@@ -60,10 +60,10 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
   };
 
   return (
-    <div className="flex gap-3 h-full">
+    <div className="flex gap-4 h-full p-4">
 
-      {/* ── Left: Category Sidebar ────────────────────────────────────── */}
-      <aside className="hidden lg:flex flex-col w-44 flex-shrink-0">
+      {/* ── Left: Category Sidebar (220px) ────────────────────────────── */}
+      <aside className="hidden lg:flex flex-col w-[220px] flex-shrink-0">
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden sticky top-16">
           <div className="px-3 py-2.5 bg-[#1A2766]">
             <p className="text-xs font-bold text-white uppercase tracking-wider">Categories</p>
@@ -159,8 +159,8 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
         </div>
       </main>
 
-      {/* ── Right: Staff Cart & Checkout ──────────────────────────────── */}
-      <aside className="hidden lg:flex flex-col w-64 flex-shrink-0">
+      {/* ── Right: Staff Cart & Checkout (320px) ──────────────────────── */}
+      <aside className="hidden lg:flex flex-col w-[320px] flex-shrink-0">
         <div className="bg-white rounded-xl border border-gray-100 sticky top-16 flex flex-col" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
           <div className="px-3 py-2.5 bg-[#1A2766] rounded-t-xl flex items-center justify-between">
             <p className="text-xs font-bold text-white uppercase tracking-wider">Dispatch Cart</p>

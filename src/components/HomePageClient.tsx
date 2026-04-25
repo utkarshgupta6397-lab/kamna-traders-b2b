@@ -5,7 +5,7 @@ import { useTransition, useState } from 'react';
 import ProductCard, { ProductData } from '@/components/ProductCard';
 import CartPanel from '@/components/CartPanel';
 import { useCartStore } from '@/store/cartStore';
-import { ShoppingCart, X, Search } from 'lucide-react';
+import { X, Search, Filter } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
 interface Category { id: string; name: string; count: number }
@@ -35,102 +35,98 @@ export default function HomePageClient({ categories, products, selectedCategoryI
   };
 
   return (
-    <div className="max-w-[1680px] mx-auto px-4 py-4 flex gap-4 relative h-full min-h-[calc(100vh-3.5rem)]">
+    <div className="w-full min-h-screen bg-[#F3F4F6] p-4">
+      {/* POS CONTAINER: 3-Column Fixed Grid */}
+      <div className="max-w-[1920px] mx-auto grid grid-cols-[240px_1fr_340px] gap-4 items-start">
 
-      {/* ── Left: Category sidebar (220px) ────────────────────────────────── */}
-      <aside className="hidden lg:flex flex-col w-[220px] flex-shrink-0">
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden sticky top-4 shadow-sm">
-          <div className="px-3 py-2 bg-[#1A2766]">
-            <p className="text-[11px] font-bold text-white uppercase tracking-wider">Categories</p>
+        {/* ── COLUMN 1: CATEGORIES (240px Fixed) ─────────────────────────── */}
+        <aside className="sticky top-4 h-[calc(100vh-32px)] flex flex-col bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 bg-[#1A2766] flex-shrink-0">
+            <h2 className="text-[12px] font-black text-white uppercase tracking-widest">POS Categories</h2>
           </div>
-          <nav className="overflow-y-auto max-h-[calc(100vh-10rem)]">
+          
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
             <button
               onClick={() => navigate({ q: searchQuery })}
-              className={`w-full text-left px-3 py-2 text-[15px] font-medium transition-colors border-b border-gray-50 ${!selectedCategoryId ? 'bg-[#AE1B1E]/5 text-[#AE1B1E] font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
+              className={`w-full flex items-center justify-between px-3 h-10 rounded-md text-[14px] font-bold transition-all ${!selectedCategoryId ? 'bg-[#AE1B1E] text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'}`}
             >
-              All Products
-              <span className="float-right text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">{totalSkuCount}</span>
+              <span>All Inventory</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${!selectedCategoryId ? 'bg-white/20' : 'bg-gray-100'}`}>{totalSkuCount}</span>
             </button>
+            <div className="h-px bg-gray-100 my-2" />
             {categories.map(cat => (
               <button
                 key={cat.id}
                 onClick={() => navigate({ category: cat.id, q: searchQuery })}
-                className={`w-full text-left px-3 py-2 text-[15px] font-medium transition-colors border-b border-gray-50 ${selectedCategoryId === cat.id ? 'bg-[#AE1B1E]/5 text-[#AE1B1E] font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
+                className={`w-full flex items-center justify-between px-3 h-10 rounded-md text-[14px] font-bold transition-all ${selectedCategoryId === cat.id ? 'bg-[#1A2766] text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'}`}
               >
-                {cat.name}
-                <span className="float-right text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">{cat.count}</span>
+                <span className="truncate">{cat.name}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${selectedCategoryId === cat.id ? 'bg-white/20' : 'bg-gray-100'}`}>{cat.count}</span>
               </button>
             ))}
-          </nav>
-        </div>
-      </aside>
+          </div>
+        </aside>
 
-      {/* ── Center: Product grid (Fluid) ────────────────────────────────── */}
-      <main className="flex-1 min-w-0 flex flex-col">
-        {/* Result toolbar (Dense: 44px) */}
-        <div className="flex items-center justify-between h-[44px] mb-2 px-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-[13px] font-bold text-gray-400 uppercase tracking-tight">{products.length} Items Found</p>
-            {selectedCategoryId && (
-              <span className="inline-flex items-center gap-1.5 text-[12px] bg-red-50 text-[#AE1B1E] px-2.5 py-0.5 rounded-full font-bold border border-red-100">
-                {categories.find(c => c.id === selectedCategoryId)?.name}
-                <button onClick={() => navigate({ q: searchQuery })} className="hover:text-red-900">
-                  <X size={12} strokeWidth={3} />
-                </button>
+        {/* ── COLUMN 2: PRODUCTS (Fluid Center) ───────────────────────────── */}
+        <main className="min-w-0">
+          {/* POS Toolbar */}
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4 h-[48px] flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <span className="text-[12px] font-black text-gray-400 uppercase tracking-tight">
+                {products.length} SKUs Listed
               </span>
-            )}
-            {searchQuery && (
-              <span className="inline-flex items-center gap-1.5 text-[12px] bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full font-bold border border-blue-100">
-                &quot;{searchQuery}&quot;
-                <button onClick={() => navigate({ category: selectedCategoryId })} className="hover:text-blue-900">
-                  <X size={12} strokeWidth={3} />
-                </button>
-              </span>
-            )}
+              {selectedCategoryId && (
+                <div className="flex items-center gap-2 bg-gray-100 px-2 py-1 rounded text-[12px] font-bold text-[#1A2766]">
+                  {categories.find(c => c.id === selectedCategoryId)?.name}
+                  <X size={14} className="cursor-pointer hover:text-red-500" onClick={() => navigate({ q: searchQuery })} />
+                </div>
+              )}
+            </div>
+            {isPending && <span className="text-[11px] font-black text-[#AE1B1E] animate-pulse">TERMINAL SYNCING...</span>}
           </div>
-          {isPending && <span className="text-[12px] text-gray-400 font-bold animate-pulse">REVALIDATING...</span>}
-        </div>
 
-        {/* Product list (High Density) */}
-        {products.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-100 py-12 text-center shadow-sm">
-            <p className="text-gray-400 font-medium text-sm">No results found</p>
-            <button onClick={() => navigate({})} className="mt-2 text-xs font-bold text-[#AE1B1E] uppercase tracking-wider">Reset Filters</button>
+          {/* Product Terminal List */}
+          <div className="space-y-2">
+            {products.length === 0 ? (
+              <div className="bg-white rounded-lg border border-gray-200 py-20 text-center">
+                <p className="text-gray-400 font-bold">No items found in POS database</p>
+                <button onClick={() => navigate({})} className="mt-4 text-[12px] font-black text-[#AE1B1E] uppercase border-b-2 border-[#AE1B1E]">Clear Search Terminal</button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {products.map(product => (
+                  <ProductCard key={product.id} product={product} />
+                ))}
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="flex flex-col gap-[10px]">
-            {products.map(product => (
-              <ProductCard key={product.id} product={product} />
-            ))}
-          </div>
-        )}
-      </main>
+        </main>
 
-      {/* ── Right: Sticky cart panel (320px) ────────────────────────────── */}
-      <aside className="hidden lg:flex flex-col w-[320px] flex-shrink-0">
-        <div className="bg-white rounded-xl border border-gray-100 sticky top-4 flex flex-col shadow-sm" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
-          <div className="px-3 py-2 bg-[#1A2766] rounded-t-xl flex items-center justify-between">
-            <p className="text-[11px] font-bold text-white uppercase tracking-wider">Your Inquiry</p>
+        {/* ── COLUMN 3: TERMINAL CART (340px Fixed) ──────────────────────── */}
+        <aside className="sticky top-4 h-[calc(100vh-32px)] flex flex-col bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 bg-[#1A2766] flex-shrink-0 flex items-center justify-between">
+            <h2 className="text-[12px] font-black text-white uppercase tracking-widest">Inquiry Terminal</h2>
             {totalItems > 0 && (
-              <span className="bg-[#AE1B1E] text-white text-[10px] font-black px-2 py-0.5 rounded-full">{totalItems}</span>
+              <span className="bg-[#AE1B1E] text-white text-[10px] font-black px-2 py-0.5 rounded">{totalItems}</span>
             )}
           </div>
-          <div className="flex-1 overflow-hidden p-0">
+          <div className="flex-1 overflow-hidden">
             <CartPanel />
           </div>
-        </div>
-      </aside>
+        </aside>
 
-      {/* Mobile drawer logic remains (scaled correctly via shared components) */}
+      </div>
+
+      {/* Mobile support remains for fallback, but layout is optimized for Desktop POS */}
       {totalItems > 0 && (
         <div className="md:hidden fixed bottom-3 left-3 right-3 z-40">
           <button
             onClick={() => setCartOpen(true)}
-            className="w-full h-[54px] flex items-center justify-between bg-[#1A2766] text-white rounded-full px-5 shadow-lg"
+            className="w-full h-[54px] flex items-center justify-between bg-[#1A2766] text-white rounded-full px-5 shadow-2xl"
           >
             <div className="flex items-center gap-2">
               <span className="bg-white/20 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black">{totalItems}</span>
-              <span className="font-bold text-sm">Checkout</span>
+              <span className="font-bold text-sm">View Terminal</span>
             </div>
             <span className="text-[15px] font-black">{formatCurrency(items.reduce((a, i) => a + (i.qty * i.price), 0))}</span>
           </button>
@@ -140,9 +136,9 @@ export default function HomePageClient({ categories, products, selectedCategoryI
       {cartOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end">
           <div className="absolute inset-0 bg-black/40" onClick={() => setCartOpen(false)} />
-          <div className="relative bg-white rounded-t-3xl p-4 max-h-[92vh] h-[92vh] overflow-hidden flex flex-col">
+          <div className="relative bg-white rounded-t-2xl p-4 max-h-[92vh] h-[92vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-gray-900 text-lg">Your Order</h3>
+              <h3 className="font-black text-gray-900 text-sm uppercase tracking-widest">Terminal Inquiry</h3>
               <button onClick={() => setCartOpen(false)} className="text-gray-400 bg-gray-100 p-2 rounded-full"><X size={18} /></button>
             </div>
             <div className="flex-1 overflow-hidden">

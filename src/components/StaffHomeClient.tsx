@@ -4,7 +4,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useTransition, useState } from 'react';
 import ProductCard, { ProductData } from '@/components/ProductCard';
 import { useCartStore } from '@/store/cartStore';
-import { Minus, Plus, Trash2, Printer, Search, X } from 'lucide-react';
+import { Minus, Plus, Trash2, Printer, Search, X, ShoppingBag } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 interface Category { id: string; name: string; count: number }
 interface Warehouse { id: string; name: string }
@@ -60,213 +61,150 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
   };
 
   return (
-    <div className="flex gap-4 h-full p-4">
+    <div className="w-full min-h-screen bg-[#F3F4F6] p-4">
+      {/* POS CONTAINER */}
+      <div className="max-w-[1920px] mx-auto grid grid-cols-[240px_1fr_340px] gap-4 items-start">
 
-      {/* ── Left: Category Sidebar (220px) ────────────────────────────── */}
-      <aside className="hidden lg:flex flex-col w-[220px] flex-shrink-0">
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden sticky top-16">
-          <div className="px-3 py-2.5 bg-[#1A2766]">
-            <p className="text-xs font-bold text-white uppercase tracking-wider">Categories</p>
+        {/* ── COLUMN 1: CATEGORIES ────────────────────────────────────── */}
+        <aside className="sticky top-4 h-[calc(100vh-32px)] flex flex-col bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 bg-[#1A2766]">
+            <p className="text-[12px] font-black text-white uppercase tracking-widest">POS Categories</p>
           </div>
-          <nav className="overflow-y-auto max-h-[calc(100vh-7rem)]">
+          <nav className="overflow-y-auto p-2 space-y-1">
             <button
               onClick={() => navigate({ q: searchQuery })}
-              className={`w-full text-left px-3 py-2 text-xs font-medium border-b border-gray-50 ${!selectedCategoryId ? 'bg-[#AE1B1E]/10 text-[#AE1B1E] font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
+              className={`w-full flex items-center justify-between px-3 h-10 rounded-md text-[14px] font-bold transition-all ${!selectedCategoryId ? 'bg-[#AE1B1E] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
             >
-              All Products
-              <span className="float-right text-[10px] text-gray-400">{totalSkuCount}</span>
+              All SKUs
+              <span className="text-[10px] font-bold opacity-70">{totalSkuCount}</span>
             </button>
+            <div className="h-px bg-gray-100 my-2" />
             {categories.map(cat => (
               <button
                 key={cat.id}
                 onClick={() => navigate({ category: cat.id, q: searchQuery })}
-                className={`w-full text-left px-3 py-2 text-xs font-medium border-b border-gray-50 ${selectedCategoryId === cat.id ? 'bg-[#AE1B1E]/10 text-[#AE1B1E] font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
+                className={`w-full flex items-center justify-between px-3 h-10 rounded-md text-[14px] font-bold transition-all ${selectedCategoryId === cat.id ? 'bg-[#1A2766] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
               >
-                {cat.name}
-                <span className="float-right text-[10px] text-gray-400">{cat.count}</span>
+                <span className="truncate">{cat.name}</span>
+                <span className="text-[10px] font-bold opacity-70">{cat.count}</span>
               </button>
             ))}
           </nav>
-        </div>
-      </aside>
+        </aside>
 
-      {/* ── Center: Products ──────────────────────────────────────────── */}
-      <main className="flex-1 min-w-0 flex flex-col">
-        
-        {/* Mobile Sticky Top Section: Warehouse + Search */}
-        <div className="lg:hidden sticky top-0 z-40 bg-[#f8f9fb] pt-3 pb-2 mx-[-12px] px-[12px] shadow-sm space-y-2">
-          <select
-            value={warehouseId}
-            onChange={e => setWarehouseId(e.target.value)}
-            className="w-full border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white font-bold text-[#1A2766] shadow-sm focus:ring-2 focus:ring-[#1A2766] outline-none"
-          >
-            {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-          </select>
-          
-          <form 
-            onSubmit={(e) => {
-              e.preventDefault();
-              navigate({ q: localSearch, category: selectedCategoryId });
-            }} 
-            className="relative"
-          >
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              value={localSearch}
-              onChange={e => setLocalSearch(e.target.value)}
-              placeholder="SKU search..."
-              className="w-full pl-9 pr-9 py-2.5 text-sm rounded-xl border border-gray-200 bg-white shadow-sm focus:ring-2 focus:ring-[#1A2766] outline-none"
-              autoFocus
-            />
-            {localSearch && (
-              <button 
-                type="button" 
-                onClick={() => {
-                  setLocalSearch('');
-                  navigate({ q: '', category: selectedCategoryId });
-                }} 
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+        {/* ── COLUMN 2: PRODUCTS ────────────────────────────────────────── */}
+        <main className="min-w-0">
+          {/* POS Staff Toolbar */}
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4 h-[48px] flex items-center justify-between mb-3">
+            <div className="flex items-center gap-4 flex-1">
+              <select
+                value={warehouseId}
+                onChange={e => setWarehouseId(e.target.value)}
+                className="bg-gray-50 border-0 rounded px-3 py-1.5 text-[13px] font-black text-[#1A2766] outline-none"
               >
-                <X size={14} />
-              </button>
-            )}
-          </form>
-        </div>
-
-        {/* Mobile categories - horizontal scrolling */}
-        <div className="lg:hidden sticky top-[108px] z-30 bg-[#f8f9fb] pt-2 pb-2 mx-[-12px] px-[12px] overflow-x-auto whitespace-nowrap scrollbar-hide shadow-[0_4px_6px_-6px_rgba(0,0,0,0.1)]">
-          <div className="flex gap-2">
-            <button onClick={() => navigate({ q: searchQuery })} className={`flex-shrink-0 text-xs px-4 py-1.5 rounded-full font-bold transition-colors ${!selectedCategoryId ? 'bg-[#1A2766] text-white shadow-md' : 'bg-white border border-gray-200 text-gray-600'}`}>All</button>
-            {categories.map(cat => (
-              <button key={cat.id} onClick={() => navigate({ category: cat.id, q: searchQuery })} className={`flex-shrink-0 text-xs px-4 py-1.5 rounded-full font-bold transition-colors ${selectedCategoryId === cat.id ? 'bg-[#1A2766] text-white shadow-md' : 'bg-white border border-gray-200 text-gray-600'}`}>{cat.name}</button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between mt-1 mb-2 hidden lg:flex">
-          <p className="text-xs text-gray-400">{products.length} products{isPending && ' · Loading…'}</p>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          {products.map(p => <ProductCard key={p.id} product={p} />)}
-          {products.length === 0 && (
-            <div className="col-span-full bg-white rounded-xl border border-gray-100 py-10 text-center mt-2">
-              <p className="text-gray-400 text-sm">No products found.</p>
-              <button onClick={() => navigate({})} className="mt-2 text-xs text-[#AE1B1E] hover:underline">Clear filters</button>
+                {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+              <div className="h-4 w-px bg-gray-200" />
+              <p className="text-[12px] font-black text-gray-400 uppercase">{products.length} Products Found</p>
             </div>
-          )}
-        </div>
-      </main>
-
-      {/* ── Right: Staff Cart & Checkout (320px) ──────────────────────── */}
-      <aside className="hidden lg:flex flex-col w-[320px] flex-shrink-0">
-        <div className="bg-white rounded-xl border border-gray-100 sticky top-16 flex flex-col" style={{ maxHeight: 'calc(100vh - 5rem)' }}>
-          <div className="px-3 py-2.5 bg-[#1A2766] rounded-t-xl flex items-center justify-between">
-            <p className="text-xs font-bold text-white uppercase tracking-wider">Dispatch Cart</p>
-            {totalQty > 0 && <span className="bg-[#AE1B1E] text-white text-[10px] font-black px-2 py-0.5 rounded-full">{totalQty}</span>}
+            <form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                navigate({ q: localSearch, category: selectedCategoryId });
+              }} 
+              className="relative w-64"
+            >
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={localSearch}
+                onChange={e => setLocalSearch(e.target.value)}
+                placeholder="Rapid SKU search..."
+                className="w-full pl-9 pr-4 py-1.5 bg-gray-50 border-0 rounded-md text-[13px] outline-none focus:ring-1 focus:ring-[#1A2766]"
+              />
+            </form>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-3 space-y-1">
+          <div className="flex flex-col gap-2">
+            {products.map(p => <ProductCard key={p.id} product={p} />)}
+            {products.length === 0 && (
+              <div className="bg-white rounded-lg border border-gray-200 py-20 text-center">
+                <p className="text-gray-400 font-bold">Terminal empty. Refine search.</p>
+              </div>
+            )}
+          </div>
+        </main>
+
+        {/* ── COLUMN 3: STAFF DISPATCH CART ───────────────────────────── */}
+        <aside className="sticky top-4 h-[calc(100vh-32px)] flex flex-col bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 bg-[#1A2766] flex items-center justify-between">
+            <p className="text-[12px] font-black text-white uppercase tracking-widest">Dispatch Cart</p>
+            {totalQty > 0 && <span className="bg-[#AE1B1E] text-white text-[10px] font-black px-2 py-0.5 rounded">{totalQty}</span>}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
             {items.length === 0 ? (
-              <p className="text-center text-xs text-gray-400 py-6">Add products from the catalog</p>
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <ShoppingBag size={24} className="text-gray-200 mb-2" />
+                <p className="text-[12px] font-black text-gray-400 uppercase tracking-widest">Empty Bin</p>
+              </div>
             ) : items.map(item => (
-              <div key={item.skuId} className="flex items-center gap-2 py-1.5 border-b border-gray-100">
+              <div key={item.skuId} className="flex items-center gap-2 h-[42px] px-2 bg-gray-50 rounded border border-gray-100 group">
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-gray-800 truncate">{item.name}</p>
-                  <p className="text-[10px] text-gray-400 font-mono">{item.skuId}</p>
+                  <p className="text-[12px] font-bold text-gray-800 truncate leading-tight">{item.name}</p>
+                  <p className="text-[9px] text-gray-400 font-mono font-bold uppercase">{item.skuId}</p>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => updateQty(item.skuId, item.qty - (item.stepQty || item.moq))} className="w-5 h-5 rounded border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
-                    <Minus size={10} />
+                <div className="flex items-center bg-white border border-gray-200 rounded px-0.5 h-[28px]">
+                  <button onClick={() => updateQty(item.skuId, item.qty - (item.stepQty || item.moq))} className="w-6 h-full flex items-center justify-center text-gray-400 hover:text-red-600 transition-colors">
+                    <Minus size={10} strokeWidth={4} />
                   </button>
-                  <span className="w-7 text-center text-xs font-bold text-gray-800">{item.qty}</span>
-                  <button onClick={() => updateQty(item.skuId, item.qty + (item.stepQty || item.moq))} className="w-5 h-5 rounded border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
-                    <Plus size={10} />
+                  <span className="w-8 text-center text-[12px] font-black text-[#1A2766]">{item.qty}</span>
+                  <button onClick={() => updateQty(item.skuId, item.qty + (item.stepQty || item.moq))} className="w-6 h-full flex items-center justify-center text-[#1A2766] hover:bg-blue-50 transition-colors">
+                    <Plus size={10} strokeWidth={4} />
                   </button>
                 </div>
-                <button onClick={() => removeItem(item.skuId)} className="text-gray-300 hover:text-red-400">
-                  <Trash2 size={12} />
+                <button onClick={() => removeItem(item.skuId)} className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 p-1">
+                  <Trash2 size={14} />
                 </button>
               </div>
             ))}
           </div>
 
-          <div className="p-3 border-t border-gray-100 space-y-2">
+          {/* POS Staff Checkout Footer */}
+          <div className="p-4 border-t border-gray-200 bg-gray-50/50 space-y-3">
             {items.length > 0 && (
               <>
-                <select
-                  value={warehouseId}
-                  onChange={e => setWarehouseId(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:ring-2 focus:ring-[#1A2766] outline-none"
-                >
-                  {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                </select>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={e => setCustomerName(e.target.value)}
-                  placeholder="Customer Name *"
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-[#1A2766] outline-none"
-                />
-                <input
-                  type="text"
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                  placeholder="Notes (optional)"
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-[#1A2766] outline-none"
-                />
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={e => setCustomerName(e.target.value)}
+                    placeholder="Customer Name *"
+                    className="w-full bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] outline-none focus:ring-1 focus:ring-[#1A2766]"
+                  />
+                  <input
+                    type="text"
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
+                    placeholder="Dispatch Notes"
+                    className="w-full bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] outline-none focus:ring-1 focus:ring-[#1A2766]"
+                  />
+                </div>
                 <button
                   onClick={handleSubmit}
-                  disabled={submitting || !customerName || !warehouseId}
-                  className="w-full flex items-center justify-center gap-2 bg-[#1A2766] text-white py-2 rounded-xl font-bold text-xs hover:bg-[#003347] disabled:opacity-50 transition-colors"
+                  disabled={submitting || !customerName}
+                  className="w-full h-[48px] flex items-center justify-center gap-2 bg-[#1A2766] text-white rounded-md font-black text-[14px] uppercase tracking-widest hover:bg-[#003347] transition-all disabled:opacity-50 shadow-md active:scale-[0.98]"
                 >
-                  <Printer size={14} />
-                  {submitting ? 'Processing…' : 'Generate & Print Slips'}
+                  <Printer size={18} strokeWidth={3} />
+                  {submitting ? 'Printing...' : 'Generate & Print'}
                 </button>
-                <button onClick={clearCart} className="w-full text-[10px] text-gray-400 hover:text-red-400">Clear cart</button>
+                <button onClick={clearCart} className="w-full text-[10px] text-gray-400 hover:text-red-500 font-black uppercase tracking-[0.2em]">Reset Bin</button>
               </>
             )}
           </div>
-        </div>
-      </aside>
+        </aside>
 
-      {/* Mobile: floating CTA */}
-      {totalQty > 0 && (
-        <div className="md:hidden fixed bottom-3 left-3 right-3 z-40">
-          <button onClick={() => setCheckoutOpen(true)} className="w-full h-[54px] flex items-center justify-between bg-[#1A2766] text-white rounded-full px-5 shadow-[0_8px_20px_-6px_rgba(26,39,102,0.4)]">
-            <span className="font-bold text-sm bg-white/20 px-3 py-1 rounded-full">{totalQty} items</span>
-            <span className="text-sm font-bold flex items-center gap-1">Checkout <span className="text-lg leading-none">→</span></span>
-          </button>
-        </div>
-      )}
-
-      {/* Mobile checkout drawer */}
-      {checkoutOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setCheckoutOpen(false)} />
-          <div className="relative bg-white rounded-t-3xl p-5 space-y-3 max-h-[92vh] h-[92vh] overflow-y-auto shadow-2xl flex flex-col">
-            <div className="flex justify-between items-center mb-2 flex-shrink-0">
-              <h3 className="font-bold text-gray-900 text-lg">Dispatch Cart</h3>
-              <button onClick={() => setCheckoutOpen(false)} className="text-gray-400 bg-gray-100 p-2 rounded-full"><X size={18} /></button>
-            </div>
-            {items.map(item => (
-              <div key={item.skuId} className="flex justify-between items-center text-sm border-b border-gray-100 pb-2">
-                <div className="flex-1"><p className="font-medium">{item.name}</p><p className="text-xs text-gray-400">{item.skuId}</p></div>
-                <span className="font-bold text-[#1A2766]">×{item.qty}</span>
-              </div>
-            ))}
-            <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className="w-full border rounded-lg p-2.5 text-sm bg-white">
-              {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </select>
-            <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Customer Name *" className="w-full border rounded-lg p-2.5 text-sm" />
-            <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)" className="w-full border rounded-lg p-2.5 text-sm" />
-            <button onClick={handleSubmit} disabled={submitting || !customerName} className="w-full flex items-center justify-center gap-2 bg-[#1A2766] text-white py-3 rounded-xl font-bold disabled:opacity-50">
-              <Printer size={16} /> {submitting ? 'Processing…' : 'Print Slips'}
-            </button>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { useTransition, useState, useEffect } from 'react';
 import ProductCard, { ProductData } from '@/components/ProductCard';
 import CartPanel from '@/components/CartPanel';
 import { useCartStore } from '@/store/cartStore';
-import { Printer, Search, X, ShoppingBag, Scan } from 'lucide-react';
+import { Printer, Scan, ShoppingBag } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
 interface Category { id: string; name: string; count: number }
@@ -91,29 +91,28 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
   };
 
   return (
-    <div className="w-full min-h-screen bg-[#F9FAFB] p-4">
-      {/* 3-COLUMN FIXED ARCHITECTURE */}
+    <div className="w-full min-h-screen bg-[#F6F7FA] p-4">
       <div className="max-w-[1920px] mx-auto flex gap-4 items-start">
 
-        {/* ── LEFT: 220px FIXED STICKY ───────────────────────────────── */}
+        {/* ── LEFT: 220px REFINED SIDEBAR ─────────────────────────────── */}
         <aside className="hidden lg:block w-[220px] sticky top-4 flex-shrink-0">
-          <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-sm overflow-hidden flex flex-col h-[calc(100vh-32px)]">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-[11px] font-[800] text-[#1A2766] uppercase tracking-widest">Inventory</h2>
+          <div className="bg-white rounded-xl border border-[#E7EAF0] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col h-[calc(100vh-32px)]">
+            <div className="px-4 py-3.5 border-b border-[#F1F3F7]">
+              <h2 className="text-[11px] font-[800] text-[#1A2766] uppercase tracking-[0.1em]">Inventory</h2>
             </div>
-            <nav className="p-2 space-y-1 overflow-y-auto custom-scrollbar flex-1">
+            <nav className="p-2 space-y-0.5 overflow-y-auto custom-scrollbar flex-1">
               <button
                 onClick={() => navigate({ q: searchQuery })}
-                className={`w-full flex items-center justify-between px-3 h-9 rounded-lg text-[13px] font-bold transition-all ${!selectedCategoryId ? 'bg-[#1A2766] text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+                className={`w-full flex items-center justify-between px-3 h-[42px] rounded-lg text-[14px] font-[700] transition-all group ${!selectedCategoryId ? 'bg-[#1A2766] text-white shadow-md' : 'text-gray-500 hover:bg-[#F1F6FF] hover:text-[#1A2766]'}`}
               >
                 <span>Full Catalog</span>
               </button>
-              <div className="h-px bg-gray-50 my-2 mx-1" />
+              <div className="h-px bg-[#F1F3F7] my-2 mx-1" />
               {categories.map(cat => (
                 <button
                   key={cat.id}
                   onClick={() => navigate({ category: cat.id, q: searchQuery })}
-                  className={`w-full flex items-center justify-between px-3 h-9 rounded-lg text-[13px] font-bold transition-all ${selectedCategoryId === cat.id ? 'bg-[#1A2766] text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+                  className={`w-full flex items-center justify-between px-3 h-[42px] rounded-lg text-[14px] font-[700] transition-all ${selectedCategoryId === cat.id ? 'bg-[#1A2766] text-white shadow-md' : 'text-gray-500 hover:bg-[#F1F6FF] hover:text-[#1A2766]'}`}
                 >
                   <span className="truncate">{cat.name}</span>
                   <span className={`text-[10px] font-bold ${selectedCategoryId === cat.id ? 'text-white/60' : 'text-gray-300'}`}>{cat.count}</span>
@@ -123,44 +122,43 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
           </div>
         </aside>
 
-        {/* ── CENTER: INDUSTRIAL GRID (Fluid) ───────────────────────────── */}
+        {/* ── CENTER: INDUSTRIAL TERMINAL (Fluid) ───────────────────────── */}
         <main className="flex-1 min-w-0">
-          {/* POS Staff Header */}
-          <div className="bg-white rounded-xl border border-gray-100 shadow-sm h-14 flex items-center px-4 gap-4 mb-4">
+          <div className="bg-white rounded-xl border border-[#E7EAF0] shadow-sm h-[56px] flex items-center px-4 gap-4 mb-4">
             <div className="flex-shrink-0">
               <select
                 value={warehouseId}
                 onChange={e => setWarehouseId(e.target.value)}
-                className="bg-gray-50 border-0 rounded px-3 py-1.5 text-[12px] font-black text-[#1A2766] outline-none"
+                className="bg-[#F9FAFB] border border-[#E7EAF0] rounded-lg px-3 py-1.5 text-[12px] font-[800] text-[#1A2766] outline-none hover:border-[#1A2766]/30 transition-colors cursor-pointer"
               >
                 {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
             </div>
-            <div className="h-6 w-px bg-gray-100" />
+            <div className="h-6 w-px bg-[#F1F3F7]" />
             <div className="flex-1 flex items-center gap-4">
-               <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest">{products.length} SKUs Listed</span>
-               {isPending && <span className="w-1.5 h-1.5 rounded-full bg-[#AE1B1E] animate-ping" />}
+               <span className="text-[11px] font-[800] text-gray-400 uppercase tracking-widest">{products.length} SKUs Listed</span>
+               {isPending && <div className="w-4 h-4 border-2 border-[#1A2766] border-t-transparent rounded-full animate-spin" />}
             </div>
-            <button className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 rounded-lg group transition-colors">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-[#F9FAFB] border border-[#E7EAF0] rounded-lg group">
               <Scan size={14} className="text-gray-400 group-hover:text-[#1A2766]" />
-              <span className="text-[10px] font-black text-gray-500 uppercase">Scanner Active</span>
-            </button>
+              <span className="text-[10px] font-[800] text-gray-500 uppercase">Scanner Live</span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
             {products.map((product, idx) => (
-              <div key={product.id} className={selectedIndex === idx ? 'ring-2 ring-[#AE1B1E] rounded-[12px]' : ''}>
+              <div key={product.id} className={selectedIndex === idx ? 'ring-2 ring-[#1A2766] rounded-xl' : ''}>
                 <ProductCard product={product} />
               </div>
             ))}
           </div>
         </main>
 
-        {/* ── RIGHT: 320px FIXED STICKY ──────────────────────────────── */}
+        {/* ── RIGHT: 320px REFINED DISPATCH ───────────────────────────── */}
         <aside className="hidden xl:block w-[320px] sticky top-4 flex-shrink-0">
-          <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-sm overflow-hidden flex flex-col h-[calc(100vh-32px)]">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-[#1A2766]">
-              <h2 className="text-[11px] font-[800] text-white uppercase tracking-widest">Dispatch Bin</h2>
+          <div className="bg-white rounded-xl border border-[#E7EAF0] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col h-[calc(100vh-32px)]">
+            <div className="px-4 py-3.5 border-b border-[#F1F3F7] bg-[#1A2766] flex items-center justify-between">
+              <h2 className="text-[11px] font-[800] text-white uppercase tracking-[0.1em]">Dispatch Bin</h2>
               {totalQty > 0 && <span className="bg-[#AE1B1E] text-white text-[10px] font-black px-2 py-0.5 rounded shadow-sm">{totalQty}</span>}
             </div>
             
@@ -168,24 +166,31 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
                <CartPanel />
             </div>
 
-            {/* Staff Checkout Zone */}
-            <div className="p-4 border-t border-gray-100 bg-gray-50/30 space-y-3">
+            <div className="p-4 border-t border-[#F1F3F7] bg-[#F9FAFB] space-y-3">
               {items.length > 0 && (
                 <>
-                  <input
-                    type="text"
-                    value={customerName}
-                    onChange={e => setCustomerName(e.target.value)}
-                    placeholder="Customer Name *"
-                    className="w-full bg-white border border-gray-100 rounded-lg px-3 py-2 text-[13px] font-bold outline-none focus:ring-1 focus:ring-[#1A2766]"
-                  />
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={e => setCustomerName(e.target.value)}
+                      placeholder="Customer Name *"
+                      className="w-full bg-white border border-[#E7EAF0] rounded-lg px-3 py-2.5 text-[14px] font-[700] outline-none focus:ring-2 focus:ring-[#1A2766]/10 focus:border-[#1A2766] transition-all"
+                    />
+                    <textarea
+                      value={notes}
+                      onChange={e => setNotes(e.target.value)}
+                      placeholder="Dispatch Notes (Optional)"
+                      className="w-full bg-white border border-[#E7EAF0] rounded-lg px-3 py-2 text-[13px] outline-none focus:ring-2 focus:ring-[#1A2766]/10 focus:border-[#1A2766] h-16 resize-none transition-all"
+                    />
+                  </div>
                   <button
                     onClick={handleSubmit}
                     disabled={submitting || !customerName}
-                    className="w-full h-11 flex items-center justify-center gap-2 bg-[#1A2766] text-white rounded-lg font-black text-[12px] uppercase tracking-widest hover:bg-[#003347] transition-all disabled:opacity-50 shadow-md active:scale-95"
+                    className="w-full h-12 flex items-center justify-center gap-2 bg-[#1A2766] text-white rounded-lg font-[800] text-[13px] uppercase tracking-widest hover:bg-[#003347] transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
                   >
-                    <Printer size={16} strokeWidth={3} />
-                    {submitting ? '...' : 'Process & Print'}
+                    <Printer size={18} strokeWidth={2.5} />
+                    {submitting ? 'Processing...' : 'Generate Dispatch Note'}
                   </button>
                 </>
               )}

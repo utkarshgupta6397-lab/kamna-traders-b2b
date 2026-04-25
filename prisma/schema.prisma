@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  mobile    String   @unique
+  role      String   @default("STAFF") // STAFF, ADMIN
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  carts     Cart[]   // Relation to carts created by staff
+}
+
+model Warehouse {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  inventory WarehouseInventory[]
+  carts     Cart[]
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String
+  parentId  String?
+  parent    Category?  @relation("SubCategories", fields: [parentId], references: [id])
+  children  Category[] @relation("SubCategories")
+  skus      Sku[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Sku {
+  id          String   @id // User provided SKU ID
+  name        String
+  brand       String?
+  unit        String?
+  moq         Int      @default(1)
+  price       Float    @default(0.0)
+  gstPercent  Float    @default(0.0)
+  hsnCode     String?
+  description String?
+  imageUrl    String?
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  inventory   WarehouseInventory[]
+  cartItems   CartItem[]
+}
+
+model WarehouseInventory {
+  id          String   @id @default(cuid())
+  warehouseId String
+  skuId       String
+  qty         Int      @default(0)
+  isOos       Boolean  @default(false)
+  zone        String?
+  updatedAt   DateTime @updatedAt
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  sku         Sku       @relation(fields: [skuId], references: [id])
+
+  @@unique([warehouseId, skuId])
+}
+
+model Cart {
+  id           String   @id @default(cuid()) // E.g., KT1001
+  warehouseId  String
+  customerName String
+  notes        String?
+  staffId      String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  warehouse    Warehouse @relation(fields: [warehouseId], references: [id])
+  staff        User      @relation(fields: [staffId], references: [id])
+  items        CartItem[]
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  cartId    String
+  skuId     String
+  qty       Int
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  sku       Sku      @relation(fields: [skuId], references: [id])
+}
+
+model CustomerLead {
+  id            String   @id @default(cuid())
+  cartId        String?  // Can be mapped if needed
+  items         String   // JSON string of items
+  sessionId     String?
+  deviceMeta    String?
+  sourceChannel String   @default("whatsapp")
+  createdAt     DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+}

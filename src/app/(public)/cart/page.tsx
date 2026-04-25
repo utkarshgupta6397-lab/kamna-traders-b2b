@@ -32,8 +32,9 @@ export default function CartPage() {
       }
       
       items.forEach(item => {
-        message += `${item.skuId} x${item.qty}\n`;
+        message += `${item.skuId} - ${item.name} x${item.qty}\n`;
       });
+      message += `\nTotal: ${formatCurrency(getTotalPrice())}`;
 
       // 3. Redirect to WhatsApp
       const waNumber = '15558246665';

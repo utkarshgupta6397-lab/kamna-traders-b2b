@@ -2,8 +2,7 @@
 
 import { useRouter, usePathname } from 'next/navigation';
 import { useTransition, useState } from 'react';
-import StaffProductRow from '@/components/StaffProductRow';
-import { ProductData } from '@/components/ProductCard';
+import ProductCard, { ProductData } from '@/components/ProductCard';
 import { useCartStore } from '@/store/cartStore';
 import { Minus, Plus, Trash2, Printer, Search, X } from 'lucide-react';
 
@@ -149,8 +148,8 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
           <p className="text-xs text-gray-400">{products.length} products{isPending && ' · Loading…'}</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 pb-24">
-          {products.map(p => <StaffProductRow key={p.id} product={p} />)}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+          {products.map(p => <ProductCard key={p.id} product={p} />)}
           {products.length === 0 && (
             <div className="col-span-full bg-white rounded-xl border border-gray-100 py-10 text-center mt-2">
               <p className="text-gray-400 text-sm">No products found.</p>

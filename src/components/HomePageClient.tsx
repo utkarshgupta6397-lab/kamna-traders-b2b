@@ -3,7 +3,6 @@
 import { useRouter, usePathname } from 'next/navigation';
 import { useTransition, useState } from 'react';
 import ProductCard, { ProductData } from '@/components/ProductCard';
-import MobileProductTile from '@/components/MobileProductTile';
 import CartPanel from '@/components/CartPanel';
 import { useCartStore } from '@/store/cartStore';
 import { ShoppingCart, X, Search } from 'lucide-react';
@@ -151,21 +150,11 @@ export default function HomePageClient({ categories, products, selectedCategoryI
             <button onClick={() => navigate({})} className="mt-3 text-sm font-bold text-[#AE1B1E] hover:underline">Clear all filters</button>
           </div>
         ) : (
-          <>
-            {/* MOBILE ONLY: Single-row tile highly optimized for Safari flex layout */}
-            <div className="md:hidden flex flex-col gap-2 mt-1 pb-32">
-              {products.map(product => (
-                <MobileProductTile key={product.id} product={product} />
-              ))}
-            </div>
-
-            {/* DESKTOP ONLY: Grid layout */}
-            <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-12">
-              {products.map(product => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
-          </>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+            {products.map(product => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
         )}
       </main>
 

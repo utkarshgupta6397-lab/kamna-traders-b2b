@@ -51,48 +51,64 @@ export default function ProductCard({ product }: { product: ProductData }) {
   };
 
   return (
-    <div className={`bg-white rounded-xl shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)] border border-gray-100 flex flex-col overflow-hidden h-full hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.12)] transition-all ${qty > 0 ? 'ring-2 ring-[#1A2766] border-transparent' : ''} ${product.isOos ? 'opacity-60' : ''}`}>
-      <div className="aspect-square bg-gray-50 flex-shrink-0 flex items-center justify-center overflow-hidden border-b border-gray-100 relative group">
-        {product.imageUrl ? (
-          <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain mix-blend-multiply p-4 group-hover:scale-105 transition-transform duration-300" />
-        ) : (
-          <Package size={32} className="text-gray-300" />
-        )}
-        {product.isOos && (
-          <span className="absolute top-3 left-3 text-[10px] font-bold bg-red-100 text-[#AE1B1E] px-2 py-1 rounded-md shadow-sm">OUT OF STOCK</span>
-        )}
-      </div>
+    <div className={`bg-white rounded-lg border transition-all hover:shadow-md ${qty > 0 ? 'border-[#1A2766]/30 ring-1 ring-[#1A2766]/10' : 'border-gray-100'} ${product.isOos ? 'opacity-60' : ''}`}>
+      <div className="flex items-center gap-3 p-2.5">
+        {/* Product Image */}
+        <div className="w-14 h-14 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 flex-shrink-0 flex items-center justify-center overflow-hidden border border-gray-100">
+          {product.imageUrl ? (
+            <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover rounded-lg" />
+          ) : (
+            <Package size={20} className="text-gray-300" />
+          )}
+        </div>
 
-      <div className="p-4 flex-1 flex flex-col">
-        <h3 className="text-sm font-bold text-gray-900 leading-snug line-clamp-2 mb-1" title={product.name}>{product.name}</h3>
-        <p className="text-xs text-gray-400 font-mono mb-3">{product.id}</p>
-        
-        <div className="mt-auto">
-          <div className="flex items-baseline gap-1.5 mb-1">
-            <span className="text-xl font-black text-[#1A2766]">₹{product.price.toFixed(0)}</span>
-            <span className="text-xs text-gray-500">/{product.unit || 'pc'}</span>
-          </div>
-          <p className="text-xs text-gray-400 mb-4">MOQ {product.moq}</p>
-
-          <div className="w-full">
-            {product.isOos ? (
-              <div className="w-full text-center py-2 bg-gray-50 rounded-xl text-xs text-gray-400 font-bold">Unavailable</div>
-            ) : qty === 0 ? (
-              <button onClick={add} className="w-full flex items-center justify-center gap-2 py-2.5 bg-white border-2 border-[#1A2766] text-[#1A2766] rounded-xl text-sm font-bold hover:bg-[#1A2766] hover:text-white transition-colors active:scale-95">
-                <Plus size={16} strokeWidth={2.5} /> Add to Cart
-              </button>
-            ) : (
-              <div className="flex items-center border-2 border-[#1A2766] rounded-xl bg-[#1A2766] text-white overflow-hidden w-full h-[44px] shadow-sm">
-                <button onClick={subtract} className="w-12 h-full flex items-center justify-center hover:bg-white/20 active:bg-white/30 transition-colors">
-                  <Minus size={16} strokeWidth={2.5} />
-                </button>
-                <span className="flex-1 text-center text-base font-black select-none">{qty}</span>
-                <button onClick={add} className="w-12 h-full flex items-center justify-center hover:bg-white/20 active:bg-white/30 transition-colors">
-                  <Plus size={16} strokeWidth={2.5} />
-                </button>
-              </div>
+        {/* Product Info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-1 mb-0.5">
+            <p className="text-xs font-bold text-gray-900 leading-snug truncate flex-1" title={product.name}>{product.name}</p>
+            {product.isOos && (
+              <span className="text-[9px] font-bold bg-red-100 text-[#AE1B1E] px-1.5 py-0.5 rounded flex-shrink-0">OOS</span>
             )}
           </div>
+          <p className="text-[10px] text-gray-400 font-mono mb-1">{product.id}</p>
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-sm font-black text-[#1A2766]">₹{product.price.toFixed(0)}</span>
+            <span className="text-[10px] text-gray-400">/{product.unit || 'pc'}</span>
+            <span className="text-[10px] text-gray-300">·</span>
+            <span className="text-[10px] text-gray-400">MOQ {product.moq}{product.unit ? ` ${product.unit}` : ''}</span>
+          </div>
+        </div>
+
+        {/* Qty Control */}
+        <div className="flex-shrink-0">
+          {product.isOos ? (
+            <div className="w-[76px] text-center py-1.5 bg-gray-50 rounded-lg text-[10px] text-gray-400 font-medium">
+              Unavail.
+            </div>
+          ) : qty === 0 ? (
+            <button
+              onClick={add}
+              className="w-[76px] flex items-center justify-center gap-1 py-2 bg-[#AE1B1E] text-white rounded-lg text-xs font-bold hover:bg-[#900f12] transition-colors active:scale-95"
+            >
+              <Plus size={12} /> Add
+            </button>
+          ) : (
+            <div className="flex items-center border-2 border-[#1A2766]/20 rounded-lg bg-white overflow-hidden w-[76px]">
+              <button
+                onClick={subtract}
+                className="flex-1 flex items-center justify-center py-1.5 text-[#AE1B1E] hover:bg-red-50 transition-colors active:scale-95"
+              >
+                <Minus size={12} strokeWidth={3} />
+              </button>
+              <span className="w-8 text-center text-xs font-black text-[#1A2766] select-none">{qty}</span>
+              <button
+                onClick={add}
+                className="flex-1 flex items-center justify-center py-1.5 text-[#1A2766] hover:bg-blue-50 transition-colors active:scale-95"
+              >
+                <Plus size={12} strokeWidth={3} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

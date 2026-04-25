@@ -33,6 +33,7 @@ model Warehouse {
 model Category {
   id        String     @id @default(cuid())
   name      String
+  active    Boolean    @default(true)
   parentId  String?
   parent    Category?  @relation("SubCategories", fields: [parentId], references: [id])
   children  Category[] @relation("SubCategories")
@@ -47,6 +48,7 @@ model Sku {
   brand       String?
   unit        String?
   moq         Int       @default(1)
+  stepQty     Int       @default(1)  // step increase per + tap
   price       Float     @default(0.0)
   gstPercent  Float     @default(0.0)
   hsnCode     String?

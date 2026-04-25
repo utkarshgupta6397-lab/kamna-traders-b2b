@@ -122,14 +122,14 @@ function HeaderContent() {
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#f8f9fb] flex flex-col">
+    <div className="min-h-[100dvh] bg-[#f8f9fb] flex flex-col">
       <Suspense fallback={
         <header className="sticky top-0 z-50 bg-gradient-to-r from-[#1A2766] via-[#1f3180] to-[#AE1B1E] shadow-lg h-14" />
       }>
         <HeaderContent />
       </Suspense>
 
-      <main className="flex-1">
+      <main className="flex-1 flex flex-col">
         {children}
       </main>
 

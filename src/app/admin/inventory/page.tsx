@@ -1,102 +1,94 @@
 import { PrismaClient } from '@prisma/client';
 import { updateInventory } from '../actions';
+import InventoryClient from '@/components/InventoryClient';
 
 const prisma = new PrismaClient();
 
-export default async function InventoryPage() {
-  const inventoryItems = await prisma.warehouseInventory.findMany({
-    include: { warehouse: true, sku: true },
-    orderBy: { updatedAt: 'desc' }
-  });
-  
-  const warehouses = await prisma.warehouse.findMany();
-  const skus = await prisma.sku.findMany();
+export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ page?: string; q?: string; wh?: string }> }) {
+  const sp = await searchParams;
+  const page = Math.max(1, parseInt(sp.page ?? '1'));
+  const q = sp.q?.trim() ?? '';
+  const whFilter = sp.wh ?? '';
+  const perPage = 30;
+
+  const whereClause: Record<string, unknown> = {};
+  if (whFilter) whereClause.warehouseId = whFilter;
+  if (q) {
+    whereClause.OR = [
+      { skuId: { contains: q } },
+      { sku: { name: { contains: q } } },
+    ];
+  }
+
+  const [inventoryItems, total, warehouses, skus] = await Promise.all([
+    prisma.warehouseInventory.findMany({
+      where: whereClause,
+      include: { warehouse: true, sku: true },
+      orderBy: { updatedAt: 'desc' },
+      skip: (page - 1) * perPage,
+      take: perPage,
+    }),
+    prisma.warehouseInventory.count({ where: whereClause }),
+    prisma.warehouse.findMany({ where: { active: true } }),
+    prisma.sku.findMany({ where: { isActive: true }, orderBy: { id: 'asc' } }),
+  ]);
+  const totalPages = Math.ceil(total / perPage);
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Inventory Management</h1>
-      </div>
-
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-        <h2 className="text-lg font-semibold mb-4">Update Inventory</h2>
-        <form action={updateInventory} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Warehouse</label>
-            <select name="warehouseId" required className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-[#1A2766] outline-none bg-white">
-              <option value="">Select Warehouse</option>
-              {warehouses.map(w => (
-                <option key={w.id} value={w.id}>{w.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">SKU</label>
-            <select name="skuId" required className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-[#1A2766] outline-none bg-white">
-              <option value="">Select SKU</option>
-              {skus.map(s => (
-                <option key={s.id} value={s.id}>{s.id} - {s.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-            <input type="number" name="qty" required className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-[#1A2766] outline-none" defaultValue="0" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Zone (e.g., A1)</label>
-            <input type="text" name="zone" className="w-full border rounded-lg p-2 focus:ring-2 focus:ring-[#1A2766] outline-none" />
-          </div>
-          <div className="md:col-span-4">
-            <button type="submit" className="w-full bg-[#1A2766] text-white px-6 py-2 rounded-lg hover:bg-[#003347] transition-colors font-medium">
-              Save Inventory Record
-            </button>
-          </div>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-xl font-bold text-gray-900">Inventory ({total})</h1>
+        <form action="/admin/inventory" method="get" className="flex gap-2 items-center flex-wrap">
+          <input type="text" name="q" defaultValue={q} placeholder="Search SKU / name…" className="border rounded-lg px-3 py-1.5 text-sm w-44 focus:ring-2 focus:ring-[#1A2766] outline-none" />
+          <select name="wh" defaultValue={whFilter} className="border rounded-lg px-2 py-1.5 text-sm bg-white">
+            <option value="">All Warehouses</option>
+            {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+          <button type="submit" className="bg-[#1A2766] text-white px-3 py-1.5 rounded-lg text-xs font-medium">Filter</button>
+          {(q || whFilter) && <a href="/admin/inventory" className="text-xs text-gray-400 hover:text-gray-600">Clear</a>}
         </form>
       </div>
 
+      {/* Update form with searchable SKU select */}
+      <InventoryClient warehouses={warehouses} skus={skus} updateAction={updateInventory} />
+
+      {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-max">
+          <table className="w-full text-left text-sm min-w-[700px]">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 text-sm">
-                <th className="p-4 font-medium">Warehouse</th>
-                <th className="p-4 font-medium">SKU ID</th>
-                <th className="p-4 font-medium">Product Name</th>
-                <th className="p-4 font-medium">Zone</th>
-                <th className="p-4 font-medium text-right">Quantity</th>
-                <th className="p-4 font-medium">Status</th>
+              <tr className="bg-gray-50 border-b text-gray-500 text-xs uppercase tracking-wider">
+                <th className="p-3">Warehouse</th><th className="p-3">SKU ID</th><th className="p-3">Product</th>
+                <th className="p-3">Zone</th><th className="p-3 text-right">Qty</th><th className="p-3">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 text-gray-700">
-              {inventoryItems.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="p-4">{item.warehouse.name}</td>
-                  <td className="p-4 font-mono text-sm">{item.sku.id}</td>
-                  <td className="p-4 font-medium">{item.sku.name}</td>
-                  <td className="p-4 text-gray-500">{item.zone || '-'}</td>
-                  <td className="p-4 text-right font-semibold">{item.qty}</td>
-                  <td className="p-4">
-                    {item.isOos ? (
-                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                        Out of Stock
-                      </span>
-                    ) : (
-                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                        In Stock
-                      </span>
-                    )}
+            <tbody className="divide-y divide-gray-50 text-gray-700">
+              {inventoryItems.map(item => (
+                <tr key={item.id} className="hover:bg-gray-50/50">
+                  <td className="p-3 text-xs">{item.warehouse.name}</td>
+                  <td className="p-3 font-mono text-xs font-bold">{item.sku.id}</td>
+                  <td className="p-3 text-xs">{item.sku.name}</td>
+                  <td className="p-3 text-xs text-gray-500">{item.zone || '-'}</td>
+                  <td className="p-3 text-right font-semibold text-xs">{item.qty}</td>
+                  <td className="p-3">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${item.isOos ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                      {item.isOos ? 'OOS' : 'In Stock'}
+                    </span>
                   </td>
                 </tr>
               ))}
-              {inventoryItems.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="p-8 text-center text-gray-500">No inventory records found.</td>
-                </tr>
-              )}
+              {inventoryItems.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-gray-400">No records.</td></tr>}
             </tbody>
           </table>
         </div>
+        {totalPages > 1 && (
+          <div className="flex justify-center gap-1.5 p-3 border-t flex-wrap">
+            {Array.from({ length: totalPages }, (_, i) => (
+              <a key={i} href={`/admin/inventory?page=${i + 1}${q ? `&q=${q}` : ''}${whFilter ? `&wh=${whFilter}` : ''}`}
+                className={`px-2.5 py-1 rounded text-xs font-medium ${page === i + 1 ? 'bg-[#1A2766] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{i + 1}</a>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

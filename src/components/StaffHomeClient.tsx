@@ -132,11 +132,11 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
                   <p className="text-[10px] text-gray-400 font-mono">{item.skuId}</p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => updateQty(item.skuId, item.qty - item.moq)} className="w-5 h-5 rounded border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
+                  <button onClick={() => updateQty(item.skuId, item.qty - (item.stepQty || item.moq))} className="w-5 h-5 rounded border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
                     <Minus size={10} />
                   </button>
                   <span className="w-7 text-center text-xs font-bold text-gray-800">{item.qty}</span>
-                  <button onClick={() => updateQty(item.skuId, item.qty + item.moq)} className="w-5 h-5 rounded border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
+                  <button onClick={() => updateQty(item.skuId, item.qty + (item.stepQty || item.moq))} className="w-5 h-5 rounded border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
                     <Plus size={10} />
                   </button>
                 </div>

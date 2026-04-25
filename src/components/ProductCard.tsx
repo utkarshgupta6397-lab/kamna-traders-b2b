@@ -9,6 +9,7 @@ export interface ProductData {
   brand: string | null;
   unit: string | null;
   moq: number;
+  stepQty?: number;
   price: number;
   imageUrl?: string | null;
   isOos: boolean;
@@ -23,7 +24,7 @@ export default function ProductCard({ product }: { product: ProductData }) {
 
   const cartItem = items.find(i => i.skuId === product.id);
   const qty = cartItem?.qty ?? 0;
-  const step = product.moq; // Each press of + or - adjusts by MOQ
+  const step = product.stepQty || product.moq; // Each press of + or - adjusts by stepQty, fallback to MOQ
 
   const add = () => {
     if (product.isOos) return;
@@ -34,6 +35,7 @@ export default function ProductCard({ product }: { product: ProductData }) {
         price: product.price,
         qty: product.moq,
         moq: product.moq,
+        stepQty: product.stepQty,
       });
     } else {
       updateQty(product.id, qty + step);
@@ -63,7 +65,7 @@ export default function ProductCard({ product }: { product: ProductData }) {
         {/* Product Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-1 mb-0.5">
-            <p className="text-xs font-bold text-gray-900 leading-snug line-clamp-2 flex-1">{product.name}</p>
+            <p className="text-xs font-bold text-gray-900 leading-snug truncate flex-1" title={product.name}>{product.name}</p>
             {product.isOos && (
               <span className="text-[9px] font-bold bg-red-100 text-[#AE1B1E] px-1.5 py-0.5 rounded flex-shrink-0">OOS</span>
             )}
@@ -74,8 +76,6 @@ export default function ProductCard({ product }: { product: ProductData }) {
             <span className="text-[10px] text-gray-400">/{product.unit || 'pc'}</span>
             <span className="text-[10px] text-gray-300">·</span>
             <span className="text-[10px] text-gray-400">MOQ {product.moq}{product.unit ? ` ${product.unit}` : ''}</span>
-            <span className="text-[10px] text-gray-300">·</span>
-            <span className="text-[10px] text-gray-400">+{step}</span>
           </div>
         </div>
 

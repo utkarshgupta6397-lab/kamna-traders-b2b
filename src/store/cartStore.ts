@@ -7,6 +7,7 @@ export interface CartItem {
   price: number;
   qty: number;
   moq: number;
+  stepQty?: number;
   imageUrl?: string;
 }
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCartStore } from '@/store/cartStore';
-import { Minus, Plus, Trash2, ArrowRight } from 'lucide-react';
+import { Minus, Plus, Trash2, ArrowRight, Package } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -65,15 +65,19 @@ export default function CartPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold text-gray-900 mb-8">Shopping Cart</h1>
+    <div className="max-w-4xl mx-auto p-4 md:p-6 w-full">
+      <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-6 md:mb-8">Shopping Cart</h1>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
         <div className="md:col-span-2 space-y-4">
           {items.map(item => (
             <div key={item.skuId} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
-              <div className="w-20 h-20 bg-gray-50 rounded-lg flex-shrink-0 border border-gray-100 flex items-center justify-center text-xs text-gray-400 font-medium">
-                {item.skuId}
+              <div className="w-16 h-16 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg flex-shrink-0 border border-gray-100 flex items-center justify-center overflow-hidden">
+                {item.imageUrl ? (
+                  <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                ) : (
+                  <Package size={20} className="text-gray-300" />
+                )}
               </div>
               
               <div className="flex-1 min-w-0">
@@ -92,7 +96,7 @@ export default function CartPage() {
                 
                 <div className="flex items-center border border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
                   <button 
-                    onClick={() => updateQty(item.skuId, item.qty - 1)}
+                    onClick={() => updateQty(item.skuId, item.qty - (item.stepQty || item.moq))}
                     className="p-2 text-gray-500 hover:text-[#AE1B1E] hover:bg-gray-100 transition-colors"
                     disabled={item.qty <= item.moq}
                   >
@@ -100,7 +104,7 @@ export default function CartPage() {
                   </button>
                   <span className="w-10 text-center font-medium text-sm">{item.qty}</span>
                   <button 
-                    onClick={() => updateQty(item.skuId, item.qty + 1)}
+                    onClick={() => updateQty(item.skuId, item.qty + (item.stepQty || item.moq))}
                     className="p-2 text-gray-500 hover:text-[#1A2766] hover:bg-gray-100 transition-colors"
                   >
                     <Plus size={14} />

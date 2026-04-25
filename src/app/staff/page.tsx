@@ -71,8 +71,10 @@ export default function StaffLoginPage() {
       <div className="fixed bottom-0 right-0 w-96 h-96 bg-[#003347]/30 rounded-full blur-3xl translate-x-1/3 translate-y-1/3" />
 
       <div className="relative bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
-        {/* Logo area — white bg, full-color logo */}
-        <div className="bg-white pt-8 pb-6 flex flex-col items-center border-b border-gray-100">
+        <div className="bg-white pt-8 pb-6 flex flex-col items-center border-b border-gray-100 relative">
+          <a href="/" className="absolute top-4 right-4 text-xs font-medium text-[#1A2766] hover:underline bg-blue-50 px-2 py-1 rounded">
+            Store →
+          </a>
           <Image
             src="/logo.svg"
             alt="Kamna Traders"

@@ -76,7 +76,7 @@ export default function InventoryClient({ warehouses, skus, updateAction }: Prop
 
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Quantity *</label>
-          <input type="number" name="qty" required className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" defaultValue="0" />
+          <input type="number" min="0" name="qty" required className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" defaultValue="0" />
         </div>
         
         <div>

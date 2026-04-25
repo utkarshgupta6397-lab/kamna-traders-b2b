@@ -57,11 +57,11 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
           <div><label className="block text-xs font-medium text-gray-500 mb-1">Unit</label>
             <input type="text" name="unit" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" placeholder="kg, L, pcs" /></div>
           <div><label className="block text-xs font-medium text-gray-500 mb-1">Price (₹)</label>
-            <input type="number" step="0.01" name="price" required defaultValue="0" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
+            <input type="number" min="0" step="0.01" name="price" required defaultValue="0" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
           <div><label className="block text-xs font-medium text-gray-500 mb-1">MOQ</label>
-            <input type="number" name="moq" required defaultValue="1" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
+            <input type="number" min="0" name="moq" required defaultValue="1" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
           <div><label className="block text-xs font-medium text-gray-500 mb-1">Step (+/- qty)</label>
-            <input type="number" name="stepQty" required defaultValue="1" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
+            <input type="number" min="1" name="stepQty" required defaultValue="1" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Thumbnail</label>
             <ImageUploadClient name="imageUrl" />
@@ -115,13 +115,13 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
                   <input type="text" name="unit" defaultValue={sku.unit ?? ''} className="w-full border rounded px-2 py-1.5 text-xs" placeholder="unit" />
                 </div>
                 <div className="w-20 p-2">
-                  <input type="number" step="0.01" name="price" defaultValue={sku.price} className="w-full border rounded px-2 py-1.5 text-xs" />
+                  <input type="number" min="0" step="0.01" name="price" defaultValue={sku.price} className="w-full border rounded px-2 py-1.5 text-xs" />
                 </div>
                 <div className="w-16 p-2">
-                  <input type="number" name="moq" defaultValue={sku.moq} className="w-full border rounded px-2 py-1.5 text-xs" />
+                  <input type="number" min="0" name="moq" defaultValue={sku.moq} className="w-full border rounded px-2 py-1.5 text-xs" />
                 </div>
                 <div className="w-16 p-2">
-                  <input type="number" name="stepQty" defaultValue={sku.stepQty} className="w-full border rounded px-2 py-1.5 text-xs" />
+                  <input type="number" min="1" name="stepQty" defaultValue={sku.stepQty} className="w-full border rounded px-2 py-1.5 text-xs" />
                 </div>
                 <div className="w-16 p-2 flex items-center justify-center">
                   <ImageUploadClient name="imageUrl" defaultValue={sku.imageUrl ?? ''} />

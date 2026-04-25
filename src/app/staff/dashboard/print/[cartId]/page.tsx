@@ -113,6 +113,10 @@ export default async function PrintSlipPage({
         <div className="px-3 pb-3">
           <QRBlock value={qrPayload} />
         </div>
+        <p className="text-center text-[10px] italic pb-2 text-gray-400">— End of Master Slip —</p>
+        <div className="hidden print:block text-[4px]" aria-hidden="true">
+          {"\x0A\x0A\x0A\x1D\x56\x01"}
+        </div>
       </div>
 
       {/* ── ZONE SLIPS ─────────────────────────────────────────────────── */}
@@ -148,6 +152,9 @@ export default async function PrintSlipPage({
             </table>
           </div>
           <p className="text-center text-[10px] italic pb-2 text-gray-400">— End of Zone Slip —</p>
+          <div className="hidden print:block text-[4px]" aria-hidden="true">
+            {"\x0A\x0A\x0A\x1D\x56\x01"}
+          </div>
         </div>
       ))}
     </div>

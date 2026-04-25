@@ -110,9 +110,9 @@ export async function createSku(data: FormData) {
   const name = data.get('name') as string;
   const categoryId = (data.get('categoryId') as string) || null;
   const brandId = (data.get('brandId') as string) || null;
-  const price = parseFloat(data.get('price') as string);
-  const moq = parseInt(data.get('moq') as string, 10);
-  const stepQty = parseInt(data.get('stepQty') as string, 10) || moq;
+  const price = Math.max(0, parseFloat(data.get('price') as string));
+  const moq = Math.max(0, parseInt(data.get('moq') as string, 10));
+  const stepQty = Math.max(1, parseInt(data.get('stepQty') as string, 10) || moq);
   const unit = data.get('unit') as string || undefined;
   const imageUrl = data.get('imageUrl') as string || undefined;
   await prisma.sku.create({ data: { id, name, categoryId, brandId, price, moq, stepQty, unit, imageUrl } });
@@ -124,9 +124,9 @@ export async function updateSku(data: FormData) {
   const name = data.get('name') as string;
   const categoryId = (data.get('categoryId') as string) || null;
   const brandId = (data.get('brandId') as string) || null;
-  const price = parseFloat(data.get('price') as string);
-  const moq = parseInt(data.get('moq') as string, 10);
-  const stepQty = parseInt(data.get('stepQty') as string, 10) || moq;
+  const price = Math.max(0, parseFloat(data.get('price') as string));
+  const moq = Math.max(0, parseInt(data.get('moq') as string, 10));
+  const stepQty = Math.max(1, parseInt(data.get('stepQty') as string, 10) || moq);
   const unit = data.get('unit') as string || undefined;
   const imageUrl = data.get('imageUrl') as string || undefined;
   const isActive = data.get('isActive') === 'true';
@@ -146,7 +146,7 @@ export async function deleteSku(id: string) {
 export async function updateInventory(data: FormData) {
   const warehouseId = data.get('warehouseId') as string;
   const skuId = data.get('skuId') as string;
-  const qty = parseInt(data.get('qty') as string, 10);
+  const qty = Math.max(0, parseInt(data.get('qty') as string, 10));
   const zone = data.get('zone') as string;
   await prisma.warehouseInventory.upsert({
     where: { warehouseId_skuId: { warehouseId, skuId } },

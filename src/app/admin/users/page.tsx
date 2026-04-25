@@ -3,6 +3,7 @@ import { createUser, updateUser, deleteUser } from '../actions';
 import { Trash2, Save } from 'lucide-react';
 import SafeDeleteButton from '@/components/SafeDeleteButton';
 import ActionForm from '@/components/ActionForm';
+import ResetPinButton from '@/components/ResetPinButton';
 
 const prisma = new PrismaClient();
 
@@ -62,8 +63,9 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                 <div className="w-40 p-2">
                   <input type="text" name="mobile" defaultValue={u.mobile} className="w-full border rounded px-2 py-1.5 text-xs font-mono focus:ring-1 focus:ring-[#1A2766] outline-none" maxLength={10} />
                 </div>
-                <div className="w-32 p-2">
-                  <input type="text" name="pin" defaultValue={u.pin ?? ''} className="w-full border rounded px-2 py-1.5 text-xs font-mono focus:ring-1 focus:ring-[#1A2766] outline-none" maxLength={6} placeholder="PIN" />
+                <div className="w-32 p-2 flex gap-1 items-center">
+                  <input type="text" name="pin" defaultValue="" className="w-full border rounded px-2 py-1.5 text-xs font-mono focus:ring-1 focus:ring-[#1A2766] outline-none" maxLength={6} placeholder="••••••" />
+                  <ResetPinButton mobile={u.mobile} />
                 </div>
                 <div className="w-32 p-2">
                   <select name="role" defaultValue={u.role} className="w-full border rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#1A2766] outline-none">

@@ -84,20 +84,21 @@ function HeaderContent() {
           <Link href="/" className="flex-shrink-0">
             <Image src="/logo.svg" alt="Kamna Traders" width={100} height={40} className="object-contain brightness-0 invert h-9 w-auto" priority />
           </Link>
-          <div className="flex-1 mx-2">
-            <form onSubmit={handleSearch} className="relative max-w-xl">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <div className="flex-1 max-w-2xl mx-2">
+            <form onSubmit={handleSearch} className="relative w-full">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input 
+                id="global-search"
                 ref={searchInputRef}
                 type="text" 
                 value={searchVal} 
                 onChange={e => setSearchVal(e.target.value)} 
-                placeholder="Search products, SKUs… [/]" 
-                className="w-full pl-9 pr-9 py-2 text-sm rounded-lg bg-white/95 border-0 focus:ring-2 focus:ring-white/50 outline-none text-gray-800 placeholder-gray-400" 
+                placeholder="Scan or Search SKU... [/]" 
+                className="w-full pl-10 pr-10 py-2.5 text-[14px] font-bold rounded-xl bg-white/95 border-0 focus:ring-2 focus:ring-white/50 outline-none text-gray-800 placeholder-gray-400 shadow-sm" 
               />
               {searchVal && (
                 <button type="button" onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                  <X size={14} />
+                  <X size={16} />
                 </button>
               )}
             </form>

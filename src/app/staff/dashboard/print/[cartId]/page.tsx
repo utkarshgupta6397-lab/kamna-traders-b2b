@@ -1,151 +1,149 @@
 import { PrismaClient } from '@prisma/client';
-import { QRCodeSVG } from 'qrcode.react';
 import Link from 'next/link';
-
 import PrintButton from '@/components/PrintButton';
+import QRBlock from '@/components/QRBlock';
 
 const prisma = new PrismaClient();
 
-export default async function PrintSlipPage({ params }: { params: { cartId: string } }) {
+export default async function PrintSlipPage({
+  params,
+}: {
+  params: Promise<{ cartId: string }>;
+}) {
+  const { cartId } = await params;
+
   const cart = await prisma.cart.findUnique({
-    where: { id: params.cartId },
+    where: { id: cartId },
     include: {
       warehouse: true,
       staff: true,
       items: {
         include: {
-          sku: {
-            include: {
-              inventory: true // need to get zone from inventory mapping
-            }
-          }
-        }
-      }
-    }
+          sku: { include: { inventory: true } },
+        },
+      },
+    },
   });
 
   if (!cart) {
-    return <div>Cart not found</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="bg-white p-8 rounded-xl shadow text-center">
+          <p className="text-gray-500 font-medium">Cart <code>{cartId}</code> not found.</p>
+          <Link href="/staff/dashboard" className="mt-4 inline-block text-[#1A2766] text-sm hover:underline">← Back to Dashboard</Link>
+        </div>
+      </div>
+    );
   }
 
-  // Process items to get zone from inventory
   const enrichedItems = cart.items.map(item => {
     const inv = item.sku.inventory.find(i => i.warehouseId === cart.warehouseId);
-    return {
-      skuId: item.skuId,
-      name: item.sku.name,
-      qty: item.qty,
-      zone: inv?.zone || 'Unassigned'
-    };
+    return { skuId: item.skuId, name: item.sku.name, qty: item.qty, zone: inv?.zone ?? 'Unassigned' };
   });
 
-  // Group by zone
-  const zoneGroups = enrichedItems.reduce((acc, item) => {
-    if (!acc[item.zone]) acc[item.zone] = [];
-    acc[item.zone].push(item);
+  const zoneGroups = enrichedItems.reduce<Record<string, typeof enrichedItems>>((acc, item) => {
+    (acc[item.zone] ??= []).push(item);
     return acc;
-  }, {} as Record<string, typeof enrichedItems>);
+  }, {});
 
-  // Generate QR payload for Master Slip
-  const qrPayload = {
+  const qrPayload = JSON.stringify({
     cart: cart.id,
-    items: enrichedItems.map(i => ({ sku: i.skuId, name: i.name, qty: i.qty }))
-  };
+    items: enrichedItems.map(i => ({ sku: i.skuId, name: i.name, qty: i.qty })),
+  });
 
   return (
-    <div className="max-w-md mx-auto print:max-w-none print:w-[80mm] print:mx-0 print:m-0 space-y-8 print:space-y-0">
-      
-      {/* Non-print controls */}
-      <div className="print:hidden space-y-4 mb-8">
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
-          <h2 className="font-bold">Print Center</h2>
-          <div className="space-x-4">
-            <Link href="/staff/dashboard" className="text-[#1A2766] font-medium text-sm">Back</Link>
-            <PrintButton />
-          </div>
+    <div className="p-4 space-y-6 print:space-y-0 print:p-0">
+      {/* ── Screen-only controls ───────────────────────────────────────── */}
+      <div className="print:hidden bg-white rounded-xl border border-gray-100 p-4 flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-gray-900">Print Center — {cart.id}</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Set printer paper to 80mm · margins to None · scale to 100%
+          </p>
         </div>
-        <p className="text-sm text-gray-500">
-          The view below is formatted for 80mm thermal printers. Use your browser's print function and ensure margins are set to "None".
-        </p>
+        <div className="flex items-center gap-3">
+          <Link href="/staff/dashboard" className="text-sm text-[#1A2766] hover:underline">← Back</Link>
+          <PrintButton />
+        </div>
       </div>
 
-      {/* MASTER SLIP */}
-      <div className="bg-white p-4 w-[300px] print:w-[80mm] print:shadow-none shadow-sm font-mono text-sm break-inside-avoid print:page-break-after-always">
-        <div className="text-center mb-4 border-b border-dashed border-black pb-4">
-          <h1 className="text-xl font-bold uppercase">Kamna Traders</h1>
-          <p className="text-xs">Master Dispatch Slip</p>
-        </div>
-        
-        <div className="mb-4 text-xs space-y-1">
-          <p><strong>Cart ID:</strong> {cart.id}</p>
-          <p><strong>Date:</strong> {new Date(cart.createdAt).toLocaleString()}</p>
-          <p><strong>Warehouse:</strong> {cart.warehouse.name}</p>
-          <p><strong>Customer:</strong> {cart.customerName}</p>
-          <p><strong>Staff:</strong> {cart.staff.name}</p>
+      {/* ── MASTER SLIP ────────────────────────────────────────────────── */}
+      <div className="bg-white w-72 print:w-[80mm] mx-auto print:mx-0 shadow-sm print:shadow-none font-mono text-sm print:break-after-page">
+        <div className="text-center border-b-2 border-dashed border-gray-400 py-3 mb-3">
+          <p className="text-base font-black uppercase tracking-widest">Kamna Traders</p>
+          <p className="text-[10px] text-gray-500">Master Dispatch Slip</p>
         </div>
 
-        <div className="border-t border-b border-dashed border-black py-2 mb-4">
-          <table className="w-full text-xs">
+        <div className="px-3 space-y-0.5 text-xs mb-3">
+          <p><span className="font-bold">Cart ID:</span> {cart.id}</p>
+          <p><span className="font-bold">Date:</span> {new Date(cart.createdAt).toLocaleString('en-IN')}</p>
+          <p><span className="font-bold">Warehouse:</span> {cart.warehouse.name}</p>
+          <p><span className="font-bold">Customer:</span> {cart.customerName}</p>
+          {cart.notes && <p><span className="font-bold">Notes:</span> {cart.notes}</p>}
+          <p><span className="font-bold">Staff:</span> {cart.staff.name}</p>
+        </div>
+
+        <div className="border-t-2 border-b-2 border-dashed border-gray-400 py-2 px-3 mb-3">
+          <table className="w-full text-[11px]">
             <thead>
-              <tr className="text-left">
-                <th className="pb-1 w-1/2">Item</th>
-                <th className="pb-1 text-center">Zone</th>
-                <th className="pb-1 text-right">Qty</th>
+              <tr className="border-b border-gray-300">
+                <th className="text-left pb-1 font-bold">Item</th>
+                <th className="text-center pb-1 font-bold">Zone</th>
+                <th className="text-right pb-1 font-bold">Qty</th>
               </tr>
             </thead>
             <tbody>
               {enrichedItems.map((item, idx) => (
-                <tr key={idx}>
-                  <td className="py-1 pr-1 truncate max-w-[120px]">{item.skuId}<br/><span className="text-[10px] text-gray-500">{item.name}</span></td>
-                  <td className="py-1 text-center">{item.zone}</td>
-                  <td className="py-1 text-right font-bold text-sm">{item.qty}</td>
+                <tr key={idx} className="border-b border-dotted border-gray-200">
+                  <td className="py-1">
+                    <p className="font-mono">{item.skuId}</p>
+                    <p className="text-[9px] text-gray-500 leading-tight">{item.name}</p>
+                  </td>
+                  <td className="text-center">{item.zone}</td>
+                  <td className="text-right font-bold">{item.qty}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        <div className="flex flex-col items-center justify-center pt-2">
-          <QRCodeSVG value={JSON.stringify(qrPayload)} size={120} level="L" />
-          <p className="text-[10px] mt-2 text-center">Scan to verify contents</p>
+        <div className="px-3 pb-3">
+          <QRBlock value={qrPayload} />
         </div>
       </div>
 
-      {/* ZONE SLIPS */}
-      {Object.entries(zoneGroups).map(([zone, items], idx) => (
-        <div key={idx} className="bg-white p-4 w-[300px] print:w-[80mm] print:shadow-none shadow-sm font-mono text-sm break-inside-avoid print:page-break-after-always">
-          <div className="text-center mb-4 border-b border-black pb-2">
-            <h2 className="text-lg font-bold">ZONE SLIP: {zone}</h2>
-            <p className="text-xs font-bold">Cart: {cart.id}</p>
+      {/* ── ZONE SLIPS ─────────────────────────────────────────────────── */}
+      {Object.entries(zoneGroups).map(([zone, zItems], idx) => (
+        <div key={idx} className="bg-white w-72 print:w-[80mm] mx-auto print:mx-0 shadow-sm print:shadow-none font-mono text-sm print:break-after-page">
+          <div className="text-center border-b-2 border-black py-2 mb-2">
+            <p className="text-xs font-black uppercase tracking-widest">Zone Slip · {zone}</p>
+            <p className="text-[10px]">Cart: {cart.id} · {cart.warehouse.name}</p>
           </div>
-          
-          <div className="mb-2 text-xs">
-            <p><strong>Warehouse:</strong> {cart.warehouse.name}</p>
-            <p><strong>Date:</strong> {new Date(cart.createdAt).toLocaleString()}</p>
+          <div className="px-3 text-[10px] mb-2 text-gray-500">
+            {new Date(cart.createdAt).toLocaleString('en-IN')}
           </div>
-
-          <div className="border-t border-dashed border-black py-2">
-            <table className="w-full text-xs">
+          <div className="border-t border-dashed border-gray-400 px-3 pb-3">
+            <table className="w-full text-xs mt-1">
               <thead>
-                <tr className="text-left border-b border-black">
-                  <th className="pb-1">SKU</th>
-                  <th className="pb-1 text-right">Qty</th>
+                <tr className="border-b border-gray-400">
+                  <th className="text-left pb-1 font-bold">SKU / Product</th>
+                  <th className="text-right pb-1 font-bold">Qty</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((item, itemIdx) => (
-                  <tr key={itemIdx}>
-                    <td className="py-2 pr-2">{item.skuId}<br/><span className="text-[10px] truncate max-w-[140px] inline-block">{item.name}</span></td>
-                    <td className="py-2 text-right font-bold text-base">{item.qty}</td>
+                {zItems.map((item, i) => (
+                  <tr key={i} className="border-b border-dotted border-gray-200">
+                    <td className="py-1.5">
+                      <p className="font-mono font-bold">{item.skuId}</p>
+                      <p className="text-[9px] text-gray-500">{item.name}</p>
+                    </td>
+                    <td className="text-right font-black text-sm">{item.qty}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          
-          <div className="text-center mt-6 text-xs italic">
-            -- End of Zone Slip --
-          </div>
+          <p className="text-center text-[10px] italic pb-2 text-gray-400">— End of Zone Slip —</p>
         </div>
       ))}
     </div>

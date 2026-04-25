@@ -1,44 +1,54 @@
 import { PrismaClient } from '@prisma/client';
-import StaffCartBuilder from '@/components/StaffCartBuilder';
 import { getSession } from '@/lib/auth';
+import StaffHomeClient from '@/components/StaffHomeClient';
 
 const prisma = new PrismaClient();
 
-export default async function StaffDashboardPage() {
+export default async function StaffDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; category?: string }>;
+}) {
   const session = await getSession();
   const staffId = session?.userId as string;
+  const sp = await searchParams;
+  const q = sp.q?.trim() ?? '';
+  const catId = sp.category ?? '';
 
-  const warehouses = await prisma.warehouse.findMany({
-    where: { active: true },
-  });
+  const [warehouses, categories] = await Promise.all([
+    prisma.warehouse.findMany({ where: { active: true } }),
+    prisma.category.findMany({ orderBy: { name: 'asc' } }),
+  ]);
 
-  // Active = visible to staff. OOS is a separate status shown as a tag.
-  // Staff can still reference OOS items in their cart (e.g., for pre-orders or notes).
   const skus = await prisma.sku.findMany({
-    where: { isActive: true },
-    include: { inventory: true },
+    where: {
+      isActive: true,
+      ...(catId ? { categoryId: catId } : {}),
+      ...(q ? { OR: [{ id: { contains: q } }, { name: { contains: q } }] } : {}),
+    },
+    include: { category: true, inventory: true },
+    orderBy: { name: 'asc' },
+    take: 200,
   });
 
-  // Enrich each SKU with computed OOS status
-  const enrichedSkus = skus.map(sku => {
-    const hasInventory = sku.inventory.length > 0;
-    const totalQty = sku.inventory.reduce((sum, inv) => sum + inv.qty, 0);
-    const anyOosFlag = sku.inventory.some(inv => inv.isOos);
-    const isOos = hasInventory ? (anyOosFlag || totalQty <= 0) : false;
-    return { ...sku, isOos };
+  const products = skus.map(sku => {
+    const totalQty = sku.inventory.reduce((s, inv) => s + inv.qty, 0);
+    const anyOos = sku.inventory.some(inv => inv.isOos);
+    return {
+      id: sku.id, name: sku.name, brand: sku.brand, unit: sku.unit,
+      moq: sku.moq, price: sku.price, category: sku.category,
+      isOos: sku.inventory.length > 0 ? anyOos || totalQty <= 0 : false,
+    };
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">New Internal Cart</h1>
-      </div>
-
-      <StaffCartBuilder
-        warehouses={warehouses}
-        skus={enrichedSkus}
-        staffId={staffId}
-      />
-    </div>
+    <StaffHomeClient
+      staffId={staffId}
+      warehouses={warehouses}
+      categories={categories}
+      products={products}
+      selectedCategoryId={catId}
+      searchQuery={q}
+    />
   );
 }

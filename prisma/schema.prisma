@@ -13,9 +13,10 @@ model User {
   mobile    String   @unique
   role      String   @default("STAFF") // STAFF, ADMIN
   active    Boolean  @default(true)
+  pin       String?  // 6-digit PIN set by system
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  carts     Cart[]   // Relation to carts created by staff
+  carts     Cart[]
 }
 
 model Warehouse {
@@ -30,44 +31,44 @@ model Warehouse {
 }
 
 model Category {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   name      String
   parentId  String?
   parent    Category?  @relation("SubCategories", fields: [parentId], references: [id])
   children  Category[] @relation("SubCategories")
   skus      Sku[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 }
 
 model Sku {
-  id          String   @id // User provided SKU ID
+  id          String    @id
   name        String
   brand       String?
   unit        String?
-  moq         Int      @default(1)
-  price       Float    @default(0.0)
-  gstPercent  Float    @default(0.0)
+  moq         Int       @default(1)
+  price       Float     @default(0.0)
+  gstPercent  Float     @default(0.0)
   hsnCode     String?
   description String?
   imageUrl    String?
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id])
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   inventory   WarehouseInventory[]
   cartItems   CartItem[]
 }
 
 model WarehouseInventory {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   warehouseId String
   skuId       String
-  qty         Int      @default(0)
-  isOos       Boolean  @default(false)
+  qty         Int       @default(0)
+  isOos       Boolean   @default(false)
   zone        String?
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime  @updatedAt
   warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
   sku         Sku       @relation(fields: [skuId], references: [id])
 
@@ -75,31 +76,31 @@ model WarehouseInventory {
 }
 
 model Cart {
-  id           String   @id @default(cuid()) // E.g., KT1001
+  id           String     @id
   warehouseId  String
   customerName String
   notes        String?
   staffId      String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  warehouse    Warehouse @relation(fields: [warehouseId], references: [id])
-  staff        User      @relation(fields: [staffId], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  warehouse    Warehouse  @relation(fields: [warehouseId], references: [id])
+  staff        User       @relation(fields: [staffId], references: [id])
   items        CartItem[]
 }
 
 model CartItem {
-  id        String   @id @default(cuid())
-  cartId    String
-  skuId     String
-  qty       Int
-  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  sku       Sku      @relation(fields: [skuId], references: [id])
+  id     String @id @default(cuid())
+  cartId String
+  skuId  String
+  qty    Int
+  cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  sku    Sku    @relation(fields: [skuId], references: [id])
 }
 
 model CustomerLead {
   id            String   @id @default(cuid())
-  cartId        String?  // Can be mapped if needed
-  items         String   // JSON string of items
+  cartId        String?
+  items         String
   sessionId     String?
   deviceMeta    String?
   sourceChannel String   @default("whatsapp")

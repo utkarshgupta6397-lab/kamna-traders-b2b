@@ -2,7 +2,7 @@ import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { LogOut, Home, ClipboardList, Package } from 'lucide-react';
+import { LogOut, Home, ClipboardList } from 'lucide-react';
 
 export default async function StaffDashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -13,39 +13,42 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
 
   return (
     <div className="min-h-screen bg-[#f8f9fb] flex flex-col">
-      <header className="bg-[#1A2766] text-white shadow-md sticky top-0 z-50">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Link href="/staff/dashboard" className="flex items-center gap-2">
-              <Image src="/logo.svg" alt="Kamna Traders" width={110} height={48} className="object-contain brightness-0 invert" priority />
-              <span className="text-white/40 text-xs border-l border-white/20 pl-2">Staff</span>
+      <header className="sticky top-0 z-50 bg-gradient-to-r from-[#1A2766] via-[#1f3180] to-[#AE1B1E] shadow-lg">
+        <div className="max-w-screen-2xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
+          {/* Logo */}
+          <Link href="/staff/dashboard" className="flex items-center gap-2 flex-shrink-0">
+            <Image src="/logo.svg" alt="Kamna Traders" width={100} height={40} className="object-contain brightness-0 invert h-9 w-auto" priority />
+            <span className="text-white/40 text-xs border-l border-white/20 pl-2">Staff</span>
+          </Link>
+
+          {/* Search */}
+          <form action="/staff/dashboard" method="get" className="flex-1 max-w-lg">
+            <input
+              name="q"
+              type="text"
+              placeholder="Search SKU or product name…"
+              className="w-full px-4 py-1.5 text-sm rounded-lg bg-white/95 border-0 focus:ring-2 focus:ring-white/50 outline-none text-gray-800 placeholder-gray-400"
+            />
+          </form>
+
+          {/* Nav */}
+          <nav className="flex items-center gap-4 text-sm text-white/80 flex-shrink-0">
+            <Link href="/staff/dashboard" className="flex items-center gap-1.5 hover:text-white transition-colors">
+              <Home size={16} /><span className="hidden md:inline text-xs">Catalog</span>
             </Link>
-          </div>
-          
-          <nav className="flex items-center space-x-6 text-sm font-medium">
-            <Link href="/staff/dashboard" className="flex items-center space-x-2 hover:text-[#AE1B1E] transition-colors">
-              <Home size={18} />
-              <span className="hidden md:inline">Dashboard</span>
+            <Link href="/staff/dashboard/carts" className="flex items-center gap-1.5 hover:text-white transition-colors">
+              <ClipboardList size={16} /><span className="hidden md:inline text-xs">My Carts</span>
             </Link>
-            <Link href="/staff/dashboard/carts" className="flex items-center space-x-2 hover:text-[#AE1B1E] transition-colors">
-              <ClipboardList size={18} />
-              <span className="hidden md:inline">Carts</span>
-            </Link>
-            <Link href="/" className="flex items-center space-x-2 hover:text-[#AE1B1E] transition-colors" target="_blank">
-              <Package size={18} />
-              <span className="hidden md:inline">Public Store</span>
-            </Link>
-            <form action="/api/auth/logout" method="POST" className="pl-4 border-l border-white/20">
-              <button type="submit" className="flex items-center space-x-2 text-red-300 hover:text-white transition-colors">
-                <LogOut size={18} />
-                <span className="hidden md:inline">Logout</span>
+            <form action="/api/auth/logout" method="POST">
+              <button type="submit" className="flex items-center gap-1.5 text-red-300 hover:text-white transition-colors">
+                <LogOut size={16} /><span className="hidden md:inline text-xs">Logout</span>
               </button>
             </form>
           </nav>
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto px-4 py-8">
+      <main className="flex-1 max-w-screen-2xl mx-auto w-full px-3 py-3">
         {children}
       </main>
     </div>

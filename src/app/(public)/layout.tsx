@@ -8,99 +8,92 @@ import { useState, useEffect } from 'react';
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
-  const items = useCartStore((state) => state.items);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const items = useCartStore(s => s.items);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  useEffect(() => setMounted(true), []);
 
-  const totalItems = items.reduce((acc, item) => acc + item.qty, 0);
+  const totalItems = items.reduce((acc, i) => acc + i.qty, 0);
 
   return (
     <div className="min-h-screen bg-[#f8f9fb] flex flex-col">
-      {/* Header */}
-      <header className="bg-[#1A2766] text-white sticky top-0 z-50 shadow-md">
-        <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between h-16">
-            {/* Logo */}
-            <Link href="/" className="flex items-center">
-              <Image
-                src="/logo.svg"
-                alt="Kamna Traders"
-                width={130}
-                height={56}
-                className="object-contain brightness-0 invert"
-                priority
+      {/* ── Compact Premium Header ───────────────────────────────────────── */}
+      <header className="sticky top-0 z-50 bg-gradient-to-r from-[#1A2766] via-[#1f3180] to-[#AE1B1E] shadow-lg">
+        <div className="max-w-screen-2xl mx-auto px-4 h-14 flex items-center gap-4">
+          {/* Logo */}
+          <Link href="/" className="flex-shrink-0">
+            <Image
+              src="/logo.svg"
+              alt="Kamna Traders"
+              width={100}
+              height={40}
+              className="object-contain brightness-0 invert h-9 w-auto"
+              priority
+            />
+          </Link>
+
+          {/* Search — centered & dominant */}
+          <div className="flex-1 mx-2 hidden sm:block">
+            <form action="/" method="get" className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                name="q"
+                type="text"
+                placeholder="Search products, SKUs…"
+                className="w-full pl-9 pr-4 py-2 text-sm rounded-lg bg-white/95 border-0 focus:ring-2 focus:ring-white/50 outline-none text-gray-800 placeholder-gray-400"
               />
-            </Link>
-
-            {/* Desktop Search */}
-            <div className="hidden md:flex flex-1 max-w-xl mx-8">
-              <div className="relative w-full">
-                <input 
-                  type="text" 
-                  placeholder="Search products by SKU or name..." 
-                  className="w-full bg-white/10 border border-white/20 rounded-full py-2 pl-4 pr-10 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-[#AE1B1E] focus:bg-white focus:text-gray-900 focus:placeholder-gray-500 transition-all"
-                />
-                <Search className="absolute right-3 top-2.5 text-white/60" size={20} />
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center space-x-4">
-              <Link href="/cart" className="relative p-2 hover:bg-white/10 rounded-full transition-colors">
-                <ShoppingCart size={24} />
-                {mounted && totalItems > 0 && (
-                  <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/4 -translate-y-1/4 bg-[#AE1B1E] rounded-full">
-                    {totalItems}
-                  </span>
-                )}
-              </Link>
-              <button 
-                className="md:hidden p-2 hover:bg-white/10 rounded-full transition-colors"
-                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              >
-                {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-              </button>
-            </div>
+            </form>
           </div>
+
+          {/* Cart */}
+          <Link href="/cart" className="flex-shrink-0 relative p-2 hover:bg-white/10 rounded-lg transition-colors">
+            <ShoppingCart size={20} className="text-white" />
+            {mounted && totalItems > 0 && (
+              <span className="absolute -top-1 -right-1 bg-white text-[#AE1B1E] text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                {totalItems > 9 ? '9+' : totalItems}
+              </span>
+            )}
+          </Link>
+
+          {/* Mobile menu toggle */}
+          <button
+            className="sm:hidden p-2 text-white hover:bg-white/10 rounded-lg"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          >
+            {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
         </div>
 
-        {/* Mobile Search - expanded if menu open or just always visible below header on small screens */}
-        {isMobileMenuOpen && (
-          <div className="md:hidden p-4 bg-[#003347] border-t border-white/10">
-            <div className="relative w-full">
-              <input 
-                type="text" 
-                placeholder="Search products..." 
-                className="w-full bg-white/10 border border-white/20 rounded-lg py-2 pl-4 pr-10 text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-[#AE1B1E] focus:bg-white focus:text-gray-900"
-              />
-              <Search className="absolute right-3 top-2.5 text-white/60" size={20} />
-            </div>
-            <nav className="mt-4 space-y-2">
-              <Link href="/" className="block py-2 hover:text-[#AE1B1E] transition-colors">Home</Link>
-              <Link href="/categories" className="block py-2 hover:text-[#AE1B1E] transition-colors">Categories</Link>
-              <Link href="/staff" className="block py-2 hover:text-[#AE1B1E] transition-colors">Staff Login</Link>
-            </nav>
+        {/* Mobile search */}
+        {mobileMenuOpen && (
+          <div className="sm:hidden px-4 pb-3">
+            <form action="/" method="get">
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  name="q"
+                  type="text"
+                  placeholder="Search products…"
+                  className="w-full pl-9 pr-4 py-2 text-sm rounded-lg bg-white border-0 outline-none text-gray-800"
+                />
+              </div>
+            </form>
           </div>
         )}
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 container mx-auto px-4 py-8">
+      {/* ── Main ─────────────────────────────────────────────────────────── */}
+      <main className="flex-1">
         {children}
       </main>
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-auto">
-        <div className="container mx-auto px-4 py-8">
-          <div className="flex flex-col md:flex-row justify-between items-center text-gray-500 text-sm">
-            <p>&copy; {new Date().getFullYear()} Kamna Traders. All rights reserved.</p>
-            <div className="flex space-x-4 mt-4 md:mt-0">
-              <Link href="/staff" className="hover:text-[#1A2766] transition-colors">Staff Portal</Link>
-              <Link href="/admin" className="hover:text-[#1A2766] transition-colors">Admin</Link>
-            </div>
+      {/* ── Footer ───────────────────────────────────────────────────────── */}
+      <footer className="bg-white border-t border-gray-200 mt-auto py-4">
+        <div className="max-w-screen-2xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-2 text-xs text-gray-400">
+          <p>&copy; {new Date().getFullYear()} Kamna Traders. All rights reserved.</p>
+          <div className="flex gap-4">
+            <Link href="/staff" className="hover:text-[#1A2766]">Staff Portal</Link>
+            <Link href="/admin" className="hover:text-[#1A2766]">Admin</Link>
           </div>
         </div>
       </footer>

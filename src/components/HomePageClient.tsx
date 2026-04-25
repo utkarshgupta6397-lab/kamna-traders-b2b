@@ -151,7 +151,7 @@ export default function HomePageClient({ categories, products, selectedCategoryI
             <button onClick={() => navigate({})} className="mt-3 text-sm font-bold text-[#AE1B1E] hover:underline">Clear all filters</button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+          <div className="flex flex-col gap-3">
             {products.map(product => (
               <ProductCard key={product.id} product={product} />
             ))}

@@ -148,7 +148,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
           <p className="text-xs text-gray-400">{products.length} products{isPending && ' · Loading…'}</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+        <div className="flex flex-col gap-2">
           {products.map(p => <ProductCard key={p.id} product={p} />)}
           {products.length === 0 && (
             <div className="col-span-full bg-white rounded-xl border border-gray-100 py-10 text-center mt-2">

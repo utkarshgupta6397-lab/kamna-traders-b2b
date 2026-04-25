@@ -52,7 +52,7 @@ export default function ProductCard({ product }: { product: ProductData }) {
   };
 
   return (
-    <div className={`group bg-white rounded-[14px] border border-[#E5E7EB] transition-all duration-200 hover:shadow-sm w-full md:h-[108px] overflow-hidden flex flex-col md:flex-row items-stretch md:items-center px-3 md:px-4 py-3 md:py-0 gap-3 md:gap-0 ${qty > 0 ? 'border-[#1A2766]/30 bg-blue-50/5' : ''} ${product.isOos ? 'opacity-50' : ''}`}>
+    <div className={`group bg-white rounded-xl border border-[#E5E7EB] border-l-4 border-l-[#1A2766] transition-all duration-200 hover:shadow-sm w-full md:h-[96px] overflow-hidden flex flex-col md:flex-row items-stretch md:items-center px-3 md:px-4 py-3 md:py-0 gap-3 md:gap-0 ${qty > 0 ? 'bg-blue-50/10' : ''} ${product.isOos ? 'opacity-50' : ''}`}>
       
       {/* SECTION 1: LEFT - COMPACT IMAGE (64px) */}
       <div className="flex-shrink-0 w-[64px] h-[64px] rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden">

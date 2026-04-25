@@ -73,45 +73,45 @@ export default function CartPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
         <div className="md:col-span-2 space-y-4">
           {items.map(item => (
-            <div key={item.skuId} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg flex-shrink-0 border border-gray-100 flex items-center justify-center overflow-hidden">
+            <div key={item.skuId} className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-[#1A2766] flex items-center gap-4 h-[96px]">
+              <div className="w-[64px] h-[64px] bg-gray-50 rounded-lg flex-shrink-0 border border-gray-100 flex items-center justify-center overflow-hidden">
                 {item.imageUrl ? (
-                  <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                  <img src={item.imageUrl} alt={item.name} className="w-full h-full object-contain" />
                 ) : (
                   <Package size={20} className="text-gray-300" />
                 )}
               </div>
               
               <div className="flex-1 min-w-0">
-                <h3 className="font-bold text-gray-900 truncate">{item.name}</h3>
-                <p className="text-[#1A2766] font-bold mt-1">{formatCurrency(item.price)}</p>
-                <p className="text-xs text-gray-500 mt-1">MOQ: {item.moq}</p>
+                <h3 className="font-bold text-gray-900 truncate text-[16px]">{item.name}</h3>
+                <p className="text-[#1A2766] font-black text-[18px]">{formatCurrency(item.price)}</p>
+                <p className="text-[10px] text-gray-400 font-mono mt-0.5">Ref: {item.skuId}</p>
               </div>
 
-              <div className="flex flex-col items-end gap-3">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center border border-gray-200 rounded-full bg-white overflow-hidden h-[42px] px-1">
+                  <button 
+                    onClick={() => updateQty(item.skuId, item.qty - (item.stepQty || item.moq))}
+                    className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-red-600 hover:bg-red-50"
+                    disabled={item.qty <= item.moq}
+                  >
+                    <Minus size={14} strokeWidth={3} />
+                  </button>
+                  <span className="w-10 text-center font-bold text-[16px] text-[#1A2766]">{item.qty}</span>
+                  <button 
+                    onClick={() => updateQty(item.skuId, item.qty + (item.stepQty || item.moq))}
+                    className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-[#1A2766] hover:bg-blue-50"
+                  >
+                    <Plus size={14} strokeWidth={3} />
+                  </button>
+                </div>
+                
                 <button 
                   onClick={() => removeItem(item.skuId)}
-                  className="text-gray-400 hover:text-red-500 transition-colors"
+                  className="text-gray-300 hover:text-red-500 transition-colors p-2"
                 >
                   <Trash2 size={18} />
                 </button>
-                
-                <div className="flex items-center border border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
-                  <button 
-                    onClick={() => updateQty(item.skuId, item.qty - (item.stepQty || item.moq))}
-                    className="p-2 text-gray-500 hover:text-[#AE1B1E] hover:bg-gray-100 transition-colors"
-                    disabled={item.qty <= item.moq}
-                  >
-                    <Minus size={14} />
-                  </button>
-                  <span className="w-10 text-center font-medium text-sm">{item.qty}</span>
-                  <button 
-                    onClick={() => updateQty(item.skuId, item.qty + (item.stepQty || item.moq))}
-                    className="p-2 text-gray-500 hover:text-[#1A2766] hover:bg-gray-100 transition-colors"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
               </div>
             </div>
           ))}

@@ -1,6 +1,7 @@
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { LogOut, Home, ClipboardList, Package } from 'lucide-react';
 
 export default async function StaffDashboardLayout({ children }: { children: React.ReactNode }) {
@@ -15,8 +16,9 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
       <header className="bg-[#1A2766] text-white shadow-md sticky top-0 z-50">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <Link href="/staff/dashboard" className="text-xl font-bold tracking-tight text-white">
-              Kamna <span className="text-[#AE1B1E]">Staff</span>
+            <Link href="/staff/dashboard" className="flex items-center gap-2">
+              <Image src="/logo.svg" alt="Kamna Traders" width={110} height={48} className="object-contain brightness-0 invert" priority />
+              <span className="text-white/40 text-xs border-l border-white/20 pl-2">Staff</span>
             </Link>
           </div>
           

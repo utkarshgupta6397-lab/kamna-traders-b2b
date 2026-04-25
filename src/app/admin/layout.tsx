@@ -1,59 +1,72 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { Package, Users, Warehouse, Tags, Database, LayoutDashboard, LogOut } from 'lucide-react';
+import { getSession } from '@/lib/auth';
+import { redirect } from 'next/navigation';
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+const navItems = [
+  { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/admin/users', label: 'Users', icon: Users },
+  { href: '/admin/warehouses', label: 'Warehouses', icon: Warehouse },
+  { href: '/admin/categories', label: 'Categories', icon: Tags },
+  { href: '/admin/skus', label: 'SKUs', icon: Package },
+  { href: '/admin/inventory', label: 'Inventory', icon: Database },
+];
+
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const session = await getSession();
+
+  if (!session || session.role !== 'ADMIN') {
+    redirect('/staff');
+  }
+
   return (
     <div className="flex h-screen bg-[#f8f9fb]">
       {/* Sidebar */}
-      <div className="w-64 bg-[#1A2766] text-white flex flex-col">
-        <div className="p-4 bg-[#003347] flex items-center justify-center">
-          <h1 className="text-xl font-bold">Kamna Admin</h1>
+      <div className="w-60 bg-[#1A2766] flex flex-col flex-shrink-0">
+        {/* Logo */}
+        <div className="px-4 py-3 bg-[#003347] flex items-center gap-2 border-b border-white/10">
+          <Image src="/logo.svg" alt="Kamna Traders" width={110} height={48} className="object-contain brightness-0 invert" />
+          <span className="text-white/50 text-xs font-medium border-l border-white/20 pl-2 ml-1">Admin</span>
         </div>
-        
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          <Link href="/admin" className="flex items-center space-x-3 p-3 rounded-lg hover:bg-[#003347] transition-colors">
-            <LayoutDashboard size={20} />
-            <span>Dashboard</span>
-          </Link>
-          <Link href="/admin/users" className="flex items-center space-x-3 p-3 rounded-lg hover:bg-[#003347] transition-colors">
-            <Users size={20} />
-            <span>Users</span>
-          </Link>
-          <Link href="/admin/warehouses" className="flex items-center space-x-3 p-3 rounded-lg hover:bg-[#003347] transition-colors">
-            <Warehouse size={20} />
-            <span>Warehouses</span>
-          </Link>
-          <Link href="/admin/categories" className="flex items-center space-x-3 p-3 rounded-lg hover:bg-[#003347] transition-colors">
-            <Tags size={20} />
-            <span>Categories</span>
-          </Link>
-          <Link href="/admin/skus" className="flex items-center space-x-3 p-3 rounded-lg hover:bg-[#003347] transition-colors">
-            <Package size={20} />
-            <span>SKUs</span>
-          </Link>
-          <Link href="/admin/inventory" className="flex items-center space-x-3 p-3 rounded-lg hover:bg-[#003347] transition-colors">
-            <Database size={20} />
-            <span>Inventory</span>
-          </Link>
+
+        {/* Nav */}
+        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+          {navItems.map(({ href, label, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/70 text-sm font-medium hover:bg-white/10 hover:text-white transition-all duration-150"
+            >
+              <Icon size={17} />
+              <span>{label}</span>
+            </Link>
+          ))}
         </nav>
 
-        <div className="p-4 border-t border-[#003347]">
-          <Link href="/logout" className="flex items-center space-x-3 p-3 rounded-lg hover:bg-[#AE1B1E] transition-colors text-red-200 hover:text-white">
-            <LogOut size={20} />
-            <span>Logout</span>
-          </Link>
+        {/* Footer */}
+        <div className="px-3 py-3 border-t border-white/10">
+          <form action="/api/auth/logout" method="POST">
+            <button
+              type="submit"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-300 text-sm font-medium hover:bg-red-700/30 hover:text-red-100 transition-all duration-150"
+            >
+              <LogOut size={17} />
+              <span>Logout</span>
+            </button>
+          </form>
         </div>
       </div>
 
-      {/* Main Content */}
+      {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white shadow-sm z-10 p-4 flex justify-between items-center">
-          <h2 className="text-xl font-semibold text-gray-800">Admin Portal</h2>
-          <div className="flex items-center space-x-4">
-            <span className="text-sm text-gray-600">Logged in as Admin</span>
-          </div>
+        <header className="bg-white border-b border-gray-200 px-6 h-14 flex items-center justify-between flex-shrink-0">
+          <h2 className="text-base font-semibold text-gray-800">Admin Portal</h2>
+          <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">
+            ● Admin Session Active
+          </span>
         </header>
-        
+
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-[#f8f9fb] p-6">
           {children}
         </main>

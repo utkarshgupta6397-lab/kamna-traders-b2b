@@ -11,17 +11,17 @@ export interface ProductData {
   unit: string | null;
   moq: number;
   price: number;
-  isOos: boolean;
+  isOos: boolean; // stock status — independent of isActive
   category?: { name: string } | null;
 }
 
 export default function ProductCard({ product }: { product: ProductData }) {
   const addItem = useCartStore((state) => state.addItem);
   const items = useCartStore((state) => state.items);
-  
+
   const cartItem = items.find(i => i.skuId === product.id);
   const currentQtyInCart = cartItem ? cartItem.qty : 0;
-  
+
   const [qtyToAdd, setQtyToAdd] = useState(product.moq);
 
   const handleAdd = () => {
@@ -33,98 +33,94 @@ export default function ProductCard({ product }: { product: ProductData }) {
       qty: qtyToAdd,
       moq: product.moq,
     });
-    // Reset to MOQ after adding or keep it? Keeping it is fine.
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col group hover:shadow-md transition-shadow">
-      <div className="aspect-square bg-gray-50 flex items-center justify-center p-6 relative">
-        {/* Placeholder for Image */}
-        <div className="text-gray-300">
-          <ShoppingBag size={64} />
-        </div>
-        
-        {/* Stock Badge */}
-        <div className="absolute top-3 right-3">
-          {product.isOos ? (
-            <span className="bg-[#AE1B1E] text-white text-xs font-bold px-3 py-1 rounded-full shadow-sm">
-              Out of Stock
-            </span>
-          ) : (
-            <span className="bg-[#003347] text-white text-xs font-medium px-3 py-1 rounded-full shadow-sm">
-              In Stock
-            </span>
-          )}
-        </div>
-        
-        {/* Brand Badge */}
+    <div className={`bg-white rounded-xl border overflow-hidden flex flex-col group transition-shadow hover:shadow-md ${product.isOos ? 'border-gray-100 opacity-80' : 'border-gray-100'}`}>
+      {/* Compact Image strip */}
+      <div className="relative h-28 bg-gray-50 flex items-center justify-center">
+        <ShoppingBag size={36} className="text-gray-200" />
+
+        {/* OOS badge top-right */}
+        {product.isOos && (
+          <span className="absolute top-2 right-2 bg-[#AE1B1E] text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+            Out of Stock
+          </span>
+        )}
+
+        {/* Brand badge top-left */}
         {product.brand && (
-          <div className="absolute top-3 left-3 bg-white text-gray-800 text-xs font-bold px-2 py-1 rounded border border-gray-200">
+          <span className="absolute top-2 left-2 bg-white text-gray-600 text-[10px] font-semibold px-1.5 py-0.5 rounded border border-gray-200">
             {product.brand}
-          </div>
+          </span>
         )}
       </div>
-      
-      <div className="p-5 flex flex-col flex-1">
-        <div className="text-xs text-gray-500 mb-1 flex justify-between">
-          <span>{product.id}</span>
+
+      {/* Content */}
+      <div className="p-3 flex flex-col flex-1 gap-1">
+        {/* SKU + Category row */}
+        <div className="flex justify-between text-[10px] text-gray-400">
+          <span className="font-mono">{product.id}</span>
           {product.category && <span>{product.category.name}</span>}
         </div>
-        <h3 className="font-bold text-gray-900 text-lg mb-1 leading-tight">{product.name}</h3>
-        <p className="text-sm text-gray-500 mb-4">Unit: {product.unit || 'PC'}</p>
-        
-        <div className="mt-auto">
-          <div className="flex justify-between items-end mb-4">
-            <div>
-              <p className="text-2xl font-black text-[#1A2766]">₹{product.price.toFixed(2)}</p>
-              <p className="text-xs text-gray-500 mt-1">MOQ: {product.moq} {product.unit}</p>
-            </div>
-            {currentQtyInCart > 0 && (
-              <div className="bg-green-50 text-green-700 text-xs font-bold px-2 py-1 rounded">
-                {currentQtyInCart} in cart
-              </div>
-            )}
-          </div>
 
-          <div className="flex space-x-2">
-            {!product.isOos && (
-              <div className="flex items-center border border-gray-200 rounded-lg bg-gray-50">
-                <button 
-                  onClick={() => setQtyToAdd(Math.max(product.moq, qtyToAdd - 1))}
-                  className="p-2 text-gray-500 hover:text-[#AE1B1E] transition-colors"
-                  disabled={qtyToAdd <= product.moq}
-                >
-                  <Minus size={16} />
-                </button>
-                <input 
-                  type="number" 
-                  value={qtyToAdd}
-                  onChange={(e) => setQtyToAdd(Math.max(product.moq, parseInt(e.target.value) || product.moq))}
-                  className="w-12 text-center bg-transparent font-medium focus:outline-none"
-                  min={product.moq}
-                />
-                <button 
-                  onClick={() => setQtyToAdd(qtyToAdd + 1)}
-                  className="p-2 text-gray-500 hover:text-[#1A2766] transition-colors"
-                >
-                  <Plus size={16} />
-                </button>
-              </div>
-            )}
-            
-            <button 
+        {/* Name */}
+        <h3 className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2">
+          {product.name}
+        </h3>
+
+        {/* Price + Unit row */}
+        <div className="flex items-baseline justify-between mt-0.5">
+          <span className="text-base font-black text-[#1A2766]">₹{product.price.toFixed(0)}</span>
+          <span className="text-[10px] text-gray-400">/{product.unit || 'PC'}</span>
+        </div>
+
+        <div className="flex items-center justify-between text-[10px] text-gray-400 mb-2">
+          <span>MOQ: {product.moq}</span>
+          {currentQtyInCart > 0 && (
+            <span className="text-green-600 font-bold">{currentQtyInCart} in cart</span>
+          )}
+        </div>
+
+        {/* Action row */}
+        {product.isOos ? (
+          <div className="mt-auto py-1.5 rounded-lg bg-gray-100 text-gray-400 text-xs text-center font-medium">
+            Unavailable
+          </div>
+        ) : (
+          <div className="mt-auto flex gap-1">
+            {/* Qty stepper */}
+            <div className="flex items-center border border-gray-200 rounded-lg bg-gray-50 h-8">
+              <button
+                onClick={() => setQtyToAdd(Math.max(product.moq, qtyToAdd - 1))}
+                className="px-2 text-gray-400 hover:text-[#AE1B1E] transition-colors disabled:opacity-30"
+                disabled={qtyToAdd <= product.moq}
+              >
+                <Minus size={12} />
+              </button>
+              <input
+                type="number"
+                value={qtyToAdd}
+                onChange={(e) => setQtyToAdd(Math.max(product.moq, parseInt(e.target.value) || product.moq))}
+                className="w-8 text-center bg-transparent text-xs font-medium focus:outline-none"
+                min={product.moq}
+              />
+              <button
+                onClick={() => setQtyToAdd(qtyToAdd + 1)}
+                className="px-2 text-gray-400 hover:text-[#1A2766] transition-colors"
+              >
+                <Plus size={12} />
+              </button>
+            </div>
+
+            <button
               onClick={handleAdd}
-              disabled={product.isOos}
-              className={`flex-1 flex items-center justify-center space-x-2 rounded-lg py-2 font-medium transition-colors ${
-                product.isOos 
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                  : 'bg-[#AE1B1E] text-white hover:bg-red-800'
-              }`}
+              className="flex-1 rounded-lg bg-[#AE1B1E] text-white text-xs font-bold hover:bg-[#900f12] transition-colors h-8"
             >
-              <span>Add</span>
+              Add
             </button>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

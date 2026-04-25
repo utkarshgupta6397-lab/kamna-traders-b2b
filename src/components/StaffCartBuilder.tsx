@@ -132,20 +132,27 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: any) {
             {searchQuery && (
               <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                 {filteredSkus.map((sku: any) => (
-                  <div 
-                    key={sku.id} 
-                    className="p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 flex justify-between items-center"
+                  <div
+                    key={sku.id}
+                    className="px-3 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 flex justify-between items-center gap-2"
                     onClick={() => addItem(sku)}
                   >
-                    <div>
-                      <p className="font-bold text-gray-900">{sku.name}</p>
-                      <p className="text-xs text-gray-500 font-mono">{sku.id}</p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-gray-900 text-sm truncate">{sku.name}</p>
+                        {sku.isOos && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-[#AE1B1E] flex-shrink-0">
+                            OOS
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400 font-mono">{sku.id}</p>
                     </div>
-                    <Plus size={18} className="text-[#1A2766]" />
+                    <Plus size={16} className="text-[#1A2766] flex-shrink-0" />
                   </div>
                 ))}
                 {filteredSkus.length === 0 && (
-                  <div className="p-4 text-center text-gray-500">No products found.</div>
+                  <div className="p-4 text-center text-gray-500 text-sm">No products found.</div>
                 )}
               </div>
             )}

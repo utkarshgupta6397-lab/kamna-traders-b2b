@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 export default function StaffLoginPage() {
   const [mobile, setMobile] = useState('');
@@ -52,8 +53,10 @@ export default function StaffLoginPage() {
   return (
     <div className="min-h-screen bg-[#f8f9fb] flex items-center justify-center p-4">
       <div className="bg-white max-w-md w-full p-8 rounded-2xl shadow-sm border border-gray-100 text-center">
-        <h1 className="text-3xl font-bold text-[#1A2766] mb-2">Staff Portal</h1>
-        <p className="text-gray-500 mb-8">Login with your registered WhatsApp number.</p>
+        <div className="flex justify-center mb-6">
+          <Image src="/logo.svg" alt="Kamna Traders" width={180} height={78} className="object-contain" />
+        </div>
+        <p className="text-gray-500 text-sm mb-8">Staff &amp; Admin Login — Use your registered WhatsApp number.</p>
 
         {error && (
           <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-6 text-sm font-medium">

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { ShoppingCart, Search, Menu, X } from 'lucide-react';
 import { useCartStore } from '@/store/cartStore';
 import { useState, useEffect } from 'react';
@@ -23,8 +24,15 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
-            <Link href="/" className="flex items-center space-x-2">
-              <span className="text-2xl font-bold tracking-tight text-white">Kamna <span className="text-[#AE1B1E]">Traders</span></span>
+            <Link href="/" className="flex items-center">
+              <Image
+                src="/logo.svg"
+                alt="Kamna Traders"
+                width={130}
+                height={56}
+                className="object-contain brightness-0 invert"
+                priority
+              />
             </Link>
 
             {/* Desktop Search */}

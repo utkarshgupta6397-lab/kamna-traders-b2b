@@ -4,6 +4,7 @@ import { useCartStore } from '@/store/cartStore';
 import { Minus, Plus, Trash2, ArrowRight, Package } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
+import { formatCurrency } from '@/lib/utils';
 
 export default function CartPage() {
   const { items, updateQty, removeItem, getTotalPrice, getTotalItems, clearCart } = useCartStore();
@@ -82,7 +83,7 @@ export default function CartPage() {
               
               <div className="flex-1 min-w-0">
                 <h3 className="font-bold text-gray-900 truncate">{item.name}</h3>
-                <p className="text-[#1A2766] font-bold mt-1">₹{item.price.toFixed(2)}</p>
+                <p className="text-[#1A2766] font-bold mt-1">{formatCurrency(item.price)}</p>
                 <p className="text-xs text-gray-500 mt-1">MOQ: {item.moq}</p>
               </div>
 
@@ -126,7 +127,7 @@ export default function CartPage() {
               </div>
               <div className="flex justify-between text-gray-600">
                 <span>Total Amount (Est.)</span>
-                <span className="font-medium text-gray-900">₹{getTotalPrice().toFixed(2)}</span>
+                <span className="font-medium text-gray-900">{formatCurrency(getTotalPrice())}</span>
               </div>
             </div>
             

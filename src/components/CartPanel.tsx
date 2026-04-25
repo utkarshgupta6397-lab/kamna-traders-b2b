@@ -3,6 +3,7 @@
 import { useCartStore } from '@/store/cartStore';
 import { Minus, Plus, Trash2, MessageCircle, ShoppingBag } from 'lucide-react';
 import { useState } from 'react';
+import { formatCurrency } from '@/lib/utils';
 
 export default function CartPanel() {
   const { items, updateQty, removeItem, getTotalPrice, clearCart } = useCartStore();
@@ -21,7 +22,7 @@ export default function CartPanel() {
       });
       let msg = '*Kamna Traders Inquiry*\n\n';
       items.forEach(i => { msg += `${i.skuId} - ${i.name} x${i.qty}\n`; });
-      msg += `\nTotal: ₹${getTotalPrice().toFixed(0)}`;
+      msg += `\nTotal: ${formatCurrency(getTotalPrice())}`;
       clearCart();
       window.open(`https://wa.me/15558246665?text=${encodeURIComponent(msg)}`, '_blank');
     } finally {
@@ -65,7 +66,7 @@ export default function CartPanel() {
               </button>
             </div>
             <div className="w-14 text-right">
-              <p className="text-xs font-bold text-[#1A2766]">₹{(item.price * item.qty).toFixed(0)}</p>
+              <p className="text-xs font-bold text-[#1A2766]">{formatCurrency(item.price * item.qty)}</p>
             </div>
             <button onClick={() => removeItem(item.skuId)} className="text-gray-300 hover:text-red-400 transition-colors">
               <Trash2 size={12} />
@@ -78,7 +79,7 @@ export default function CartPanel() {
       <div className="pt-3 border-t border-gray-100 space-y-3 mt-2">
         <div className="flex justify-between text-sm">
           <span className="text-gray-500">{totalQty} items</span>
-          <span className="font-black text-[#1A2766]">₹{getTotalPrice().toFixed(0)}</span>
+          <span className="font-black text-[#1A2766]">{formatCurrency(getTotalPrice())}</span>
         </div>
         <button
           onClick={handleWhatsApp}

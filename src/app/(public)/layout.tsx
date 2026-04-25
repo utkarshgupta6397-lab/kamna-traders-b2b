@@ -4,8 +4,9 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ShoppingCart, Search, Menu, X } from 'lucide-react';
 import { useCartStore } from '@/store/cartStore';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { formatCurrency } from '@/lib/utils';
 
 function HeaderContent() {
   const [mounted, setMounted] = useState(false);
@@ -18,6 +19,23 @@ function HeaderContent() {
   useEffect(() => {
     setSearchVal(searchParams.get('q') ?? '');
   }, [searchParams]);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // If pressing '/' and not already in an input/textarea
+      if (e.key === '/' && 
+          document.activeElement?.tagName !== 'INPUT' && 
+          document.activeElement?.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const totalItems = items.reduce((acc, i) => acc + i.qty, 0);
 
@@ -68,7 +86,14 @@ function HeaderContent() {
           <div className="flex-1 mx-2">
             <form onSubmit={handleSearch} className="relative max-w-xl">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input type="text" value={searchVal} onChange={e => setSearchVal(e.target.value)} placeholder="Search products, SKUs…" className="w-full pl-9 pr-9 py-2 text-sm rounded-lg bg-white/95 border-0 focus:ring-2 focus:ring-white/50 outline-none text-gray-800 placeholder-gray-400" />
+              <input 
+                ref={searchInputRef}
+                type="text" 
+                value={searchVal} 
+                onChange={e => setSearchVal(e.target.value)} 
+                placeholder="Search products, SKUs…" 
+                className="w-full pl-9 pr-9 py-2 text-sm rounded-lg bg-white/95 border-0 focus:ring-2 focus:ring-white/50 outline-none text-gray-800 placeholder-gray-400" 
+              />
               {searchVal && (
                 <button type="button" onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                   <X size={14} />

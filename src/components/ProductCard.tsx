@@ -2,6 +2,7 @@
 
 import { useCartStore } from '@/store/cartStore';
 import { Plus, Minus, Package } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 export interface ProductData {
   id: string;
@@ -72,7 +73,7 @@ export default function ProductCard({ product }: { product: ProductData }) {
           </div>
           <p className="text-[10px] text-gray-400 font-mono mb-1">{product.id}</p>
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-sm font-black text-[#1A2766]">₹{product.price.toFixed(0)}</span>
+            <span className="text-sm font-black text-[#1A2766]">{formatCurrency(product.price)}</span>
             <span className="text-[10px] text-gray-400">/{product.unit || 'pc'}</span>
             <span className="text-[10px] text-gray-300">·</span>
             <span className="text-[10px] text-gray-400">MOQ {product.moq}{product.unit ? ` ${product.unit}` : ''}</span>

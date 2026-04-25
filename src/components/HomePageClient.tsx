@@ -6,6 +6,7 @@ import ProductCard, { ProductData } from '@/components/ProductCard';
 import CartPanel from '@/components/CartPanel';
 import { useCartStore } from '@/store/cartStore';
 import { ShoppingCart, X, Search } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 
 interface Category { id: string; name: string; count: number }
 
@@ -184,7 +185,7 @@ export default function HomePageClient({ categories, products, selectedCategoryI
               <span className="bg-white/20 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black">{totalItems}</span>
               <span className="font-bold text-sm">View Cart</span>
             </div>
-            <span className="text-[15px] font-black">₹{items.reduce((a, i) => a + (i.qty * i.price), 0).toFixed(0)} <span className="text-xl ml-1 leading-none">→</span></span>
+            <span className="text-[15px] font-black">{formatCurrency(items.reduce((a, i) => a + (i.qty * i.price), 0))} <span className="text-xl ml-1 leading-none">→</span></span>
           </button>
         </div>
       )}

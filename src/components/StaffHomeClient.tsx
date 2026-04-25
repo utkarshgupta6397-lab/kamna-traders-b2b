@@ -30,7 +30,6 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
   const [customerName, setCustomerName] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   const { items, updateQty, removeItem, clearCart } = useCartStore();
   const totalQty = items.reduce((a, i) => a + i.qty, 0);
@@ -61,146 +60,151 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
   };
 
   return (
-    <div className="w-full min-h-screen bg-[#F3F4F6] p-4">
-      {/* POS CONTAINER */}
-      <div className="max-w-[1920px] mx-auto grid grid-cols-[240px_1fr_340px] gap-4 items-start">
+    <div className="w-full min-h-screen bg-[#F8F9FB] px-4 py-6">
+      {/* 3-COLUMN PREMIUM STAFF LAYOUT */}
+      <div className="max-w-[1600px] mx-auto flex gap-6 items-start">
 
-        {/* ── COLUMN 1: CATEGORIES ────────────────────────────────────── */}
-        <aside className="sticky top-4 h-[calc(100vh-32px)] flex flex-col bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-4 py-3 bg-[#1A2766]">
-            <p className="text-[12px] font-black text-white uppercase tracking-widest">POS Categories</p>
-          </div>
-          <nav className="overflow-y-auto p-2 space-y-1">
-            <button
-              onClick={() => navigate({ q: searchQuery })}
-              className={`w-full flex items-center justify-between px-3 h-10 rounded-md text-[14px] font-bold transition-all ${!selectedCategoryId ? 'bg-[#AE1B1E] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-              All SKUs
-              <span className="text-[10px] font-bold opacity-70">{totalSkuCount}</span>
-            </button>
-            <div className="h-px bg-gray-100 my-2" />
-            {categories.map(cat => (
+        {/* ── LEFT: CATEGORIES (240px) ────────────────────────────────── */}
+        <aside className="hidden lg:block w-[240px] sticky top-6 flex-shrink-0">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 bg-[#1A2766]">
+              <p className="text-[12px] font-black text-white uppercase tracking-widest">Inventory</p>
+            </div>
+            <nav className="p-2 space-y-1 max-h-[calc(100vh-12rem)] overflow-y-auto custom-scrollbar">
               <button
-                key={cat.id}
-                onClick={() => navigate({ category: cat.id, q: searchQuery })}
-                className={`w-full flex items-center justify-between px-3 h-10 rounded-md text-[14px] font-bold transition-all ${selectedCategoryId === cat.id ? 'bg-[#1A2766] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                onClick={() => navigate({ q: searchQuery })}
+                className={`w-full flex items-center justify-between px-4 h-11 rounded-xl text-[14px] font-bold transition-all ${!selectedCategoryId ? 'bg-red-50 text-[#AE1B1E]' : 'text-gray-500 hover:bg-gray-50'}`}
               >
-                <span className="truncate">{cat.name}</span>
-                <span className="text-[10px] font-bold opacity-70">{cat.count}</span>
+                All SKUs
+                <span className="text-[10px] font-bold opacity-60 bg-gray-100 px-2 py-0.5 rounded-full">{totalSkuCount}</span>
               </button>
-            ))}
-          </nav>
+              {categories.map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => navigate({ category: cat.id, q: searchQuery })}
+                  className={`w-full flex items-center justify-between px-4 h-11 rounded-xl text-[14px] font-bold transition-all ${selectedCategoryId === cat.id ? 'bg-red-50 text-[#AE1B1E]' : 'text-gray-500 hover:bg-gray-50'}`}
+                >
+                  <span className="truncate">{cat.name}</span>
+                  <span className="text-[10px] font-bold opacity-60 bg-gray-100 px-2 py-0.5 rounded-full">{cat.count}</span>
+                </button>
+              ))}
+            </nav>
+          </div>
         </aside>
 
-        {/* ── COLUMN 2: PRODUCTS ────────────────────────────────────────── */}
-        <main className="min-w-0">
-          {/* POS Staff Toolbar */}
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4 h-[48px] flex items-center justify-between mb-3">
+        {/* ── CENTER: RESPONSIVE GRID ───────────────────────────────────── */}
+        <main className="flex-1 min-w-0">
+          {/* Staff POS Header */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center justify-between mb-6">
             <div className="flex items-center gap-4 flex-1">
-              <select
-                value={warehouseId}
-                onChange={e => setWarehouseId(e.target.value)}
-                className="bg-gray-50 border-0 rounded px-3 py-1.5 text-[13px] font-black text-[#1A2766] outline-none"
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black text-gray-400 uppercase mb-0.5">Warehouse Source</span>
+                <select
+                  value={warehouseId}
+                  onChange={e => setWarehouseId(e.target.value)}
+                  className="bg-gray-50 border-0 rounded-lg px-3 py-1.5 text-[14px] font-bold text-[#1A2766] outline-none"
+                >
+                  {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select>
+              </div>
+              <div className="h-8 w-px bg-gray-100 mx-2" />
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  navigate({ q: localSearch, category: selectedCategoryId });
+                }} 
+                className="relative flex-1 max-w-sm"
               >
-                {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
-              <div className="h-4 w-px bg-gray-200" />
-              <p className="text-[12px] font-black text-gray-400 uppercase">{products.length} Products Found</p>
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={localSearch}
+                  onChange={e => setLocalSearch(e.target.value)}
+                  placeholder="Scan or Search SKU..."
+                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border-0 rounded-xl text-[14px] outline-none focus:ring-2 focus:ring-[#1A2766]/10"
+                />
+              </form>
             </div>
-            <form 
-              onSubmit={(e) => {
-                e.preventDefault();
-                navigate({ q: localSearch, category: selectedCategoryId });
-              }} 
-              className="relative w-64"
-            >
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={localSearch}
-                onChange={e => setLocalSearch(e.target.value)}
-                placeholder="Rapid SKU search..."
-                className="w-full pl-9 pr-4 py-1.5 bg-gray-50 border-0 rounded-md text-[13px] outline-none focus:ring-1 focus:ring-[#1A2766]"
-              />
-            </form>
+            {isPending && <span className="text-[10px] font-black text-[#AE1B1E] animate-pulse ml-4">SYNCING...</span>}
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {products.map(p => <ProductCard key={p.id} product={p} />)}
             {products.length === 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 py-20 text-center">
-                <p className="text-gray-400 font-bold">Terminal empty. Refine search.</p>
+              <div className="bg-white rounded-2xl border border-gray-100 py-20 text-center shadow-sm col-span-full">
+                <p className="text-gray-400 font-bold">No results in this view.</p>
               </div>
             )}
           </div>
         </main>
 
-        {/* ── COLUMN 3: STAFF DISPATCH CART ───────────────────────────── */}
-        <aside className="sticky top-4 h-[calc(100vh-32px)] flex flex-col bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-4 py-3 bg-[#1A2766] flex items-center justify-between">
-            <p className="text-[12px] font-black text-white uppercase tracking-widest">Dispatch Cart</p>
-            {totalQty > 0 && <span className="bg-[#AE1B1E] text-white text-[10px] font-black px-2 py-0.5 rounded">{totalQty}</span>}
-          </div>
+        {/* ── RIGHT: DISPATCH TERMINAL (340px) ─────────────────────────── */}
+        <aside className="hidden xl:block w-[340px] sticky top-6 flex-shrink-0">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 3rem)' }}>
+            <div className="px-5 py-4 bg-[#1A2766] flex items-center justify-between">
+              <p className="text-[12px] font-black text-white uppercase tracking-widest">Dispatch Cart</p>
+              {totalQty > 0 && <span className="bg-[#AE1B1E] text-white text-[10px] font-black px-2.5 py-1 rounded-full">{totalQty}</span>}
+            </div>
 
-          <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
-            {items.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <ShoppingBag size={24} className="text-gray-200 mb-2" />
-                <p className="text-[12px] font-black text-gray-400 uppercase tracking-widest">Empty Bin</p>
-              </div>
-            ) : items.map(item => (
-              <div key={item.skuId} className="flex items-center gap-2 h-[42px] px-2 bg-gray-50 rounded border border-gray-100 group">
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-bold text-gray-800 truncate leading-tight">{item.name}</p>
-                  <p className="text-[9px] text-gray-400 font-mono font-bold uppercase">{item.skuId}</p>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
+              {items.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <ShoppingBag size={32} className="text-gray-100 mb-4" />
+                  <p className="text-[12px] font-black text-gray-300 uppercase tracking-[0.1em]">Empty Bin</p>
                 </div>
-                <div className="flex items-center bg-white border border-gray-200 rounded px-0.5 h-[28px]">
-                  <button onClick={() => updateQty(item.skuId, item.qty - (item.stepQty || item.moq))} className="w-6 h-full flex items-center justify-center text-gray-400 hover:text-red-600 transition-colors">
-                    <Minus size={10} strokeWidth={4} />
-                  </button>
-                  <span className="w-8 text-center text-[12px] font-black text-[#1A2766]">{item.qty}</span>
-                  <button onClick={() => updateQty(item.skuId, item.qty + (item.stepQty || item.moq))} className="w-6 h-full flex items-center justify-center text-[#1A2766] hover:bg-blue-50 transition-colors">
-                    <Plus size={10} strokeWidth={4} />
+              ) : items.map(item => (
+                <div key={item.skuId} className="flex items-center gap-3 p-2 bg-gray-50/50 rounded-xl border border-gray-50 group">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-bold text-gray-800 truncate leading-tight">{item.name}</p>
+                    <p className="text-[10px] text-gray-400 font-mono font-bold uppercase">{item.skuId}</p>
+                  </div>
+                  <div className="flex items-center bg-white border border-gray-100 rounded-lg p-0.5 h-8">
+                    <button onClick={() => updateQty(item.skuId, item.qty - (item.stepQty || item.moq))} className="w-7 h-full flex items-center justify-center text-gray-400 hover:text-red-600">
+                      <Minus size={12} strokeWidth={3} />
+                    </button>
+                    <span className="w-8 text-center text-[13px] font-black text-[#1A2766]">{item.qty}</span>
+                    <button onClick={() => updateQty(item.skuId, item.qty + (item.stepQty || item.moq))} className="w-7 h-full flex items-center justify-center text-[#1A2766] hover:bg-blue-50">
+                      <Plus size={12} strokeWidth={3} />
+                    </button>
+                  </div>
+                  <button onClick={() => removeItem(item.skuId)} className="text-gray-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-all">
+                    <Trash2 size={16} />
                   </button>
                 </div>
-                <button onClick={() => removeItem(item.skuId)} className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 p-1">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
 
-          {/* POS Staff Checkout Footer */}
-          <div className="p-4 border-t border-gray-200 bg-gray-50/50 space-y-3">
-            {items.length > 0 && (
-              <>
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={customerName}
-                    onChange={e => setCustomerName(e.target.value)}
-                    placeholder="Customer Name *"
-                    className="w-full bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] outline-none focus:ring-1 focus:ring-[#1A2766]"
-                  />
-                  <input
-                    type="text"
-                    value={notes}
-                    onChange={e => setNotes(e.target.value)}
-                    placeholder="Dispatch Notes"
-                    className="w-full bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] outline-none focus:ring-1 focus:ring-[#1A2766]"
-                  />
-                </div>
-                <button
-                  onClick={handleSubmit}
-                  disabled={submitting || !customerName}
-                  className="w-full h-[48px] flex items-center justify-center gap-2 bg-[#1A2766] text-white rounded-md font-black text-[14px] uppercase tracking-widest hover:bg-[#003347] transition-all disabled:opacity-50 shadow-md active:scale-[0.98]"
-                >
-                  <Printer size={18} strokeWidth={3} />
-                  {submitting ? 'Printing...' : 'Generate & Print'}
-                </button>
-                <button onClick={clearCart} className="w-full text-[10px] text-gray-400 hover:text-red-500 font-black uppercase tracking-[0.2em]">Reset Bin</button>
-              </>
-            )}
+            {/* Premium Staff Checkout */}
+            <div className="p-5 border-t border-gray-100 bg-gray-50/30 space-y-4">
+              {items.length > 0 && (
+                <>
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={e => setCustomerName(e.target.value)}
+                      placeholder="Customer Name *"
+                      className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-[14px] outline-none focus:ring-4 focus:ring-[#1A2766]/5"
+                    />
+                    <textarea
+                      value={notes}
+                      onChange={e => setNotes(e.target.value)}
+                      placeholder="Dispatch Notes"
+                      className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2.5 text-[14px] outline-none focus:ring-4 focus:ring-[#1A2766]/5 resize-none h-20"
+                    />
+                  </div>
+                  <button
+                    onClick={handleSubmit}
+                    disabled={submitting || !customerName}
+                    className="w-full h-14 flex items-center justify-center gap-3 bg-[#1A2766] text-white rounded-2xl font-black text-[14px] uppercase tracking-widest hover:bg-[#003347] transition-all disabled:opacity-50 shadow-xl active:scale-95"
+                  >
+                    <Printer size={20} strokeWidth={3} />
+                    {submitting ? 'Generating...' : 'Confirm & Print'}
+                  </button>
+                  <button onClick={clearCart} className="w-full text-[10px] text-gray-400 hover:text-red-500 font-black uppercase tracking-[0.2em]">Reset Order Bin</button>
+                </>
+              )}
+            </div>
           </div>
         </aside>
 

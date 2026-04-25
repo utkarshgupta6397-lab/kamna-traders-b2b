@@ -66,7 +66,7 @@ export default function ProductCard({ product }: { product: ProductData }) {
         {/* Product Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-1 mb-0.5">
-            <p className="text-xs font-bold text-gray-900 leading-snug truncate flex-1" title={product.name}>{product.name}</p>
+            <p className="text-xs font-bold text-gray-900 leading-snug flex-1" title={product.name}>{product.name}</p>
             {product.isOos && (
               <span className="text-[9px] font-bold bg-red-100 text-[#AE1B1E] px-1.5 py-0.5 rounded flex-shrink-0">OOS</span>
             )}

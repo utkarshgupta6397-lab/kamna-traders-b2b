@@ -29,6 +29,7 @@ function HeaderContent() {
           document.activeElement?.tagName !== 'INPUT' && 
           document.activeElement?.tagName !== 'TEXTAREA') {
         e.preventDefault();
+        setSearchVal(''); // Clear existing value
         searchInputRef.current?.focus();
       }
     };
@@ -91,7 +92,7 @@ function HeaderContent() {
                 type="text" 
                 value={searchVal} 
                 onChange={e => setSearchVal(e.target.value)} 
-                placeholder="Search products, SKUs…" 
+                placeholder="Search products, SKUs… [/]" 
                 className="w-full pl-9 pr-9 py-2 text-sm rounded-lg bg-white/95 border-0 focus:ring-2 focus:ring-white/50 outline-none text-gray-800 placeholder-gray-400" 
               />
               {searchVal && (

@@ -4,9 +4,9 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useTransition, useState } from 'react';
 import ProductCard, { ProductData } from '@/components/ProductCard';
 import { useCartStore } from '@/store/cartStore';
-import { Minus, Plus, Trash2, Printer, Search } from 'lucide-react';
+import { Minus, Plus, Trash2, Printer } from 'lucide-react';
 
-interface Category { id: string; name: string }
+interface Category { id: string; name: string; count: number }
 interface Warehouse { id: string; name: string }
 
 interface Props {
@@ -16,14 +16,14 @@ interface Props {
   products: ProductData[];
   selectedCategoryId: string;
   searchQuery: string;
+  totalSkuCount: number;
 }
 
-export default function StaffHomeClient({ staffId, warehouses, categories, products, selectedCategoryId, searchQuery }: Props) {
+export default function StaffHomeClient({ staffId, warehouses, categories, products, selectedCategoryId, searchQuery, totalSkuCount }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
 
-  // Staff checkout fields
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [customerName, setCustomerName] = useState('');
   const [notes, setNotes] = useState('');
@@ -36,7 +36,8 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
   const navigate = (params: Record<string, string>) => {
     const sp = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => { if (v) sp.set(k, v); });
-    startTransition(() => router.push(`${pathname}?${sp.toString()}`));
+    const qs = sp.toString();
+    startTransition(() => router.push(qs ? `${pathname}?${qs}` : pathname));
   };
 
   const handleSubmit = async () => {
@@ -70,7 +71,10 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
             <button
               onClick={() => navigate({ q: searchQuery })}
               className={`w-full text-left px-3 py-2 text-xs font-medium border-b border-gray-50 ${!selectedCategoryId ? 'bg-[#AE1B1E]/10 text-[#AE1B1E] font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
-            >All Products</button>
+            >
+              All Products
+              <span className="float-right text-[10px] text-gray-400">{totalSkuCount}</span>
+            </button>
             {categories.map(cat => (
               <button
                 key={cat.id}
@@ -78,6 +82,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
                 className={`w-full text-left px-3 py-2 text-xs font-medium border-b border-gray-50 ${selectedCategoryId === cat.id ? 'bg-[#AE1B1E]/10 text-[#AE1B1E] font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
               >
                 {cat.name}
+                <span className="float-right text-[10px] text-gray-400">{cat.count}</span>
               </button>
             ))}
           </nav>
@@ -87,10 +92,10 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
       {/* ── Center: Products ──────────────────────────────────────────── */}
       <main className="flex-1 min-w-0">
         {/* Mobile categories */}
-        <div className="lg:hidden flex gap-2 overflow-x-auto pb-2 mb-3">
+        <div className="lg:hidden flex gap-2 overflow-x-auto pb-2 mb-3 scrollbar-hide">
           <button onClick={() => navigate({ q: searchQuery })} className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-full font-medium ${!selectedCategoryId ? 'bg-[#1A2766] text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>All</button>
           {categories.map(cat => (
-            <button key={cat.id} onClick={() => navigate({ category: cat.id, q: searchQuery })} className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-full font-medium ${selectedCategoryId === cat.id ? 'bg-[#1A2766] text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>{cat.name}</button>
+            <button key={cat.id} onClick={() => navigate({ category: cat.id, q: searchQuery })} className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-full font-medium whitespace-nowrap ${selectedCategoryId === cat.id ? 'bg-[#1A2766] text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>{cat.name}</button>
           ))}
         </div>
 
@@ -103,6 +108,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
           {products.length === 0 && (
             <div className="col-span-full bg-white rounded-xl border border-gray-100 py-10 text-center">
               <p className="text-gray-400 text-sm">No products found.</p>
+              <button onClick={() => navigate({})} className="mt-2 text-xs text-[#AE1B1E] hover:underline">Clear filters</button>
             </div>
           )}
         </div>
@@ -116,7 +122,6 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
             {totalQty > 0 && <span className="bg-[#AE1B1E] text-white text-[10px] font-black px-2 py-0.5 rounded-full">{totalQty}</span>}
           </div>
 
-          {/* Items */}
           <div className="flex-1 overflow-y-auto p-3 space-y-1">
             {items.length === 0 ? (
               <p className="text-center text-xs text-gray-400 py-6">Add products from the catalog</p>
@@ -127,11 +132,11 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
                   <p className="text-[10px] text-gray-400 font-mono">{item.skuId}</p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => updateQty(item.skuId, item.qty - 1)} disabled={item.qty <= item.moq} className="w-5 h-5 rounded border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 disabled:opacity-30">
+                  <button onClick={() => updateQty(item.skuId, item.qty - item.moq)} className="w-5 h-5 rounded border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
                     <Minus size={10} />
                   </button>
                   <span className="w-7 text-center text-xs font-bold text-gray-800">{item.qty}</span>
-                  <button onClick={() => updateQty(item.skuId, item.qty + 1)} className="w-5 h-5 rounded border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
+                  <button onClick={() => updateQty(item.skuId, item.qty + item.moq)} className="w-5 h-5 rounded border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100">
                     <Plus size={10} />
                   </button>
                 </div>
@@ -142,7 +147,6 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
             ))}
           </div>
 
-          {/* Checkout area */}
           <div className="p-3 border-t border-gray-100 space-y-2">
             {items.length > 0 && (
               <>
@@ -196,8 +200,17 @@ export default function StaffHomeClient({ staffId, warehouses, categories, produ
       {checkoutOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end">
           <div className="absolute inset-0 bg-black/40" onClick={() => setCheckoutOpen(false)} />
-          <div className="relative bg-white rounded-t-2xl p-5 space-y-3">
-            <h3 className="font-bold text-gray-900">Dispatch Cart</h3>
+          <div className="relative bg-white rounded-t-2xl p-5 space-y-3 max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-gray-900">Dispatch Cart</h3>
+              <button onClick={() => setCheckoutOpen(false)} className="text-gray-400 text-sm">Close</button>
+            </div>
+            {items.map(item => (
+              <div key={item.skuId} className="flex justify-between items-center text-sm border-b border-gray-100 pb-2">
+                <div className="flex-1"><p className="font-medium">{item.name}</p><p className="text-xs text-gray-400">{item.skuId}</p></div>
+                <span className="font-bold text-[#1A2766]">×{item.qty}</span>
+              </div>
+            ))}
             <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className="w-full border rounded-lg p-2.5 text-sm bg-white">
               {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>

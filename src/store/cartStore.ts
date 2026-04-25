@@ -38,11 +38,19 @@ export const useCartStore = create<CartStore>()(
       removeItem: (skuId) => set((state) => ({
         items: state.items.filter(i => i.skuId !== skuId)
       })),
-      updateQty: (skuId, qty) => set((state) => ({
-        items: state.items.map(i => 
-          i.skuId === skuId ? { ...i, qty: Math.max(i.moq, qty) } : i
-        )
-      })),
+      updateQty: (skuId, qty) => set((state) => {
+        const item = state.items.find(i => i.skuId === skuId);
+        if (!item) return state;
+        // If qty drops below MOQ, remove item entirely
+        if (qty < item.moq) {
+          return { items: state.items.filter(i => i.skuId !== skuId) };
+        }
+        return {
+          items: state.items.map(i => 
+            i.skuId === skuId ? { ...i, qty } : i
+          )
+        };
+      }),
       clearCart: () => set({ items: [] }),
       getTotalItems: () => get().items.reduce((total, item) => total + item.qty, 0),
       getTotalPrice: () => get().items.reduce((total, item) => total + (item.price * item.qty), 0),

@@ -5,18 +5,19 @@ import { useTransition, useState } from 'react';
 import ProductCard, { ProductData } from '@/components/ProductCard';
 import CartPanel from '@/components/CartPanel';
 import { useCartStore } from '@/store/cartStore';
-import { ShoppingCart } from 'lucide-react';
+import { ShoppingCart, X } from 'lucide-react';
 
-interface Category { id: string; name: string }
+interface Category { id: string; name: string; count: number }
 
 interface Props {
   categories: Category[];
   products: ProductData[];
   selectedCategoryId: string;
   searchQuery: string;
+  totalSkuCount: number;
 }
 
-export default function HomePageClient({ categories, products, selectedCategoryId, searchQuery }: Props) {
+export default function HomePageClient({ categories, products, selectedCategoryId, searchQuery, totalSkuCount }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
@@ -27,7 +28,8 @@ export default function HomePageClient({ categories, products, selectedCategoryI
   const navigate = (params: Record<string, string>) => {
     const sp = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => { if (v) sp.set(k, v); });
-    startTransition(() => router.push(`${pathname}?${sp.toString()}`));
+    const qs = sp.toString();
+    startTransition(() => router.push(qs ? `${pathname}?${qs}` : pathname));
   };
 
   return (
@@ -45,21 +47,18 @@ export default function HomePageClient({ categories, products, selectedCategoryI
               className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors border-b border-gray-50 ${!selectedCategoryId ? 'bg-[#AE1B1E]/10 text-[#AE1B1E] font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
             >
               All Products
-              <span className="float-right text-[10px] text-gray-400">{products.length}</span>
+              <span className="float-right text-[10px] text-gray-400">{totalSkuCount}</span>
             </button>
-            {categories.map(cat => {
-              const count = products.filter(p => p.category?.name === cat.name).length;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => navigate({ category: cat.id, q: searchQuery })}
-                  className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors border-b border-gray-50 ${selectedCategoryId === cat.id ? 'bg-[#AE1B1E]/10 text-[#AE1B1E] font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
-                >
-                  {cat.name}
-                  <span className="float-right text-[10px] text-gray-400">{count}</span>
-                </button>
-              );
-            })}
+            {categories.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => navigate({ category: cat.id, q: searchQuery })}
+                className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors border-b border-gray-50 ${selectedCategoryId === cat.id ? 'bg-[#AE1B1E]/10 text-[#AE1B1E] font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
+              >
+                {cat.name}
+                <span className="float-right text-[10px] text-gray-400">{cat.count}</span>
+              </button>
+            ))}
           </nav>
         </div>
       </aside>
@@ -67,7 +66,7 @@ export default function HomePageClient({ categories, products, selectedCategoryI
       {/* ── Center: Product grid ─────────────────────────────────────────── */}
       <main className="flex-1 min-w-0">
         {/* Mobile category chips */}
-        <div className="lg:hidden flex gap-2 overflow-x-auto pb-2 mb-3">
+        <div className="lg:hidden flex gap-2 overflow-x-auto pb-2 mb-3 scrollbar-hide">
           <button
             onClick={() => navigate({ q: searchQuery })}
             className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-full font-medium ${!selectedCategoryId ? 'bg-[#1A2766] text-white' : 'bg-white border border-gray-200 text-gray-600'}`}
@@ -78,7 +77,7 @@ export default function HomePageClient({ categories, products, selectedCategoryI
             <button
               key={cat.id}
               onClick={() => navigate({ category: cat.id, q: searchQuery })}
-              className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-full font-medium ${selectedCategoryId === cat.id ? 'bg-[#1A2766] text-white' : 'bg-white border border-gray-200 text-gray-600'}`}
+              className={`flex-shrink-0 text-xs px-3 py-1.5 rounded-full font-medium whitespace-nowrap ${selectedCategoryId === cat.id ? 'bg-[#1A2766] text-white' : 'bg-white border border-gray-200 text-gray-600'}`}
             >
               {cat.name}
             </button>
@@ -87,20 +86,33 @@ export default function HomePageClient({ categories, products, selectedCategoryI
 
         {/* Result header */}
         <div className="flex items-center justify-between mb-3">
-          <div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-xs text-gray-400">{products.length} product{products.length !== 1 ? 's' : ''}</p>
             {searchQuery && (
-              <p className="text-xs text-gray-500">Results for <strong className="text-gray-800">"{searchQuery}"</strong></p>
+              <span className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
+                &quot;{searchQuery}&quot;
+                <button onClick={() => navigate({ category: selectedCategoryId })} className="hover:text-blue-900">
+                  <X size={12} />
+                </button>
+              </span>
             )}
-            <p className="text-xs text-gray-400">{products.length} products</p>
+            {selectedCategoryId && (
+              <span className="inline-flex items-center gap-1 text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">
+                {categories.find(c => c.id === selectedCategoryId)?.name}
+                <button onClick={() => navigate({ q: searchQuery })} className="hover:text-purple-900">
+                  <X size={12} />
+                </button>
+              </span>
+            )}
           </div>
           {isPending && <span className="text-xs text-gray-400 animate-pulse">Loading…</span>}
         </div>
 
-        {/* Dense product list */}
+        {/* Product list */}
         {products.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-100 py-16 text-center">
             <p className="text-gray-400 font-medium">No products found</p>
-            <button onClick={() => navigate({})} className="mt-3 text-xs text-[#AE1B1E] hover:underline">Clear filters</button>
+            <button onClick={() => navigate({})} className="mt-3 text-xs text-[#AE1B1E] hover:underline">Clear all filters</button>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">

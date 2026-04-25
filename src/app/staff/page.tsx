@@ -65,12 +65,23 @@ export default function StaffLoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#1A2766] via-[#003347] to-[#1A2766] flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-[#1A2766] to-[#003347] p-6 flex flex-col items-center">
-          <Image src="/logo.svg" alt="Kamna Traders" width={140} height={60} className="object-contain brightness-0 invert" priority />
-          <p className="text-white/60 text-xs mt-2">Staff &amp; Admin Portal</p>
+    <div className="min-h-screen bg-gradient-to-br from-[#0f1a40] via-[#1A2766] to-[#003347] flex items-center justify-center p-4">
+      {/* Decorative circles */}
+      <div className="fixed top-0 left-0 w-80 h-80 bg-[#AE1B1E]/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
+      <div className="fixed bottom-0 right-0 w-96 h-96 bg-[#003347]/30 rounded-full blur-3xl translate-x-1/3 translate-y-1/3" />
+
+      <div className="relative bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+        {/* Logo area — white bg, full-color logo */}
+        <div className="bg-white pt-8 pb-6 flex flex-col items-center border-b border-gray-100">
+          <Image
+            src="/logo.svg"
+            alt="Kamna Traders"
+            width={160}
+            height={70}
+            className="object-contain h-16 w-auto"
+            priority
+          />
+          <p className="text-gray-400 text-xs mt-3 font-medium">Staff &amp; Admin Portal</p>
         </div>
 
         <div className="p-6">
@@ -91,7 +102,7 @@ export default function StaffLoginPage() {
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">WhatsApp Number</label>
                 <div className="flex">
                   <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-200 bg-gray-50 text-gray-500 text-sm">
-                    <Phone size={14} className="mr-1" />+91
+                    <Phone size={14} className="mr-1.5" />+91
                   </span>
                   <input
                     type="tel"

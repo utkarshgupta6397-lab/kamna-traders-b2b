@@ -20,7 +20,8 @@ export default function CartPanel() {
         body: JSON.stringify({ items }),
       });
       let msg = '*Kamna Traders Inquiry*\n\n';
-      items.forEach(i => { msg += `${i.skuId} x${i.qty}\n`; });
+      items.forEach(i => { msg += `${i.skuId} - ${i.name} x${i.qty}\n`; });
+      msg += `\nTotal: ₹${getTotalPrice().toFixed(0)}`;
       clearCart();
       window.open(`https://wa.me/15558246665?text=${encodeURIComponent(msg)}`, '_blank');
     } finally {
@@ -50,15 +51,14 @@ export default function CartPanel() {
             </div>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => updateQty(item.skuId, item.qty - 1)}
-                disabled={item.qty <= item.moq}
-                className="w-5 h-5 rounded border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 disabled:opacity-30"
+                onClick={() => updateQty(item.skuId, item.qty - item.moq)}
+                className="w-5 h-5 rounded border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
               >
                 <Minus size={10} />
               </button>
               <span className="w-7 text-center text-xs font-bold text-gray-800">{item.qty}</span>
               <button
-                onClick={() => updateQty(item.skuId, item.qty + 1)}
+                onClick={() => updateQty(item.skuId, item.qty + item.moq)}
                 className="w-5 h-5 rounded border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100"
               >
                 <Plus size={10} />

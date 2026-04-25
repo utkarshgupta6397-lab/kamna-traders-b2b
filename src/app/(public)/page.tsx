@@ -12,7 +12,11 @@ export default async function HomePage({
   const q = sp.q?.trim() ?? '';
   const catId = sp.category ?? '';
 
-  const categories = await prisma.category.findMany({ orderBy: { name: 'asc' } });
+  // Always fetch ALL categories with their SKU counts (independent of filters)
+  const categories = await prisma.category.findMany({
+    orderBy: { name: 'asc' },
+    include: { _count: { select: { skus: { where: { isActive: true } } } } },
+  });
 
   const skus = await prisma.sku.findMany({
     where: {
@@ -44,17 +48,28 @@ export default async function HomePage({
       unit: sku.unit,
       moq: sku.moq,
       price: sku.price,
+      imageUrl: sku.imageUrl,
       category: sku.category,
       isOos: hasInventory ? anyOos || totalQty <= 0 : false,
     };
   });
 
+  // Map categories with real total counts (not filtered counts)
+  const categoriesWithCounts = categories.map(c => ({
+    id: c.id,
+    name: c.name,
+    count: c._count.skus,
+  }));
+
+  const totalActiveSkus = categoriesWithCounts.reduce((sum, c) => sum + c.count, 0);
+
   return (
     <HomePageClient
-      categories={categories}
+      categories={categoriesWithCounts}
       products={products}
       selectedCategoryId={catId}
       searchQuery={q}
+      totalSkuCount={totalActiveSkus}
     />
   );
 }

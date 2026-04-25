@@ -50,6 +50,10 @@ export default async function PrintSlipPage({
     enrichedItems.map(i => ({ sku: i.skuId, qty: i.qty }))
   );
 
+  const dateStr = new Date(cart.createdAt).toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric'
+  }).replace(/ /g, '-');
+
   return (
     <div className="p-4 space-y-6 print:space-y-0 print:p-0">
       {/* ── Screen-only controls ───────────────────────────────────────── */}
@@ -75,7 +79,7 @@ export default async function PrintSlipPage({
 
         <div className="px-3 space-y-0.5 text-xs mb-3">
           <p><span className="font-bold">Cart ID:</span> {cart.id}</p>
-          <p><span className="font-bold">Date:</span> {new Date(cart.createdAt).toLocaleString('en-IN')}</p>
+          <p><span className="font-bold">Date:</span> {dateStr}</p>
           <p><span className="font-bold">Warehouse:</span> {cart.warehouse.name}</p>
           <p><span className="font-bold">Customer:</span> {cart.customerName}</p>
           {cart.notes && <p><span className="font-bold">Notes:</span> {cart.notes}</p>}
@@ -118,8 +122,9 @@ export default async function PrintSlipPage({
             <p className="text-xs font-black uppercase tracking-widest">Zone Slip · {zone}</p>
             <p className="text-[10px]">Cart: {cart.id} · {cart.warehouse.name}</p>
           </div>
-          <div className="px-3 text-[10px] mb-2 text-gray-500">
-            {new Date(cart.createdAt).toLocaleString('en-IN')}
+          <div className="px-3 text-[10px] mb-2 flex justify-between items-center text-gray-500">
+            <span>{dateStr}</span>
+            <span className="font-bold text-gray-800 uppercase max-w-[120px] truncate" title={cart.customerName}>{cart.customerName}</span>
           </div>
           <div className="border-t border-dashed border-gray-400 px-3 pb-3">
             <table className="w-full text-xs mt-1">

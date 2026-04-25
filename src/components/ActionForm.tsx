@@ -1,6 +1,7 @@
 'use client';
 
 import { useTransition, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 
 export default function ActionForm({ 
@@ -16,6 +17,7 @@ export default function ActionForm({
   successMessage?: string;
   resetOnSuccess?: boolean;
 }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -26,6 +28,7 @@ export default function ActionForm({
       try {
         await action(formData);
         toast.success(successMessage);
+        router.refresh();
         if (resetOnSuccess) {
           formRef.current?.reset();
         }

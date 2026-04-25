@@ -77,6 +77,7 @@ export default async function WarehousesPage({ searchParams }: { searchParams: P
             {warehouses.length === 0 && <div className="p-8 text-center text-gray-400">No warehouses.</div>}
           </div>
         </div>
+        {totalPages > 1 && (
           <div className="flex justify-center gap-2 p-3 border-t">
             {Array.from({ length: totalPages }, (_, i) => (
               <a key={i} href={`/admin/warehouses?page=${i + 1}`} className={`px-3 py-1 rounded text-xs font-medium ${page === i + 1 ? 'bg-[#1A2766] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{i + 1}</a>

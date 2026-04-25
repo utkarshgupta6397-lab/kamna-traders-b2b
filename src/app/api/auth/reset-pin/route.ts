@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       destination: destination,
       userName: "Anmak Solar", // Note: Ensure this matches the approved business name in Aisensy
       templateParams: [
-        user.name.split(' ')[0] // First name
+        newPin
       ],
       source: "kamna-staff-portal",
       media: {},

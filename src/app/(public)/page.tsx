@@ -27,12 +27,12 @@ export default async function HomePage({
             OR: [
               { id: { contains: q } },
               { name: { contains: q } },
-              { brand: { contains: q } },
+              { brand: { name: { contains: q } } },
             ],
           }
         : {}),
     },
-    include: { category: true, inventory: true },
+    include: { category: true, inventory: true, brand: true },
     orderBy: { name: 'asc' },
     take: 200,
   });
@@ -44,9 +44,10 @@ export default async function HomePage({
     return {
       id: sku.id,
       name: sku.name,
-      brand: sku.brand,
+      brand: sku.brand?.name ?? null,
       unit: sku.unit,
       moq: sku.moq,
+      stepQty: sku.stepQty,
       price: sku.price,
       imageUrl: sku.imageUrl,
       category: sku.category,

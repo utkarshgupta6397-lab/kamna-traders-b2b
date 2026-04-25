@@ -30,6 +30,15 @@ model Warehouse {
   carts     Cart[]
 }
 
+model Brand {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  skus      Sku[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Category {
   id        String     @id @default(cuid())
   name      String
@@ -45,7 +54,8 @@ model Category {
 model Sku {
   id          String    @id
   name        String
-  brand       String?
+  brandId     String?
+  brand       Brand?    @relation(fields: [brandId], references: [id])
   unit        String?
   moq         Int       @default(1)
   stepQty     Int       @default(1)  // step increase per + tap

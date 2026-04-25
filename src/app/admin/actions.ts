@@ -80,35 +80,57 @@ export async function deleteCategory(id: string) {
   revalidatePath('/admin/categories');
 }
 
+// ─── Brand Actions ─────────────────────────────────────────────────────────────
+export async function createBrand(data: FormData) {
+  const name = data.get('name') as string;
+  await prisma.brand.create({ data: { name } });
+  revalidatePath('/admin/brands');
+}
+
+export async function updateBrand(data: FormData) {
+  const id = data.get('id') as string;
+  const name = data.get('name') as string;
+  const active = data.get('active') === 'true';
+  await prisma.brand.update({ where: { id }, data: { name, active } });
+  revalidatePath('/admin/brands');
+}
+
+export async function deleteBrand(id: string) {
+  const skuCount = await prisma.sku.count({ where: { brandId: id } });
+  if (skuCount > 0) throw new Error('Cannot delete brand with mapped SKUs');
+  await prisma.brand.delete({ where: { id } });
+  revalidatePath('/admin/brands');
+}
+
 // ─── SKU Actions ─────────────────────────────────────────────────────────────
 export async function createSku(data: FormData) {
   const id = data.get('id') as string;
   const existing = await prisma.sku.findUnique({ where: { id } });
   if (existing) throw new Error('SKU ID already exists');
   const name = data.get('name') as string;
-  const categoryId = data.get('categoryId') as string;
+  const categoryId = (data.get('categoryId') as string) || null;
+  const brandId = (data.get('brandId') as string) || null;
   const price = parseFloat(data.get('price') as string);
   const moq = parseInt(data.get('moq') as string, 10);
   const stepQty = parseInt(data.get('stepQty') as string, 10) || moq;
   const unit = data.get('unit') as string || undefined;
-  const brand = data.get('brand') as string || undefined;
   const imageUrl = data.get('imageUrl') as string || undefined;
-  await prisma.sku.create({ data: { id, name, categoryId, price, moq, stepQty, unit, brand, imageUrl } });
+  await prisma.sku.create({ data: { id, name, categoryId, brandId, price, moq, stepQty, unit, imageUrl } });
   revalidatePath('/admin/skus');
 }
 
 export async function updateSku(data: FormData) {
   const id = data.get('id') as string;
   const name = data.get('name') as string;
-  const categoryId = data.get('categoryId') as string;
+  const categoryId = (data.get('categoryId') as string) || null;
+  const brandId = (data.get('brandId') as string) || null;
   const price = parseFloat(data.get('price') as string);
   const moq = parseInt(data.get('moq') as string, 10);
   const stepQty = parseInt(data.get('stepQty') as string, 10) || moq;
   const unit = data.get('unit') as string || undefined;
-  const brand = data.get('brand') as string || undefined;
   const imageUrl = data.get('imageUrl') as string || undefined;
   const isActive = data.get('isActive') === 'true';
-  await prisma.sku.update({ where: { id }, data: { name, categoryId, price, moq, stepQty, unit, brand, imageUrl, isActive } });
+  await prisma.sku.update({ where: { id }, data: { name, categoryId, brandId, price, moq, stepQty, unit, imageUrl, isActive } });
   revalidatePath('/admin/skus');
 }
 

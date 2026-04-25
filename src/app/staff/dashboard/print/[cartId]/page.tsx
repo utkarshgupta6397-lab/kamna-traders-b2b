@@ -46,10 +46,9 @@ export default async function PrintSlipPage({
     return acc;
   }, {});
 
-  const qrPayload = JSON.stringify({
-    cart: cart.id,
-    items: enrichedItems.map(i => ({ sku: i.skuId, name: i.name, qty: i.qty })),
-  });
+  const qrPayload = JSON.stringify(
+    enrichedItems.map(i => ({ sku: i.skuId, qty: i.qty }))
+  );
 
   return (
     <div className="p-4 space-y-6 print:space-y-0 print:p-0">

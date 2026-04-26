@@ -20,6 +20,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Account is deactivated. Contact admin.' }, { status: 403 });
     }
 
+    const aisensyApiKey = process.env.AISENSY_API_KEY;
+    if (!aisensyApiKey) {
+      return NextResponse.json({ error: 'PIN reset messaging is not configured.' }, { status: 500 });
+    }
+
     // Generate a new 6-digit PIN
     const newPin = Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -29,9 +34,7 @@ export async function POST(request: Request) {
       data: { pin: newPin }
     });
 
-    // ─── Aisensy WhatsApp Integration ───
-    const aisensyApiKey = process.env.AISENSY_API_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5MWFjNTIwMGU1NjkwMGQ1MGFmOWFjNyIsIm5hbWUiOiJBbm1hayBTb2xhciIsImFwcE5hbWUiOiJBaVNlbnN5IiwiY2xpZW50SWQiOiI2OTFhYzUyMDBlNTY5MDBkNTBhZjlhYzIiLCJhY3RpdmVQbGFuIjoiRlJFRV9GT1JFVkVSIiwiaWF0IjoxNzYzMzYyMDgwfQ.r6e0ALzBisPPpkZxJkhaYLoGAuta8D2SEggol4DkWxI";
-    
+    // Aisensy WhatsApp Integration
     // Aisensy expects destination with country code (91)
     const destination = mobile.startsWith('91') ? mobile : `91${mobile}`;
 

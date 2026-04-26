@@ -4,22 +4,45 @@ import { useState } from 'react';
 import { Search, Plus, Trash2, Printer } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
-export default function StaffCartBuilder({ warehouses, skus, staffId }: any) {
+type WarehouseOption = {
+  id: string;
+  name: string;
+};
+
+type StaffSku = {
+  id: string;
+  name: string;
+  isOos?: boolean;
+};
+
+type CartItem = {
+  skuId: string;
+  name: string;
+  qty: number;
+};
+
+type StaffCartBuilderProps = {
+  warehouses: WarehouseOption[];
+  skus: StaffSku[];
+  staffId: string;
+};
+
+export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCartBuilderProps) {
   const router = useRouter();
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id || '');
   const [customerName, setCustomerName] = useState('');
   const [notes, setNotes] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [cartItems, setCartItems] = useState<any[]>([]);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Filter SKUs based on search
-  const filteredSkus = skus.filter((sku: any) => 
+  const filteredSkus = skus.filter((sku) =>
     sku.id.toLowerCase().includes(searchQuery.toLowerCase()) || 
     sku.name.toLowerCase().includes(searchQuery.toLowerCase())
   ).slice(0, 10);
 
-  const addItem = (sku: any) => {
+  const addItem = (sku: StaffSku) => {
     const existing = cartItems.find(i => i.skuId === sku.id);
     if (existing) {
       setCartItems(cartItems.map(i => i.skuId === sku.id ? { ...i, qty: i.qty + 1 } : i));
@@ -88,7 +111,7 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: any) {
                 required
               >
                 <option value="">Select Warehouse</option>
-                {warehouses.map((w: any) => (
+                {warehouses.map((w) => (
                   <option key={w.id} value={w.id}>{w.name}</option>
                 ))}
               </select>
@@ -131,7 +154,7 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: any) {
             
             {searchQuery && (
               <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                {filteredSkus.map((sku: any) => (
+                {filteredSkus.map((sku) => (
                   <div
                     key={sku.id}
                     className="px-3 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 flex justify-between items-center gap-2"

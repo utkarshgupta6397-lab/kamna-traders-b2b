@@ -2,11 +2,10 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { ShoppingCart, Search, Menu, X } from 'lucide-react';
+import { ShoppingCart, Search, X } from 'lucide-react';
 import { useCartStore } from '@/store/cartStore';
 import { useState, useEffect, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { formatCurrency } from '@/lib/utils';
 
 function HeaderContent() {
   const [mounted, setMounted] = useState(false);
@@ -15,9 +14,14 @@ function HeaderContent() {
   const searchParams = useSearchParams();
   const [searchVal, setSearchVal] = useState(searchParams.get('q') ?? '');
 
-  useEffect(() => setMounted(true), []);
   useEffect(() => {
-    setSearchVal(searchParams.get('q') ?? '');
+    const id = window.setTimeout(() => setMounted(true), 0);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setSearchVal(searchParams.get('q') ?? ''), 0);
+    return () => window.clearTimeout(id);
   }, [searchParams]);
 
   const searchInputRef = useRef<HTMLInputElement>(null);

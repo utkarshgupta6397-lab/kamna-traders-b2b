@@ -1,6 +1,10 @@
 import { prisma } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
+type CartItemInput = {
+  skuId: string;
+  qty: number;
+};
 
 export async function POST(request: Request) {
   try {
@@ -22,7 +26,7 @@ export async function POST(request: Request) {
         notes,
         staffId,
         items: {
-          create: items.map((i: any) => ({
+          create: (items as CartItemInput[]).map((i) => ({
             skuId: i.skuId,
             qty: i.qty,
           }))

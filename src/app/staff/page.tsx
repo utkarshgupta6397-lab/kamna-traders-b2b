@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import Image from 'next/image';
 import { Lock, Phone, RefreshCw } from 'lucide-react';
 
@@ -72,9 +73,9 @@ export default function StaffLoginPage() {
 
       <div className="relative bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
         <div className="bg-white pt-8 pb-6 flex flex-col items-center border-b border-gray-100 relative">
-          <a href="/" className="absolute top-4 right-4 text-xs font-medium text-[#1A2766] hover:underline bg-blue-50 px-2 py-1 rounded">
+          <Link href="/" className="absolute top-4 right-4 text-xs font-medium text-[#1A2766] hover:underline bg-blue-50 px-2 py-1 rounded">
             Store →
-          </a>
+          </Link>
           <Image
             src="/logo.svg"
             alt="Kamna Traders"

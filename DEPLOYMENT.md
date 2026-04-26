@@ -34,7 +34,13 @@ If `DATABASE_URL` or `POSTGRES_PRISMA_URL` points to Supabase's direct IPv6-only
 `npm run vercel-build` runs:
 
 ```bash
-prisma generate && DATABASE_URL="$(node scripts/resolve-database-url.mjs)" prisma migrate deploy && next build
+prisma generate && next build
+```
+
+Run migrations separately with a database URL that can reach Supabase from the current machine:
+
+```bash
+DATABASE_URL="$(node scripts/resolve-database-url.mjs)" npm run db:migrate:deploy
 ```
 
 ## First Production Deploy

@@ -12,6 +12,19 @@ function isDirectSupabaseUrl(value?: string) {
 }
 
 function getProjectRef() {
+  for (const value of [process.env.DATABASE_URL, process.env.POSTGRES_PRISMA_URL]) {
+    if (!value) continue;
+
+    try {
+      const hostname = new URL(value).hostname;
+      if (hostname.startsWith('db.') && hostname.endsWith('.supabase.co')) {
+        return hostname.split('.')[1];
+      }
+    } catch {
+      // Continue checking the remaining metadata sources.
+    }
+  }
+
   const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (supabaseUrl) {
     try {

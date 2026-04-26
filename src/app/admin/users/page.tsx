@@ -1,11 +1,10 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import { createUser, updateUser, deleteUser } from '../actions';
 import { Trash2, Save } from 'lucide-react';
 import SafeDeleteButton from '@/components/SafeDeleteButton';
 import ActionForm from '@/components/ActionForm';
 import ResetPinButton from '@/components/ResetPinButton';
 
-const prisma = new PrismaClient();
 
 export default async function UsersPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const sp = await searchParams;

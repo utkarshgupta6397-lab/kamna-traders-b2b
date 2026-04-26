@@ -1,7 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import HomePageClient from '@/components/HomePageClient';
 
-const prisma = new PrismaClient();
 
 export default async function HomePage({
   searchParams,

@@ -1,9 +1,8 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import Link from 'next/link';
 import { Printer, ExternalLink } from 'lucide-react';
 
-const prisma = new PrismaClient();
 
 export default async function CartsPage() {
   const session = await getSession();

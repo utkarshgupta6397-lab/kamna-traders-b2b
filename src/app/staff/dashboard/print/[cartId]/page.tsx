@@ -1,9 +1,8 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import Link from 'next/link';
 import PrintButton from '@/components/PrintButton';
 import QRBlock from '@/components/QRBlock';
 
-const prisma = new PrismaClient();
 
 export default async function PrintSlipPage({
   params,

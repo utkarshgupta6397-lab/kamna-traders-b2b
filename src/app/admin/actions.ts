@@ -1,9 +1,8 @@
 'use server';
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 
-const prisma = new PrismaClient();
 
 // ─── User Actions ────────────────────────────────────────────────────────────
 export async function createUser(data: FormData) {

@@ -1,8 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import { updateInventory } from '../actions';
 import InventoryClient from '@/components/InventoryClient';
 
-const prisma = new PrismaClient();
 
 export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ page?: string; q?: string; wh?: string }> }) {
   const sp = await searchParams;

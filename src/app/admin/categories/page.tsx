@@ -1,10 +1,9 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import { createCategory, updateCategory, deleteCategory } from '../actions';
 import { Trash2, Save } from 'lucide-react';
 import SafeDeleteButton from '@/components/SafeDeleteButton';
 import ActionForm from '@/components/ActionForm';
 
-const prisma = new PrismaClient();
 
 export default async function CategoriesPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const sp = await searchParams;

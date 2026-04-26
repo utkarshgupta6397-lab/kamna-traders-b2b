@@ -1,7 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import { Package, Users, Warehouse, Database } from 'lucide-react';
 
-const prisma = new PrismaClient();
 
 export default async function AdminDashboard() {
   const userCount = await prisma.user.count();

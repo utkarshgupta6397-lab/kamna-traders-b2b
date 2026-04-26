@@ -119,6 +119,13 @@ async function main() {
   })
   console.log('✅ Warehouses seeded')
 
+  const brand = await prisma.brand.upsert({
+    where: { name: 'Kamna' },
+    update: {},
+    create: { name: 'Kamna' },
+  })
+  console.log('✅ Brand seeded')
+
   // ── Categories ─────────────────────────────────────────────────────────────
   const catMap = {}
   for (const name of CATEGORY_NAMES) {
@@ -144,7 +151,7 @@ async function main() {
         create: {
           id: skuId,
           name: prodName,
-          brand: 'Kamna',
+          brandId: brand.id,
           unit: catName === 'Cooking Oil' ? 'L' : catName === 'Packaging' ? 'pcs' : 'kg',
           moq,
           price,

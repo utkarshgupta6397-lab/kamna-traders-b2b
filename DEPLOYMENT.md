@@ -16,11 +16,14 @@ Set these in the production hosting environment:
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
 DIRECT_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
 POSTGRES_PRISMA_URL="postgresql://USER:PASSWORD@POOLER_HOST:PORT/DATABASE?schema=public"
+SUPABASE_POOLER_HOST="aws-0-ap-south-1.pooler.supabase.com"
 SESSION_SECRET="generate-a-long-random-secret"
 AISENSY_API_KEY="your-aisensy-api-key"
 ```
 
 For Vercel Postgres or Supabase poolers, `POSTGRES_PRISMA_URL` should be the pooled Prisma-compatible URL. The app and Prisma deploy config prefer `POSTGRES_PRISMA_URL` and fall back to `DATABASE_URL` for local setups.
+
+If `DATABASE_URL` or `POSTGRES_PRISMA_URL` points to Supabase's direct IPv6-only `db.*.supabase.co` host, the app builds a session-pooler URL from `SUPABASE_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DATABASE`. Override `SUPABASE_POOLER_HOST` if the Supabase project is not in `ap-south-1`.
 
 ## Vercel Settings
 

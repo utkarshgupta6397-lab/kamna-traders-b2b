@@ -1,8 +1,9 @@
 import { PrismaClient } from '@prisma/client';
+import { getDatabaseUrl } from './database-url';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
-const datasourceUrl = process.env.POSTGRES_PRISMA_URL || process.env.DATABASE_URL;
+const datasourceUrl = getDatabaseUrl();
 
 export const prisma =
   globalForPrisma.prisma ??

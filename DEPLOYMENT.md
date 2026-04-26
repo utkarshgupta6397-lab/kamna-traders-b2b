@@ -15,11 +15,12 @@ Set these in the production hosting environment:
 ```bash
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
 DIRECT_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
+POSTGRES_PRISMA_URL="postgresql://USER:PASSWORD@POOLER_HOST:PORT/DATABASE?schema=public"
 SESSION_SECRET="generate-a-long-random-secret"
 AISENSY_API_KEY="your-aisensy-api-key"
 ```
 
-For Vercel Postgres or Supabase poolers, `DATABASE_URL` can be the pooled URL and `DIRECT_URL` should be the direct connection URL used for migrations.
+For Vercel Postgres or Supabase poolers, `POSTGRES_PRISMA_URL` should be the pooled Prisma-compatible URL. The app and Prisma deploy config prefer `POSTGRES_PRISMA_URL` and fall back to `DATABASE_URL` for local setups.
 
 ## Vercel Settings
 

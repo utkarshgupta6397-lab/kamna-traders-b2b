@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "vercel-build": "prisma generate && prisma migrate deploy && next build",
+    "vercel-build": "prisma generate && DATABASE_URL=\"$(node scripts/resolve-database-url.mjs)\" prisma migrate deploy && next build",
     "start": "next start",
     "lint": "eslint",
     "db:migrate:deploy": "prisma migrate deploy",

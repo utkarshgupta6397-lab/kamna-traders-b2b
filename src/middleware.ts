@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { decrypt } from '@/lib/auth';
 
 /**
  * Middleware to protect /admin/* and /staff/* routes.
@@ -18,7 +18,11 @@ export async function middleware(request: NextRequest) {
 
   // Apply protection only to admin and staff sections
   if (pathname.startsWith('/admin') || pathname.startsWith('/staff')) {
-    const session = await getSession();
+    const sessionCookie = request.cookies.get('session')?.value;
+    let session = null;
+    if (sessionCookie) {
+      session = await decrypt(sessionCookie).catch(() => null);
+    }
 
     // No session → redirect to login (preserve intended URL)
     if (!session?.userId) {

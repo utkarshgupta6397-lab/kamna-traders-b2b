@@ -1,9 +1,13 @@
 import { prisma } from '@/lib/db';
 import { NextResponse } from 'next/server';
-
+import { validateOrigin } from '@/lib/csrf';
 
 export async function POST(request: Request) {
   try {
+    // Basic CSRF/Origin protection
+    if (!validateOrigin(request)) {
+      return NextResponse.json({ error: 'Cross-site requests are not allowed.' }, { status: 403 });
+    }
     const { mobile } = await request.json();
 
     if (!mobile) {

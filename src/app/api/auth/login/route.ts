@@ -1,10 +1,22 @@
 import { prisma } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { createSession } from '@/lib/auth';
-
+import { checkRateLimit } from '@/lib/rate-limit';
+import { validateOrigin } from '@/lib/csrf';
 
 export async function POST(request: Request) {
   try {
+    // Basic CSRF/Origin protection
+    if (!validateOrigin(request)) {
+      return NextResponse.json({ error: 'Cross-site requests are not allowed.' }, { status: 403 });
+    }
+
+    // Basic rate limit: 5 requests per minute per IP
+    const ip = request.headers.get('x-forwarded-for') || '127.0.0.1';
+    if (!checkRateLimit(`login_${ip}`, 5, 60 * 1000)) {
+      return NextResponse.json({ error: 'Too many login attempts. Please try again later.' }, { status: 429 });
+    }
+
     const { mobile, pin } = await request.json();
 
     if (!mobile || !pin) {

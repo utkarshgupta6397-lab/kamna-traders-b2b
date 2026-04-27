@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { NextResponse } from 'next/server';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { validateOrigin } from '@/lib/csrf';
 
 type CartItemInput = {
   skuId: string;
@@ -9,6 +11,17 @@ type CartItemInput = {
 
 export async function POST(request: Request) {
   try {
+    // Basic CSRF/Origin protection
+    if (!validateOrigin(request)) {
+      return NextResponse.json({ error: 'Cross-site requests are not allowed.' }, { status: 403 });
+    }
+
+    // Basic rate limit: 10 requests per minute per IP
+    const ip = request.headers.get('x-forwarded-for') || '127.0.0.1';
+    if (!checkRateLimit(`cart_${ip}`, 10, 60 * 1000)) {
+      return NextResponse.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
+    }
+
     // 1. Verify staff session server-side — never trust client-passed staffId
     const session = await getSession();
     if (!session?.userId || typeof session.userId !== 'string') {
@@ -68,9 +81,10 @@ export async function POST(request: Request) {
 
     // 2. Prisma interactive transaction — atomic cart + items + inventory deduction
     const cart = await prisma.$transaction(async (tx) => {
-      // Generate cart ID
-      const count = await tx.cart.count();
-      const cartId = `KT${1000 + count + 1}`;
+      // Generate collision-safe cart ID (KT-[TIMESTAMP]-[RANDOM_4_CHARS])
+      const timestamp = Date.now().toString(36).toUpperCase();
+      const randomSuffix = crypto.randomUUID().split('-')[0].substring(0, 4).toUpperCase();
+      const cartId = `KT-${timestamp}-${randomSuffix}`;
 
       // Verify warehouse exists
       const warehouse = await tx.warehouse.findUnique({ where: { id: warehouseId } });

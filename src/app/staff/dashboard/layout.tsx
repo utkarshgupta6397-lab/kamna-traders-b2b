@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { LogOut, Home, ClipboardList } from 'lucide-react';
+import DashboardSearchInput from '@/components/DashboardSearchInput';
 
 export default async function StaffDashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -21,15 +22,10 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
             <span className="text-white/40 text-xs border-l border-white/20 pl-2">Staff</span>
           </Link>
 
-          {/* Search */}
-          <form action="/staff/dashboard" method="get" className="flex-1 max-w-lg">
-            <input
-              name="q"
-              type="text"
-              placeholder="Search SKU or product name…"
-              className="w-full px-4 py-1.5 text-sm rounded-lg bg-white/95 border-0 focus:ring-2 focus:ring-white/50 outline-none text-gray-800 placeholder-gray-400"
-            />
-          </form>
+          {/* Search — local filtering via Zustand store */}
+          <div className="flex-1 max-w-lg">
+            <DashboardSearchInput />
+          </div>
 
           {/* Nav */}
           <nav className="flex items-center gap-4 text-sm text-white/80 flex-shrink-0">

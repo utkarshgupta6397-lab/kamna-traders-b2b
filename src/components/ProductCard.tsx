@@ -4,6 +4,8 @@ import { useCartStore } from '@/store/cartStore';
 import { Plus, Minus, Package } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
+import { memo } from 'react';
+
 export interface ProductData {
   id: string;
   name: string;
@@ -14,16 +16,18 @@ export interface ProductData {
   price: number;
   imageUrl?: string | null;
   isOos: boolean;
+  categoryId?: string | null;
   category?: { name: string } | null;
 }
 
-export default function ProductCard({ product }: { product: ProductData }) {
+const ProductCard = memo(function ProductCard({ product, isSelected }: { product: ProductData, isSelected?: boolean }) {
   const addItem = useCartStore(s => s.addItem);
-  const items = useCartStore(s => s.items);
   const updateQty = useCartStore(s => s.updateQty);
   const removeItem = useCartStore(s => s.removeItem);
+  
+  // Only subscribe to THIS specific item to avoid full grid re-renders on other cart changes
+  const cartItem = useCartStore(s => s.items.find(i => i.skuId === product.id));
 
-  const cartItem = items.find(i => i.skuId === product.id);
   const qty = cartItem?.qty ?? 0;
   const step = product.stepQty || product.moq;
 
@@ -118,4 +122,6 @@ export default function ProductCard({ product }: { product: ProductData }) {
       </div>
     </div>
   );
-}
+});
+
+export default ProductCard;

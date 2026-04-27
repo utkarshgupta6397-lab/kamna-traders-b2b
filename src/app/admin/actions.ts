@@ -2,10 +2,18 @@
 
 import { prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
+import { getSession } from '@/lib/auth';
 
+async function requireAdmin() {
+  const session = await getSession();
+  if (!session || session.role !== 'ADMIN') {
+    throw new Error('Unauthorized');
+  }
+}
 
 // ─── User Actions ────────────────────────────────────────────────────────────
 export async function createUser(data: FormData) {
+  await requireAdmin();
   const name = data.get('name') as string;
   const mobile = data.get('mobile') as string;
   const role = data.get('role') as string;
@@ -15,6 +23,7 @@ export async function createUser(data: FormData) {
 }
 
 export async function updateUser(data: FormData) {
+  await requireAdmin();
   const id = data.get('id') as string;
   const name = data.get('name') as string;
   const mobile = data.get('mobile') as string;
@@ -26,6 +35,7 @@ export async function updateUser(data: FormData) {
 }
 
 export async function deleteUser(id: string) {
+  await requireAdmin();
   const cartCount = await prisma.cart.count({ where: { staffId: id } });
   if (cartCount > 0) throw new Error('Cannot delete user with existing carts');
   await prisma.user.delete({ where: { id } });
@@ -34,6 +44,7 @@ export async function deleteUser(id: string) {
 
 // ─── Warehouse Actions ───────────────────────────────────────────────────────
 export async function createWarehouse(data: FormData) {
+  await requireAdmin();
   const name = data.get('name') as string;
   const address = data.get('address') as string;
   await prisma.warehouse.create({ data: { name, address } });
@@ -41,6 +52,7 @@ export async function createWarehouse(data: FormData) {
 }
 
 export async function updateWarehouse(data: FormData) {
+  await requireAdmin();
   const id = data.get('id') as string;
   const name = data.get('name') as string;
   const address = data.get('address') as string;
@@ -50,6 +62,7 @@ export async function updateWarehouse(data: FormData) {
 }
 
 export async function deleteWarehouse(id: string) {
+  await requireAdmin();
   const invCount = await prisma.warehouseInventory.count({ where: { warehouseId: id } });
   const cartCount = await prisma.cart.count({ where: { warehouseId: id } });
   if (invCount > 0 || cartCount > 0) throw new Error('Cannot delete warehouse with mapped inventory or carts');
@@ -59,12 +72,14 @@ export async function deleteWarehouse(id: string) {
 
 // ─── Category Actions ────────────────────────────────────────────────────────
 export async function createCategory(data: FormData) {
+  await requireAdmin();
   const name = data.get('name') as string;
   await prisma.category.create({ data: { name } });
   revalidatePath('/admin/categories');
 }
 
 export async function updateCategory(data: FormData) {
+  await requireAdmin();
   const id = data.get('id') as string;
   const name = data.get('name') as string;
   const active = data.get('active') === 'true';
@@ -73,6 +88,7 @@ export async function updateCategory(data: FormData) {
 }
 
 export async function deleteCategory(id: string) {
+  await requireAdmin();
   const skuCount = await prisma.sku.count({ where: { categoryId: id } });
   if (skuCount > 0) throw new Error('Cannot delete category with mapped SKUs');
   await prisma.category.delete({ where: { id } });
@@ -81,12 +97,14 @@ export async function deleteCategory(id: string) {
 
 // ─── Brand Actions ─────────────────────────────────────────────────────────────
 export async function createBrand(data: FormData) {
+  await requireAdmin();
   const name = data.get('name') as string;
   await prisma.brand.create({ data: { name } });
   revalidatePath('/admin/brands');
 }
 
 export async function updateBrand(data: FormData) {
+  await requireAdmin();
   const id = data.get('id') as string;
   const name = data.get('name') as string;
   const active = data.get('active') === 'true';
@@ -95,6 +113,7 @@ export async function updateBrand(data: FormData) {
 }
 
 export async function deleteBrand(id: string) {
+  await requireAdmin();
   const skuCount = await prisma.sku.count({ where: { brandId: id } });
   if (skuCount > 0) throw new Error('Cannot delete brand with mapped SKUs');
   await prisma.brand.delete({ where: { id } });
@@ -103,6 +122,7 @@ export async function deleteBrand(id: string) {
 
 // ─── SKU Actions ─────────────────────────────────────────────────────────────
 export async function createSku(data: FormData) {
+  await requireAdmin();
   const id = data.get('id') as string;
   const existing = await prisma.sku.findUnique({ where: { id } });
   if (existing) throw new Error('SKU ID already exists');
@@ -119,6 +139,7 @@ export async function createSku(data: FormData) {
 }
 
 export async function updateSku(data: FormData) {
+  await requireAdmin();
   const id = data.get('id') as string;
   const name = data.get('name') as string;
   const categoryId = (data.get('categoryId') as string) || null;
@@ -143,6 +164,7 @@ export async function deleteSku(id: string) {
 
 // ─── Inventory Actions ───────────────────────────────────────────────────────
 export async function updateInventory(data: FormData) {
+  await requireAdmin();
   const warehouseId = data.get('warehouseId') as string;
   const skuId = data.get('skuId') as string;
   const qty = Math.max(0, parseInt(data.get('qty') as string, 10));

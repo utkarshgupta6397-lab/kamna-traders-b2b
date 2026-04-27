@@ -1,8 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import { Search, Plus, Trash2, Printer } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, Plus, Trash2, Printer, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
+import { useStaffCartStore } from '@/store/staffCartStore';
 
 type WarehouseOption = {
   id: string;
@@ -29,41 +31,53 @@ type StaffCartBuilderProps = {
 
 export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCartBuilderProps) {
   const router = useRouter();
-  const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id || '');
-  const [customerName, setCustomerName] = useState('');
-  const [notes, setNotes] = useState('');
+  const [mounted, setMounted] = useState(false);
+  const { 
+    warehouseId, setWarehouseId, 
+    customerName, setCustomerName, 
+    notes, setNotes, 
+    items: cartItems, addItem: storeAddItem, 
+    removeItem, updateQty: storeUpdateQty, 
+    clearCart 
+  } = useStaffCartStore();
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Filter SKUs based on search
+  useEffect(() => {
+    setMounted(true);
+    if (!warehouseId && warehouses.length > 0) {
+      setWarehouseId(warehouses[0].id);
+    }
+  }, [warehouseId, warehouses, setWarehouseId]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery), 150);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  if (!mounted) return null;
+
+  // Filter SKUs based on debounced search
   const filteredSkus = skus.filter((sku) =>
-    sku.id.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    sku.name.toLowerCase().includes(searchQuery.toLowerCase())
+    sku.id.toLowerCase().includes(debouncedQuery.toLowerCase()) || 
+    sku.name.toLowerCase().includes(debouncedQuery.toLowerCase())
   ).slice(0, 10);
 
   const addItem = (sku: StaffSku) => {
-    const existing = cartItems.find(i => i.skuId === sku.id);
-    if (existing) {
-      setCartItems(cartItems.map(i => i.skuId === sku.id ? { ...i, qty: i.qty + 1 } : i));
-    } else {
-      setCartItems([...cartItems, { skuId: sku.id, name: sku.name, qty: 1 }]);
-    }
+    storeAddItem({ skuId: sku.id, name: sku.name, qty: 1 });
     setSearchQuery('');
   };
 
   const updateQty = (skuId: string, qty: number) => {
-    if (qty <= 0) {
-      setCartItems(cartItems.filter(i => i.skuId !== skuId));
-    } else {
-      setCartItems(cartItems.map(i => i.skuId === skuId ? { ...i, qty } : i));
-    }
+    storeUpdateQty(skuId, qty);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!warehouseId || !customerName || cartItems.length === 0) {
-      alert('Please fill all required fields and add items.');
+      toast.error('Required fields missing. Please select a warehouse and enter customer name.');
       return;
     }
     setIsSubmitting(true);
@@ -83,15 +97,16 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
 
       if (res.ok) {
         const data = await res.json();
+        clearCart();
         // Redirect to print slip page
         router.push(`/staff/dashboard/print/${data.cartId}`);
       } else {
-        alert('Failed to submit cart');
+        toast.error('Unable to submit cart. Please check your connection and try again.');
         setIsSubmitting(false);
       }
     } catch (error) {
       console.error(error);
-      alert('Error submitting cart');
+      toast.error('Network error. Unable to connect to server.');
       setIsSubmitting(false);
     }
   };
@@ -238,8 +253,17 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
                 : 'bg-[#1A2766] text-white hover:bg-[#003347]'
             }`}
           >
-            <Printer size={18} />
-            <span>Generate & Print Slips</span>
+            {isSubmitting ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                <span>Submitting...</span>
+              </>
+            ) : (
+              <>
+                <Printer size={18} />
+                <span>Generate & Print Slips</span>
+              </>
+            )}
           </button>
         </div>
       </div>

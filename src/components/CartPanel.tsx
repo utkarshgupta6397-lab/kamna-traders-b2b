@@ -1,9 +1,10 @@
 'use client';
 
 import { useCartStore } from '@/store/cartStore';
-import { Minus, Plus, MessageSquare, X } from 'lucide-react';
+import { Minus, Plus, MessageSquare, X, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { formatCurrency } from '@/lib/utils';
+import toast from 'react-hot-toast';
 
 export default function CartPanel() {
   const { items, updateQty, removeItem, getTotalPrice, clearCart } = useCartStore();
@@ -23,8 +24,16 @@ export default function CartPanel() {
       let msg = '*Industrial Inquiry - Kamna Traders*\n\n';
       items.forEach(i => { msg += `• ${i.skuId}: ${i.name} [Qty: ${i.qty}]\n`; });
       msg += `\n*TOTAL: ${formatCurrency(getTotalPrice())}*`;
+      
+      toast.success('Inquiry sent! Opening WhatsApp...');
       clearCart();
-      window.open(`https://wa.me/15558246665?text=${encodeURIComponent(msg)}`, '_blank');
+      
+      // Delay slightly to let toast show
+      setTimeout(() => {
+        window.open(`https://wa.me/15558246665?text=${encodeURIComponent(msg)}`, '_blank');
+      }, 800);
+    } catch (error) {
+      toast.error('Failed to process inquiry');
     } finally {
       setSubmitting(false);
     }
@@ -81,8 +90,17 @@ export default function CartPanel() {
           disabled={submitting}
           className="w-full h-[44px] flex items-center justify-center gap-2 bg-[#25D366] text-white rounded-[10px] font-[700] text-[15px] hover:bg-[#1EBE5D] transition-all shadow-[0_4px_10px_rgba(37,211,102,0.18)] active:scale-[0.98] disabled:opacity-50"
         >
-          <MessageSquare size={18} strokeWidth={2.5} />
-          {submitting ? 'Connecting...' : 'Send via WhatsApp'}
+          {submitting ? (
+            <>
+              <Loader2 size={18} className="animate-spin" />
+              <span>Connecting...</span>
+            </>
+          ) : (
+            <>
+              <MessageSquare size={18} strokeWidth={2.5} />
+              <span>Send via WhatsApp</span>
+            </>
+          )}
         </button>
         
         <button onClick={clearCart} className="w-full mt-4 text-[10px] text-gray-300 hover:text-red-500 font-bold uppercase tracking-widest transition-colors">Reset Inquiry Terminal</button>

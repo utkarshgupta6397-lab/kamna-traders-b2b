@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db';
 import { createSku, updateSku, deleteSku } from '../actions';
 import { Trash2, Save } from 'lucide-react';
 import SafeDeleteButton from '@/components/SafeDeleteButton';
-import ActionForm from '@/components/ActionForm';
+import ActionForm, { FormSubmit } from '@/components/ActionForm';
 import ImageUploadClient from '@/components/ImageUploadClient';
 
 
@@ -66,7 +66,7 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
             <ImageUploadClient name="imageUrl" />
           </div>
           <div className="md:col-span-5">
-            <button type="submit" className="w-full bg-[#AE1B1E] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">Add SKU</button>
+            <FormSubmit className="w-full bg-[#AE1B1E] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">Add SKU</FormSubmit>
           </div>
         </ActionForm>
       </div>
@@ -131,9 +131,7 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
                   </select>
                 </div>
                 <div className="flex-1 p-2 flex justify-end items-center gap-1">
-                  <button type="submit" className="text-[#1A2766] hover:bg-blue-50 p-1.5 rounded transition-colors" title="Save">
-                    <Save size={14} />
-                  </button>
+                  <FormSubmit className="text-[#1A2766] hover:bg-blue-50 p-1.5 rounded transition-colors" icon={<Save size={14} />} />
                   <SafeDeleteButton action={deleteSku} id={sku.id} label="SKU" className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors">
                     <Trash2 size={14} />
                   </SafeDeleteButton>

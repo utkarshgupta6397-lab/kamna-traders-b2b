@@ -1,10 +1,11 @@
 'use client';
 
 import { useCartStore } from '@/store/cartStore';
-import { Minus, Plus, Trash2, ArrowRight, Package } from 'lucide-react';
+import { Minus, Plus, Trash2, ArrowRight, Package, ShoppingBag } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { formatCurrency } from '@/lib/utils';
+import toast from 'react-hot-toast';
 
 export default function CartPage() {
   const { items, updateQty, removeItem, getTotalPrice, getTotalItems, clearCart } = useCartStore();
@@ -40,26 +41,33 @@ export default function CartPage() {
       const waNumber = '15558246665';
       const waUrl = `https://wa.me/${waNumber}?text=${encodeURIComponent(message)}`;
       
+      toast.success('Inquiry initiated! Opening WhatsApp...');
       clearCart();
-      window.location.href = waUrl;
+      
+      setTimeout(() => {
+        window.location.href = waUrl;
+      }, 800);
     } catch (error) {
       console.error('Failed to submit lead', error);
-      alert('There was an issue processing your request. Please try again.');
+      toast.error('Unable to connect to inquiry server. Your cart is preserved, please try again.');
+    } finally {
       setIsSubmitting(false);
     }
   };
 
   if (items.length === 0) {
     return (
-      <div className="max-w-2xl mx-auto text-center py-16 bg-white rounded-2xl shadow-sm border border-gray-100">
+      <div className="max-w-2xl mx-4 md:mx-auto text-center py-16 px-4 bg-white rounded-2xl shadow-sm border border-gray-100 my-8">
         <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6">
-          <svg className="w-12 h-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-          </svg>
+          <ShoppingBag className="w-12 h-12 text-gray-200" />
         </div>
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Your cart is empty</h2>
-        <p className="text-gray-500 mb-8">Looks like you have not added any products to your cart yet.</p>
-        <Link href="/" className="inline-flex items-center space-x-2 bg-[#1A2766] text-white px-8 py-3 rounded-full font-medium hover:bg-[#003347] transition-colors">
+        <p className="text-gray-500 mb-8 max-w-sm mx-auto">Looks like you have not added any products to your cart yet. Browse our catalog to find what you need.</p>
+        <Link 
+          href="/" 
+          className="inline-flex items-center justify-center space-x-2 bg-[#1A2766] text-white px-10 py-3.5 rounded-xl font-bold hover:bg-[#003347] transition-all active:scale-95 shadow-lg shadow-[#1A2766]/10"
+        >
+          <ShoppingBag size={18} />
           <span>Browse Products</span>
         </Link>
       </div>

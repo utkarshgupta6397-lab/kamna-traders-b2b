@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname } from 'next/navigation';
 import { useTransition } from 'react';
+import Link from 'next/link';
 import ProductCard, { ProductData } from '@/components/ProductCard';
 import CartPanel from '@/components/CartPanel';
 import { useCartStore } from '@/store/cartStore';
@@ -42,23 +43,25 @@ export default function HomePageClient({ categories, products, selectedCategoryI
               <h2 className="text-[11px] font-[800] text-[#1A2766] uppercase tracking-[0.1em]">Catalog</h2>
             </div>
             <nav className="p-2 space-y-0.5 overflow-y-auto custom-scrollbar flex-1">
-              <button
-                onClick={() => navigate({ q: searchQuery })}
+              <Link
+                href={searchQuery ? `/?q=${searchQuery}` : '/'}
+                scroll={false}
                 className={`w-full flex items-center justify-between px-3 h-[42px] rounded-lg text-[14px] font-[700] transition-all group ${!selectedCategoryId ? 'bg-[#1A2766] text-white shadow-md' : 'text-gray-500 hover:bg-[#F1F6FF] hover:text-[#1A2766]'}`}
               >
                 <span>Full Inventory</span>
                 {!selectedCategoryId && <span className="w-1.5 h-1.5 rounded-full bg-white/40" />}
-              </button>
+              </Link>
               <div className="h-px bg-[#F1F3F7] my-2 mx-1" />
               {categories.map(cat => (
-                <button
+                <Link
                   key={cat.id}
-                  onClick={() => navigate({ category: cat.id, q: searchQuery })}
+                  href={`/?category=${cat.id}${searchQuery ? `&q=${searchQuery}` : ''}`}
+                  scroll={false}
                   className={`w-full flex items-center justify-between px-3 h-[42px] rounded-lg text-[14px] font-[700] transition-all ${selectedCategoryId === cat.id ? 'bg-[#1A2766] text-white shadow-md' : 'text-gray-500 hover:bg-[#F1F6FF] hover:text-[#1A2766]'}`}
                 >
                   <span className="truncate">{cat.name}</span>
                   <span className={`text-[10px] font-bold ${selectedCategoryId === cat.id ? 'text-white/60' : 'text-gray-300'}`}>{cat.count}</span>
-                </button>
+                </Link>
               ))}
             </nav>
           </div>
@@ -71,7 +74,6 @@ export default function HomePageClient({ categories, products, selectedCategoryI
               <h1 className="text-[16px] font-[800] text-gray-900 uppercase tracking-tight">
                 {selectedCategoryId ? categories.find(c => c.id === selectedCategoryId)?.name : 'Active Terminal'}
               </h1>
-              {isPending && <div className="w-4 h-4 border-2 border-[#1A2766] border-t-transparent rounded-full animate-spin" />}
             </div>
             <div className="flex items-center gap-2">
                <span className="text-[11px] font-[800] text-gray-400 uppercase tracking-widest bg-white px-2 py-1 rounded border border-[#E7EAF0]">{products.length} SKUs Available</span>
@@ -79,18 +81,25 @@ export default function HomePageClient({ categories, products, selectedCategoryI
           </div>
 
           {/* Calibrated Breakpoints for 4-Column Flow */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
-            {products.map(product => (
-              <ProductCard key={product.id} product={product} />
-            ))}
-            {products.length === 0 && (
-              <div className="col-span-full bg-white rounded-xl border border-[#E7EAF0] py-24 text-center">
-                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <ShoppingBag size={32} className="text-gray-200" />
-                </div>
-                <p className="text-gray-400 font-bold uppercase text-[12px] tracking-widest">No Products Matching Criteria</p>
+          <div className="relative">
+            {isPending && (
+              <div className="absolute inset-0 z-10 bg-[#F6F7FA]/50 backdrop-blur-[1px] flex items-center justify-center rounded-xl transition-all duration-300">
+                <div className="w-8 h-8 border-3 border-[#1A2766] border-t-transparent rounded-full animate-spin shadow-sm" />
               </div>
             )}
+            <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 transition-opacity duration-300 ${isPending ? 'opacity-30' : 'opacity-100'}`}>
+              {products.map(product => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+              {products.length === 0 && (
+                <div className="col-span-full bg-white rounded-xl border border-[#E7EAF0] py-24 text-center">
+                  <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <ShoppingBag size={32} className="text-gray-200" />
+                  </div>
+                  <p className="text-gray-400 font-bold uppercase text-[12px] tracking-widest">No Products Matching Criteria</p>
+                </div>
+              )}
+            </div>
           </div>
         </main>
 

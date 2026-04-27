@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { FormSubmit } from './ActionForm';
 
 interface Warehouse { id: string; name: string; }
 interface Sku { id: string; name: string; }
@@ -83,9 +84,9 @@ export default function InventoryClient({ warehouses, skus, updateAction }: Prop
           <label className="block text-xs font-medium text-gray-500 mb-1">Zone (Optional)</label>
           <div className="flex gap-2">
             <input type="text" name="zone" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" placeholder="e.g. A1" />
-            <button type="submit" className="bg-[#1A2766] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#003347] transition-colors whitespace-nowrap">
+            <FormSubmit className="bg-[#1A2766] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#003347] transition-colors whitespace-nowrap">
               Save
-            </button>
+            </FormSubmit>
           </div>
         </div>
       </form>

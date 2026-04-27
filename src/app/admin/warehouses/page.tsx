@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db';
 import { createWarehouse, updateWarehouse, deleteWarehouse } from '../actions';
 import { Trash2, Save } from 'lucide-react';
 import SafeDeleteButton from '@/components/SafeDeleteButton';
-import ActionForm from '@/components/ActionForm';
+import ActionForm, { FormSubmit } from '@/components/ActionForm';
 
 
 export default async function WarehousesPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
@@ -29,7 +29,7 @@ export default async function WarehousesPage({ searchParams }: { searchParams: P
             <input type="text" name="name" required className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
           <div><label className="block text-xs font-medium text-gray-500 mb-1">Address</label>
             <input type="text" name="address" required className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
-          <button type="submit" className="bg-[#AE1B1E] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">Add Warehouse</button>
+          <FormSubmit className="bg-[#AE1B1E] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">Add Warehouse</FormSubmit>
         </ActionForm>
       </div>
 
@@ -64,9 +64,7 @@ export default async function WarehousesPage({ searchParams }: { searchParams: P
                   {w._count.inventory} inv · {w._count.carts} carts
                 </div>
                 <div className="w-32 p-2 flex justify-end items-center gap-1">
-                  <button type="submit" className="text-[#1A2766] hover:bg-blue-50 p-1.5 rounded transition-colors" title="Save">
-                    <Save size={14} />
-                  </button>
+                  <FormSubmit className="text-[#1A2766] hover:bg-blue-50 p-1.5 rounded transition-colors" icon={<Save size={14} />} />
                   <SafeDeleteButton action={deleteWarehouse} id={w.id} label="warehouse" className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded disabled:opacity-30 transition-colors">
                     <Trash2 size={14} />
                   </SafeDeleteButton>

@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db';
 import { createBrand, updateBrand, deleteBrand } from '../actions';
 import { Trash2, Save } from 'lucide-react';
 import SafeDeleteButton from '@/components/SafeDeleteButton';
-import ActionForm from '@/components/ActionForm';
+import ActionForm, { FormSubmit } from '@/components/ActionForm';
 
 
 export default async function BrandsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
@@ -29,7 +29,7 @@ export default async function BrandsPage({ searchParams }: { searchParams: Promi
             <label className="block text-xs font-medium text-gray-500 mb-1">Brand Name</label>
             <input type="text" name="name" required className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" />
           </div>
-          <button type="submit" className="bg-[#AE1B1E] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">Add Brand</button>
+          <FormSubmit className="bg-[#AE1B1E] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">Add Brand</FormSubmit>
         </ActionForm>
       </div>
 
@@ -60,9 +60,7 @@ export default async function BrandsPage({ searchParams }: { searchParams: Promi
                   {b._count.skus} SKUs
                 </div>
                 <div className="flex-1 p-2 flex justify-end items-center gap-1">
-                  <button type="submit" className="text-[#1A2766] hover:bg-blue-50 p-1.5 rounded transition-colors" title="Save">
-                    <Save size={14} />
-                  </button>
+                  <FormSubmit className="text-[#1A2766] hover:bg-blue-50 p-1.5 rounded transition-colors" icon={<Save size={14} />} />
                   <SafeDeleteButton action={deleteBrand} id={b.id} label="brand" className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors">
                     <Trash2 size={14} />
                   </SafeDeleteButton>

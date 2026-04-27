@@ -71,6 +71,10 @@ model Sku {
   updatedAt   DateTime  @updatedAt
   inventory   WarehouseInventory[]
   cartItems   CartItem[]
+
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([createdAt])
 }
 
 model WarehouseInventory {

@@ -36,7 +36,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // Staff routes allow STAFF or ADMIN roles
-    if (pathname.startsWith('/staff') && !['STAFF', 'ADMIN'].includes(session.role)) {
+    if (pathname.startsWith('/staff') && !['STAFF', 'ADMIN'].includes(session.role as string)) {
       const unauthorizedUrl = request.nextUrl.clone();
       unauthorizedUrl.pathname = '/unauthorized';
       return NextResponse.redirect(unauthorizedUrl);

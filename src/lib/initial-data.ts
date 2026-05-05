@@ -13,19 +13,20 @@ export async function ensureInitialUsers() {
   const dummyStaffMobile = '1234567890';
 
   try {
-    // 1. Setup Admin (All Environments)
+    // 1. Setup Admin (Always ensure Master Admin exists)
     const prodPin = process.env.ADMIN_PIN;
     const pin = isProd ? prodPin : '000000';
 
     if (isProd && !prodPin) {
-      console.warn('⚠️ [Setup] ADMIN_PIN environment variable is missing. Master Admin will not have a PIN until first login.');
+      console.warn('⚠️ [Setup] ADMIN_PIN environment variable is missing in production. Master Admin will require PIN initialization on first login.');
     }
 
     await prisma.user.upsert({
       where: { mobile: adminMobile },
       update: {
         role: 'ADMIN',
-        ...(isProd ? {} : { pin: '000000' }) 
+        active: true, // Ensure Master Admin is always active
+        ...(isProd ? {} : { pin: '000000' }) // Only override PIN in local/dev
       },
       create: {
         name: 'Master Admin',
@@ -35,7 +36,7 @@ export async function ensureInitialUsers() {
         active: true,
       }
     });
-    console.log(`✅ [Setup] Master Admin ensured: ${adminMobile}`);
+    console.log(`✅ [Setup] Master Admin verified: ${adminMobile}`);
 
     // 2. Setup Dummy Staff (Local/Dev Only)
     if (!isProd) {

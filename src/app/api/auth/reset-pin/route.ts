@@ -25,74 +25,81 @@ export async function POST(request: Request) {
     }
 
     const aisensyApiKey = process.env.AISENSY_API_KEY;
-    if (!aisensyApiKey) {
-      return NextResponse.json({ error: 'PIN reset messaging is not configured.' }, { status: 500 });
-    }
 
     // Generate a new 6-digit PIN
     const newPin = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // Update the PIN in the database
+    // 1. Update the PIN in the database FIRST
+    // This ensures the reset works even if the messaging flow is broken.
     await prisma.user.update({
       where: { id: user.id },
       data: { pin: newPin }
     });
 
-    // Aisensy WhatsApp Integration
-    // Aisensy expects destination with country code (91)
-    const destination = mobile.startsWith('91') ? mobile : `91${mobile}`;
-
-    const payload = {
-      apiKey: aisensyApiKey,
-      campaignName: "kamna_b2b_pin",
-      destination: destination,
-      userName: "Anmak Solar", // Note: Ensure this matches the approved business name in Aisensy
-      templateParams: [
-        newPin
-      ],
-      source: "kamna-staff-portal",
-      media: {},
-      buttons: [
-        {
-          type: "button",
-          sub_type: "url",
-          index: 0,
-          parameters: [
-            {
-              type: "text",
-              text: newPin
-            }
-          ]
-        }
-      ],
-      carouselCards: [],
-      location: {},
-      attributes: {},
-      paramsFallbackValue: {
-        FirstName: user.name.split(' ')[0]
-      }
-    };
-
-    // Make the API call to Aisensy
-    const response = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Aisensy API Error:', errorText);
-      // We still updated the DB, but the WhatsApp message failed.
-      return NextResponse.json({ error: 'PIN generated but failed to send WhatsApp message. Contact Admin.' }, { status: 500 });
+    // 2. Attempt Messaging Flow
+    if (!aisensyApiKey) {
+      console.warn(`[Messaging] Skipping WhatsApp for ${mobile}: AISENSY_API_KEY not configured.`);
+      return NextResponse.json({ 
+        success: true, 
+        message: 'PIN updated successfully. (WhatsApp messaging not configured)',
+        pin: process.env.NODE_ENV !== 'production' ? newPin : undefined // Show PIN in dev only if messaging fails
+      });
     }
 
-    return NextResponse.json({ success: true, message: 'PIN reset sent to WhatsApp' });
+    // Aisensy WhatsApp Integration
+    const destination = mobile.startsWith('91') ? mobile : `91${mobile}`;
+
+    try {
+      const payload = {
+        apiKey: aisensyApiKey,
+        campaignName: "kamna_b2b_pin",
+        destination: destination,
+        userName: "Anmak Solar",
+        templateParams: [newPin],
+        source: "kamna-staff-portal",
+        media: {},
+        buttons: [
+          {
+            type: "button",
+            sub_type: "url",
+            index: 0,
+            parameters: [{ type: "text", text: newPin }]
+          }
+        ],
+        carouselCards: [],
+        location: {},
+        attributes: {},
+        paramsFallbackValue: {
+          FirstName: user.name.split(' ')[0]
+        }
+      };
+
+      const response = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Aisensy API Error:', errorText);
+        return NextResponse.json({ 
+          success: true, 
+          message: 'PIN updated, but WhatsApp message failed to send. Please contact Admin.' 
+        });
+      }
+
+      return NextResponse.json({ success: true, message: 'PIN reset and sent to WhatsApp' });
+    } catch (msgError) {
+      console.error('Messaging delivery error:', msgError);
+      return NextResponse.json({ 
+        success: true, 
+        message: 'PIN updated, but encountered a network error while sending WhatsApp.' 
+      });
+    }
 
   } catch (error) {
-    console.error('Reset PIN error:', error);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    console.error('Reset PIN fatal error:', error);
+    return NextResponse.json({ error: 'Internal server error during PIN reset' }, { status: 500 });
   }
 }

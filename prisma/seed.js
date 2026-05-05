@@ -42,17 +42,35 @@ async function main() {
   console.log('🌱 Seeding Kamna Traders (Solar Edition)...')
 
   // ── Users ──────────────────────────────────────────────────────────────────
-  const admin = await prisma.user.upsert({
-    where: { mobile: '88744832318' },
-    update: { pin: '000000', name: 'Forced Admin' },
-    create: { name: 'Forced Admin', mobile: '88744832318', role: 'ADMIN', pin: '000000' },
+  const isProd = process.env.NODE_ENV === 'production'
+  
+  // Ensure Admin (Both envs)
+  await prisma.user.upsert({
+    where: { mobile: '8744832318' },
+    update: { 
+      role: 'ADMIN',
+      ...(isProd ? {} : { pin: '000000' })
+    }, // Ensure role is ADMIN and PIN is reset in local
+    create: { 
+      name: 'Master Admin', 
+      mobile: '8744832318', 
+      role: 'ADMIN', 
+      pin: isProd ? (process.env.ADMIN_PIN || null) : '000000' 
+    },
   })
-  const staff1 = await prisma.user.upsert({
-    where: { mobile: '9876543210' },
-    update: { pin: '654321', name: 'Ravi Kumar' },
-    create: { name: 'Ravi Kumar', mobile: '9876543210', role: 'STAFF', pin: '654321' },
-  })
-  console.log('✅ Users seeded (Admin: 88744832318 | PIN: 000000)')
+
+  // Ensure Dummy Staff (Local only)
+  if (!isProd) {
+    await prisma.user.upsert({
+      where: { mobile: '1234567890' },
+      update: { 
+        role: 'STAFF',
+        pin: '000000'
+      },
+      create: { name: 'Dummy Staff', mobile: '1234567890', role: 'STAFF', pin: '000000' },
+    })
+  }
+  console.log('✅ Users setup complete')
 
   // ── Warehouse ──────────────────────────────────────────────────────────────
   const warehouse = await prisma.warehouse.upsert({
@@ -120,8 +138,8 @@ async function main() {
   }
   console.log(`✅ ${totalSkus} Solar SKUs seeded with inventory`)
   console.log('\n🚀 Seed complete!')
-  console.log('   Admin → mobile: 88744832318 | PIN: 000000')
-  console.log('   Staff → mobile: 9876543210 | PIN: 654321')
+  console.log('   Admin → mobile: 8744832318 | PIN: 000000')
+  console.log('   Staff → mobile: 1234567890 | PIN: 000000')
 }
 
 main()

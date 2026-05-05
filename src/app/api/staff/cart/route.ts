@@ -51,6 +51,9 @@ export async function POST(request: Request) {
       }
     }
 
+    // Handle empty notes safely
+    const safeNotes = notes && notes.trim() !== '' ? notes.trim() : null;
+
     // 1.5 Idempotency / Fingerprint check (prevent double clicks within 15 seconds)
     const timeWindow = new Date(Date.now() - 15 * 1000);
     const recentDuplicateCart = await prisma.cart.findFirst({
@@ -98,8 +101,19 @@ export async function POST(request: Request) {
         throw new Error('Staff account not found or deactivated');
       }
 
-      // Deduct inventory for each item — prevent negative stock
+      // Deduct inventory for each item — prevent negative stock & check MOQ
       for (const item of items) {
+        // Valid SKU existence check
+        const sku = await tx.sku.findUnique({ where: { id: item.skuId } });
+        if (!sku) {
+          throw new Error(`SKU "${item.skuId}" does not exist in the catalog`);
+        }
+
+        // Quantity validation (MOQ)
+        if (item.qty < sku.moq) {
+          throw new Error(`Quantity for SKU "${item.skuId}" (${item.qty}) is below MOQ (${sku.moq})`);
+        }
+
         const inventory = await tx.warehouseInventory.findUnique({
           where: { warehouseId_skuId: { warehouseId, skuId: item.skuId } },
         });
@@ -128,7 +142,7 @@ export async function POST(request: Request) {
           id: cartId,
           warehouseId,
           customerName,
-          notes: notes ?? null,
+          notes: safeNotes,
           staffId,
           items: {
             create: items.map((i) => ({
@@ -161,7 +175,9 @@ export async function POST(request: Request) {
       message.includes('Insufficient stock') ||
       message.includes('No inventory record') ||
       message.includes('not found') ||
-      message.includes('deactivated');
+      message.includes('deactivated') ||
+      message.includes('does not exist') ||
+      message.includes('below MOQ');
 
     return NextResponse.json(
       { error: message },

@@ -25,12 +25,7 @@ export async function POST(request: Request) {
 
     let user = await prisma.user.findUnique({ where: { mobile } });
 
-    // Auto-create Master Admin
-    if (!user && mobile === '8744832318') {
-      user = await prisma.user.create({
-        data: { name: 'Master Admin', mobile: '8744832318', role: 'ADMIN', active: true }
-      });
-    }
+
 
     if (!user) {
       return NextResponse.json({ error: 'No account found for this number. Contact admin.' }, { status: 404 });

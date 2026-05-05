@@ -82,12 +82,8 @@ export default function HomePageClient({ categories, products, selectedCategoryI
 
           {/* Calibrated Breakpoints for 4-Column Flow */}
           <div className="relative">
-            {isPending && (
-              <div className="absolute inset-0 z-10 bg-[#F6F7FA]/50 backdrop-blur-[1px] flex items-center justify-center rounded-xl transition-all duration-300">
-                <div className="w-8 h-8 border-3 border-[#1A2766] border-t-transparent rounded-full animate-spin shadow-sm" />
-              </div>
-            )}
-            <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 transition-opacity duration-300 ${isPending ? 'opacity-30' : 'opacity-100'}`}>
+            {/* isPending overlay removed to fix interactivity issues */}
+            <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 transition-opacity duration-300 opacity-100`}>
               {products.map(product => (
                 <ProductCard key={product.id} product={product} />
               ))}

@@ -16,9 +16,15 @@ export default async function PrintSlipPage({
 
   const cart = await prisma.cart.findUnique({
     where: { id: cartId },
-    include: {
+    select: {
+      id: true,
+      dispatchSlipNumber: true,
+      customerName: true,
+      notes: true,
+      createdAt: true,
       warehouse: true,
       staff: true,
+      warehouseId: true,
       items: {
         include: {
           sku: true,

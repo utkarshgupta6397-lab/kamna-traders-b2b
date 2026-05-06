@@ -63,7 +63,10 @@ export async function POST(request: Request) {
         customerName,
         createdAt: { gte: timeWindow },
       },
-      include: { items: true },
+      select: { 
+        id: true,
+        items: { select: { skuId: true, qty: true } }
+      },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -186,23 +189,49 @@ export async function POST(request: Request) {
       }).replace(/ /g, '-');
       const dispatchSlipNumber = `KS-DP/${datePart}/${sequence}`;
 
-      // Create cart + items
-      return await tx.cart.create({
-        data: {
-          id: cartId,
-          dispatchSlipNumber,
-          warehouseId,
-          customerName,
-          notes: safeNotes,
-          staffId,
-          items: {
-            create: items.map((i) => ({
-              skuId: i.skuId,
-              qty: i.qty,
-            })),
+      // Create cart + items with defensive fallback for missing column
+      let cart;
+      try {
+        cart = await tx.cart.create({
+          data: {
+            id: cartId,
+            dispatchSlipNumber,
+            warehouseId,
+            customerName,
+            notes: safeNotes,
+            staffId,
+            items: {
+              create: items.map((i) => ({
+                skuId: i.skuId,
+                qty: i.qty,
+              })),
+            },
           },
-        },
-      });
+        });
+      } catch (err: any) {
+        // Fallback if production DB hasn't been migrated yet
+        if (err.message?.includes('dispatchSlipNumber') || err.code === 'P2025') {
+          console.warn('Production DB missing dispatchSlipNumber column. Falling back to basic creation.');
+          cart = await tx.cart.create({
+            data: {
+              id: cartId,
+              warehouseId,
+              customerName,
+              notes: safeNotes,
+              staffId,
+              items: {
+                create: items.map((i) => ({
+                  skuId: i.skuId,
+                  qty: i.qty,
+                })),
+              },
+            },
+          });
+        } else {
+          throw err;
+        }
+      }
+      return cart;
     }, { maxWait: 5000, timeout: 10000 });
 
     // 3. Audit log (outside transaction for performance)

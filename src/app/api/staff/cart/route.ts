@@ -143,6 +143,7 @@ export async function POST(request: Request) {
       try {
         return await tx.cart.create({
           data: cartData,
+          select: { id: true }, // CRITICAL: Avoid selecting dispatchSlipNumber in RETURNING clause
         });
       } catch (err: any) {
         console.error(`[TX_FAIL: cart.create] Failed to create cart ${cartId}`, err);

@@ -139,7 +139,8 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
       clearCart();
       router.push(`/staff/dashboard/print/${cartId}`);
     } else {
-      alert('Failed to submit cart.');
+      const data = await res.json().catch(() => null);
+      alert(data?.error || 'Failed to submit cart.');
       setSubmitting(false);
     }
   };

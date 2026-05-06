@@ -79,57 +79,78 @@ export async function POST(request: Request) {
     const cartId = `KT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const sequence = (dayCount + 1).toString().padStart(3, '0');
     const datePart = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-');
-    const dispatchSlipNumber = `KS-DP/${datePart}/${sequence}`;
+    const dispatchSlipNumber = `KS-DP-${Date.now()}`; // TEMPORARY FALLBACK to test uniqueness
     const safeNotes = notes?.trim() || null;
 
+    // Detect if dispatchSlipNumber column exists before transaction
+    let hasDispatchSlipNumber = false;
+    try {
+      const result = await prisma.$queryRaw`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='Cart' AND column_name='dispatchSlipNumber'
+      `;
+      hasDispatchSlipNumber = Array.isArray(result) && result.length > 0;
+    } catch (err) {
+      console.warn('Failed to check column existence, assuming false', err);
+    }
+
+    const cartData: any = {
+      id: cartId,
+      warehouseId,
+      customerName,
+      notes: safeNotes,
+      staffId,
+      items: { create: items.map((i) => ({ skuId: i.skuId, qty: i.qty })) },
+    };
+
+    if (hasDispatchSlipNumber) {
+      cartData.dispatchSlipNumber = dispatchSlipNumber;
+    }
+
     // 6. Minimal Transaction (WRITES ONLY)
+    console.log(`[TX_START] Starting transaction for cartId: ${cartId}`);
     const cart = await prisma.$transaction(async (tx) => {
       // Inventory updates
+      let stepCounter = 1;
       for (const item of items) {
         const inv = inventoryMap.get(item.skuId);
         if (!inv) {
-          await tx.warehouseInventory.create({
-            data: { warehouseId, skuId: item.skuId, qty: 999 - item.qty, isOos: 999 - item.qty <= 0 },
-          });
+          console.log(`[TX_STEP ${stepCounter++}: warehouseInventory.create] Creating inventory for SKU ${item.skuId} at warehouse ${warehouseId}`);
+          try {
+            await tx.warehouseInventory.create({
+              data: { warehouseId, skuId: item.skuId, qty: 999 - item.qty, isOos: 999 - item.qty <= 0 },
+            });
+          } catch (e: any) {
+            console.error(`[TX_FAIL: warehouseInventory.create] Failed for SKU ${item.skuId}`, e);
+            throw new Error(`Transaction aborted during warehouseInventory.create for ${item.skuId}: ${e.message}`);
+          }
         } else {
-          await tx.warehouseInventory.update({
-            where: { warehouseId_skuId: { warehouseId, skuId: item.skuId } },
-            data: { qty: { decrement: item.qty }, isOos: inv.qty - item.qty <= 0 },
-          });
+          console.log(`[TX_STEP ${stepCounter++}: warehouseInventory.update] Updating inventory for SKU ${item.skuId} at warehouse ${warehouseId}`);
+          try {
+            await tx.warehouseInventory.update({
+              where: { warehouseId_skuId: { warehouseId, skuId: item.skuId } },
+              data: { qty: { decrement: item.qty }, isOos: inv.qty - item.qty <= 0 },
+            });
+          } catch (e: any) {
+            console.error(`[TX_FAIL: warehouseInventory.update] Failed for SKU ${item.skuId}`, e);
+            throw new Error(`Transaction aborted during warehouseInventory.update for ${item.skuId}: ${e.message}`);
+          }
         }
       }
 
-      // Cart creation with defensive migration fallback
+      console.log(`[TX_STEP ${stepCounter++}: cart.create] Creating cart ${cartId}`);
       try {
         return await tx.cart.create({
-          data: {
-            id: cartId,
-            dispatchSlipNumber,
-            warehouseId,
-            customerName,
-            notes: safeNotes,
-            staffId,
-            items: { create: items.map((i) => ({ skuId: i.skuId, qty: i.qty })) },
-          },
+          data: cartData,
         });
       } catch (err: any) {
-        // P2025/P2026/P2027 or message match for missing column
-        if (err.message?.includes('dispatchSlipNumber') || err.code === 'P2025') {
-          console.error('Migration MISSING: Falling back to ID-only cart creation');
-          return await tx.cart.create({
-            data: {
-              id: cartId,
-              warehouseId,
-              customerName,
-              notes: safeNotes,
-              staffId,
-              items: { create: items.map((i) => ({ skuId: i.skuId, qty: i.qty })) },
-            },
-          });
-        }
-        throw err;
+        console.error(`[TX_FAIL: cart.create] Failed to create cart ${cartId}`, err);
+        throw new Error(`Transaction aborted during cart.create: ${err.message}`);
       }
     }, { maxWait: 5000, timeout: 10000 });
+    console.log(`[TX_END] Transaction successful for cartId: ${cartId}`);
+    console.log(`[TX_END] Transaction successful for cartId: ${cartId}`);
 
     // 7. Success Response
     return NextResponse.json({ success: true, cartId: cart.id }, { status: 200 });

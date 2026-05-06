@@ -114,13 +114,22 @@ export async function POST(request: Request) {
           throw new Error(`Quantity for SKU "${item.skuId}" (${item.qty}) is below MOQ (${sku.moq})`);
         }
 
-        const inventory = await tx.warehouseInventory.findUnique({
+        let inventory = await tx.warehouseInventory.findUnique({
           where: { warehouseId_skuId: { warehouseId, skuId: item.skuId } },
         });
 
+        // Auto-create inventory record for untracked SKUs (no stock management = default high qty)
         if (!inventory) {
-          throw new Error(`No inventory record for SKU "${item.skuId}" in this warehouse`);
+          inventory = await tx.warehouseInventory.create({
+            data: {
+              warehouseId,
+              skuId: item.skuId,
+              qty: 999,
+              isOos: false,
+            },
+          });
         }
+
         if (inventory.qty < item.qty) {
           throw new Error(
             `Insufficient stock for SKU "${item.skuId}": available=${inventory.qty}, requested=${item.qty}`

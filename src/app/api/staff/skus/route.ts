@@ -39,7 +39,7 @@ export async function GET() {
       price: sku.price,
       imageUrl: sku.imageUrl,
       categoryId: sku.categoryId,
-      isOos: sku.inventory.length > 0 ? anyOos || totalQty <= 0 : false,
+      isOos: sku.inventory.length > 0 ? anyOos || totalQty <= 0 : false, // No inventory records = not tracked = available
     };
   });
 

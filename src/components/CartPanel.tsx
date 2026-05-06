@@ -1,43 +1,13 @@
 'use client';
 
 import { useCartStore } from '@/store/cartStore';
-import { Minus, Plus, MessageSquare, X, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { Minus, Plus, X } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
-import toast from 'react-hot-toast';
 
 export default function CartPanel() {
   const { items, updateQty, removeItem, getTotalPrice, clearCart } = useCartStore();
-  const [submitting, setSubmitting] = useState(false);
 
   const totalQty = items.reduce((a, i) => a + i.qty, 0);
-
-  const handleWhatsApp = async () => {
-    if (!items.length) return;
-    setSubmitting(true);
-    try {
-      await fetch('/api/leads', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items }),
-      });
-      let msg = '*Industrial Inquiry - Kamna Traders*\n\n';
-      items.forEach(i => { msg += `• ${i.skuId}: ${i.name} [Qty: ${i.qty}]\n`; });
-      msg += `\n*TOTAL: ${formatCurrency(getTotalPrice())}*`;
-      
-      toast.success('Inquiry sent! Opening WhatsApp...');
-      clearCart();
-      
-      // Delay slightly to let toast show
-      setTimeout(() => {
-        window.open(`https://wa.me/15558246665?text=${encodeURIComponent(msg)}`, '_blank');
-      }, 800);
-    } catch (error) {
-      toast.error('Failed to process inquiry');
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   if (!items.length) {
     return (
@@ -81,29 +51,11 @@ export default function CartPanel() {
       {/* Production-Ready Total Section */}
       <div className="p-4 border-t border-[#F1F3F7] bg-[#F9FAFB] flex-shrink-0">
         <div className="flex justify-between items-baseline mb-4">
-          <span className="text-[11px] font-[800] text-gray-500 uppercase tracking-widest">Inquiry Total</span>
+          <span className="text-[11px] font-[800] text-gray-500 uppercase tracking-widest">Total Value</span>
           <span className="text-[18px] font-[800] text-[#111827] tabular-nums">{formatCurrency(getTotalPrice())}</span>
         </div>
-
-        <button
-          onClick={handleWhatsApp}
-          disabled={submitting}
-          className="w-full h-[44px] flex items-center justify-center gap-2 bg-[#25D366] text-white rounded-[10px] font-[700] text-[15px] hover:bg-[#1EBE5D] transition-all shadow-[0_4px_10px_rgba(37,211,102,0.18)] active:scale-[0.98] disabled:opacity-50"
-        >
-          {submitting ? (
-            <>
-              <Loader2 size={18} className="animate-spin" />
-              <span>Connecting...</span>
-            </>
-          ) : (
-            <>
-              <MessageSquare size={18} strokeWidth={2.5} />
-              <span>Send via WhatsApp</span>
-            </>
-          )}
-        </button>
         
-        <button onClick={clearCart} className="w-full mt-4 text-[10px] text-gray-300 hover:text-red-500 font-bold uppercase tracking-widest transition-colors">Reset Inquiry Terminal</button>
+        <button onClick={clearCart} className="w-full mt-4 text-[10px] text-gray-300 hover:text-red-500 font-bold uppercase tracking-widest transition-colors">Clear Selection</button>
       </div>
     </div>
   );

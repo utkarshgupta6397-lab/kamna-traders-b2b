@@ -164,10 +164,33 @@ export async function POST(request: Request) {
         }
       }
 
+      // Generate structured dispatch number (KS-DP/DD-MMM-YY/NNN)
+      const now = new Date();
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      
+      const dayCount = await tx.cart.count({
+        where: {
+          createdAt: {
+            gte: startOfDay,
+            lte: endOfDay,
+          },
+        },
+      });
+
+      const sequence = (dayCount + 1).toString().padStart(3, '0');
+      const datePart = now.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: '2-digit',
+      }).replace(/ /g, '-');
+      const dispatchSlipNumber = `KS-DP/${datePart}/${sequence}`;
+
       // Create cart + items
       return await tx.cart.create({
         data: {
           id: cartId,
+          dispatchSlipNumber,
           warehouseId,
           customerName,
           notes: safeNotes,

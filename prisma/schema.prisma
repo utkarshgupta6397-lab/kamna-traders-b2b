@@ -96,12 +96,13 @@ model Cart {
   warehouseId  String
   customerName String
   notes        String?
-  staffId      String
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  warehouse    Warehouse  @relation(fields: [warehouseId], references: [id])
-  staff        User       @relation(fields: [staffId], references: [id])
-  items        CartItem[]
+  staffId            String
+  dispatchSlipNumber String?    @unique
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  warehouse          Warehouse  @relation(fields: [warehouseId], references: [id])
+  staff              User       @relation(fields: [staffId], references: [id])
+  items              CartItem[]
 }
 
 model CartItem {

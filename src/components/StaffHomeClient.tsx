@@ -138,8 +138,8 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
 
       if (res.ok) {
         const { cartId } = await res.json();
-        // Push navigation first
-        router.push(`/staff/dashboard/print/${cartId}`);
+        // Push navigation first with autoprint flag
+        router.push(`/staff/dashboard/print/${cartId}?autoprint=true`);
         // Delay clearing the cart to ensure navigation starts before UI empties
         setTimeout(() => clearCart(), 100);
       } else {

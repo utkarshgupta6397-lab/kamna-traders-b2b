@@ -99,7 +99,7 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
         const data = await res.json();
         clearCart();
         // Redirect to print slip page
-        router.push(`/staff/dashboard/print/${data.cartId}`);
+        router.push(`/staff/dashboard/print/${data.cartId}?autoprint=true`);
       } else {
         toast.error('Unable to submit cart. Please check your connection and try again.');
         setIsSubmitting(false);

@@ -23,10 +23,11 @@ export async function POST(request: Request) {
 
     // 2. Auth Verification
     const session = await getSession();
-    if (!session?.userId) {
+    const rawStaffId = session?.userId;
+    if (typeof rawStaffId !== 'string') {
       return NextResponse.json({ error: 'Unauthorized. Please log in.' }, { status: 401 });
     }
-    const staffId = session.userId;
+    const staffId = rawStaffId;
 
     const body = await request.json();
     const { warehouseId, customerName, notes, items } = body as {

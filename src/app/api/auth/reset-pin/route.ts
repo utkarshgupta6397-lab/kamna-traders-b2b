@@ -24,7 +24,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Account is deactivated. Contact admin.' }, { status: 403 });
     }
 
-    const aisensyApiKey = process.env.AISENSY_API_KEY;
+    const aisensyApiKey = process.env.WHATSAPP_API_KEY || process.env.AISENSY_API_KEY;
+    const aisensyApiUrl = process.env.WHATSAPP_API_URL || 'https://backend.aisensy.com/campaign/t1/api/v2';
 
     // Generate a new 6-digit PIN
     const newPin = Math.floor(100000 + Math.random() * 900000).toString();
@@ -38,11 +39,11 @@ export async function POST(request: Request) {
 
     // 2. Attempt Messaging Flow
     if (!aisensyApiKey) {
-      console.warn(`[Messaging] Skipping WhatsApp for ${mobile}: AISENSY_API_KEY not configured.`);
+      console.warn(`[Messaging] Skipping WhatsApp for ${mobile}: WHATSAPP_API_KEY not configured.`);
       return NextResponse.json({ 
         success: true, 
         message: 'PIN updated successfully. (WhatsApp messaging not configured)',
-        pin: process.env.NODE_ENV !== 'production' ? newPin : undefined // Show PIN in dev only if messaging fails
+        pin: process.env.NODE_ENV !== 'production' ? newPin : undefined 
       });
     }
 
@@ -74,7 +75,9 @@ export async function POST(request: Request) {
         }
       };
 
-      const response = await fetch('https://backend.aisensy.com/campaign/t1/api/v2', {
+      console.log(`[Messaging] Sending WhatsApp PIN reset to ${destination} via ${aisensyApiUrl}`);
+      
+      const response = await fetch(aisensyApiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -82,13 +85,15 @@ export async function POST(request: Request) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Aisensy API Error:', errorText);
+        console.error('Aisensy API Error Status:', response.status);
+        console.error('Aisensy API Error Body:', errorText);
         return NextResponse.json({ 
           success: true, 
           message: 'PIN updated, but WhatsApp message failed to send. Please contact Admin.' 
         });
       }
 
+      console.log(`[Messaging] WhatsApp PIN reset sent successfully to ${destination}`);
       return NextResponse.json({ success: true, message: 'PIN reset and sent to WhatsApp' });
     } catch (msgError) {
       console.error('Messaging delivery error:', msgError);

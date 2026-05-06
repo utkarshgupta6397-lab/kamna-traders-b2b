@@ -129,18 +129,27 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   const handleSubmit = async () => {
     if (!customerName || !warehouseId || items.length === 0) return;
     setSubmitting(true);
-    const res = await fetch('/api/staff/cart', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ warehouseId, customerName, notes, staffId, items: items.map((i) => ({ skuId: i.skuId, qty: i.qty })) }),
-    });
-    if (res.ok) {
-      const { cartId } = await res.json();
-      clearCart();
-      router.push(`/staff/dashboard/print/${cartId}`);
-    } else {
-      const data = await res.json().catch(() => null);
-      alert(data?.error || 'Failed to submit cart.');
+    try {
+      const res = await fetch('/api/staff/cart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ warehouseId, customerName, notes, staffId, items: items.map((i) => ({ skuId: i.skuId, qty: i.qty })) }),
+      });
+
+      if (res.ok) {
+        const { cartId } = await res.json();
+        // Push navigation first
+        router.push(`/staff/dashboard/print/${cartId}`);
+        // Delay clearing the cart to ensure navigation starts before UI empties
+        setTimeout(() => clearCart(), 100);
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(data?.error || 'Failed to submit cart.');
+        setSubmitting(false);
+      }
+    } catch (err) {
+      console.error('Submission error:', err);
+      alert('An unexpected error occurred. Please check your connection.');
       setSubmitting(false);
     }
   };
@@ -196,7 +205,22 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
 
   // ─── MAIN POS LAYOUT ──────────────────────────────────────────
   return (
-    <div className="w-full min-h-screen bg-[#F6F7FA] p-4">
+    <div className="w-full min-h-screen bg-[#F6F7FA] p-4 relative">
+      {/* ── SUBMISSION OVERLAY ──────────────────────────────────────── */}
+      {submitting && (
+        <div className="fixed inset-0 z-[999] bg-[#1A2766]/60 backdrop-blur-[2px] flex items-center justify-center animate-in fade-in duration-200">
+          <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-4 max-w-xs w-full">
+            <div className="w-16 h-16 rounded-2xl bg-[#1A2766] flex items-center justify-center shadow-lg">
+              <Loader2 size={28} className="text-white animate-spin" />
+            </div>
+            <div className="text-center space-y-1">
+              <p className="text-[16px] font-[800] text-[#1A2766]">Generating Dispatch Note...</p>
+              <p className="text-[12px] font-[600] text-gray-400">Updating inventory and securing order</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-[1920px] mx-auto flex gap-4 items-start">
 
         {/* ── LEFT: 220px REFINED SIDEBAR ─────────────────────────────── */}

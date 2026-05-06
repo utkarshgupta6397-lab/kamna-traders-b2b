@@ -18,7 +18,7 @@ export default async function PrintSlipPage({
       staff: true,
       items: {
         include: {
-          sku: { include: { inventory: true } },
+          sku: true,
         },
       },
     },
@@ -35,9 +35,22 @@ export default async function PrintSlipPage({
     );
   }
 
-  const enrichedItems = cart.items.map(item => {
-    const inv = item.sku.inventory.find(i => i.warehouseId === cart.warehouseId);
-    return { skuId: item.skuId, name: item.sku.name, qty: item.qty, zone: inv?.zone ?? 'Unassigned' };
+  // Fetch only the relevant inventory for this warehouse and the SKUs in the cart
+  const warehouseInventory = await prisma.warehouseInventory.findMany({
+    where: {
+      warehouseId: cart.warehouseId,
+      skuId: { in: cart.items.map((i) => i.skuId) },
+    },
+  });
+
+  const enrichedItems = cart.items.map((item) => {
+    const inv = warehouseInventory.find((i) => i.skuId === item.skuId);
+    return {
+      skuId: item.skuId,
+      name: item.sku.name,
+      qty: item.qty,
+      zone: inv?.zone ?? 'Unassigned',
+    };
   });
 
   const zoneGroups = enrichedItems.reduce<Record<string, typeof enrichedItems>>((acc, item) => {

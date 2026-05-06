@@ -82,6 +82,44 @@ export async function POST(request: Request) {
       }
     }
 
+    // 1.7 Batch read SKUs and Inventory before transaction
+    const skuIds = items.map((i) => i.skuId);
+    const [skus, inventories] = await Promise.all([
+      prisma.sku.findMany({
+        where: { id: { in: skuIds } },
+      }),
+      prisma.warehouseInventory.findMany({
+        where: {
+          warehouseId,
+          skuId: { in: skuIds },
+        },
+      }),
+    ]);
+
+    const skuMap = new Map(skus.map((s) => [s.id, s]));
+    const inventoryMap = new Map(inventories.map((i) => [i.skuId, i]));
+
+    // In-memory validation
+    for (const item of items) {
+      const sku = skuMap.get(item.skuId);
+      if (!sku) {
+        throw new Error(`SKU "${item.skuId}" does not exist in the catalog`);
+      }
+      if (item.qty < sku.moq) {
+        throw new Error(`Quantity for SKU "${item.skuId}" (${item.qty}) is below MOQ (${sku.moq})`);
+      }
+
+      const inventory = inventoryMap.get(item.skuId);
+      // If no inventory record, we assume it's an untracked SKU (created with 999 later if needed)
+      // but we should still check if it's available. 
+      // If it doesn't exist, it will be created in the transaction.
+      if (inventory && inventory.qty < item.qty) {
+        throw new Error(
+          `Insufficient stock for SKU "${item.skuId}": available=${inventory.qty}, requested=${item.qty}`
+        );
+      }
+    }
+
     // 2. Prisma interactive transaction — atomic cart + items + inventory deduction
     const cart = await prisma.$transaction(async (tx) => {
       // Generate collision-safe cart ID (KT-[TIMESTAMP]-[RANDOM_4_CHARS])
@@ -89,64 +127,45 @@ export async function POST(request: Request) {
       const randomSuffix = crypto.randomUUID().split('-')[0].substring(0, 4).toUpperCase();
       const cartId = `KT-${timestamp}-${randomSuffix}`;
 
-      // Verify warehouse exists
-      const warehouse = await tx.warehouse.findUnique({ where: { id: warehouseId } });
+      // Verify warehouse exists (fast check)
+      const warehouse = await tx.warehouse.findUnique({ where: { id: warehouseId }, select: { id: true, active: true } });
       if (!warehouse || !warehouse.active) {
         throw new Error('Warehouse not found or inactive');
       }
 
-      // Verify staff exists and is active
-      const staff = await tx.user.findUnique({ where: { id: staffId } });
+      // Verify staff exists and is active (fast check)
+      const staff = await tx.user.findUnique({ where: { id: staffId }, select: { id: true, active: true } });
       if (!staff || !staff.active) {
         throw new Error('Staff account not found or deactivated');
       }
 
-      // Deduct inventory for each item — prevent negative stock & check MOQ
+      // Deduct inventory for each item
       for (const item of items) {
-        // Valid SKU existence check
-        const sku = await tx.sku.findUnique({ where: { id: item.skuId } });
-        if (!sku) {
-          throw new Error(`SKU "${item.skuId}" does not exist in the catalog`);
-        }
+        const inventory = inventoryMap.get(item.skuId);
 
-        // Quantity validation (MOQ)
-        if (item.qty < sku.moq) {
-          throw new Error(`Quantity for SKU "${item.skuId}" (${item.qty}) is below MOQ (${sku.moq})`);
-        }
-
-        let inventory = await tx.warehouseInventory.findUnique({
-          where: { warehouseId_skuId: { warehouseId, skuId: item.skuId } },
-        });
-
-        // Auto-create inventory record for untracked SKUs (no stock management = default high qty)
         if (!inventory) {
-          inventory = await tx.warehouseInventory.create({
+          // Auto-create inventory record for untracked SKUs
+          await tx.warehouseInventory.create({
             data: {
               warehouseId,
               skuId: item.skuId,
-              qty: 999,
-              isOos: false,
+              qty: 999 - item.qty,
+              isOos: 999 - item.qty === 0,
+            },
+          });
+        } else {
+          await tx.warehouseInventory.update({
+            where: { warehouseId_skuId: { warehouseId, skuId: item.skuId } },
+            data: {
+              qty: { decrement: item.qty },
+              isOos: inventory.qty - item.qty === 0,
             },
           });
         }
-
-        if (inventory.qty < item.qty) {
-          throw new Error(
-            `Insufficient stock for SKU "${item.skuId}": available=${inventory.qty}, requested=${item.qty}`
-          );
-        }
-
-        await tx.warehouseInventory.update({
-          where: { warehouseId_skuId: { warehouseId, skuId: item.skuId } },
-          data: {
-            qty: { decrement: item.qty },
-            isOos: inventory.qty - item.qty === 0,
-          },
-        });
       }
 
       // Create cart + items
-      const newCart = await tx.cart.create({
+      return await tx.cart.create({
         data: {
           id: cartId,
           warehouseId,
@@ -161,18 +180,18 @@ export async function POST(request: Request) {
           },
         },
       });
+    }, { maxWait: 5000, timeout: 10000 });
 
-      // Audit log
-      await tx.auditLog.create({
-        data: {
-          userId: staffId,
-          action: 'CART_CREATED',
-          details: `Cart ${cartId} created with ${items.length} item(s) for "${customerName}"`,
-        },
-      });
-
-      return newCart;
-    }, { maxWait: 10000, timeout: 15000 });
+    // 3. Audit log (outside transaction for performance)
+    // We don't await this to speed up response, but in a production app 
+    // you might want to ensure it finishes or use a queue.
+    prisma.auditLog.create({
+      data: {
+        userId: staffId,
+        action: 'CART_CREATED',
+        details: `Cart ${cart.id} created with ${items.length} item(s) for "${customerName}"`,
+      },
+    }).catch(err => console.error('Failed to create audit log:', err));
 
     return NextResponse.json({ success: true, cartId: cart.id }, { status: 200 });
   } catch (error: unknown) {

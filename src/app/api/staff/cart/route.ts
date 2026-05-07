@@ -30,7 +30,6 @@ export async function POST(request: Request) {
     const staffId = rawStaffId;
 
     const body = await request.json();
-    console.log('[DEBUG] POST /api/staff/cart payload:', JSON.stringify(body, null, 2));
     const { warehouseId, customerName, notes, items } = body as {
       warehouseId?: string;
       customerName?: string;
@@ -44,21 +43,18 @@ export async function POST(request: Request) {
 
     // 3. Batch Reads & Validation (ALL READS OUTSIDE TRANSACTION)
     const skuIds = items.map((i) => i.skuId);
-    
-    // Fetch all necessary data in parallel to minimize latency
     const now = new Date();
 
-
-    const [skus, inventories, warehouse, staff] = await Promise.all([
+    const [skus, inventories, warehouse, staffUser] = await Promise.all([
       prisma.sku.findMany({ where: { id: { in: skuIds } } }),
       prisma.warehouseInventory.findMany({ where: { warehouseId, skuId: { in: skuIds } } }),
-      prisma.warehouse.findUnique({ where: { id: warehouseId }, select: { id: true, active: true } }),
-      prisma.user.findUnique({ where: { id: staffId }, select: { id: true, active: true } }),
+      prisma.warehouse.findUnique({ where: { id: warehouseId }, select: { id: true, name: true, active: true } }),
+      prisma.user.findUnique({ where: { id: staffId }, select: { id: true, name: true, active: true } }),
     ]);
 
     // 4. In-Memory Validation & Preparations
     if (!warehouse || !warehouse.active) throw new Error('Warehouse not found or inactive');
-    if (!staff || !staff.active) throw new Error('Staff account not found or deactivated');
+    if (!staffUser || !staffUser.active) throw new Error('Staff account not found or deactivated');
 
     const skuMap = new Map(skus.map((s) => [s.id, s]));
     const inventoryMap = new Map(inventories.map((i) => [i.skuId, i]));
@@ -71,136 +67,161 @@ export async function POST(request: Request) {
 
     // 5. Generate Identifiers
     const cartId = `KT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-    const datePart = now.toLocaleDateString('en-GB', { 
-      day: '2-digit', 
-      month: 'short', 
+    const datePart = now.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
       year: '2-digit',
-      timeZone: 'Asia/Kolkata' 
+      timeZone: 'Asia/Kolkata'
     }).replace(/ /g, '/');
     const safeNotes = notes?.trim() || null;
 
-    const cartData: any = {
-      id: cartId,
-      warehouseId,
-      customerName,
-      notes: safeNotes,
-      staffId,
-      items: { create: items.map((i) => ({ skuId: i.skuId, qty: i.qty })) },
-    };
+    // 6. Pre-compute all write data in memory
+    const historyRows: {
+      warehouseId: string;
+      skuId: string;
+      productName: string;
+      beforeQty: number;
+      afterQty: number;
+      qtyChange: number;
+      remarks: string;
+      createdBy: string;
+    }[] = [];
 
-    // 6. Minimal Transaction (WRITES ONLY)
-    console.log(`[TX_START] Starting transaction for cartId: ${cartId}`);
+    // We'll fill in the remarks after generating the slip number inside the tx
+    const inventoryOps: {
+      skuId: string;
+      exists: boolean;
+      beforeQty: number;
+      afterQty: number;
+      deductQty: number;
+    }[] = [];
+
+    for (const item of items) {
+      const inv = inventoryMap.get(item.skuId);
+      const beforeQty = inv ? inv.qty : 999;
+      const afterQty = beforeQty - item.qty;
+
+      inventoryOps.push({
+        skuId: item.skuId,
+        exists: !!inv,
+        beforeQty,
+        afterQty,
+        deductQty: item.qty,
+      });
+    }
+
+    // 7. Minimal Transaction (WRITES ONLY, parallelized)
     const cart = await prisma.$transaction(async (tx) => {
-      console.log(`[DEBUG] Step: 6.1 (Generate Sequence), datePart: ${datePart}`);
-      let seqRecord;
-      try {
-        seqRecord = await tx.dispatchSequence.upsert({
-          where: { date: datePart },
-          create: { date: datePart, sequence: 1 },
-          update: { sequence: { increment: 1 } },
-        });
-      } catch (err: any) {
-        console.error(`[TX_FAIL: dispatchSequence.upsert] Failed for date ${datePart}`, {
-          error: err.message,
-          code: err.code,
-          meta: err.meta,
-        });
-        throw new Error(`Transaction aborted during sequence generation: ${err.message}`);
-      }
-      
+      // 7.1 Generate sequence number
+      const seqRecord = await tx.dispatchSequence.upsert({
+        where: { date: datePart },
+        create: { date: datePart, sequence: 1 },
+        update: { sequence: { increment: 1 } },
+      });
+
       const generatedSlipNumber = `KS-DP-${datePart}-${seqRecord.sequence.toString().padStart(3, '0')}`;
-      console.log(`[DEBUG] Generated dispatchNo: ${generatedSlipNumber}`);
-      cartData.dispatchSlipNumber = generatedSlipNumber;
 
-      // 6.2 Inventory updates & History logging
-      let stepCounter = 1;
-      for (const item of items) {
-        const sku = skuMap.get(item.skuId);
-        const inv = inventoryMap.get(item.skuId);
-        
-        let beforeQty = inv?.qty ?? 0;
-        // In this app's current logic (line 123), if inventory doesn't exist, it assumes a start of 999.
-        // We'll reflect that assumption if needed, or stick to 0. 
-        // Let's use the actual logic from the create/update calls below.
-        if (!inv) beforeQty = 999; 
-
-        const afterQty = beforeQty - item.qty;
-
-        if (!inv) {
-          console.log(`[TX_STEP ${stepCounter++}: warehouseInventory.create] Creating inventory for SKU ${item.skuId} at warehouse ${warehouseId}`);
-          try {
-            await tx.warehouseInventory.create({
-              data: { warehouseId, skuId: item.skuId, qty: afterQty, isOos: afterQty <= 0 },
-            });
-          } catch (e: any) {
-            console.error(`[TX_FAIL: warehouseInventory.create] Failed for SKU ${item.skuId}`, e);
-            throw new Error(`Transaction aborted during warehouseInventory.create for ${item.skuId}: ${e.message}`);
-          }
+      // 7.2 Parallelize all inventory updates
+      const invPromises = inventoryOps.map((op) => {
+        if (!op.exists) {
+          return tx.warehouseInventory.create({
+            data: { warehouseId, skuId: op.skuId, qty: op.afterQty, isOos: op.afterQty <= 0 },
+          });
         } else {
-          console.log(`[TX_STEP ${stepCounter++}: warehouseInventory.update] Updating inventory for SKU ${item.skuId} at warehouse ${warehouseId}`);
-          try {
-            await tx.warehouseInventory.update({
-              where: { warehouseId_skuId: { warehouseId, skuId: item.skuId } },
-              data: { qty: { decrement: item.qty }, isOos: afterQty <= 0 },
-            });
-          } catch (e: any) {
-            console.error(`[TX_FAIL: warehouseInventory.update] Failed for SKU ${item.skuId}`, e);
-            throw new Error(`Transaction aborted during warehouseInventory.update for ${item.skuId}: ${e.message}`);
-          }
+          return tx.warehouseInventory.update({
+            where: { warehouseId_skuId: { warehouseId, skuId: op.skuId } },
+            data: { qty: { decrement: op.deductQty }, isOos: op.afterQty <= 0 },
+          });
         }
+      });
 
-        // Add Inventory History Row
-        console.log(`[TX_STEP ${stepCounter++}: inventoryHistory.create] Logging history for SKU ${item.skuId}`);
-        await tx.inventoryHistory.create({
+      // 7.3 Build history rows with final slip number
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const op = inventoryOps[i];
+        const sku = skuMap.get(item.skuId);
+        historyRows.push({
+          warehouseId,
+          skuId: item.skuId,
+          productName: sku?.name || item.skuId,
+          beforeQty: op.beforeQty,
+          afterQty: op.afterQty,
+          qtyChange: -item.qty,
+          remarks: `Dispatch ${generatedSlipNumber} | Customer: ${customerName}`,
+          createdBy: staffId,
+        });
+      }
+
+      // 7.4 Create cart + bulk history + all inventory updates in parallel
+      const [newCart] = await Promise.all([
+        tx.cart.create({
           data: {
+            id: cartId,
             warehouseId,
-            skuId: item.skuId,
-            productName: sku?.name || item.skuId,
-            beforeQty,
-            afterQty,
-            qtyChange: -item.qty,
-            remarks: `Dispatch ${generatedSlipNumber} | Customer: ${customerName}`,
-            createdBy: staffId,
-          }
-        });
-      }
+            customerName,
+            notes: safeNotes,
+            staffId,
+            dispatchSlipNumber: generatedSlipNumber,
+            items: { create: items.map((i) => ({ skuId: i.skuId, qty: i.qty })) },
+          },
+          select: {
+            id: true,
+            dispatchSlipNumber: true,
+            customerName: true,
+            notes: true,
+            createdAt: true,
+          },
+        }),
+        tx.inventoryHistory.createMany({ data: historyRows }),
+        ...invPromises,
+      ]);
 
-      console.log(`[DEBUG] Step: 6.3 (Create Cart), cartId: ${cartId}, dispatchNo: ${cartData.dispatchSlipNumber}`);
-      try {
-        const newCart = await tx.cart.create({
-          data: cartData,
-          select: { id: true },
-        });
-        console.log(`[DEBUG] Cart created successfully in DB: ${newCart.id}`);
-        return newCart;
-      } catch (err: any) {
-        console.error(`[TX_FAIL: cart.create] Failed to create cart ${cartId}`, {
-          error: err.message,
-          code: err.code,
-          meta: err.meta,
-          dispatchNo: cartData.dispatchSlipNumber
-        });
-        throw new Error(`Transaction aborted during cart.create: ${err.message}`);
-      }
+      return newCart;
     }, { maxWait: 10000, timeout: 20000 });
-    console.log(`[TX_END] Transaction successful for cartId: ${cartId}`);
 
-    // 7. Success Response
-    return NextResponse.json({ success: true, cartId: cart.id }, { status: 200 });
+    // 8. Build print payload to avoid refetch waterfall
+    const enrichedItems = items.map((item) => {
+      const sku = skuMap.get(item.skuId);
+      const inv = inventoryMap.get(item.skuId);
+      return {
+        skuId: item.skuId,
+        name: sku?.name || item.skuId,
+        qty: item.qty,
+        unit: sku?.unit || 'PCS',
+        zone: inv?.zone ?? 'Unassigned',
+      };
+    });
+
+    const zoneGroups: Record<string, typeof enrichedItems> = {};
+    for (const item of enrichedItems) {
+      (zoneGroups[item.zone] ??= []).push(item);
+    }
+
+    return NextResponse.json({
+      success: true,
+      cartId: cart.id,
+      printPayload: {
+        id: cart.id,
+        dispatchSlipNumber: cart.dispatchSlipNumber,
+        customerName: cart.customerName,
+        notes: cart.notes,
+        createdAt: cart.createdAt,
+        warehouseName: warehouse.name,
+        staffName: staffUser.name,
+        items: enrichedItems,
+        zoneGroups,
+        qrPayload: JSON.stringify(enrichedItems.map(i => ({ sku: i.skuId, qty: i.qty }))),
+      },
+    }, { status: 200 });
 
   } catch (error: any) {
     const message = error instanceof Error ? error.message : 'Internal Server Error';
-    console.error('[CART_ERROR] Full metadata:', {
-      message,
-      stack: error.stack,
-      code: error.code,
-      meta: error.meta,
-    });
+    console.error('[CART_ERROR]', message);
 
-    const isBusinessError = 
-      message.includes('stock') || 
-      message.includes('not found') || 
-      message.includes('inactive') || 
+    const isBusinessError =
+      message.includes('stock') ||
+      message.includes('not found') ||
+      message.includes('inactive') ||
       message.includes('MOQ') ||
       message.includes('does not exist');
 

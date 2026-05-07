@@ -174,10 +174,12 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
       });
 
       if (res.ok) {
-        const { cartId } = await res.json();
-        // Push navigation first with autoprint flag
+        const { cartId, printPayload } = await res.json();
+        // Cache print payload to skip refetch on print page
+        if (printPayload) {
+          try { sessionStorage.setItem(`print_${cartId}`, JSON.stringify(printPayload)); } catch {}
+        }
         router.push(`/staff/dashboard/print/${cartId}?autoprint=true`);
-        // Delay clearing the cart to ensure navigation starts before UI empties
         setTimeout(() => clearCart(), 100);
       } else {
         const data = await res.json().catch(() => null);

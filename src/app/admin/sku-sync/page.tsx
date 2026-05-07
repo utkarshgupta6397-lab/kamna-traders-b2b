@@ -43,15 +43,19 @@ export default function SkuSyncPage() {
 
   const formatDateIST = (dateStr: string) => {
     const date = new Date(dateStr);
-    return new Intl.DateTimeFormat('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-      timeZone: 'Asia/Kolkata'
-    }).format(date);
+    
+    // Format parts to construct specific string: 07-May-2026 03:30 PM IST
+    const day = date.toLocaleString('en-IN', { day: '2-digit', timeZone: 'Asia/Kolkata' });
+    const month = date.toLocaleString('en-IN', { month: 'short', timeZone: 'Asia/Kolkata' });
+    const year = date.toLocaleString('en-IN', { year: 'numeric', timeZone: 'Asia/Kolkata' });
+    const time = date.toLocaleString('en-IN', { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      hour12: true, 
+      timeZone: 'Asia/Kolkata' 
+    }).toUpperCase();
+
+    return `${day}-${month}-${year} ${time} IST`;
   };
 
   const runSync = async () => {

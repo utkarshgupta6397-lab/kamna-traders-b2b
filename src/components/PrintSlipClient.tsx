@@ -128,6 +128,22 @@ export default function PrintSlipClient({
 
   const zoneGroups = useMemo(() => payload?.zoneGroups || {}, [payload]);
 
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    const text = `Dispatch Performance
+
+API Request: ${timings.apiRequest || 0}ms
+Navigation: ${timings.navigation?.toFixed(0) || 0}ms
+Data Load: ${timings.dataFetch?.toFixed(0) || 0}ms
+First Paint: ${(performance.now() - (mountTime || 0)).toFixed(0)}ms
+Total Perceived: ${(timings.apiRequest + timings.navigation + timings.totalPerceived || 0).toFixed(0)}ms`;
+
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   if (!payload) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -143,17 +159,25 @@ export default function PrintSlipClient({
     <div className="relative p-4 space-y-6 print:space-y-0 print:p-0" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as any}>
       {/* ── PERFORMANCE DEBUG PANEL ───────────────────────────────────── */}
       {showDebug && mountTime !== null && (
-        <div className="fixed top-32 left-4 z-[9999] bg-black/80 text-white text-[10px] p-3 rounded-lg shadow-xl backdrop-blur-md border border-white/20 font-mono space-y-1.5 w-48 pointer-events-none print:hidden animate-in fade-in slide-in-from-left-4 duration-500">
-          <p className="font-bold border-b border-white/20 pb-1 mb-1 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            Dispatch Performance
-          </p>
+        <div className="fixed top-[100px] left-4 z-[9999] bg-black/80 text-white text-[10px] p-3 rounded-lg shadow-xl backdrop-blur-md border border-white/20 font-mono space-y-1.5 w-48 pointer-events-auto print:hidden animate-in fade-in slide-in-from-left-4 duration-500">
+          <div className="flex items-center justify-between border-b border-white/20 pb-1 mb-1">
+            <p className="font-bold flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              Performance
+            </p>
+            <button 
+              onClick={handleCopy}
+              className="text-[9px] bg-white/10 hover:bg-white/20 px-1.5 py-0.5 rounded transition-colors"
+            >
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
           <div className="space-y-1">
             <div className="flex justify-between"><span>API Request</span> <span className={timings.apiRequest > 4000 ? 'text-red-400' : 'text-green-400'}>{timings.apiRequest || 0}ms</span></div>
             <div className="flex justify-between"><span>Navigation</span> <span className="text-blue-400">{timings.navigation?.toFixed(0) || 0}ms</span></div>
             <div className="flex justify-between"><span>Data Load</span> <span className="text-yellow-400">{timings.dataFetch?.toFixed(0) || 0}ms</span></div>
             <div className="flex justify-between"><span>First Paint</span> <span className="text-purple-400">{(performance.now() - mountTime).toFixed(0)}ms</span></div>
-            <div className="flex justify-between"><span>Total perceived</span> <span className="font-bold text-white">{(timings.apiRequest + timings.navigation + timings.totalPerceived || 0).toFixed(0)}ms</span></div>
+            <div className="flex justify-between"><span>Total perceived</span> <span className="font-bold text-white">{(timings.apiRequest + timings.navigation + (timings.totalPerceived || 0)).toFixed(0)}ms</span></div>
           </div>
         </div>
       )}

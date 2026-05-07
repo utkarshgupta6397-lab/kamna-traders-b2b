@@ -4,6 +4,7 @@ import { persist } from 'zustand/middleware';
 export interface StaffCartItem {
   skuId: string;
   name: string;
+  unit: string | null;
   qty: number;
 }
 

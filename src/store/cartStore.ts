@@ -4,6 +4,7 @@ import { persist } from 'zustand/middleware';
 export interface CartItem {
   skuId: string;
   name: string;
+  unit: string | null;
   price: number;
   qty: number;
   moq: number;

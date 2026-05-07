@@ -14,12 +14,14 @@ type WarehouseOption = {
 type StaffSku = {
   id: string;
   name: string;
+  unit: string | null;
   isOos?: boolean;
 };
 
 type CartItem = {
   skuId: string;
   name: string;
+  unit: string | null;
   qty: number;
 };
 
@@ -66,7 +68,7 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
   ).slice(0, 10);
 
   const addItem = (sku: StaffSku) => {
-    storeAddItem({ skuId: sku.id, name: sku.name, qty: 1 });
+    storeAddItem({ skuId: sku.id, name: sku.name, unit: sku.unit, qty: 1 });
     setSearchQuery('');
   };
 
@@ -184,7 +186,10 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-400 font-mono">{sku.id}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-gray-400 font-mono">{sku.id}</p>
+                        {sku.unit && <span className="text-[10px] font-bold text-[#1A2766] uppercase">({sku.unit})</span>}
+                      </div>
                     </div>
                     <Plus size={16} className="text-[#1A2766] flex-shrink-0" />
                   </div>
@@ -201,7 +206,10 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
               <div key={item.skuId} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg bg-gray-50">
                 <div className="flex-1">
                   <p className="font-bold text-gray-900">{item.name}</p>
-                  <p className="text-xs text-gray-500 font-mono">{item.skuId}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-gray-500 font-mono">{item.skuId}</p>
+                    {item.unit && <span className="text-xs font-bold text-[#1A2766] uppercase">({item.unit})</span>}
+                  </div>
                 </div>
                 <div className="flex items-center gap-4">
                   <input 

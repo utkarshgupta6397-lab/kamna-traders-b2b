@@ -37,6 +37,7 @@ const ProductCard = memo(function ProductCard({ product, isSelected }: { product
       addItem({
         skuId: product.id,
         name: product.name,
+        unit: product.unit,
         price: product.price,
         qty: product.moq,
         moq: product.moq,

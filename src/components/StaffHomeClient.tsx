@@ -109,6 +109,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
             addItem({
               skuId: p.id,
               name: p.name,
+              unit: p.unit,
               price: p.price,
               qty: p.moq,
               moq: p.moq,
@@ -317,7 +318,6 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
           <div className="bg-white rounded-xl border border-[#E7EAF0] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col h-[calc(100vh-32px)]">
             <div className="px-4 py-3.5 border-b border-[#F1F3F7] bg-[#1A2766] flex items-center justify-between">
               <h2 className="text-[11px] font-[800] text-white uppercase tracking-[0.1em]">Dispatch Bin</h2>
-              {totalQty > 0 && <span className="bg-[#AE1B1E] text-white text-[10px] font-black px-2 py-0.5 rounded shadow-sm">{totalQty}</span>}
             </div>
             
             <div className="flex-1 overflow-hidden">

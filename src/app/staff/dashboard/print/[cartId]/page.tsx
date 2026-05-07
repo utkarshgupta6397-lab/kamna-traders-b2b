@@ -107,8 +107,8 @@ export default async function PrintSlipPage({
       </div>
 
       {/* ── MASTER SLIP ────────────────────────────────────────────────── */}
-      <div className="bg-white w-72 print:w-[80mm] mx-auto print:mx-0 shadow-sm print:shadow-none font-mono text-sm print:break-after-page">
-        <div className="relative text-center border-b-2 border-dashed border-gray-400 py-3 mb-3">
+      <div className="bg-white w-[80mm] mx-auto print:mx-0 shadow-sm print:shadow-none font-mono text-sm print:break-after-page border border-gray-100 print:border-none">
+        <div className="relative text-center border-b-2 border-dashed border-black py-3 mb-3">
           <p className="text-base font-black uppercase tracking-widest">Kamna Traders</p>
           <p className="text-[10px] text-gray-500">Master Dispatch Slip</p>
           {isSequenceId && (
@@ -127,7 +127,7 @@ export default async function PrintSlipPage({
           <p><span className="font-bold">Staff:</span> {cart.staff.name}</p>
         </div>
 
-        <div className="border-t-2 border-b-2 border-dashed border-gray-400 py-2 px-3 mb-3">
+        <div className="border-t-2 border-b-2 border-dashed border-black py-2 px-3 mb-3">
           {Object.entries(zoneGroups).map(([zone, zItems], gIdx) => (
             <div key={gIdx} className="mb-4 last:mb-0">
               <div className="bg-gray-50 px-2 py-0.5 mb-2 border-l-4 border-black">
@@ -166,21 +166,16 @@ export default async function PrintSlipPage({
 
       {/* ── ZONE SLIPS ─────────────────────────────────────────────────── */}
       {Object.entries(zoneGroups).map(([zone, zItems], idx) => (
-        <div key={idx} className="bg-white w-72 print:w-[80mm] mx-auto print:mx-0 shadow-sm print:shadow-none font-mono text-sm print:break-after-page">
+        <div key={idx} className="bg-white w-[80mm] mx-auto print:mx-0 shadow-sm print:shadow-none font-mono text-sm print:break-after-page border border-gray-100 print:border-none">
           <div className="relative text-center border-b-2 border-black py-2 mb-2">
             <p className="text-xs font-black uppercase tracking-widest">Zone Slip · {zone}</p>
             <p className="text-[10px]">No: <FormattedId /> · {cart.warehouse.name}</p>
-            {isSequenceId && (
-              <div className="absolute top-1 right-2 bg-black text-white rounded-md px-1.5 py-0.5 shadow-sm print:shadow-none">
-                <span className="text-xs font-black tracking-widest leading-none">{parts[3]}</span>
-              </div>
-            )}
           </div>
           <div className="px-3 text-[10px] mb-2 flex justify-between items-center text-gray-500">
             <span>{dateStr}</span>
             <span className="font-bold text-gray-800 uppercase max-w-[120px] truncate" title={cart.customerName}>{cart.customerName}</span>
           </div>
-          <div className="border-t border-dashed border-gray-400 px-3 pb-3">
+          <div className="border-t border-dashed border-black px-3 pb-3">
             <table className="w-full text-xs mt-1 table-fixed">
               <thead>
                 <tr className="border-b border-gray-400">

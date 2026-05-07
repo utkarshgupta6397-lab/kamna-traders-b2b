@@ -16,6 +16,7 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
         OR: [
           { id: { contains: q } },
           { name: { contains: q } },
+          { zohoBooksId2: { contains: q } },
           // Also allow searching by Zoho Book Item ID (string match)
           ...(isNaN(Number(q)) ? [] : [{ zohoBookItemId: BigInt(q) }]),
         ],
@@ -72,8 +73,10 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
             <input type="number" min="1" name="stepQty" required defaultValue="1" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
           <div><label className="block text-xs font-medium text-gray-500 mb-1">Case Size</label>
             <input type="number" min="1" step="1" name="caseSize" required defaultValue="1" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
-          <div><label className="block text-xs font-medium text-gray-500 mb-1">Zoho Book Item ID</label>
+          <div><label className="block text-xs font-medium text-gray-500 mb-1">Zoho Internal ID</label>
             <input type="text" name="zohoBookItemId" inputMode="numeric" pattern="[0-9]*" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" placeholder="optional" /></div>
+          <div><label className="block text-xs font-medium text-gray-500 mb-1">Zoho Books ID</label>
+            <input type="text" name="zohoBooksId2" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" placeholder="optional" /></div>
           <div className="md:col-span-5">
             <FormSubmit className="w-full bg-[#AE1B1E] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">Add SKU</FormSubmit>
           </div>
@@ -94,7 +97,8 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
             <div className="w-16 p-3">MOQ</div>
             <div className="w-16 p-3">Step</div>
             <div className="w-20 p-3">Case Size</div>
-            <div className="w-32 p-3">Zoho Book ID</div>
+            <div className="w-28 p-3">Zoho Internal ID</div>
+            <div className="w-28 p-3">Zoho Books ID</div>
             <div className="w-32 p-3">Last Synced</div>
             <div className="w-24 p-3">Status</div>
             <div className="flex-1 p-3 text-right">Actions</div>
@@ -153,13 +157,22 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
                     className="w-full border rounded px-2 py-1.5 text-xs"
                   />
                 </div>
-                <div className="w-32 p-2">
+                <div className="w-28 p-2">
                   <input
                     type="text"
                     name="zohoBookItemId"
                     inputMode="numeric"
                     pattern="[0-9]*"
                     defaultValue={sku.zohoBookItemId != null ? String(sku.zohoBookItemId) : ''}
+                    placeholder="—"
+                    className="w-full border rounded px-2 py-1.5 text-xs font-mono"
+                  />
+                </div>
+                <div className="w-28 p-2">
+                  <input
+                    type="text"
+                    name="zohoBooksId2"
+                    defaultValue={sku.zohoBooksId2 ?? ''}
                     placeholder="—"
                     className="w-full border rounded px-2 py-1.5 text-xs font-mono"
                   />

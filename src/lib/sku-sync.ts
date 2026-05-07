@@ -6,6 +6,18 @@ const normalizeStr = (s: string) => {
   return s.trim().replace(/\s+/g, ' ').toLowerCase();
 };
 
+/**
+ * Recursively converts BigInt values to strings to prevent JSON serialization crashes.
+ */
+function safeJson(value: any) {
+  if (value === undefined || value === null) return value;
+  return JSON.parse(
+    JSON.stringify(value, (_, v) =>
+      typeof v === 'bigint' ? v.toString() : v
+    )
+  );
+}
+
 export async function runSkuSync() {
   const zohoUrl = getZohoSyncUrl();
   if (!zohoUrl) {
@@ -44,27 +56,24 @@ export async function runSkuSync() {
       let created = 0;
       let updated = 0;
       let failed = 0;
-
-      const existingBrands = await tx.brand.findMany();
-      const existingCategories = await tx.category.findMany();
-      const existingSkus = await tx.sku.findMany({ select: { id: true, zohoBookItemId: true } });
-
-      const brandMap = new Map<string, string>();
-      existingBrands.forEach(b => brandMap.set(normalizeStr(b.name), b.id));
-
-      const categoryMap = new Map<string, string>();
-      existingCategories.forEach(c => categoryMap.set(normalizeStr(c.name), c.id));
-
-      const skuMap = new Map<string, string>();
-      existingSkus.forEach(s => {
-        if (s.zohoBookItemId) {
-          skuMap.set(s.zohoBookItemId.toString(), s.id);
-        }
-      });
+      const errorLogs: any[] = [];
 
       for (const raw of rawSkus) {
+        let currentSkuData: any = null;
         try {
           if (!raw.zoho_book_item_id) {
+            try {
+              errorLogs.push(safeJson({
+                sku: raw.sku_id || 'N/A',
+                product: raw.name || 'Unknown',
+                reason: 'Zoho Internal ID missing (zoho_book_item_id)',
+                api_response: raw,
+                payload: null,
+                timestamp: new Date().toISOString()
+              }));
+            } catch (logErr) {
+              console.error('Failed to capture structured error log:', logErr);
+            }
             failed++;
             continue;
           }
@@ -72,31 +81,29 @@ export async function runSkuSync() {
           const zohoIdStr = raw.zoho_book_item_id.toString();
           const zohoIdBigInt = BigInt(zohoIdStr);
 
-          // Resolve Brand
-          let brandId = null;
+          // Step 1 — Find/Create Brand
+          let brand = null;
           if (raw.brand) {
-            const normBrand = normalizeStr(raw.brand);
-            if (brandMap.has(normBrand)) {
-              brandId = brandMap.get(normBrand);
-            } else {
-              const cleanCasing = raw.brand.trim().replace(/\s+/g, ' ');
-              const newBrand = await tx.brand.create({ data: { name: cleanCasing } });
-              brandId = newBrand.id;
-              brandMap.set(normBrand, newBrand.id);
+            brand = await tx.brand.findFirst({
+              where: { name: raw.brand }
+            });
+            if (!brand) {
+              brand = await tx.brand.create({
+                data: { name: raw.brand }
+              });
             }
           }
 
-          // Resolve Category
-          let categoryId = null;
+          // Step 2 — Find/Create Category
+          let category = null;
           if (raw.category) {
-            const normCat = normalizeStr(raw.category);
-            if (categoryMap.has(normCat)) {
-              categoryId = categoryMap.get(normCat);
-            } else {
-              const cleanCasing = raw.category.trim().replace(/\s+/g, ' ');
-              const newCategory = await tx.category.create({ data: { name: cleanCasing } });
-              categoryId = newCategory.id;
-              categoryMap.set(normCat, newCategory.id);
+            category = await tx.category.findFirst({
+              where: { name: raw.category }
+            });
+            if (!category) {
+              category = await tx.category.create({
+                data: { name: raw.category }
+              });
             }
           }
 
@@ -104,44 +111,78 @@ export async function runSkuSync() {
           const caseSize = typeof raw.case_size === 'number' ? raw.case_size : parseInt(raw.case_size, 10) || 1;
           const status = raw.status || 'Inactive';
 
-          const skuData = {
+          // Prepare Base Data
+          const baseData = {
             name: raw.name || '',
-            brandId,
-            categoryId,
             price,
-            caseSize: caseSize > 0 ? caseSize : 1,
             unit: raw.uom || '',
-            isActive: status.toLowerCase() === 'active',
+            caseSize: caseSize > 0 ? caseSize : 1,
+            isActive: status === 'Active',
+            zohoBooksId2: raw.zoho_books_id ? raw.zoho_books_id.toString() : null,
             lastSyncedAt: new Date(),
+            brand: brand ? { connect: { id: brand.id } } : undefined,
+            category: category ? { connect: { id: category.id } } : undefined,
           };
 
-          if (skuMap.has(zohoIdStr)) {
-            const localSkuId = skuMap.get(zohoIdStr)!;
+          // Find Existing SKU by zohoBookItemId FIRST (Identity Priority 1)
+          const existingSku = await tx.sku.findFirst({
+            where: { zohoBookItemId: zohoIdBigInt }
+          });
+
+          if (existingSku) {
+            // Update Existing SKU
+            currentSkuData = {
+              id: raw.sku_id?.trim() || existingSku.id,
+              ...baseData
+            };
             await tx.sku.update({
-              where: { id: localSkuId },
-              data: skuData
+              where: { id: existingSku.id },
+              data: currentSkuData
             });
             updated++;
           } else {
-            const localSkuId = raw.sku_id?.trim() || `SKU-${zohoIdStr}`;
+            // Create New SKU
+            currentSkuData = {
+              id: raw.sku_id?.trim() || `SKU-${zohoIdStr}`,
+              zohoBookItemId: zohoIdBigInt,
+              ...baseData
+            };
             await tx.sku.create({
-              data: {
-                id: localSkuId,
-                zohoBookItemId: zohoIdBigInt,
-                ...skuData
-              }
+              data: currentSkuData
             });
-            skuMap.set(zohoIdStr, localSkuId);
             created++;
           }
-        } catch (e) {
+        } catch (e: any) {
           console.error(`Failed to sync SKU ${raw.sku_id || raw.zoho_book_item_id}`, e);
+          
+          let reason = e.message || 'Unknown processing error';
+          if (reason.includes('Unique constraint failed on the fields: (`id`)')) {
+            reason = 'Duplicate SKU ID conflict in local database';
+          } else if (reason.includes('Foreign key constraint failed')) {
+            reason = 'Category or Brand resolution failed';
+          } else if (reason.includes('Unknown argument `brandId`')) {
+            reason = 'Invalid SKU relation mapping';
+          }
+
+          try {
+            errorLogs.push(safeJson({
+              sku: raw.sku_id || 'N/A',
+              product: raw.name || 'Unknown',
+              reason: reason,
+              api_response: raw,
+              payload: currentSkuData,
+              timestamp: new Date().toISOString()
+            }));
+          } catch (logErr) {
+            console.error('Failed to capture structured error log:', logErr);
+          }
           failed++;
         }
       }
 
-      return { created, updated, failed };
+      return { created, updated, failed, errorLogs };
     }, { maxWait: 20000, timeout: 60000 });
+
 
     // Update log
     await prisma.skuSyncLog.update({
@@ -152,6 +193,7 @@ export async function runSkuSync() {
         createdCount: result.created,
         updatedCount: result.updated,
         failedCount: result.failed,
+        logs: result.errorLogs.length > 0 ? { errors: result.errorLogs } : undefined,
       }
     });
 

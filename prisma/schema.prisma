@@ -35,7 +35,7 @@ model Warehouse {
 
 model Brand {
   id        String   @id @default(cuid())
-  name      String   @unique
+  name      String
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -68,6 +68,7 @@ model Sku {
   caseSize        Int                  @default(1)
   lastSyncedAt    DateTime?
   zohoBookItemId  BigInt?
+  zohoBooksId2    String?
   categoryId      String?
   isActive        Boolean              @default(true)
   createdAt       DateTime             @default(now())
@@ -81,6 +82,7 @@ model Sku {
   @@index([brandId])
   @@index([createdAt])
   @@index([zohoBookItemId])
+  @@index([zohoBooksId2])
 }
 
 model WarehouseInventory {

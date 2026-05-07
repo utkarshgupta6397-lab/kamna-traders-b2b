@@ -2,8 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import { formatCurrency } from '@/lib/utils';
-import { RefreshCw, AlertCircle, CheckCircle2, Download, Clock } from 'lucide-react';
+import { RefreshCw, AlertCircle, CheckCircle2, Download, Clock, Trash2, Lock, X, Copy, FileJson, ChevronDown, ChevronRight, ClipboardCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+type SyncError = {
+  sku: string;
+  product: string;
+  reason: string;
+  api_response: any;
+  payload: any;
+  timestamp: string;
+};
 
 type PreviewSku = {
   skuId: string;
@@ -23,7 +32,26 @@ export default function SkuSyncPage() {
   const [hasFetched, setHasFetched] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncSummary, setSyncSummary] = useState<{ created: number; updated: number; failed: number } | null>(null);
-  const [lastSync, setLastSync] = useState<{ startedAt: string; completedAt: string | null; totalReceived: number; createdCount: number; updatedCount: number; failedCount: number } | null>(null);
+  const [lastSync, setLastSync] = useState<{ 
+    startedAt: string; 
+    completedAt: string | null; 
+    totalReceived: number; 
+    createdCount: number; 
+    updatedCount: number; 
+    failedCount: number;
+    logs?: { errors?: SyncError[] } | null;
+  } | null>(null);
+  
+  // Hard Reset States
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetStep, setResetStep] = useState(1); // 1: Warn, 2: Phrase, 3: PIN
+  const [resetPhrase, setResetPhrase] = useState('');
+  const [adminPin, setAdminPin] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+
+  // Sync Error States
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [expandedJson, setExpandedJson] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     fetchStatus();
@@ -105,6 +133,66 @@ export default function SkuSyncPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleHardReset = async () => {
+    if (resetStep < 3) {
+      setResetStep(resetStep + 1);
+      return;
+    }
+
+    setIsResetting(true);
+    try {
+      const res = await fetch('/api/admin/hard-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phrase: resetPhrase, pin: adminPin }),
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json.error || 'Reset failed');
+      }
+
+      toast.success('System reset successfully');
+      setShowResetModal(false);
+      setResetStep(1);
+      setResetPhrase('');
+      setAdminPin('');
+      
+      // Refresh all state
+      setSkus([]);
+      setHasFetched(false);
+      fetchStatus();
+    } catch (err: any) {
+      toast.error(err.message || 'Reset failed');
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const closeResetModal = () => {
+    if (isResetting) return;
+    setShowResetModal(false);
+    setResetStep(1);
+    setResetPhrase('');
+    setAdminPin('');
+  };
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} copied!`, { icon: <ClipboardCheck className="text-emerald-500" size={16} /> });
+  };
+
+  const toggleJson = (id: string) => {
+    setExpandedJson(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const copyAllErrors = () => {
+    const errors = lastSync?.logs?.errors || [];
+    if (errors.length === 0) return;
+    const text = JSON.stringify(errors, null, 2);
+    copyToClipboard(text, 'All errors');
   };
 
   return (
@@ -198,9 +286,18 @@ export default function SkuSyncPage() {
               <span className="text-blue-600 text-lg font-bold">{syncSummary.updated}</span>
               <span className="text-gray-500 text-[10px] uppercase tracking-wider">Updated</span>
             </div>
-            <div className="flex flex-col items-center bg-white px-4 py-2 rounded shadow-sm border border-emerald-100 min-w-[80px]">
+            <div className="flex flex-col items-center bg-white px-4 py-2 rounded shadow-sm border border-emerald-100 min-w-[80px] relative">
               <span className="text-red-600 text-lg font-bold">{syncSummary.failed}</span>
               <span className="text-gray-500 text-[10px] uppercase tracking-wider">Failed</span>
+              {syncSummary.failed > 0 && (
+                <button 
+                  onClick={() => setShowErrorModal(true)}
+                  className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-bold text-red-600 hover:underline flex items-center gap-1"
+                >
+                  <AlertCircle size={10} />
+                  View Errors
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -317,6 +414,275 @@ export default function SkuSyncPage() {
           </>
         )}
       </div>
+
+      {/* ── DANGER ZONE ─────────────────────────────────────────────────── */}
+      <div className="mt-12 mb-8">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div>
+              <h2 className="text-lg font-bold text-red-800 flex items-center gap-2">
+                <Trash2 size={20} />
+                Danger Zone
+              </h2>
+              <p className="text-sm text-red-600 mt-1 max-w-2xl">
+                The Hard Reset will permanently delete all SKUs, Brands, Categories, Inventory History, and Dispatch records. 
+                Users and Warehouses will be preserved. This action is irreversible.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowResetModal(true)}
+              className="bg-red-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-red-700 transition-all shadow-sm flex items-center gap-2 flex-shrink-0"
+            >
+              <Trash2 size={18} />
+              Hard Reset System
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── TRIPLE CONFIRMATION MODAL ────────────────────────────────────── */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeResetModal} />
+          
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900">System Hard Reset</h3>
+              <button onClick={closeResetModal} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-8">
+              {resetStep === 1 && (
+                <div className="space-y-6 text-center">
+                  <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+                    <AlertCircle size={32} />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-gray-900 font-bold text-xl">Are you absolutely sure?</p>
+                    <p className="text-gray-500 text-sm">
+                      This will wipe the entire catalog and all transaction history. 
+                      You will need to run a fresh SKU sync after this.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {resetStep === 2 && (
+                <div className="space-y-4">
+                  <p className="text-sm font-medium text-gray-700">
+                    To confirm, please type <span className="font-bold text-red-600 uppercase">RESET EVERYTHING</span> in the box below:
+                  </p>
+                  <input
+                    type="text"
+                    value={resetPhrase}
+                    onChange={(e) => setResetPhrase(e.target.value)}
+                    placeholder="Type the phrase here"
+                    className="w-full border-2 border-red-100 rounded-xl px-4 py-3 focus:border-red-500 focus:ring-0 outline-none font-bold text-center tracking-wide"
+                    autoFocus
+                  />
+                </div>
+              )}
+
+              {resetStep === 3 && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 text-sm font-medium text-gray-700">
+                    <Lock size={16} className="text-[#1A2766]" />
+                    <span>Enter Admin PIN to authorize:</span>
+                  </div>
+                  <input
+                    type="password"
+                    value={adminPin}
+                    onChange={(e) => setAdminPin(e.target.value)}
+                    placeholder="••••"
+                    className="w-full border-2 border-[#1A2766]/10 rounded-xl px-4 py-3 focus:border-[#1A2766] focus:ring-0 outline-none text-center text-2xl tracking-[0.5em] font-bold"
+                    autoFocus
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-gray-50 flex gap-3">
+              <button
+                onClick={closeResetModal}
+                disabled={isResetting}
+                className="flex-1 px-4 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg font-bold hover:bg-gray-100 transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleHardReset}
+                disabled={
+                  isResetting || 
+                  (resetStep === 2 && resetPhrase !== 'RESET EVERYTHING') ||
+                  (resetStep === 3 && !adminPin)
+                }
+                className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center justify-center gap-2"
+              >
+                {isResetting ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin" />
+                    Resetting...
+                  </>
+                ) : resetStep < 3 ? 'Continue' : 'Destroy & Reset'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── SYNC ERROR MODAL ────────────────────────────────────────────── */}
+      {showErrorModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowErrorModal(false)} />
+          
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <AlertCircle className="text-red-500" size={24} />
+                  Sync Failure Details
+                </h3>
+                <p className="text-sm text-gray-500 mt-0.5">Diagnostic logs for SKUs that failed to synchronize.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={copyAllErrors}
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-bold hover:bg-gray-200 transition-all"
+                >
+                  <Copy size={16} />
+                  Copy All Errors
+                </button>
+                <button onClick={() => setShowErrorModal(false)} className="text-gray-400 hover:text-gray-600 p-1">
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto p-0">
+              <table className="w-full text-left border-collapse min-w-[1200px]">
+                <thead className="bg-gray-50 sticky top-0 z-10 border-b">
+                  <tr className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-4 w-32">SKU</th>
+                    <th className="px-6 py-4 w-48">Product</th>
+                    <th className="px-6 py-4 w-64">Reason</th>
+                    <th className="px-6 py-4">API Response</th>
+                    <th className="px-6 py-4">Payload</th>
+                    <th className="px-6 py-4 w-40">Time</th>
+                    <th className="px-6 py-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-sm">
+                  {(lastSync?.logs?.errors || []).map((err, idx) => {
+                    const rowId = `row-${idx}`;
+                    return (
+                      <tr key={idx} className="hover:bg-red-50/30 transition-colors align-top">
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col gap-1.5">
+                            <span className="font-mono font-bold text-[#1A2766]">{err.sku}</span>
+                            <button 
+                              onClick={() => copyToClipboard(err.sku, 'SKU')}
+                              className="text-[10px] text-gray-400 hover:text-[#1A2766] flex items-center gap-1"
+                            >
+                              <Copy size={10} /> Copy
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 font-medium text-gray-900">{err.product}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col gap-1.5">
+                            <span className="text-red-600 font-medium leading-relaxed">{err.reason}</span>
+                            <button 
+                              onClick={() => copyToClipboard(err.reason, 'Error')}
+                              className="text-[10px] text-gray-400 hover:text-red-600 flex items-center gap-1"
+                            >
+                              <Copy size={10} /> Copy Error
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="space-y-2">
+                            <button 
+                              onClick={() => toggleJson(`${rowId}-api`)}
+                              className="flex items-center gap-1 text-blue-600 hover:underline font-semibold text-xs"
+                            >
+                              {expandedJson[`${rowId}-api`] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                              API Data
+                            </button>
+                            {expandedJson[`${rowId}-api`] && (
+                              <div className="relative group">
+                                <pre className="p-3 bg-gray-900 text-emerald-400 rounded-lg text-[10px] overflow-auto max-h-48 font-mono shadow-inner border border-gray-800">
+                                  {JSON.stringify(err.api_response, null, 2)}
+                                </pre>
+                                <button 
+                                  onClick={() => copyToClipboard(JSON.stringify(err.api_response, null, 2), 'API Response')}
+                                  className="absolute top-2 right-2 p-1.5 bg-gray-800 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="Copy JSON"
+                                >
+                                  <Copy size={12} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="space-y-2">
+                            <button 
+                              onClick={() => toggleJson(`${rowId}-payload`)}
+                              className="flex items-center gap-1 text-blue-600 hover:underline font-semibold text-xs"
+                            >
+                              {expandedJson[`${rowId}-payload`] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                              Attempted Payload
+                            </button>
+                            {expandedJson[`${rowId}-payload`] && (
+                              <div className="relative group">
+                                <pre className="p-3 bg-gray-900 text-blue-300 rounded-lg text-[10px] overflow-auto max-h-48 font-mono shadow-inner border border-gray-800">
+                                  {JSON.stringify(err.payload, null, 2)}
+                                </pre>
+                                <button 
+                                  onClick={() => copyToClipboard(JSON.stringify(err.payload, null, 2), 'Payload')}
+                                  className="absolute top-2 right-2 p-1.5 bg-gray-800 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="Copy Payload"
+                                >
+                                  <Copy size={12} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-xs text-gray-500 tabular-nums">
+                          {new Date(err.timestamp).toLocaleTimeString('en-IN', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <button 
+                            onClick={() => {
+                              const rowText = `SKU: ${err.sku}\nProduct: ${err.product}\nReason: ${err.reason}\nTime: ${err.timestamp}`;
+                              copyToClipboard(rowText, 'Row details');
+                            }}
+                            className="p-2 text-gray-400 hover:text-[#1A2766] hover:bg-gray-100 rounded-lg transition-all"
+                            title="Copy Full Row Summary"
+                          >
+                            <Copy size={18} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {(lastSync?.logs?.errors || []).length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-20 text-center text-gray-400 italic">
+                        No structured errors found for this sync run.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+

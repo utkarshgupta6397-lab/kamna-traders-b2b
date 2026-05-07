@@ -136,7 +136,9 @@ export async function createSku(data: FormData) {
   const caseSize = Math.max(1, parseInt(data.get('caseSize') as string, 10) || 1);
   const zohoRaw = data.get('zohoBookItemId') as string;
   const zohoBookItemId = zohoRaw ? BigInt(zohoRaw) : null;
-  await prisma.sku.create({ data: { id, name, categoryId, brandId, price, moq, stepQty, unit, caseSize, zohoBookItemId } });
+  const zohoBooksId2 = data.get('zohoBooksId2') as string || null;
+
+  await prisma.sku.create({ data: { id, name, categoryId, brandId, price, moq, stepQty, unit, caseSize, zohoBookItemId, zohoBooksId2 } });
   revalidatePath('/admin/skus');
 }
 
@@ -157,6 +159,7 @@ export async function updateSku(data: FormData) {
   const caseSize = Math.max(1, parseInt(data.get('caseSize') as string, 10) || 1);
   const zohoRaw = data.get('zohoBookItemId') as string;
   const zohoBookItemId = zohoRaw ? BigInt(zohoRaw) : null;
+  const zohoBooksId2 = data.get('zohoBooksId2') as string || null;
 
   // If SKU ID is being renamed, verify the new ID is not already taken
   if (newId !== id) {
@@ -166,7 +169,7 @@ export async function updateSku(data: FormData) {
 
   await prisma.sku.update({
     where: { id },
-    data: { id: newId, name, categoryId, brandId, price, moq, stepQty, unit, isActive, caseSize, zohoBookItemId },
+    data: { id: newId, name, categoryId, brandId, price, moq, stepQty, unit, isActive, caseSize, zohoBookItemId, zohoBooksId2 },
   });
   revalidatePath('/admin/skus');
 }

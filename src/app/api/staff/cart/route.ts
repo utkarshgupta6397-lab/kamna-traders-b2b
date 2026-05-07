@@ -47,26 +47,45 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 3. Batch Reads & Validation (ALL READS OUTSIDE TRANSACTION)
+    // 3. Batch Reads & Validation (OPTIMIZED: 2 Unified Queries)
     const tReadStart = performance.now();
     const skuIds = items.map((i) => i.skuId);
-    const now = new Date();
-
-    const [skus, inventories, warehouse, staffUser] = await Promise.all([
-      prisma.sku.findMany({ where: { id: { in: skuIds } } }),
-      prisma.warehouseInventory.findMany({ where: { warehouseId, skuId: { in: skuIds } } }),
-      prisma.warehouse.findUnique({ where: { id: warehouseId }, select: { id: true, name: true, active: true } }),
+    
+    const [warehouseData, staffUser] = await Promise.all([
+      prisma.warehouse.findUnique({
+        where: { id: warehouseId },
+        select: {
+          id: true,
+          name: true,
+          active: true,
+          inventory: {
+            where: { skuId: { in: skuIds } },
+            include: { sku: true }
+          }
+        }
+      }),
       prisma.user.findUnique({ where: { id: staffId }, select: { id: true, name: true, active: true } }),
     ]);
-    queryCount += 4;
+    queryCount += 2;
     perf.preReads = performance.now() - tReadStart;
 
     // 4. In-Memory Validation & Preparations
-    if (!warehouse || !warehouse.active) throw new Error('Warehouse not found or inactive');
+    if (!warehouseData || !warehouseData.active) throw new Error('Warehouse not found or inactive');
     if (!staffUser || !staffUser.active) throw new Error('Staff account not found or deactivated');
 
-    const skuMap = new Map(skus.map((s) => [s.id, s]));
+    // Flatten inventories and skus from unified fetch
+    const inventories = warehouseData.inventory;
     const inventoryMap = new Map(inventories.map((i) => [i.skuId, i]));
+    const skuMap = new Map(inventories.map((i) => [i.skuId, i.sku]));
+
+    // Check for any missing SKUs (those not in inventory)
+    const missingSkuIds = skuIds.filter(id => !skuMap.has(id));
+    if (missingSkuIds.length > 0) {
+      // Fallback: fetch missing SKUs if they haven't been stocked yet
+      const missingSkus = await prisma.sku.findMany({ where: { id: { in: missingSkuIds } } });
+      queryCount += 1;
+      missingSkus.forEach(s => skuMap.set(s.id, s));
+    }
 
     for (const item of items) {
       const sku = skuMap.get(item.skuId);
@@ -76,23 +95,17 @@ export async function POST(request: Request) {
 
     // 5. Generate Identifiers
     const cartId = `KT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    const now = new Date();
     const datePart = now.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: '2-digit',
-      timeZone: 'Asia/Kolkata'
+      day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata'
     }).replace(/ /g, '/');
-    const safeNotes = notes?.trim() || null;
 
     // 6. Pre-compute all write data in memory
-    const historyRows: any[] = [];
     const inventoryOps: any[] = [];
-
     for (const item of items) {
       const inv = inventoryMap.get(item.skuId);
       const beforeQty = inv ? inv.qty : 999;
       const afterQty = beforeQty - item.qty;
-
       inventoryOps.push({
         skuId: item.skuId,
         exists: !!inv,
@@ -102,10 +115,10 @@ export async function POST(request: Request) {
       });
     }
 
-    // 7. Minimal Transaction (WRITES ONLY)
+    // 7. Optimized Transaction (2 Roundtrips Max)
     const tTxStart = performance.now();
-    const cart = await prisma.$transaction(async (tx) => {
-      // 7.1 Generate sequence number
+    const result = await prisma.$transaction(async (tx) => {
+      // 7.1 Sequence Generation (Sequential roundtrip)
       const tSeqStart = performance.now();
       const seqRecord = await tx.dispatchSequence.upsert({
         where: { date: datePart },
@@ -116,9 +129,25 @@ export async function POST(request: Request) {
       perf.dispatchNo = performance.now() - tSeqStart;
 
       const generatedSlipNumber = `KS-DP-${datePart}-${seqRecord.sequence.toString().padStart(3, '0')}`;
+      const tWritesStart = performance.now();
 
-      // 7.2 Parallelize all inventory updates
-      const tInvStart = performance.now();
+      // 7.2 Prepare History Rows
+      const historyRows = items.map((item, i) => {
+        const op = inventoryOps[i];
+        const sku = skuMap.get(item.skuId);
+        return {
+          warehouseId,
+          skuId: item.skuId,
+          productName: sku?.name || item.skuId,
+          beforeQty: op.beforeQty,
+          afterQty: op.afterQty,
+          qtyChange: -item.qty,
+          remarks: `Dispatch ${generatedSlipNumber} | Customer: ${customerName}`,
+          createdBy: staffId,
+        };
+      });
+
+      // 7.3 Parallel Execution of All Writes
       const invPromises = inventoryOps.map((op) => {
         queryCount += 1;
         if (!op.exists) {
@@ -133,56 +162,33 @@ export async function POST(request: Request) {
         }
       });
 
-      // 7.3 Build history rows with final slip number
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const op = inventoryOps[i];
-        const sku = skuMap.get(item.skuId);
-        historyRows.push({
-          warehouseId,
-          skuId: item.skuId,
-          productName: sku?.name || item.skuId,
-          beforeQty: op.beforeQty,
-          afterQty: op.afterQty,
-          qtyChange: -item.qty,
-          remarks: `Dispatch ${generatedSlipNumber} | Customer: ${customerName}`,
-          createdBy: staffId,
-        });
-      }
-
-      // 7.4 Create cart + bulk history + all inventory updates in parallel
-      const tWritesStart = performance.now();
-      const [newCart] = await Promise.all([
+      await Promise.all([
         tx.cart.create({
           data: {
             id: cartId,
             warehouseId,
             customerName,
-            notes: safeNotes,
+            notes: notes?.trim() || null,
             staffId,
             dispatchSlipNumber: generatedSlipNumber,
-            items: { create: items.map((i) => ({ skuId: i.skuId, qty: i.qty })) },
-          },
-          select: {
-            id: true,
-            dispatchSlipNumber: true,
-            customerName: true,
-            notes: true,
-            createdAt: true,
-          },
+          }
+        }),
+        tx.cartItem.createMany({
+          data: items.map(i => ({ cartId, skuId: i.skuId, qty: i.qty }))
         }),
         tx.inventoryHistory.createMany({ data: historyRows }),
-        ...invPromises,
+        ...invPromises
       ]);
-      queryCount += 2; // cart create + history createMany
+
+      queryCount += 3; // cart + cartItems + history
       perf.transactionWrites = performance.now() - tWritesStart;
 
-      return newCart;
+      return { cartId, generatedSlipNumber };
     }, { maxWait: 10000, timeout: 20000 });
     
     perf.transactionTotal = performance.now() - tTxStart;
 
-    // 8. Build print payload
+    // 8. Build print payload using in-memory data (NO RE-FETCH)
     const enrichedItems = items.map((item) => {
       const sku = skuMap.get(item.skuId);
       const inv = inventoryMap.get(item.skuId);
@@ -200,28 +206,24 @@ export async function POST(request: Request) {
       (zoneGroups[item.zone] ??= []).push(item);
     }
 
-    const tEnd = performance.now();
-    const totalApi = tEnd - t0;
+    const totalApi = performance.now() - t0;
     perf.apiTotal = totalApi;
 
-    // Region diagnostics
     const vercelRegion = request.headers.get('x-vercel-id')?.split(':')[0] || 'local';
-    
-    // Construct Server-Timing header
     const serverTiming = Object.entries(perf)
       .map(([name, dur]) => `${name};dur=${dur.toFixed(0)}`)
       .join(', ');
 
     return NextResponse.json({
       success: true,
-      cartId: cart.id,
+      cartId: result.cartId,
       printPayload: {
-        id: cart.id,
-        dispatchSlipNumber: cart.dispatchSlipNumber,
-        customerName: cart.customerName,
-        notes: cart.notes,
-        createdAt: cart.createdAt,
-        warehouseName: warehouse.name,
+        id: result.cartId,
+        dispatchSlipNumber: result.generatedSlipNumber,
+        customerName,
+        notes: notes?.trim() || null,
+        createdAt: now,
+        warehouseName: warehouseData.name,
         staffName: staffUser.name,
         items: enrichedItems,
         zoneGroups,

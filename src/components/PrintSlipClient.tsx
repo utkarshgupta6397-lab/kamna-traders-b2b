@@ -38,9 +38,24 @@ export default function PrintSlipClient({
 }) {
   const [payload, setPayload] = useState<PrintPayload | null>(serverPayload);
   const [showZoneSlips, setShowZoneSlips] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [timings, setTimings] = useState<Record<string, number>>({});
   const [mountTime, setMountTime] = useState<number | null>(null);
   const searchParams = useSearchParams();
+
+  const handleCopy = () => {
+    const text = `Dispatch Performance
+
+API Request: ${timings.apiRequest || 0}ms
+Navigation: ${timings.navigation?.toFixed(0) || 0}ms
+Data Load: ${timings.dataFetch?.toFixed(0) || 0}ms
+First Paint: ${timings.firstPaint?.toFixed(0) || 0}ms
+Total Perceived: ${timings.totalPerceived?.toFixed(0) || 0}ms`;
+
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   // Performance debug panel visibility
   const showDebug = process.env.NODE_ENV !== 'production' || searchParams.get('debugPerf') === 'true';
@@ -51,18 +66,15 @@ export default function PrintSlipClient({
     setMountTime(now);
 
     const apiTime = searchParams.get('apiTime');
+    const pushTime = searchParams.get('pushTime');
+
     if (apiTime) {
       setTimings(prev => ({ ...prev, apiRequest: parseInt(apiTime) }));
     }
 
-    // Capture navigation timing safely on client
-    if (typeof window !== 'undefined' && window.performance) {
-      const perf = window.performance;
-      const navEntry = perf.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
-      if (navEntry) {
-        // Approximate navigation time as time from fetchStart to current mount
-        setTimings(prev => ({ ...prev, navigation: now - navEntry.startTime }));
-      }
+    if (pushTime) {
+      const pTime = parseInt(pushTime);
+      setTimings(prev => ({ ...prev, navigation: now - pTime }));
     }
   }, [searchParams]);
 
@@ -86,23 +98,26 @@ export default function PrintSlipClient({
 
   // Lazy render zone slips after initial paint
   useEffect(() => {
-    if (payload) {
-      const t0 = performance.now();
-      // Use setTimeout to ensure initial render of Master Slip is fast
+    if (payload && mountTime !== null) {
+      // First paint is when Master Slip is rendered (on mount if payload exists)
+      setTimings(prev => ({ ...prev, firstPaint: performance.now() - mountTime }));
+
       const timer = setTimeout(() => {
         setShowZoneSlips(true);
-        setTimings(prev => ({ ...prev, lazyRenderTrigger: performance.now() - t0 }));
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [payload]);
+  }, [payload, mountTime]);
 
-  // Track total perceived time relative to mount
+  // Track total perceived time relative to start of API request
   useEffect(() => {
     if (showZoneSlips && mountTime !== null) {
-      setTimings(prev => ({ ...prev, totalPerceived: performance.now() - mountTime }));
+      const apiReq = timings.apiRequest || 0;
+      const nav = timings.navigation || 0;
+      const render = performance.now() - mountTime;
+      setTimings(prev => ({ ...prev, totalPerceived: apiReq + nav + render }));
     }
-  }, [showZoneSlips, mountTime]);
+  }, [showZoneSlips, mountTime, timings.apiRequest, timings.navigation]);
 
   const displayId = useMemo(() => payload?.dispatchSlipNumber || payload?.id || '', [payload]);
   const parts = useMemo(() => displayId.split('-'), [displayId]);
@@ -128,22 +143,6 @@ export default function PrintSlipClient({
 
   const zoneGroups = useMemo(() => payload?.zoneGroups || {}, [payload]);
 
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    const text = `Dispatch Performance
-
-API Request: ${timings.apiRequest || 0}ms
-Navigation: ${timings.navigation?.toFixed(0) || 0}ms
-Data Load: ${timings.dataFetch?.toFixed(0) || 0}ms
-First Paint: ${(performance.now() - (mountTime || 0)).toFixed(0)}ms
-Total Perceived: ${(timings.apiRequest + timings.navigation + timings.totalPerceived || 0).toFixed(0)}ms`;
-
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   if (!payload) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -159,7 +158,7 @@ Total Perceived: ${(timings.apiRequest + timings.navigation + timings.totalPerce
     <div className="relative p-4 space-y-6 print:space-y-0 print:p-0" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as any}>
       {/* ── PERFORMANCE DEBUG PANEL ───────────────────────────────────── */}
       {showDebug && mountTime !== null && (
-        <div className="fixed top-[100px] left-4 z-[9999] bg-black/80 text-white text-[10px] p-3 rounded-lg shadow-xl backdrop-blur-md border border-white/20 font-mono space-y-1.5 w-48 pointer-events-auto print:hidden animate-in fade-in slide-in-from-left-4 duration-500">
+        <div className="fixed bottom-6 right-6 z-[9999] bg-black/80 text-white text-[10px] p-3 rounded-lg shadow-xl backdrop-blur-md border border-white/20 font-mono space-y-1.5 w-48 pointer-events-auto print:hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="flex items-center justify-between border-b border-white/20 pb-1 mb-1">
             <p className="font-bold flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
@@ -176,8 +175,11 @@ Total Perceived: ${(timings.apiRequest + timings.navigation + timings.totalPerce
             <div className="flex justify-between"><span>API Request</span> <span className={timings.apiRequest > 4000 ? 'text-red-400' : 'text-green-400'}>{timings.apiRequest || 0}ms</span></div>
             <div className="flex justify-between"><span>Navigation</span> <span className="text-blue-400">{timings.navigation?.toFixed(0) || 0}ms</span></div>
             <div className="flex justify-between"><span>Data Load</span> <span className="text-yellow-400">{timings.dataFetch?.toFixed(0) || 0}ms</span></div>
-            <div className="flex justify-between"><span>First Paint</span> <span className="text-purple-400">{(performance.now() - mountTime).toFixed(0)}ms</span></div>
-            <div className="flex justify-between"><span>Total perceived</span> <span className="font-bold text-white">{(timings.apiRequest + timings.navigation + (timings.totalPerceived || 0)).toFixed(0)}ms</span></div>
+            <div className="flex justify-between"><span>First Paint</span> <span className="text-purple-400">{timings.firstPaint?.toFixed(0) || 0}ms</span></div>
+            <div className="flex justify-between border-t border-white/10 pt-1 mt-1">
+              <span className="font-bold">Total perceived</span> 
+              <span className="font-bold text-white">{timings.totalPerceived?.toFixed(0) || 0}ms</span>
+            </div>
           </div>
         </div>
       )}

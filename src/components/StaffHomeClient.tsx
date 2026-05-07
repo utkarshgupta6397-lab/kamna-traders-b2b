@@ -179,11 +179,12 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
       if (res.ok) {
         const { cartId, printPayload } = await res.json();
         const apiTime = (performance.now() - tStart).toFixed(0);
+        const pushTime = performance.now().toFixed(0);
         // Cache print payload to skip refetch on print page
         if (printPayload) {
           try { sessionStorage.setItem(`print_${cartId}`, JSON.stringify(printPayload)); } catch {}
         }
-        router.push(`/staff/dashboard/print/${cartId}?autoprint=true&apiTime=${apiTime}`);
+        router.push(`/staff/dashboard/print/${cartId}?autoprint=true&apiTime=${apiTime}&pushTime=${pushTime}`);
         setTimeout(() => clearCart(), 100);
       } else {
         const data = await res.json().catch(() => null);

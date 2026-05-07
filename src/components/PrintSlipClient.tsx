@@ -57,11 +57,14 @@ Total Perceived: ${timings.totalPerceived?.toFixed(0) || 0}ms`;
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Performance debug panel visibility
-  const showDebug = process.env.NODE_ENV !== 'production' || searchParams.get('debugPerf') === 'true';
+  const [showDebug, setShowDebug] = useState(false);
 
-  // Initialize client-side timing baselines
+  // Initialize client-side timing baselines and visibility
   useEffect(() => {
+    const isDev = process.env.NODE_ENV !== 'production';
+    const hasDebugParam = searchParams.get('debugPerf') === 'true';
+    setShowDebug(isDev || hasDebugParam);
+
     const now = performance.now();
     setMountTime(now);
 

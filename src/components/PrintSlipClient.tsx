@@ -41,16 +41,36 @@ export default function PrintSlipClient({
   const [copied, setCopied] = useState(false);
   const [timings, setTimings] = useState<Record<string, number>>({});
   const [mountTime, setMountTime] = useState<number | null>(null);
+  const [backendPerf, setBackendPerf] = useState<any>(null);
   const searchParams = useSearchParams();
 
   const handleCopy = () => {
-    const text = `Dispatch Performance
+    const text = `Dispatch Performance Report
+Generated: ${new Date().toISOString()}
 
-API Request: ${timings.apiRequest || 0}ms
+[FRONTEND]
+API Response: ${timings.apiRequest || 0}ms
 Navigation: ${timings.navigation?.toFixed(0) || 0}ms
 Data Load: ${timings.dataFetch?.toFixed(0) || 0}ms
 First Paint: ${timings.firstPaint?.toFixed(0) || 0}ms
-Total Perceived: ${timings.totalPerceived?.toFixed(0) || 0}ms`;
+Total Perceived: ${timings.totalPerceived?.toFixed(0) || 0}ms
+
+[BACKEND PHASES]
+Auth Check: ${backendPerf?.auth?.toFixed(1) || 0}ms
+Batch Reads: ${backendPerf?.preReads?.toFixed(1) || 0}ms
+Dispatch No: ${backendPerf?.dispatchNo?.toFixed(1) || 0}ms
+TX Writes: ${backendPerf?.transactionWrites?.toFixed(1) || 0}ms
+TX Total: ${backendPerf?.transactionTotal?.toFixed(1) || 0}ms
+API Total: ${backendPerf?.apiTotal?.toFixed(1) || 0}ms
+
+[PAYLOAD & OPS]
+SKUs: ${backendPerf?.skuCount || 0}
+Zones: ${backendPerf?.zoneCount || 0}
+Query Est: ${backendPerf?.queryCount || 0}
+
+[ENVIRONMENT]
+Vercel: ${backendPerf?.vercelRegion || 'unknown'}
+DB: ${backendPerf?.dbType || 'unknown'}`;
 
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -92,6 +112,12 @@ Total Perceived: ${timings.totalPerceived?.toFixed(0) || 0}ms`;
           setPayload(parsed);
           sessionStorage.removeItem(`print_${cartId}`);
           setTimings(prev => ({ ...prev, dataFetch: performance.now() - t0 }));
+        }
+
+        const cachedPerf = sessionStorage.getItem(`perf_${cartId}`);
+        if (cachedPerf) {
+          setBackendPerf(JSON.parse(cachedPerf));
+          sessionStorage.removeItem(`perf_${cartId}`);
         }
       } catch {}
     } else {
@@ -159,29 +185,65 @@ Total Perceived: ${timings.totalPerceived?.toFixed(0) || 0}ms`;
 
   return (
     <div className="relative p-4 space-y-6 print:space-y-0 print:p-0" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as any}>
-      {/* ── PERFORMANCE DEBUG PANEL ───────────────────────────────────── */}
+      {/* ── OPERATIONAL DIAGNOSTICS PANEL ─────────────────────────────── */}
       {showDebug && mountTime !== null && (
-        <div className="fixed bottom-6 right-6 z-[9999] bg-black/80 text-white text-[10px] p-3 rounded-lg shadow-xl backdrop-blur-md border border-white/20 font-mono space-y-1.5 w-48 pointer-events-auto print:hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="flex items-center justify-between border-b border-white/20 pb-1 mb-1">
-            <p className="font-bold flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              Performance
-            </p>
+        <div className="fixed bottom-6 right-6 z-[9999] bg-black/90 text-white text-[9px] p-3 rounded-lg shadow-2xl backdrop-blur-lg border border-white/10 font-mono space-y-2 w-56 pointer-events-auto print:hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              <span className="font-bold tracking-tight">DIAGNOSTICS</span>
+            </div>
             <button 
               onClick={handleCopy}
-              className="text-[9px] bg-white/10 hover:bg-white/20 px-1.5 py-0.5 rounded transition-colors"
+              className="bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded transition-colors text-[8px] uppercase font-bold"
             >
               {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
-          <div className="space-y-1">
-            <div className="flex justify-between"><span>API Request</span> <span className={timings.apiRequest > 4000 ? 'text-red-400' : 'text-green-400'}>{timings.apiRequest || 0}ms</span></div>
-            <div className="flex justify-between"><span>Navigation</span> <span className="text-blue-400">{timings.navigation?.toFixed(0) || 0}ms</span></div>
-            <div className="flex justify-between"><span>Data Load</span> <span className="text-yellow-400">{timings.dataFetch?.toFixed(0) || 0}ms</span></div>
-            <div className="flex justify-between"><span>First Paint</span> <span className="text-purple-400">{timings.firstPaint?.toFixed(0) || 0}ms</span></div>
-            <div className="flex justify-between border-t border-white/10 pt-1 mt-1">
-              <span className="font-bold">Total perceived</span> 
-              <span className="font-bold text-white">{timings.totalPerceived?.toFixed(0) || 0}ms</span>
+
+          <div className="space-y-2.5">
+            {/* Backend Phases */}
+            <div className="space-y-1">
+              <p className="text-white/40 uppercase font-bold text-[7px] tracking-widest">Backend Phases</p>
+              <div className="flex justify-between"><span>Auth Check</span> <span className="text-white/60">{backendPerf?.auth?.toFixed(0) || 0}ms</span></div>
+              <div className="flex justify-between"><span>Batch Reads</span> <span className="text-white/60">{backendPerf?.preReads?.toFixed(0) || 0}ms</span></div>
+              <div className="flex justify-between"><span>Dispatch No</span> <span className="text-white/60">{backendPerf?.dispatchNo?.toFixed(0) || 0}ms</span></div>
+              <div className="flex justify-between"><span>TX Writes</span> <span className="text-white/60">{backendPerf?.transactionWrites?.toFixed(0) || 0}ms</span></div>
+              <div className="flex justify-between border-t border-white/5 pt-0.5">
+                <span className="text-blue-400">API Total</span> 
+                <span className="text-blue-400 font-bold">{backendPerf?.apiTotal?.toFixed(0) || 0}ms</span>
+              </div>
+            </div>
+
+            {/* Frontend Lifecycle */}
+            <div className="space-y-1">
+              <p className="text-white/40 uppercase font-bold text-[7px] tracking-widest">Frontend Lifecycle</p>
+              <div className="flex justify-between"><span>Navigation</span> <span className="text-white/60">{timings.navigation?.toFixed(0) || 0}ms</span></div>
+              <div className="flex justify-between"><span>Data Load</span> <span className="text-white/60">{timings.dataFetch?.toFixed(0) || 0}ms</span></div>
+              <div className="flex justify-between"><span>First Paint</span> <span className="text-purple-400">{timings.firstPaint?.toFixed(0) || 0}ms</span></div>
+            </div>
+
+            {/* Diagnostics & Env */}
+            <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-1.5 text-[8px]">
+              <div className="space-y-0.5">
+                <p className="text-white/30 uppercase text-[6px]">Payload</p>
+                <div className="flex justify-between px-0.5"><span>SKUs</span> <span>{backendPerf?.skuCount || 0}</span></div>
+                <div className="flex justify-between px-0.5"><span>Zones</span> <span>{backendPerf?.zoneCount || 0}</span></div>
+                <div className="flex justify-between px-0.5"><span>Queries</span> <span>~{backendPerf?.queryCount || 0}</span></div>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-white/30 uppercase text-[6px]">Infrastructure</p>
+                <div className="flex justify-between px-0.5"><span>Region</span> <span className="text-yellow-500 uppercase">{backendPerf?.vercelRegion || '-'}</span></div>
+                <div className="flex justify-between px-0.5"><span>DB</span> <span>{backendPerf?.dbType || '-'}</span></div>
+              </div>
+            </div>
+
+            {/* End to End */}
+            <div className="border-t border-white/20 pt-1.5 mt-1 flex justify-between items-center">
+              <span className="font-bold text-white text-[10px]">TOTAL TIME</span> 
+              <span className="font-bold text-white text-[11px] bg-white/10 px-1.5 py-0.5 rounded leading-none">
+                {timings.totalPerceived?.toFixed(0) || 0}ms
+              </span>
             </div>
           </div>
         </div>

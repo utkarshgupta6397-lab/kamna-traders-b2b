@@ -104,8 +104,14 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
         const data = await res.json();
         const apiTime = (performance.now() - tStart).toFixed(0);
         const pushTime = performance.now().toFixed(0);
+        
         if (data.printPayload) {
-          try { sessionStorage.setItem(`print_${data.cartId}`, JSON.stringify(data.printPayload)); } catch {}
+          try { 
+            sessionStorage.setItem(`print_${data.cartId}`, JSON.stringify(data.printPayload)); 
+            if (data.perf) {
+              sessionStorage.setItem(`perf_${data.cartId}`, JSON.stringify(data.perf));
+            }
+          } catch {}
         }
         clearCart();
         router.push(`/staff/dashboard/print/${data.cartId}?autoprint=true&apiTime=${apiTime}&pushTime=${pushTime}`);

@@ -11,7 +11,8 @@ type CartItemInput = {
 
 export async function POST(request: Request) {
   const t0 = performance.now();
-  console.log('[DISPATCH_PERF] REQUEST_START');
+  const perf: Record<string, number> = {};
+  let queryCount = 0;
   
   try {
     // 1. Basic Safety & Rate Limiting
@@ -25,12 +26,14 @@ export async function POST(request: Request) {
     }
 
     // 2. Auth Verification
+    const tAuthStart = performance.now();
     const session = await getSession();
     const rawStaffId = session?.userId;
     if (typeof rawStaffId !== 'string') {
       return NextResponse.json({ error: 'Unauthorized. Please log in.' }, { status: 401 });
     }
     const staffId = rawStaffId;
+    perf.auth = performance.now() - tAuthStart;
 
     const body = await request.json();
     const { warehouseId, customerName, notes, items } = body as {
@@ -45,6 +48,7 @@ export async function POST(request: Request) {
     }
 
     // 3. Batch Reads & Validation (ALL READS OUTSIDE TRANSACTION)
+    const tReadStart = performance.now();
     const skuIds = items.map((i) => i.skuId);
     const now = new Date();
 
@@ -54,6 +58,8 @@ export async function POST(request: Request) {
       prisma.warehouse.findUnique({ where: { id: warehouseId }, select: { id: true, name: true, active: true } }),
       prisma.user.findUnique({ where: { id: staffId }, select: { id: true, name: true, active: true } }),
     ]);
+    queryCount += 4;
+    perf.preReads = performance.now() - tReadStart;
 
     // 4. In-Memory Validation & Preparations
     if (!warehouse || !warehouse.active) throw new Error('Warehouse not found or inactive');
@@ -79,24 +85,8 @@ export async function POST(request: Request) {
     const safeNotes = notes?.trim() || null;
 
     // 6. Pre-compute all write data in memory
-    const historyRows: {
-      warehouseId: string;
-      skuId: string;
-      productName: string;
-      beforeQty: number;
-      afterQty: number;
-      qtyChange: number;
-      remarks: string;
-      createdBy: string;
-    }[] = [];
-
-    const inventoryOps: {
-      skuId: string;
-      exists: boolean;
-      beforeQty: number;
-      afterQty: number;
-      deductQty: number;
-    }[] = [];
+    const historyRows: any[] = [];
+    const inventoryOps: any[] = [];
 
     for (const item of items) {
       const inv = inventoryMap.get(item.skuId);
@@ -112,7 +102,8 @@ export async function POST(request: Request) {
       });
     }
 
-    // 7. Minimal Transaction (WRITES ONLY, parallelized)
+    // 7. Minimal Transaction (WRITES ONLY)
+    const tTxStart = performance.now();
     const cart = await prisma.$transaction(async (tx) => {
       // 7.1 Generate sequence number
       const tSeqStart = performance.now();
@@ -121,13 +112,15 @@ export async function POST(request: Request) {
         create: { date: datePart, sequence: 1 },
         update: { sequence: { increment: 1 } },
       });
-      console.log(`[DISPATCH_PERF] dispatchNoGeneration: ${(performance.now() - tSeqStart).toFixed(2)}ms`);
+      queryCount += 1;
+      perf.dispatchNo = performance.now() - tSeqStart;
 
       const generatedSlipNumber = `KS-DP-${datePart}-${seqRecord.sequence.toString().padStart(3, '0')}`;
 
       // 7.2 Parallelize all inventory updates
       const tInvStart = performance.now();
       const invPromises = inventoryOps.map((op) => {
+        queryCount += 1;
         if (!op.exists) {
           return tx.warehouseInventory.create({
             data: { warehouseId, skuId: op.skuId, qty: op.afterQty, isOos: op.afterQty <= 0 },
@@ -181,17 +174,15 @@ export async function POST(request: Request) {
         tx.inventoryHistory.createMany({ data: historyRows }),
         ...invPromises,
       ]);
-
-      const tWritesEnd = performance.now();
-      console.log(`[DISPATCH_PERF] inventoryUpdates (batch): ${(tWritesEnd - tWritesStart).toFixed(2)}ms`);
-      console.log(`[DISPATCH_PERF] cartCreate + historyInsert (combined in batch): ${(tWritesEnd - tWritesStart).toFixed(2)}ms`);
+      queryCount += 2; // cart create + history createMany
+      perf.transactionWrites = performance.now() - tWritesStart;
 
       return newCart;
     }, { maxWait: 10000, timeout: 20000 });
     
-    console.log(`[DISPATCH_PERF] transactionComplete: ${(performance.now() - t0).toFixed(2)}ms`);
+    perf.transactionTotal = performance.now() - tTxStart;
 
-    // 8. Build print payload to avoid refetch waterfall
+    // 8. Build print payload
     const enrichedItems = items.map((item) => {
       const sku = skuMap.get(item.skuId);
       const inv = inventoryMap.get(item.skuId);
@@ -204,12 +195,22 @@ export async function POST(request: Request) {
       };
     });
 
-    const zoneGroups: Record<string, typeof enrichedItems> = {};
+    const zoneGroups: Record<string, any[]> = {};
     for (const item of enrichedItems) {
       (zoneGroups[item.zone] ??= []).push(item);
     }
 
-    console.log(`[DISPATCH_PERF] TOTAL_API: ${(performance.now() - t0).toFixed(2)}ms`);
+    const tEnd = performance.now();
+    const totalApi = tEnd - t0;
+    perf.apiTotal = totalApi;
+
+    // Region diagnostics
+    const vercelRegion = request.headers.get('x-vercel-id')?.split(':')[0] || 'local';
+    
+    // Construct Server-Timing header
+    const serverTiming = Object.entries(perf)
+      .map(([name, dur]) => `${name};dur=${dur.toFixed(0)}`)
+      .join(', ');
 
     return NextResponse.json({
       success: true,
@@ -226,22 +227,23 @@ export async function POST(request: Request) {
         zoneGroups,
         qrPayload: JSON.stringify(enrichedItems.map(i => ({ sku: i.skuId, qty: i.qty }))),
       },
-    }, { status: 200 });
+      perf: {
+        ...perf,
+        queryCount,
+        skuCount: items.length,
+        zoneCount: Object.keys(zoneGroups).length,
+        vercelRegion,
+        dbType: process.env.DATABASE_URL?.includes('supabase') ? 'Supabase' : 'Postgres',
+      }
+    }, { 
+      status: 200,
+      headers: {
+        'Server-Timing': serverTiming
+      }
+    });
 
   } catch (error: any) {
     const message = error instanceof Error ? error.message : 'Internal Server Error';
-    console.error('[CART_ERROR]', message);
-
-    const isBusinessError =
-      message.includes('stock') ||
-      message.includes('not found') ||
-      message.includes('inactive') ||
-      message.includes('MOQ') ||
-      message.includes('does not exist');
-
-    return NextResponse.json(
-      { error: message },
-      { status: isBusinessError ? 400 : 500 }
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

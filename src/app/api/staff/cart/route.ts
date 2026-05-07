@@ -10,6 +10,9 @@ type CartItemInput = {
 };
 
 export async function POST(request: Request) {
+  const t0 = performance.now();
+  console.log('[DISPATCH_PERF] REQUEST_START');
+  
   try {
     // 1. Basic Safety & Rate Limiting
     if (!validateOrigin(request)) {
@@ -87,7 +90,6 @@ export async function POST(request: Request) {
       createdBy: string;
     }[] = [];
 
-    // We'll fill in the remarks after generating the slip number inside the tx
     const inventoryOps: {
       skuId: string;
       exists: boolean;
@@ -113,15 +115,18 @@ export async function POST(request: Request) {
     // 7. Minimal Transaction (WRITES ONLY, parallelized)
     const cart = await prisma.$transaction(async (tx) => {
       // 7.1 Generate sequence number
+      const tSeqStart = performance.now();
       const seqRecord = await tx.dispatchSequence.upsert({
         where: { date: datePart },
         create: { date: datePart, sequence: 1 },
         update: { sequence: { increment: 1 } },
       });
+      console.log(`[DISPATCH_PERF] dispatchNoGeneration: ${(performance.now() - tSeqStart).toFixed(2)}ms`);
 
       const generatedSlipNumber = `KS-DP-${datePart}-${seqRecord.sequence.toString().padStart(3, '0')}`;
 
       // 7.2 Parallelize all inventory updates
+      const tInvStart = performance.now();
       const invPromises = inventoryOps.map((op) => {
         if (!op.exists) {
           return tx.warehouseInventory.create({
@@ -153,6 +158,7 @@ export async function POST(request: Request) {
       }
 
       // 7.4 Create cart + bulk history + all inventory updates in parallel
+      const tWritesStart = performance.now();
       const [newCart] = await Promise.all([
         tx.cart.create({
           data: {
@@ -176,8 +182,14 @@ export async function POST(request: Request) {
         ...invPromises,
       ]);
 
+      const tWritesEnd = performance.now();
+      console.log(`[DISPATCH_PERF] inventoryUpdates (batch): ${(tWritesEnd - tWritesStart).toFixed(2)}ms`);
+      console.log(`[DISPATCH_PERF] cartCreate + historyInsert (combined in batch): ${(tWritesEnd - tWritesStart).toFixed(2)}ms`);
+
       return newCart;
     }, { maxWait: 10000, timeout: 20000 });
+    
+    console.log(`[DISPATCH_PERF] transactionComplete: ${(performance.now() - t0).toFixed(2)}ms`);
 
     // 8. Build print payload to avoid refetch waterfall
     const enrichedItems = items.map((item) => {
@@ -196,6 +208,8 @@ export async function POST(request: Request) {
     for (const item of enrichedItems) {
       (zoneGroups[item.zone] ??= []).push(item);
     }
+
+    console.log(`[DISPATCH_PERF] TOTAL_API: ${(performance.now() - t0).toFixed(2)}ms`);
 
     return NextResponse.json({
       success: true,

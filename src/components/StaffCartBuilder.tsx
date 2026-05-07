@@ -82,6 +82,7 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
       toast.error('Required fields missing. Please select a warehouse and enter customer name.');
       return;
     }
+    const tStart = performance.now();
     setIsSubmitting(true);
 
     try {
@@ -96,6 +97,8 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
           items: cartItems
         })
       });
+
+      console.log(`[DISPATCH_PERF] CLICK_TO_API_RESPONSE: ${(performance.now() - tStart).toFixed(2)}ms`);
 
       if (res.ok) {
         const data = await res.json();

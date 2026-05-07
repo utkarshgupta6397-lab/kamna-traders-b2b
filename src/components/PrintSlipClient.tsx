@@ -39,15 +39,23 @@ export default function PrintSlipClient({
 
   // Try to load from sessionStorage if server didn't provide data
   useEffect(() => {
-    if (payload) return;
-    try {
-      const cached = sessionStorage.getItem(`print_${cartId}`);
-      if (cached) {
-        setPayload(JSON.parse(cached));
-        sessionStorage.removeItem(`print_${cartId}`);
-      }
-    } catch {}
+    if (!payload) {
+      try {
+        const cached = sessionStorage.getItem(`print_${cartId}`);
+        if (cached) {
+          setPayload(JSON.parse(cached));
+          sessionStorage.removeItem(`print_${cartId}`);
+        }
+      } catch {}
+    }
   }, [cartId, payload]);
+
+  // Performance monitoring for render completion
+  useEffect(() => {
+    if (payload) {
+      console.log(`[DISPATCH_PERF] PRINT_PAGE_RENDER_COMPLETE for cart: ${cartId}`);
+    }
+  }, [payload, cartId]);
 
   if (!payload) {
     return (

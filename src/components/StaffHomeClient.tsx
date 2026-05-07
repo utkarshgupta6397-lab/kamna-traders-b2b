@@ -165,6 +165,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   // ─── Cart Submit ───────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!customerName || !warehouseId || items.length === 0) return;
+    const tStart = performance.now();
     setSubmitting(true);
     try {
       const res = await fetch('/api/staff/cart', {
@@ -172,6 +173,8 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ warehouseId, customerName, notes, staffId, items: items.map((i) => ({ skuId: i.skuId, qty: i.qty })) }),
       });
+
+      console.log(`[DISPATCH_PERF] CLICK_TO_API_RESPONSE: ${(performance.now() - tStart).toFixed(2)}ms`);
 
       if (res.ok) {
         const { cartId, printPayload } = await res.json();

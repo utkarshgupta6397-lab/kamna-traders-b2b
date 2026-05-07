@@ -91,7 +91,7 @@ export default async function PrintSlipPage({
   };
 
   return (
-    <div className="p-4 space-y-6 print:space-y-0 print:p-0">
+    <div className="p-4 space-y-6 print:space-y-0 print:p-0" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as any}>
       {/* ── Screen-only controls ───────────────────────────────────────── */}
       <div className="print:hidden bg-white rounded-xl border border-gray-100 p-4 flex items-center justify-between">
         <div>

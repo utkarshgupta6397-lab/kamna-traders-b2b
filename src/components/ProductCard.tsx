@@ -14,7 +14,7 @@ export interface ProductData {
   moq: number;
   stepQty?: number;
   price: number;
-  imageUrl?: string | null;
+  caseSize?: number;
   isOos: boolean;
   categoryId?: string | null;
   category?: { name: string } | null;
@@ -42,6 +42,7 @@ const ProductCard = memo(function ProductCard({ product, isSelected }: { product
         qty: product.moq,
         moq: product.moq,
         stepQty: product.stepQty,
+        caseSize: product.caseSize,
       });
     } else {
       updateQty(product.id, qty + step);
@@ -86,9 +87,12 @@ const ProductCard = memo(function ProductCard({ product, isSelected }: { product
       {/* 3. Action Row: Price + Qty */}
       <div className="mt-auto flex items-center justify-between gap-3 pt-2 border-t border-[#F1F3F7]">
         <div className="flex flex-col">
-          <span className="text-[16px] font-[800] text-[#1A2766] leading-none mb-0.5">
-            {formatCurrency(product.price)}
-          </span>
+          <div className="flex items-baseline gap-1">
+            <span className="text-[16px] font-[800] text-[#1A2766] leading-none mb-0.5">
+              {formatCurrency(product.price / (product.caseSize || 1))}
+            </span>
+            <span className="text-[10px] font-bold text-gray-400 uppercase">/unit</span>
+          </div>
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">MOQ {product.moq} {product.unit}</span>
         </div>
 

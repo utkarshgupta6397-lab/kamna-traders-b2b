@@ -83,16 +83,15 @@ export default function CartPage() {
           {items.map(item => (
             <div key={item.skuId} className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 border-l-4 border-l-[#1A2766] flex items-center gap-4 h-[96px]">
               <div className="w-[64px] h-[64px] bg-gray-50 rounded-lg flex-shrink-0 border border-gray-100 flex items-center justify-center overflow-hidden">
-                {item.imageUrl ? (
-                  <img src={item.imageUrl} alt={item.name} className="w-full h-full object-contain" />
-                ) : (
-                  <Package size={20} className="text-gray-300" />
-                )}
+                <Package size={20} className="text-gray-300" />
               </div>
               
               <div className="flex-1 min-w-0">
                 <h3 className="font-bold text-gray-900 truncate text-[16px]">{item.name}</h3>
-                <p className="text-[#1A2766] font-black text-[18px]">{formatCurrency(item.price)}</p>
+                <div className="flex items-baseline gap-1">
+                  <p className="text-[#1A2766] font-black text-[18px]">{formatCurrency(item.price / (item.caseSize || 1))}</p>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">/unit</span>
+                </div>
                 <p className="text-[10px] text-gray-400 font-mono mt-0.5">Ref: {item.skuId}</p>
               </div>
 

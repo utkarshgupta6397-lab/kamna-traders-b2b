@@ -9,7 +9,7 @@ export interface CartItem {
   qty: number;
   moq: number;
   stepQty?: number;
-  imageUrl?: string;
+  caseSize?: number;
 }
 
 interface CartStore {

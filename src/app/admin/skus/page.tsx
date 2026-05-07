@@ -3,7 +3,6 @@ import { createSku, updateSku, deleteSku } from '../actions';
 import { Trash2, Save } from 'lucide-react';
 import SafeDeleteButton from '@/components/SafeDeleteButton';
 import ActionForm, { FormSubmit } from '@/components/ActionForm';
-import ImageUploadClient from '@/components/ImageUploadClient';
 
 
 export default async function SKUsPage({ searchParams }: { searchParams: Promise<{ page?: string; q?: string }> }) {
@@ -12,7 +11,17 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
   const q = sp.q?.trim() ?? '';
   const perPage = 25;
 
-  const where = q ? { OR: [{ id: { contains: q } }, { name: { contains: q } }] } : {};
+  const where = q
+    ? {
+        OR: [
+          { id: { contains: q } },
+          { name: { contains: q } },
+          // Also allow searching by Zoho Book Item ID (string match)
+          ...(isNaN(Number(q)) ? [] : [{ zohoBookItemId: BigInt(q) }]),
+        ],
+      }
+    : {};
+
   const [skus, total, categories, brands] = await Promise.all([
     prisma.sku.findMany({
       where, include: { category: true, brand: true },
@@ -29,7 +38,7 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">SKUs ({total})</h1>
         <form action="/admin/skus" method="get" className="flex gap-2">
-          <input type="text" name="q" defaultValue={q} placeholder="Search SKU / name…" className="border rounded-lg px-3 py-1.5 text-sm w-48 focus:ring-2 focus:ring-[#1A2766] outline-none" />
+          <input type="text" name="q" defaultValue={q} placeholder="Search SKU / name / Zoho ID…" className="border rounded-lg px-3 py-1.5 text-sm w-52 focus:ring-2 focus:ring-[#1A2766] outline-none" />
           <button type="submit" className="bg-[#1A2766] text-white px-3 py-1.5 rounded-lg text-xs font-medium">Search</button>
           {q && <a href="/admin/skus" className="text-xs text-gray-400 self-center hover:text-gray-600">Clear</a>}
         </form>
@@ -61,22 +70,22 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
             <input type="number" min="0" name="moq" required defaultValue="1" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
           <div><label className="block text-xs font-medium text-gray-500 mb-1">Step (+/- qty)</label>
             <input type="number" min="1" name="stepQty" required defaultValue="1" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Thumbnail</label>
-            <ImageUploadClient name="imageUrl" />
-          </div>
+          <div><label className="block text-xs font-medium text-gray-500 mb-1">Case Size</label>
+            <input type="number" min="1" step="1" name="caseSize" required defaultValue="1" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
+          <div><label className="block text-xs font-medium text-gray-500 mb-1">Zoho Book Item ID</label>
+            <input type="text" name="zohoBookItemId" inputMode="numeric" pattern="[0-9]*" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" placeholder="optional" /></div>
           <div className="md:col-span-5">
             <FormSubmit className="w-full bg-[#AE1B1E] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">Add SKU</FormSubmit>
           </div>
         </ActionForm>
       </div>
 
-      {/* Table (Div-based to avoid layout breaking with ActionForm) */}
+      {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden overflow-x-auto">
-        <div className="min-w-[1200px]">
+        <div className="min-w-[1400px]">
           {/* Header */}
           <div className="flex bg-gray-50 border-b text-gray-500 uppercase tracking-wider text-xs font-medium">
-            <div className="w-20 p-3">SKU</div>
+            <div className="w-28 p-3">SKU ID</div>
             <div className="w-48 p-3">Name</div>
             <div className="w-32 p-3">Category</div>
             <div className="w-24 p-3">Brand</div>
@@ -84,17 +93,29 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
             <div className="w-20 p-3">Price</div>
             <div className="w-16 p-3">MOQ</div>
             <div className="w-16 p-3">Step</div>
-            <div className="w-16 p-3">Image</div>
+            <div className="w-20 p-3">Case Size</div>
+            <div className="w-32 p-3">Zoho Book ID</div>
+            <div className="w-32 p-3">Last Synced</div>
             <div className="w-24 p-3">Status</div>
             <div className="flex-1 p-3 text-right">Actions</div>
           </div>
-          
+
           {/* Body */}
           <div className="divide-y divide-gray-50 text-gray-700">
             {skus.map(sku => (
               <ActionForm key={sku.id} action={updateSku} successMessage="SKU updated" className="flex items-center hover:bg-gray-50/50 transition-colors">
+                {/* Original ID for WHERE clause */}
                 <input type="hidden" name="id" value={sku.id} />
-                <div className="w-20 p-2 font-mono text-xs font-bold text-gray-600 truncate" title={sku.id}>{sku.id}</div>
+                {/* Editable SKU ID */}
+                <div className="w-28 p-2">
+                  <input
+                    type="text"
+                    name="newId"
+                    defaultValue={sku.id}
+                    className="w-full border rounded px-2 py-1.5 text-xs font-mono font-bold text-gray-600 focus:ring-1 focus:ring-[#1A2766] outline-none"
+                    title="Edit SKU ID (cascades to all related records)"
+                  />
+                </div>
                 <div className="w-48 p-2">
                   <input type="text" name="name" defaultValue={sku.name} className="w-full border rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#1A2766] outline-none" />
                 </div>
@@ -122,8 +143,32 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
                 <div className="w-16 p-2">
                   <input type="number" min="1" name="stepQty" defaultValue={sku.stepQty} className="w-full border rounded px-2 py-1.5 text-xs" />
                 </div>
-                <div className="w-16 p-2 flex items-center justify-center">
-                  <ImageUploadClient name="imageUrl" defaultValue={sku.imageUrl ?? ''} />
+                <div className="w-20 p-2">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    name="caseSize"
+                    defaultValue={sku.caseSize}
+                    className="w-full border rounded px-2 py-1.5 text-xs"
+                  />
+                </div>
+                <div className="w-32 p-2">
+                  <input
+                    type="text"
+                    name="zohoBookItemId"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    defaultValue={sku.zohoBookItemId != null ? String(sku.zohoBookItemId) : ''}
+                    placeholder="—"
+                    className="w-full border rounded px-2 py-1.5 text-xs font-mono"
+                  />
+                </div>
+                {/* Read-only: last_synced_at */}
+                <div className="w-32 p-2 text-xs text-gray-400">
+                  {sku.lastSyncedAt
+                    ? sku.lastSyncedAt.toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })
+                    : '—'}
                 </div>
                 <div className="w-24 p-2">
                   <select name="isActive" defaultValue={String(sku.isActive)} className="w-full border rounded px-2 py-1.5 text-xs bg-white">

@@ -19,10 +19,6 @@ const CATEGORIES = [
 
 const BRANDS = ["Microtek", "Luminous", "Loom Solar", "Waaree", "Vikram Solar", "Exide", "Havells", "Schneider"];
 
-const IMAGES = [
-  "https://images.unsplash.com/photo-1509391366360-fe5bb58583bb?auto=format&fit=crop&w=400&q=80",
-];
-
 export async function GET() {
   if (process.env.NODE_ENV === 'production') {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -75,7 +71,6 @@ export async function GET() {
         stepQty: 1,
         unit: catName.includes("Cable") ? "ROLL" : "PCS",
         isActive: true,
-        imageUrl: IMAGES[0],
       };
       
       await prisma.sku.create({ data: skuData });

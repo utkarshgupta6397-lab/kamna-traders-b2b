@@ -133,14 +133,19 @@ export async function createSku(data: FormData) {
   const moq = Math.max(0, parseInt(data.get('moq') as string, 10));
   const stepQty = Math.max(1, parseInt(data.get('stepQty') as string, 10) || moq);
   const unit = data.get('unit') as string || undefined;
-  const imageUrl = data.get('imageUrl') as string || undefined;
-  await prisma.sku.create({ data: { id, name, categoryId, brandId, price, moq, stepQty, unit, imageUrl } });
+  const caseSize = Math.max(1, parseInt(data.get('caseSize') as string, 10) || 1);
+  const zohoRaw = data.get('zohoBookItemId') as string;
+  const zohoBookItemId = zohoRaw ? BigInt(zohoRaw) : null;
+  await prisma.sku.create({ data: { id, name, categoryId, brandId, price, moq, stepQty, unit, caseSize, zohoBookItemId } });
   revalidatePath('/admin/skus');
 }
 
 export async function updateSku(data: FormData) {
   await requireAdmin();
+  // `id` = original/current SKU id (the WHERE key)
+  // `newId` = desired SKU id (may differ for a rename)
   const id = data.get('id') as string;
+  const newId = (data.get('newId') as string)?.trim() || id;
   const name = data.get('name') as string;
   const categoryId = (data.get('categoryId') as string) || null;
   const brandId = (data.get('brandId') as string) || null;
@@ -148,9 +153,21 @@ export async function updateSku(data: FormData) {
   const moq = Math.max(0, parseInt(data.get('moq') as string, 10));
   const stepQty = Math.max(1, parseInt(data.get('stepQty') as string, 10) || moq);
   const unit = data.get('unit') as string || undefined;
-  const imageUrl = data.get('imageUrl') as string || undefined;
   const isActive = data.get('isActive') === 'true';
-  await prisma.sku.update({ where: { id }, data: { name, categoryId, brandId, price, moq, stepQty, unit, imageUrl, isActive } });
+  const caseSize = Math.max(1, parseInt(data.get('caseSize') as string, 10) || 1);
+  const zohoRaw = data.get('zohoBookItemId') as string;
+  const zohoBookItemId = zohoRaw ? BigInt(zohoRaw) : null;
+
+  // If SKU ID is being renamed, verify the new ID is not already taken
+  if (newId !== id) {
+    const conflict = await prisma.sku.findUnique({ where: { id: newId } });
+    if (conflict) throw new Error(`SKU ID "${newId}" is already in use`);
+  }
+
+  await prisma.sku.update({
+    where: { id },
+    data: { id: newId, name, categoryId, brandId, price, moq, stepQty, unit, isActive, caseSize, zohoBookItemId },
+  });
   revalidatePath('/admin/skus');
 }
 

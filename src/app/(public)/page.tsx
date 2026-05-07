@@ -48,7 +48,7 @@ export default async function HomePage({
       moq: sku.moq,
       stepQty: sku.stepQty,
       price: sku.price,
-      imageUrl: sku.imageUrl,
+      caseSize: sku.caseSize,
       category: sku.category,
       isOos: hasInventory ? anyOos || totalQty <= 0 : false,
     };

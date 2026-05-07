@@ -18,7 +18,7 @@ export async function GET() {
       moq: true,
       stepQty: true,
       price: true,
-      imageUrl: true,
+      caseSize: true,
       categoryId: true,
       brand: { select: { name: true } },
       inventory: { select: { qty: true, isOos: true } },
@@ -37,7 +37,7 @@ export async function GET() {
       moq: sku.moq,
       stepQty: sku.stepQty,
       price: sku.price,
-      imageUrl: sku.imageUrl,
+      caseSize: sku.caseSize,
       categoryId: sku.categoryId,
       isOos: sku.inventory.length > 0 ? anyOos || totalQty <= 0 : false, // No inventory records = not tracked = available
     };

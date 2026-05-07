@@ -15,6 +15,7 @@ export default function StaffLoginPage() {
   const [error, setError] = useState('');
   const [resetMsg, setResetMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const router = useRouter();
 
   const handleMobileSubmit = (e: React.FormEvent) => {
@@ -32,19 +33,25 @@ export default function StaffLoginPage() {
     setError('');
     setLoading(true);
 
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mobile, pin }),
-    });
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile, pin }),
+      });
 
-    const data = await res.json();
-    setLoading(false);
+      const data = await res.json();
 
-    if (res.ok) {
-      router.push(data.role === 'ADMIN' ? '/admin' : '/staff/dashboard');
-    } else {
-      setError(data.error || 'Login failed');
+      if (res.ok) {
+        setIsTransitioning(true); // Start full-screen transition
+        router.push(data.role === 'ADMIN' ? '/admin' : '/staff/dashboard');
+      } else {
+        setLoading(false);
+        setError(data.error || 'Login failed');
+      }
+    } catch (err) {
+      setLoading(false);
+      setError('Connection error. Please try again.');
     }
   };
 
@@ -67,6 +74,16 @@ export default function StaffLoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0f1a40] via-[#1A2766] to-[#003347] flex items-center justify-center p-4">
+      {/* Transition Overlay */}
+      {isTransitioning && (
+        <div className="fixed inset-0 z-[100] bg-[#1A2766]/60 backdrop-blur-md flex items-center justify-center animate-in fade-in duration-300">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+            <p className="text-white font-bold text-sm tracking-widest uppercase animate-pulse">Loading Dashboard...</p>
+          </div>
+        </div>
+      )}
+
       {/* Decorative circles */}
       <div className="fixed top-0 left-0 w-80 h-80 bg-[#AE1B1E]/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
       <div className="fixed bottom-0 right-0 w-96 h-96 bg-[#003347]/30 rounded-full blur-3xl translate-x-1/3 translate-y-1/3" />
@@ -147,10 +164,17 @@ export default function StaffLoginPage() {
               </div>
               <button
                 type="submit"
-                disabled={loading || pin.length !== 6}
-                className="w-full bg-[#AE1B1E] text-white py-2.5 rounded-lg font-semibold text-sm hover:bg-[#900f12] transition-colors disabled:opacity-50"
+                disabled={loading || pin.length !== 6 || isTransitioning}
+                className="w-full bg-[#AE1B1E] text-white py-2.5 rounded-lg font-semibold text-sm hover:bg-[#900f12] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {loading ? 'Verifying...' : 'Login'}
+                {loading || isTransitioning ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin" />
+                    {isTransitioning ? 'Redirecting...' : 'Signing In...'}
+                  </>
+                ) : (
+                  'Login'
+                )}
               </button>
               <div className="flex justify-between text-xs pt-1">
                 <button type="button" onClick={() => { setStep('mobile'); setPin(''); setError(''); }} className="text-gray-400 hover:text-gray-600">

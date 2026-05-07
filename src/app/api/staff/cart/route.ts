@@ -112,15 +112,25 @@ export async function POST(request: Request) {
       console.log(`[DEBUG] Generated dispatchNo: ${generatedSlipNumber}`);
       cartData.dispatchSlipNumber = generatedSlipNumber;
 
-      // 6.2 Inventory updates
+      // 6.2 Inventory updates & History logging
       let stepCounter = 1;
       for (const item of items) {
+        const sku = skuMap.get(item.skuId);
         const inv = inventoryMap.get(item.skuId);
+        
+        let beforeQty = inv?.qty ?? 0;
+        // In this app's current logic (line 123), if inventory doesn't exist, it assumes a start of 999.
+        // We'll reflect that assumption if needed, or stick to 0. 
+        // Let's use the actual logic from the create/update calls below.
+        if (!inv) beforeQty = 999; 
+
+        const afterQty = beforeQty - item.qty;
+
         if (!inv) {
           console.log(`[TX_STEP ${stepCounter++}: warehouseInventory.create] Creating inventory for SKU ${item.skuId} at warehouse ${warehouseId}`);
           try {
             await tx.warehouseInventory.create({
-              data: { warehouseId, skuId: item.skuId, qty: 999 - item.qty, isOos: 999 - item.qty <= 0 },
+              data: { warehouseId, skuId: item.skuId, qty: afterQty, isOos: afterQty <= 0 },
             });
           } catch (e: any) {
             console.error(`[TX_FAIL: warehouseInventory.create] Failed for SKU ${item.skuId}`, e);
@@ -131,13 +141,28 @@ export async function POST(request: Request) {
           try {
             await tx.warehouseInventory.update({
               where: { warehouseId_skuId: { warehouseId, skuId: item.skuId } },
-              data: { qty: { decrement: item.qty }, isOos: inv.qty - item.qty <= 0 },
+              data: { qty: { decrement: item.qty }, isOos: afterQty <= 0 },
             });
           } catch (e: any) {
             console.error(`[TX_FAIL: warehouseInventory.update] Failed for SKU ${item.skuId}`, e);
             throw new Error(`Transaction aborted during warehouseInventory.update for ${item.skuId}: ${e.message}`);
           }
         }
+
+        // Add Inventory History Row
+        console.log(`[TX_STEP ${stepCounter++}: inventoryHistory.create] Logging history for SKU ${item.skuId}`);
+        await tx.inventoryHistory.create({
+          data: {
+            warehouseId,
+            skuId: item.skuId,
+            productName: sku?.name || item.skuId,
+            beforeQty,
+            afterQty,
+            qtyChange: -item.qty,
+            remarks: `Dispatch ${generatedSlipNumber} | Customer: ${customerName}`,
+            createdBy: staffId,
+          }
+        });
       }
 
       console.log(`[DEBUG] Step: 6.3 (Create Cart), cartId: ${cartId}, dispatchNo: ${cartData.dispatchSlipNumber}`);

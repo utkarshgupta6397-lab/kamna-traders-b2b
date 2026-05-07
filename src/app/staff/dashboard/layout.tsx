@@ -2,7 +2,7 @@ import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { LogOut, Home, ClipboardList } from 'lucide-react';
+import { LogOut, Home, ClipboardList, History } from 'lucide-react';
 import DashboardSearchInput from '@/components/DashboardSearchInput';
 
 export default async function StaffDashboardLayout({ children }: { children: React.ReactNode }) {
@@ -34,6 +34,9 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
             </Link>
             <Link href="/staff/dashboard/carts" className="flex items-center gap-1.5 hover:text-white transition-colors">
               <ClipboardList size={16} /><span className="hidden md:inline text-xs">My Carts</span>
+            </Link>
+            <Link href="/staff/dashboard/inventory/history" className="flex items-center gap-1.5 hover:text-white transition-colors">
+              <History size={16} /><span className="hidden md:inline text-xs">Inventory History</span>
             </Link>
             <form action="/api/auth/logout" method="POST">
               <button type="submit" className="flex items-center gap-1.5 text-red-300 hover:text-white transition-colors">

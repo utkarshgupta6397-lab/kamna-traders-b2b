@@ -18,6 +18,7 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   carts     Cart[]
+  inventoryHistory InventoryHistory[]
 }
 
 model Warehouse {
@@ -29,6 +30,7 @@ model Warehouse {
   updatedAt DateTime             @updatedAt
   carts     Cart[]
   inventory WarehouseInventory[]
+  inventoryHistory InventoryHistory[]
 }
 
 model Brand {
@@ -151,3 +153,24 @@ model SkuSyncLog {
   failedCount   Int       @default(0)
   logs          Json?
 }
+
+model InventoryHistory {
+  id          String    @id @default(cuid())
+  warehouseId String
+  skuId       String
+  productName String
+  beforeQty   Int
+  afterQty    Int
+  qtyChange   Int
+  remarks     String
+  createdBy   String
+  createdAt   DateTime  @default(now())
+
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  user        User      @relation(fields: [createdBy], references: [id])
+
+  @@index([warehouseId])
+  @@index([skuId])
+  @@index([createdAt])
+}
+

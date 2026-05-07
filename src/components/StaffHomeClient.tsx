@@ -54,6 +54,40 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   const { items, addItem, clearCart } = useCartStore();
   const totalQty = items.reduce((a, i) => a + i.qty, 0);
 
+  // Derived: Active Category List & Counts based on current Search + OOS state
+  const dynamicCategories = useMemo(() => {
+    // 1. Filter by Search + OOS only (ignoring category selection)
+    let searchFiltered = allSkus;
+    if (hideOos) {
+      searchFiltered = searchFiltered.filter((s) => !s.isOos);
+    }
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      searchFiltered = searchFiltered.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          s.id.toLowerCase().includes(q) ||
+          (s.brand ?? '').toLowerCase().includes(q)
+      );
+    }
+
+    // 2. Count occurrences per category
+    const counts: Record<string, number> = {};
+    searchFiltered.forEach(s => {
+      if (s.categoryId) {
+        counts[s.categoryId] = (counts[s.categoryId] || 0) + 1;
+      }
+    });
+
+    // 3. Build the final visible list
+    return {
+      fullCount: searchFiltered.length,
+      visible: categories
+        .map(c => ({ ...c, count: counts[c.id] || 0 }))
+        .filter(c => c.count > 0)
+    };
+  }, [allSkus, searchQuery, hideOos, categories]);
+
   // Filtered products — recomputes when allSkus, category, search, or hideOos changes
   const products = useMemo(() => getFiltered(), [getFiltered, allSkus, selectedCategoryId, searchQuery, hideOos]);
 
@@ -238,9 +272,10 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
                 className={`w-full flex items-center justify-between px-3 h-[42px] rounded-lg text-[14px] font-[700] transition-all group ${!selectedCategoryId ? 'bg-[#1A2766] text-white shadow-md' : 'text-gray-500 hover:bg-[#F1F6FF] hover:text-[#1A2766]'}`}
               >
                 <span>Full Catalog</span>
+                <span className={`text-[10px] font-bold ${!selectedCategoryId ? 'text-white/60' : 'text-gray-300'}`}>{dynamicCategories.fullCount}</span>
               </button>
               <div className="h-px bg-[#F1F3F7] my-2 mx-1" />
-              {categories.map((cat) => (
+              {dynamicCategories.visible.map((cat) => (
                 <button
                   key={cat.id}
                   onClick={() => setCategory(cat.id)}

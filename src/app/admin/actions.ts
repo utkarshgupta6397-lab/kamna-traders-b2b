@@ -181,15 +181,103 @@ export async function deleteSku(id: string) {
 
 // ─── Inventory Actions ───────────────────────────────────────────────────────
 export async function updateInventory(data: FormData) {
-  await requireAdmin();
+  const session = await getSession();
+  if (!session) throw new Error('Unauthorized');
+  
   const warehouseId = data.get('warehouseId') as string;
   const skuId = data.get('skuId') as string;
-  const qty = Math.max(0, parseInt(data.get('qty') as string, 10));
+  const qty = parseInt(data.get('qty') as string, 10);
   const zone = data.get('zone') as string;
-  await prisma.warehouseInventory.upsert({
-    where: { warehouseId_skuId: { warehouseId, skuId } },
-    update: { qty, zone, isOos: qty <= 0 },
-    create: { warehouseId, skuId, qty, zone, isOos: qty <= 0 },
+  const remarks = data.get('remarks') as string;
+
+  if (!remarks || remarks.trim().length < 3) {
+    throw new Error('Remarks are mandatory for inventory adjustments (min 3 chars)');
+  }
+
+  const sku = await prisma.sku.findUnique({ where: { id: skuId } });
+  if (!sku) throw new Error('SKU not found');
+
+  await prisma.$transaction(async (tx) => {
+    const currentInv = await tx.warehouseInventory.findUnique({
+      where: { warehouseId_skuId: { warehouseId, skuId } }
+    });
+
+    const beforeQty = currentInv?.qty ?? 0;
+    const afterQty = qty; // Manual adjustment sets the absolute value
+    const qtyChange = afterQty - beforeQty;
+
+    await tx.warehouseInventory.upsert({
+      where: { warehouseId_skuId: { warehouseId, skuId } },
+      update: { qty, zone, isOos: qty <= 0 },
+      create: { warehouseId, skuId, qty, zone, isOos: qty <= 0 },
+    });
+
+    await tx.inventoryHistory.create({
+      data: {
+        warehouseId,
+        skuId,
+        productName: sku.name,
+        beforeQty,
+        afterQty,
+        qtyChange,
+        remarks: `Manual Adjustment | ${remarks.trim()}`,
+        createdBy: session.userId as string,
+      }
+    });
   });
+
   revalidatePath('/admin/inventory');
+  revalidatePath('/staff/dashboard/inventory/history');
+}
+
+export async function adjustInventory(data: FormData) {
+  const session = await getSession();
+  if (!session) throw new Error('Unauthorized');
+  
+  const warehouseId = data.get('warehouseId') as string;
+  const skuId = data.get('skuId') as string;
+  const delta = parseInt(data.get('delta') as string, 10);
+  const remarks = data.get('remarks') as string;
+
+  if (isNaN(delta)) throw new Error('Invalid adjustment quantity');
+  if (!remarks || remarks.trim().length < 3) {
+    throw new Error('Remarks are mandatory (min 3 chars)');
+  }
+
+  const sku = await prisma.sku.findUnique({ where: { id: skuId } });
+  if (!sku) throw new Error('SKU not found');
+
+  await prisma.$transaction(async (tx) => {
+    // 1. Get current stock
+    const currentInv = await tx.warehouseInventory.findUnique({
+      where: { warehouseId_skuId: { warehouseId, skuId } }
+    });
+
+    const beforeQty = currentInv?.qty ?? 0;
+    const afterQty = beforeQty + delta;
+
+    // 2. Update/Create inventory
+    await tx.warehouseInventory.upsert({
+      where: { warehouseId_skuId: { warehouseId, skuId } },
+      update: { qty: { increment: delta }, isOos: afterQty <= 0 },
+      create: { warehouseId, skuId, qty: afterQty, isOos: afterQty <= 0 },
+    });
+
+    // 3. Log History
+    await tx.inventoryHistory.create({
+      data: {
+        warehouseId,
+        skuId,
+        productName: sku.name,
+        beforeQty,
+        afterQty,
+        qtyChange: delta,
+        remarks: `Manual Adjustment | ${remarks.trim()}`,
+        createdBy: session.userId as string,
+      }
+    });
+  });
+
+  revalidatePath('/admin/inventory');
+  revalidatePath('/staff/dashboard/inventory/history');
 }

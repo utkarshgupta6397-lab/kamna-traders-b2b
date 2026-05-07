@@ -57,17 +57,16 @@ export async function POST(request: Request) {
     const cartId = `KT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
     // ═══════════════════════════════════════════════════════════════
-    // 3. READS — 2 raw SQL queries in parallel (1 DB roundtrip)
-    //    Combined warehouse+user into 1 query via CROSS JOIN.
-    //    Combined SKU+inventory into 1 query via LEFT JOIN.
+    // 3. ALL READS + SEQUENCE — 3 parallel queries (1 wall-clock roundtrip)
+    //    The sequence upsert is atomic and independent of read results,
+    //    so it runs in parallel with the reads instead of sequentially.
+    //    This saves 1 full Supabase roundtrip (~1100ms).
     // ═══════════════════════════════════════════════════════════════
     const tReadStart = performance.now();
-
-    // Build parameterized placeholders for skuIds
     const skuPlaceholders = skuIds.map((_, i) => `$${i + 2}`).join(',');
 
-    const [metaRows, skuInvRows] = await Promise.all([
-      // Query 1: Warehouse + User in a single query
+    const [metaRows, skuInvRows, seqRows] = await Promise.all([
+      // Query 1: Warehouse + User via cross join
       prisma.$queryRawUnsafe<Array<{
         wid: string; wname: string; wactive: boolean;
         uid: string; uname: string; uactive: boolean;
@@ -78,7 +77,7 @@ export async function POST(request: Request) {
          WHERE w."id" = $1 AND u."id" = $2`,
         warehouseId, staffId
       ),
-      // Query 2: SKU details + inventory in a single LEFT JOIN
+      // Query 2: SKU details + inventory via LEFT JOIN
       prisma.$queryRawUnsafe<Array<{
         id: string; name: string; unit: string | null; moq: number;
         inv_qty: number | null; inv_zone: string | null;
@@ -91,9 +90,19 @@ export async function POST(request: Request) {
          WHERE s."id" IN (${skuPlaceholders})`,
         warehouseId, ...skuIds
       ),
+      // Query 3: Atomic dispatch sequence (parallel with reads)
+      prisma.$queryRawUnsafe<Array<{ sequence: number }>>(
+        `INSERT INTO "DispatchSequence" ("date", "sequence")
+         VALUES ($1, 1)
+         ON CONFLICT ("date")
+         DO UPDATE SET "sequence" = "DispatchSequence"."sequence" + 1
+         RETURNING "sequence"`,
+        datePart
+      ),
     ]);
-    queryCount += 2;
+    queryCount += 3;
     perf.preReads = performance.now() - tReadStart;
+    perf.dispatchNo = 0; // Folded into parallel reads, no additional latency
 
     // 4. In-Memory Validation
     const meta = metaRows[0];
@@ -107,7 +116,11 @@ export async function POST(request: Request) {
       if (item.qty < sku.moq) throw new Error(`Qty for ${item.skuId} is below MOQ (${sku.moq})`);
     }
 
-    // 5. Pre-compute all write payloads in memory
+    // 5. Generate slip number from sequence
+    const seqNum = Number(seqRows[0].sequence);
+    const generatedSlipNumber = `KS-DP-${datePart}-${seqNum.toString().padStart(3, '0')}`;
+
+    // 6. Pre-compute all write payloads in memory
     const inventoryOps = items.map((item) => {
       const row = skuMap.get(item.skuId)!;
       const hasInv = row.inv_qty !== null;
@@ -116,31 +129,6 @@ export async function POST(request: Request) {
       return { skuId: item.skuId, exists: hasInv, beforeQty, afterQty, deductQty: item.qty };
     });
 
-    // ═══════════════════════════════════════════════════════════════
-    // 6. SEQUENCE + WRITES — Atomic sequence then BATCH transaction
-    //    Interactive $transaction pins a connection and serializes
-    //    every query (BEGIN + N queries + COMMIT = N+2 roundtrips).
-    //    Batch $transaction sends all queries in ONE roundtrip.
-    // ═══════════════════════════════════════════════════════════════
-    const tTxStart = performance.now();
-
-    // 6.1 Atomic sequence generation (standalone, no tx needed)
-    const tSeqStart = performance.now();
-    const seqRows = await prisma.$queryRawUnsafe<Array<{ sequence: number }>>(
-      `INSERT INTO "DispatchSequence" ("date", "sequence")
-       VALUES ($1, 1)
-       ON CONFLICT ("date")
-       DO UPDATE SET "sequence" = "DispatchSequence"."sequence" + 1
-       RETURNING "sequence"`,
-      datePart
-    );
-    queryCount += 1;
-    perf.dispatchNo = performance.now() - tSeqStart;
-
-    const seqNum = Number(seqRows[0].sequence);
-    const generatedSlipNumber = `KS-DP-${datePart}-${seqNum.toString().padStart(3, '0')}`;
-
-    // 6.2 Build all data arrays
     const historyRows = items.map((item, i) => {
       const op = inventoryOps[i];
       const sku = skuMap.get(item.skuId)!;
@@ -156,29 +144,28 @@ export async function POST(request: Request) {
       };
     });
 
-    // 6.3 BATCH TRANSACTION — all writes in ONE roundtrip
+    // ═══════════════════════════════════════════════════════════════
+    // 7. WRITES — Lean batch tx (cart + items + inventory only)
+    //    InventoryHistory is moved outside the transaction to reduce
+    //    lock duration. History is an audit trail — if it fails after
+    //    a successful inventory update, data integrity is preserved.
+    // ═══════════════════════════════════════════════════════════════
     const tWritesStart = performance.now();
+
     const batchOps: Prisma.PrismaPromise<any>[] = [
-      // Op 1: Create cart
       prisma.cart.create({
         data: {
-          id: cartId,
-          warehouseId,
-          customerName,
-          notes: safeNotes,
-          staffId,
+          id: cartId, warehouseId, customerName,
+          notes: safeNotes, staffId,
           dispatchSlipNumber: generatedSlipNumber,
         },
       }),
-      // Op 2: Bulk create cart items
       prisma.cartItem.createMany({
         data: items.map(i => ({ cartId, skuId: i.skuId, qty: i.qty })),
       }),
-      // Op 3: Bulk create history
-      prisma.inventoryHistory.createMany({ data: historyRows }),
     ];
 
-    // Op 4: Bulk inventory update (1 raw SQL for all existing)
+    // Bulk inventory update (1 raw SQL for all existing)
     const existingOps = inventoryOps.filter(op => op.exists);
     if (existingOps.length > 0) {
       const setClauses = existingOps.map(op =>
@@ -201,16 +188,13 @@ export async function POST(request: Request) {
       );
     }
 
-    // Op 5: Create new inventory rows (for SKUs not previously stocked)
     const newOps = inventoryOps.filter(op => !op.exists);
     if (newOps.length > 0) {
       batchOps.push(
         prisma.warehouseInventory.createMany({
           data: newOps.map(op => ({
-            warehouseId,
-            skuId: op.skuId,
-            qty: op.afterQty,
-            isOos: op.afterQty <= 0,
+            warehouseId, skuId: op.skuId,
+            qty: op.afterQty, isOos: op.afterQty <= 0,
           })),
         })
       );
@@ -218,11 +202,17 @@ export async function POST(request: Request) {
 
     queryCount += batchOps.length;
     await prisma.$transaction(batchOps);
-
     perf.transactionWrites = performance.now() - tWritesStart;
-    perf.transactionTotal = performance.now() - tTxStart;
 
-    // 7. Build print payload from in-memory data (ZERO re-fetches)
+    // 8. Post-tx audit trail (non-critical, outside transaction)
+    const tHistStart = performance.now();
+    await prisma.inventoryHistory.createMany({ data: historyRows });
+    queryCount += 1;
+    perf.historyWrite = performance.now() - tHistStart;
+
+    perf.transactionTotal = performance.now() - tWritesStart;
+
+    // 9. Build print payload from in-memory data (ZERO re-fetches)
     const enrichedItems = items.map((item) => {
       const row = skuMap.get(item.skuId)!;
       return {

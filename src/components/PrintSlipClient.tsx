@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -41,6 +41,8 @@ export default function PrintSlipClient({
   const [copied, setCopied] = useState(false);
   const [timings, setTimings] = useState<Record<string, number>>({});
   const [mountTimePerf, setMountTimePerf] = useState<number | null>(null);
+  // Capture mount time synchronously during first render, not in useEffect
+  const mountTimeAbsolute = useRef(Date.now());
   const [backendPerf, setBackendPerf] = useState<any>(null);
   const searchParams = useSearchParams();
 
@@ -59,6 +61,7 @@ Auth Check: ${backendPerf?.auth?.toFixed(1) || 0}ms
 Batch Reads: ${backendPerf?.preReads?.toFixed(1) || 0}ms
 Dispatch No: ${backendPerf?.dispatchNo?.toFixed(1) || 0}ms
 TX Writes: ${backendPerf?.transactionWrites?.toFixed(1) || 0}ms
+History Write: ${backendPerf?.historyWrite?.toFixed(1) || 0}ms
 TX Total: ${backendPerf?.transactionTotal?.toFixed(1) || 0}ms
 API Server Total: ${backendPerf?.apiTotal?.toFixed(1) || 0}ms
 
@@ -90,7 +93,9 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
 
   // 2. Data Hydration & Diagnostic Reconstruction
   useEffect(() => {
-    const tMount = Date.now();
+    // Use the ref captured during first render, not Date.now() inside effect
+    // (effects fire AFTER paint, inflating navigation by hydration time)
+    const tMount = mountTimeAbsolute.current;
     
     try {
       const diagRaw = sessionStorage.getItem(`dispatch_diag_${cartId}`);
@@ -110,11 +115,12 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
         // Calculate Timing Breakdown
         const clickTime = diag.clickTime;
         const apiDuration = diag.apiDuration;
+        const navTime = Math.max(0, tMount - (clickTime + apiDuration));
         
         setTimings(prev => ({
           ...prev,
           apiRequest: apiDuration,
-          navigation: tMount - (clickTime + apiDuration), // click -> API end -> Page Mount
+          navigation: navTime,
         }));
       }
     } catch (e) {
@@ -211,6 +217,7 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
               <div className="flex justify-between"><span>Batch Reads</span> <span className="text-white/60">{backendPerf?.preReads?.toFixed(0) || 0}ms</span></div>
               <div className="flex justify-between"><span>Dispatch No</span> <span className="text-white/60">{backendPerf?.dispatchNo?.toFixed(0) || 0}ms</span></div>
               <div className="flex justify-between"><span>TX Writes</span> <span className="text-white/60">{backendPerf?.transactionWrites?.toFixed(0) || 0}ms</span></div>
+              <div className="flex justify-between"><span>History</span> <span className="text-white/60">{backendPerf?.historyWrite?.toFixed(0) || 0}ms</span></div>
               <div className="flex justify-between border-t border-white/5 pt-0.5">
                 <span className="text-blue-400">API Server Total</span> 
                 <span className="text-blue-400 font-bold">{backendPerf?.apiTotal?.toFixed(0) || 0}ms</span>

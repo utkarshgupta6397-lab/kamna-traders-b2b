@@ -140,3 +140,14 @@ model DispatchSequence {
   date     String @id
   sequence Int    @default(0)
 }
+
+model SkuSyncLog {
+  id            String    @id @default(cuid())
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  totalReceived Int       @default(0)
+  createdCount  Int       @default(0)
+  updatedCount  Int       @default(0)
+  failedCount   Int       @default(0)
+  logs          Json?
+}

@@ -48,131 +48,119 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    const skuIds = items.map((i) => i.skuId);
+    const now = new Date();
+    const datePart = now.toLocaleDateString('en-GB', {
+      day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata'
+    }).replace(/ /g, '/');
+    const safeNotes = notes?.trim() || null;
+    const cartId = `KT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
     // ═══════════════════════════════════════════════════════════════
-    // 3. BATCH READS — 3 flat parallel queries, no nested includes
+    // 3. READS — 2 raw SQL queries in parallel (1 DB roundtrip)
+    //    Combined warehouse+user into 1 query via CROSS JOIN.
+    //    Combined SKU+inventory into 1 query via LEFT JOIN.
     // ═══════════════════════════════════════════════════════════════
     const tReadStart = performance.now();
-    const skuIds = items.map((i) => i.skuId);
 
-    const [warehouse, staffUser, inventories] = await Promise.all([
-      prisma.warehouse.findUnique({
-        where: { id: warehouseId },
-        select: { id: true, name: true, active: true },
-      }),
-      prisma.user.findUnique({
-        where: { id: staffId },
-        select: { id: true, name: true, active: true },
-      }),
-      prisma.warehouseInventory.findMany({
-        where: { warehouseId, skuId: { in: skuIds } },
-        select: { skuId: true, qty: true, zone: true, id: true },
-      }),
+    // Build parameterized placeholders for skuIds
+    const skuPlaceholders = skuIds.map((_, i) => `$${i + 2}`).join(',');
+
+    const [metaRows, skuInvRows] = await Promise.all([
+      // Query 1: Warehouse + User in a single query
+      prisma.$queryRawUnsafe<Array<{
+        wid: string; wname: string; wactive: boolean;
+        uid: string; uname: string; uactive: boolean;
+      }>>(
+        `SELECT w."id" AS "wid", w."name" AS "wname", w."active" AS "wactive",
+                u."id" AS "uid", u."name" AS "uname", u."active" AS "uactive"
+         FROM "Warehouse" w, "User" u
+         WHERE w."id" = $1 AND u."id" = $2`,
+        warehouseId, staffId
+      ),
+      // Query 2: SKU details + inventory in a single LEFT JOIN
+      prisma.$queryRawUnsafe<Array<{
+        id: string; name: string; unit: string | null; moq: number;
+        inv_qty: number | null; inv_zone: string | null;
+      }>>(
+        `SELECT s."id", s."name", s."unit", s."moq",
+                wi."qty" AS "inv_qty", wi."zone" AS "inv_zone"
+         FROM "Sku" s
+         LEFT JOIN "WarehouseInventory" wi
+           ON wi."skuId" = s."id" AND wi."warehouseId" = $1
+         WHERE s."id" IN (${skuPlaceholders})`,
+        warehouseId, ...skuIds
+      ),
     ]);
-    queryCount += 3;
-
-    // Only fetch SKU details if some items lack inventory records
-    const inventoryMap = new Map(inventories.map((i) => [i.skuId, i]));
-    const skuIdsNeedingLookup = skuIds.filter(id => !inventoryMap.has(id));
-
-    let skuDetails: { id: string; name: string; unit: string | null; moq: number }[] = [];
-    if (skuIdsNeedingLookup.length > 0) {
-      skuDetails = await prisma.sku.findMany({
-        where: { id: { in: skuIds } },
-        select: { id: true, name: true, unit: true, moq: true },
-      });
-      queryCount += 1;
-    } else {
-      // All items have inventory — fetch SKU metadata in one query
-      skuDetails = await prisma.sku.findMany({
-        where: { id: { in: skuIds } },
-        select: { id: true, name: true, unit: true, moq: true },
-      });
-      queryCount += 1;
-    }
-
+    queryCount += 2;
     perf.preReads = performance.now() - tReadStart;
 
     // 4. In-Memory Validation
-    if (!warehouse || !warehouse.active) throw new Error('Warehouse not found or inactive');
-    if (!staffUser || !staffUser.active) throw new Error('Staff account not found or deactivated');
+    const meta = metaRows[0];
+    if (!meta || !meta.wactive) throw new Error('Warehouse not found or inactive');
+    if (!meta.uid || !meta.uactive) throw new Error('Staff account not found or deactivated');
 
-    const skuMap = new Map(skuDetails.map((s) => [s.id, s]));
-
+    const skuMap = new Map(skuInvRows.map(r => [r.id, r]));
     for (const item of items) {
       const sku = skuMap.get(item.skuId);
       if (!sku) throw new Error(`SKU "${item.skuId}" does not exist`);
       if (item.qty < sku.moq) throw new Error(`Qty for ${item.skuId} is below MOQ (${sku.moq})`);
     }
 
-    // 5. Generate Identifiers
-    const cartId = `KT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-    const now = new Date();
-    const datePart = now.toLocaleDateString('en-GB', {
-      day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata'
-    }).replace(/ /g, '/');
-
-    // 6. Pre-compute all write data in memory
+    // 5. Pre-compute all write payloads in memory
     const inventoryOps = items.map((item) => {
-      const inv = inventoryMap.get(item.skuId);
-      const beforeQty = inv ? inv.qty : 999;
+      const row = skuMap.get(item.skuId)!;
+      const hasInv = row.inv_qty !== null;
+      const beforeQty = hasInv ? Number(row.inv_qty) : 999;
       const afterQty = beforeQty - item.qty;
-      return {
-        skuId: item.skuId,
-        exists: !!inv,
-        beforeQty,
-        afterQty,
-        deductQty: item.qty,
-      };
+      return { skuId: item.skuId, exists: hasInv, beforeQty, afterQty, deductQty: item.qty };
     });
 
     // ═══════════════════════════════════════════════════════════════
-    // 7. RAW SQL TRANSACTION — 4 queries total instead of 3+N
-    //    Prisma interactive transactions serialize ALL queries on one
-    //    connection. Promise.all inside tx does NOT parallelize.
-    //    Using $executeRawUnsafe for bulk inventory update eliminates
-    //    the N per-item query overhead entirely.
+    // 6. SEQUENCE + WRITES — Atomic sequence then BATCH transaction
+    //    Interactive $transaction pins a connection and serializes
+    //    every query (BEGIN + N queries + COMMIT = N+2 roundtrips).
+    //    Batch $transaction sends all queries in ONE roundtrip.
     // ═══════════════════════════════════════════════════════════════
     const tTxStart = performance.now();
 
-    const result = await prisma.$transaction(async (tx) => {
-      // 7.1 Sequence number generation (1 query)
-      const tSeqStart = performance.now();
-      const seqRecord = await tx.dispatchSequence.upsert({
-        where: { date: datePart },
-        create: { date: datePart, sequence: 1 },
-        update: { sequence: { increment: 1 } },
-      });
-      queryCount += 1;
-      perf.dispatchNo = performance.now() - tSeqStart;
+    // 6.1 Atomic sequence generation (standalone, no tx needed)
+    const tSeqStart = performance.now();
+    const seqRows = await prisma.$queryRawUnsafe<Array<{ sequence: number }>>(
+      `INSERT INTO "DispatchSequence" ("date", "sequence")
+       VALUES ($1, 1)
+       ON CONFLICT ("date")
+       DO UPDATE SET "sequence" = "DispatchSequence"."sequence" + 1
+       RETURNING "sequence"`,
+      datePart
+    );
+    queryCount += 1;
+    perf.dispatchNo = performance.now() - tSeqStart;
 
-      const generatedSlipNumber = `KS-DP-${datePart}-${seqRecord.sequence.toString().padStart(3, '0')}`;
-      const safeNotes = notes?.trim() || null;
-      const tWritesStart = performance.now();
+    const seqNum = Number(seqRows[0].sequence);
+    const generatedSlipNumber = `KS-DP-${datePart}-${seqNum.toString().padStart(3, '0')}`;
 
-      // 7.2 Build all data arrays
-      const historyRows = items.map((item, i) => {
-        const op = inventoryOps[i];
-        const sku = skuMap.get(item.skuId);
-        return {
-          warehouseId,
-          skuId: item.skuId,
-          productName: sku?.name || item.skuId,
-          beforeQty: op.beforeQty,
-          afterQty: op.afterQty,
-          qtyChange: -item.qty,
-          remarks: `Dispatch ${generatedSlipNumber} | Customer: ${customerName}`,
-          createdBy: staffId,
-        };
-      });
+    // 6.2 Build all data arrays
+    const historyRows = items.map((item, i) => {
+      const op = inventoryOps[i];
+      const sku = skuMap.get(item.skuId)!;
+      return {
+        warehouseId,
+        skuId: item.skuId,
+        productName: sku.name || item.skuId,
+        beforeQty: op.beforeQty,
+        afterQty: op.afterQty,
+        qtyChange: -item.qty,
+        remarks: `Dispatch ${generatedSlipNumber} | Customer: ${customerName}`,
+        createdBy: staffId,
+      };
+    });
 
-      const cartItemRows = items.map(i => ({
-        cartId,
-        skuId: i.skuId,
-        qty: i.qty,
-      }));
-
-      // 7.3 Cart + CartItems + History — 3 bulk inserts
-      await tx.cart.create({
+    // 6.3 BATCH TRANSACTION — all writes in ONE roundtrip
+    const tWritesStart = performance.now();
+    const batchOps: Prisma.PrismaPromise<any>[] = [
+      // Op 1: Create cart
+      prisma.cart.create({
         data: {
           id: cartId,
           warehouseId,
@@ -181,73 +169,68 @@ export async function POST(request: Request) {
           staffId,
           dispatchSlipNumber: generatedSlipNumber,
         },
-      });
-      queryCount += 1;
+      }),
+      // Op 2: Bulk create cart items
+      prisma.cartItem.createMany({
+        data: items.map(i => ({ cartId, skuId: i.skuId, qty: i.qty })),
+      }),
+      // Op 3: Bulk create history
+      prisma.inventoryHistory.createMany({ data: historyRows }),
+    ];
 
-      await tx.cartItem.createMany({ data: cartItemRows });
-      queryCount += 1;
+    // Op 4: Bulk inventory update (1 raw SQL for all existing)
+    const existingOps = inventoryOps.filter(op => op.exists);
+    if (existingOps.length > 0) {
+      const setClauses = existingOps.map(op =>
+        `WHEN "skuId" = '${op.skuId}' THEN "qty" - ${op.deductQty}`
+      ).join(' ');
+      const oosClauses = existingOps.map(op =>
+        `WHEN "skuId" = '${op.skuId}' THEN ${op.afterQty <= 0}`
+      ).join(' ');
+      const skuIdList = existingOps.map(op => `'${op.skuId}'`).join(',');
 
-      await tx.inventoryHistory.createMany({ data: historyRows });
-      queryCount += 1;
-
-      // 7.4 Bulk inventory update via raw SQL (1 query for ALL items)
-      //     This replaces N individual update/create calls with a single
-      //     INSERT ... ON CONFLICT ... UPDATE statement.
-      const existingOps = inventoryOps.filter(op => op.exists);
-      const newOps = inventoryOps.filter(op => !op.exists);
-
-      if (existingOps.length > 0) {
-        // Build a single UPDATE using CASE/WHEN for all existing inventory
-        const setClauses = existingOps.map(op =>
-          `WHEN "skuId" = '${op.skuId}' THEN "qty" - ${op.deductQty}`
-        ).join(' ');
-
-        const oosClauses = existingOps.map(op =>
-          `WHEN "skuId" = '${op.skuId}' THEN ${op.afterQty <= 0}`
-        ).join(' ');
-
-        const skuIdList = existingOps.map(op => `'${op.skuId}'`).join(',');
-
-        await tx.$executeRawUnsafe(`
+      batchOps.push(
+        prisma.$executeRawUnsafe(`
           UPDATE "WarehouseInventory"
-          SET
-            "qty" = CASE ${setClauses} ELSE "qty" END,
-            "isOos" = CASE ${oosClauses} ELSE "isOos" END,
-            "updatedAt" = NOW()
+          SET "qty" = CASE ${setClauses} ELSE "qty" END,
+              "isOos" = CASE ${oosClauses} ELSE "isOos" END,
+              "updatedAt" = NOW()
           WHERE "warehouseId" = '${warehouseId}'
             AND "skuId" IN (${skuIdList})
-        `);
-        queryCount += 1;
-      }
+        `)
+      );
+    }
 
-      if (newOps.length > 0) {
-        await tx.warehouseInventory.createMany({
+    // Op 5: Create new inventory rows (for SKUs not previously stocked)
+    const newOps = inventoryOps.filter(op => !op.exists);
+    if (newOps.length > 0) {
+      batchOps.push(
+        prisma.warehouseInventory.createMany({
           data: newOps.map(op => ({
             warehouseId,
             skuId: op.skuId,
             qty: op.afterQty,
             isOos: op.afterQty <= 0,
           })),
-        });
-        queryCount += 1;
-      }
+        })
+      );
+    }
 
-      perf.transactionWrites = performance.now() - tWritesStart;
-      return { cartId, generatedSlipNumber };
-    }, { maxWait: 10000, timeout: 20000 });
+    queryCount += batchOps.length;
+    await prisma.$transaction(batchOps);
 
+    perf.transactionWrites = performance.now() - tWritesStart;
     perf.transactionTotal = performance.now() - tTxStart;
 
-    // 8. Build print payload from in-memory data (ZERO re-fetches)
+    // 7. Build print payload from in-memory data (ZERO re-fetches)
     const enrichedItems = items.map((item) => {
-      const sku = skuMap.get(item.skuId);
-      const inv = inventoryMap.get(item.skuId);
+      const row = skuMap.get(item.skuId)!;
       return {
         skuId: item.skuId,
-        name: sku?.name || item.skuId,
+        name: row.name || item.skuId,
         qty: item.qty,
-        unit: sku?.unit || 'PCS',
-        zone: inv?.zone ?? 'Unassigned',
+        unit: row.unit || 'PCS',
+        zone: row.inv_zone ?? 'Unassigned',
       };
     });
 
@@ -265,15 +248,15 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      cartId: result.cartId,
+      cartId,
       printPayload: {
-        id: result.cartId,
-        dispatchSlipNumber: result.generatedSlipNumber,
+        id: cartId,
+        dispatchSlipNumber: generatedSlipNumber,
         customerName,
-        notes: notes?.trim() || null,
+        notes: safeNotes,
         createdAt: now,
-        warehouseName: warehouse.name,
-        staffName: staffUser.name,
+        warehouseName: meta.wname,
+        staffName: meta.uname,
         items: enrichedItems,
         zoneGroups,
         qrPayload: JSON.stringify(enrichedItems.map(i => ({ sku: i.skuId, qty: i.qty }))),
@@ -288,9 +271,7 @@ export async function POST(request: Request) {
       }
     }, { 
       status: 200,
-      headers: {
-        'Server-Timing': serverTiming
-      }
+      headers: { 'Server-Timing': serverTiming }
     });
 
   } catch (error: any) {

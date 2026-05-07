@@ -28,6 +28,77 @@ async function fetchAllSkus(): Promise<ProductData[]> {
 /** Background refresh interval (ms) */
 const BG_REFRESH_INTERVAL = 60_000;
 
+/** Progressive dispatch loader — fills to ~92% over 10s, completes on API response */
+function DispatchProgressOverlay() {
+  const [progress, setProgress] = useState(0);
+  const [phase, setPhase] = useState('Validating inventory...');
+
+  useEffect(() => {
+    const startTime = Date.now();
+    const duration = 10000; // 10 seconds to reach ~92%
+    const maxProgress = 92;
+
+    const phases = [
+      { at: 0, text: 'Validating inventory...' },
+      { at: 15, text: 'Checking warehouse stock...' },
+      { at: 35, text: 'Generating dispatch number...' },
+      { at: 55, text: 'Writing inventory updates...' },
+      { at: 75, text: 'Creating dispatch record...' },
+      { at: 88, text: 'Finalizing...' },
+    ];
+
+    let raf: number;
+    const tick = () => {
+      const elapsed = Date.now() - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      // Cubic ease-out: fast start, slow finish
+      const eased = 1 - Math.pow(1 - t, 3);
+      const current = eased * maxProgress;
+      setProgress(current);
+
+      // Update phase text
+      for (let i = phases.length - 1; i >= 0; i--) {
+        if (current >= phases[i].at) {
+          setPhase(phases[i].text);
+          break;
+        }
+      }
+
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-[999] bg-[#1A2766]/60 backdrop-blur-[2px] flex items-center justify-center animate-in fade-in duration-200">
+      <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-5 max-w-xs w-full">
+        <div className="w-16 h-16 rounded-2xl bg-[#1A2766] flex items-center justify-center shadow-lg">
+          <Printer size={28} className="text-white" />
+        </div>
+        <div className="text-center space-y-1">
+          <p className="text-[16px] font-[800] text-[#1A2766]">Generating Dispatch Note</p>
+          <p className="text-[12px] font-[600] text-gray-400 h-4 transition-all duration-300">{phase}</p>
+        </div>
+        <div className="w-full space-y-2">
+          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-100 ease-linear"
+              style={{
+                width: `${progress}%`,
+                background: 'linear-gradient(90deg, #1A2766 0%, #3B5BDB 50%, #5C7CFA 100%)',
+              }}
+            />
+          </div>
+          <p className="text-center text-[11px] font-[700] text-[#1A2766]/60 tabular-nums">
+            {Math.round(progress)}%
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function StaffHomeClient({ staffId, warehouses, categories }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -258,19 +329,9 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   // ─── MAIN POS LAYOUT ──────────────────────────────────────────
   return (
     <div className="w-full min-h-screen bg-[#F6F7FA] p-4 relative">
-      {/* ── SUBMISSION OVERLAY ──────────────────────────────────────── */}
+      {/* ── DISPATCH PROGRESS OVERLAY ──────────────────────────────── */}
       {submitting && (
-        <div className="fixed inset-0 z-[999] bg-[#1A2766]/60 backdrop-blur-[2px] flex items-center justify-center animate-in fade-in duration-200">
-          <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-4 max-w-xs w-full">
-            <div className="w-16 h-16 rounded-2xl bg-[#1A2766] flex items-center justify-center shadow-lg">
-              <Loader2 size={28} className="text-white animate-spin" />
-            </div>
-            <div className="text-center space-y-1">
-              <p className="text-[16px] font-[800] text-[#1A2766]">Generating Dispatch Note...</p>
-              <p className="text-[12px] font-[600] text-gray-400">Updating inventory and securing order</p>
-            </div>
-          </div>
-        </div>
+        <DispatchProgressOverlay />
       )}
 
       <div className="max-w-[1920px] mx-auto flex gap-4 items-start">

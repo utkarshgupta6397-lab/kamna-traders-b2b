@@ -40,7 +40,7 @@ export default function PrintSlipClient({
   const [showZoneSlips, setShowZoneSlips] = useState(false);
   const [copied, setCopied] = useState(false);
   const [timings, setTimings] = useState<Record<string, number>>({});
-  const [mountTime, setMountTime] = useState<number | null>(null);
+  const [mountTimePerf, setMountTimePerf] = useState<number | null>(null);
   const [backendPerf, setBackendPerf] = useState<any>(null);
   const searchParams = useSearchParams();
 
@@ -48,29 +48,28 @@ export default function PrintSlipClient({
     const text = `Dispatch Performance Report
 Generated: ${new Date().toISOString()}
 
-[FRONTEND]
-API Response: ${timings.apiRequest || 0}ms
+[FRONTEND LIFECYCLE]
+API Roundtrip: ${timings.apiRequest || 0}ms
 Navigation: ${timings.navigation?.toFixed(0) || 0}ms
-Data Load: ${timings.dataFetch?.toFixed(0) || 0}ms
 First Paint: ${timings.firstPaint?.toFixed(0) || 0}ms
 Total Perceived: ${timings.totalPerceived?.toFixed(0) || 0}ms
 
-[BACKEND PHASES]
+[BACKEND EXECUTION]
 Auth Check: ${backendPerf?.auth?.toFixed(1) || 0}ms
 Batch Reads: ${backendPerf?.preReads?.toFixed(1) || 0}ms
 Dispatch No: ${backendPerf?.dispatchNo?.toFixed(1) || 0}ms
 TX Writes: ${backendPerf?.transactionWrites?.toFixed(1) || 0}ms
 TX Total: ${backendPerf?.transactionTotal?.toFixed(1) || 0}ms
-API Total: ${backendPerf?.apiTotal?.toFixed(1) || 0}ms
+API Server Total: ${backendPerf?.apiTotal?.toFixed(1) || 0}ms
 
-[PAYLOAD & OPS]
+[PAYLOAD METRICS]
 SKUs: ${backendPerf?.skuCount || 0}
 Zones: ${backendPerf?.zoneCount || 0}
-Query Est: ${backendPerf?.queryCount || 0}
+Query Count: ${backendPerf?.queryCount || 0}
 
-[ENVIRONMENT]
-Vercel: ${backendPerf?.vercelRegion || 'unknown'}
-DB: ${backendPerf?.dbType || 'unknown'}`;
+[INFRASTRUCTURE]
+Vercel Region: ${backendPerf?.vercelRegion || 'unknown'}
+Runtime: ${backendPerf?.dbType || 'unknown'}`;
 
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -79,74 +78,77 @@ DB: ${backendPerf?.dbType || 'unknown'}`;
 
   const [showDebug, setShowDebug] = useState(false);
 
-  // Initialize client-side timing baselines and visibility
+  // 1. Initialize Baseline & Visibility
   useEffect(() => {
     const isDev = process.env.NODE_ENV !== 'production';
     const hasDebugParam = searchParams.get('debugPerf') === 'true';
     setShowDebug(isDev || hasDebugParam);
-
-    const now = performance.now();
-    setMountTime(now);
-
-    const apiTime = searchParams.get('apiTime');
-    const pushTime = searchParams.get('pushTime');
-
-    if (apiTime) {
-      setTimings(prev => ({ ...prev, apiRequest: parseInt(apiTime) }));
-    }
-
-    if (pushTime) {
-      const pTime = parseInt(pushTime);
-      setTimings(prev => ({ ...prev, navigation: now - pTime }));
-    }
+    
+    // Use performance.now() for internal durations on this page
+    setMountTimePerf(performance.now());
   }, [searchParams]);
 
-  // Try to load from sessionStorage if server didn't provide data
+  // 2. Data Hydration & Diagnostic Reconstruction
   useEffect(() => {
-    if (!payload) {
-      const t0 = performance.now();
-      try {
-        const cached = sessionStorage.getItem(`print_${cartId}`);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          setPayload(parsed);
-          sessionStorage.removeItem(`print_${cartId}`);
-          setTimings(prev => ({ ...prev, dataFetch: performance.now() - t0 }));
+    const tMount = Date.now();
+    
+    try {
+      const diagRaw = sessionStorage.getItem(`dispatch_diag_${cartId}`);
+      if (diagRaw) {
+        const diag = JSON.parse(diagRaw);
+        
+        // Restore Payload
+        if (diag.payload && !payload) {
+          setPayload(diag.payload);
+        }
+        
+        // Restore Backend Diagnostics
+        if (diag.backendPerf) {
+          setBackendPerf(diag.backendPerf);
         }
 
-        const cachedPerf = sessionStorage.getItem(`perf_${cartId}`);
-        if (cachedPerf) {
-          setBackendPerf(JSON.parse(cachedPerf));
-          sessionStorage.removeItem(`perf_${cartId}`);
-        }
-      } catch {}
-    } else {
-      setTimings(prev => ({ ...prev, dataFetch: 0 })); // Data came from server
+        // Calculate Timing Breakdown
+        const clickTime = diag.clickTime;
+        const apiDuration = diag.apiDuration;
+        
+        setTimings(prev => ({
+          ...prev,
+          apiRequest: apiDuration,
+          navigation: tMount - (clickTime + apiDuration), // click -> API end -> Page Mount
+        }));
+      }
+    } catch (e) {
+      console.error('[DIAG_ERROR] Hydration failed', e);
     }
   }, [cartId, payload]);
 
-  // Lazy render zone slips after initial paint
+  // 3. Render Tracking
   useEffect(() => {
-    if (payload && mountTime !== null) {
-      // First paint is when Master Slip is rendered (on mount if payload exists)
-      setTimings(prev => ({ ...prev, firstPaint: performance.now() - mountTime }));
+    if (payload && mountTimePerf !== null) {
+      const nowPerf = performance.now();
+      const renderDuration = nowPerf - mountTimePerf;
+      
+      setTimings(prev => ({
+        ...prev,
+        firstPaint: renderDuration,
+      }));
 
       const timer = setTimeout(() => {
         setShowZoneSlips(true);
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [payload, mountTime]);
+  }, [payload, mountTimePerf]);
 
-  // Track total perceived time relative to start of API request
+  // 4. Final Perceived Calculation
   useEffect(() => {
-    if (showZoneSlips && mountTime !== null) {
-      const apiReq = timings.apiRequest || 0;
-      const nav = timings.navigation || 0;
-      const render = performance.now() - mountTime;
-      setTimings(prev => ({ ...prev, totalPerceived: apiReq + nav + render }));
+    if (showZoneSlips && timings.apiRequest && timings.navigation && timings.firstPaint) {
+      setTimings(prev => ({
+        ...prev,
+        totalPerceived: (prev.apiRequest || 0) + (prev.navigation || 0) + (prev.firstPaint || 0)
+      }));
     }
-  }, [showZoneSlips, mountTime, timings.apiRequest, timings.navigation]);
+  }, [showZoneSlips, timings.apiRequest, timings.navigation, timings.firstPaint]);
 
   const displayId = useMemo(() => payload?.dispatchSlipNumber || payload?.id || '', [payload]);
   const parts = useMemo(() => displayId.split('-'), [displayId]);
@@ -186,7 +188,7 @@ DB: ${backendPerf?.dbType || 'unknown'}`;
   return (
     <div className="relative p-4 space-y-6 print:space-y-0 print:p-0" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as any}>
       {/* ── OPERATIONAL DIAGNOSTICS PANEL ─────────────────────────────── */}
-      {showDebug && mountTime !== null && (
+      {showDebug && (
         <div className="fixed bottom-6 right-6 z-[9999] bg-black/90 text-white text-[9px] p-3 rounded-lg shadow-2xl backdrop-blur-lg border border-white/10 font-mono space-y-2 w-56 pointer-events-auto print:hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
             <div className="flex items-center gap-2">
@@ -210,7 +212,7 @@ DB: ${backendPerf?.dbType || 'unknown'}`;
               <div className="flex justify-between"><span>Dispatch No</span> <span className="text-white/60">{backendPerf?.dispatchNo?.toFixed(0) || 0}ms</span></div>
               <div className="flex justify-between"><span>TX Writes</span> <span className="text-white/60">{backendPerf?.transactionWrites?.toFixed(0) || 0}ms</span></div>
               <div className="flex justify-between border-t border-white/5 pt-0.5">
-                <span className="text-blue-400">API Total</span> 
+                <span className="text-blue-400">API Server Total</span> 
                 <span className="text-blue-400 font-bold">{backendPerf?.apiTotal?.toFixed(0) || 0}ms</span>
               </div>
             </div>
@@ -218,8 +220,8 @@ DB: ${backendPerf?.dbType || 'unknown'}`;
             {/* Frontend Lifecycle */}
             <div className="space-y-1">
               <p className="text-white/40 uppercase font-bold text-[7px] tracking-widest">Frontend Lifecycle</p>
+              <div className="flex justify-between"><span>API R-Trip</span> <span className="text-white/60">{timings.apiRequest || 0}ms</span></div>
               <div className="flex justify-between"><span>Navigation</span> <span className="text-white/60">{timings.navigation?.toFixed(0) || 0}ms</span></div>
-              <div className="flex justify-between"><span>Data Load</span> <span className="text-white/60">{timings.dataFetch?.toFixed(0) || 0}ms</span></div>
               <div className="flex justify-between"><span>First Paint</span> <span className="text-purple-400">{timings.firstPaint?.toFixed(0) || 0}ms</span></div>
             </div>
 

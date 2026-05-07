@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Search, Plus, Trash2, Printer, Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useStaffCartStore } from '@/store/staffCartStore';
 
@@ -33,6 +33,7 @@ type StaffCartBuilderProps = {
 
 export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCartBuilderProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
   const { 
     warehouseId, setWarehouseId, 
@@ -82,9 +83,9 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
       toast.error('Required fields missing. Please select a warehouse and enter customer name.');
       return;
     }
-    const tStart = performance.now();
-    setIsSubmitting(true);
 
+    const tClick = Date.now();
+    setIsSubmitting(true);
     try {
       const res = await fetch('/api/staff/cart', {
         method: 'POST',
@@ -98,25 +99,27 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
         })
       });
 
-      console.log(`[DISPATCH_PERF] CLICK_TO_API_RESPONSE: ${(performance.now() - tStart).toFixed(2)}ms`);
-
       if (res.ok) {
         const data = await res.json();
-        const apiTime = (performance.now() - tStart).toFixed(0);
-        const pushTime = performance.now().toFixed(0);
+        const tApiEnd = Date.now();
         
-        if (data.printPayload) {
-          try { 
-            sessionStorage.setItem(`print_${data.cartId}`, JSON.stringify(data.printPayload)); 
-            if (data.perf) {
-              sessionStorage.setItem(`perf_${data.cartId}`, JSON.stringify(data.perf));
-            }
-          } catch {}
+        try {
+          const diagnostics = {
+            clickTime: tClick,
+            apiDuration: tApiEnd - tClick,
+            backendPerf: data.perf,
+            payload: data.printPayload,
+          };
+          sessionStorage.setItem(`dispatch_diag_${data.cartId}`, JSON.stringify(diagnostics));
+        } catch (e) {
+          console.error('[DIAG_ERROR] Failed to save diagnostics', e);
         }
+
         clearCart();
-        router.push(`/staff/dashboard/print/${data.cartId}?autoprint=true&apiTime=${apiTime}&pushTime=${pushTime}`);
+        router.push(`/staff/dashboard/print/${data.cartId}?autoprint=true&debugPerf=${searchParams.get('debugPerf') === 'true'}`);
       } else {
-        toast.error('Unable to submit cart. Please check your connection and try again.');
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || 'Unable to submit cart.');
         setIsSubmitting(false);
       }
     } catch (error) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import ProductCard, { ProductData } from '@/components/ProductCard';
 import CartPanel from '@/components/CartPanel';
@@ -30,6 +30,7 @@ const BG_REFRESH_INTERVAL = 60_000;
 
 export default function StaffHomeClient({ staffId, warehouses, categories }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [customerName, setCustomerName] = useState('');
@@ -165,7 +166,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   // ─── Cart Submit ───────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!customerName || !warehouseId || items.length === 0) return;
-    const tStart = performance.now();
+    const tClick = Date.now();
     setSubmitting(true);
     try {
       const res = await fetch('/api/staff/cart', {
@@ -174,23 +175,24 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
         body: JSON.stringify({ warehouseId, customerName, notes, staffId, items: items.map((i) => ({ skuId: i.skuId, qty: i.qty })) }),
       });
 
-      console.log(`[DISPATCH_PERF] CLICK_TO_API_RESPONSE: ${(performance.now() - tStart).toFixed(2)}ms`);
-
       if (res.ok) {
         const { cartId, printPayload, perf } = await res.json();
-        const apiTime = (performance.now() - tStart).toFixed(0);
-        const pushTime = performance.now().toFixed(0);
+        const tApiEnd = Date.now();
         
-        // Cache print payload + backend performance data
-        if (printPayload) {
-          try { 
-            sessionStorage.setItem(`print_${cartId}`, JSON.stringify(printPayload)); 
-            if (perf) {
-              sessionStorage.setItem(`perf_${cartId}`, JSON.stringify(perf));
-            }
-          } catch {}
+        // Comprehensive operational diagnostics persistence
+        try {
+          const diagnostics = {
+            clickTime: tClick,
+            apiDuration: tApiEnd - tClick,
+            backendPerf: perf,
+            payload: printPayload,
+          };
+          sessionStorage.setItem(`dispatch_diag_${cartId}`, JSON.stringify(diagnostics));
+        } catch (e) {
+          console.error('[DIAG_ERROR] Failed to save diagnostics', e);
         }
-        router.push(`/staff/dashboard/print/${cartId}?autoprint=true&apiTime=${apiTime}&pushTime=${pushTime}`);
+
+        router.push(`/staff/dashboard/print/${cartId}?autoprint=true&debugPerf=${searchParams.get('debugPerf') === 'true'}`);
         setTimeout(() => clearCart(), 100);
       } else {
         const data = await res.json().catch(() => null);

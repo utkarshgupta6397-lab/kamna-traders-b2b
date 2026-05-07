@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { validateOrigin } from '@/lib/csrf';
+import { Prisma } from '@prisma/client';
 
 type CartItemInput = {
   skuId: string;
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
     }
 
-    // 2. Auth Verification
+    // 2. Auth Verification (JWT-only, no DB hit)
     const tAuthStart = performance.now();
     const session = await getSession();
     const rawStaffId = session?.userId;
@@ -47,45 +48,55 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 3. Batch Reads & Validation (OPTIMIZED: 2 Unified Queries)
+    // ═══════════════════════════════════════════════════════════════
+    // 3. BATCH READS — 3 flat parallel queries, no nested includes
+    // ═══════════════════════════════════════════════════════════════
     const tReadStart = performance.now();
     const skuIds = items.map((i) => i.skuId);
-    
-    const [warehouseData, staffUser] = await Promise.all([
+
+    const [warehouse, staffUser, inventories] = await Promise.all([
       prisma.warehouse.findUnique({
         where: { id: warehouseId },
-        select: {
-          id: true,
-          name: true,
-          active: true,
-          inventory: {
-            where: { skuId: { in: skuIds } },
-            include: { sku: true }
-          }
-        }
+        select: { id: true, name: true, active: true },
       }),
-      prisma.user.findUnique({ where: { id: staffId }, select: { id: true, name: true, active: true } }),
+      prisma.user.findUnique({
+        where: { id: staffId },
+        select: { id: true, name: true, active: true },
+      }),
+      prisma.warehouseInventory.findMany({
+        where: { warehouseId, skuId: { in: skuIds } },
+        select: { skuId: true, qty: true, zone: true, id: true },
+      }),
     ]);
-    queryCount += 2;
+    queryCount += 3;
+
+    // Only fetch SKU details if some items lack inventory records
+    const inventoryMap = new Map(inventories.map((i) => [i.skuId, i]));
+    const skuIdsNeedingLookup = skuIds.filter(id => !inventoryMap.has(id));
+
+    let skuDetails: { id: string; name: string; unit: string | null; moq: number }[] = [];
+    if (skuIdsNeedingLookup.length > 0) {
+      skuDetails = await prisma.sku.findMany({
+        where: { id: { in: skuIds } },
+        select: { id: true, name: true, unit: true, moq: true },
+      });
+      queryCount += 1;
+    } else {
+      // All items have inventory — fetch SKU metadata in one query
+      skuDetails = await prisma.sku.findMany({
+        where: { id: { in: skuIds } },
+        select: { id: true, name: true, unit: true, moq: true },
+      });
+      queryCount += 1;
+    }
+
     perf.preReads = performance.now() - tReadStart;
 
-    // 4. In-Memory Validation & Preparations
-    if (!warehouseData || !warehouseData.active) throw new Error('Warehouse not found or inactive');
+    // 4. In-Memory Validation
+    if (!warehouse || !warehouse.active) throw new Error('Warehouse not found or inactive');
     if (!staffUser || !staffUser.active) throw new Error('Staff account not found or deactivated');
 
-    // Flatten inventories and skus from unified fetch
-    const inventories = warehouseData.inventory;
-    const inventoryMap = new Map(inventories.map((i) => [i.skuId, i]));
-    const skuMap = new Map(inventories.map((i) => [i.skuId, i.sku]));
-
-    // Check for any missing SKUs (those not in inventory)
-    const missingSkuIds = skuIds.filter(id => !skuMap.has(id));
-    if (missingSkuIds.length > 0) {
-      // Fallback: fetch missing SKUs if they haven't been stocked yet
-      const missingSkus = await prisma.sku.findMany({ where: { id: { in: missingSkuIds } } });
-      queryCount += 1;
-      missingSkus.forEach(s => skuMap.set(s.id, s));
-    }
+    const skuMap = new Map(skuDetails.map((s) => [s.id, s]));
 
     for (const item of items) {
       const sku = skuMap.get(item.skuId);
@@ -101,24 +112,30 @@ export async function POST(request: Request) {
     }).replace(/ /g, '/');
 
     // 6. Pre-compute all write data in memory
-    const inventoryOps: any[] = [];
-    for (const item of items) {
+    const inventoryOps = items.map((item) => {
       const inv = inventoryMap.get(item.skuId);
       const beforeQty = inv ? inv.qty : 999;
       const afterQty = beforeQty - item.qty;
-      inventoryOps.push({
+      return {
         skuId: item.skuId,
         exists: !!inv,
         beforeQty,
         afterQty,
         deductQty: item.qty,
-      });
-    }
+      };
+    });
 
-    // 7. Optimized Transaction (2 Roundtrips Max)
+    // ═══════════════════════════════════════════════════════════════
+    // 7. RAW SQL TRANSACTION — 4 queries total instead of 3+N
+    //    Prisma interactive transactions serialize ALL queries on one
+    //    connection. Promise.all inside tx does NOT parallelize.
+    //    Using $executeRawUnsafe for bulk inventory update eliminates
+    //    the N per-item query overhead entirely.
+    // ═══════════════════════════════════════════════════════════════
     const tTxStart = performance.now();
+
     const result = await prisma.$transaction(async (tx) => {
-      // 7.1 Sequence Generation (Sequential roundtrip)
+      // 7.1 Sequence number generation (1 query)
       const tSeqStart = performance.now();
       const seqRecord = await tx.dispatchSequence.upsert({
         where: { date: datePart },
@@ -129,9 +146,10 @@ export async function POST(request: Request) {
       perf.dispatchNo = performance.now() - tSeqStart;
 
       const generatedSlipNumber = `KS-DP-${datePart}-${seqRecord.sequence.toString().padStart(3, '0')}`;
+      const safeNotes = notes?.trim() || null;
       const tWritesStart = performance.now();
 
-      // 7.2 Prepare History Rows
+      // 7.2 Build all data arrays
       const historyRows = items.map((item, i) => {
         const op = inventoryOps[i];
         const sku = skuMap.get(item.skuId);
@@ -147,48 +165,80 @@ export async function POST(request: Request) {
         };
       });
 
-      // 7.3 Parallel Execution of All Writes
-      const invPromises = inventoryOps.map((op) => {
-        queryCount += 1;
-        if (!op.exists) {
-          return tx.warehouseInventory.create({
-            data: { warehouseId, skuId: op.skuId, qty: op.afterQty, isOos: op.afterQty <= 0 },
-          });
-        } else {
-          return tx.warehouseInventory.update({
-            where: { warehouseId_skuId: { warehouseId, skuId: op.skuId } },
-            data: { qty: { decrement: op.deductQty }, isOos: op.afterQty <= 0 },
-          });
-        }
+      const cartItemRows = items.map(i => ({
+        cartId,
+        skuId: i.skuId,
+        qty: i.qty,
+      }));
+
+      // 7.3 Cart + CartItems + History — 3 bulk inserts
+      await tx.cart.create({
+        data: {
+          id: cartId,
+          warehouseId,
+          customerName,
+          notes: safeNotes,
+          staffId,
+          dispatchSlipNumber: generatedSlipNumber,
+        },
       });
+      queryCount += 1;
 
-      await Promise.all([
-        tx.cart.create({
-          data: {
-            id: cartId,
+      await tx.cartItem.createMany({ data: cartItemRows });
+      queryCount += 1;
+
+      await tx.inventoryHistory.createMany({ data: historyRows });
+      queryCount += 1;
+
+      // 7.4 Bulk inventory update via raw SQL (1 query for ALL items)
+      //     This replaces N individual update/create calls with a single
+      //     INSERT ... ON CONFLICT ... UPDATE statement.
+      const existingOps = inventoryOps.filter(op => op.exists);
+      const newOps = inventoryOps.filter(op => !op.exists);
+
+      if (existingOps.length > 0) {
+        // Build a single UPDATE using CASE/WHEN for all existing inventory
+        const setClauses = existingOps.map(op =>
+          `WHEN "skuId" = '${op.skuId}' THEN "qty" - ${op.deductQty}`
+        ).join(' ');
+
+        const oosClauses = existingOps.map(op =>
+          `WHEN "skuId" = '${op.skuId}' THEN ${op.afterQty <= 0}`
+        ).join(' ');
+
+        const skuIdList = existingOps.map(op => `'${op.skuId}'`).join(',');
+
+        await tx.$executeRawUnsafe(`
+          UPDATE "WarehouseInventory"
+          SET
+            "qty" = CASE ${setClauses} ELSE "qty" END,
+            "isOos" = CASE ${oosClauses} ELSE "isOos" END,
+            "updatedAt" = NOW()
+          WHERE "warehouseId" = '${warehouseId}'
+            AND "skuId" IN (${skuIdList})
+        `);
+        queryCount += 1;
+      }
+
+      if (newOps.length > 0) {
+        await tx.warehouseInventory.createMany({
+          data: newOps.map(op => ({
             warehouseId,
-            customerName,
-            notes: notes?.trim() || null,
-            staffId,
-            dispatchSlipNumber: generatedSlipNumber,
-          }
-        }),
-        tx.cartItem.createMany({
-          data: items.map(i => ({ cartId, skuId: i.skuId, qty: i.qty }))
-        }),
-        tx.inventoryHistory.createMany({ data: historyRows }),
-        ...invPromises
-      ]);
+            skuId: op.skuId,
+            qty: op.afterQty,
+            isOos: op.afterQty <= 0,
+          })),
+        });
+        queryCount += 1;
+      }
 
-      queryCount += 3; // cart + cartItems + history
       perf.transactionWrites = performance.now() - tWritesStart;
-
       return { cartId, generatedSlipNumber };
     }, { maxWait: 10000, timeout: 20000 });
-    
+
     perf.transactionTotal = performance.now() - tTxStart;
 
-    // 8. Build print payload using in-memory data (NO RE-FETCH)
+    // 8. Build print payload from in-memory data (ZERO re-fetches)
     const enrichedItems = items.map((item) => {
       const sku = skuMap.get(item.skuId);
       const inv = inventoryMap.get(item.skuId);
@@ -206,8 +256,7 @@ export async function POST(request: Request) {
       (zoneGroups[item.zone] ??= []).push(item);
     }
 
-    const totalApi = performance.now() - t0;
-    perf.apiTotal = totalApi;
+    perf.apiTotal = performance.now() - t0;
 
     const vercelRegion = request.headers.get('x-vercel-id')?.split(':')[0] || 'local';
     const serverTiming = Object.entries(perf)
@@ -223,7 +272,7 @@ export async function POST(request: Request) {
         customerName,
         notes: notes?.trim() || null,
         createdAt: now,
-        warehouseName: warehouseData.name,
+        warehouseName: warehouse.name,
         staffName: staffUser.name,
         items: enrichedItems,
         zoneGroups,

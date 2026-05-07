@@ -72,19 +72,30 @@ export default async function PrintSlipPage({
   );
 
   const dateStr = new Date(cart.createdAt).toLocaleDateString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric'
+    day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata'
   }).replace(/ /g, '-') + ' ' + new Date(cart.createdAt).toLocaleTimeString('en-US', {
-    hour: '2-digit', minute: '2-digit', hour12: true
+    hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata'
   });
 
   const displayId = cart.dispatchSlipNumber || cart.id;
+  const parts = displayId.split('-');
+  const isSequenceId = parts.length === 4 && parts[0] === 'KS' && parts[1] === 'DP';
+
+  const FormattedId = () => {
+    if (!isSequenceId) return <>{displayId}</>;
+    return (
+      <>
+        {parts.slice(0, 3).join('-')}-<span className="font-bold">{parts[3]}</span>
+      </>
+    );
+  };
 
   return (
     <div className="p-4 space-y-6 print:space-y-0 print:p-0">
       {/* ── Screen-only controls ───────────────────────────────────────── */}
       <div className="print:hidden bg-white rounded-xl border border-gray-100 p-4 flex items-center justify-between">
         <div>
-          <h2 className="font-bold text-gray-900">Print Center — {displayId}</h2>
+          <h2 className="font-bold text-gray-900">Print Center — <FormattedId /></h2>
           <p className="text-xs text-gray-500 mt-0.5">
             Set printer paper to 80mm · margins to None · scale to 100%
           </p>
@@ -97,13 +108,18 @@ export default async function PrintSlipPage({
 
       {/* ── MASTER SLIP ────────────────────────────────────────────────── */}
       <div className="bg-white w-72 print:w-[80mm] mx-auto print:mx-0 shadow-sm print:shadow-none font-mono text-sm print:break-after-page">
-        <div className="text-center border-b-2 border-dashed border-gray-400 py-3 mb-3">
+        <div className="relative text-center border-b-2 border-dashed border-gray-400 py-3 mb-3">
           <p className="text-base font-black uppercase tracking-widest">Kamna Traders</p>
           <p className="text-[10px] text-gray-500">Master Dispatch Slip</p>
+          {isSequenceId && (
+            <div className="absolute top-2 right-2 bg-black text-white rounded-md px-2 py-0.5 shadow-sm print:shadow-none">
+              <span className="text-sm font-black tracking-widest leading-none">{parts[3]}</span>
+            </div>
+          )}
         </div>
 
         <div className="px-3 space-y-0.5 text-xs mb-3">
-          <p><span className="font-bold">Dispatch No:</span> {displayId}</p>
+          <p><span>Dispatch No:</span> <FormattedId /></p>
           <p><span className="font-bold">Date:</span> {dateStr}</p>
           <p><span className="font-bold">Warehouse:</span> {cart.warehouse.name}</p>
           <p><span className="font-bold">Customer:</span> {cart.customerName}</p>
@@ -151,9 +167,14 @@ export default async function PrintSlipPage({
       {/* ── ZONE SLIPS ─────────────────────────────────────────────────── */}
       {Object.entries(zoneGroups).map(([zone, zItems], idx) => (
         <div key={idx} className="bg-white w-72 print:w-[80mm] mx-auto print:mx-0 shadow-sm print:shadow-none font-mono text-sm print:break-after-page">
-          <div className="text-center border-b-2 border-black py-2 mb-2">
+          <div className="relative text-center border-b-2 border-black py-2 mb-2">
             <p className="text-xs font-black uppercase tracking-widest">Zone Slip · {zone}</p>
-            <p className="text-[10px]">No: {displayId} · {cart.warehouse.name}</p>
+            <p className="text-[10px]">No: <FormattedId /> · {cart.warehouse.name}</p>
+            {isSequenceId && (
+              <div className="absolute top-1 right-2 bg-black text-white rounded-md px-1.5 py-0.5 shadow-sm print:shadow-none">
+                <span className="text-xs font-black tracking-widest leading-none">{parts[3]}</span>
+              </div>
+            )}
           </div>
           <div className="px-3 text-[10px] mb-2 flex justify-between items-center text-gray-500">
             <span>{dateStr}</span>

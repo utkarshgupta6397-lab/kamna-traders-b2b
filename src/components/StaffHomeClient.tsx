@@ -6,7 +6,7 @@ import ProductCard, { ProductData } from '@/components/ProductCard';
 import CartPanel from '@/components/CartPanel';
 import { useCartStore } from '@/store/cartStore';
 import { useSkuStore } from '@/store/skuStore';
-import { Printer, Scan, Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Printer, Scan, Loader2, RefreshCw, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
 interface Category { id: string; name: string; count: number }
@@ -47,13 +47,15 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   const setStatus = useSkuStore((s) => s.setStatus);
   const setCategory = useSkuStore((s) => s.setCategory);
   const getFiltered = useSkuStore((s) => s.getFiltered);
+  const hideOos = useSkuStore((s) => s.hideOos);
+  const setHideOos = useSkuStore((s) => s.setHideOos);
 
   // Cart
   const { items, addItem, clearCart } = useCartStore();
   const totalQty = items.reduce((a, i) => a + i.qty, 0);
 
-  // Filtered products — recomputes when allSkus, category, or search changes
-  const products = useMemo(() => getFiltered(), [getFiltered, allSkus, selectedCategoryId, searchQuery]);
+  // Filtered products — recomputes when allSkus, category, search, or hideOos changes
+  const products = useMemo(() => getFiltered(), [getFiltered, allSkus, selectedCategoryId, searchQuery, hideOos]);
 
   // ─── Initial Load ──────────────────────────────────────────────
   const loadSkus = useCallback(async (silent = false) => {
@@ -103,7 +105,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
         } else if (e.key === 'Enter' && selectedIndex >= 0) {
           e.preventDefault();
           const p = products[selectedIndex];
-          if (p && !p.isOos) {
+          if (p) {
             addItem({
               skuId: p.id,
               name: p.name,
@@ -123,7 +125,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   // Reset selection when filters change
   useEffect(() => {
     setSelectedIndex(-1);
-  }, [selectedCategoryId, searchQuery]);
+  }, [selectedCategoryId, searchQuery, hideOos]);
 
   // ─── Cart Submit ───────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -266,6 +268,21 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
             <div className="h-6 w-px bg-[#F1F3F7]" />
             <div className="flex-1 flex items-center gap-4">
                <span className="text-[11px] font-[800] text-gray-400 uppercase tracking-widest">{products.length} SKUs Listed</span>
+               <div className="h-4 w-px bg-[#F1F3F7]" />
+               <button
+                 onClick={() => setHideOos(!hideOos)}
+                 className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-all ${
+                   hideOos 
+                     ? 'bg-[#F9FAFB] border-[#E7EAF0] text-gray-500 hover:bg-white hover:border-[#1A2766]/30' 
+                     : 'bg-[#1A2766]/5 border-[#1A2766]/20 text-[#1A2766] hover:bg-[#1A2766]/10'
+                 }`}
+                 title={hideOos ? "Show Out of Stock" : "Hide Out of Stock"}
+               >
+                 {hideOos ? <EyeOff size={13} /> : <Eye size={13} />}
+                 <span className="text-[10px] font-[800] uppercase tracking-wider">
+                   {hideOos ? 'Hide OOS' : 'Show OOS'}
+                 </span>
+               </button>
             </div>
             <div className="flex items-center gap-2 px-3 py-1.5 bg-[#F9FAFB] border border-[#E7EAF0] rounded-lg group">
               <Scan size={14} className="text-gray-400 group-hover:text-[#1A2766]" />
@@ -277,7 +294,11 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
             <div className="flex flex-col items-center justify-center py-32 text-center opacity-50">
               <p className="text-[14px] font-[700] text-gray-500">No products found</p>
               <p className="text-[12px] text-gray-400 mt-1">
-                {searchQuery ? 'Try a different search term' : 'This category is empty'}
+                {searchQuery 
+                  ? 'Try a different search term' 
+                  : hideOos 
+                    ? 'This category is empty or all items are Out of Stock' 
+                    : 'This category is empty'}
               </p>
             </div>
           ) : (

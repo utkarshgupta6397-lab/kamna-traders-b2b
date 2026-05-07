@@ -10,6 +10,7 @@ interface SkuStore {
   /** Active filter state (local only – no network) */
   selectedCategoryId: string;
   searchQuery: string;
+  hideOos: boolean;
   /** Last successful fetch timestamp */
   lastFetchedAt: number | null;
 
@@ -17,6 +18,7 @@ interface SkuStore {
   setStatus: (s: SkuStore['status'], err?: string) => void;
   setCategory: (id: string) => void;
   setSearch: (q: string) => void;
+  setHideOos: (val: boolean) => void;
 
   /** Derived: filtered view (computed on the fly, no extra storage) */
   getFiltered: () => ProductData[];
@@ -28,16 +30,22 @@ export const useSkuStore = create<SkuStore>((set, get) => ({
   errorMsg: null,
   selectedCategoryId: '',
   searchQuery: '',
+  hideOos: true, // Default: hide OOS
   lastFetchedAt: null,
 
   setSkus: (skus) => set({ allSkus: skus, lastFetchedAt: Date.now() }),
   setStatus: (status, err) => set({ status, errorMsg: err ?? null }),
   setCategory: (id) => set({ selectedCategoryId: id }),
   setSearch: (q) => set({ searchQuery: q }),
+  setHideOos: (val) => set({ hideOos: val }),
 
   getFiltered: () => {
-    const { allSkus, selectedCategoryId, searchQuery } = get();
+    const { allSkus, selectedCategoryId, searchQuery, hideOos } = get();
     let list = allSkus;
+
+    if (hideOos) {
+      list = list.filter((s) => !s.isOos);
+    }
 
     if (selectedCategoryId) {
       list = list.filter((s) => s.categoryId === selectedCategoryId);

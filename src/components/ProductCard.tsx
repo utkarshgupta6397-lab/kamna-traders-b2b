@@ -32,7 +32,6 @@ const ProductCard = memo(function ProductCard({ product, isSelected }: { product
   const step = product.stepQty || product.moq;
 
   const add = () => {
-    if (product.isOos) return;
     
     if (qty === 0) {
       addItem({
@@ -96,7 +95,6 @@ const ProductCard = memo(function ProductCard({ product, isSelected }: { product
           {qty === 0 ? (
             <button
               onClick={add}
-              disabled={product.isOos}
               className="w-[82px] h-[34px] rounded-[10px] text-[14px] font-[700] transition-all active:scale-95 disabled:opacity-50 shadow-sm flex items-center justify-center bg-[#1A2766] text-white hover:bg-[#003347]"
             >
               ADD

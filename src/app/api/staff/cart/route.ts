@@ -68,32 +68,17 @@ export async function POST(request: Request) {
       const sku = skuMap.get(item.skuId);
       if (!sku) throw new Error(`SKU "${item.skuId}" does not exist`);
       if (item.qty < sku.moq) throw new Error(`Qty for ${item.skuId} is below MOQ (${sku.moq})`);
-
-      const inv = inventoryMap.get(item.skuId);
-      if (inv && inv.qty < item.qty) {
-        throw new Error(`Insufficient stock for ${item.skuId}: ${inv.qty} available, ${item.qty} requested`);
-      }
     }
 
     // 5. Generate Identifiers
     const cartId = `KT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-    const sequence = (dayCount + 1).toString().padStart(3, '0');
-    const datePart = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-');
-    const dispatchSlipNumber = `KS-DP-${Date.now()}`; // TEMPORARY FALLBACK to test uniqueness
+    const datePart = now.toLocaleDateString('en-GB', { 
+      day: '2-digit', 
+      month: 'short', 
+      year: '2-digit',
+      timeZone: 'Asia/Kolkata' 
+    }).replace(/ /g, '/');
     const safeNotes = notes?.trim() || null;
-
-    // Detect if dispatchSlipNumber column exists before transaction
-    let hasDispatchSlipNumber = false;
-    try {
-      const result = await prisma.$queryRaw`
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_name='Cart' AND column_name='dispatchSlipNumber'
-      `;
-      hasDispatchSlipNumber = Array.isArray(result) && result.length > 0;
-    } catch (err) {
-      console.warn('Failed to check column existence, assuming false', err);
-    }
 
     const cartData: any = {
       id: cartId,
@@ -104,14 +89,19 @@ export async function POST(request: Request) {
       items: { create: items.map((i) => ({ skuId: i.skuId, qty: i.qty })) },
     };
 
-    if (hasDispatchSlipNumber) {
-      cartData.dispatchSlipNumber = dispatchSlipNumber;
-    }
-
     // 6. Minimal Transaction (WRITES ONLY)
     console.log(`[TX_START] Starting transaction for cartId: ${cartId}`);
     const cart = await prisma.$transaction(async (tx) => {
-      // Inventory updates
+      // 6.1 Generate Transaction-Safe Sequence
+      const seqRecord = await tx.dispatchSequence.upsert({
+        where: { date: datePart },
+        create: { date: datePart, sequence: 1 },
+        update: { sequence: { increment: 1 } },
+      });
+      const generatedSlipNumber = `KS-DP-${datePart}-${seqRecord.sequence.toString().padStart(3, '0')}`;
+      cartData.dispatchSlipNumber = generatedSlipNumber;
+
+      // 6.2 Inventory updates
       let stepCounter = 1;
       for (const item of items) {
         const inv = inventoryMap.get(item.skuId);

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { formatCurrency } from '@/lib/utils';
-import { RefreshCw, AlertCircle, CheckCircle2, Download } from 'lucide-react';
+import { RefreshCw, AlertCircle, CheckCircle2, Download, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 type PreviewSku = {
@@ -23,6 +23,36 @@ export default function SkuSyncPage() {
   const [hasFetched, setHasFetched] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncSummary, setSyncSummary] = useState<{ created: number; updated: number; failed: number } | null>(null);
+  const [lastSync, setLastSync] = useState<{ startedAt: string; completedAt: string | null; totalReceived: number; createdCount: number; updatedCount: number; failedCount: number } | null>(null);
+
+  useEffect(() => {
+    fetchStatus();
+  }, []);
+
+  const fetchStatus = async () => {
+    try {
+      const res = await fetch('/api/admin/sku-sync/last-run');
+      const json = await res.json();
+      if (res.ok && json.lastLog) {
+        setLastSync(json.lastLog);
+      }
+    } catch (err) {
+      console.error('Failed to fetch sync status:', err);
+    }
+  };
+
+  const formatDateIST = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return new Intl.DateTimeFormat('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Kolkata'
+    }).format(date);
+  };
 
   const runSync = async () => {
     if (!confirm('Are you sure you want to run the full catalog sync from Zoho? This will update your local database.')) return;
@@ -40,7 +70,8 @@ export default function SkuSyncPage() {
       setSyncSummary(json.summary);
       toast.success('Catalog synchronization completed successfully');
       
-      // Refresh the preview
+      // Refresh status and preview
+      fetchStatus();
       fetchSkus();
     } catch (err: any) {
       console.error(err);
@@ -99,6 +130,46 @@ export default function SkuSyncPage() {
             <Download size={18} className={isSyncing ? 'animate-bounce' : ''} />
             {isSyncing ? 'Syncing Catalog...' : 'Run SKU Sync'}
           </button>
+        </div>
+      </div>
+
+      {/* Status & Last Synced Card */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="md:col-span-2 bg-white rounded-xl border border-gray-200 p-5 shadow-sm flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+              <Clock size={24} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Last Sync Status</p>
+              {lastSync ? (
+                <div className="mt-1">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {formatDateIST(lastSync.startedAt)}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {lastSync.totalReceived} items processed • {lastSync.createdCount} new • {lastSync.updatedCount} updated
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm font-medium text-gray-500 mt-1 italic">Never synced yet</p>
+              )}
+            </div>
+          </div>
+          {lastSync && (
+            <div className="hidden sm:block">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
+                <CheckCircle2 size={12} />
+                SUCCESSFUL
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-[#1A2766] rounded-xl p-5 shadow-sm text-white flex flex-col justify-center">
+          <p className="text-xs font-bold text-blue-200 uppercase tracking-wider">Auto-Sync Schedule</p>
+          <p className="text-lg font-bold mt-1">Every 30 Minutes</p>
+          <p className="text-xs text-blue-200 mt-1 opacity-80">9:00 AM — 8:00 PM IST</p>
         </div>
       </div>
 

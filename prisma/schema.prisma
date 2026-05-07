@@ -12,32 +12,32 @@ model User {
   id        String   @id @default(cuid())
   name      String
   mobile    String   @unique
-  role      String   @default("STAFF") // STAFF, ADMIN
+  role      String   @default("STAFF")
   active    Boolean  @default(true)
-  pin       String?  // 6-digit PIN set by system
+  pin       String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   carts     Cart[]
 }
 
 model Warehouse {
-  id        String   @id @default(cuid())
+  id        String               @id @default(cuid())
   name      String
   address   String?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  inventory WarehouseInventory[]
+  active    Boolean              @default(true)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
   carts     Cart[]
+  inventory WarehouseInventory[]
 }
 
 model Brand {
   id        String   @id @default(cuid())
   name      String   @unique
   active    Boolean  @default(true)
-  skus      Sku[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  skus      Sku[]
 }
 
 model Category {
@@ -45,33 +45,33 @@ model Category {
   name      String
   active    Boolean    @default(true)
   parentId  String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
   parent    Category?  @relation("SubCategories", fields: [parentId], references: [id])
   children  Category[] @relation("SubCategories")
   skus      Sku[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
 }
 
 model Sku {
-  id          String    @id
+  id          String               @id
   name        String
   brandId     String?
-  brand       Brand?    @relation(fields: [brandId], references: [id])
   unit        String?
-  moq         Int       @default(1)
-  stepQty     Int       @default(1)  // step increase per + tap
-  price       Float     @default(0.0)
-  gstPercent  Float     @default(0.0)
+  moq         Int                  @default(1)
+  stepQty     Int                  @default(1)
+  price       Float                @default(0.0)
+  gstPercent  Float                @default(0.0)
   hsnCode     String?
   description String?
   imageUrl    String?
   categoryId  String?
-  category    Category? @relation(fields: [categoryId], references: [id])
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  inventory   WarehouseInventory[]
+  isActive    Boolean              @default(true)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
   cartItems   CartItem[]
+  brand       Brand?               @relation(fields: [brandId], references: [id])
+  category    Category?            @relation(fields: [categoryId], references: [id])
+  inventory   WarehouseInventory[]
 
   @@index([categoryId])
   @@index([brandId])
@@ -86,23 +86,23 @@ model WarehouseInventory {
   isOos       Boolean   @default(false)
   zone        String?
   updatedAt   DateTime  @updatedAt
-  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
   sku         Sku       @relation(fields: [skuId], references: [id])
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
 
   @@unique([warehouseId, skuId])
 }
 
 model Cart {
-  id           String     @id
-  warehouseId  String
-  customerName String
-  notes        String?
+  id                 String     @id
+  warehouseId        String
+  customerName       String
+  notes              String?
   staffId            String
-  dispatchSlipNumber String?    @unique
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
-  warehouse          Warehouse  @relation(fields: [warehouseId], references: [id])
+  dispatchSlipNumber String?    @unique
   staff              User       @relation(fields: [staffId], references: [id])
+  warehouse          Warehouse  @relation(fields: [warehouseId], references: [id])
   items              CartItem[]
 }
 

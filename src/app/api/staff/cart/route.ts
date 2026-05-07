@@ -30,6 +30,7 @@ export async function POST(request: Request) {
     const staffId = rawStaffId;
 
     const body = await request.json();
+    console.log('[DEBUG] POST /api/staff/cart payload:', JSON.stringify(body, null, 2));
     const { warehouseId, customerName, notes, items } = body as {
       warehouseId?: string;
       customerName?: string;
@@ -46,15 +47,13 @@ export async function POST(request: Request) {
     
     // Fetch all necessary data in parallel to minimize latency
     const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
-    const [skus, inventories, warehouse, staff, dayCount] = await Promise.all([
+
+    const [skus, inventories, warehouse, staff] = await Promise.all([
       prisma.sku.findMany({ where: { id: { in: skuIds } } }),
       prisma.warehouseInventory.findMany({ where: { warehouseId, skuId: { in: skuIds } } }),
       prisma.warehouse.findUnique({ where: { id: warehouseId }, select: { id: true, active: true } }),
       prisma.user.findUnique({ where: { id: staffId }, select: { id: true, active: true } }),
-      prisma.cart.count({ where: { createdAt: { gte: startOfDay, lte: endOfDay } } }),
     ]);
 
     // 4. In-Memory Validation & Preparations
@@ -92,13 +91,25 @@ export async function POST(request: Request) {
     // 6. Minimal Transaction (WRITES ONLY)
     console.log(`[TX_START] Starting transaction for cartId: ${cartId}`);
     const cart = await prisma.$transaction(async (tx) => {
-      // 6.1 Generate Transaction-Safe Sequence
-      const seqRecord = await tx.dispatchSequence.upsert({
-        where: { date: datePart },
-        create: { date: datePart, sequence: 1 },
-        update: { sequence: { increment: 1 } },
-      });
+      console.log(`[DEBUG] Step: 6.1 (Generate Sequence), datePart: ${datePart}`);
+      let seqRecord;
+      try {
+        seqRecord = await tx.dispatchSequence.upsert({
+          where: { date: datePart },
+          create: { date: datePart, sequence: 1 },
+          update: { sequence: { increment: 1 } },
+        });
+      } catch (err: any) {
+        console.error(`[TX_FAIL: dispatchSequence.upsert] Failed for date ${datePart}`, {
+          error: err.message,
+          code: err.code,
+          meta: err.meta,
+        });
+        throw new Error(`Transaction aborted during sequence generation: ${err.message}`);
+      }
+      
       const generatedSlipNumber = `KS-DP-${datePart}-${seqRecord.sequence.toString().padStart(3, '0')}`;
+      console.log(`[DEBUG] Generated dispatchNo: ${generatedSlipNumber}`);
       cartData.dispatchSlipNumber = generatedSlipNumber;
 
       // 6.2 Inventory updates
@@ -129,26 +140,37 @@ export async function POST(request: Request) {
         }
       }
 
-      console.log(`[TX_STEP ${stepCounter++}: cart.create] Creating cart ${cartId}`);
+      console.log(`[DEBUG] Step: 6.3 (Create Cart), cartId: ${cartId}, dispatchNo: ${cartData.dispatchSlipNumber}`);
       try {
-        return await tx.cart.create({
+        const newCart = await tx.cart.create({
           data: cartData,
-          select: { id: true }, // CRITICAL: Avoid selecting dispatchSlipNumber in RETURNING clause
+          select: { id: true },
         });
+        console.log(`[DEBUG] Cart created successfully in DB: ${newCart.id}`);
+        return newCart;
       } catch (err: any) {
-        console.error(`[TX_FAIL: cart.create] Failed to create cart ${cartId}`, err);
+        console.error(`[TX_FAIL: cart.create] Failed to create cart ${cartId}`, {
+          error: err.message,
+          code: err.code,
+          meta: err.meta,
+          dispatchNo: cartData.dispatchSlipNumber
+        });
         throw new Error(`Transaction aborted during cart.create: ${err.message}`);
       }
-    }, { maxWait: 5000, timeout: 10000 });
-    console.log(`[TX_END] Transaction successful for cartId: ${cartId}`);
+    }, { maxWait: 10000, timeout: 20000 });
     console.log(`[TX_END] Transaction successful for cartId: ${cartId}`);
 
     // 7. Success Response
     return NextResponse.json({ success: true, cartId: cart.id }, { status: 200 });
 
-  } catch (error: unknown) {
+  } catch (error: any) {
     const message = error instanceof Error ? error.message : 'Internal Server Error';
-    console.error('[CART_ERROR]', error);
+    console.error('[CART_ERROR] Full metadata:', {
+      message,
+      stack: error.stack,
+      code: error.code,
+      meta: error.meta,
+    });
 
     const isBusinessError = 
       message.includes('stock') || 

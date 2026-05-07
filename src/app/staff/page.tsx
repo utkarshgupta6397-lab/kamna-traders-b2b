@@ -74,16 +74,6 @@ export default function StaffLoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0f1a40] via-[#1A2766] to-[#003347] flex items-center justify-center p-4">
-      {/* Transition Overlay */}
-      {isTransitioning && (
-        <div className="fixed inset-0 z-[100] bg-[#1A2766]/60 backdrop-blur-md flex items-center justify-center animate-in fade-in duration-300">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
-            <p className="text-white font-bold text-sm tracking-widest uppercase animate-pulse">Loading Dashboard...</p>
-          </div>
-        </div>
-      )}
-
       {/* Decorative circles */}
       <div className="fixed top-0 left-0 w-80 h-80 bg-[#AE1B1E]/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
       <div className="fixed bottom-0 right-0 w-96 h-96 bg-[#003347]/30 rounded-full blur-3xl translate-x-1/3 translate-y-1/3" />

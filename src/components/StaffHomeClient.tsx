@@ -25,8 +25,8 @@ async function fetchAllSkus(): Promise<ProductData[]> {
   return res.json();
 }
 
-/** Background refresh interval (ms) */
-const BG_REFRESH_INTERVAL = 60_000;
+/** Background refresh interval (ms) — 120 seconds for silent hydration */
+const BG_REFRESH_INTERVAL = 120_000;
 
 /** Progressive dispatch loader — fills to ~92% over 10s, completes on API response */
 function DispatchProgressOverlay() {
@@ -124,6 +124,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   const setHideOos = useSkuStore((s) => s.setHideOos);
   const selectedCaseSizes = useSkuStore((s) => s.selectedCaseSizes);
   const setSelectedCaseSizes = useSkuStore((s) => s.setSelectedCaseSizes);
+  const lastFetchedAt = useSkuStore((s) => s.lastFetchedAt);
 
   // Cart
   const { items, addItem, clearCart } = useCartStore();
@@ -176,6 +177,29 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     const sizes = Array.from(new Set(allSkus.map(s => s.caseSize).filter((s): s is number => !!s && s > 1))).sort((a, b) => a - b);
     return sizes;
   }, [allSkus]);
+
+  // Derived: Sizes actually available in the currently selected category (for disabling irrelevant pills)
+  const sizesInCategory = useMemo(() => {
+    const list = selectedCategoryId 
+      ? allSkus.filter(s => s.categoryId === selectedCategoryId)
+      : allSkus;
+    return new Set(list.map(s => s.caseSize).filter((s): s is number => !!s && s > 1));
+  }, [allSkus, selectedCategoryId]);
+
+  // Derived: "Updated X ago" text
+  const [timeAgo, setTimeAgo] = useState('Just now');
+  useEffect(() => {
+    if (!lastFetchedAt) return;
+    const update = () => {
+      const sec = Math.floor((Date.now() - lastFetchedAt) / 1000);
+      if (sec < 10) setTimeAgo('Just now');
+      else if (sec < 60) setTimeAgo(`${sec}s ago`);
+      else setTimeAgo(`${Math.floor(sec/60)}m ago`);
+    };
+    update();
+    const inv = setInterval(update, 10000);
+    return () => clearInterval(inv);
+  }, [lastFetchedAt]);
 
   // Derived: Current Brands to show
   const currentTopBrands = useMemo(() => {
@@ -415,6 +439,12 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
                    {hideOos ? 'Hide OOS' : 'Show OOS'}
                  </span>
                </button>
+               <div className="flex items-center gap-1.5 ml-2">
+                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/40" />
+                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">
+                   Updated {timeAgo}
+                 </span>
+               </div>
             </div>
             
             <div className="h-6 w-px bg-[#F1F3F7]" />
@@ -444,23 +474,31 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
                     />
                     <div className="absolute top-full left-0 mt-1.5 w-40 bg-white border border-[#E7EAF0] rounded-xl shadow-xl z-[101] p-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
                       <div className="max-h-48 overflow-y-auto custom-scrollbar">
-                        {availableCaseSizes.map((size) => (
-                          <button
-                            key={size}
-                            onClick={() => {
-                              const next = selectedCaseSizes.includes(size)
-                                ? selectedCaseSizes.filter(s => s !== size)
-                                : [...selectedCaseSizes, size];
-                              setSelectedCaseSizes(next);
-                            }}
-                            className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-[#F1F6FF] transition-colors group"
-                          >
-                            <span className="text-[12px] font-[700] text-gray-600 group-hover:text-[#1A2766]">{size}</span>
-                            {selectedCaseSizes.includes(size) && (
-                              <Check size={14} className="text-[#1A2766]" />
-                            )}
-                          </button>
-                        ))}
+                        {availableCaseSizes.map((size) => {
+                          const isAvailable = sizesInCategory.has(size);
+                          return (
+                            <button
+                              key={size}
+                              disabled={!isAvailable}
+                              onClick={() => {
+                                const next = selectedCaseSizes.includes(size)
+                                  ? selectedCaseSizes.filter(s => s !== size)
+                                  : [...selectedCaseSizes, size];
+                                setSelectedCaseSizes(next);
+                              }}
+                              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors group ${
+                                !isAvailable ? 'opacity-40 cursor-not-allowed' : 'hover:bg-[#F1F6FF]'
+                              }`}
+                            >
+                              <span className={`text-[12px] font-[700] ${!isAvailable ? 'text-gray-400' : 'text-gray-600 group-hover:text-[#1A2766]'}`}>
+                                {size}
+                              </span>
+                              {selectedCaseSizes.includes(size) && (
+                                <Check size={14} className={isAvailable ? 'text-[#1A2766]' : 'text-gray-400'} />
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                       {selectedCaseSizes.length > 0 && (
                         <div className="mt-1 pt-1 border-t border-[#F1F3F7]">

@@ -40,6 +40,7 @@ export async function GET() {
       price: sku.price,
       caseSize: sku.caseSize,
       categoryId: sku.categoryId,
+      inventoryQty: totalQty,
       isOos: sku.inventory.length > 0 ? anyOos || totalQty <= 0 : false,
     };
   });

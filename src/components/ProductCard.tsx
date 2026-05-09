@@ -16,6 +16,7 @@ export interface ProductData {
   price: number;
   caseSize?: number;
   isOos: boolean;
+  inventoryQty?: number;
   categoryId?: string | null;
   category?: { name: string } | null;
 }
@@ -71,7 +72,9 @@ const ProductCard = memo(function ProductCard({ product, isSelected }: { product
         ) : (
           <div className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span className="text-[9px] font-bold text-emerald-600 uppercase">In Stock</span>
+            <span className="text-[9px] font-[800] text-emerald-600 uppercase tabular-nums">
+              {product.inventoryQty !== undefined ? `${product.inventoryQty} IN STOCK` : 'IN STOCK'}
+            </span>
           </div>
         )}
       </div>

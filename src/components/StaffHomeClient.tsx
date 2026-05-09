@@ -163,8 +163,13 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     };
   }, [allSkus, searchQuery, hideOos, categories]);
 
-  // Filtered products — recomputes when allSkus, category, search, hideOos, or selectedCaseSizes change
-  const products = useMemo(() => getFiltered(), [getFiltered, allSkus, selectedCategoryId, searchQuery, hideOos, selectedCaseSizes]);
+  const selectedBrands = useSkuStore((s) => s.selectedBrands);
+  const toggleBrand = useSkuStore((s) => s.toggleBrand);
+  const topBrandsByCategory = useSkuStore((s) => s.topBrandsByCategory);
+  const topBrandsFullCatalog = useSkuStore((s) => s.topBrandsFullCatalog);
+
+  // Filtered products — recomputes when allSkus, category, search, hideOos, selectedCaseSizes, or selectedBrands change
+  const products = useMemo(() => getFiltered(), [getFiltered, allSkus, selectedCategoryId, searchQuery, hideOos, selectedCaseSizes, selectedBrands]);
 
   // Derived: Unique Case Sizes > 1 for filtering
   const availableCaseSizes = useMemo(() => {
@@ -172,18 +177,24 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     return sizes;
   }, [allSkus]);
 
+  // Derived: Current Brands to show
+  const currentTopBrands = useMemo(() => {
+    return selectedCategoryId 
+      ? (topBrandsByCategory[selectedCategoryId] || [])
+      : topBrandsFullCatalog;
+  }, [selectedCategoryId, topBrandsByCategory, topBrandsFullCatalog]);
+
   // ─── Initial Load ──────────────────────────────────────────────
   const loadSkus = useCallback(async (silent = false) => {
     if (!silent) setStatus('loading');
     try {
-      const data = await fetchAllSkus();
-      setSkus(data);
+      const data = await fetchAllSkus() as any;
+      setSkus(data); // Payload: { skus, topBrandsByCategory, topBrandsFullCatalog }
       setStatus('ready');
     } catch (err) {
       if (!silent) {
         setStatus('error', err instanceof Error ? err.message : 'Failed to load products');
       }
-      // On silent (background) failure, keep existing data
     }
   }, [setSkus, setStatus]);
 
@@ -241,7 +252,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   // Reset selection when filters change
   useEffect(() => {
     setSelectedIndex(-1);
-  }, [selectedCategoryId, searchQuery, hideOos]);
+  }, [selectedCategoryId, searchQuery, hideOos, selectedBrands]);
 
   // ─── Cart Submit ───────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -376,7 +387,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
 
         {/* ── CENTER: INDUSTRIAL TERMINAL (Fluid) ───────────────────────── */}
         <main className="flex-1 min-w-0">
-          <div className="bg-white rounded-xl border border-[#E7EAF0] shadow-sm h-[56px] flex items-center px-4 gap-4 mb-4">
+          <div className="bg-white rounded-xl border border-[#E7EAF0] shadow-sm h-[56px] flex items-center px-4 gap-4 mb-5">
             <div className="flex-shrink-0">
               <select
                 value={warehouseId}
@@ -470,6 +481,40 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
               </div>
             )}
           </div>
+
+          {/* ── TOP BRANDS PILLS ROW ────────────────────────────────────── */}
+          {currentTopBrands.length > 0 && (
+            <div className="flex items-center gap-3 mb-6 overflow-x-auto custom-scrollbar pb-1 no-scrollbar select-none">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1 shrink-0">Top Brands</span>
+              <div className="flex items-center gap-2">
+                {currentTopBrands.map((brand) => (
+                  <button
+                    key={brand.brandName}
+                    onClick={() => toggleBrand(brand.brandName)}
+                    className={`h-8 px-4 rounded-full text-[12px] font-[800] transition-all whitespace-nowrap border flex items-center gap-1.5 shadow-sm active:scale-95 transition-all duration-200 ${
+                      selectedBrands.includes(brand.brandName)
+                        ? 'bg-gradient-to-br from-[#1A2766] to-[#003347] border-[#1A2766] text-white shadow-[#1A2766]/20 shadow-lg scale-[1.02]'
+                        : 'bg-white border-[#E7EAF0] text-[#1A2766] hover:border-[#1A2766]/30 hover:bg-[#F9FAFB] hover:shadow-md'
+                    }`}
+                  >
+                    <span>{brand.brandName}</span>
+                    <span className={`w-1 h-1 rounded-full ${selectedBrands.includes(brand.brandName) ? 'bg-white/40' : 'bg-[#1A2766]/20'}`} />
+                    <span className={`text-[10px] font-black tabular-nums ${selectedBrands.includes(brand.brandName) ? 'text-white/70' : 'text-gray-400'}`}>
+                      {brand.activeSkuCount}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {selectedBrands.length > 0 && (
+                <button
+                  onClick={() => useSkuStore.setState({ selectedBrands: [] })}
+                  className="h-8 px-4 text-[10px] font-black text-[#AE1B1E] uppercase tracking-widest hover:bg-red-50 rounded-full transition-colors shrink-0 flex items-center"
+                >
+                  Clear All
+                </button>
+              )}
+            </div>
+          )}
 
           {products.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-32 text-center opacity-50">

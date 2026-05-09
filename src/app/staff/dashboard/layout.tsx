@@ -33,7 +33,7 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
               <Home size={16} /><span className="hidden md:inline text-xs">Catalog</span>
             </Link>
             <Link href="/staff/dashboard/carts" className="flex items-center gap-1.5 hover:text-white transition-colors">
-              <ClipboardList size={16} /><span className="hidden md:inline text-xs">My Carts</span>
+              <ClipboardList size={16} /><span className="hidden md:inline text-xs">Carts</span>
             </Link>
             <Link href="/staff/dashboard/inventory/history" className="flex items-center gap-1.5 hover:text-white transition-colors">
               <History size={16} /><span className="hidden md:inline text-xs">Inventory History</span>

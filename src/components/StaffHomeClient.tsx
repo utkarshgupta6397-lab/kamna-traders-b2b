@@ -83,10 +83,10 @@ function DispatchProgressOverlay() {
         <div className="w-full space-y-2">
           <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
             <div
-              className="h-full rounded-full transition-all duration-100 ease-linear"
-              style={{
+              className="h-full bg-[#1A2766] transition-all duration-500 ease-out"
+              style={{ 
                 width: `${progress}%`,
-                background: 'linear-gradient(90deg, #1A2766 0%, #3B5BDB 50%, #5C7CFA 100%)',
+                background: 'linear-gradient(90deg, #1A2766 0%, #3B5BDB 50%, #5C7CFA 100%)'
               }}
             />
           </div>

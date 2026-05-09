@@ -122,8 +122,8 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   const getFiltered = useSkuStore((s) => s.getFiltered);
   const hideOos = useSkuStore((s) => s.hideOos);
   const setHideOos = useSkuStore((s) => s.setHideOos);
-  const selectedMoqs = useSkuStore((s) => s.selectedMoqs);
-  const setSelectedMoqs = useSkuStore((s) => s.setSelectedMoqs);
+  const selectedCaseSizes = useSkuStore((s) => s.selectedCaseSizes);
+  const setSelectedCaseSizes = useSkuStore((s) => s.setSelectedCaseSizes);
 
   // Cart
   const { items, addItem, clearCart } = useCartStore();
@@ -163,13 +163,13 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     };
   }, [allSkus, searchQuery, hideOos, categories]);
 
-  // Filtered products — recomputes when allSkus, category, search, hideOos, or selectedMoqs change
-  const products = useMemo(() => getFiltered(), [getFiltered, allSkus, selectedCategoryId, searchQuery, hideOos, selectedMoqs]);
+  // Filtered products — recomputes when allSkus, category, search, hideOos, or selectedCaseSizes change
+  const products = useMemo(() => getFiltered(), [getFiltered, allSkus, selectedCategoryId, searchQuery, hideOos, selectedCaseSizes]);
 
-  // Derived: Unique MOQs > 1 for filtering
-  const availableMoqs = useMemo(() => {
-    const moqs = Array.from(new Set(allSkus.map(s => s.moq))).filter(m => m > 1).sort((a, b) => a - b);
-    return moqs;
+  // Derived: Unique Case Sizes > 1 for filtering
+  const availableCaseSizes = useMemo(() => {
+    const sizes = Array.from(new Set(allSkus.map(s => s.caseSize).filter((s): s is number => !!s && s > 1))).sort((a, b) => a - b);
+    return sizes;
   }, [allSkus]);
 
   // ─── Initial Load ──────────────────────────────────────────────
@@ -408,69 +408,67 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
             
             <div className="h-6 w-px bg-[#F1F3F7]" />
             
-            {/* ── CASE SIZE FILTER ─────────────────────────────────────── */}
-            <div className="relative">
-              <button
-                onClick={() => setShowCaseFilter(!showCaseFilter)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${
-                  selectedMoqs.length > 0
-                    ? 'bg-[#1A2766] border-[#1A2766] text-white shadow-sm'
-                    : 'bg-[#F9FAFB] border-[#E7EAF0] text-gray-500 hover:bg-white hover:border-[#1A2766]/30'
-                }`}
-              >
-                <span className="text-[10px] font-[800] uppercase tracking-wider">
-                  Case Size {selectedMoqs.length > 0 && `(${selectedMoqs.length})`}
-                </span>
-                <ChevronDown size={14} className={`transition-transform duration-200 ${showCaseFilter ? 'rotate-180' : ''}`} />
-              </button>
+            {/* ── CASE SIZE FILTER (Conditional) ────────────────────────── */}
+            {availableCaseSizes.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowCaseFilter(!showCaseFilter)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${
+                    selectedCaseSizes.length > 0
+                      ? 'bg-[#1A2766] border-[#1A2766] text-white shadow-sm'
+                      : 'bg-[#F9FAFB] border-[#E7EAF0] text-gray-500 hover:bg-white hover:border-[#1A2766]/30'
+                  }`}
+                >
+                  <span className="text-[10px] font-[800] uppercase tracking-wider">
+                    CASE SIZE {selectedCaseSizes.length > 0 && `(${selectedCaseSizes.length})`}
+                  </span>
+                  <ChevronDown size={14} className={`transition-transform duration-200 ${showCaseFilter ? 'rotate-180' : ''}`} />
+                </button>
 
-              {showCaseFilter && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-[100]" 
-                    onClick={() => setShowCaseFilter(false)} 
-                  />
-                  <div className="absolute top-full left-0 mt-1.5 w-40 bg-white border border-[#E7EAF0] rounded-xl shadow-xl z-[101] p-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
-                    <div className="max-h-48 overflow-y-auto custom-scrollbar">
-                      {availableMoqs.length === 0 ? (
-                        <p className="px-3 py-2 text-[11px] text-gray-400 font-medium">No case sizes</p>
-                      ) : (
-                        availableMoqs.map((moq) => (
+                {showCaseFilter && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-[100]" 
+                      onClick={() => setShowCaseFilter(false)} 
+                    />
+                    <div className="absolute top-full left-0 mt-1.5 w-40 bg-white border border-[#E7EAF0] rounded-xl shadow-xl z-[101] p-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                      <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                        {availableCaseSizes.map((size) => (
                           <button
-                            key={moq}
+                            key={size}
                             onClick={() => {
-                              const next = selectedMoqs.includes(moq)
-                                ? selectedMoqs.filter(m => m !== moq)
-                                : [...selectedMoqs, moq];
-                              setSelectedMoqs(next);
+                              const next = selectedCaseSizes.includes(size)
+                                ? selectedCaseSizes.filter(s => s !== size)
+                                : [...selectedCaseSizes, size];
+                              setSelectedCaseSizes(next);
                             }}
                             className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-[#F1F6FF] transition-colors group"
                           >
-                            <span className="text-[12px] font-[700] text-gray-600 group-hover:text-[#1A2766]">MOQ {moq}</span>
-                            {selectedMoqs.includes(moq) && (
+                            <span className="text-[12px] font-[700] text-gray-600 group-hover:text-[#1A2766]">{size}</span>
+                            {selectedCaseSizes.includes(size) && (
                               <Check size={14} className="text-[#1A2766]" />
                             )}
                           </button>
-                        ))
+                        ))}
+                      </div>
+                      {selectedCaseSizes.length > 0 && (
+                        <div className="mt-1 pt-1 border-t border-[#F1F3F7]">
+                          <button
+                            onClick={() => {
+                              setSelectedCaseSizes([]);
+                              setShowCaseFilter(false);
+                            }}
+                            className="w-full py-1.5 text-[10px] font-bold text-[#AE1B1E] uppercase tracking-widest hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            Clear Filter
+                          </button>
+                        </div>
                       )}
                     </div>
-                    {selectedMoqs.length > 0 && (
-                      <div className="mt-1 pt-1 border-t border-[#F1F3F7]">
-                        <button
-                          onClick={() => {
-                            setSelectedMoqs([]);
-                            setShowCaseFilter(false);
-                          }}
-                          className="w-full py-1.5 text-[10px] font-bold text-[#AE1B1E] uppercase tracking-widest hover:bg-red-50 rounded-lg transition-colors"
-                        >
-                          Clear Filter
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           {products.length === 0 ? (
@@ -495,12 +493,12 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
           )}
         </main>
 
-        {/* ── RIGHT: 280px COMPACT DISPATCH (Always Visible) ─────────── */}
-        <aside className="hidden xl:block w-[280px] sticky top-4 flex-shrink-0">
-          <div className="bg-white rounded-xl border border-[#E7EAF0] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col h-[calc(100vh-32px)]">
-            <div className="px-3 py-2.5 border-b border-[#F1F3F7] bg-[#1A2766] flex items-center justify-between">
-              <h2 className="text-[10px] font-[800] text-white uppercase tracking-[0.1em]">Dispatch Bin</h2>
-              <span className="bg-white/20 text-white text-[9px] font-black px-1.5 py-0.5 rounded tabular-nums">
+        {/* ── RIGHT: 320px REFINED DISPATCH (Sticky) ─────────────────── */}
+        <aside className="hidden xl:block w-[320px] sticky top-4 flex-shrink-0">
+          <div className="bg-white rounded-xl border border-[#E7EAF0] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col">
+            <div className="px-4 py-3.5 border-b border-[#F1F3F7] bg-[#1A2766] flex items-center justify-between">
+              <h2 className="text-[11px] font-[800] text-white uppercase tracking-[0.1em]">Dispatch Bin</h2>
+              <span className="bg-white/20 text-white text-[10px] font-black px-2 py-0.5 rounded tabular-nums">
                 {items.length}
               </span>
             </div>
@@ -509,31 +507,31 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
                <CartPanel />
             </div>
 
-            <div className="p-3 border-t border-[#F1F3F7] bg-[#F9FAFB] space-y-2">
+            <div className="p-3.5 border-t border-[#F1F3F7] bg-[#F9FAFB] space-y-2.5">
               {items.length > 0 && (
                 <>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <input
                       type="text"
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
                       placeholder="Customer Name *"
-                      className="w-full bg-white border border-[#E7EAF0] rounded-lg px-3 py-2 text-[13px] font-[700] outline-none focus:ring-2 focus:ring-[#1A2766]/10 focus:border-[#1A2766] transition-all"
+                      className="w-full bg-white border border-[#E7EAF0] rounded-lg px-3 py-2 text-[14px] font-[700] outline-none focus:ring-2 focus:ring-[#1A2766]/10 focus:border-[#1A2766] transition-all"
                     />
                     <textarea
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
                       placeholder="Dispatch Notes (Optional)"
-                      className="w-full bg-white border border-[#E7EAF0] rounded-lg px-3 py-1.5 text-[12px] outline-none focus:ring-2 focus:ring-[#1A2766]/10 focus:border-[#1A2766] h-12 resize-none transition-all"
+                      className="w-full bg-white border border-[#E7EAF0] rounded-lg px-3 py-1.5 text-[13px] outline-none focus:ring-2 focus:ring-[#1A2766]/10 focus:border-[#1A2766] h-14 resize-none transition-all"
                     />
                   </div>
                   <button
                     onClick={handleSubmit}
                     disabled={submitting || !customerName}
-                    className="w-full h-10 flex items-center justify-center gap-2 bg-[#1A2766] text-white rounded-lg font-[800] text-[12px] uppercase tracking-widest hover:bg-[#003347] transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
+                    className="w-full h-11 flex items-center justify-center gap-2 bg-[#1A2766] text-white rounded-lg font-[800] text-[13px] uppercase tracking-widest hover:bg-[#003347] transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
                   >
-                    <Printer size={16} strokeWidth={2.5} />
-                    {submitting ? 'Processing...' : 'Generate Dispatch'}
+                    <Printer size={18} strokeWidth={2.5} />
+                    {submitting ? 'Processing...' : 'Generate Dispatch Note'}
                   </button>
                 </>
               )}

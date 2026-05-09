@@ -216,18 +216,8 @@ export async function POST(request: Request) {
     const isTestWarehouse = meta.wname.toLowerCase().includes('test');
     const isAdmin = session?.role === 'ADMIN';
 
-    console.log(`[DISPATCH][${cartId}] Zoho Rollout Check:`, {
-      isProdRollout,
-      isTestWarehouse,
-      isAdmin,
-      wname: meta.wname,
-      role: session?.role,
-      env_rollout: process.env.PRODUCTION_ZOHO_ROLLOUT
-    });
-
     if (isProdRollout || isTestWarehouse || isAdmin) {
       console.log(`[DISPATCH][${cartId}] ABOUT TO TRIGGER ZOHO`);
-      
       await addZohoTrace(cartId, 'SYNC_TRIGGERED');
 
       // Determine absolute base URL for server-side internal fetch
@@ -253,12 +243,24 @@ export async function POST(request: Request) {
         })();
         console.log(`[DISPATCH][${cartId}] ZOHO TRIGGER CALLED`);
       } else {
-        console.warn(`[DISPATCH][${cartId}] Zoho sync skipped: No baseUrl (NEXT_PUBLIC_APP_URL) configured.`);
-        await addZohoTrace(cartId, 'SYNC_SKIPPED_NO_BASEURL');
+        const reason = 'NO_BASE_URL';
+        console.error(`[ZOHO] Sync skipped: ${reason}`, {
+          nodeEnv: process.env.NODE_ENV,
+          vercelEnv: process.env.VERCEL_ENV,
+          appUrl: process.env.NEXT_PUBLIC_APP_URL
+        });
+        await addZohoTrace(cartId, `SYNC_TRIGGER_SKIPPED:${reason}`);
       }
     } else {
-      console.log(`[DISPATCH][${cartId}] Sync skipped: Production rollout is restricted.`);
-      await addZohoTrace(cartId, 'SYNC_TRIGGER_SKIPPED');
+      const reason = !isProdRollout ? 'ROLLOUT_OFF' : 'NOT_TEST_OR_ADMIN';
+      console.error(`[ZOHO] Sync skipped: ${reason}`, {
+        isProdRollout,
+        isTestWarehouse,
+        isAdmin,
+        wname: meta.wname,
+        role: session?.role
+      });
+      await addZohoTrace(cartId, `SYNC_TRIGGER_SKIPPED:${reason}`);
     }
 
 

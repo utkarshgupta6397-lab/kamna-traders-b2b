@@ -219,19 +219,31 @@ export async function POST(request: Request) {
       
       await addZohoTrace(cartId, 'SYNC_TRIGGERED');
 
-      // Determine base URL for internal API trigger
-      const protocol = request.headers.get('x-forwarded-proto') || 'http';
-      const host = request.headers.get('host');
-      const baseUrl = `${protocol}://${host}`;
+      // Determine absolute base URL for server-side internal fetch
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+                      (process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : '');
 
-      // Detached trigger - DO NOT AWAIT
-      fetch(`${baseUrl}/api/zoho/sync-dispatch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cartId })
-      }).catch(err => {
-        console.error(`[DISPATCH][${cartId}] Background sync trigger failed:`, err);
-      });
+      if (baseUrl) {
+        // Detached trigger - DO NOT AWAIT the main worker, but we log the fetch lifecycle
+        (async () => {
+          try {
+            await addZohoTrace(cartId, 'SYNC_FETCH_SENT');
+            const response = await fetch(`${baseUrl}/api/zoho/sync-dispatch`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ cartId })
+            });
+            console.log(`[DISPATCH][${cartId}] Background fetch status:`, response.status);
+            await addZohoTrace(cartId, `SYNC_FETCH_RESPONSE_${response.status}`);
+          } catch (err) {
+            console.error(`[DISPATCH][${cartId}] Background sync trigger failed:`, err);
+            await addZohoTrace(cartId, 'SYNC_FETCH_FAILED');
+          }
+        })();
+      } else {
+        console.warn(`[DISPATCH][${cartId}] Zoho sync skipped: No baseUrl (NEXT_PUBLIC_APP_URL) configured.`);
+        await addZohoTrace(cartId, 'SYNC_SKIPPED_NO_BASEURL');
+      }
     } else {
       console.log(`[DISPATCH][${cartId}] Sync skipped: Production rollout is restricted.`);
     }

@@ -232,6 +232,58 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
     return () => clearInterval(interval);
   }, [cartId]);
 
+  const [copyingReport, setCopyingReport] = useState(false);
+
+  const copyDebugReport = async () => {
+    const report = `
+=== ZOHO SYNC DEBUG REPORT ===
+Generated: ${new Date().toISOString()}
+Environment: ${process.env.NODE_ENV || 'unknown'}
+
+## DISPATCH INFO
+- Dispatch No: ${displayId}
+- Internal ID: ${cartId}
+- CreatedAt: ${payload?.createdAt}
+- Status: ${zohoStatus.status}
+- Step: ${zohoStatus.step}
+
+## ZOHO STATUS
+- SalesOrder ID: ${zohoStatus.id || 'N/A'}
+- SO Number: ${zohoStatus.number || 'N/A'}
+- Response Time: ${zohoStatus.responseTimeMs ? `${zohoStatus.responseTimeMs}ms` : 'N/A'}
+
+## EXECUTION TRACE
+${Array.isArray(zohoStatus.trace) 
+  ? zohoStatus.trace.map((t, idx) => `${idx + 1}. [${t.time}] ${t.step}`).join('\n') 
+  : 'No trace available'}
+
+## ERRORS
+- Message: ${zohoStatus.error || 'None'}
+
+## PAYLOAD
+${JSON.stringify(zohoStatus.payload, null, 2)}
+
+## API RESPONSE
+${JSON.stringify(zohoStatus.response, null, 2)}
+
+## ENVIRONMENT INFO
+- NODE_ENV: ${process.env.NODE_ENV}
+- hasPayload: ${!!zohoStatus.payload}
+- hasResponse: ${!!zohoStatus.response}
+- hasTrace: ${!!zohoStatus.trace}
+==============================
+    `.trim();
+
+    try {
+      setCopyingReport(true);
+      await navigator.clipboard.writeText(report);
+      setTimeout(() => setCopyingReport(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy report:', err);
+      setCopyingReport(false);
+    }
+  };
+
   const handleZohoRetry = async () => {
     setRetrying(true);
     try {
@@ -569,12 +621,29 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
                   </p>
                 </div>
               </div>
-              <button 
-                onClick={() => setShowZohoDetails(false)}
-                className="hover:bg-white/20 p-2 rounded-lg transition-colors"
-              >
-                <ChevronDown size={20} className="rotate-90" />
-              </button>
+              <div className="flex items-center gap-2">
+                {process.env.NODE_ENV === 'development' && (
+                  <button 
+                    onClick={copyDebugReport}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border border-white/20 active:scale-95"
+                  >
+                    {copyingReport ? (
+                      <>Report Copied!</>
+                    ) : (
+                      <>
+                        <Copy size={12} />
+                        Copy Debug Report
+                      </>
+                    )}
+                  </button>
+                )}
+                <button 
+                  onClick={() => setShowZohoDetails(false)}
+                  className="hover:bg-white/20 p-2 rounded-lg transition-colors"
+                >
+                  <ChevronDown size={20} className="rotate-90" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6">

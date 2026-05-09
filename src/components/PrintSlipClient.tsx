@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { RefreshCw, CheckCircle2, AlertCircle, ExternalLink, ChevronDown, ChevronRight, Info, Eye, Loader2, Copy } from 'lucide-react';
 import PrintButton from '@/components/PrintButton';
 
 type PrintItem = {
@@ -156,6 +157,88 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
     }
   }, [showZoneSlips, timings.apiRequest, timings.navigation, timings.firstPaint]);
 
+  const [zohoStatus, setZohoStatus] = useState<{
+    status: 'PENDING' | 'SUCCESS' | 'FAILED';
+    step: string;
+    error: string | null;
+    id: string | null;
+    number: string | null;
+    booksUrl: string | null;
+    responseTimeMs: number | null;
+    payload: any;
+    response: any;
+  }>({
+    status: 'PENDING',
+    step: 'INITIATED',
+    error: null,
+    id: null,
+    number: null,
+    booksUrl: null,
+    responseTimeMs: null,
+    payload: null,
+    response: null
+  });
+  const [retrying, setRetrying] = useState(false);
+  const [showZohoDetails, setShowZohoDetails] = useState(false);
+
+  // 1.5. Zoho Sync Status Polling (High Frequency: 2s)
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    const pollStatus = async () => {
+      try {
+        const res = await fetch(`/api/staff/zoho/sync-status/${cartId}`);
+        const data = await res.json();
+        if (data.zohoSyncStatus) {
+          setZohoStatus({
+            status: data.zohoSyncStatus,
+            step: data.zohoSyncStep || 'INITIATED',
+            error: data.zohoSyncError,
+            id: data.zohoSalesorderId,
+            number: data.zohoSalesorderNumber,
+            booksUrl: data.booksUrl,
+            responseTimeMs: data.zohoResponseTimeMs,
+            payload: data.zohoPayload,
+            response: data.zohoResponse
+          });
+
+          // Stop polling if done
+          if (data.zohoSyncStatus === 'SUCCESS' || data.zohoSyncStatus === 'FAILED') {
+            clearInterval(interval);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to poll Zoho status', err);
+      }
+    };
+
+    pollStatus();
+    interval = setInterval(pollStatus, 2000);
+
+    return () => clearInterval(interval);
+  }, [cartId]);
+
+  const handleZohoRetry = async () => {
+    setRetrying(true);
+    try {
+      const res = await fetch('/api/admin/zoho/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cartId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        // Status will be updated by polling
+      } else {
+        alert(`Retry failed: ${data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Network error: ${err.message}`);
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   const displayId = useMemo(() => payload?.dispatchSlipNumber || payload?.id || '', [payload]);
   const parts = useMemo(() => displayId.split('-'), [displayId]);
   const isSequenceId = useMemo(() => parts.length === 4 && parts[0] === 'KS' && parts[1] === 'DP', [parts]);
@@ -270,6 +353,91 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {/* ── CONDENSED ZOHO SYNC STATUS ─────────────────────────────── */}
+          <div className="flex items-center gap-3 bg-white border border-gray-100 rounded-lg px-3 py-1.5 shadow-sm min-w-[320px]">
+            <div className="flex flex-col flex-1">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Zoho Books Sync</span>
+                {zohoStatus.responseTimeMs && (
+                  <span className="text-[9px] text-gray-300 font-mono">{zohoStatus.responseTimeMs}ms</span>
+                )}
+              </div>
+
+              {zohoStatus.status === 'SUCCESS' ? (
+                <div className="flex items-center gap-3 animate-in fade-in zoom-in-95 duration-500 py-1">
+                  <div className="w-6 h-6 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
+                    <CheckCircle2 size={14} />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black text-emerald-700 uppercase tracking-tight whitespace-nowrap">Zoho SO:</span>
+                    <span className="text-[11px] font-mono font-black text-gray-800 tracking-tighter">{zohoStatus.number}</span>
+                    <a 
+                      href={zohoStatus.booksUrl || '#'}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-1 p-1 hover:bg-gray-100 rounded transition-colors text-emerald-600"
+                      title="Open in Zoho"
+                    >
+                      <ExternalLink size={10} />
+                    </a>
+                  </div>
+                </div>
+              ) : zohoStatus.status === 'FAILED' ? (
+                <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
+                  <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red-600 shadow-inner">
+                    <AlertCircle size={18} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-black text-red-700 uppercase tracking-tight">Sync Failed</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-red-400 font-medium truncate max-w-[120px]" title={zohoStatus.error || ''}>
+                        {zohoStatus.error || 'API Error'}
+                      </span>
+                      <button 
+                        onClick={handleZohoRetry}
+                        disabled={retrying}
+                        className="text-[10px] text-red-700 hover:underline font-black uppercase"
+                      >
+                        {retrying ? 'Retrying...' : 'Retry'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Loader2 size={14} className="text-yellow-600 animate-spin" />
+                    <span className="text-xs font-black text-yellow-700 uppercase tracking-tight animate-pulse">
+                      {zohoStatus.step.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  {/* Step Progress Bar */}
+                  <div className="h-1 w-full bg-gray-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-yellow-500 transition-all duration-500 ease-out"
+                      style={{ 
+                        width: zohoStatus.step === 'INITIATED' ? '15%' :
+                               zohoStatus.step === 'PREPARING_PAYLOAD' ? '35%' :
+                               zohoStatus.step === 'REFRESHING_TOKEN' ? '60%' :
+                               zohoStatus.step === 'WAITING_FOR_ZOHO_RESPONSE' ? '85%' : '0%'
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="h-10 w-px bg-gray-100 mx-1" />
+
+            <button 
+              onClick={() => setShowZohoDetails(true)}
+              className="p-2 hover:bg-gray-50 rounded-lg transition-colors text-gray-400"
+              title="View Logs"
+            >
+              <Info size={18} />
+            </button>
+          </div>
+
           <Link href="/staff/dashboard" className="text-sm text-[#1A2766] hover:underline">← Back</Link>
           <PrintButton auto={autoprint} />
         </div>
@@ -373,6 +541,106 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
           </div>
         </div>
       ))}
+      {/* ── ZOHO DETAILS MODAL ────────────────────────────────────────── */}
+      {showZohoDetails && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 print:hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col border border-gray-100 scale-in-center animate-in zoom-in-95 duration-200">
+            <div className={`p-4 flex items-center justify-between text-white ${zohoStatus.status === 'SUCCESS' ? 'bg-emerald-600' : 'bg-[#AE1B1E]'}`}>
+              <div className="flex items-center gap-3">
+                <Info size={20} />
+                <div>
+                  <h3 className="font-bold text-sm">Zoho Sync Diagnostics</h3>
+                  <p className="text-[10px] opacity-80 uppercase tracking-widest font-bold">
+                    Dispatch: {displayId}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowZohoDetails(false)}
+                className="hover:bg-white/20 p-2 rounded-lg transition-colors"
+              >
+                <ChevronDown size={20} className="rotate-90" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Status Header */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">Status</span>
+                  <div className={`text-sm font-black uppercase ${zohoStatus.status === 'SUCCESS' ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {zohoStatus.status}
+                  </div>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">Sales Order ID</span>
+                  <div className="text-sm font-mono font-bold text-gray-700 truncate">
+                    {zohoStatus.id || 'N/A'}
+                  </div>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-1">SO Number</span>
+                  <div className="text-sm font-mono font-bold text-gray-700">
+                    {zohoStatus.number || 'N/A'}
+                  </div>
+                </div>
+              </div>
+
+              {zohoStatus.error && (
+                <div className="bg-red-50 border border-red-100 p-4 rounded-xl flex items-start gap-3">
+                  <AlertCircle className="text-red-600 mt-0.5 flex-shrink-0" size={16} />
+                  <div>
+                    <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider block mb-0.5">Error Message</span>
+                    <p className="text-sm text-red-900 font-medium">{zohoStatus.error}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* JSON Inspectors */}
+              <div className="space-y-4">
+                <div className="bg-gray-900 rounded-xl overflow-hidden border border-gray-800">
+                  <div className="px-4 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase">Request Payload</span>
+                  </div>
+                  <pre className="p-4 text-[10px] text-blue-300 font-mono overflow-x-auto max-h-[200px]">
+                    {JSON.stringify(zohoStatus.payload, null, 2)}
+                  </pre>
+                </div>
+
+                <div className="bg-gray-900 rounded-xl overflow-hidden border border-gray-800">
+                  <div className="px-4 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase">API Response</span>
+                  </div>
+                  <pre className="p-4 text-[10px] text-emerald-400 font-mono overflow-x-auto max-h-[200px]">
+                    {JSON.stringify(zohoStatus.response, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-gray-50 flex items-center justify-between bg-gray-50/50">
+              {zohoStatus.status === 'SUCCESS' ? (
+                <a 
+                  href={`https://books.zoho.in/app/${process.env.NEXT_PUBLIC_ZOHO_ORG_ID || ''}#/salesorders/${zohoStatus.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2 text-xs font-bold text-emerald-700 hover:underline"
+                >
+                  Open in Zoho Books <ExternalLink size={14} />
+                </a>
+              ) : (
+                <div className="text-xs text-gray-400 font-medium">Verify your OAuth connection in Zoho Debug</div>
+              )}
+              <button 
+                onClick={() => setShowZohoDetails(false)}
+                className="px-6 py-2 bg-gray-900 text-white rounded-lg text-xs font-bold hover:bg-black transition-colors shadow-sm"
+              >
+                Close Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

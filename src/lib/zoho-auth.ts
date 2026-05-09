@@ -1,0 +1,350 @@
+import { prisma } from './db';
+
+const CLIENT_ID = process.env.ZOHO_CLIENT_ID;
+const CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
+const REDIRECT_URI = process.env.ZOHO_REDIRECT_URI;
+const ACCOUNTS_URL = 'https://accounts.zoho.in'; // India accounts
+
+if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI) {
+  console.warn('[ZohoAuth] CRITICAL: Zoho OAuth credentials or REDIRECT_URI missing in environment variables.');
+}
+
+export interface ZohoTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: Date;
+}
+
+/**
+ * Gets valid tokens from DB. Automatically refreshes if expired.
+ */
+export async function getZohoTokens(): Promise<string | null> {
+  console.log('[ZohoAuth] Prisma models available:', Object.keys(prisma));
+  const tokenRecord = await prisma.zohoToken.findUnique({
+    where: { id: 'singleton' }
+  });
+
+  if (!tokenRecord) return null;
+
+  const now = new Date();
+  // Buffer of 5 minutes
+  if (tokenRecord.expiresAt.getTime() - now.getTime() > 5 * 60 * 1000) {
+    return tokenRecord.accessToken;
+  }
+
+  // Refresh token
+  console.log('[ZohoAuth] Access token expired, refreshing...');
+  try {
+    const response = await fetch(`${ACCOUNTS_URL}/oauth/v2/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        refresh_token: tokenRecord.refreshToken,
+        client_id: CLIENT_ID!,
+        client_secret: CLIENT_SECRET!,
+        grant_type: 'refresh_token'
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('[ZohoAuth] Refresh failed:', data);
+      return null;
+    }
+
+    const expiresAt = new Date(Date.now() + data.expires_in * 1000);
+    
+    await prisma.zohoToken.update({
+      where: { id: 'singleton' },
+      data: {
+        accessToken: data.access_token,
+        expiresAt
+      }
+    });
+
+    return data.access_token;
+  } catch (error) {
+    console.error('[ZohoAuth] Refresh error:', error);
+    return null;
+  }
+}
+
+/**
+ * Exchanges auth code for tokens and saves to DB.
+ */
+export async function exchangeAuthCode(code: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    console.log('[ZohoAuth] Attempting token exchange with code...');
+    
+    const params = new URLSearchParams({
+      code,
+      client_id: CLIENT_ID!,
+      client_secret: CLIENT_SECRET!,
+      redirect_uri: REDIRECT_URI!,
+      grant_type: 'authorization_code'
+    });
+
+    const response = await fetch(`${ACCOUNTS_URL}/oauth/v2/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+
+    const data = await response.json();
+    console.log(`[ZohoAuth] Response Status: ${response.status}`);
+    console.log('[ZohoAuth] Response Body:', JSON.stringify(data, null, 2));
+
+    if (!response.ok) {
+      console.error('[ZohoAuth] Token exchange failed:', data);
+      return { success: false, error: data.error || 'Token exchange failed' };
+    }
+
+    const expiresAt = new Date(Date.now() + data.expires_in * 1000);
+
+    console.log('[ZohoAuth] Prisma models before upsert:', Object.keys(prisma));
+    await prisma.zohoToken.upsert({
+      where: { id: 'singleton' },
+      update: {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token || undefined,
+        expiresAt
+      },
+      create: {
+        id: 'singleton',
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        expiresAt
+      }
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('[ZohoAuth] Exchange error:', error);
+    return { success: false, error: error.message || 'Network error' };
+  }
+}
+
+export function getAuthorizationUrl(): string {
+  const scopes = [
+    'ZohoBooks.salesorders.CREATE',
+    'ZohoBooks.items.READ'
+  ];
+
+  const params = new URLSearchParams({
+    scope: scopes.join(','),
+    client_id: CLIENT_ID!,
+    response_type: 'code',
+    redirect_uri: REDIRECT_URI!,
+    access_type: 'offline',
+    prompt: 'consent' // Required to get refresh_token
+  });
+
+  return `${ACCOUNTS_URL}/oauth/v2/auth?${params.toString()}`;
+}
+
+/**
+ * Creates a Zoho Books Sales Order from an internal dispatch cart with staged status updates.
+ * This function is designed to be bulletproof with aggressive logging and persistence.
+ */
+export async function syncDispatchToZoho(cartId: string): Promise<{ success: boolean; error?: string; response?: any; payload?: any }> {
+  const t0 = Date.now();
+  console.log(`[ZOHO][PROD-SYNC][${cartId}] Lifecycle INITIATED`);
+  
+  // 0. Environment Validation
+  const customerId = process.env.ZOHO_BOOKS_CUSTOMER_ID;
+  const salespersonId = process.env.ZOHO_BOOKS_SALESPERSON_ID;
+  const orgId = process.env.ZOHO_BOOKS_ORG_ID;
+  const redirectUri = process.env.ZOHO_REDIRECT_URI;
+
+  if (!CLIENT_ID || !CLIENT_SECRET || !redirectUri || !orgId || !customerId) {
+    const missing = [];
+    if (!CLIENT_ID) missing.push('ZOHO_CLIENT_ID');
+    if (!CLIENT_SECRET) missing.push('ZOHO_CLIENT_SECRET');
+    if (!redirectUri) missing.push('ZOHO_REDIRECT_URI');
+    if (!orgId) missing.push('ZOHO_BOOKS_ORG_ID');
+    if (!customerId) missing.push('ZOHO_BOOKS_CUSTOMER_ID');
+    
+    const msg = `CRITICAL: Missing environment variables: ${missing.join(', ')}`;
+    console.error(`[ZOHO][${cartId}] ${msg}`);
+    return { success: false, error: msg };
+  }
+
+  const updateStep = async (step: string, status: string = 'PENDING', extra: any = {}) => {
+    console.log(`[ZOHO][${cartId}] STEP: ${step} (${status})`);
+    try {
+      await prisma.cart.update({
+        where: { id: cartId },
+        data: { 
+          zohoSyncStep: step, 
+          zohoSyncStatus: status,
+          ...extra 
+        }
+      });
+    } catch (dbErr) {
+      console.error(`[ZOHO][${cartId}] DB Update Failed:`, dbErr);
+    }
+  };
+
+  try {
+    // 1. Fetching Cart & Checking for Duplicates
+    console.log(`[ZOHO][${cartId}] Fetching cart and checking for duplicates...`);
+    const cart = await prisma.cart.findUnique({
+      where: { id: cartId },
+      include: {
+        items: {
+          include: {
+            sku: true
+          }
+        }
+      }
+    });
+
+    if (!cart) {
+      const msg = 'Cart not found in database';
+      console.error(`[ZOHO][${cartId}] ${msg}`);
+      await updateStep('FAILED', 'FAILED', { zohoSyncError: msg });
+      return { success: false, error: msg };
+    }
+
+    // DUPLICATE PREVENTION: Skip if already synced
+    if (cart.zohoSalesorderId) {
+      console.log(`[ZOHO][${cartId}] Duplicate sync prevented. Sales Order already exists: ${cart.zohoSalesorderId}`);
+      return { 
+        success: true, 
+        error: 'Order already synced', 
+        response: cart.zohoResponse, 
+        payload: cart.zohoPayload 
+      };
+    }
+
+    // 2. Building Payload
+    console.log(`[ZOHO][${cartId}] Building payload...`);
+    await updateStep('PREPARING_PAYLOAD');
+
+    const customerId = process.env.ZOHO_BOOKS_CUSTOMER_ID;
+    const salespersonId = process.env.ZOHO_BOOKS_SALESPERSON_ID;
+    const orgId = process.env.ZOHO_BOOKS_ORG_ID;
+
+    if (!customerId || !orgId) {
+      const msg = 'Missing ZOHO_BOOKS_CUSTOMER_ID or ZOHO_BOOKS_ORG_ID in env';
+      console.error(`[ZOHO][${cartId}] ${msg}`);
+      await updateStep('FAILED', 'FAILED', { zohoSyncError: msg });
+      return { success: false, error: msg };
+    }
+
+    const payload: any = {
+      customer_id: customerId,
+      salesperson_id: salespersonId,
+      reference_number: cart.dispatchSlipNumber,
+      date: new Date(cart.createdAt).toISOString().split('T')[0],
+      line_items: cart.items
+        .filter(item => item.sku.zohoBooksId2)
+        .map(item => ({
+          item_id: item.sku.zohoBooksId2,
+          quantity: item.qty,
+          rate: item.sku.price
+        }))
+    };
+
+    if (payload.line_items.length === 0) {
+      const msg = 'No SKUs with valid zohoBooksId2 found';
+      console.warn(`[ZOHO][${cartId}] ${msg}`);
+      await updateStep('FAILED', 'FAILED', { zohoSyncError: msg, zohoPayload: payload });
+      return { success: false, error: msg, payload };
+    }
+
+    // CRITICAL: Save payload BEFORE the API call
+    console.log(`[ZOHO][${cartId}] Payload ready (Auto-numbering ENABLED), saving to DB...`);
+    await updateStep('REFRESHING_TOKEN', 'PENDING', { zohoPayload: payload });
+
+    // 3. Token Refresh
+    console.log(`[ZOHO][${cartId}] Refreshing OAuth token...`);
+    const accessToken = await getZohoTokens();
+    if (!accessToken) {
+      const msg = 'OAuth token refresh failed (no token returned)';
+      console.error(`[ZOHO][${cartId}] ${msg}`);
+      await updateStep('FAILED', 'FAILED', { zohoSyncError: msg });
+      return { success: false, error: msg, payload };
+    }
+
+    // 4. Sending Request
+    console.log(`[ZOHO][${cartId}] Sending request to Zoho API...`);
+    await updateStep('WAITING_FOR_ZOHO_RESPONSE');
+    
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
+    const apiStartTime = Date.now();
+    try {
+      const response = await fetch(`https://www.zohoapis.in/books/v3/salesorders?organization_id=${orgId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Zoho-oauthtoken ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      const responseTimeMs = Date.now() - apiStartTime;
+      const data = await response.json();
+      clearTimeout(timeout);
+
+      console.log(`[ZOHO][${cartId}] Response received in ${responseTimeMs}ms. Status: ${response.status}`);
+
+      // 5. Finalizing
+      const syncStatus = response.ok ? 'SUCCESS' : 'FAILED';
+      const syncError = response.ok ? null : (data.message || 'Zoho API Error');
+
+      try {
+        await prisma.cart.update({
+          where: { id: cartId },
+          data: {
+            zohoSalesorderId: data.salesorder?.salesorder_id || null,
+            zohoSalesorderNumber: data.salesorder?.salesorder_number || null,
+            zohoSyncStatus: syncStatus,
+            zohoSyncStep: syncStatus === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
+            zohoSyncError: syncError,
+            zohoResponse: data,
+            zohoResponseTimeMs: responseTimeMs,
+            zohoLastSyncAt: new Date()
+          }
+        });
+      } catch (dbErr: any) {
+        console.error(`[ZOHO][${cartId}] Final DB Update Failed (Zoho was ${syncStatus}):`, dbErr);
+        // We don't throw here so the function can still return the API result
+      }
+
+      console.log(`[ZOHO][${cartId}] Final Status: ${syncStatus}`);
+      return { 
+        success: response.ok, 
+        error: syncError, 
+        response: data, 
+        payload 
+      };
+
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        const msg = 'Zoho API timeout (20s)';
+        console.error(`[ZOHO][${cartId}] ${msg}`);
+        await updateStep('FAILED', 'FAILED', { zohoSyncError: msg });
+        return { success: false, error: msg };
+      }
+      throw e;
+    }
+
+  } catch (error: any) {
+    const msg = error.message || 'Unknown internal error';
+    console.error(`[ZOHO][${cartId}] CRITICAL FAILURE:`, error);
+    await prisma.cart.update({
+      where: { id: cartId },
+      data: {
+        zohoSyncStatus: 'FAILED',
+        zohoSyncStep: 'FAILED',
+        zohoSyncError: `${msg}\nStack: ${error.stack?.substring(0, 500)}`
+      }
+    });
+    return { success: false, error: msg };
+  }
+}

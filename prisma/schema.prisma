@@ -111,6 +111,17 @@ model Cart {
   staff              User       @relation(fields: [staffId], references: [id])
   warehouse          Warehouse  @relation(fields: [warehouseId], references: [id])
   items              CartItem[]
+
+  // Zoho Integration
+  zohoSalesorderId     String?
+  zohoSalesorderNumber String?
+  zohoSyncStatus       String?            @default("PENDING")
+  zohoSyncStep         String?            @default("INITIATED")
+  zohoSyncError        String?
+  zohoLastSyncAt       DateTime?
+  zohoResponseTimeMs   Int?
+  zohoPayload          Json?
+  zohoResponse         Json?
 }
 
 model CartItem {
@@ -176,3 +187,11 @@ model InventoryHistory {
   @@index([createdAt])
 }
 
+
+model ZohoToken {
+  id           String   @id @default("singleton")
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  updatedAt    DateTime @updatedAt
+}

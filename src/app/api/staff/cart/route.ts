@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { validateOrigin } from '@/lib/csrf';
 import { Prisma } from '@prisma/client';
+import { syncDispatchToZoho } from '@/lib/zoho-auth';
 
 type CartItemInput = {
   skuId: string;
@@ -203,6 +204,27 @@ export async function POST(request: Request) {
     queryCount += batchOps.length;
     await prisma.$transaction(batchOps);
     perf.transactionWrites = performance.now() - tWritesStart;
+
+    // 7.5. Zoho Sync (Synchronous execution with Rollout Safety)
+    // ═══════════════════════════════════════════════════════════════
+    const isProdRollout = process.env.PRODUCTION_ZOHO_ROLLOUT === 'true';
+    const isTestWarehouse = meta.wname.toLowerCase().includes('test');
+    const isAdmin = session?.role === 'ADMIN';
+
+    if (isProdRollout || isTestWarehouse || isAdmin) {
+      const tZohoStart = performance.now();
+      console.log(`[ZOHO][${cartId}] Starting synchronous sync (Rollout: ${isProdRollout}, Test: ${isTestWarehouse}, Admin: ${isAdmin})...`);
+      try {
+        await syncDispatchToZoho(cartId);
+        perf.zohoSync = performance.now() - tZohoStart;
+        console.log(`[ZOHO][${cartId}] Synchronous sync finished in ${perf.zohoSync.toFixed(0)}ms`);
+      } catch (err) {
+        console.error(`[ZOHO][${cartId}] Synchronous sync failed:`, err);
+      }
+    } else {
+      console.log(`[ZOHO][${cartId}] Sync skipped: Production rollout is restricted.`);
+    }
+
 
     // 8. Post-tx audit trail (non-critical, outside transaction)
     const tHistStart = performance.now();

@@ -23,6 +23,14 @@ export default async function PrintSlipPage({
       warehouse: { select: { name: true } },
       staff: { select: { name: true } },
       warehouseId: true,
+      zohoSyncStatus: true,
+      zohoSyncStep: true,
+      zohoSyncError: true,
+      zohoSalesorderId: true,
+      zohoSalesorderNumber: true,
+      zohoPayload: true,
+      zohoResponse: true,
+      zohoResponseTimeMs: true,
       items: {
         include: {
           sku: { select: { name: true, unit: true } },
@@ -34,6 +42,11 @@ export default async function PrintSlipPage({
   let serverPayload = null;
 
   if (cart) {
+    const orgId = process.env.ZOHO_BOOKS_ORG_ID;
+    const booksUrl = (cart.zohoSyncStatus === 'SUCCESS' && cart.zohoSalesorderId && orgId)
+      ? `https://books.zoho.in/app/${orgId}#/salesorders/${cart.zohoSalesorderId}`
+      : null;
+
     // Fetch zone info in a single query
     const warehouseInventory = await prisma.warehouseInventory.findMany({
       where: {
@@ -69,6 +82,16 @@ export default async function PrintSlipPage({
       items: enrichedItems,
       zoneGroups,
       qrPayload: JSON.stringify(enrichedItems.map(i => ({ sku: i.skuId, qty: i.qty }))),
+      // Zoho Status
+      zohoSyncStatus: cart.zohoSyncStatus,
+      zohoSyncStep: cart.zohoSyncStep,
+      zohoSyncError: cart.zohoSyncError,
+      zohoSalesorderId: cart.zohoSalesorderId,
+      zohoSalesorderNumber: cart.zohoSalesorderNumber,
+      zohoPayload: cart.zohoPayload,
+      zohoResponse: cart.zohoResponse,
+      zohoResponseTimeMs: cart.zohoResponseTimeMs,
+      booksUrl
     };
   }
 

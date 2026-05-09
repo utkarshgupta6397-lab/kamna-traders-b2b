@@ -298,6 +298,7 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
       const syncError = response.ok ? null : (data.message || 'Zoho API Error');
 
       try {
+        console.log(`[ZOHO][${cartId}] FINAL SUCCESS SAVE - Persisting Sales Order: ${data.salesorder?.salesorder_number}`);
         await prisma.cart.update({
           where: { id: cartId },
           data: {
@@ -311,9 +312,9 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
             zohoLastSyncAt: new Date()
           }
         });
+        console.log(`[ZOHO][${cartId}] DB UPDATE COMPLETE`);
       } catch (dbErr: any) {
         console.error(`[ZOHO][${cartId}] Final DB Update Failed (Zoho was ${syncStatus}):`, dbErr);
-        // We don't throw here so the function can still return the API result
       }
 
       console.log(`[ZOHO][${cartId}] Final Status: ${syncStatus}`);

@@ -26,6 +26,16 @@ type PrintPayload = {
   items: PrintItem[];
   zoneGroups: Record<string, PrintItem[]>;
   qrPayload: string;
+  // Zoho Integration Status
+  zohoSyncStatus?: string | null;
+  zohoSyncStep?: string | null;
+  zohoSyncError?: string | null;
+  zohoSalesorderId?: string | null;
+  zohoSalesorderNumber?: string | null;
+  zohoPayload?: any;
+  zohoResponse?: any;
+  zohoResponseTimeMs?: number | null;
+  booksUrl?: string | null;
 };
 
 export default function PrintSlipClient({
@@ -168,15 +178,15 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
     payload: any;
     response: any;
   }>({
-    status: 'PENDING',
-    step: 'INITIATED',
-    error: null,
-    id: null,
-    number: null,
-    booksUrl: null,
-    responseTimeMs: null,
-    payload: null,
-    response: null
+    status: (serverPayload as any)?.zohoSyncStatus || 'PENDING',
+    step: (serverPayload as any)?.zohoSyncStep || 'INITIATED',
+    error: (serverPayload as any)?.zohoSyncError || null,
+    id: (serverPayload as any)?.zohoSalesorderId || null,
+    number: (serverPayload as any)?.zohoSalesorderNumber || null,
+    booksUrl: (serverPayload as any)?.booksUrl || null,
+    responseTimeMs: (serverPayload as any)?.zohoResponseTimeMs || null,
+    payload: (serverPayload as any)?.zohoPayload || null,
+    response: (serverPayload as any)?.zohoResponse || null
   });
   const [retrying, setRetrying] = useState(false);
   const [showZohoDetails, setShowZohoDetails] = useState(false);
@@ -363,7 +373,7 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
                 )}
               </div>
 
-              {zohoStatus.status === 'SUCCESS' ? (
+              {zohoStatus.status === 'SUCCESS' || !!zohoStatus.id ? (
                 <div className="flex items-center gap-3 animate-in fade-in zoom-in-95 duration-500 py-1">
                   <div className="w-6 h-6 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
                     <CheckCircle2 size={14} />

@@ -208,57 +208,41 @@ export async function POST(request: Request) {
     // Add initial trace
     await addZohoTrace(cartId, 'DISPATCH_CREATED');
 
-    // 7.5. Zoho Sync (Background trigger with Rollout Safety)
+    // 7.5. Zoho Sync (Global Enablement with BaseURL Safety)
     // ═══════════════════════════════════════════════════════════════
     await addZohoTrace(cartId, 'SYNC_TRIGGER_ATTEMPTED');
 
-    const isProdRollout = process.env.PRODUCTION_ZOHO_ROLLOUT === 'true';
-    const isTestWarehouse = meta.wname.toLowerCase().includes('test');
-    const isAdmin = session?.role === 'ADMIN';
+    console.log(`[DISPATCH][${cartId}] ABOUT TO TRIGGER ZOHO`);
+    await addZohoTrace(cartId, 'SYNC_TRIGGERED');
 
-    if (isProdRollout || isTestWarehouse || isAdmin) {
-      console.log(`[DISPATCH][${cartId}] ABOUT TO TRIGGER ZOHO`);
-      await addZohoTrace(cartId, 'SYNC_TRIGGERED');
+    // Determine absolute base URL for server-side internal fetch
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+                    (process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : '');
 
-      // Determine absolute base URL for server-side internal fetch
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
-                      (process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : '');
-
-      if (baseUrl) {
-        // Detached trigger - DO NOT AWAIT the main worker, but we log the fetch lifecycle
-        (async () => {
-          try {
-            await addZohoTrace(cartId, 'SYNC_FETCH_SENT');
-            const response = await fetch(`${baseUrl}/api/zoho/sync-dispatch`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ cartId })
-            });
-            console.log(`[DISPATCH][${cartId}] Background fetch status:`, response.status);
-            await addZohoTrace(cartId, `SYNC_FETCH_RESPONSE_${response.status}`);
-          } catch (err) {
-            console.error(`[DISPATCH][${cartId}] Background sync trigger failed:`, err);
-            await addZohoTrace(cartId, 'SYNC_FETCH_FAILED');
-          }
-        })();
-        console.log(`[DISPATCH][${cartId}] ZOHO TRIGGER CALLED`);
-      } else {
-        const reason = 'NO_BASE_URL';
-        console.error(`[ZOHO] Sync skipped: ${reason}`, {
-          nodeEnv: process.env.NODE_ENV,
-          vercelEnv: process.env.VERCEL_ENV,
-          appUrl: process.env.NEXT_PUBLIC_APP_URL
-        });
-        await addZohoTrace(cartId, `SYNC_TRIGGER_SKIPPED:${reason}`);
-      }
+    if (baseUrl) {
+      // Detached trigger - DO NOT AWAIT the main worker, but we log the fetch lifecycle
+      (async () => {
+        try {
+          await addZohoTrace(cartId, 'SYNC_FETCH_SENT');
+          const response = await fetch(`${baseUrl}/api/zoho/sync-dispatch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cartId })
+          });
+          console.log(`[DISPATCH][${cartId}] Background fetch status:`, response.status);
+          await addZohoTrace(cartId, `SYNC_FETCH_RESPONSE_${response.status}`);
+        } catch (err) {
+          console.error(`[DISPATCH][${cartId}] Background sync trigger failed:`, err);
+          await addZohoTrace(cartId, 'SYNC_FETCH_FAILED');
+        }
+      })();
+      console.log(`[DISPATCH][${cartId}] ZOHO TRIGGER CALLED`);
     } else {
-      const reason = !isProdRollout ? 'ROLLOUT_OFF' : 'NOT_TEST_OR_ADMIN';
+      const reason = 'NO_BASE_URL';
       console.error(`[ZOHO] Sync skipped: ${reason}`, {
-        isProdRollout,
-        isTestWarehouse,
-        isAdmin,
-        wname: meta.wname,
-        role: session?.role
+        nodeEnv: process.env.NODE_ENV,
+        vercelEnv: process.env.VERCEL_ENV,
+        appUrl: process.env.NEXT_PUBLIC_APP_URL
       });
       await addZohoTrace(cartId, `SYNC_TRIGGER_SKIPPED:${reason}`);
     }

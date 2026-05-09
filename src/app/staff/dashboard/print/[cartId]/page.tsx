@@ -31,6 +31,7 @@ export default async function PrintSlipPage({
       zohoPayload: true,
       zohoResponse: true,
       zohoResponseTimeMs: true,
+      zohoExecutionTrace: true,
       items: {
         include: {
           sku: { select: { name: true, unit: true } },
@@ -91,6 +92,7 @@ export default async function PrintSlipPage({
       zohoPayload: cart.zohoPayload,
       zohoResponse: cart.zohoResponse,
       zohoResponseTimeMs: cart.zohoResponseTimeMs,
+      zohoExecutionTrace: cart.zohoExecutionTrace,
       booksUrl
     };
   }

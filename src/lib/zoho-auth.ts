@@ -16,6 +16,35 @@ export interface ZohoTokens {
 }
 
 /**
+ * Appends a lifecycle checkpoint to the cart's execution trace.
+ * This is critical for debugging serverless execution failures.
+ */
+export async function addZohoTrace(cartId: string, step: string) {
+  const timestamp = new Date().toISOString();
+  console.log(`[ZOHO TRACE][${cartId}] ${step} @ ${timestamp}`);
+  
+  try {
+    const cart = await prisma.cart.findUnique({
+      where: { id: cartId },
+      select: { zohoExecutionTrace: true }
+    });
+
+    const currentTrace = Array.isArray(cart?.zohoExecutionTrace) 
+      ? cart.zohoExecutionTrace as any[] 
+      : [];
+    
+    const newTrace = [...currentTrace, { step, time: timestamp }];
+
+    await prisma.cart.update({
+      where: { id: cartId },
+      data: { zohoExecutionTrace: newTrace }
+    });
+  } catch (err) {
+    console.error(`[ZOHO TRACE][${cartId}] Failed to persist trace step ${step}:`, err);
+  }
+}
+
+/**
  * Gets valid tokens from DB. Automatically refreshes if expired.
  */
 export async function getZohoTokens(): Promise<string | null> {
@@ -150,6 +179,7 @@ export function getAuthorizationUrl(): string {
 export async function syncDispatchToZoho(cartId: string): Promise<{ success: boolean; error?: string; response?: any; payload?: any }> {
   const t0 = Date.now();
   console.log(`[ZOHO][PROD-SYNC][${cartId}] Lifecycle INITIATED`);
+  await addZohoTrace(cartId, 'SYNC_WORKER_STARTED');
   
   // 0. Environment Validation
   const customerId = process.env.ZOHO_BOOKS_CUSTOMER_ID;
@@ -219,6 +249,7 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
     }
 
     // 2. Building Payload
+    await addZohoTrace(cartId, 'PAYLOAD_BUILD_STARTED');
     console.log(`[ZOHO][${cartId}] Building payload...`);
     await updateStep('PREPARING_PAYLOAD');
 
@@ -247,6 +278,8 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
         }))
     };
 
+    await addZohoTrace(cartId, 'PAYLOAD_BUILD_SUCCESS');
+
     if (payload.line_items.length === 0) {
       const msg = 'No SKUs with valid zohoBooksId2 found';
       console.warn(`[ZOHO][${cartId}] ${msg}`);
@@ -259,16 +292,20 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
     await updateStep('REFRESHING_TOKEN', 'PENDING', { zohoPayload: payload });
 
     // 3. Token Refresh
+    await addZohoTrace(cartId, 'TOKEN_LOOKUP_STARTED');
     console.log(`[ZOHO][${cartId}] Refreshing OAuth token...`);
     const accessToken = await getZohoTokens();
     if (!accessToken) {
       const msg = 'OAuth token refresh failed (no token returned)';
       console.error(`[ZOHO][${cartId}] ${msg}`);
+      await addZohoTrace(cartId, 'TOKEN_LOOKUP_FAILED');
       await updateStep('FAILED', 'FAILED', { zohoSyncError: msg });
       return { success: false, error: msg, payload };
     }
+    await addZohoTrace(cartId, 'TOKEN_FOUND');
 
     // 4. Sending Request
+    await addZohoTrace(cartId, 'ZOHO_API_STARTED');
     console.log(`[ZOHO][${cartId}] Sending request to Zoho API...`);
     await updateStep('WAITING_FOR_ZOHO_RESPONSE');
     
@@ -292,12 +329,18 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
       clearTimeout(timeout);
 
       console.log(`[ZOHO][${cartId}] Response received in ${responseTimeMs}ms. Status: ${response.status}`);
+      if (response.ok) {
+        await addZohoTrace(cartId, 'ZOHO_API_SUCCESS');
+      } else {
+        await addZohoTrace(cartId, `ZOHO_API_FAILED_${response.status}`);
+      }
 
       // 5. Finalizing
       const syncStatus = response.ok ? 'SUCCESS' : 'FAILED';
       const syncError = response.ok ? null : (data.message || 'Zoho API Error');
 
       try {
+        await addZohoTrace(cartId, 'DB_PERSIST_STARTED');
         console.log(`[ZOHO][${cartId}] FINAL SUCCESS SAVE - Persisting Sales Order: ${data.salesorder?.salesorder_number}`);
         await prisma.cart.update({
           where: { id: cartId },
@@ -312,7 +355,9 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
             zohoLastSyncAt: new Date()
           }
         });
+        await addZohoTrace(cartId, 'DB_PERSIST_SUCCESS');
         console.log(`[ZOHO][${cartId}] DB UPDATE COMPLETE`);
+        await addZohoTrace(cartId, 'SYNC_COMPLETED');
       } catch (dbErr: any) {
         console.error(`[ZOHO][${cartId}] Final DB Update Failed (Zoho was ${syncStatus}):`, dbErr);
       }
@@ -338,12 +383,13 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
   } catch (error: any) {
     const msg = error.message || 'Unknown internal error';
     console.error(`[ZOHO][${cartId}] CRITICAL FAILURE:`, error);
+    await addZohoTrace(cartId, 'SYNC_CRASHED');
     await prisma.cart.update({
       where: { id: cartId },
       data: {
         zohoSyncStatus: 'FAILED',
         zohoSyncStep: 'FAILED',
-        zohoSyncError: `${msg}\nStack: ${error.stack?.substring(0, 500)}`
+        zohoSyncError: `[CRASH][${msg}]\nStack: ${error.stack?.substring(0, 500)}`
       }
     });
     return { success: false, error: msg };

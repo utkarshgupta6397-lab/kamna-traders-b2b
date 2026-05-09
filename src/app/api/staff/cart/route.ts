@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { validateOrigin } from '@/lib/csrf';
 import { Prisma } from '@prisma/client';
-import { syncDispatchToZoho } from '@/lib/zoho-auth';
+import { syncDispatchToZoho, addZohoTrace } from '@/lib/zoho-auth';
 
 type CartItemInput = {
   skuId: string;
@@ -205,6 +205,9 @@ export async function POST(request: Request) {
     await prisma.$transaction(batchOps);
     perf.transactionWrites = performance.now() - tWritesStart;
 
+    // Add initial trace
+    await addZohoTrace(cartId, 'DISPATCH_CREATED');
+
     // 7.5. Zoho Sync (Background trigger with Rollout Safety)
     // ═══════════════════════════════════════════════════════════════
     const isProdRollout = process.env.PRODUCTION_ZOHO_ROLLOUT === 'true';
@@ -214,6 +217,8 @@ export async function POST(request: Request) {
     if (isProdRollout || isTestWarehouse || isAdmin) {
       console.log(`[DISPATCH][${cartId}] Triggering background Zoho sync (Rollout: ${isProdRollout}, Test: ${isTestWarehouse}, Admin: ${isAdmin})...`);
       
+      await addZohoTrace(cartId, 'SYNC_TRIGGERED');
+
       // Determine base URL for internal API trigger
       const protocol = request.headers.get('x-forwarded-proto') || 'http';
       const host = request.headers.get('host');

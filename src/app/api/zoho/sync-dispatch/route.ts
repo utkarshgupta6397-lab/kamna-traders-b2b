@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import { syncDispatchToZoho } from '@/lib/zoho-auth';
+import { syncDispatchToZoho, addZohoTrace } from '@/lib/zoho-auth';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -13,6 +13,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'cartId is required' }, { status: 400 });
     }
 
+    await addZohoTrace(cartId, 'SYNC_ROUTE_STARTED');
     console.log(`[ZOHO] Background sync started for cart: ${cartId}`);
     
     // syncDispatchToZoho handles duplicate prevention internally

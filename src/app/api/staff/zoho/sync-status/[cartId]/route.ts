@@ -28,7 +28,8 @@ export async function GET(
         zohoLastSyncAt: true,
         zohoResponseTimeMs: true,
         zohoPayload: true,
-        zohoResponse: true
+        zohoResponse: true,
+        zohoExecutionTrace: true
       }
     });
 

@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { RefreshCw, CheckCircle2, AlertCircle, ExternalLink, ChevronDown, ChevronRight, Info, Eye, Loader2, Copy } from 'lucide-react';
+import { RefreshCw, CheckCircle2, AlertCircle, ExternalLink, ChevronDown, ChevronRight, Info, Eye, Loader2, Copy, Activity, XCircle } from 'lucide-react';
 import PrintButton from '@/components/PrintButton';
 
 type PrintItem = {
@@ -35,6 +35,7 @@ type PrintPayload = {
   zohoPayload?: any;
   zohoResponse?: any;
   zohoResponseTimeMs?: number | null;
+  zohoExecutionTrace?: any;
   booksUrl?: string | null;
 };
 
@@ -177,6 +178,7 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
     responseTimeMs: number | null;
     payload: any;
     response: any;
+    trace: any[] | null;
   }>({
     status: (serverPayload as any)?.zohoSyncStatus || 'PENDING',
     step: (serverPayload as any)?.zohoSyncStep || 'INITIATED',
@@ -186,7 +188,8 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
     booksUrl: (serverPayload as any)?.booksUrl || null,
     responseTimeMs: (serverPayload as any)?.zohoResponseTimeMs || null,
     payload: (serverPayload as any)?.zohoPayload || null,
-    response: (serverPayload as any)?.zohoResponse || null
+    response: (serverPayload as any)?.zohoResponse || null,
+    trace: (serverPayload as any)?.zohoExecutionTrace || null
   });
   const [retrying, setRetrying] = useState(false);
   const [showZohoDetails, setShowZohoDetails] = useState(false);
@@ -209,7 +212,8 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
             booksUrl: data.booksUrl,
             responseTimeMs: data.zohoResponseTimeMs,
             payload: data.zohoPayload,
-            response: data.zohoResponse
+            response: data.zohoResponse,
+            trace: data.zohoExecutionTrace
           });
 
           // Stop polling if done
@@ -593,6 +597,43 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
                   <div className="text-sm font-mono font-bold text-gray-700">
                     {zohoStatus.number || 'N/A'}
                   </div>
+                </div>
+              </div>
+
+              {/* Execution Trace */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center text-gray-500">
+                    <Activity size={12} />
+                  </div>
+                  <h4 className="text-[11px] font-black uppercase tracking-widest text-gray-700">Execution Trace</h4>
+                </div>
+                <div className="bg-gray-50 rounded-lg border border-gray-100 overflow-hidden">
+                  {zohoStatus.trace && Array.isArray(zohoStatus.trace) && zohoStatus.trace.length > 0 ? (
+                    <div className="divide-y divide-gray-100">
+                      {zohoStatus.trace.map((t, idx) => (
+                        <div key={idx} className="px-4 py-2.5 flex items-center justify-between hover:bg-gray-100/50 transition-colors">
+                          <div className="flex items-center gap-3">
+                            {t.step === 'SYNC_COMPLETED' ? (
+                              <CheckCircle2 size={12} className="text-emerald-500" />
+                            ) : t.step === 'SYNC_CRASHED' ? (
+                              <XCircle size={12} className="text-rose-500" />
+                            ) : (
+                              <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                            )}
+                            <span className="text-[10px] font-mono font-bold text-gray-700">{t.step}</span>
+                          </div>
+                          <span className="text-[9px] font-mono text-gray-400">
+                            {new Date(t.time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-4 py-8 text-center">
+                      <p className="text-[10px] text-gray-400 italic">No trace recorded yet</p>
+                    </div>
+                  )}
                 </div>
               </div>
 

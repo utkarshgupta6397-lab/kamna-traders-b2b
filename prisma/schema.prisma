@@ -122,6 +122,7 @@ model Cart {
   zohoResponseTimeMs   Int?
   zohoPayload          Json?
   zohoResponse         Json?
+  zohoExecutionTrace   Json?
 }
 
 model CartItem {

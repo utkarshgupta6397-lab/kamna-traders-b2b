@@ -205,24 +205,30 @@ export async function POST(request: Request) {
     await prisma.$transaction(batchOps);
     perf.transactionWrites = performance.now() - tWritesStart;
 
-    // 7.5. Zoho Sync (Synchronous execution with Rollout Safety)
+    // 7.5. Zoho Sync (Background trigger with Rollout Safety)
     // ═══════════════════════════════════════════════════════════════
     const isProdRollout = process.env.PRODUCTION_ZOHO_ROLLOUT === 'true';
     const isTestWarehouse = meta.wname.toLowerCase().includes('test');
     const isAdmin = session?.role === 'ADMIN';
 
     if (isProdRollout || isTestWarehouse || isAdmin) {
-      const tZohoStart = performance.now();
-      console.log(`[ZOHO][${cartId}] Starting synchronous sync (Rollout: ${isProdRollout}, Test: ${isTestWarehouse}, Admin: ${isAdmin})...`);
-      try {
-        await syncDispatchToZoho(cartId);
-        perf.zohoSync = performance.now() - tZohoStart;
-        console.log(`[ZOHO][${cartId}] Synchronous sync finished in ${perf.zohoSync.toFixed(0)}ms`);
-      } catch (err) {
-        console.error(`[ZOHO][${cartId}] Synchronous sync failed:`, err);
-      }
+      console.log(`[DISPATCH][${cartId}] Triggering background Zoho sync (Rollout: ${isProdRollout}, Test: ${isTestWarehouse}, Admin: ${isAdmin})...`);
+      
+      // Determine base URL for internal API trigger
+      const protocol = request.headers.get('x-forwarded-proto') || 'http';
+      const host = request.headers.get('host');
+      const baseUrl = `${protocol}://${host}`;
+
+      // Detached trigger - DO NOT AWAIT
+      fetch(`${baseUrl}/api/zoho/sync-dispatch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cartId })
+      }).catch(err => {
+        console.error(`[DISPATCH][${cartId}] Background sync trigger failed:`, err);
+      });
     } else {
-      console.log(`[ZOHO][${cartId}] Sync skipped: Production rollout is restricted.`);
+      console.log(`[DISPATCH][${cartId}] Sync skipped: Production rollout is restricted.`);
     }
 
 

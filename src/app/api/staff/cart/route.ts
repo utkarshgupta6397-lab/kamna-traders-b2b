@@ -210,12 +210,23 @@ export async function POST(request: Request) {
 
     // 7.5. Zoho Sync (Background trigger with Rollout Safety)
     // ═══════════════════════════════════════════════════════════════
+    await addZohoTrace(cartId, 'SYNC_TRIGGER_ATTEMPTED');
+
     const isProdRollout = process.env.PRODUCTION_ZOHO_ROLLOUT === 'true';
     const isTestWarehouse = meta.wname.toLowerCase().includes('test');
     const isAdmin = session?.role === 'ADMIN';
 
+    console.log(`[DISPATCH][${cartId}] Zoho Rollout Check:`, {
+      isProdRollout,
+      isTestWarehouse,
+      isAdmin,
+      wname: meta.wname,
+      role: session?.role,
+      env_rollout: process.env.PRODUCTION_ZOHO_ROLLOUT
+    });
+
     if (isProdRollout || isTestWarehouse || isAdmin) {
-      console.log(`[DISPATCH][${cartId}] Triggering background Zoho sync (Rollout: ${isProdRollout}, Test: ${isTestWarehouse}, Admin: ${isAdmin})...`);
+      console.log(`[DISPATCH][${cartId}] ABOUT TO TRIGGER ZOHO`);
       
       await addZohoTrace(cartId, 'SYNC_TRIGGERED');
 
@@ -240,12 +251,14 @@ export async function POST(request: Request) {
             await addZohoTrace(cartId, 'SYNC_FETCH_FAILED');
           }
         })();
+        console.log(`[DISPATCH][${cartId}] ZOHO TRIGGER CALLED`);
       } else {
         console.warn(`[DISPATCH][${cartId}] Zoho sync skipped: No baseUrl (NEXT_PUBLIC_APP_URL) configured.`);
         await addZohoTrace(cartId, 'SYNC_SKIPPED_NO_BASEURL');
       }
     } else {
       console.log(`[DISPATCH][${cartId}] Sync skipped: Production rollout is restricted.`);
+      await addZohoTrace(cartId, 'SYNC_TRIGGER_SKIPPED');
     }
 
 

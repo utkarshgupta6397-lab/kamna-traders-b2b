@@ -6,7 +6,7 @@ import ProductCard, { ProductData } from '@/components/ProductCard';
 import CartPanel from '@/components/CartPanel';
 import { useCartStore } from '@/store/cartStore';
 import { useSkuStore } from '@/store/skuStore';
-import { Printer, Scan, Loader2, RefreshCw, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+import { Printer, Scan, Loader2, RefreshCw, AlertTriangle, Eye, EyeOff, ChevronDown, Check } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
 interface Category { id: string; name: string; count: number }
@@ -108,6 +108,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [showCaseFilter, setShowCaseFilter] = useState(false);
 
   // SKU store (local cache)
   const status = useSkuStore((s) => s.status);
@@ -121,6 +122,8 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   const getFiltered = useSkuStore((s) => s.getFiltered);
   const hideOos = useSkuStore((s) => s.hideOos);
   const setHideOos = useSkuStore((s) => s.setHideOos);
+  const selectedMoqs = useSkuStore((s) => s.selectedMoqs);
+  const setSelectedMoqs = useSkuStore((s) => s.setSelectedMoqs);
 
   // Cart
   const { items, addItem, clearCart } = useCartStore();
@@ -160,8 +163,14 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     };
   }, [allSkus, searchQuery, hideOos, categories]);
 
-  // Filtered products — recomputes when allSkus, category, search, or hideOos changes
-  const products = useMemo(() => getFiltered(), [getFiltered, allSkus, selectedCategoryId, searchQuery, hideOos]);
+  // Filtered products — recomputes when allSkus, category, search, hideOos, or selectedMoqs change
+  const products = useMemo(() => getFiltered(), [getFiltered, allSkus, selectedCategoryId, searchQuery, hideOos, selectedMoqs]);
+
+  // Derived: Unique MOQs > 1 for filtering
+  const availableMoqs = useMemo(() => {
+    const moqs = Array.from(new Set(allSkus.map(s => s.moq))).filter(m => m > 1).sort((a, b) => a - b);
+    return moqs;
+  }, [allSkus]);
 
   // ─── Initial Load ──────────────────────────────────────────────
   const loadSkus = useCallback(async (silent = false) => {
@@ -396,9 +405,71 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
                  </span>
                </button>
             </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-[#F9FAFB] border border-[#E7EAF0] rounded-lg group">
-              <Scan size={14} className="text-gray-400 group-hover:text-[#1A2766]" />
-              <span className="text-[10px] font-[800] text-gray-500 uppercase">Scanner Live</span>
+            
+            <div className="h-6 w-px bg-[#F1F3F7]" />
+            
+            {/* ── CASE SIZE FILTER ─────────────────────────────────────── */}
+            <div className="relative">
+              <button
+                onClick={() => setShowCaseFilter(!showCaseFilter)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${
+                  selectedMoqs.length > 0
+                    ? 'bg-[#1A2766] border-[#1A2766] text-white shadow-sm'
+                    : 'bg-[#F9FAFB] border-[#E7EAF0] text-gray-500 hover:bg-white hover:border-[#1A2766]/30'
+                }`}
+              >
+                <span className="text-[10px] font-[800] uppercase tracking-wider">
+                  Case Size {selectedMoqs.length > 0 && `(${selectedMoqs.length})`}
+                </span>
+                <ChevronDown size={14} className={`transition-transform duration-200 ${showCaseFilter ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showCaseFilter && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-[100]" 
+                    onClick={() => setShowCaseFilter(false)} 
+                  />
+                  <div className="absolute top-full left-0 mt-1.5 w-40 bg-white border border-[#E7EAF0] rounded-xl shadow-xl z-[101] p-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                      {availableMoqs.length === 0 ? (
+                        <p className="px-3 py-2 text-[11px] text-gray-400 font-medium">No case sizes</p>
+                      ) : (
+                        availableMoqs.map((moq) => (
+                          <button
+                            key={moq}
+                            onClick={() => {
+                              const next = selectedMoqs.includes(moq)
+                                ? selectedMoqs.filter(m => m !== moq)
+                                : [...selectedMoqs, moq];
+                              setSelectedMoqs(next);
+                            }}
+                            className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-[#F1F6FF] transition-colors group"
+                          >
+                            <span className="text-[12px] font-[700] text-gray-600 group-hover:text-[#1A2766]">MOQ {moq}</span>
+                            {selectedMoqs.includes(moq) && (
+                              <Check size={14} className="text-[#1A2766]" />
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                    {selectedMoqs.length > 0 && (
+                      <div className="mt-1 pt-1 border-t border-[#F1F3F7]">
+                        <button
+                          onClick={() => {
+                            setSelectedMoqs([]);
+                            setShowCaseFilter(false);
+                          }}
+                          className="w-full py-1.5 text-[10px] font-bold text-[#AE1B1E] uppercase tracking-widest hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          Clear Filter
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -424,42 +495,45 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
           )}
         </main>
 
-        {/* ── RIGHT: 320px REFINED DISPATCH ───────────────────────────── */}
-        <aside className="hidden xl:block w-[320px] sticky top-4 flex-shrink-0">
+        {/* ── RIGHT: 280px COMPACT DISPATCH (Always Visible) ─────────── */}
+        <aside className="hidden xl:block w-[280px] sticky top-4 flex-shrink-0">
           <div className="bg-white rounded-xl border border-[#E7EAF0] shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden flex flex-col h-[calc(100vh-32px)]">
-            <div className="px-4 py-3.5 border-b border-[#F1F3F7] bg-[#1A2766] flex items-center justify-between">
-              <h2 className="text-[11px] font-[800] text-white uppercase tracking-[0.1em]">Dispatch Bin</h2>
+            <div className="px-3 py-2.5 border-b border-[#F1F3F7] bg-[#1A2766] flex items-center justify-between">
+              <h2 className="text-[10px] font-[800] text-white uppercase tracking-[0.1em]">Dispatch Bin</h2>
+              <span className="bg-white/20 text-white text-[9px] font-black px-1.5 py-0.5 rounded tabular-nums">
+                {items.length}
+              </span>
             </div>
             
             <div className="flex-1 overflow-hidden">
                <CartPanel />
             </div>
 
-            <div className="p-4 border-t border-[#F1F3F7] bg-[#F9FAFB] space-y-3">
+            <div className="p-3 border-t border-[#F1F3F7] bg-[#F9FAFB] space-y-2">
               {items.length > 0 && (
                 <>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <input
                       type="text"
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
                       placeholder="Customer Name *"
-                      className="w-full bg-white border border-[#E7EAF0] rounded-lg px-3 py-2.5 text-[14px] font-[700] outline-none focus:ring-2 focus:ring-[#1A2766]/10 focus:border-[#1A2766] transition-all"
+                      className="w-full bg-white border border-[#E7EAF0] rounded-lg px-3 py-2 text-[13px] font-[700] outline-none focus:ring-2 focus:ring-[#1A2766]/10 focus:border-[#1A2766] transition-all"
                     />
                     <textarea
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
                       placeholder="Dispatch Notes (Optional)"
-                      className="w-full bg-white border border-[#E7EAF0] rounded-lg px-3 py-2 text-[13px] outline-none focus:ring-2 focus:ring-[#1A2766]/10 focus:border-[#1A2766] h-16 resize-none transition-all"
+                      className="w-full bg-white border border-[#E7EAF0] rounded-lg px-3 py-1.5 text-[12px] outline-none focus:ring-2 focus:ring-[#1A2766]/10 focus:border-[#1A2766] h-12 resize-none transition-all"
                     />
                   </div>
                   <button
                     onClick={handleSubmit}
                     disabled={submitting || !customerName}
-                    className="w-full h-12 flex items-center justify-center gap-2 bg-[#1A2766] text-white rounded-lg font-[800] text-[13px] uppercase tracking-widest hover:bg-[#003347] transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
+                    className="w-full h-10 flex items-center justify-center gap-2 bg-[#1A2766] text-white rounded-lg font-[800] text-[12px] uppercase tracking-widest hover:bg-[#003347] transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
                   >
-                    <Printer size={18} strokeWidth={2.5} />
-                    {submitting ? 'Processing...' : 'Generate Dispatch Note'}
+                    <Printer size={16} strokeWidth={2.5} />
+                    {submitting ? 'Processing...' : 'Generate Dispatch'}
                   </button>
                 </>
               )}

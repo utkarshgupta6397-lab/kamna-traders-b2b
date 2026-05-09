@@ -11,6 +11,7 @@ interface SkuStore {
   selectedCategoryId: string;
   searchQuery: string;
   hideOos: boolean;
+  selectedMoqs: number[];
   /** Last successful fetch timestamp */
   lastFetchedAt: number | null;
 
@@ -19,6 +20,7 @@ interface SkuStore {
   setCategory: (id: string) => void;
   setSearch: (q: string) => void;
   setHideOos: (val: boolean) => void;
+  setSelectedMoqs: (moqs: number[]) => void;
 
   /** Derived: filtered view (computed on the fly, no extra storage) */
   getFiltered: () => ProductData[];
@@ -31,6 +33,7 @@ export const useSkuStore = create<SkuStore>((set, get) => ({
   selectedCategoryId: '',
   searchQuery: '',
   hideOos: true, // Default: hide OOS
+  selectedMoqs: [],
   lastFetchedAt: null,
 
   setSkus: (skus) => set({ allSkus: skus, lastFetchedAt: Date.now() }),
@@ -38,9 +41,10 @@ export const useSkuStore = create<SkuStore>((set, get) => ({
   setCategory: (id) => set({ selectedCategoryId: id }),
   setSearch: (q) => set({ searchQuery: q }),
   setHideOos: (val) => set({ hideOos: val }),
+  setSelectedMoqs: (moqs) => set({ selectedMoqs: moqs }),
 
   getFiltered: () => {
-    const { allSkus, selectedCategoryId, searchQuery, hideOos } = get();
+    const { allSkus, selectedCategoryId, searchQuery, hideOos, selectedMoqs } = get();
     let list = allSkus;
 
     if (hideOos) {
@@ -49,6 +53,10 @@ export const useSkuStore = create<SkuStore>((set, get) => ({
 
     if (selectedCategoryId) {
       list = list.filter((s) => s.categoryId === selectedCategoryId);
+    }
+
+    if (selectedMoqs.length > 0) {
+      list = list.filter((s) => selectedMoqs.includes(s.moq));
     }
 
     const q = searchQuery.trim().toLowerCase();

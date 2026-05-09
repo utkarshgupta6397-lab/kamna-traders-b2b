@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ProductCard, { ProductData } from '@/components/ProductCard';
 import CartPanel from '@/components/CartPanel';
 import { useCartStore } from '@/store/cartStore';
@@ -20,13 +20,17 @@ interface Props {
 
 /** Fetch all active SKUs from the lightweight API endpoint */
 async function fetchAllSkus(): Promise<ProductData[]> {
+  const start = performance.now();
   const res = await fetch('/api/staff/skus');
   if (!res.ok) throw new Error(`Failed to fetch SKUs: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  const end = performance.now();
+  console.log(`[PERF] fetchAllSkus: ${(end - start).toFixed(2)}ms`);
+  return data;
 }
 
-/** Background refresh interval (ms) — 120 seconds for silent hydration */
-const BG_REFRESH_INTERVAL = 120_000;
+/** Background refresh interval (ms) — 5 minutes (300,000ms) for silent hydration */
+const BG_REFRESH_INTERVAL = 300_000;
 
 /** Progressive dispatch loader — fills to ~92% over 10s, completes on API response */
 function DispatchProgressOverlay() {
@@ -109,6 +113,8 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   const [submitting, setSubmitting] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [showCaseFilter, setShowCaseFilter] = useState(false);
+  const fetchInProgress = useRef(false);
+  const lastFetchTime = useRef(0);
 
   // SKU store (local cache)
   const status = useSkuStore((s) => s.status);
@@ -186,16 +192,21 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     return new Set(list.map(s => s.caseSize).filter((s): s is number => !!s && s > 1));
   }, [allSkus, selectedCategoryId]);
 
-  // Derived: "Updated X ago" text
+  // Derived: "Updated X ago" text — Optimized to avoid triggering full component re-renders if possible,
+  // though useState in the main component will still cause it.
   const [timeAgo, setTimeAgo] = useState('Just now');
   useEffect(() => {
     if (!lastFetchedAt) return;
+    
     const update = () => {
       const sec = Math.floor((Date.now() - lastFetchedAt) / 1000);
-      if (sec < 10) setTimeAgo('Just now');
-      else if (sec < 60) setTimeAgo(`${sec}s ago`);
-      else setTimeAgo(`${Math.floor(sec/60)}m ago`);
+      let next = 'Just now';
+      if (sec >= 60) next = `${Math.floor(sec / 60)}m ago`;
+      else if (sec >= 10) next = `${sec}s ago`;
+      
+      setTimeAgo(prev => prev === next ? prev : next);
     };
+
     update();
     const inv = setInterval(update, 10000);
     return () => clearInterval(inv);
@@ -210,15 +221,37 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
 
   // ─── Initial Load ──────────────────────────────────────────────
   const loadSkus = useCallback(async (silent = false) => {
+    // 1. Prevent overlapping requests
+    if (fetchInProgress.current) {
+      console.log(`[SYNC] Fetch already in progress, skipping`);
+      return;
+    }
+    
+    // 2. Throttle: Don't fetch more than once every 5s
+    const now = Date.now();
+    if (now - lastFetchTime.current < 5000) {
+      console.log(`[SYNC] Throttled (last fetch was ${(now - lastFetchTime.current)/1000}s ago)`);
+      return;
+    }
+
+    const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.log(`[SYNC] ${timestamp} - loadSkus start (silent: ${silent})`);
+    
+    fetchInProgress.current = true;
     if (!silent) setStatus('loading');
     try {
       const data = await fetchAllSkus() as any;
-      setSkus(data); // Payload: { skus, topBrandsByCategory, topBrandsFullCatalog }
+      lastFetchTime.current = Date.now();
+      setSkus(data); 
       setStatus('ready');
+      console.log(`[SYNC] ${timestamp} - loadSkus success`);
     } catch (err) {
+      console.error(`[SYNC] ${timestamp} - loadSkus failed:`, err);
       if (!silent) {
         setStatus('error', err instanceof Error ? err.message : 'Failed to load products');
       }
+    } finally {
+      fetchInProgress.current = false;
     }
   }, [setSkus, setStatus]);
 
@@ -229,18 +262,47 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     }
   }, [status, loadSkus]);
 
-  // ─── Background Refresh (every 60s + on tab focus) ─────────────
+  // ─── Background Refresh (Tab Visibility Aware) ─────────────────
   useEffect(() => {
-    const interval = setInterval(() => loadSkus(true), BG_REFRESH_INTERVAL);
+    let interval: ReturnType<typeof setInterval> | null = null;
 
-    const onFocus = () => loadSkus(true);
-    window.addEventListener('focus', onFocus);
+    const startPolling = () => {
+      if (interval) return;
+      console.log(`[POLLING] Tab visible, starting 5m interval`);
+      interval = setInterval(() => {
+        console.log(`[TIMER] Triggering scheduled refresh`);
+        loadSkus(true);
+      }, BG_REFRESH_INTERVAL);
+    };
+
+    const stopPolling = () => {
+      if (interval) {
+        console.log(`[POLLING] Tab hidden, pausing refresh`);
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+
+    // Initial check on mount
+    if (document.visibilityState === 'visible') {
+      startPolling();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      clearInterval(interval);
-      window.removeEventListener('focus', onFocus);
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [loadSkus]);
+  }, [loadSkus]); // loadSkus is stable from useCallback
 
   // ─── Speed Mode (keyboard nav) ────────────────────────────────
   useEffect(() => {

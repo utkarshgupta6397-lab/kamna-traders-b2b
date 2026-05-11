@@ -19,7 +19,14 @@ export type PrintPayload = {
   items: PrintItem[];
   zoneGroups: Record<string, PrintItem[]>;
   qrPayload: string;
+  // Zoho Status & Sync Details
+  zohoSyncStatus?: string | null;
+  zohoSyncStep?: string | null;
+  zohoSyncError?: string | null;
+  zohoSalesorderId?: string | null;
   zohoSalesorderNumber?: string | null;
+  zohoResponse?: any;
+  zohoExecutionTrace?: any;
 };
 
 export type StyledLine = {

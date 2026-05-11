@@ -514,7 +514,7 @@ ${JSON.stringify(zohoStatus.response, null, 2)}
           </div>
 
           <Link href="/staff/dashboard" className="text-sm text-[#1A2766] hover:underline">← Back</Link>
-          <PrintButton auto={autoprint} />
+          <PrintButton auto={autoprint} payload={payload} />
         </div>
       </div>
 

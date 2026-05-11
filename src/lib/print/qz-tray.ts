@@ -10,6 +10,7 @@ import { initializeQZSecurity } from '@/lib/printing/security/qz-security';
 class QZManager {
   private static instance: QZManager;
   private connected: boolean = false;
+  private connecting: boolean = false;
   private printerName: string | null = null;
   private securityInitialized: boolean = false;
 
@@ -32,10 +33,22 @@ class QZManager {
     try {
       // 1. Check if already active
       if (this.connected && qz.websocket.isActive()) {
-        console.log('[QZ] Already connected and active');
         return true;
       }
 
+      // 2. Prevent parallel connection attempts
+      if (this.connecting) {
+        console.log('[QZ] Connection already in progress, waiting...');
+        // Wait up to 5s for the other attempt
+        let retries = 0;
+        while (this.connecting && retries < 50) {
+          await new Promise(r => setTimeout(r, 100));
+          retries++;
+        }
+        return this.connected;
+      }
+
+      this.connecting = true;
       console.log('[QZ] Initializing security layer...');
       if (!this.securityInitialized) {
         await initializeQZSecurity();
@@ -59,6 +72,8 @@ class QZManager {
       
       this.connected = false;
       return false;
+    } finally {
+      this.connecting = false;
     }
   }
 

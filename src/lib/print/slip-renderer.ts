@@ -25,7 +25,9 @@ export type PrintPayload = {
   zohoSyncError?: string | null;
   zohoSalesorderId?: string | null;
   zohoSalesorderNumber?: string | null;
+  zohoPayload?: any;
   zohoResponse?: any;
+  zohoResponseTimeMs?: number | null;
   zohoExecutionTrace?: any;
 };
 

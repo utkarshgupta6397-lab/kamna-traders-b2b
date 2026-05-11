@@ -29,6 +29,7 @@ export type PrintPayload = {
   zohoResponse?: any;
   zohoResponseTimeMs?: number | null;
   zohoExecutionTrace?: any;
+  booksUrl?: string | null;
 };
 
 export type StyledLine = {

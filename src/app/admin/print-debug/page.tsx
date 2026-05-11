@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import * as qz from 'qz-tray';
 import { qzManager } from '@/lib/print/qz-tray';
 import { EscPosRenderer } from '@/lib/print/esc-pos-renderer';
+import { generateMasterSlip, generateZoneSlip } from '@/lib/print/slip-renderer';
 import { Printer, Wifi, WifiOff, Terminal, Play, Scissors, QrCode, Trash2, CheckCircle2, AlertCircle, Loader2, Search, Activity, ChevronRight } from 'lucide-react';
 
 export default function PrintDebugPage() {

@@ -116,7 +116,7 @@ export default function PrintDebugPage() {
       
       const testPayload: any = {
         id: 'TEST-123',
-        dispatchSlipNumber: 'KS-DP-TEST-999',
+        dispatchSlipNumber: 'KS-DP-11/May/26-004',
         customerName: 'Test Wholesale Customer (Long Name To Verify Wrapping Logic)',
         warehouseName: 'Main Warehouse',
         staffName: 'Debug Admin',

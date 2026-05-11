@@ -68,10 +68,13 @@ function wrapText(text: string, width: number): string[] {
  */
 export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
   const lines: StyledLine[] = [];
-  const width = 46; // Safe buffer to prevent right-edge overflow (reduced from 48)
+  const width = 46; // Safe buffer to prevent right-edge overflow
   const dateStr = new Date(payload.createdAt).toLocaleString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
   });
+
+  // Extract dispatch sequence (e.g., KS-DP-...-004 -> 004)
+  const dispatchSeq = payload.dispatchSlipNumber?.split('-').pop() || '000';
 
   // Header
   lines.push({ text: 'KAMNA TRADERS', size: 'double-width', bold: true, align: 'center' });
@@ -94,13 +97,13 @@ export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
   lines.push({ text: '-'.repeat(width) });
 
   // Items Table: # | ITEM [SKU] | QTY
-  // Alignment: width - 12 (qty) - 1 (spacer) = 33 for # and ITEM
   lines.push({ text: '#   ITEM [SKU]'.padEnd(width - 12) + 'QTY/UOM'.padStart(12), bold: true });
   lines.push({ text: '-'.repeat(width) });
 
   let totalItems = 0;
   Object.entries(payload.zoneGroups).forEach(([zone, items]) => {
     lines.push({ text: `[ ZONE: ${zone.toUpperCase()} ]`, bold: true });
+    lines.push({ text: '' }); // Spacing after zone header
     
     items.forEach((item) => {
       totalItems++;
@@ -110,14 +113,16 @@ export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
       // Inline SKU: "Item Name [SKU]"
       const fullName = `${item.name} [${item.skuId}]`;
       
-      // Name width: width - 4 (index) - 12 (qty) = 30 chars for 46 width
+      // Name width: width - 4 (index) - 12 (qty) = 30 chars
       const nameWidth = width - 16;
       const nameLines = wrapText(fullName, nameWidth);
 
       nameLines.forEach((nameLine, lineIdx) => {
         if (lineIdx === 0) {
+          // First line includes index and qty
           lines.push({ text: `${indexStr}${nameLine.padEnd(nameWidth)} ${qtyStr}` });
         } else {
+          // Subsequent lines are indented 4 spaces to align with name start
           lines.push({ text: `    ${nameLine}` });
         }
       });
@@ -126,7 +131,7 @@ export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
   });
 
   lines.push({ text: '-'.repeat(width) });
-  lines.push({ text: `-- End of Master Slip : ${String(totalItems).padStart(3, '0')} --`, align: 'center' });
+  lines.push({ text: `-- End of Master Slip : ${dispatchSeq} --`, align: 'center', bold: true });
 
   return lines;
 }
@@ -136,10 +141,12 @@ export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
  */
 export function generateZoneSlip(zone: string, items: PrintItem[], payload: PrintPayload): StyledLine[] {
   const lines: StyledLine[] = [];
-  const width = 46; // Safe buffer
+  const width = 46;
   const dateStr = new Date(payload.createdAt).toLocaleString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
   });
+
+  const dispatchSeq = payload.dispatchSlipNumber?.split('-').pop() || '000';
 
   lines.push({ text: `ZONE SLIP: ${zone.toUpperCase()}`, size: 'double-width', bold: true, align: 'center' });
   lines.push({ text: `REF: ${payload.dispatchSlipNumber || payload.id}`, align: 'center', bold: true });
@@ -170,8 +177,9 @@ export function generateZoneSlip(zone: string, items: PrintItem[], payload: Prin
     });
   });
 
+  lines.push({ text: '' }); // Spacing before footer
   lines.push({ text: '-'.repeat(width) });
-  lines.push({ text: `-- End of Zone Slip (${zone}) : ${String(items.length).padStart(3, '0')} --`, align: 'center' });
+  lines.push({ text: `-- End of Zone Slip : ${dispatchSeq} --`, align: 'center', bold: true });
 
   return lines;
 }

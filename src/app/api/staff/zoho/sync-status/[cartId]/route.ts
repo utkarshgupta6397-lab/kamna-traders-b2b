@@ -37,8 +37,8 @@ export async function GET(
       return NextResponse.json({ error: 'Cart not found' }, { status: 404 });
     }
 
-    const orgId = process.env.ZOHO_BOOKS_ORG_ID;
-    const booksUrl = (cart.zohoSyncStatus === 'SUCCESS' && cart.zohoSalesorderId && orgId)
+    const orgId = process.env.ZOHO_ORGANIZATION_ID || "60027595766";
+    const booksUrl = (cart.zohoSalesorderId && orgId)
       ? `https://books.zoho.in/app/${orgId}#/salesorders/${cart.zohoSalesorderId}`
       : null;
 

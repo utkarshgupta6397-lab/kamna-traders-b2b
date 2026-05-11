@@ -10,9 +10,19 @@ export async function GET() {
     }
 
     const zohoUrl = getZohoSyncUrl();
+
+    console.log('ZOHO PREVIEW MODE', {
+      hasCreatorUrl: !!process.env.ZOHO_CREATOR_SYNC_URL,
+      hasRefresh: !!process.env.ZOHO_REFRESH_TOKEN,
+      nodeEnv: process.env.NODE_ENV,
+    });
+
     if (!zohoUrl) {
+      console.error('Zoho preview failed: No URL found in environment');
       return NextResponse.json({ error: 'Zoho sync environment variables missing' }, { status: 503 });
     }
+
+    console.log(`[ZOHO PREVIEW] Fetching from: ${zohoUrl.split('?')[0]}...`);
 
     const response = await fetch(zohoUrl, {
       method: 'GET',

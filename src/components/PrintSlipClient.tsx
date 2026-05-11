@@ -437,15 +437,24 @@ ${JSON.stringify(zohoStatus.response, null, 2)}
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-black text-emerald-700 uppercase tracking-tight whitespace-nowrap">Zoho SO:</span>
                     <span className="text-[11px] font-mono font-black text-gray-800 tracking-tighter">{zohoStatus.number}</span>
-                    <a 
-                      href={zohoStatus.booksUrl || '#'}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="ml-1 p-1 hover:bg-gray-100 rounded transition-colors text-emerald-600"
-                      title="Open in Zoho"
-                    >
-                      <ExternalLink size={10} />
-                    </a>
+                    {zohoStatus.id ? (
+                      <a 
+                        href={`https://books.zoho.in/app/${process.env.NEXT_PUBLIC_ZOHO_ORGANIZATION_ID || "60027595766"}#/salesorders/${zohoStatus.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-1 p-1 hover:bg-gray-100 rounded transition-colors text-emerald-600"
+                        title="Open in Zoho Books"
+                      >
+                        <ExternalLink size={10} />
+                      </a>
+                    ) : (
+                      <div 
+                        className="ml-1 p-1 text-gray-300 cursor-not-allowed"
+                        title="Zoho Sales Order link unavailable"
+                      >
+                        <ExternalLink size={10} />
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : zohoStatus.status === 'FAILED' ? (
@@ -739,17 +748,17 @@ ${JSON.stringify(zohoStatus.response, null, 2)}
             </div>
 
             <div className="p-4 border-t border-gray-50 flex items-center justify-between bg-gray-50/50">
-              {zohoStatus.status === 'SUCCESS' ? (
+              {zohoStatus.id ? (
                 <a 
-                  href={`https://books.zoho.in/app/${process.env.NEXT_PUBLIC_ZOHO_ORG_ID || ''}#/salesorders/${zohoStatus.id}`}
+                  href={`https://books.zoho.in/app/${process.env.NEXT_PUBLIC_ZOHO_ORGANIZATION_ID || "60027595766"}#/salesorders/${zohoStatus.id}`}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="flex items-center gap-2 text-xs font-bold text-emerald-700 hover:underline"
                 >
                   Open in Zoho Books <ExternalLink size={14} />
                 </a>
               ) : (
-                <div className="text-xs text-gray-400 font-medium">Verify your OAuth connection in Zoho Debug</div>
+                <div className="text-xs text-gray-400 font-medium">Zoho Sales Order link unavailable</div>
               )}
               <button 
                 onClick={() => setShowZohoDetails(false)}

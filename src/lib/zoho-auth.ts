@@ -2,11 +2,19 @@ import { prisma } from './db';
 
 const CLIENT_ID = process.env.ZOHO_CLIENT_ID;
 const CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
-const REDIRECT_URI = process.env.ZOHO_REDIRECT_URI;
-const ACCOUNTS_URL = 'https://accounts.zoho.in'; // India accounts
+const ACCOUNTS_URL = process.env.ZOHO_ACCOUNTS_URL || 'https://accounts.zoho.in';
+const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
-if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI) {
-  console.warn('[ZohoAuth] CRITICAL: Zoho OAuth credentials or REDIRECT_URI missing in environment variables.');
+console.log('ZOHO CONFIG', {
+  org: process.env.ZOHO_ORGANIZATION_ID,
+  apiBase: process.env.ZOHO_API_BASE_URL,
+  accountsBase: process.env.ZOHO_ACCOUNTS_URL,
+  redirect: process.env.ZOHO_REDIRECT_URI,
+  hasCreatorUrl: !!process.env.ZOHO_CREATOR_SYNC_URL,
+});
+
+if (!CLIENT_ID || !CLIENT_SECRET || !process.env.ZOHO_REDIRECT_URI) {
+  console.warn('[ZohoAuth] CRITICAL: Zoho OAuth credentials or ZOHO_REDIRECT_URI missing in environment variables.');
 }
 
 export interface ZohoTokens {
@@ -110,7 +118,7 @@ export async function exchangeAuthCode(code: string): Promise<{ success: boolean
       code,
       client_id: CLIENT_ID!,
       client_secret: CLIENT_SECRET!,
-      redirect_uri: REDIRECT_URI!,
+      redirect_uri: process.env.ZOHO_REDIRECT_URI!,
       grant_type: 'authorization_code'
     });
 
@@ -157,19 +165,25 @@ export async function exchangeAuthCode(code: string): Promise<{ success: boolean
 export function getAuthorizationUrl(): string {
   const scopes = [
     'ZohoBooks.salesorders.CREATE',
-    'ZohoBooks.items.READ'
+    'ZohoBooks.items.READ',
+    'ZohoBooks.organizations.READ'
   ];
+
+  console.log('ZOHO REDIRECT URI', process.env.ZOHO_REDIRECT_URI);
 
   const params = new URLSearchParams({
     scope: scopes.join(','),
     client_id: CLIENT_ID!,
     response_type: 'code',
-    redirect_uri: REDIRECT_URI!,
+    redirect_uri: process.env.ZOHO_REDIRECT_URI!,
     access_type: 'offline',
     prompt: 'consent' // Required to get refresh_token
   });
 
-  return `${ACCOUNTS_URL}/oauth/v2/auth?${params.toString()}`;
+  const authUrl = `${ACCOUNTS_URL}/oauth/v2/auth?${params.toString()}`;
+  console.log('ZOHO AUTH URL', authUrl);
+  
+  return authUrl;
 }
 
 /**
@@ -182,9 +196,9 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
   await addZohoTrace(cartId, 'SYNC_WORKER_STARTED');
   
   // 0. Environment Validation
-  const customerId = process.env.ZOHO_BOOKS_CUSTOMER_ID;
-  const salespersonId = process.env.ZOHO_BOOKS_SALESPERSON_ID;
-  const orgId = process.env.ZOHO_BOOKS_ORG_ID;
+  const customerId = process.env.DEFAULT_CUSTOMER_ID || process.env.ZOHO_BOOKS_CUSTOMER_ID;
+  const salespersonId = process.env.DEFAULT_SALESPERSON_ID || process.env.ZOHO_BOOKS_SALESPERSON_ID;
+  const orgId = process.env.ZOHO_ORGANIZATION_ID || process.env.ZOHO_BOOKS_ORG_ID;
   const redirectUri = process.env.ZOHO_REDIRECT_URI;
 
   if (!CLIENT_ID || !CLIENT_SECRET || !redirectUri || !orgId || !customerId) {
@@ -253,17 +267,7 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
     console.log(`[ZOHO][${cartId}] Building payload...`);
     await updateStep('PREPARING_PAYLOAD');
 
-    const customerId = process.env.ZOHO_BOOKS_CUSTOMER_ID;
-    const salespersonId = process.env.ZOHO_BOOKS_SALESPERSON_ID;
-    const orgId = process.env.ZOHO_BOOKS_ORG_ID;
-
-    if (!customerId || !orgId) {
-      const msg = 'Missing ZOHO_BOOKS_CUSTOMER_ID or ZOHO_BOOKS_ORG_ID in env';
-      console.error(`[ZOHO][${cartId}] ${msg}`);
-      await updateStep('FAILED', 'FAILED', { zohoSyncError: msg });
-      return { success: false, error: msg };
-    }
-
+    // Values already validated and logged at function start
     const payload: any = {
       customer_id: customerId,
       salesperson_id: salespersonId,
@@ -312,15 +316,30 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
 
+    const orgId = process.env.ZOHO_ORGANIZATION_ID;
+    const apiBase = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
+    const url = `${apiBase}/books/v3/salesorders?organization_id=${orgId}`;
+
+    const finalPayload = {
+      customer_id: process.env.DEFAULT_CUSTOMER_ID || "1759923000000023423",
+      salesperson_id: process.env.DEFAULT_SALESPERSON_ID || "1759923000001693003",
+      reference_number: payload.reference_number,
+      date: payload.date,
+      line_items: payload.line_items,
+    };
+
+    console.log('FETCH URL', url);
+    console.log('FETCH BODY', JSON.stringify(finalPayload, null, 2));
+
     const apiStartTime = Date.now();
     try {
-      const response = await fetch(`https://www.zohoapis.in/books/v3/salesorders?organization_id=${orgId}`, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Authorization': `Zoho-oauthtoken ${accessToken}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(finalPayload),
         signal: controller.signal
       });
 

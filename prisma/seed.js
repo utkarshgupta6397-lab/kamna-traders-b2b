@@ -81,9 +81,9 @@ async function main() {
   console.log('✅ Warehouse seeded')
 
   const brand = await prisma.brand.upsert({
-    where: { name: 'Generic' },
+    where: { id: 'BR_GENERIC' },
     update: {},
-    create: { name: 'Generic' },
+    create: { id: 'BR_GENERIC', name: 'Generic' },
   })
 
   // ── Categories ─────────────────────────────────────────────────────────────

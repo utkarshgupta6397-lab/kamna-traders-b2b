@@ -40,11 +40,12 @@ export default function ZohoDebugPage() {
     try {
       const res = await fetch('/api/staff/skus');
       const data = await res.json();
+      const skus = Array.isArray(data) ? data : data.skus || [];
       // Filter for active + zohoBooksId2 in frontend for display
-      const filtered = data.filter((s: any) => s.isActive && s.zohoBooksId2);
+      const filtered = skus.filter((s: any) => s.isActive && s.zohoBooksId2);
       setActiveSkus(filtered);
     } catch (err) {
-      console.error('Failed to fetch SKUs');
+      console.error('Failed to fetch SKUs:', err);
     }
   };
 

@@ -46,13 +46,28 @@ export async function POST() {
     };
 
     // 3. Call Zoho API
-    const response = await fetch(`https://www.zohoapis.in/books/v3/salesorders?organization_id=${orgId}`, {
+    const orgId = process.env.ZOHO_ORGANIZATION_ID || "60027595766";
+    const apiBase = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
+    const url = `${apiBase}/books/v3/salesorders?organization_id=${orgId}`;
+    
+    const finalPayload = {
+      customer_id: process.env.DEFAULT_CUSTOMER_ID || "1759923000000023423",
+      salesperson_id: process.env.DEFAULT_SALESPERSON_ID || "1759923000001693003",
+      reference_number: payload.reference_number,
+      date: payload.date,
+      line_items: payload.line_items,
+    };
+
+    console.log('FETCH URL', url);
+    console.log('FETCH BODY', JSON.stringify(finalPayload, null, 2));
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Zoho-oauthtoken ${accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(finalPayload)
     });
 
     const data = await response.json();
@@ -60,7 +75,7 @@ export async function POST() {
     return NextResponse.json({
       success: response.ok,
       status: response.status,
-      payload,
+      payload: finalPayload,
       response: data,
       skuCount: activeSkus.length
     });

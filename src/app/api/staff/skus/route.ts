@@ -20,6 +20,8 @@ export async function GET() {
       price: true,
       caseSize: true,
       categoryId: true,
+      isActive: true,
+      zohoBooksId2: true,
       brand: { select: { name: true } },
       inventory: { select: { qty: true, isOos: true } },
     },
@@ -42,6 +44,8 @@ export async function GET() {
       categoryId: sku.categoryId,
       inventoryQty: totalQty,
       isOos: sku.inventory.length > 0 ? anyOos || totalQty <= 0 : false,
+      isActive: sku.isActive,
+      zohoBooksId2: sku.zohoBooksId2,
     };
   });
 

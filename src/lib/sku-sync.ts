@@ -20,9 +20,21 @@ function safeJson(value: any) {
 
 export async function runSkuSync() {
   const zohoUrl = getZohoSyncUrl();
+
+  console.log('ZOHO CONFIG [SKU SYNC]', {
+    org: process.env.ZOHO_ORGANIZATION_ID,
+    apiBase: process.env.ZOHO_API_BASE_URL,
+    accountsBase: process.env.ZOHO_ACCOUNTS_URL,
+    redirect: process.env.ZOHO_REDIRECT_URI,
+    hasCreatorUrl: !!process.env.ZOHO_CREATOR_SYNC_URL,
+  });
+
   if (!zohoUrl) {
+    console.error('Zoho sync failed: No URL found in environment');
     throw new Error('Zoho sync environment variables missing');
   }
+
+  console.log(`[ZOHO SYNC] Starting fetch from: ${zohoUrl.split('?')[0]}...`);
 
   // Create Log entry
   const syncLog = await prisma.skuSyncLog.create({

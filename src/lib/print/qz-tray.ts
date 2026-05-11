@@ -83,18 +83,21 @@ class QZManager {
     
     try {
       // 1. Try regex match (more robust on macOS)
+      // @ts-ignore - QZ Tray supports Regex but types may be outdated
       const printer = await qz.printers.find(/POS120/i);
-      console.log(`[QZ] Regex match found: ${printer}`);
-      this.printerName = printer;
-      return printer;
+      const selected = Array.isArray(printer) ? printer[0] : (printer as string);
+      console.log(`[QZ] Regex match found: ${selected}`);
+      this.printerName = selected;
+      return selected;
     } catch (err) {
       console.warn(`[QZ] Regex search for "POS120" failed. Trying broad search...`);
       
       try {
         // 2. Try broad search (contains 'POS')
         const posPrinters = await qz.printers.find('POS');
-        if (posPrinters && (Array.isArray(posPrinters) ? posPrinters.length > 0 : posPrinters)) {
-          const selected = Array.isArray(posPrinters) ? posPrinters[0] : posPrinters;
+        const selected = Array.isArray(posPrinters) ? posPrinters[0] : (posPrinters as string);
+        
+        if (selected) {
           console.log(`[QZ] Found broad match: ${selected}`);
           this.printerName = selected;
           return selected;
@@ -118,7 +121,8 @@ class QZManager {
   public async getAllPrinters(): Promise<string[]> {
     if (!this.connected) await this.connect();
     try {
-      return await qz.printers.find();
+      const printers = await qz.printers.find();
+      return Array.isArray(printers) ? printers : [printers as string];
     } catch (err) {
       console.error('[QZ] Failed to fetch printers', err);
       return [];
@@ -148,7 +152,7 @@ class QZManager {
     // QZ Tray 'raw' mode bypasses drivers for native ESC/POS
     // For binary data, hex encoding is the most robust across different QZ Tray versions
     let finalData: any = data;
-    let flavor: string | undefined = undefined;
+    let flavor: any = undefined;
 
     if (data instanceof Uint8Array) {
       finalData = Array.from(data)

@@ -97,6 +97,31 @@ export class EscPosRenderer {
     return this;
   }
 
+  /**
+   * Prints a QR Code using standard ESC/POS GS ( k commands.
+   * Calibrated for standard 80mm thermal printers.
+   */
+  public qr(data: string, size: number = 6): this {
+    if (!data) return this;
+
+    const dataBytes = this.encoder.encode(data);
+    const len = dataBytes.length + 3;
+    const pL = len % 256;
+    const pH = Math.floor(len / 256);
+
+    // 1. Function 167: Set QR Model (Model 2)
+    this.buffer.push(0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x43, 0x02, 0x00);
+    // 2. Function 169: Set QR Size
+    this.buffer.push(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, size);
+    // 3. Function 180: Store QR Data
+    this.buffer.push(0x1d, 0x28, 0x6b, pL, pH, 0x31, 0x50, 0x30);
+    this.buffer.push(...Array.from(dataBytes));
+    // 4. Function 181: Print QR Data
+    this.buffer.push(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30);
+
+    return this;
+  }
+
   public feed(lines: number = 1): this {
     this.buffer.push(0x1b, 0x64, lines);
     return this;

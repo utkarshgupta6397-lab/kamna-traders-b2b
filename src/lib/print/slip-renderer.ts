@@ -37,6 +37,7 @@ export type StyledLine = {
   bold?: boolean;
   size?: 'normal' | 'double-width' | 'quad';
   align?: 'left' | 'center' | 'right';
+  type?: 'text' | 'qr';
 };
 
 /**
@@ -88,9 +89,15 @@ export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
   lines.push({ text: `WH     : ${payload.warehouseName}` });
   lines.push({ text: `STAFF  : ${payload.staffName}` });
   
+  // ZOHO SO LINKAGE (ONLY ON MASTER)
   if (payload.zohoSalesorderNumber) {
     lines.push({ text: `ZOHO SO: ${payload.zohoSalesorderNumber}`, bold: true });
+  } else if (payload.zohoSyncStatus === 'FAILED') {
+    lines.push({ text: `ZOHO SO: SYNC FAILED`, bold: true });
+  } else {
+    lines.push({ text: `ZOHO SO: PENDING SYNC`, bold: true });
   }
+
   if (payload.notes) {
     lines.push({ text: `NOTES  : ${payload.notes}` });
   }
@@ -131,6 +138,14 @@ export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
   });
 
   lines.push({ text: '-'.repeat(width) });
+
+  // REDIRECT QR (ONLY ON MASTER)
+  if (payload.qrPayload) {
+    lines.push({ text: 'Scan for Sales Order / Tracking', align: 'center' });
+    lines.push({ text: payload.qrPayload, type: 'qr', align: 'center' });
+    lines.push({ text: '' });
+  }
+
   lines.push({ text: `-- End of Master Slip : ${dispatchSeq} --`, align: 'center', bold: true });
 
   return lines;
@@ -193,10 +208,14 @@ export function renderDispatchSlips(payload: PrintPayload): Uint8Array {
 
   const renderVirtualSlip = (lines: StyledLine[]) => {
     lines.forEach(line => {
-      renderer.align(line.align || 'left');
-      renderer.bold(!!line.bold);
-      renderer.size(line.size || 'normal');
-      renderer.line(line.text);
+      if (line.type === 'qr') {
+        renderer.qr(line.text);
+      } else {
+        renderer.align(line.align || 'left');
+        renderer.bold(!!line.bold);
+        renderer.size(line.size || 'normal');
+        renderer.line(line.text);
+      }
     });
   };
 

@@ -82,7 +82,7 @@ export default async function PrintSlipPage({
       staffName: cart.staff.name,
       items: enrichedItems,
       zoneGroups,
-      qrPayload: JSON.stringify(enrichedItems.map(i => ({ sku: i.skuId, qty: i.qty }))),
+      qrPayload: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/r/${cart.id}`,
       // Zoho Status
       zohoSyncStatus: cart.zohoSyncStatus,
       zohoSyncStep: cart.zohoSyncStep,

@@ -1,6 +1,7 @@
 'use client';
 
 import { StyledLine } from '@/lib/print/slip-renderer';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface Props {
   lines: StyledLine[];
@@ -22,6 +23,14 @@ export default function ThermalSlip({ lines }: Props) {
     >
       <div className="flex flex-col">
         {lines.map((line, idx) => {
+          if (line.type === 'qr') {
+            return (
+              <div key={idx} className="flex justify-center my-4">
+                <QRCodeSVG value={line.text} size={128} level="L" />
+              </div>
+            );
+          }
+
           const alignmentClass = 
             line.align === 'center' ? 'text-center' : 
             line.align === 'right' ? 'text-right' : 'text-left';

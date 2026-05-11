@@ -28,22 +28,14 @@ export async function POST() {
     }
 
     // 2. Prepare Payload
-    const orgId = process.env.ZOHO_BOOKS_ORG_ID;
-    const customerId = process.env.ZOHO_BOOKS_CUSTOMER_ID;
-    const salespersonId = process.env.ZOHO_BOOKS_SALESPERSON_ID || '1759923000001693003';
     const timestamp = Date.now();
-    
-    const payload = {
-      customer_id: customerId,
-      salesperson_id: salespersonId,
-      reference_number: `TEST-SO-${timestamp}`,
-      date: new Date().toISOString().split('T')[0],
-      line_items: activeSkus.map(sku => ({
-        item_id: sku.zohoBooksId2,
-        quantity: 5,
-        rate: sku.price
-      }))
-    };
+    const reference_number = `TEST-SO-${timestamp}`;
+    const date = new Date().toISOString().split('T')[0];
+    const line_items = activeSkus.map(sku => ({
+      item_id: sku.zohoBooksId2,
+      quantity: 5,
+      rate: sku.price
+    }));
 
     // 3. Call Zoho API
     const orgId = process.env.ZOHO_ORGANIZATION_ID || "60027595766";
@@ -53,9 +45,9 @@ export async function POST() {
     const finalPayload = {
       customer_id: process.env.DEFAULT_CUSTOMER_ID || "1759923000000023423",
       salesperson_id: process.env.DEFAULT_SALESPERSON_ID || "1759923000001693003",
-      reference_number: payload.reference_number,
-      date: payload.date,
-      line_items: payload.line_items,
+      reference_number,
+      date,
+      line_items,
     };
 
     console.log('FETCH URL', url);

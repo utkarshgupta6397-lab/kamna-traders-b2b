@@ -108,109 +108,54 @@ export default function PrintDebugPage() {
     }
   };
 
-  const testQR = async () => {
+  const testNewFlow = async () => {
     try {
       setBusy(true);
-      const renderer = new EscPosRenderer();
-      renderer
-        .align('center')
-        .line('QR CODE TEST')
-        .line()
-        .qr('https://kamnatraders.in/verify/test-123')
-        .line()
-        .line('Scan to verify')
-        .feed(3)
-        .cut();
-
-      addLog('Sending QR Code command...');
-      await qzManager.printRaw(renderer.build());
-      addLog('Print job sent', 'success');
-    } catch (err: any) {
-      addLog(`Print failed: ${err.message}`, 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const testBill = async () => {
-    try {
-      setBusy(true);
-      const renderer = new EscPosRenderer();
-      renderer
-        .align('center')
-        .bold().text('KAMNA TRADERS').bold(false)
-        .line('123, Warehouse Area, New Delhi')
-        .line('GSTIN: 07AAAAA0000A1Z5')
-        .line('--------------------------------')
-        .align('left')
-        .line(`Order: #KT-${Math.floor(Math.random() * 9000) + 1000}`)
-        .line(`Date: ${new Date().toLocaleString()}`)
-        .line('--------------------------------')
-        .bold().line('ITEM            QTY   PRICE   AMT').bold(false)
-        .line('--------------------------------')
-        .line('Aashirvaad Atta  5kg  245.00  245')
-        .line('Fortune Oil      1L   155.00  155')
-        .line('Tata Salt        1kg   28.00   28')
-        .line('Maggi Noodles    4pk   60.00   60')
-        .line('--------------------------------')
-        .align('right')
-        .bold().line('TOTAL: INR 488.00').bold(false)
-        .align('center')
-        .line('--------------------------------')
-        .feed(1)
-        .qr('https://kamnatraders.in/bill/test-123')
-        .line('Scan to Pay/Verify')
-        .line()
-        .italic().line('Thank you for shopping!').italic(false)
-        .feed(3)
-        .cut();
-
-      addLog('Sending Sample Bill command...');
-      await qzManager.printRaw(renderer.build());
-      addLog('Sample Bill sent', 'success');
-    } catch (err: any) {
-      addLog(`Print failed: ${err.message}`, 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const testMultiSlip = async () => {
-    try {
-      setBusy(true);
-      const renderer = new EscPosRenderer();
+      addLog('Generating Virtual Slips for Test Flow...');
       
-      // Slip 1: Customer Copy
-      renderer
-        .align('center')
-        .bold().line('--- CUSTOMER COPY ---').bold(false)
-        .line('KAMNA TRADERS')
-        .line('Order #KT-SLIP-789')
-        .feed(2)
-        .line('Amount Paid: INR 1,250.00')
-        .line('Status: SUCCESS')
-        .feed(2)
-        .cut();
+      const testPayload: any = {
+        id: 'TEST-123',
+        dispatchSlipNumber: 'KS-DP-TEST-999',
+        customerName: 'Test Wholesale Customer (Long Name To Verify Wrapping Logic)',
+        warehouseName: 'Main Warehouse',
+        staffName: 'Debug Admin',
+        createdAt: new Date().toISOString(),
+        items: [
+          { skuId: 'SKU001', name: 'Standard Product', qty: 10, unit: 'pcs', zone: 'A' },
+          { skuId: 'SKU002', name: 'Very Long Product Name That Should Wrap Properly On Thermal Paper Without Cutting Qty', qty: 5, unit: 'kg', zone: 'B' }
+        ],
+        zoneGroups: {
+          'A': [{ skuId: 'SKU001', name: 'Standard Product', qty: 10, unit: 'pcs', zone: 'A' }],
+          'B': [{ skuId: 'SKU002', name: 'Very Long Product Name That Should Wrap Properly On Thermal Paper Without Cutting Qty', qty: 5, unit: 'kg', zone: 'B' }]
+        },
+        qrPayload: 'https://test.com'
+      };
 
-      // Slip 2: Warehouse Copy (Internal)
-      renderer
-        .reset()
-        .align('center')
-        .bold().line('--- WAREHOUSE COPY ---').bold(false)
-        .align('left')
-        .line('Order #KT-SLIP-789')
-        .line('Bin: B2-R4')
-        .line('--------------------------------')
-        .bold().line('PICK LIST:').bold(false)
-        .line('- Basmati Rice (5kg)  x 2')
-        .line('- Saffola Oil (5L)    x 1')
-        .line('--------------------------------')
-        .feed(2)
-        .cut();
+      const renderer = new EscPosRenderer();
+      const renderVirtualSlip = (lines: any[]) => {
+        lines.forEach(line => {
+          renderer.align(line.align || 'left');
+          renderer.bold(!!line.bold);
+          renderer.size(line.size || 'normal');
+          renderer.line(line.text);
+        });
+      };
 
-      addLog('Sending Multi-Slip command...');
+      // Master
+      addLog('Rendering Master Slip...');
+      renderVirtualSlip(generateMasterSlip(testPayload));
+      renderer.cut();
+
+      // Zones
+      addLog('Rendering Zone Slips...');
+      Object.entries(testPayload.zoneGroups).forEach(([zone, items]: [any, any]) => {
+        renderVirtualSlip(generateZoneSlip(zone, items, testPayload));
+        renderer.cut();
+      });
+
+      addLog('Sending New Flow job to printer...');
       await qzManager.printRaw(renderer.build());
-      addLog('Multi-Slips sent', 'success');
+      addLog('Test Flow Complete', 'success');
     } catch (err: any) {
       addLog(`Print failed: ${err.message}`, 'error');
     } finally {
@@ -338,33 +283,18 @@ export default function PrintDebugPage() {
               </h2>
               <div className="grid grid-cols-1 gap-3">
                 <button
-                  onClick={testBill}
+                  onClick={testNewFlow}
                   disabled={!connected || busy || !printer}
                   className="w-full flex items-center justify-between p-4 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition-all border border-emerald-100 group disabled:opacity-50"
                 >
                   <div className="flex items-center gap-3">
                     <Printer size={18} className="text-emerald-600" />
                     <div className="text-left">
-                      <span className="font-bold text-emerald-900 block leading-tight">Sample Grocery Bill</span>
-                      <span className="text-[10px] text-emerald-600 font-medium italic">Layout + Items + QR</span>
+                      <span className="font-bold text-emerald-900 block leading-tight">Test Production Layout</span>
+                      <span className="text-[10px] text-emerald-600 font-medium italic">Full Flow (Master + 2 Zones)</span>
                     </div>
                   </div>
                   <ChevronRight size={16} className="text-emerald-300 group-hover:translate-x-1 transition-transform" />
-                </button>
-
-                <button
-                  onClick={testMultiSlip}
-                  disabled={!connected || busy || !printer}
-                  className="w-full flex items-center justify-between p-4 bg-orange-50 hover:bg-orange-100 rounded-xl transition-all border border-orange-100 group disabled:opacity-50"
-                >
-                  <div className="flex items-center gap-3">
-                    <Scissors size={18} className="text-orange-600" />
-                    <div className="text-left">
-                      <span className="font-bold text-orange-900 block leading-tight">Multi-Slip (2 Zones)</span>
-                      <span className="text-[10px] text-orange-600 font-medium italic">Customer + Warehouse Copies</span>
-                    </div>
-                  </div>
-                  <ChevronRight size={16} className="text-orange-300 group-hover:translate-x-1 transition-transform" />
                 </button>
 
                 <button
@@ -374,19 +304,7 @@ export default function PrintDebugPage() {
                 >
                   <div className="flex items-center gap-3">
                     <Play size={18} className="text-blue-500" />
-                    <span className="font-bold text-gray-700">Hello World</span>
-                  </div>
-                  <ChevronRight size={16} className="text-gray-300 group-hover:translate-x-1 transition-transform" />
-                </button>
-
-                <button
-                  onClick={testQR}
-                  disabled={!connected || busy || !printer}
-                  className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-xl transition-all border border-gray-100 group disabled:opacity-50"
-                >
-                  <div className="flex items-center gap-3">
-                    <QrCode size={18} className="text-purple-500" />
-                    <span className="font-bold text-gray-700">QR Code Test</span>
+                    <span className="font-bold text-gray-700">Simple Ping</span>
                   </div>
                   <ChevronRight size={16} className="text-gray-300 group-hover:translate-x-1 transition-transform" />
                 </button>
@@ -398,7 +316,7 @@ export default function PrintDebugPage() {
                 >
                   <div className="flex items-center gap-3">
                     <Scissors size={18} className="text-orange-500" />
-                    <span className="font-bold text-gray-700">Execute Cut</span>
+                    <span className="font-bold text-gray-700">Manual Paper Cut</span>
                   </div>
                   <ChevronRight size={16} className="text-gray-300 group-hover:translate-x-1 transition-transform" />
                 </button>

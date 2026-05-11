@@ -196,23 +196,46 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
   await addZohoTrace(cartId, 'SYNC_WORKER_STARTED');
   
   // 0. Environment Validation
-  const customerId = process.env.DEFAULT_CUSTOMER_ID || process.env.ZOHO_BOOKS_CUSTOMER_ID;
-  const salespersonId = process.env.DEFAULT_SALESPERSON_ID || process.env.ZOHO_BOOKS_SALESPERSON_ID;
+  const rawCustomerId = process.env.DEFAULT_CUSTOMER_ID || process.env.ZOHO_BOOKS_CUSTOMER_ID;
+  const rawSalespersonId = process.env.DEFAULT_SALESPERSON_ID || process.env.ZOHO_BOOKS_SALESPERSON_ID;
   const orgId = process.env.ZOHO_ORGANIZATION_ID || process.env.ZOHO_BOOKS_ORG_ID;
   const redirectUri = process.env.ZOHO_REDIRECT_URI;
 
-  if (!CLIENT_ID || !CLIENT_SECRET || !redirectUri || !orgId || !customerId) {
-    const missing = [];
-    if (!CLIENT_ID) missing.push('ZOHO_CLIENT_ID');
-    if (!CLIENT_SECRET) missing.push('ZOHO_CLIENT_SECRET');
-    if (!redirectUri) missing.push('ZOHO_REDIRECT_URI');
-    if (!orgId) missing.push('ZOHO_BOOKS_ORG_ID');
-    if (!customerId) missing.push('ZOHO_BOOKS_CUSTOMER_ID');
+  // STRICT ID VALIDATION (Preventing JS precision loss)
+  const validateId = (id: any, name: string) => {
+    if (!id) return { valid: false, error: `${name} is missing` };
+    const idStr = String(id).trim();
+    // Zoho IDs in this org are typically 19 digits
+    if (!/^\d{19}$/.test(idStr)) {
+      return { 
+        valid: false, 
+        error: `${name} is invalid (expected 19 digits, got ${idStr.length}). Value: ${idStr}` 
+      };
+    }
+    return { valid: true, value: idStr };
+  };
+
+  const customerCheck = validateId(rawCustomerId, 'DEFAULT_CUSTOMER_ID');
+  const salespersonCheck = validateId(rawSalespersonId, 'DEFAULT_SALESPERSON_ID');
+
+  if (!customerCheck.valid || !salespersonCheck.valid || !CLIENT_ID || !CLIENT_SECRET || !redirectUri || !orgId) {
+    const errors = [];
+    if (!customerCheck.valid) errors.push(customerCheck.error);
+    if (!salespersonCheck.valid) errors.push(salespersonCheck.error);
+    if (!CLIENT_ID) errors.push('ZOHO_CLIENT_ID missing');
+    if (!CLIENT_SECRET) errors.push('ZOHO_CLIENT_SECRET missing');
+    if (!redirectUri) errors.push('ZOHO_REDIRECT_URI missing');
+    if (!orgId) errors.push('ZOHO_BOOKS_ORG_ID missing');
     
-    const msg = `CRITICAL: Missing environment variables: ${missing.join(', ')}`;
+    const msg = `CRITICAL VALIDATION FAILED: ${errors.join(' | ')}`;
     console.error(`[ZOHO][${cartId}] ${msg}`);
     return { success: false, error: msg };
   }
+
+  const customerId = customerCheck.value!;
+  const salespersonId = salespersonCheck.value!;
+
+  console.log(`[ZOHO][${cartId}] ID Validation Passed: Customer=${customerId}, Salesperson=${salespersonId}`);
 
   const updateStep = async (step: string, status: string = 'PENDING', extra: any = {}) => {
     console.log(`[ZOHO][${cartId}] STEP: ${step} (${status})`);

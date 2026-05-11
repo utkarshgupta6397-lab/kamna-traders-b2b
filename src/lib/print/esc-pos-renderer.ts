@@ -60,6 +60,27 @@ export class EscPosRenderer {
     return this;
   }
 
+  private wrapText(text: string, width: number): string[] {
+    const lines: string[] = [];
+    let currentLine = '';
+    const words = text.split(' ');
+
+    for (const word of words) {
+      if ((currentLine + word).length <= width) {
+        currentLine += (currentLine ? ' ' : '') + word;
+      } else {
+        if (currentLine) lines.push(currentLine);
+        currentLine = word;
+        while (currentLine.length > width) {
+          lines.push(currentLine.substring(0, width));
+          currentLine = currentLine.substring(width);
+        }
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+  }
+
   public text(content: string): this {
     const encoded = this.encoder.encode(content);
     this.buffer.push(...Array.from(encoded));
@@ -67,47 +88,23 @@ export class EscPosRenderer {
   }
 
   public line(content: string = ''): this {
-    this.text(content + '\n');
+    if (!content) {
+      this.text('\n');
+      return this;
+    }
+    const wrapped = this.wrapText(content, 46); // Safe buffer (reduced from 48)
+    wrapped.forEach(l => this.text(l + '\n'));
     return this;
   }
 
   public feed(lines: number = 1): this {
-    // ESC d n
     this.buffer.push(0x1b, 0x64, lines);
     return this;
   }
 
   public cut(): this {
-    // Add a few feeds before cutting for better visibility
     this.feed(4);
     this.buffer.push(...Array.from(COMMANDS.CUT_PARTIAL));
-    return this;
-  }
-
-  /**
-   * Generates a QR Code using standard GS ( k commands.
-   * Note: Implementation varies by printer raster capability.
-   */
-  public qr(data: string, size: number = 6): this {
-    const content = this.encoder.encode(data);
-    const n = content.length + 3;
-    const pL = n % 256;
-    const pH = Math.floor(n / 256);
-
-    // 1. Store data in symbol storage area
-    // GS ( k pL pH cn fn m n (dk)
-    this.buffer.push(0x1d, 0x28, 0x6b, pL, pH, 0x31, 0x50, 0x30);
-    this.buffer.push(...Array.from(content));
-
-    // 2. Set QR code size
-    this.buffer.push(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, size);
-
-    // 3. Set error correction level (L=48, M=49, Q=50, H=51)
-    this.buffer.push(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 49);
-
-    // 4. Print the symbol data
-    this.buffer.push(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30);
-
     return this;
   }
 

@@ -1,5 +1,5 @@
 
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { formatCPDValue } from './consumption';
 
@@ -13,7 +13,7 @@ export async function exportStockToPDF(data: {
   };
 }) {
   const { warehouses, items, filters } = data;
-  const doc = jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   
   const timestamp = new Date().toLocaleString('en-IN', {
     day: '2-digit',

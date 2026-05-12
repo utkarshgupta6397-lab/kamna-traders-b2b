@@ -10,11 +10,9 @@ import ThermalSlip from '@/components/thermal-preview/ThermalSlip';
 
 export default function PrintSlipClient({
   cartId,
-  autoprint,
   serverPayload,
 }: {
   cartId: string;
-  autoprint: boolean;
   serverPayload: PrintPayload | null;
 }) {
   const [payload, setPayload] = useState<PrintPayload | null>(serverPayload);
@@ -362,17 +360,25 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
                     )}
                   </div>
                 </div>
-              ) : zohoStatus.status === 'FAILED' ? (
+              ) : (zohoStatus.status === 'FAILED' || (!zohoStatus.id && zohoStatus.status !== 'SUCCESS')) ? (
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red-600">
-                    <AlertCircle size={18} />
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${zohoStatus.status === 'FAILED' ? 'bg-red-50 text-red-600' : 'bg-yellow-50 text-yellow-600'}`}>
+                    {zohoStatus.status === 'FAILED' ? <AlertCircle size={18} /> : <Loader2 size={18} className="animate-spin" />}
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-xs font-black text-red-700 uppercase tracking-tight">Sync Failed</span>
+                    <span className={`text-xs font-black uppercase tracking-tight ${zohoStatus.status === 'FAILED' ? 'text-red-700' : 'text-yellow-700'}`}>
+                      {zohoStatus.status === 'FAILED' ? 'Sync Failed' : 'Sync Pending'}
+                    </span>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-red-400 truncate max-w-[120px]">{zohoStatus.error || 'API Error'}</span>
-                      <button onClick={handleZohoRetry} disabled={retrying} className="text-[10px] text-red-700 hover:underline font-black uppercase">
-                        {retrying ? 'Retrying...' : 'Retry'}
+                      <span className="text-[10px] text-gray-400 truncate max-w-[120px]">
+                        {zohoStatus.error || (zohoStatus.status === 'FAILED' ? 'API Error' : 'Waiting for Zoho...')}
+                      </span>
+                      <button 
+                        onClick={handleZohoRetry} 
+                        disabled={retrying} 
+                        className="text-[10px] text-blue-700 hover:underline font-black uppercase"
+                      >
+                        {retrying ? 'Retrying...' : 'Retry Now'}
                       </button>
                     </div>
                   </div>
@@ -400,7 +406,7 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
           </div>
 
           <Link href="/staff/dashboard" className="text-sm text-[#1A2766] hover:underline">← Back</Link>
-          <PrintButton auto={autoprint} payload={payload} />
+          <PrintButton payload={payload} />
         </div>
       </div>
 

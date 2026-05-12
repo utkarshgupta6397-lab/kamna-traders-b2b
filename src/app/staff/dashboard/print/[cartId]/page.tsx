@@ -3,13 +3,10 @@ import PrintSlipClient from '@/components/PrintSlipClient';
 
 export default async function PrintSlipPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ cartId: string }>;
-  searchParams: Promise<{ autoprint?: string }>;
 }) {
   const { cartId } = await params;
-  const { autoprint } = await searchParams;
 
   // Server-side fallback: fetch cart data for direct URL access / bookmarks
   const cart = await prisma.cart.findUnique({
@@ -100,7 +97,6 @@ export default async function PrintSlipPage({
   return (
     <PrintSlipClient
       cartId={cartId}
-      autoprint={autoprint === 'true'}
       serverPayload={serverPayload}
     />
   );

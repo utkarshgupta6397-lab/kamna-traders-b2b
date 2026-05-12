@@ -208,35 +208,53 @@ export async function POST(request: Request) {
     // Add initial trace
     await addZohoTrace(cartId, 'DISPATCH_CREATED');
 
-    // 7.5. Zoho Sync (Global Enablement with BaseURL Safety)
-    // ═══════════════════════════════════════════════════════════════
-    await addZohoTrace(cartId, 'SYNC_TRIGGER_ATTEMPTED');
-
-    console.log(`[DISPATCH][${cartId}] ABOUT TO TRIGGER ZOHO`);
-    await addZohoTrace(cartId, 'SYNC_TRIGGERED');
-
-    // Determine absolute base URL for server-side internal fetch
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
-                    (process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : '');
+    // 7.5. Zoho Sync Trigger (Background)
+    // Determining baseUrl from headers ensures it works on LAN, Localhost, and Vercel
+    const host = request.headers.get('host') || 'localhost:3000';
+    const protocol = request.headers.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
+    const baseUrl = `${protocol}://${host}`;
 
     if (baseUrl) {
-      // Detached trigger - DO NOT AWAIT the main worker, but we log the fetch lifecycle
+      // Detached trigger - DO NOT AWAIT to keep response fast
       (async () => {
+        const syncUrl = `${baseUrl}/api/zoho/sync-dispatch`;
         try {
+          console.log(`[ZOHO][${cartId}] Triggering background sync via: ${syncUrl}`);
           await addZohoTrace(cartId, 'SYNC_FETCH_SENT');
-          const response = await fetch(`${baseUrl}/api/zoho/sync-dispatch`, {
+          
+          const response = await fetch(syncUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ cartId })
           });
-          console.log(`[DISPATCH][${cartId}] Background fetch status:`, response.status);
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Status ${response.status}: ${errorText}`);
+          }
+          
+          console.log(`[ZOHO][${cartId}] Sync trigger successful (status: ${response.status})`);
           await addZohoTrace(cartId, `SYNC_FETCH_RESPONSE_${response.status}`);
-        } catch (err) {
-          console.error(`[DISPATCH][${cartId}] Background sync trigger failed:`, err);
-          await addZohoTrace(cartId, 'SYNC_FETCH_FAILED');
+        } catch (err: any) {
+          console.error(`[ZOHO][${cartId}] Sync trigger CRITICAL ERROR:`, err.message);
+          
+          // Persistence: Mark as FAILED so retry UI appears
+          try {
+            await prisma.cart.update({
+              where: { id: cartId },
+              data: { 
+                zohoSyncStatus: 'FAILED',
+                zohoSyncStep: 'TRIGGER_FAILED',
+                zohoSyncError: `Trigger failed: ${err.message}`
+              }
+            });
+            await addZohoTrace(cartId, 'SYNC_FETCH_FAILED');
+          } catch (dbErr) {
+            console.error(`[ZOHO][${cartId}] Failed to persist trigger failure:`, dbErr);
+          }
         }
       })();
-      console.log(`[DISPATCH][${cartId}] ZOHO TRIGGER CALLED`);
+      console.log(`[DISPATCH][${cartId}] Zoho sync initiated background trigger`);
     } else {
       const reason = 'NO_BASE_URL';
       console.error(`[ZOHO] Sync skipped: ${reason}`, {

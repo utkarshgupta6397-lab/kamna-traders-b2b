@@ -5,6 +5,8 @@ import { Search, Plus, Trash2, Printer, Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useStaffCartStore } from '@/store/staffCartStore';
+import { qzManager } from '@/lib/print/qz-tray';
+import { renderDispatchSlips } from '@/lib/print/slip-renderer';
 
 type WarehouseOption = {
   id: string;
@@ -47,6 +49,23 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isThermalReady, setIsThermalReady] = useState(false);
+
+  // Detect Thermal Printer for Silent Printing
+  useEffect(() => {
+    const checkThermal = async () => {
+      try {
+        const connected = await qzManager.connect();
+        if (connected) {
+          const printer = await qzManager.findPrinter();
+          setIsThermalReady(!!printer);
+        }
+      } catch (e) {
+        console.warn('[PRINT] Thermal detection failed', e);
+      }
+    };
+    checkThermal();
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -79,7 +98,7 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!warehouseId || !customerName || cartItems.length === 0) {
+    if (isSubmitting || !warehouseId || !customerName || cartItems.length === 0) {
       toast.error('Required fields missing. Please select a warehouse and enter customer name.');
       return;
     }
@@ -115,8 +134,21 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
           console.error('[DIAG_ERROR] Failed to save diagnostics', e);
         }
 
+        // 2. Trigger Silent Thermal Print (Background)
+        if (isThermalReady && data.printPayload) {
+          const loadingToast = toast.loading('Sending to thermal printer...');
+          try {
+            const buffer = renderDispatchSlips(data.printPayload);
+            await qzManager.printRaw(buffer);
+            toast.success('Dispatch note sent to printer', { id: loadingToast });
+          } catch (err: any) {
+            console.error('[PRINT_ERROR] Silent thermal print failed', err);
+            toast.error('Thermal print failed. You can reprint from the next page.', { id: loadingToast });
+          }
+        }
+
         clearCart();
-        router.push(`/staff/dashboard/print/${data.cartId}?autoprint=true&debugPerf=${searchParams.get('debugPerf') === 'true'}`);
+        router.push(`/staff/dashboard/print/${data.cartId}?debugPerf=${searchParams.get('debugPerf') === 'true'}`);
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error(data.error || 'Unable to submit cart.');

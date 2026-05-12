@@ -89,13 +89,13 @@ export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
   lines.push({ text: `WH     : ${payload.warehouseName}` });
   lines.push({ text: `STAFF  : ${payload.staffName}` });
   
-  // ZOHO SO LINKAGE (ONLY ON MASTER)
+  // ZOHO SO LINKAGE (ONLY ON MASTER) - REMOVED "Zoho SO:" LABEL
   if (payload.zohoSalesorderNumber) {
-    lines.push({ text: `ZOHO SO: ${payload.zohoSalesorderNumber}`, bold: true });
+    lines.push({ text: payload.zohoSalesorderNumber, bold: true });
   } else if (payload.zohoSyncStatus === 'FAILED') {
-    lines.push({ text: `ZOHO SO: SYNC FAILED`, bold: true });
+    lines.push({ text: 'SYNC FAILED', bold: true });
   } else {
-    lines.push({ text: `ZOHO SO: PENDING SYNC`, bold: true });
+    lines.push({ text: 'PENDING SYNC', bold: true });
   }
 
   if (payload.notes) {
@@ -107,6 +107,8 @@ export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
   lines.push({ text: '#   ITEM [SKU]'.padEnd(width - 12) + 'QTY/UOM'.padStart(12), bold: true });
   lines.push({ text: '-'.repeat(width) });
 
+  const ITEM_INDENT = '    '; // 4 spaces for consistent hanging indent
+
   let totalItems = 0;
   Object.entries(payload.zoneGroups).forEach(([zone, items]) => {
     lines.push({ text: `[ ZONE: ${zone.toUpperCase()} ]`, bold: true });
@@ -114,7 +116,7 @@ export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
     
     items.forEach((item) => {
       totalItems++;
-      const indexStr = `${totalItems}`.padEnd(4); // "1   "
+      const indexStr = `${totalItems}`.padEnd(4); // e.g. "1   "
       const qtyStr = `${item.qty} ${item.unit}`.padStart(12);
       
       // Inline SKU: "Item Name [SKU]"
@@ -129,8 +131,8 @@ export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
           // First line includes index and qty
           lines.push({ text: `${indexStr}${nameLine.padEnd(nameWidth)} ${qtyStr}` });
         } else {
-          // Subsequent lines are indented 4 spaces to align with name start
-          lines.push({ text: `    ${nameLine}` });
+          // Subsequent lines use the fixed indentation to align with name start
+          lines.push({ text: `${ITEM_INDENT}${nameLine}` });
         }
       });
     });
@@ -162,6 +164,7 @@ export function generateZoneSlip(zone: string, items: PrintItem[], payload: Prin
   });
 
   const dispatchSeq = payload.dispatchSlipNumber?.split('-').pop() || '000';
+  const ITEM_INDENT = '    ';
 
   lines.push({ text: `ZONE SLIP: ${zone.toUpperCase()}`, size: 'double-width', bold: true, align: 'center' });
   lines.push({ text: `REF: ${payload.dispatchSlipNumber || payload.id}`, align: 'center', bold: true });
@@ -187,7 +190,7 @@ export function generateZoneSlip(zone: string, items: PrintItem[], payload: Prin
       if (lineIdx === 0) {
         lines.push({ text: `${indexStr}${nameLine.padEnd(nameWidth)} ${qtyStr}`, bold: true });
       } else {
-        lines.push({ text: `    ${nameLine}`, bold: true });
+        lines.push({ text: `${ITEM_INDENT}${nameLine}`, bold: true });
       }
     });
   });

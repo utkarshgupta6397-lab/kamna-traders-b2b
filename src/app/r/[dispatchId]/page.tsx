@@ -37,7 +37,7 @@ export default async function RedirectPage({
   }
 
   // If Zoho Sync is successful and we have a Sales Order ID, redirect
-  const orgId = process.env.ZOHO_BOOKS_ORG_ID;
+  const orgId = process.env.ZOHO_ORGANIZATION_ID;
   if (cart.zohoSyncStatus === 'SUCCESS' && cart.zohoSalesorderId && orgId) {
     const booksUrl = `https://books.zoho.in/app/${orgId}#/salesorders/${cart.zohoSalesorderId}`;
     redirect(booksUrl);

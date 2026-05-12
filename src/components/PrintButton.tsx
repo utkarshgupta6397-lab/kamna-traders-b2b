@@ -1,20 +1,12 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { qzManager } from '@/lib/print/qz-tray';
 import { renderDispatchSlips, PrintPayload } from '@/lib/print/slip-renderer';
 import { Printer, Loader2, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-interface Props {
-  auto?: boolean;
-  payload?: PrintPayload | null;
-}
-
-export default function PrintButton({ auto, payload }: Props) {
-  const router = useRouter();
-  const hasTriggered = useRef(false);
+export default function PrintButton({ payload }: { payload?: PrintPayload | null }) {
   const [isThermalReady, setIsThermalReady] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
 
@@ -54,24 +46,6 @@ export default function PrintButton({ auto, payload }: Props) {
     // B. Fallback to Browser Print
     window.print();
   };
-
-  // 2. Auto-Print Logic
-  useEffect(() => {
-    if (auto && !hasTriggered.current && payload) {
-      hasTriggered.current = true;
-      
-      const timer = setTimeout(() => {
-        handlePrint();
-        
-        // Consume the autoprint state to prevent repeat triggers
-        const url = new URL(window.location.href);
-        url.searchParams.delete('autoprint');
-        router.replace(url.pathname + url.search, { scroll: false });
-      }, 1000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [auto, payload, isThermalReady]);
 
   return (
     <button 

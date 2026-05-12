@@ -8,6 +8,9 @@ import { useCartStore } from '@/store/cartStore';
 import { useSkuStore } from '@/store/skuStore';
 import { Printer, Scan, Loader2, RefreshCw, AlertTriangle, Eye, EyeOff, ChevronDown, Check } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { qzManager } from '@/lib/print/qz-tray';
+import { renderDispatchSlips } from '@/lib/print/slip-renderer';
+import toast from 'react-hot-toast';
 
 interface Category { id: string; name: string; count: number }
 interface Warehouse { id: string; name: string }
@@ -111,7 +114,24 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   const [customerName, setCustomerName] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [isThermalReady, setIsThermalReady] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+
+  // Detect Thermal Printer for Silent Printing
+  useEffect(() => {
+    const checkThermal = async () => {
+      try {
+        const connected = await qzManager.connect();
+        if (connected) {
+          const printer = await qzManager.findPrinter();
+          setIsThermalReady(!!printer);
+        }
+      } catch (e) {
+        console.warn('[PRINT] Thermal detection failed', e);
+      }
+    };
+    checkThermal();
+  }, []);
   const [showCaseFilter, setShowCaseFilter] = useState(false);
   const fetchInProgress = useRef(false);
   const lastFetchTime = useRef(0);
@@ -342,7 +362,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
 
   // ─── Cart Submit ───────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (!customerName || !warehouseId || items.length === 0) return;
+    if (submitting || !customerName || !warehouseId || items.length === 0) return;
     const tClick = Date.now();
     setSubmitting(true);
     try {
@@ -369,7 +389,20 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
           console.error('[DIAG_ERROR] Failed to save diagnostics', e);
         }
 
-        router.push(`/staff/dashboard/print/${cartId}?autoprint=true&debugPerf=${searchParams.get('debugPerf') === 'true'}`);
+        // 2. Trigger Silent Thermal Print (Background)
+        if (isThermalReady && printPayload) {
+          const loadingToast = toast.loading('Sending to thermal printer...');
+          try {
+            const buffer = renderDispatchSlips(printPayload);
+            await qzManager.printRaw(buffer);
+            toast.success('Dispatch note sent to printer', { id: loadingToast });
+          } catch (err: any) {
+            console.error('[PRINT_ERROR] Silent thermal print failed', err);
+            toast.error('Thermal print failed. You can reprint from the next page.', { id: loadingToast });
+          }
+        }
+
+        router.push(`/staff/dashboard/print/${cartId}?debugPerf=${searchParams.get('debugPerf') === 'true'}`);
         setTimeout(() => clearCart(), 100);
       } else {
         const data = await res.json().catch(() => null);

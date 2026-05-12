@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   try {
     const { cartId } = await request.json();
+    console.log(`[ZOHO_DEBUG] POST request received for cartId: ${cartId}`);
 
     if (!cartId) {
       return NextResponse.json({ error: 'cartId is required' }, { status: 400 });

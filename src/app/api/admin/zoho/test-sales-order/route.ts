@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import { getZohoTokens } from '@/lib/zoho-auth';
+import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
 import { getSession } from '@/lib/auth';
 import { NextResponse } from 'next/server';
 
@@ -14,31 +14,10 @@ export async function POST() {
     return NextResponse.json({ error: 'Zoho not connected or token refresh failed' }, { status: 400 });
   }
 
-  try {
-    // 1. Fetch Active SKUs with Zoho IDs
-    const activeSkus = await prisma.sku.findMany({
-      where: {
-        isActive: true,
-        zohoBooksId2: { not: null }
-      }
-    });
-
-    if (activeSkus.length === 0) {
-      return NextResponse.json({ error: 'No active SKUs with Zoho Books IDs found' }, { status: 400 });
-    }
-
-    // 2. Prepare Payload
-    const timestamp = Date.now();
-    const reference_number = `TEST-SO-${timestamp}`;
-    const date = new Date().toISOString().split('T')[0];
-    const line_items = activeSkus.map(sku => ({
-      item_id: sku.zohoBooksId2,
-      quantity: 5,
-      rate: sku.price
-    }));
-
-    // 3. Call Zoho API
-    const orgId = process.env.ZOHO_ORGANIZATION_ID || "60027595766";
+  const orgId = getZohoOrgId();
+  if (!orgId) {
+    return NextResponse.json({ error: 'ZOHO_BOOKS_ORG_ID missing in environment' }, { status: 400 });
+  }
     const apiBase = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
     const url = `${apiBase}/books/v3/salesorders?organization_id=${orgId}`;
     

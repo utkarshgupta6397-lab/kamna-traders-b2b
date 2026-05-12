@@ -1,4 +1,4 @@
-import { getZohoTokens } from '@/lib/zoho-auth';
+import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
 import { prisma } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
@@ -6,6 +6,8 @@ export async function GET() {
   try {
     const tokenRecord = await prisma.zohoToken.findUnique({ where: { id: 'singleton' } });
     const accessToken = await getZohoTokens();
+    const orgId = getZohoOrgId();
+
     if (!accessToken) {
       return NextResponse.json({ 
         error: 'OAuth token missing or expired',
@@ -33,7 +35,7 @@ export async function GET() {
     const customerId = process.env.DEFAULT_CUSTOMER_ID;
     let contactData = null;
     if (customerId) {
-      const contactRes = await fetch(`https://www.zohoapis.in/books/v3/contacts/${customerId}?organization_id=${process.env.ZOHO_ORGANIZATION_ID}`, {
+      const contactRes = await fetch(`https://www.zohoapis.in/books/v3/contacts/${customerId}?organization_id=${orgId}`, {
         headers: { 'Authorization': `Zoho-oauthtoken ${accessToken}` }
       });
       contactData = await contactRes.json();
@@ -42,7 +44,7 @@ export async function GET() {
     return NextResponse.json({
       success: orgRes.ok,
       user: userData,
-      configured_org_id: process.env.ZOHO_ORGANIZATION_ID,
+      configured_org_id: orgId,
       configured_customer_id: customerId,
       zoho_org_response: orgData,
       zoho_contact_response: contactData

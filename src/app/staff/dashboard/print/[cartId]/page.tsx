@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import PrintSlipClient from '@/components/PrintSlipClient';
+import { getZohoOrgId } from '@/lib/zoho-auth';
 
 export default async function PrintSlipPage({
   params,
@@ -40,7 +41,7 @@ export default async function PrintSlipPage({
   let serverPayload = null;
 
   if (cart) {
-    const orgId = process.env.ZOHO_BOOKS_ORG_ID;
+    const orgId = getZohoOrgId();
     const booksUrl = (cart.zohoSyncStatus === 'SUCCESS' && cart.zohoSalesorderId && orgId)
       ? `https://books.zoho.in/app/${orgId}#/salesorders/${cart.zohoSalesorderId}`
       : null;

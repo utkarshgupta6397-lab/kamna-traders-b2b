@@ -17,6 +17,15 @@ if (!CLIENT_ID || !CLIENT_SECRET || !process.env.ZOHO_REDIRECT_URI) {
   console.warn('[ZohoAuth] CRITICAL: Zoho OAuth credentials or ZOHO_REDIRECT_URI missing in environment variables.');
 }
 
+/**
+ * Robustly retrieves the Zoho Organization ID from environment variables.
+ * Prioritizes ZOHO_BOOKS_ORG_ID.
+ */
+export function getZohoOrgId(): string {
+  const id = (process.env.ZOHO_BOOKS_ORG_ID || process.env.ZOHO_ORGANIZATION_ID || '').trim();
+  return id;
+}
+
 export interface ZohoTokens {
   accessToken: string;
   refreshToken: string;
@@ -198,8 +207,16 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
   // 0. Environment Validation
   const rawCustomerId = process.env.DEFAULT_CUSTOMER_ID || process.env.ZOHO_BOOKS_CUSTOMER_ID;
   const rawSalespersonId = process.env.DEFAULT_SALESPERSON_ID || process.env.ZOHO_BOOKS_SALESPERSON_ID;
-  const orgId = process.env.ZOHO_ORGANIZATION_ID || process.env.ZOHO_BOOKS_ORG_ID;
+  
+  // PRIMARY SOURCE OF TRUTH FOR ORG ID
+  const orgId = getZohoOrgId();
   const redirectUri = process.env.ZOHO_REDIRECT_URI;
+
+  console.log(`[ZOHO][${cartId}] ENV_CHECK:`, {
+    orgId_length: orgId.length,
+    has_cert: !!process.env.ZOHO_CLIENT_ID,
+    env_used: process.env.ZOHO_BOOKS_ORG_ID ? 'ZOHO_BOOKS_ORG_ID' : 'ZOHO_ORGANIZATION_ID'
+  });
 
   // STRICT ID VALIDATION (Preventing JS precision loss)
   const validateId = (id: any, name: string) => {
@@ -339,7 +356,10 @@ export async function syncDispatchToZoho(cartId: string): Promise<{ success: boo
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
 
-    const orgId = process.env.ZOHO_ORGANIZATION_ID;
+    if (!orgId) {
+      throw new Error("CRITICAL: ZOHO_BOOKS_ORG_ID is empty or undefined. Cannot construct API URL.");
+    }
+
     const apiBase = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
     const url = `${apiBase}/books/v3/salesorders?organization_id=${orgId}`;
 

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import CartRegistryClient from '@/components/CartRegistryClient';
+import { getZohoOrgId } from '@/lib/zoho-auth';
 
 export default async function CartsPage({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   const session = await getSession();
@@ -32,7 +33,7 @@ export default async function CartsPage({ searchParams }: { searchParams: Promis
       <CartRegistryClient 
         warehouses={warehouses}
         staff={staff}
-        zohoOrgId={process.env.ZOHO_BOOKS_ORG_ID || ''}
+        zohoOrgId={getZohoOrgId()}
         canManageCarts={user?.canManageCarts || user?.role === 'ADMIN'}
       />
     </div>

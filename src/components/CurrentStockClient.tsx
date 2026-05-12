@@ -5,7 +5,7 @@ import { Search, Filter, Box, ChevronDown, Check, X, TrendingUp, AlertTriangle, 
 import SkuInsightsDrawer from './SkuInsightsDrawer';
 import { formatStockDate } from '@/lib/date-utils';
 import { DOI_THRESHOLDS } from '@/lib/config';
-import { formatCPDValue, calculateDOIInfo } from '@/lib/inventory/consumption';
+import { formatCPDValue, calculateDOIInfo, calculateConsumptionDenominator } from '@/lib/inventory/consumption';
 import { exportStockToPDF } from '@/lib/inventory/export-pdf';
 import { FileDown } from 'lucide-react';
 
@@ -156,7 +156,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
       if (cData) {
         if (!isSubset) {
           // Use pre-aggregated overall data for performance when all WHs shown
-          const denom = calculateDenominator(cData.overallFirstSale, cData.overallActiveDaysCount);
+          const denom = calculateConsumptionDenominator(cData.overallFirstSale, cData.overallActiveDaysCount);
           netCPD = cData.overallOut / denom;
         } else {
           // Aggregate selected warehouses
@@ -175,7 +175,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
             }
           });
 
-          const denom = calculateDenominator(firstSale, maxActiveDays);
+          const denom = calculateConsumptionDenominator(firstSale, maxActiveDays);
           netCPD = totalOut / denom;
         }
       }

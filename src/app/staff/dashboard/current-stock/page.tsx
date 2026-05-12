@@ -117,10 +117,12 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
 
   // 3. Convert Sets to counts for client transmission and calculate base metrics
   Object.values(consumptionData).forEach((sku: any) => {
+    sku.overallActiveDaysCount = sku.overallActiveDays.size;
+    
     // Overall metrics
     const overallDenom = calculateConsumptionDenominator(
       sku.overallFirstSale,
-      sku.overallActiveDays.size
+      sku.overallActiveDaysCount
     );
     sku.overallCPD = sku.overallOut / overallDenom;
 
@@ -128,12 +130,12 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
 
     // Warehouse metrics
     Object.entries(sku.warehouses).forEach(([whId, wh]: [string, any]) => {
+      wh.activeDaysCount = wh.activeDays.size;
       const whDenom = calculateConsumptionDenominator(
         wh.firstSale,
-        wh.activeDays.size
+        wh.activeDaysCount
       );
       wh.cpd = wh.out / whDenom;
-      wh.activeDaysCount = wh.activeDays.size;
       delete wh.activeDays;
     });
   });

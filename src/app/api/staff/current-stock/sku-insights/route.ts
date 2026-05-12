@@ -164,16 +164,34 @@ export async function GET(request: Request) {
       outwardDatesOverall.size
     );
     const overallAvgDailyOut = totalOut / overallDenom;
-
-    return NextResponse.json({
-      skuId,
-      movements,
-      totalsByWarehouse,
-      overallTotals: {
+    const overallTotals = {
         in: totalIn,
         out: totalOut,
         avgDailyOut: overallAvgDailyOut,
         denominator: overallDenom
+    };
+
+    return NextResponse.json({
+      sku: {
+        id: sku.id,
+        name: sku.name,
+        totalStock: sku.inventory.reduce((sum, inv) => sum + inv.qty, 0),
+        inventoryByWarehouse: sku.inventory.reduce((acc, inv) => {
+          acc[inv.warehouseId] = { qty: inv.qty };
+          return acc;
+        }, {} as Record<string, { qty: number }>),
+        unit: sku.unit
+      },
+      movements,
+      totalsByWarehouse,
+      overallTotals,
+      deployment: {
+        version: "v1.2.0-inventory-unification",
+        timestamp: new Date().toISOString()
+      }
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, max-age=0, must-revalidate'
       }
     });
 

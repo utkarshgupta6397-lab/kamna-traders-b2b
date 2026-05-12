@@ -40,6 +40,17 @@ class QZManager {
         ]);
         
         this.connection = true;
+
+        // Auto-load printer from storage if not set
+        if (!this.printer) {
+          const { getQZConfig } = await import('@/lib/print/qz-storage');
+          const config = await getQZConfig();
+          if (config?.printerName) {
+            console.log(`[QZ] Auto-loaded printer from config: ${config.printerName}`);
+            this.printer = config.printerName;
+          }
+        }
+
         return true;
       } catch (err) {
         console.warn('[QZ] Connection failed:', err);
@@ -53,10 +64,15 @@ class QZManager {
     return this.connectingPromise;
   }
 
-  async findPrinter(name: string = 'POS120'): Promise<string | null> {
+  async findPrinter(name?: string): Promise<string | null> {
     try {
       if (!this.connection) await this.connect();
-      const printer = await qz.printers.find(name);
+      
+      // If no name provided, use the one we have or the default
+      const targetName = name || this.printer || 'POS120';
+      
+      console.log(`[QZ] Finding printer: ${targetName}`);
+      const printer = await qz.printers.find(targetName);
       const selected = Array.isArray(printer) ? (printer[0] || null) : (printer || null);
       this.printer = selected;
       return selected;

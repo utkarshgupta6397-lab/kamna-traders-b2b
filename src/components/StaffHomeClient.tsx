@@ -151,9 +151,26 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
 
   // Detect Thermal Printer for Silent Printing
   // ─── Thermal / Print Sync Logic ─────────────────────────────
-  // TEMPORARILY DISABLED to stabilize CPU and Memory
   useEffect(() => {
-    // Disabled
+    async function checkQZReadiness() {
+      try {
+        const { getQZConfig } = await import('@/lib/print/qz-storage');
+        const config = await getQZConfig();
+        
+        if (config?.certificate && config?.privateKey && config?.printerName) {
+          console.log(`[QZ_INIT] Found valid local config for ${config.printerName}. Pre-connecting...`);
+          setIsThermalReady(true);
+          // Pre-warm the connection
+          qzManager.connect().catch(() => {});
+        } else {
+          console.log('[QZ_INIT] No valid local config found for silent printing.');
+          setIsThermalReady(false);
+        }
+      } catch (err) {
+        console.warn('[QZ_INIT] Readiness check failed:', err);
+      }
+    }
+    checkQZReadiness();
   }, []);
   const [showCaseFilter, setShowCaseFilter] = useState(false);
   const fetchInProgress = useRef(false);
@@ -394,14 +411,21 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
         }
 
         // 2. Trigger Silent Thermal Print (Background)
+        console.log(`[DISPATCH_PRINT] Checking silent print readiness... isThermalReady: ${isThermalReady}, hasPayload: ${!!printPayload}`);
+        
         if (isThermalReady && printPayload) {
+          console.log('[DISPATCH_PRINT] Silent print triggered.');
           const loadingToast = toast.loading('Sending to thermal printer...');
           try {
+            console.log('[DISPATCH_PRINT] Rendering slips...');
             const buffer = renderDispatchSlips(printPayload);
+            
+            console.log(`[DISPATCH_PRINT] Buffer generated (${buffer.length} bytes). Sending to QZ...`);
             await qzManager.printRaw(buffer);
+            
+            console.log('[DISPATCH_PRINT] QZ Print Success');
             toast.success('Dispatch note sent to printer', { id: loadingToast });
           } catch (err: any) {
-            console.error('[PRINT_ERROR] Silent thermal print failed', err);
             toast.error('Thermal print failed. You can reprint from the next page.', { id: loadingToast });
           }
         }

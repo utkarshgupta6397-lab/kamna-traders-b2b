@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import * as qz from 'qz-tray';
 import { qzManager } from '@/lib/print/qz-tray';
+import { getQZConfig, clearQZConfig } from '@/lib/print/qz-storage';
 import { EscPosRenderer } from '@/lib/print/esc-pos-renderer';
 import { generateMasterSlip, generateZoneSlip } from '@/lib/print/slip-renderer';
 import { Printer, Wifi, WifiOff, Terminal, Play, Scissors, QrCode, Trash2, CheckCircle2, AlertCircle, Loader2, Search, Activity, ChevronRight } from 'lucide-react';
@@ -321,6 +322,75 @@ export default function PrintDebugPage() {
                     <span className="font-bold text-gray-700">Manual Paper Cut</span>
                   </div>
                   <ChevronRight size={16} className="text-gray-300 group-hover:translate-x-1 transition-transform" />
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+              <h2 className="text-sm font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                <Printer size={14} /> Printer Diagnostics (Machine Local)
+              </h2>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 bg-gray-50 rounded-lg space-y-1">
+                  <span className="text-[10px] text-gray-500 font-bold uppercase">Setup Completion</span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div 
+                        id="setup-progress-bar"
+                        className="h-full bg-emerald-500 transition-all duration-500"
+                        style={{ width: '0%' }}
+                      />
+                    </div>
+                    <span id="setup-progress-text" className="text-[10px] font-black text-emerald-600">0%</span>
+                  </div>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-lg space-y-1">
+                  <span className="text-[10px] text-gray-500 font-bold uppercase">Signature Mode</span>
+                  <div className="text-xs font-bold text-[#1A2766]">
+                    {process.env.NEXT_PUBLIC_QZ_MODE === 'demo' ? 'Local Signing' : 'Server Signing'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  onClick={async () => {
+                    const config = await getQZConfig();
+                    let progress = 0;
+                    if (config?.certificate) progress += 25;
+                    if (config?.privateKey) progress += 25;
+                    if (qzManager.isConnected()) progress += 25;
+                    if (config?.printerName) progress += 25;
+
+                    const bar = document.getElementById('setup-progress-bar');
+                    const text = document.getElementById('setup-progress-text');
+                    if (bar) bar.style.width = `${progress}%`;
+                    if (text) text.innerText = `${progress}%`;
+
+                    if (config) {
+                      addLog(`Browser Config: Found (${progress}% complete)`, 'info');
+                      addLog(`Local Cert: ${config.certificate ? 'OK' : 'Missing'}`, config.certificate ? 'success' : 'error');
+                      addLog(`Local Key: ${config.privateKey ? 'OK' : 'Missing'}`, config.privateKey ? 'success' : 'error');
+                    } else {
+                      addLog('No browser config found.', 'error');
+                    }
+                  }}
+                  className="w-full py-2 px-4 rounded-lg bg-gray-100 text-gray-700 text-xs font-bold hover:bg-gray-200 transition-all"
+                >
+                  Fetch Browser Config Status
+                </button>
+                <button
+                  onClick={async () => {
+                    if (confirm('Clear ALL local printer data?')) {
+                      await clearQZConfig();
+                      addLog('Local browser storage cleared', 'success');
+                      window.location.reload();
+                    }
+                  }}
+                  className="w-full py-2 px-4 rounded-lg border border-red-100 text-red-600 text-xs font-bold hover:bg-red-50 transition-all"
+                >
+                  Reset Local Onboarding
                 </button>
               </div>
             </div>

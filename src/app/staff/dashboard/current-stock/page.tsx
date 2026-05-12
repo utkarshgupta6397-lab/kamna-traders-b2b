@@ -4,6 +4,9 @@ import { redirect } from 'next/navigation';
 import { calculateConsumptionDenominator } from '@/lib/inventory/consumption';
 import CurrentStockClient from '@/components/CurrentStockClient';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function CurrentStockPage({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   const session = await getSession();
   if (!session) return null;

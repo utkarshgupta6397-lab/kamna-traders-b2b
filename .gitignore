@@ -55,3 +55,4 @@ AI_DOCUMENTATION.md
 AGENTS.md
 no_turbo.log
 dev.log
+.env*.local

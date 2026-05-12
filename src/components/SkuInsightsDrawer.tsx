@@ -251,34 +251,36 @@ const SkuInsightsDrawer = React.memo(({ isOpen, onClose, sku, warehouses }: Prop
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Stabilizing Layout...</span>
                   </div>
                 ) : (
-                  <div className="w-full h-full min-h-[200px] flex items-center justify-center bg-gray-50/50 rounded-lg overflow-hidden">
-                    <ResponsiveContainer width="100%" height="100%" debounce={100}>
-                      <ComposedChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                        <XAxis dataKey="date" tick={{fontSize: 10}} tickFormatter={(val) => formatStockDate(val).split('-').slice(0, 2).join('-')} />
-                        <YAxis 
-                          yAxisId="left" 
-                          tick={{fontSize: 10}} 
-                          domain={[0, 'auto']}
-                          allowDecimals={false}
-                        />
-                        <YAxis 
-                          yAxisId="right" 
-                          orientation="right" 
-                          tick={{fontSize: 10}} 
-                          domain={[0, 'auto']}
-                          allowDecimals={false}
-                        />
-                        <Tooltip 
-                          labelFormatter={(val) => formatStockDate(val)}
-                          contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
-                        />
-                        <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
-                        <Bar yAxisId="left" dataKey="Inward" fill="#10B981" radius={[2, 2, 0, 0]} maxBarSize={30} isAnimationActive={false} />
-                        <Bar yAxisId="left" dataKey="Outward" fill="#EF4444" radius={[2, 2, 0, 0]} maxBarSize={30} isAnimationActive={false} />
-                        <Line yAxisId="right" type="monotone" dataKey="Stock" stroke="#1A2766" strokeWidth={2} dot={{ r: 3, fill: '#1A2766' }} activeDot={{ r: 5 }} isAnimationActive={false} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
+                  <div className="w-full h-full min-h-[250px] flex items-center justify-center bg-gray-50/50 rounded-lg overflow-hidden relative">
+                    {isChartMounted && (
+                      <div style={{ width: '100%', height: '100%', padding: '10px' }}>
+                        <ComposedChart width={600} height={200} data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                          <XAxis dataKey="date" tick={{fontSize: 10}} tickFormatter={(val) => formatStockDate(val).split('-').slice(0, 2).join('-')} />
+                          <YAxis 
+                            yAxisId="left" 
+                            tick={{fontSize: 10}} 
+                            domain={[0, 'auto']}
+                            allowDecimals={false}
+                          />
+                          <YAxis 
+                            yAxisId="right" 
+                            orientation="right" 
+                            tick={{fontSize: 10}} 
+                            domain={[0, 'auto']}
+                            allowDecimals={false}
+                          />
+                          <Tooltip 
+                            labelFormatter={(val) => formatStockDate(val)}
+                            contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
+                          />
+                          <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
+                          <Bar yAxisId="left" dataKey="Inward" fill="#10B981" radius={[2, 2, 0, 0]} maxBarSize={30} isAnimationActive={false} />
+                          <Bar yAxisId="left" dataKey="Outward" fill="#EF4444" radius={[2, 2, 0, 0]} maxBarSize={30} isAnimationActive={false} />
+                          <Line yAxisId="right" type="monotone" dataKey="Stock" stroke="#1A2766" strokeWidth={2} dot={{ r: 3, fill: '#1A2766' }} activeDot={{ r: 5 }} isAnimationActive={false} />
+                        </ComposedChart>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

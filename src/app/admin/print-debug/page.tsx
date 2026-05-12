@@ -31,6 +31,7 @@ export default function PrintDebugPage() {
 
   useEffect(() => {
     const checkStatus = () => {
+      if (document.visibilityState !== 'visible') return;
       const isConnected = qzManager.isConnected();
       setConnected(isConnected);
       if (isConnected) {

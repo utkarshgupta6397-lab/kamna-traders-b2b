@@ -41,3 +41,17 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# AI & Tooling
+.gemini/
+brain/
+scratch/
+artifacts/
+*.log
+task_log.json
+LOCAL_CHANGES.md
+WALKTHROUGH.md
+AI_DOCUMENTATION.md
+AGENTS.md
+no_turbo.log
+dev.log

@@ -106,71 +106,62 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   }, [items]);
 
 
-  // Filter and compute row totals
-  const processedItems = useMemo(() => {
-    return items.map(item => {
-      let rowTotal = 0;
-      visibleWarehouses.forEach(wh => {
-        rowTotal += item.inventory[wh.id]?.qty || 0;
-      });
-      return { ...item, rowTotal };
-    }).filter(item => {
-      // 1. Category Filter
-      if (selectedCategories.length > 0 && !selectedCategories.includes(item.categoryId || 'uncategorized')) return false;
-      
-      // 2. Brand Filter
-      if (selectedBrands.length > 0 && !selectedBrands.includes(item.brandId || 'unbranded')) return false;
-
-      // 3. Case Size Filter
-      if (selectedCaseSizes.length > 0 && !selectedCaseSizes.includes(item.caseSize)) return false;
-
-      // 4. Search Filter
-      if (debouncedSearchQuery) {
-        const q = debouncedSearchQuery.toLowerCase();
-        const matchName = item.name.toLowerCase().includes(q);
-        const matchSku = item.id.toLowerCase().includes(q);
-        if (!matchName && !matchSku) return false;
-      }
-
-      // 5. Hide OOS Filter
-      if (hideOos && item.rowTotal <= 0) return false;
-
-      return true;
-    });
-  }, [items, visibleWarehouses, selectedCategories, selectedBrands, selectedCaseSizes, debouncedSearchQuery, hideOos]);
-
-
-  // Group by Category and pre-compute subtotals
-  const categoryGroupsAndTotals = useMemo(() => {
-    const groups: Record<string, { items: typeof processedItems, totals: Record<string, number> }> = {};
+  // Unified computation pass to minimize object creation and property-set pressure (V8 OrderedHashSet growth)
+  const { categoryGroups, grandTotals, processedCount } = useMemo(() => {
+    const groups: Record<string, { items: any[], totals: Record<string, number> }> = {};
     const grand: Record<string, number> = { total: 0 };
     visibleWarehouses.forEach(wh => grand[wh.id] = 0);
+    
+    let count = 0;
+    const q = debouncedSearchQuery.toLowerCase().trim();
 
-    processedItems.forEach(item => {
+    // Single pass through items
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      
+      // 1. Basic Filters (Short-circuit as early as possible)
+      if (selectedCategories.length > 0 && !selectedCategories.includes(item.categoryId || 'uncategorized')) continue;
+      if (selectedBrands.length > 0 && !selectedBrands.includes(item.brandId || 'unbranded')) continue;
+      if (selectedCaseSizes.length > 0 && !selectedCaseSizes.includes(item.caseSize)) continue;
+      
+      if (q) {
+        if (!item.name.toLowerCase().includes(q) && !item.id.toLowerCase().includes(q)) continue;
+      }
+
+      // 2. Compute Row Total
+      let rowTotal = 0;
+      for (let j = 0; j < visibleWarehouses.length; j++) {
+        rowTotal += item.inventory[visibleWarehouses[j].id]?.qty || 0;
+      }
+
+      // 3. OOS Filter
+      if (hideOos && rowTotal <= 0) continue;
+
+      // 4. Aggregation
       const catId = item.categoryId || 'uncategorized';
       if (!groups[catId]) {
-        groups[catId] = { 
-          items: [], 
-          totals: { total: 0 } 
-        };
+        groups[catId] = { items: [], totals: { total: 0 } };
         visibleWarehouses.forEach(wh => groups[catId].totals[wh.id] = 0);
       }
       
-      groups[catId].items.push(item);
-      groups[catId].totals.total += item.rowTotal;
-      grand.total += item.rowTotal;
+      // Use a shallow copy or just augment the existing item reference if safe
+      // Here we create a wrapper to keep the original item ref stable
+      const processedItem = { ...item, rowTotal };
+      groups[catId].items.push(processedItem);
+      groups[catId].totals.total += rowTotal;
+      grand.total += rowTotal;
 
-      visibleWarehouses.forEach(wh => {
-        const val = item.inventory[wh.id]?.qty || 0;
-        groups[catId].totals[wh.id] += val;
-        grand[wh.id] += val;
-      });
-    });
+      for (let j = 0; j < visibleWarehouses.length; j++) {
+        const whId = visibleWarehouses[j].id;
+        const val = item.inventory[whId]?.qty || 0;
+        groups[catId].totals[whId] += val;
+        grand[whId] += val;
+      }
+      count++;
+    }
 
-    return { groups, grand };
-  }, [processedItems, visibleWarehouses]);
-
-  const { groups: categoryGroups, grand: grandTotals } = categoryGroupsAndTotals;
+    return { categoryGroups: groups, grandTotals: grand, processedCount: count };
+  }, [items, visibleWarehouses, selectedCategories, selectedBrands, selectedCaseSizes, debouncedSearchQuery, hideOos]);
 
 
 

@@ -54,18 +54,8 @@ export const useSkuStore = create<SkuStore>((set, get) => ({
   lastFetchedAt: null,
 
   setSkus: ({ skus, topBrandsByCategory, topBrandsFullCatalog }) => {
-    // Build brand index map for O(1) brand lookup
-    const indexMap: Record<string, ProductData[]> = {};
-    skus.forEach(sku => {
-      if (sku.brand) {
-        if (!indexMap[sku.brand]) indexMap[sku.brand] = [];
-        indexMap[sku.brand].push(sku);
-      }
-    });
-
     set({ 
       allSkus: skus, 
-      brandIndexMap: indexMap,
       topBrandsByCategory, 
       topBrandsFullCatalog,
       lastFetchedAt: Date.now() 

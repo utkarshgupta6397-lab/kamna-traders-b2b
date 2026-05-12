@@ -75,14 +75,6 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canMa
   const [selectedCartId, setSelectedCartId] = useState<string | null>(null);
 
 
-  // Debounced search trigger
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      updateUrl({ search, page: 1 });
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [search]);
-
   const updateUrl = useCallback((updates: Record<string, any>) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => {
@@ -94,6 +86,15 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canMa
       router.push(`?${newQuery}`);
     }
   }, [router, searchParams]);
+
+  // Debounced search trigger (increased to 800ms to reduce HMR/Server churn)
+  useEffect(() => {
+    if (search === (searchParams.get('search') || '')) return;
+    const timer = setTimeout(() => {
+      updateUrl({ search, page: 1 });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [search, searchParams, updateUrl]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);

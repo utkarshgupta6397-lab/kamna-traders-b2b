@@ -106,7 +106,34 @@ function DispatchProgressOverlay() {
   );
 }
 
+/** Lightweight component to handle relative time updates without re-rendering the whole dashboard */
+function TimeAgo({ timestamp }: { timestamp: number | null }) {
+  const [text, setText] = useState('Just now');
+
+  useEffect(() => {
+    if (!timestamp) return;
+    const update = () => {
+      if (document.visibilityState !== 'visible') return;
+      const sec = Math.floor((Date.now() - timestamp) / 1000);
+      if (sec < 10) setText('Just now');
+      else if (sec < 60) setText(`${sec}s ago`);
+      else setText(`${Math.floor(sec / 60)}m ago`);
+    };
+    update();
+    const interval = setInterval(update, 30000); // 30s is precise enough
+    return () => clearInterval(interval);
+  }, [timestamp]);
+
+  return <span>{text}</span>;
+}
+
 export default function StaffHomeClient({ staffId, warehouses, categories }: Props) {
+  if (typeof window !== 'undefined') {
+    (window as any).__renderCount = ((window as any).__renderCount || 0) + 1;
+    if ((window as any).__renderCount % 100 === 0) {
+      console.warn(`[PERF] StaffHomeClient Render Count: ${(window as any).__renderCount}`);
+    }
+  }
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isClient, setIsClient] = useState(false);
@@ -123,24 +150,10 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   const [selectedIndex, setSelectedIndex] = useState(-1);
 
   // Detect Thermal Printer for Silent Printing
+  // ─── Thermal / Print Sync Logic ─────────────────────────────
+  // TEMPORARILY DISABLED to stabilize CPU and Memory
   useEffect(() => {
-    const checkThermal = async () => {
-      // 1. Check if we already have a successful connection in this session
-      if (qzManager.isConnected()) return;
-
-      try {
-        const connected = await qzManager.connect();
-        if (connected) {
-          const printer = await qzManager.findPrinter();
-          setIsThermalReady(!!printer);
-        }
-      } catch (e) {
-        console.warn('[PRINT] Thermal detection failed', e);
-      }
-    };
-    // Delay probe slightly to avoid startup spike
-    const timer = setTimeout(checkThermal, 2000);
-    return () => clearTimeout(timer);
+    // Disabled
   }, []);
   const [showCaseFilter, setShowCaseFilter] = useState(false);
   const fetchInProgress = useRef(false);
@@ -166,34 +179,31 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   const { items, addItem, clearCart } = useCartStore();
   const totalQty = items.reduce((a, i) => a + i.qty, 0);
 
-  // Derived: Active Category List & Counts based on current Search + OOS state
+  // Optimized single-pass category counts to reduce object churn
   const dynamicCategories = useMemo(() => {
-    // 1. Filter by Search + OOS only (ignoring category selection)
-    let searchFiltered = allSkus;
-    if (hideOos) {
-      searchFiltered = searchFiltered.filter((s) => !s.isOos);
-    }
-    const q = searchQuery.trim().toLowerCase();
-    if (q) {
-      searchFiltered = searchFiltered.filter(
-        (s) =>
-          s.name.toLowerCase().includes(q) ||
-          s.id.toLowerCase().includes(q) ||
-          (s.brand ?? '').toLowerCase().includes(q)
-      );
-    }
-
-    // 2. Count occurrences per category
     const counts: Record<string, number> = {};
-    searchFiltered.forEach(s => {
+    const q = searchQuery.trim().toLowerCase();
+    let totalMatch = 0;
+
+    for (let i = 0; i < allSkus.length; i++) {
+      const s = allSkus[i];
+      if (hideOos && s.isOos) continue;
+      
+      if (q) {
+        const match = s.name.toLowerCase().includes(q) ||
+                      s.id.toLowerCase().includes(q) ||
+                      (s.brand ?? '').toLowerCase().includes(q);
+        if (!match) continue;
+      }
+
+      totalMatch++;
       if (s.categoryId) {
         counts[s.categoryId] = (counts[s.categoryId] || 0) + 1;
       }
-    });
+    }
 
-    // 3. Build the final visible list
     return {
-      fullCount: searchFiltered.length,
+      fullCount: totalMatch,
       visible: categories
         .map(c => ({ ...c, count: counts[c.id] || 0 }))
         .filter(c => c.count > 0)
@@ -222,25 +232,9 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     return new Set(list.map(s => s.caseSize).filter((s): s is number => !!s && s > 1));
   }, [allSkus, selectedCategoryId]);
 
-  // Derived: "Updated X ago" text — Optimized to avoid triggering full component re-renders if possible,
-  // though useState in the main component will still cause it.
-  const [timeAgo, setTimeAgo] = useState('Just now');
-  useEffect(() => {
-    if (!lastFetchedAt) return;
-    
-    const update = () => {
-      const sec = Math.floor((Date.now() - lastFetchedAt) / 1000);
-      let next = 'Just now';
-      if (sec >= 60) next = `${Math.floor(sec / 60)}m ago`;
-      else if (sec >= 10) next = `${sec}s ago`;
-      
-      setTimeAgo(prev => prev === next ? prev : next);
-    };
-
-    update();
-    const inv = setInterval(update, 10000);
-    return () => clearInterval(inv);
-  }, [lastFetchedAt]);
+  // ─── Time Ago Logic ──────────────────────────────────────────
+  // Isolated in its own internal component or removed from main effect
+  // to prevent StaffHomeClient from re-rendering every second.
 
   // Derived: Current Brands to show
   const currentTopBrands = useMemo(() => {
@@ -547,10 +541,10 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
                  </span>
                </button>
                <div className="flex items-center gap-1.5 ml-2">
-                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/40" />
-                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">
-                   Updated {timeAgo}
-                 </span>
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/40" />
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">
+                    Updated <TimeAgo timestamp={lastFetchedAt} />
+                  </span>
                </div>
             </div>
             

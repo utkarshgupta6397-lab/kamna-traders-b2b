@@ -99,10 +99,24 @@ export default function PrintSlipClient({
   const [retrying, setRetrying] = useState(false);
   const [showZohoDetails, setShowZohoDetails] = useState(false);
 
-  // Status Polling
+  // Status Polling (Tab-Aware + Timeout)
   useEffect(() => {
     let interval: NodeJS.Timeout;
+    let pollCount = 0;
+    const MAX_POLLS = 150; // ~5 minutes at 2s interval
+    
     const pollStatus = async () => {
+      // 1. Pause if tab is hidden
+      if (document.visibilityState !== 'visible') return;
+
+      // 2. Stop if we've polled for too long without result
+      if (pollCount >= MAX_POLLS) {
+        console.warn('[ZOHO] Polling timed out after 5 minutes');
+        clearInterval(interval);
+        return;
+      }
+
+      pollCount++;
       try {
         const res = await fetch(`/api/staff/zoho/sync-status/${cartId}`);
         const data = await res.json();

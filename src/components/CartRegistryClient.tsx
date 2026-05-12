@@ -89,7 +89,10 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canMa
       if (value) params.set(key, value.toString());
       else params.delete(key);
     });
-    router.push(`?${params.toString()}`);
+    const newQuery = params.toString();
+    if (newQuery !== searchParams.toString()) {
+      router.push(`?${newQuery}`);
+    }
   }, [router, searchParams]);
 
   const fetchData = useCallback(async () => {
@@ -279,7 +282,7 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canMa
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col h-[calc(100vh-160px)]">
       
       {/* ── TOOLBAR ─────────────────────────────────────────────────── */}
-      <div className="p-4 border-b border-gray-50 bg-white/50 backdrop-blur-sm sticky top-0 z-10 flex flex-wrap gap-4 items-center">
+      <div className="p-4 border-b border-gray-50 bg-white sticky top-0 z-10 flex flex-wrap gap-4 items-center">
         
         {/* Search */}
         <div className="relative flex-1 min-w-[240px]">

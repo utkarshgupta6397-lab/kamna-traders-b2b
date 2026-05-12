@@ -11,6 +11,8 @@ class QZManager {
   private static instance: QZManager;
   private connected: boolean = false;
   private connecting: boolean = false;
+  private lastConnectAttempt: number = 0;
+  private connectFailCount: number = 0;
   private printerName: string | null = null;
   private securityInitialized: boolean = false;
 
@@ -30,46 +32,38 @@ class QZManager {
   public async connect(): Promise<boolean> {
     if (typeof window === 'undefined') return false;
     
+    // 1. Cooldown Check: If we failed recently, wait 30s before trying again automatically
+    const now = Date.now();
+    if (!this.connected && this.connectFailCount > 0 && (now - this.lastConnectAttempt < 30000)) {
+      return false;
+    }
+
     try {
-      // 1. Check if already active
+      // 2. Check if already active
       if (this.connected && qz.websocket.isActive()) {
         return true;
       }
 
-      // 2. Prevent parallel connection attempts
+      // 3. Prevent parallel connection attempts
       if (this.connecting) {
-        console.log('[QZ] Connection already in progress, waiting...');
-        // Wait up to 5s for the other attempt
-        let retries = 0;
-        while (this.connecting && retries < 50) {
-          await new Promise(r => setTimeout(r, 100));
-          retries++;
-        }
         return this.connected;
       }
 
+      this.lastConnectAttempt = now;
       this.connecting = true;
-      console.log('[QZ] Initializing security layer...');
+      
       if (!this.securityInitialized) {
         await initializeQZSecurity();
         this.securityInitialized = true;
       }
 
-      console.log('[QZ] Opening WebSocket connection to localhost...');
-      // This will try 8181 (ws) then 8182 (wss)
       await qz.websocket.connect();
       
       this.connected = true;
-      // @ts-ignore
-      const version = await qz.api.getVersion();
-      console.log(`[QZ] Connected successfully to QZ Tray v${version}`);
-      
+      this.connectFailCount = 0;
       return true;
     } catch (err: any) {
-      // Extract the most useful error message
-      const errMsg = err?.message || err || 'Unknown WebSocket Error';
-      console.error('[QZ] Connection failed:', errMsg);
-      
+      this.connectFailCount++;
       this.connected = false;
       return false;
     } finally {

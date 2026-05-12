@@ -109,6 +109,11 @@ function DispatchProgressOverlay() {
 export default function StaffHomeClient({ staffId, warehouses, categories }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [customerName, setCustomerName] = useState('');
@@ -120,6 +125,9 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   // Detect Thermal Printer for Silent Printing
   useEffect(() => {
     const checkThermal = async () => {
+      // 1. Check if we already have a successful connection in this session
+      if (qzManager.isConnected()) return;
+
       try {
         const connected = await qzManager.connect();
         if (connected) {
@@ -130,7 +138,9 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
         console.warn('[PRINT] Thermal detection failed', e);
       }
     };
-    checkThermal();
+    // Delay probe slightly to avoid startup spike
+    const timer = setTimeout(checkThermal, 2000);
+    return () => clearTimeout(timer);
   }, []);
   const [showCaseFilter, setShowCaseFilter] = useState(false);
   const fetchInProgress = useRef(false);
@@ -466,6 +476,8 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   }
 
   // ─── MAIN POS LAYOUT ──────────────────────────────────────────
+  if (!isClient) return null;
+
   return (
     <div className="w-full min-h-screen bg-[#F6F7FA] p-4 relative">
       {/* ── DISPATCH PROGRESS OVERLAY ──────────────────────────────── */}

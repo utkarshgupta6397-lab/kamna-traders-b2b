@@ -3,11 +3,14 @@ import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import CurrentStockClient from '@/components/CurrentStockClient';
 
-export default async function CurrentStockPage() {
+export default async function CurrentStockPage({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   const session = await getSession();
-  if (!session) redirect('/staff');
+  if (!session) return null;
 
-  // Fetch all necessary data
+  const sp = await searchParams;
+  if (sp.safe === '1') {
+    return <div className="p-20 text-center font-bold text-red-600 bg-red-50 rounded-2xl border-2 border-red-200">SAFE MODE ACTIVE: Heavy dashboard components disabled to prevent overheating. <a href="?" className="underline ml-2">Exit Safe Mode</a></div>;
+  }
   const [warehouses, categories, brands, skus, inventory] = await Promise.all([
     prisma.warehouse.findMany({ 
       where: { active: true }, 

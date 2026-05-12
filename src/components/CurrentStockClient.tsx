@@ -43,7 +43,6 @@ interface Props {
 }
 
 export default function CurrentStockClient({ warehouses, categories, brands, items }: Props) {
-  console.count('Render: CurrentStockClient');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -142,10 +141,11 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
 
 
   // Group by Category and pre-compute subtotals
-  const categoryGroups = useMemo(() => {
+  const categoryGroupsAndTotals = useMemo(() => {
     const groups: Record<string, { items: typeof processedItems, totals: Record<string, number> }> = {};
+    const grand: Record<string, number> = { total: 0 };
+    visibleWarehouses.forEach(wh => grand[wh.id] = 0);
 
-    
     processedItems.forEach(item => {
       const catId = item.categoryId || 'uncategorized';
       if (!groups[catId]) {
@@ -158,13 +158,19 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
       
       groups[catId].items.push(item);
       groups[catId].totals.total += item.rowTotal;
+      grand.total += item.rowTotal;
+
       visibleWarehouses.forEach(wh => {
-        groups[catId].totals[wh.id] += item.inventory[wh.id]?.qty || 0;
+        const val = item.inventory[wh.id]?.qty || 0;
+        groups[catId].totals[wh.id] += val;
+        grand[wh.id] += val;
       });
     });
 
-    return groups;
+    return { groups, grand };
   }, [processedItems, visibleWarehouses]);
+
+  const { groups: categoryGroups, grand: grandTotals } = categoryGroupsAndTotals;
 
 
 
@@ -175,20 +181,6 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
     return map;
   }, [categories]);
 
-  // Compute Grand Totals
-  const grandTotals = useMemo(() => {
-    const totals: Record<string, number> = { total: 0 };
-    visibleWarehouses.forEach(wh => totals[wh.id] = 0);
-
-    processedItems.forEach(item => {
-      totals.total += item.rowTotal;
-      visibleWarehouses.forEach(wh => {
-        totals[wh.id] += item.inventory[wh.id]?.qty || 0;
-      });
-    });
-
-    return totals;
-  }, [processedItems, visibleWarehouses]);
 
   const toggleCategory = (id: string) => {
     setSelectedCategories(prev => 
@@ -213,6 +205,10 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
       prev.includes(id) ? prev.filter(w => w !== id) : [...prev, id]
     );
   };
+
+  const handleCloseDrawer = React.useCallback(() => {
+    setSelectedSku(null);
+  }, []);
 
   const handleSuggestionClick = (item: SkuItem) => {
     let total = 0;
@@ -489,7 +485,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
       {/* Drawer */}
       <SkuInsightsDrawer 
         isOpen={!!selectedSku} 
-        onClose={() => setSelectedSku(null)} 
+        onClose={handleCloseDrawer} 
         sku={selectedSku} 
         warehouses={warehouses} 
       />

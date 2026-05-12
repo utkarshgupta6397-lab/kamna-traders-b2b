@@ -46,13 +46,24 @@ const SkuInsightsDrawer = React.memo(({ isOpen, onClose, sku, warehouses }: Prop
   const [totalsByWarehouse, setTotalsByWarehouse] = useState<Record<string, { in: number, out: number, avgDailyOut: number }>>({});
   const [overallTotals, setOverallTotals] = useState({ in: 0, out: 0, avgDailyOut: 0 });
   const [selectedWarehouses, setSelectedWarehouses] = useState<Set<string>>(new Set());
+  const [isChartMounted, setIsChartMounted] = useState(false);
+  const lastOpenedSkuId = useRef<string | null>(null);
 
-  // Initialize selected warehouses when drawer opens
+  // Initialize selected warehouses only once per SKU open
   useEffect(() => {
-    if (isOpen && warehouses.length > 0) {
+    if (isOpen && sku && sku.id !== lastOpenedSkuId.current) {
       setSelectedWarehouses(new Set(warehouses.map(w => w.id)));
+      lastOpenedSkuId.current = sku.id;
+      
+      // Delay chart mounting to ensure drawer animation is finished and dimensions are stable
+      setIsChartMounted(false);
+      const timer = setTimeout(() => setIsChartMounted(true), 500);
+      return () => clearTimeout(timer);
+    } else if (!isOpen) {
+      lastOpenedSkuId.current = null;
+      setIsChartMounted(false);
     }
-  }, [isOpen, warehouses]);
+  }, [isOpen, sku, warehouses]);
 
   useEffect(() => {
     if (isOpen && sku) {
@@ -161,7 +172,7 @@ const SkuInsightsDrawer = React.memo(({ isOpen, onClose, sku, warehouses }: Prop
               {/* Chart Skeleton */}
               <div className="h-64 bg-gray-50 rounded-lg border border-gray-200 flex flex-col p-4">
                 <div className="h-4 w-32 bg-gray-100 rounded mb-4" />
-                <div className="flex-1 bg-white/50 rounded" />
+                <div className="flex-1 bg-gray-100 rounded" />
               </div>
 
               {/* Table Skeleton */}
@@ -234,35 +245,41 @@ const SkuInsightsDrawer = React.memo(({ isOpen, onClose, sku, warehouses }: Prop
                 </h3>
                 {chartData.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-sm text-gray-400">No movement data for selected warehouses</div>
+                ) : !isChartMounted ? (
+                  <div className="h-full flex flex-col items-center justify-center gap-3 bg-gray-50/30 rounded-lg">
+                    <Loader2 size={24} className="text-gray-300 animate-spin" />
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Stabilizing Layout...</span>
+                  </div>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                      <XAxis dataKey="date" tick={{fontSize: 10}} tickFormatter={(val) => formatStockDate(val).split('-').slice(0, 2).join('-')} />
-                      <YAxis 
-                        yAxisId="left" 
-                        tick={{fontSize: 10}} 
-                        domain={[0, 'auto']}
-                        allowDecimals={false}
-                      />
-                      <YAxis 
-                        yAxisId="right" 
-                        orientation="right" 
-                        tick={{fontSize: 10}} 
-                        domain={[0, 'auto']}
-                        allowDecimals={false}
-                      />
-                      <Tooltip 
-                        labelFormatter={(val) => formatStockDate(val)}
-                        contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
-                      />
-                      <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
-                      <Bar yAxisId="left" dataKey="Inward" fill="#10B981" radius={[2, 2, 0, 0]} maxBarSize={30} isAnimationActive={false} />
-                      <Bar yAxisId="left" dataKey="Outward" fill="#EF4444" radius={[2, 2, 0, 0]} maxBarSize={30} isAnimationActive={false} />
-                      <Line yAxisId="right" type="monotone" dataKey="Stock" stroke="#1A2766" strokeWidth={2} dot={{ r: 3, fill: '#1A2766' }} activeDot={{ r: 5 }} isAnimationActive={false} />
-
-                    </ComposedChart>
-                  </ResponsiveContainer>
+                  <div className="w-full h-full min-h-[200px] flex items-center justify-center bg-gray-50/50 rounded-lg overflow-hidden">
+                    <ResponsiveContainer width="100%" height="100%" debounce={100}>
+                      <ComposedChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                        <XAxis dataKey="date" tick={{fontSize: 10}} tickFormatter={(val) => formatStockDate(val).split('-').slice(0, 2).join('-')} />
+                        <YAxis 
+                          yAxisId="left" 
+                          tick={{fontSize: 10}} 
+                          domain={[0, 'auto']}
+                          allowDecimals={false}
+                        />
+                        <YAxis 
+                          yAxisId="right" 
+                          orientation="right" 
+                          tick={{fontSize: 10}} 
+                          domain={[0, 'auto']}
+                          allowDecimals={false}
+                        />
+                        <Tooltip 
+                          labelFormatter={(val) => formatStockDate(val)}
+                          contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
+                        />
+                        <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
+                        <Bar yAxisId="left" dataKey="Inward" fill="#10B981" radius={[2, 2, 0, 0]} maxBarSize={30} isAnimationActive={false} />
+                        <Bar yAxisId="left" dataKey="Outward" fill="#EF4444" radius={[2, 2, 0, 0]} maxBarSize={30} isAnimationActive={false} />
+                        <Line yAxisId="right" type="monotone" dataKey="Stock" stroke="#1A2766" strokeWidth={2} dot={{ r: 3, fill: '#1A2766' }} activeDot={{ r: 5 }} isAnimationActive={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
                 )}
               </div>
 

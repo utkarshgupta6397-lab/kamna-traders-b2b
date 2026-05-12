@@ -6,14 +6,18 @@ export default async function CartsPage() {
   const session = await getSession();
   if (!session) return null;
 
-  // Pre-fetch filter data for the client component
-  const [warehouses, staff] = await Promise.all([
+  // Pre-fetch filter data and user permissions
+  const [warehouses, staff, user] = await Promise.all([
     prisma.warehouse.findMany({ where: { active: true }, select: { id: true, name: true } }),
     prisma.user.findMany({ 
       where: { active: true }, 
       select: { id: true, name: true },
       orderBy: { name: 'asc' }
     }),
+    prisma.user.findUnique({
+      where: { id: session.userId as string },
+      select: { canManageCarts: true, role: true }
+    })
   ]);
 
   return (
@@ -26,6 +30,7 @@ export default async function CartsPage() {
         warehouses={warehouses}
         staff={staff}
         zohoOrgId={process.env.ZOHO_BOOKS_ORG_ID || ''}
+        canManageCarts={user?.canManageCarts || user?.role === 'ADMIN'}
       />
     </div>
   );

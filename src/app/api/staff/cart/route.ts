@@ -162,7 +162,7 @@ export async function POST(request: Request) {
         },
       }),
       prisma.cartItem.createMany({
-        data: items.map(i => ({ cartId, skuId: i.skuId, qty: i.qty })),
+        data: items.map(i => ({ cartId, skuId: i.skuId, qty: i.qty, originalQty: i.qty })),
       }),
     ];
 

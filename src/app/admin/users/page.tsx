@@ -23,7 +23,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
       {/* Add */}
       <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
         <h2 className="text-sm font-semibold mb-3 text-gray-600 uppercase tracking-wider">Add New User</h2>
-        <ActionForm action={createUser} successMessage="User created!" resetOnSuccess className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
+        <ActionForm action={createUser} successMessage="User created!" resetOnSuccess className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
           <div><label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
             <input type="text" name="name" required className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
           <div><label className="block text-xs font-medium text-gray-500 mb-1">Mobile</label>
@@ -34,20 +34,25 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
             </select></div>
           <div><label className="block text-xs font-medium text-gray-500 mb-1">PIN (6-digit)</label>
             <input type="text" name="pin" maxLength={6} className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" placeholder="Auto if empty" /></div>
+          <div><label className="block text-xs font-medium text-gray-500 mb-1">Cart Access</label>
+            <select name="canManageCarts" className="w-full border rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-[#1A2766] outline-none">
+              <option value="false">Read Only</option><option value="true">Edit/Delete</option>
+            </select></div>
           <FormSubmit className="bg-[#AE1B1E] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">Add User</FormSubmit>
         </ActionForm>
       </div>
 
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden overflow-x-auto">
-        <div className="min-w-[800px]">
+        <div className="min-w-[900px]">
           {/* Header */}
           <div className="flex bg-gray-50 border-b text-gray-500 uppercase tracking-wider text-xs font-medium">
-            <div className="w-48 p-3">Name</div>
-            <div className="w-40 p-3">Mobile</div>
-            <div className="w-32 p-3">PIN</div>
-            <div className="w-32 p-3">Role</div>
-            <div className="w-32 p-3">Status</div>
+            <div className="w-40 p-3">Name</div>
+            <div className="w-32 p-3">Mobile</div>
+            <div className="w-24 p-3">PIN</div>
+            <div className="w-24 p-3">Role</div>
+            <div className="w-28 p-3">Cart Manage</div>
+            <div className="w-24 p-3">Status</div>
             <div className="flex-1 p-3 text-right">Actions</div>
           </div>
           
@@ -56,22 +61,27 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
             {users.map(u => (
               <ActionForm key={u.id} action={updateUser} successMessage="User updated" className="flex items-center hover:bg-gray-50/50 transition-colors">
                 <input type="hidden" name="id" value={u.id} />
-                <div className="w-48 p-2">
+                <div className="w-40 p-2">
                   <input type="text" name="name" defaultValue={u.name} className="w-full border rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#1A2766] outline-none" />
                 </div>
-                <div className="w-40 p-2">
+                <div className="w-32 p-2">
                   <input type="text" name="mobile" defaultValue={u.mobile} className="w-full border rounded px-2 py-1.5 text-xs font-mono focus:ring-1 focus:ring-[#1A2766] outline-none" maxLength={10} />
                 </div>
-                <div className="w-32 p-2 flex gap-1 items-center">
-                  <input type="text" name="pin" defaultValue="" className="w-full border rounded px-2 py-1.5 text-xs font-mono focus:ring-1 focus:ring-[#1A2766] outline-none" maxLength={6} placeholder="••••••" />
+                <div className="w-24 p-2 flex gap-1 items-center">
+                  <input type="text" name="pin" defaultValue="" className="w-full border rounded px-2 py-1.5 text-xs font-mono focus:ring-1 focus:ring-[#1A2766] outline-none" maxLength={6} placeholder="••••" />
                   <ResetPinButton mobile={u.mobile} />
                 </div>
-                <div className="w-32 p-2">
+                <div className="w-24 p-2">
                   <select name="role" defaultValue={u.role} className="w-full border rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#1A2766] outline-none">
                     <option value="STAFF">Staff</option><option value="ADMIN">Admin</option>
                   </select>
                 </div>
-                <div className="w-32 p-2">
+                <div className="w-28 p-2">
+                  <select name="canManageCarts" defaultValue={String(u.canManageCarts)} className="w-full border rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#1A2766] outline-none">
+                    <option value="false">Read Only</option><option value="true">Edit/Delete</option>
+                  </select>
+                </div>
+                <div className="w-24 p-2">
                   <select name="active" defaultValue={String(u.active)} className="w-full border rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#1A2766] outline-none">
                     <option value="true">Active</option><option value="false">Inactive</option>
                   </select>

@@ -55,7 +55,9 @@ export async function GET(request: Request) {
           dispatchSlipNumber: true,
           zohoSalesorderNumber: true,
           zohoSalesorderId: true,
+          deletedAt: true,
           warehouse: { select: { name: true } },
+
           staff: { select: { name: true } },
           items: {
             select: {
@@ -86,8 +88,9 @@ export async function GET(request: Request) {
         slipNumber: cart.dispatchSlipNumber || cart.id,
         zohoSalesorderNumber: cart.zohoSalesorderNumber,
         zohoSalesorderId: cart.zohoSalesorderId,
-        warehouseName: cart.warehouse.name,
-        staffName: cart.staff.name,
+        warehouseName: cart.warehouse?.name || 'Unknown',
+        staffName: cart.staff?.name || 'Unknown',
+        deletedAt: cart.deletedAt,
         itemCount: cart.items.length,
         totalQty,
         totalValue,
@@ -103,8 +106,12 @@ export async function GET(request: Request) {
         pages: Math.ceil(totalCount / limit),
       },
     });
-  } catch (error) {
-    console.error('[CARTS_API_ERROR]', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  } catch (error: any) {
+    console.error('[CARTS_API_ERROR]', {
+      message: error.message,
+      stack: error.stack,
+      cause: error.cause
+    });
+    return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
   }
 }

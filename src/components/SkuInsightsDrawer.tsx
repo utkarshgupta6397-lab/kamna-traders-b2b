@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Loader2, TrendingUp, AlertTriangle, CheckCircle2, Filter } from 'lucide-react';
 import { DOI_THRESHOLDS } from '@/lib/config';
 import { formatStockDate, formatStockDateTime } from '@/lib/date-utils';
@@ -39,7 +39,8 @@ interface MovementData {
   afterQty: number;
 }
 
-export default function SkuInsightsDrawer({ isOpen, onClose, sku, warehouses }: Props) {
+const SkuInsightsDrawer = React.memo(({ isOpen, onClose, sku, warehouses }: Props) => {
+
   const [loading, setLoading] = useState(false);
   const [movements, setMovements] = useState<MovementData[]>([]);
   const [totalsByWarehouse, setTotalsByWarehouse] = useState<Record<string, { in: number, out: number, avgDailyOut: number }>>({});
@@ -111,6 +112,13 @@ export default function SkuInsightsDrawer({ isOpen, onClose, sku, warehouses }: 
 
     return Object.values(byDate).sort((a: any, b: any) => a.date.localeCompare(b.date));
   }, [movements, selectedWarehouses]);
+  
+  const filteredTableMovements = useMemo(() => {
+    return movements
+      .filter(m => selectedWarehouses.has(m.warehouseId))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [movements, selectedWarehouses]);
+
 
   if (!isOpen || !sku) return null;
 
@@ -249,9 +257,10 @@ export default function SkuInsightsDrawer({ isOpen, onClose, sku, warehouses }: 
                         contentStyle={{ fontSize: '12px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
                       />
                       <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
-                      <Bar yAxisId="left" dataKey="Inward" fill="#10B981" radius={[2, 2, 0, 0]} maxBarSize={30} />
-                      <Bar yAxisId="left" dataKey="Outward" fill="#EF4444" radius={[2, 2, 0, 0]} maxBarSize={30} />
-                      <Line yAxisId="right" type="monotone" dataKey="Stock" stroke="#1A2766" strokeWidth={2} dot={{ r: 3, fill: '#1A2766' }} activeDot={{ r: 5 }} />
+                      <Bar yAxisId="left" dataKey="Inward" fill="#10B981" radius={[2, 2, 0, 0]} maxBarSize={30} isAnimationActive={false} />
+                      <Bar yAxisId="left" dataKey="Outward" fill="#EF4444" radius={[2, 2, 0, 0]} maxBarSize={30} isAnimationActive={false} />
+                      <Line yAxisId="right" type="monotone" dataKey="Stock" stroke="#1A2766" strokeWidth={2} dot={{ r: 3, fill: '#1A2766' }} activeDot={{ r: 5 }} isAnimationActive={false} />
+
                     </ComposedChart>
                   </ResponsiveContainer>
                 )}
@@ -274,31 +283,30 @@ export default function SkuInsightsDrawer({ isOpen, onClose, sku, warehouses }: 
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {movements.filter(m => selectedWarehouses.has(m.warehouseId)).length === 0 ? (
+                      {filteredTableMovements.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="px-3 py-4 text-center text-gray-400">No movement history.</td>
                         </tr>
                       ) : (
-                        movements.filter(m => selectedWarehouses.has(m.warehouseId))
-                          .sort((a, b) => b.date.localeCompare(a.date)) // Latest first
-                          .map(m => {
-                            const whAvgOut = totalsByWarehouse[m.warehouseId]?.avgDailyOut || 0;
-                            const whDOI = calculateDOIValue(m.afterQty, whAvgOut);
-                            return (
-                              <tr key={m.id} className="hover:bg-blue-50/30 transition-colors">
-                                <td className="px-3 py-2 text-gray-500 border-r border-gray-100 whitespace-nowrap">{formatStockDate(m.date)}</td>
-                                <td className="px-3 py-2 font-medium border-r border-gray-100">{m.warehouseName}</td>
-                                <td className="px-3 py-2 text-center text-green-600 font-mono border-r border-gray-100 bg-green-50/10">{m.inward > 0 ? `+${m.inward}` : '-'}</td>
-                                <td className="px-3 py-2 text-center text-red-600 font-mono border-r border-gray-100 bg-red-50/10">{m.outward > 0 ? `-${m.outward}` : '-'}</td>
-                                <td className={`px-3 py-2 text-center font-bold font-mono border-r border-gray-100 ${m.net > 0 ? 'text-green-700' : m.net < 0 ? 'text-red-700' : 'text-gray-500'}`}>{m.net > 0 ? `+${m.net}` : m.net}</td>
-                                <td className="px-3 py-2 text-center font-black font-mono border-r border-gray-100 bg-gray-50/50">{m.afterQty}</td>
-                                <td className={`px-3 py-2 text-center font-bold font-mono ${whDOI.status === 'CRITICAL' ? 'text-red-600' : whDOI.status === 'WARNING' ? 'text-amber-600' : 'text-green-600'}`}>
-                                  {whDOI.value}
-                                </td>
-                              </tr>
-                            );
-                          })
+                        filteredTableMovements.map(m => {
+                          const whAvgOut = totalsByWarehouse[m.warehouseId]?.avgDailyOut || 0;
+                          const whDOI = calculateDOIValue(m.afterQty, whAvgOut);
+                          return (
+                            <tr key={m.id} className="hover:bg-blue-50/30 transition-colors">
+                              <td className="px-3 py-2 text-gray-500 border-r border-gray-100 whitespace-nowrap">{formatStockDate(m.date)}</td>
+                              <td className="px-3 py-2 font-medium border-r border-gray-100">{m.warehouseName}</td>
+                              <td className="px-3 py-2 text-center text-green-600 font-mono border-r border-gray-100 bg-green-50/10">{m.inward > 0 ? `+${m.inward}` : '-'}</td>
+                              <td className="px-3 py-2 text-center text-red-600 font-mono border-r border-gray-100 bg-red-50/10">{m.outward > 0 ? `-${m.outward}` : '-'}</td>
+                              <td className={`px-3 py-2 text-center font-bold font-mono border-r border-gray-100 ${m.net > 0 ? 'text-green-700' : m.net < 0 ? 'text-red-700' : 'text-gray-500'}`}>{m.net > 0 ? `+${m.net}` : m.net}</td>
+                              <td className="px-3 py-2 text-center font-black font-mono border-r border-gray-100 bg-gray-50/50">{m.afterQty}</td>
+                              <td className={`px-3 py-2 text-center font-bold font-mono ${whDOI.status === 'CRITICAL' ? 'text-red-600' : whDOI.status === 'WARNING' ? 'text-amber-600' : 'text-green-600'}`}>
+                                {whDOI.value}
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
+
                     </tbody>
                   </table>
                 </div>
@@ -309,4 +317,7 @@ export default function SkuInsightsDrawer({ isOpen, onClose, sku, warehouses }: 
       </div>
     </>
   );
-}
+});
+
+export default SkuInsightsDrawer;
+

@@ -15,6 +15,7 @@ model User {
   role      String   @default("STAFF")
   active    Boolean  @default(true)
   pin       String?
+  canManageCarts Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   carts     Cart[]
@@ -108,6 +109,8 @@ model Cart {
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
   dispatchSlipNumber String?    @unique
+  deletedAt          DateTime?
+
   staff              User       @relation(fields: [staffId], references: [id])
   warehouse          Warehouse  @relation(fields: [warehouseId], references: [id])
   items              CartItem[]
@@ -129,7 +132,9 @@ model CartItem {
   id     String @id @default(cuid())
   cartId String
   skuId  String
-  qty    Int
+  qty         Int
+  originalQty Int?
+
   cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
   sku    Sku    @relation(fields: [skuId], references: [id], onUpdate: Cascade)
 }

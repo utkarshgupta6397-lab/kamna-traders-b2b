@@ -43,6 +43,7 @@ interface Props {
 }
 
 export default function CurrentStockClient({ warehouses, categories, brands, items }: Props) {
+  console.count('Render: CurrentStockClient');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -56,8 +57,19 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
     totalStock: number;
     inventoryByWarehouse: SkuInventory;
   } | null>(null);
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
 
   const searchRef = useRef<HTMLDivElement>(null);
+
 
   // Close search suggestions when clicking outside
   useEffect(() => {
@@ -70,10 +82,12 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Determine which warehouses to show as columns
-  const visibleWarehouses = selectedWarehouses.length > 0
-    ? warehouses.filter(w => selectedWarehouses.includes(w.id))
-    : warehouses;
+  // Determine which warehouses to show as columns - Memoized to prevent busting down-stream memos
+  const visibleWarehouses = useMemo(() => {
+    return selectedWarehouses.length > 0
+      ? warehouses.filter(w => selectedWarehouses.includes(w.id))
+      : warehouses;
+  }, [warehouses, selectedWarehouses]);
 
   // Filter items for suggestions
   const suggestions = useMemo(() => {
@@ -85,11 +99,13 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
     ).slice(0, 10);
   }, [items, searchQuery]);
 
+
   // Unique case sizes for filter
   const caseSizeOptions = useMemo(() => {
     const sizes = new Set(items.map(item => item.caseSize));
     return Array.from(sizes).filter(s => s !== 1).sort((a, b) => a - b);
   }, [items]);
+
 
   // Filter and compute row totals
   const processedItems = useMemo(() => {
@@ -110,8 +126,8 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
       if (selectedCaseSizes.length > 0 && !selectedCaseSizes.includes(item.caseSize)) return false;
 
       // 4. Search Filter
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+      if (debouncedSearchQuery) {
+        const q = debouncedSearchQuery.toLowerCase();
         const matchName = item.name.toLowerCase().includes(q);
         const matchSku = item.id.toLowerCase().includes(q);
         if (!matchName && !matchSku) return false;
@@ -122,20 +138,36 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
 
       return true;
     });
-  }, [items, visibleWarehouses, selectedCategories, selectedBrands, selectedCaseSizes, searchQuery, hideOos]);
+  }, [items, visibleWarehouses, selectedCategories, selectedBrands, selectedCaseSizes, debouncedSearchQuery, hideOos]);
 
-  // Group by Category
-  const groupedItems = useMemo(() => {
-    const groups: Record<string, typeof processedItems> = {};
+
+  // Group by Category and pre-compute subtotals
+  const categoryGroups = useMemo(() => {
+    const groups: Record<string, { items: typeof processedItems, totals: Record<string, number> }> = {};
+
     
     processedItems.forEach(item => {
       const catId = item.categoryId || 'uncategorized';
-      if (!groups[catId]) groups[catId] = [];
-      groups[catId].push(item);
+      if (!groups[catId]) {
+        groups[catId] = { 
+          items: [], 
+          totals: { total: 0 } 
+        };
+        visibleWarehouses.forEach(wh => groups[catId].totals[wh.id] = 0);
+      }
+      
+      groups[catId].items.push(item);
+      groups[catId].totals.total += item.rowTotal;
+      visibleWarehouses.forEach(wh => {
+        groups[catId].totals[wh.id] += item.inventory[wh.id]?.qty || 0;
+      });
     });
 
     return groups;
-  }, [processedItems]);
+  }, [processedItems, visibleWarehouses]);
+
+
+
 
   const categoryMap = useMemo(() => {
     const map: Record<string, string> = { 'uncategorized': 'Uncategorized' };
@@ -370,25 +402,14 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
             </tr>
           </thead>
           <tbody>
-            {Object.keys(groupedItems).length === 0 ? (
+            {Object.keys(categoryGroups).length === 0 ? (
               <tr>
                 <td colSpan={visibleWarehouses.length + 3} className="px-4 py-8 text-center text-gray-500">
                   No items found matching your filters.
                 </td>
               </tr>
             ) : (
-              Object.entries(groupedItems).map(([categoryId, catItems]) => {
-                // Compute category subtotals
-                const catTotals: Record<string, number> = { total: 0 };
-                visibleWarehouses.forEach(wh => catTotals[wh.id] = 0);
-
-                catItems.forEach(item => {
-                  catTotals.total += item.rowTotal;
-                  visibleWarehouses.forEach(wh => {
-                    catTotals[wh.id] += item.inventory[wh.id]?.qty || 0;
-                  });
-                });
-
+              Object.entries(categoryGroups).map(([categoryId, { items: catItems, totals: catTotals }]) => {
                 return (
                   <React.Fragment key={categoryId}>
                     {/* Category Header Row */}
@@ -405,6 +426,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                         {catTotals.total.toLocaleString()}
                       </td>
                     </tr>
+
                     
                     {/* Item Rows */}
                     {catItems.map((item, idx) => (
@@ -443,7 +465,8 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
             )}
           </tbody>
           {/* Grand Totals Footer */}
-          {Object.keys(groupedItems).length > 0 && (
+          {Object.keys(categoryGroups).length > 0 && (
+
             <tfoot className="sticky bottom-0 z-20 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
               <tr className="bg-[#1A2766] text-white font-bold">
                 <td colSpan={2} className="px-4 py-2 text-right border-r border-white/20 uppercase tracking-wider text-[10px]">

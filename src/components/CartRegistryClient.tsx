@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { 
   Printer, 
@@ -12,9 +12,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
-  FileText
+  FileText,
+  Eye,
+  Edit2,
+  Trash2
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import CartManagementModals from './CartManagementModals';
+
 
 interface CartData {
   id: string;
@@ -28,6 +33,8 @@ interface CartData {
   itemCount: number;
   totalQty: number;
   totalValue: number;
+  deletedAt: string | null;
+
 }
 
 interface Pagination {
@@ -41,9 +48,10 @@ interface Props {
   warehouses: { id: string, name: string }[];
   staff: { id: string, name: string }[];
   zohoOrgId: string;
+  canManageCarts?: boolean;
 }
 
-export default function CartRegistryClient({ warehouses, staff, zohoOrgId }: Props) {
+export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canManageCarts = false }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -61,6 +69,11 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId }: Pro
   const [customEnd, setCustomEnd] = useState(searchParams.get('endDate')?.split('T')[0] || '');
   const [limit, setLimit] = useState(parseInt(searchParams.get('limit') || '10'));
   const [page, setPage] = useState(parseInt(searchParams.get('page') || '1'));
+
+  // Modal state
+  const [modalType, setModalType] = useState<'view' | 'edit' | 'delete' | null>(null);
+  const [selectedCartId, setSelectedCartId] = useState<string | null>(null);
+
 
   // Debounced search trigger
   useEffect(() => {
@@ -114,10 +127,14 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId }: Pro
       if (end) params.set('endDate', end);
 
       const res = await fetch(`/api/staff/carts?${params.toString()}`);
-      if (!res.ok) throw new Error('Failed to fetch');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to fetch: ${res.status}`);
+      }
       const data = await res.json();
       setCarts(data.carts);
       setPagination(data.pagination);
+
     } catch (err) {
       console.error(err);
     } finally {
@@ -128,6 +145,135 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId }: Pro
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const cartRows = useMemo(() => {
+    return carts.map((cart) => (
+      <tr 
+        key={cart.id} 
+        className={`hover:bg-[#F1F6FF]/40 transition-colors group ${cart.deletedAt ? 'bg-gray-50/50' : ''}`}
+      >
+        <td className="px-4 py-2.5">
+          <span className={`font-mono font-bold text-[11px] px-2 py-1 rounded ${cart.deletedAt ? 'text-gray-400 bg-gray-100 line-through' : 'text-[#1A2766] bg-[#1A2766]/5'}`}>
+            {cart.slipNumber}
+          </span>
+        </td>
+        <td className="px-4 py-2.5">
+          {cart.zohoSalesorderNumber && cart.zohoSalesorderId ? (
+            <a
+              href={`https://books.zoho.in/app#/salesorders/${cart.zohoSalesorderId}?organization_id=${zohoOrgId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-[11px] font-bold text-blue-500 hover:underline hover:text-blue-600 transition-colors"
+              title="View in Zoho Books"
+            >
+              {cart.zohoSalesorderNumber}
+            </a>
+          ) : (
+            <span className="font-mono text-[11px] font-bold text-gray-300">
+              {cart.zohoSalesorderNumber || '—'}
+            </span>
+          )}
+        </td>
+        <td className="px-4 py-2.5">
+          <div className={`text-[13px] font-bold truncate max-w-[180px] ${cart.deletedAt ? 'text-gray-400 line-through' : 'text-gray-900'}`} title={cart.customerName}>
+            {cart.customerName}
+          </div>
+        </td>
+        <td className="px-4 py-2.5">
+          <span className="text-[12px] font-bold text-gray-500">{cart.warehouseName}</span>
+        </td>
+        <td className="px-4 py-2.5">
+          <span className="text-[12px] font-bold text-gray-500">{cart.staffName}</span>
+        </td>
+        <td className="px-4 py-2.5 text-center">
+          <div className="flex flex-col">
+            <span className="text-[11px] font-black text-[#1A2766]">{cart.itemCount} SKUs</span>
+            <span className="text-[9px] font-bold text-gray-400 uppercase leading-none mt-0.5">{cart.totalQty} Units</span>
+          </div>
+        </td>
+        <td className="px-4 py-2.5 text-right">
+          <span className="text-[13px] font-black text-[#1A2766] tabular-nums">
+            {formatCurrency(cart.totalValue)}
+          </span>
+        </td>
+        <td className="px-4 py-2.5">
+          {cart.deletedAt ? (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-50 text-red-700 text-[9px] font-black uppercase tracking-wider">
+              <div className="w-1 h-1 rounded-full bg-red-500" />
+              Deleted
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[9px] font-black uppercase tracking-wider">
+              <div className="w-1 h-1 rounded-full bg-emerald-500" />
+              Completed
+            </span>
+          )}
+        </td>
+        <td className="px-4 py-2.5">
+          <span className="text-[11px] font-bold text-gray-400 whitespace-nowrap">
+            {new Date(cart.createdAt).toLocaleString('en-IN', {
+              day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+            })}
+          </span>
+        </td>
+        <td className="px-4 py-2.5 text-right">
+          <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={() => {
+                setSelectedCartId(cart.id);
+                setModalType('view');
+              }}
+              className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-[#1A2766] hover:text-white transition-all shadow-sm"
+              title="View Details"
+            >
+              <Eye size={13} />
+            </button>
+            {!cart.deletedAt && canManageCarts && (
+              <>
+                <button
+                  onClick={() => {
+                    setSelectedCartId(cart.id);
+                    setModalType('edit');
+                  }}
+                  className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                  title="Edit Cart"
+                >
+                  <Edit2 size={13} />
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedCartId(cart.id);
+                    setModalType('delete');
+                  }}
+                  className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                  title="Delete Cart"
+                >
+                  <Trash2 size={13} />
+                </button>
+                <div className="w-[1px] h-4 bg-gray-200 mx-0.5" />
+                <button
+                  onClick={() => router.push(`/staff/dashboard/print/${cart.id}`)}
+                  className="p-1.5 rounded-lg bg-[#1A2766] text-white hover:bg-[#003347] transition-all shadow-sm"
+                  title="Print Slip"
+                >
+                  <Printer size={13} />
+                </button>
+                <a
+                  href={`/staff/dashboard/print/${cart.id}`}
+                  target="_blank"
+                  className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-[#1A2766] hover:border-[#1A2766]/30 transition-all"
+                  title="Open in New Tab"
+                >
+                  <ExternalLink size={13} />
+                </a>
+              </>
+            )}
+          </div>
+        </td>
+      </tr>
+    ));
+  }, [carts, loading, zohoOrgId, router, canManageCarts]);
+
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col h-[calc(100vh-160px)]">
@@ -257,86 +403,8 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId }: Pro
                   <td className="px-4 py-3.5 text-right"><div className="h-8 w-16 bg-gray-50 rounded-md ml-auto" /></td>
                 </tr>
               ))
-            ) : carts.map((cart) => (
-              <tr key={cart.id} className="hover:bg-[#F1F6FF]/40 transition-colors group">
-                <td className="px-4 py-2.5">
-                  <span className="font-mono font-bold text-[#1A2766] text-[11px] bg-[#1A2766]/5 px-2 py-1 rounded">
-                    {cart.slipNumber}
-                  </span>
-                </td>
-                <td className="px-4 py-2.5">
-                  {cart.zohoSalesorderNumber && cart.zohoSalesorderId ? (
-                    <a
-                      href={`https://books.zoho.in/app#/salesorders/${cart.zohoSalesorderId}?organization_id=${zohoOrgId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-[11px] font-bold text-blue-500 hover:underline hover:text-blue-600 transition-colors"
-                      title="View in Zoho Books"
-                    >
-                      {cart.zohoSalesorderNumber}
-                    </a>
-                  ) : (
-                    <span className="font-mono text-[11px] font-bold text-gray-300">
-                      {cart.zohoSalesorderNumber || '—'}
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-2.5">
-                  <div className="text-[13px] font-bold text-gray-900 truncate max-w-[180px]" title={cart.customerName}>
-                    {cart.customerName}
-                  </div>
-                </td>
-                <td className="px-4 py-2.5">
-                  <span className="text-[12px] font-bold text-gray-500">{cart.warehouseName}</span>
-                </td>
-                <td className="px-4 py-2.5">
-                  <span className="text-[12px] font-bold text-gray-500">{cart.staffName}</span>
-                </td>
-                <td className="px-4 py-2.5 text-center">
-                  <div className="flex flex-col">
-                    <span className="text-[11px] font-black text-[#1A2766]">{cart.itemCount} SKUs</span>
-                    <span className="text-[9px] font-bold text-gray-400 uppercase leading-none mt-0.5">{cart.totalQty} Units</span>
-                  </div>
-                </td>
-                <td className="px-4 py-2.5 text-right">
-                  <span className="text-[13px] font-black text-[#1A2766] tabular-nums">
-                    {formatCurrency(cart.totalValue)}
-                  </span>
-                </td>
-                <td className="px-4 py-2.5">
-                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[9px] font-black uppercase tracking-wider">
-                    <div className="w-1 h-1 rounded-full bg-emerald-500" />
-                    Completed
-                  </span>
-                </td>
-                <td className="px-4 py-2.5">
-                  <span className="text-[11px] font-bold text-gray-400 whitespace-nowrap">
-                    {new Date(cart.createdAt).toLocaleString('en-IN', {
-                      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
-                    })}
-                  </span>
-                </td>
-                <td className="px-4 py-2.5 text-right">
-                  <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => router.push(`/staff/dashboard/print/${cart.id}`)}
-                      className="p-1.5 rounded-lg bg-[#1A2766] text-white hover:bg-[#003347] transition-all shadow-sm"
-                      title="Print Slip"
-                    >
-                      <Printer size={13} />
-                    </button>
-                    <a
-                      href={`/staff/dashboard/print/${cart.id}`}
-                      target="_blank"
-                      className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-[#1A2766] hover:border-[#1A2766]/30 transition-all"
-                      title="Open in New Tab"
-                    >
-                      <ExternalLink size={13} />
-                    </a>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            ) : cartRows}
+
           </tbody>
         </table>
 
@@ -420,6 +488,18 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId }: Pro
           </div>
         </div>
       )}
+
+      {/* Cart Management Modals */}
+      <CartManagementModals
+        cartId={selectedCartId}
+        type={modalType}
+        onClose={() => {
+          setModalType(null);
+          setSelectedCartId(null);
+        }}
+        onSuccess={() => fetchData()}
+      />
     </div>
+
   );
 }

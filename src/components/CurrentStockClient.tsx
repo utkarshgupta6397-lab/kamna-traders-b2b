@@ -15,6 +15,11 @@ interface Category {
   name: string;
 }
 
+interface Brand {
+  id: string;
+  name: string;
+}
+
 interface SkuInventory {
   [warehouseId: string]: {
     qty: number;
@@ -33,15 +38,18 @@ interface SkuItem {
 interface Props {
   warehouses: Warehouse[];
   categories: Category[];
-  items: SkuItem[];
+  brands: Brand[];
+  items: (SkuItem & { brandId?: string | null; caseSize: number })[];
 }
 
-export default function CurrentStockClient({ warehouses, categories, items }: Props) {
+export default function CurrentStockClient({ warehouses, categories, brands, items }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+  const [selectedCaseSizes, setSelectedCaseSizes] = useState<number[]>([]);
   const [selectedWarehouses, setSelectedWarehouses] = useState<string[]>([]);
-  const [hideOos, setHideOos] = useState(false);
+  const [hideOos, setHideOos] = useState(true);
   const [selectedSku, setSelectedSku] = useState<{
     id: string;
     name: string;
@@ -77,6 +85,12 @@ export default function CurrentStockClient({ warehouses, categories, items }: Pr
     ).slice(0, 10);
   }, [items, searchQuery]);
 
+  // Unique case sizes for filter
+  const caseSizeOptions = useMemo(() => {
+    const sizes = new Set(items.map(item => item.caseSize));
+    return Array.from(sizes).filter(s => s !== 1).sort((a, b) => a - b);
+  }, [items]);
+
   // Filter and compute row totals
   const processedItems = useMemo(() => {
     return items.map(item => {
@@ -89,7 +103,13 @@ export default function CurrentStockClient({ warehouses, categories, items }: Pr
       // 1. Category Filter
       if (selectedCategories.length > 0 && !selectedCategories.includes(item.categoryId || 'uncategorized')) return false;
       
-      // 2. Search Filter
+      // 2. Brand Filter
+      if (selectedBrands.length > 0 && !selectedBrands.includes(item.brandId || 'unbranded')) return false;
+
+      // 3. Case Size Filter
+      if (selectedCaseSizes.length > 0 && !selectedCaseSizes.includes(item.caseSize)) return false;
+
+      // 4. Search Filter
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         const matchName = item.name.toLowerCase().includes(q);
@@ -97,12 +117,12 @@ export default function CurrentStockClient({ warehouses, categories, items }: Pr
         if (!matchName && !matchSku) return false;
       }
 
-      // 3. Hide OOS Filter
+      // 5. Hide OOS Filter
       if (hideOos && item.rowTotal <= 0) return false;
 
       return true;
     });
-  }, [items, visibleWarehouses, selectedCategories, searchQuery, hideOos]);
+  }, [items, visibleWarehouses, selectedCategories, selectedBrands, selectedCaseSizes, searchQuery, hideOos]);
 
   // Group by Category
   const groupedItems = useMemo(() => {
@@ -141,6 +161,18 @@ export default function CurrentStockClient({ warehouses, categories, items }: Pr
   const toggleCategory = (id: string) => {
     setSelectedCategories(prev => 
       prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
+    );
+  };
+
+  const toggleBrand = (id: string) => {
+    setSelectedBrands(prev => 
+      prev.includes(id) ? prev.filter(b => b !== id) : [...prev, id]
+    );
+  };
+
+  const toggleCaseSize = (size: number) => {
+    setSelectedCaseSizes(prev => 
+      prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size]
     );
   };
 
@@ -223,12 +255,62 @@ export default function CurrentStockClient({ warehouses, categories, items }: Pr
                   <button
                     key={c.id}
                     onClick={() => toggleCategory(c.id)}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 rounded"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 rounded text-left"
                   >
-                    <div className={`w-4 h-4 border rounded flex items-center justify-center ${selectedCategories.includes(c.id) ? 'bg-[#1A2766] border-[#1A2766]' : 'bg-white border-gray-300'}`}>
+                    <div className={`w-4 h-4 border rounded shrink-0 flex items-center justify-center ${selectedCategories.includes(c.id) ? 'bg-[#1A2766] border-[#1A2766]' : 'bg-white border-gray-300'}`}>
                       {selectedCategories.includes(c.id) && <Check size={10} className="text-white" />}
                     </div>
-                    {c.name}
+                    <span className="truncate">{c.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Multi-select Brand */}
+          <div className="relative group">
+            <button className="flex items-center gap-2 text-sm border border-gray-300 rounded-md py-2 px-3 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20">
+              <span className="text-gray-400 font-bold text-xs">B</span>
+              <span>{selectedBrands.length > 0 ? `${selectedBrands.length} Brands` : 'All Brands'}</span>
+              <ChevronDown size={14} className="text-gray-400" />
+            </button>
+            <div className="absolute left-0 mt-1 z-50 w-48 bg-white border border-gray-200 rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
+              <div className="p-1 max-h-60 overflow-auto">
+                {brands.map(b => (
+                  <button
+                    key={b.id}
+                    onClick={() => toggleBrand(b.id)}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 rounded text-left"
+                  >
+                    <div className={`w-4 h-4 border rounded shrink-0 flex items-center justify-center ${selectedBrands.includes(b.id) ? 'bg-[#1A2766] border-[#1A2766]' : 'bg-white border-gray-300'}`}>
+                      {selectedBrands.includes(b.id) && <Check size={10} className="text-white" />}
+                    </div>
+                    <span className="truncate">{b.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Multi-select Case Size */}
+          <div className="relative group">
+            <button className="flex items-center gap-2 text-sm border border-gray-300 rounded-md py-2 px-3 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20">
+              <span className="text-gray-400 font-bold text-xs">CS</span>
+              <span>{selectedCaseSizes.length > 0 ? `${selectedCaseSizes.length} Case Sizes` : 'Case Size'}</span>
+              <ChevronDown size={14} className="text-gray-400" />
+            </button>
+            <div className="absolute left-0 mt-1 z-50 w-40 bg-white border border-gray-200 rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
+              <div className="p-1 max-h-60 overflow-auto">
+                {caseSizeOptions.map(size => (
+                  <button
+                    key={size}
+                    onClick={() => toggleCaseSize(size)}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 rounded"
+                  >
+                    <div className={`w-4 h-4 border rounded flex items-center justify-center ${selectedCaseSizes.includes(size) ? 'bg-[#1A2766] border-[#1A2766]' : 'bg-white border-gray-300'}`}>
+                      {selectedCaseSizes.includes(size) && <Check size={10} className="text-white" />}
+                    </div>
+                    {size}
                   </button>
                 ))}
               </div>
@@ -248,12 +330,12 @@ export default function CurrentStockClient({ warehouses, categories, items }: Pr
                   <button
                     key={w.id}
                     onClick={() => toggleWarehouse(w.id)}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 rounded"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 rounded text-left"
                   >
-                    <div className={`w-4 h-4 border rounded flex items-center justify-center ${selectedWarehouses.includes(w.id) ? 'bg-[#1A2766] border-[#1A2766]' : 'bg-white border-gray-300'}`}>
+                    <div className={`w-4 h-4 border rounded shrink-0 flex items-center justify-center ${selectedWarehouses.includes(w.id) ? 'bg-[#1A2766] border-[#1A2766]' : 'bg-white border-gray-300'}`}>
                       {selectedWarehouses.includes(w.id) && <Check size={10} className="text-white" />}
                     </div>
-                    {w.name}
+                    <span className="truncate">{w.name}</span>
                   </button>
                 ))}
               </div>
@@ -277,14 +359,14 @@ export default function CurrentStockClient({ warehouses, categories, items }: Pr
         <table className="w-full text-sm text-left border-collapse">
           <thead className="text-xs text-gray-700 uppercase bg-gray-100 sticky top-0 z-10 shadow-sm">
             <tr>
-              <th className="px-4 py-3 font-semibold border-b border-r border-gray-200 bg-gray-100 sticky left-0 z-20 w-12 text-center">#</th>
-              <th className="px-4 py-3 font-semibold border-b border-r border-gray-200 bg-gray-100 sticky left-[48px] z-20 min-w-[250px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Product [SKU]</th>
+              <th className="px-4 py-2 font-semibold border-b border-r border-gray-200 bg-gray-100 sticky left-0 z-20 w-10 text-center">#</th>
+              <th className="px-4 py-2 font-semibold border-b border-r border-gray-200 bg-gray-100 sticky left-[40px] z-20 min-w-[300px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Product [SKU]</th>
               {visibleWarehouses.map(wh => (
-                <th key={wh.id} className="px-4 py-3 font-semibold border-b border-r border-gray-200 text-center bg-gray-100 min-w-[100px]">
+                <th key={wh.id} className="px-4 py-2 font-semibold border-b border-r border-gray-200 text-center bg-gray-100 min-w-[100px]">
                   {wh.name}
                 </th>
               ))}
-              <th className="px-4 py-3 font-semibold border-b border-gray-200 text-center bg-[#1A2766]/5 min-w-[100px]">Total</th>
+              <th className="px-4 py-2 font-semibold border-b border-gray-200 text-center bg-[#1A2766]/5 min-w-[100px]">Total</th>
             </tr>
           </thead>
           <tbody>
@@ -310,47 +392,47 @@ export default function CurrentStockClient({ warehouses, categories, items }: Pr
                 return (
                   <React.Fragment key={categoryId}>
                     {/* Category Header Row */}
-                    <tr className="bg-gray-50/80 font-bold border-b border-gray-200 text-[#1A2766]">
-                      <td colSpan={2} className="px-4 py-2 border-r border-gray-200 sticky left-0 z-10 bg-gray-50/90 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                        {categoryMap[categoryId] || 'Unknown Category'} <span className="text-xs font-normal text-gray-500 ml-2">({catItems.length} items)</span>
+                    <tr className="bg-gray-50/80 font-bold border-b border-gray-200 text-[#1A2766] text-xs">
+                      <td colSpan={2} className="px-4 py-1.5 border-r border-gray-200 sticky left-0 z-10 bg-gray-50/90 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                        {categoryMap[categoryId] || 'Unknown Category'} <span className="text-[10px] font-normal text-gray-500 ml-2">({catItems.length} items)</span>
                       </td>
                       {visibleWarehouses.map(wh => (
-                        <td key={wh.id} className="px-4 py-2 text-center border-r border-gray-200">
+                        <td key={wh.id} className="px-4 py-1.5 text-center border-r border-gray-200">
                           {catTotals[wh.id].toLocaleString()}
                         </td>
                       ))}
-                      <td className="px-4 py-2 text-center bg-[#1A2766]/5">
+                      <td className="px-4 py-1.5 text-center bg-[#1A2766]/5">
                         {catTotals.total.toLocaleString()}
                       </td>
                     </tr>
                     
                     {/* Item Rows */}
                     {catItems.map((item, idx) => (
-                      <tr key={item.id} className="border-b border-gray-100 hover:bg-blue-50/50 transition-colors">
-                        <td className="px-4 py-2 text-gray-500 text-center border-r border-gray-100 sticky left-0 z-10 bg-white group-hover:bg-blue-50/50">{idx + 1}</td>
-                        <td className="px-4 py-2 border-r border-gray-100 sticky left-[48px] z-10 bg-white group-hover:bg-blue-50/50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                          <div 
-                            className="flex flex-col cursor-pointer hover:text-[#1A2766]"
-                            onClick={() => setSelectedSku({
-                              id: item.id,
-                              name: item.name,
-                              totalStock: item.rowTotal,
-                              inventoryByWarehouse: item.inventory
-                            })}
-                          >
-                            <span className="font-medium text-gray-900 leading-tight group-hover:underline decoration-[#1A2766]/30">{item.name}</span>
-                            <span className="text-[10px] text-gray-500 font-mono mt-0.5">[{item.id}]</span>
+                      <tr key={item.id} className="border-b border-gray-100 hover:bg-blue-50/50 transition-colors group">
+                        <td className="px-4 py-1.5 text-gray-400 text-center border-r border-gray-100 sticky left-0 z-10 bg-white group-hover:bg-blue-50/30">{idx + 1}</td>
+                        <td 
+                          className="px-4 py-1.5 border-r border-gray-100 sticky left-[40px] z-10 bg-white group-hover:bg-blue-50/30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] cursor-pointer"
+                          onClick={() => setSelectedSku({
+                            id: item.id,
+                            name: item.name,
+                            totalStock: item.rowTotal,
+                            inventoryByWarehouse: item.inventory
+                          })}
+                        >
+                          <div className="flex items-center gap-2 hover:text-[#1A2766] overflow-hidden">
+                            <span className="font-medium text-gray-900 truncate group-hover:underline decoration-[#1A2766]/30">{item.name}</span>
+                            <span className="text-[10px] text-gray-400 font-mono flex-shrink-0">[{item.id}]</span>
                           </div>
                         </td>
                         {visibleWarehouses.map(wh => {
                           const qty = item.inventory[wh.id]?.qty || 0;
                           return (
-                            <td key={wh.id} className={`px-4 py-2 text-center border-r border-gray-100 font-mono ${qty > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                            <td key={wh.id} className={`px-4 py-1.5 text-center border-r border-gray-100 font-mono ${qty > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
                               {qty}
                             </td>
                           );
                         })}
-                        <td className={`px-4 py-2 text-center font-bold font-mono bg-[#1A2766]/5 ${item.rowTotal > 0 ? 'text-[#1A2766]' : 'text-gray-300'}`}>
+                        <td className={`px-4 py-1.5 text-center font-bold font-mono bg-[#1A2766]/5 ${item.rowTotal > 0 ? 'text-[#1A2766]' : 'text-gray-300'}`}>
                           {item.rowTotal}
                         </td>
                       </tr>
@@ -364,15 +446,15 @@ export default function CurrentStockClient({ warehouses, categories, items }: Pr
           {Object.keys(groupedItems).length > 0 && (
             <tfoot className="sticky bottom-0 z-20 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
               <tr className="bg-[#1A2766] text-white font-bold">
-                <td colSpan={2} className="px-4 py-3 text-right border-r border-white/20 uppercase tracking-wider text-xs">
+                <td colSpan={2} className="px-4 py-2 text-right border-r border-white/20 uppercase tracking-wider text-[10px]">
                   Grand Total
                 </td>
                 {visibleWarehouses.map(wh => (
-                  <td key={wh.id} className="px-4 py-3 text-center border-r border-white/20">
+                  <td key={wh.id} className="px-4 py-2 text-center border-r border-white/20">
                     {grandTotals[wh.id].toLocaleString()}
                   </td>
                 ))}
-                <td className="px-4 py-3 text-center text-green-300">
+                <td className="px-4 py-2 text-center text-green-300">
                   {grandTotals.total.toLocaleString()}
                 </td>
               </tr>

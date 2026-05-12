@@ -8,7 +8,7 @@ export default async function CurrentStockPage() {
   if (!session) redirect('/staff');
 
   // Fetch all necessary data
-  const [warehouses, categories, skus, inventory] = await Promise.all([
+  const [warehouses, categories, brands, skus, inventory] = await Promise.all([
     prisma.warehouse.findMany({ 
       where: { active: true }, 
       select: { id: true, name: true },
@@ -19,9 +19,14 @@ export default async function CurrentStockPage() {
       select: { id: true, name: true },
       orderBy: { name: 'asc' }
     }),
+    prisma.brand.findMany({
+      where: { active: true },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' }
+    }),
     prisma.sku.findMany({ 
       where: { isActive: true }, 
-      select: { id: true, name: true, zohoBooksId2: true, categoryId: true },
+      select: { id: true, name: true, zohoBooksId2: true, categoryId: true, brandId: true, caseSize: true },
       orderBy: { name: 'asc' }
     }),
     prisma.warehouseInventory.findMany({
@@ -53,6 +58,7 @@ export default async function CurrentStockPage() {
     <CurrentStockClient 
       warehouses={warehouses} 
       categories={categories} 
+      brands={brands}
       items={items} 
     />
   );

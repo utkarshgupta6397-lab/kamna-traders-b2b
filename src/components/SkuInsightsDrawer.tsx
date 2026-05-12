@@ -79,7 +79,7 @@ export default function SkuInsightsDrawer({ isOpen, onClose, sku, warehouses }: 
 
   // Helper for DOI formatting
   const calculateDOIValue = (stock: number, avgDailyOut: number) => {
-    if (avgDailyOut === 0) return { value: 'N/A', status: 'HEALTHY' };
+    if (avgDailyOut === 0) return { value: '0', status: 'HEALTHY' };
     const doi = Math.round(stock / avgDailyOut);
     if (doi <= DOI_THRESHOLDS.CRITICAL) return { value: `${doi}d`, status: 'CRITICAL' };
     if (doi <= DOI_THRESHOLDS.WARNING) return { value: `${doi}d`, status: 'WARNING' };
@@ -241,7 +241,7 @@ export default function SkuInsightsDrawer({ isOpen, onClose, sku, warehouses }: 
                         yAxisId="right" 
                         orientation="right" 
                         tick={{fontSize: 10}} 
-                        domain={['auto', 'auto']}
+                        domain={[0, 'auto']}
                         allowDecimals={false}
                       />
                       <Tooltip 

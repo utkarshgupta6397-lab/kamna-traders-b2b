@@ -115,6 +115,10 @@ class QZManager {
     }
   }
 
+  setPrinter(name: string) {
+    this.printer = name;
+  }
+
   isConnected() {
     return this.connection && qz.websocket.isActive();
   }

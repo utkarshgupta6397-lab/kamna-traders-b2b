@@ -1,14 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Lock, Phone, RefreshCw } from 'lucide-react';
+import { Lock, Phone, RefreshCw, AlertTriangle } from 'lucide-react';
 
 type Step = 'mobile' | 'pin' | 'reset';
 
-export default function StaffLoginPage() {
+function StaffLoginContent() {
   const [step, setStep] = useState<Step>('mobile');
   const [mobile, setMobile] = useState('');
   const [pin, setPin] = useState('');
@@ -17,6 +17,13 @@ export default function StaffLoginPage() {
   const [loading, setLoading] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get('error') === 'superseded') {
+      setError('Your session was signed in on another device.');
+    }
+  }, [searchParams]);
 
   const handleMobileSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -200,5 +207,13 @@ export default function StaffLoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function StaffLoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0f1a40] flex items-center justify-center text-white">Loading...</div>}>
+      <StaffLoginContent />
+    </Suspense>
   );
 }

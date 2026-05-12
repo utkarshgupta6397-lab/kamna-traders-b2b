@@ -1,6 +1,5 @@
 import { PrismaClient } from '@prisma/client';
 import { getDatabaseUrl } from './database-url';
-import { ensureInitialUsers } from './initial-data';
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
@@ -26,8 +25,7 @@ export async function initializeDatabase() {
   globalForInit.__db_initialized = true;
   
   try {
-    const fs = require('fs');
-    fs.appendFileSync('/tmp/db_init.log', `[DB] Init triggered at ${new Date().toISOString()}\n`);
+    const { ensureInitialUsers } = await import('./initial-data');
     await ensureInitialUsers();
   } catch (err) {
     console.error('[DB] Initialization failed:', err);

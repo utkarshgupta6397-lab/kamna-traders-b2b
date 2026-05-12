@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { decrypt } from '@/lib/auth';
+import { decrypt } from '@/lib/jwt';
 
 /**
  * Middleware to protect /admin/* and /staff/* routes.
@@ -25,11 +25,36 @@ export async function middleware(request: NextRequest) {
     }
 
     // No session → redirect to login (preserve intended URL)
-    if (!session?.userId) {
+    if (!session?.userId || !session?.sessionToken) {
       const loginUrl = request.nextUrl.clone();
-      loginUrl.pathname = '/staff'; // The login page is at /staff
+      loginUrl.pathname = '/staff'; 
       loginUrl.searchParams.set('callbackUrl', pathname);
       return NextResponse.redirect(loginUrl);
+    }
+
+    // Server-side source of truth validation
+    // We call the internal API because Prisma is not Edge-compatible
+    try {
+      const validateUrl = new URL('/api/auth/session/validate', request.url);
+      const validateRes = await fetch(validateUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionToken: session.sessionToken })
+      });
+      const validation = await validateRes.json();
+      
+      if (!validation.isValid) {
+        console.warn(`[Middleware] Session ${session.sessionToken} invalidated by DB.`);
+        const loginUrl = new URL('/staff', request.url);
+        loginUrl.searchParams.set('error', 'superseded');
+        
+        // Clear the stale cookie
+        const response = NextResponse.redirect(loginUrl);
+        response.cookies.set('session', '', { expires: new Date(0) });
+        return response;
+      }
+    } catch (err) {
+      console.error('[Middleware] Session validation failed:', err);
     }
 
     // Admin routes require ADMIN role

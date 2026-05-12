@@ -17,7 +17,7 @@ export default function ActionForm({
   successMessage = "Updated successfully",
   resetOnSuccess = false,
 }: { 
-  action: (data: FormData) => Promise<void>;
+  action: (data: FormData) => Promise<any>;
   children: React.ReactNode;
   className?: string;
   successMessage?: string;
@@ -32,7 +32,14 @@ export default function ActionForm({
     const formData = new FormData(e.currentTarget);
     startTransition(async () => {
       try {
-        await action(formData);
+        const result = await action(formData);
+        
+        // Handle explicit error return from server action
+        if (result && typeof result === 'object' && 'error' in result) {
+          toast.error(String(result.error));
+          return;
+        }
+
         toast.success(successMessage);
         router.refresh();
         if (resetOnSuccess) {

@@ -9,29 +9,30 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  mobile    String   @unique
-  role      String   @default("STAFF")
-  active    Boolean  @default(true)
-  pin       String?
-  canManageCarts Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  carts     Cart[]
+  id               String             @id @default(cuid())
+  name             String
+  mobile           String             @unique
+  role             String             @default("STAFF")
+  active           Boolean            @default(true)
+  pin              String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  canManageCarts   Boolean            @default(false)
+  sessions         ActiveSession[]
+  carts            Cart[]
   inventoryHistory InventoryHistory[]
 }
 
 model Warehouse {
-  id        String               @id @default(cuid())
-  name      String
-  address   String?
-  active    Boolean              @default(true)
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
-  carts     Cart[]
-  inventory WarehouseInventory[]
+  id               String               @id @default(cuid())
+  name             String
+  address          String?
+  active           Boolean              @default(true)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  carts            Cart[]
   inventoryHistory InventoryHistory[]
+  inventory        WarehouseInventory[]
 }
 
 model Brand {
@@ -56,28 +57,28 @@ model Category {
 }
 
 model Sku {
-  id              String               @id
-  name            String
-  brandId         String?
-  unit            String?
-  moq             Int                  @default(1)
-  stepQty         Int                  @default(1)
-  price           Float                @default(0.0)
-  gstPercent      Float                @default(0.0)
-  hsnCode         String?
-  description     String?
-  caseSize        Int                  @default(1)
-  lastSyncedAt    DateTime?
-  zohoBookItemId  BigInt?
-  zohoBooksId2    String?
-  categoryId      String?
-  isActive        Boolean              @default(true)
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-  cartItems       CartItem[]
-  brand           Brand?               @relation(fields: [brandId], references: [id])
-  category        Category?            @relation(fields: [categoryId], references: [id])
-  inventory       WarehouseInventory[]
+  id             String               @id
+  name           String
+  brandId        String?
+  unit           String?
+  moq            Int                  @default(1)
+  stepQty        Int                  @default(1)
+  price          Float                @default(0.0)
+  gstPercent     Float                @default(0.0)
+  hsnCode        String?
+  description    String?
+  caseSize       Int                  @default(1)
+  lastSyncedAt   DateTime?
+  zohoBookItemId BigInt?
+  zohoBooksId2   String?
+  categoryId     String?
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  cartItems      CartItem[]
+  brand          Brand?               @relation(fields: [brandId], references: [id])
+  category       Category?            @relation(fields: [categoryId], references: [id])
+  inventory      WarehouseInventory[]
 
   @@index([categoryId])
   @@index([brandId])
@@ -94,49 +95,45 @@ model WarehouseInventory {
   isOos       Boolean   @default(false)
   zone        String?
   updatedAt   DateTime  @updatedAt
-  sku         Sku       @relation(fields: [skuId], references: [id], onUpdate: Cascade)
+  sku         Sku       @relation(fields: [skuId], references: [id])
   warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
 
   @@unique([warehouseId, skuId])
 }
 
 model Cart {
-  id                 String     @id
-  warehouseId        String
-  customerName       String
-  notes              String?
-  staffId            String
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
-  dispatchSlipNumber String?    @unique
-  deletedAt          DateTime?
-
-  staff              User       @relation(fields: [staffId], references: [id])
-  warehouse          Warehouse  @relation(fields: [warehouseId], references: [id])
-  items              CartItem[]
-
-  // Zoho Integration
+  id                   String     @id
+  warehouseId          String
+  customerName         String
+  notes                String?
+  staffId              String
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  dispatchSlipNumber   String?    @unique
   zohoSalesorderId     String?
   zohoSalesorderNumber String?
-  zohoSyncStatus       String?            @default("PENDING")
-  zohoSyncStep         String?            @default("INITIATED")
+  zohoSyncStatus       String?    @default("PENDING")
+  zohoSyncStep         String?    @default("INITIATED")
   zohoSyncError        String?
   zohoLastSyncAt       DateTime?
   zohoResponseTimeMs   Int?
   zohoPayload          Json?
   zohoResponse         Json?
   zohoExecutionTrace   Json?
+  deletedAt            DateTime?
+  staff                User       @relation(fields: [staffId], references: [id])
+  warehouse            Warehouse  @relation(fields: [warehouseId], references: [id])
+  items                CartItem[]
 }
 
 model CartItem {
-  id     String @id @default(cuid())
-  cartId String
-  skuId  String
+  id          String @id @default(cuid())
+  cartId      String
+  skuId       String
   qty         Int
   originalQty Int?
-
-  cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  sku    Sku    @relation(fields: [skuId], references: [id], onUpdate: Cascade)
+  cart        Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  sku         Sku    @relation(fields: [skuId], references: [id])
 }
 
 model CustomerLead {
@@ -184,15 +181,13 @@ model InventoryHistory {
   remarks     String
   createdBy   String
   createdAt   DateTime  @default(now())
-
-  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
   user        User      @relation(fields: [createdBy], references: [id])
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
 
   @@index([warehouseId])
   @@index([skuId])
   @@index([createdAt])
 }
-
 
 model ZohoToken {
   id           String   @id @default("singleton")
@@ -200,4 +195,19 @@ model ZohoToken {
   refreshToken String
   expiresAt    DateTime
   updatedAt    DateTime @updatedAt
+}
+
+model ActiveSession {
+  id           String   @id @default(cuid())
+  userId       String
+  sessionToken String   @unique
+  deviceType   String
+  deviceName   String?
+  userAgent    String?
+  ipAddress    String?
+  lastSeenAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, deviceType])
 }

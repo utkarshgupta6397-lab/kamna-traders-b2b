@@ -18,6 +18,32 @@ export async function POST() {
   if (!orgId) {
     return NextResponse.json({ error: 'ZOHO_BOOKS_ORG_ID missing in environment' }, { status: 400 });
   }
+
+  try {
+    // 1. Fetch Active SKUs with Zoho IDs
+    const activeSkus = await prisma.sku.findMany({
+      where: {
+        isActive: true,
+        zohoBooksId2: { not: null }
+      },
+      take: 5 // Limit to 5 for testing
+    });
+
+    if (activeSkus.length === 0) {
+      return NextResponse.json({ error: 'No active SKUs with Zoho Books IDs found' }, { status: 400 });
+    }
+
+    // 2. Prepare Payload
+    const timestamp = Date.now();
+    const reference_number = `TEST-SO-${timestamp}`;
+    const date = new Date().toISOString().split('T')[0];
+    const line_items = activeSkus.map(sku => ({
+      item_id: sku.zohoBooksId2,
+      quantity: 1,
+      rate: sku.price
+    }));
+
+    // 3. Call Zoho API
     const apiBase = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
     const url = `${apiBase}/books/v3/salesorders?organization_id=${orgId}`;
     

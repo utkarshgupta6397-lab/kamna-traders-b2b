@@ -42,21 +42,46 @@ export type StyledLine = {
 
 /**
  * Shared logic to wrap text into multiple lines while preserving alignment.
+ * TREATS UOM AND SKU BRACKETS AS ATOMIC TOKENS.
  */
 function wrapText(text: string, width: number): string[] {
+  if (!text) return [];
+  
+  // 1. Identify and protect atomic tokens (e.g. "200 mtr", "[SPA15]")
+  // We temporarily replace spaces within these tokens with a non-space character
+  let processed = text;
+  
+  // Protect "Number + Unit" (e.g. 200 mtr, 5 nos, 1.5 kg)
+  processed = processed.replace(/(\d+(?:\.\d+)?)\s+([a-zA-Z]{1,5})(?![a-zA-Z])/g, '$1\u00A0$2');
+  
+  // Protect SKU brackets (e.g. [SPA15])
+  processed = processed.replace(/\[([^\]\s]+)\]/g, (match) => match.replace(/\s+/g, '\u00A0'));
+
   const lines: string[] = [];
   let currentLine = '';
-  const words = text.split(' ');
+  // Split by actual spaces, keeping our protected tokens intact
+  const words = processed.split(' ');
 
   for (const word of words) {
-    if ((currentLine + word).length <= width) {
-      currentLine += (currentLine ? ' ' : '') + word;
+    // Length check must account for the fact that \u00A0 counts as 1 char
+    const cleanWord = word.replace(/\u00A0/g, ' ');
+    const potentialLine = currentLine ? `${currentLine} ${cleanWord}` : cleanWord;
+
+    if (potentialLine.length <= width) {
+      currentLine = potentialLine;
     } else {
       if (currentLine) lines.push(currentLine);
-      currentLine = word;
-      while (currentLine.length > width) {
-        lines.push(currentLine.substring(0, width));
-        currentLine = currentLine.substring(width);
+      
+      // If a single word is longer than width, we must force wrap it
+      if (cleanWord.length > width) {
+        let temp = cleanWord;
+        while (temp.length > width) {
+          lines.push(temp.substring(0, width));
+          temp = temp.substring(width);
+        }
+        currentLine = temp;
+      } else {
+        currentLine = cleanWord;
       }
     }
   }
@@ -104,7 +129,13 @@ export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
   lines.push({ text: '-'.repeat(width) });
 
   // Items Table: # | ITEM [SKU] | QTY
-  lines.push({ text: '#   ITEM [SKU]'.padEnd(width - 12) + 'QTY/UOM'.padStart(12), bold: true });
+  // CALIBRATION: Standard 80mm paper is ~48 chars. 
+  // We use 48 as our base and ensure columns fit perfectly.
+  const COL_INDEX = 4;
+  const COL_QTY = 12;
+  const COL_NAME = width - COL_INDEX - COL_QTY - 1; // 48 - 4 - 12 - 1 = 31
+
+  lines.push({ text: '#   ITEM [SKU]'.padEnd(COL_INDEX + COL_NAME) + ' '.repeat(1) + 'QTY/UOM'.padStart(COL_QTY), bold: true });
   lines.push({ text: '-'.repeat(width) });
 
   const ITEM_INDENT = '    '; // 4 spaces for consistent hanging indent
@@ -122,14 +153,13 @@ export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
       // Inline SKU: "Item Name [SKU]"
       const fullName = `${item.name} [${item.skuId}]`;
       
-      // Name width: width - 4 (index) - 12 (qty) = 30 chars
-      const nameWidth = width - 16;
-      const nameLines = wrapText(fullName, nameWidth);
+      // Name width: width - 4 (index) - 12 (qty) - 1 (spacer)
+      const nameLines = wrapText(fullName, COL_NAME);
 
       nameLines.forEach((nameLine, lineIdx) => {
         if (lineIdx === 0) {
           // First line includes index and qty
-          lines.push({ text: `${indexStr}${nameLine.padEnd(nameWidth)} ${qtyStr}` });
+          lines.push({ text: `${indexStr}${nameLine.padEnd(COL_NAME)} ${qtyStr}` });
         } else {
           // Subsequent lines use the fixed indentation to align with name start
           lines.push({ text: `${ITEM_INDENT}${nameLine}` });
@@ -176,19 +206,22 @@ export function generateZoneSlip(zone: string, items: PrintItem[], payload: Prin
   lines.push({ text: '-'.repeat(width) });
 
   // Zone slip: NO SKU column, just ITEM and QTY
-  lines.push({ text: '#   ITEM'.padEnd(width - 12) + 'QTY/UOM'.padStart(12), bold: true });
+  const COL_INDEX = 4;
+  const COL_QTY = 12;
+  const COL_NAME = width - COL_INDEX - COL_QTY - 1;
+
+  lines.push({ text: '#   ITEM'.padEnd(COL_INDEX + COL_NAME) + ' '.repeat(1) + 'QTY/UOM'.padStart(COL_QTY), bold: true });
   lines.push({ text: '-'.repeat(width) });
 
   items.forEach((item, idx) => {
-    const indexStr = `${idx + 1}`.padEnd(4);
-    const qtyStr = `${item.qty} ${item.unit}`.padStart(12);
+    const indexStr = `${idx + 1}`.padEnd(COL_INDEX);
+    const qtyStr = `${item.qty} ${item.unit}`.padStart(COL_QTY);
     
-    const nameWidth = width - 16;
-    const nameLines = wrapText(item.name, nameWidth);
+    const nameLines = wrapText(item.name, COL_NAME);
 
     nameLines.forEach((nameLine, lineIdx) => {
       if (lineIdx === 0) {
-        lines.push({ text: `${indexStr}${nameLine.padEnd(nameWidth)} ${qtyStr}`, bold: true });
+        lines.push({ text: `${indexStr}${nameLine.padEnd(COL_NAME)} ${qtyStr}`, bold: true });
       } else {
         lines.push({ text: `${ITEM_INDENT}${nameLine}`, bold: true });
       }

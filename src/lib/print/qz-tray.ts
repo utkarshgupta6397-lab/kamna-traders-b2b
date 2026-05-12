@@ -57,8 +57,9 @@ class QZManager {
     try {
       if (!this.connection) await this.connect();
       const printer = await qz.printers.find(name);
-      this.printer = printer;
-      return printer;
+      const selected = Array.isArray(printer) ? (printer[0] || null) : (printer || null);
+      this.printer = selected;
+      return selected;
     } catch (err) {
       console.error('[QZ] Printer search failed:', err);
       return null;
@@ -68,7 +69,8 @@ class QZManager {
   async getAllPrinters(): Promise<string[]> {
     try {
       if (!this.connection) await this.connect();
-      return await qz.printers.find();
+      const list = await qz.printers.find();
+      return Array.isArray(list) ? list : (list ? [list] : []);
     } catch (err) {
       console.error('[QZ] Failed to fetch printers:', err);
       return [];

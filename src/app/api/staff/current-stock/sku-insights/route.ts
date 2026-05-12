@@ -20,6 +20,17 @@ export async function GET(request: Request) {
   sevenDaysAgo.setHours(0, 0, 0, 0);
 
   try {
+    const sku = await prisma.sku.findUnique({
+      where: { id: skuId },
+      include: {
+        inventory: true
+      }
+    });
+
+    if (!sku) {
+      return NextResponse.json({ error: 'SKU not found' }, { status: 404 });
+    }
+
     // 1. Fetch Outward Movements (Sales only) from CartItems
     const cartItems = await prisma.cartItem.findMany({
       where: {

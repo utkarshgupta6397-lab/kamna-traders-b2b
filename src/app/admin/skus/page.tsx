@@ -3,6 +3,8 @@ import { createSku, updateSku, deleteSku } from '../actions';
 import { Trash2, Save } from 'lucide-react';
 import SafeDeleteButton from '@/components/SafeDeleteButton';
 import ActionForm, { FormSubmit } from '@/components/ActionForm';
+import ExportSkusButton from '@/components/ExportSkusButton';
+
 
 
 export default async function SKUsPage({ searchParams }: { searchParams: Promise<{ page?: string; q?: string }> }) {
@@ -38,11 +40,15 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">SKUs ({total})</h1>
-        <form action="/admin/skus" method="get" className="flex gap-2">
-          <input type="text" name="q" defaultValue={q} placeholder="Search SKU / name / Zoho ID…" className="border rounded-lg px-3 py-1.5 text-sm w-52 focus:ring-2 focus:ring-[#1A2766] outline-none" />
-          <button type="submit" className="bg-[#1A2766] text-white px-3 py-1.5 rounded-lg text-xs font-medium">Search</button>
-          {q && <a href="/admin/skus" className="text-xs text-gray-400 self-center hover:text-gray-600">Clear</a>}
-        </form>
+        <div className="flex items-center gap-4">
+          <ExportSkusButton searchQuery={q} />
+          <form action="/admin/skus" method="get" className="flex gap-2">
+            <input type="text" name="q" defaultValue={q} placeholder="Search SKU / name / Zoho ID…" className="border rounded-lg px-3 py-1.5 text-sm w-52 focus:ring-2 focus:ring-[#1A2766] outline-none" />
+            <button type="submit" className="bg-[#1A2766] text-white px-3 py-1.5 rounded-lg text-xs font-medium">Search</button>
+            {q && <a href="/admin/skus" className="text-xs text-gray-400 self-center hover:text-gray-600">Clear</a>}
+          </form>
+        </div>
+
       </div>
 
       {/* Add SKU */}

@@ -65,15 +65,15 @@ export async function GET() {
 
   const topBrandsFullCatalog = Object.entries(brandCounts)
     .map(([brandName, count]) => ({ brandName, activeSkuCount: count }))
-    .sort((a, b) => b.activeSkuCount - a.activeSkuCount)
-    .slice(0, 8);
+    .sort((a, b) => a.brandName.localeCompare(b.brandName))
+    .slice(0, 5);
 
   const topBrandsByCategory: Record<string, { brandName: string; activeSkuCount: number }[]> = {};
   Object.entries(categoryBrandCounts).forEach(([catId, counts]) => {
     topBrandsByCategory[catId] = Object.entries(counts)
       .map(([brandName, count]) => ({ brandName, activeSkuCount: count }))
-      .sort((a, b) => b.activeSkuCount - a.activeSkuCount)
-      .slice(0, 8);
+      .sort((a, b) => a.brandName.localeCompare(b.brandName))
+      .slice(0, 5);
   });
 
   return NextResponse.json({

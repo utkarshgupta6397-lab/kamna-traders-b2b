@@ -275,7 +275,7 @@ export default function PrinterSettingsTab() {
             {status.hasConnection && (
               <div className="mt-2 text-[10px] text-gray-400 flex items-center gap-1">
                 <Info className="w-3 h-3" />
-                <span>QZ Tray {qz.version} detected</span>
+                <span>QZ Tray {(qz as any).version} detected</span>
               </div>
             )}
           </StepCard>

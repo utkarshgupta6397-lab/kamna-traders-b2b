@@ -338,18 +338,11 @@ export default function PrinterSettingsTab() {
             </h3>
             <span className="text-[10px] font-bold text-gray-400">Environment: {process.env.NEXT_PUBLIC_QZ_MODE || 'Production'}</span>
           </div>
-          <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
             <DiagnosticItem 
               label="Certificate API" 
               onClick={async () => {
                 const res = await fetch('/api/qz/certificate');
-                return res.ok ? 'REACHABLE' : `ERROR: ${res.status}`;
-              }}
-            />
-            <DiagnosticItem 
-              label="Signing API" 
-              onClick={async () => {
-                const res = await fetch('/api/qz/sign', { method: 'POST', body: JSON.stringify({ payload: 'test' }) });
                 return res.ok ? 'REACHABLE' : `ERROR: ${res.status}`;
               }}
             />

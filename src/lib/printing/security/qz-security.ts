@@ -6,28 +6,28 @@ import { KJUR, KEYUTIL, hextob64, X509 } from 'jsrsasign';
 
 /**
  * Initializes QZ Security flow.
- * Registers the certificate and the local/remote signing promise.
+ * Registers the certificate and the local signing promise.
  */
 export function initializeQZSecurity() {
   if (typeof window === 'undefined') return;
 
-  const mode = process.env.NEXT_PUBLIC_QZ_MODE || 'production';
-  console.log(`[QZ_SECURITY] Registering promises in ${mode} mode`);
+  console.log('[QZ_SECURITY] Initializing 100% Browser-Local Security Handshake');
 
-  // 1. Set Certificate Promise
+  // 1. Set Certificate Promise (Always load from Local Config first, fallback to public cert)
   qz.security.setCertificatePromise(async () => {
     try {
-      if (mode === 'demo') {
-        const config = await getQZConfig();
-        if (config?.certificate) return config.certificate;
-        throw new Error('Local QZ certificate not found. Please configure printer in settings.');
+      const config = await getQZConfig();
+      
+      // If user has a specific machine cert, use it
+      if (config?.certificate) {
+        console.debug('[QZ_SECURITY] Using machine-local certificate from storage');
+        return config.certificate;
       }
 
+      // Fallback to the default system certificate (for common public root trust)
+      console.debug('[QZ_SECURITY] Falling back to default system certificate API');
       const response = await fetch('/api/qz/certificate');
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Unknown error');
-        throw new Error(`Failed to load QZ certificate: ${response.status} ${errorText}`);
-      }
+      if (!response.ok) throw new Error(`Cert API failed: ${response.status}`);
       return await response.text();
     } catch (err: any) {
       console.error('[QZ_SECURITY] Certificate promise failed:', err.message);
@@ -35,56 +35,51 @@ export function initializeQZSecurity() {
     }
   });
 
-  // 2. Set Signature Promise
+  // 2. Set Signature Promise (100% BROWSER-LOCAL)
   qz.security.setSignaturePromise(async (toSign) => {
     try {
-      if (mode === 'demo') {
-        const config = await getQZConfig();
-        if (!config?.privateKey || !config?.certificate) throw new Error('Local QZ configuration incomplete');
-
-        // Load Private Key
-        const pk = KEYUTIL.getKey(config.privateKey);
-        
-        // Detect Algorithm (Default to SHA1 for Demo)
-        let sigAlg = "SHA1withRSA";
-        try {
-          const x509 = new X509();
-          x509.readCertPEM(config.certificate);
-          const certAlg = x509.getSignatureAlgorithmField();
-          if (certAlg.toLowerCase().includes('sha256')) {
-            // sigAlg = "SHA256withRSA";
-          }
-        } catch (e) {}
-
-        const sig = new KJUR.crypto.Signature({ alg: sigAlg });
-        sig.init(pk);
-        sig.updateString(toSign);
-        const sigHex = sig.sign();
-        const sigB64 = hextob64(sigHex);
-        
-        console.log(`[QZ_SECURITY] Local signed with ${sigAlg}`);
-        return sigB64;
+      // FORCE LOCAL ONLY - No network requests allowed here
+      const config = await getQZConfig();
+      if (!config?.privateKey || !config?.certificate) {
+        throw new Error('Local QZ credentials missing. Please upload your Certificate and Private Key in Settings.');
       }
 
-      // Production (Server-side) Signing
-      const response = await fetch('/api/qz/sign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payload: toSign })
-      });
+      /**
+       * BROWSER-LOCAL CRYPTOGRAPHY
+       * We use jsrsasign to match QZ Tray's internal Java-based RSA verification.
+       * This preserves the private key entirely within the browser's memory/storage.
+       */
       
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown server error' }));
-        throw new Error(`Signing API failed: ${response.status} ${errorData.error || ''}`);
-      }
+      // 1. Load Private Key from IndexedDB
+      const pk = KEYUTIL.getKey(config.privateKey);
       
-      const data = await response.json();
-      return data.signature;
+      // 2. Detect Algorithm from Certificate (Default to SHA1 for Demo/Compatibility)
+      let sigAlg = "SHA1withRSA";
+      try {
+        const x509 = new X509();
+        x509.readCertPEM(config.certificate);
+        const certAlg = x509.getSignatureAlgorithmField();
+        if (certAlg.toLowerCase().includes('sha256')) {
+          // sigAlg = "SHA256withRSA";
+        }
+      } catch (e) {}
+
+      // 3. Generate Signature locally
+      const sig = new KJUR.crypto.Signature({ alg: sigAlg });
+      sig.init(pk);
+      sig.updateString(toSign);
+      const sigHex = sig.sign();
+      
+      // 4. Base64 Encode
+      const sigB64 = hextob64(sigHex);
+
+      console.log(`[QZ_SECURITY] Message signed locally (${sigAlg}) - No server interaction`);
+      return sigB64;
     } catch (err: any) {
-      console.error('[QZ_SECURITY] Signature promise failed:', err.message);
+      console.error('[QZ_SECURITY] Browser-local signing failed:', err.message);
       throw err;
     }
   });
 
-  console.log('[QZ_SECURITY] Security promises registered');
+  console.log('[QZ_SECURITY] 100% Local Security promises registered');
 }

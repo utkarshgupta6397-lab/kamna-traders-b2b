@@ -360,7 +360,7 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
                     )}
                   </div>
                 </div>
-              ) : (zohoStatus.status === 'FAILED' || (!zohoStatus.id && zohoStatus.status !== 'SUCCESS')) ? (
+              ) : (
                 <div className="flex items-center gap-3">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center ${zohoStatus.status === 'FAILED' ? 'bg-red-50 text-red-600' : 'bg-yellow-50 text-yellow-600'}`}>
                     {zohoStatus.status === 'FAILED' ? <AlertCircle size={18} /> : <Loader2 size={18} className="animate-spin" />}
@@ -381,15 +381,6 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
                         {retrying ? 'Retrying...' : 'Retry Now'}
                       </button>
                     </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Loader2 size={14} className="text-yellow-600 animate-spin" />
-                    <span className="text-xs font-black text-yellow-700 uppercase tracking-tight animate-pulse">
-                      {zohoStatus.step.replace(/_/g, ' ')}
-                    </span>
                   </div>
                 </div>
               )}

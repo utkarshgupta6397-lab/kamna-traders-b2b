@@ -1,13 +1,33 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
+
+const QZ_CERTIFICATE = `-----BEGIN CERTIFICATE-----
+MIIECzCCAvOgAwIBAgIGAZ4WdrqxMA0GCSqGSIb3DQEBCwUAMIGiMQswCQYDVQQG
+EwJVUzELMAkGA1UECAwCTlkxEjAQBgNVBAcMCUNhbmFzdG90YTEbMBkGA1UECgwS
+UVogSW5kdXN0cmllcywgTExDMRswGQYDVQQLDBJRWiBJbmR1c3RyaWVzLCBMTEMx
+HDAaBgkqhkiG9w0BCQEWDXN1cHBvcnRAcXouaW8xGjAYBgNVBAMMEVFaIFRyYXkg
+RGVtbyBDZXJ0MB4XDTI2MDUxMDA5NTU0MFoXDTQ2MDUxMDA5NTU0MFowgaIxCzAJ
+BgNVBAYTAlVTMQswCQYDVQQIDAJOWTESMBAGA1UEBwwJQ2FuYXN0b3RhMRswGQYD
+VQQKDBJRWiBJbmR1c3RyaWVzLCBMTEMxGzAZBgNVBAsMElFaIEluZHVzdHJpZXMs
+IExMQzEcMBoGCSqGSIb3DQEJARYNc3VwcG9ydEBxei5pbzEaMBgGA1UEAwwRUVog
+VHJheSBEZW1vIENlcnQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCP
+9WJ7gkK4v/pGJ5oAl7V427PnJhxB6KwXTmsldAhhErGuc1bF50/h8ET5+WGO+fwV
+mD0vI84gZBIPHz8ANBrO520ZCyBsnH0G2mSGM3U9Tm6GoBvrD8T+Cu0bddy0Y3wP
+DlehZKtCqnu8XPfoEy1RUZ+kQ4+00s1RJaUU3+XZ8u0BntaMhzLm+9h8xkTnu8hX
+fW6kxL23Yaia9pbf9AHddcnvxd8vff77q/1DaIGROvCznhhFKU+1/ccn7UQb6up0
+SGJNZUJm+E9dKQKB9W7UjkTwIMRAUTp2XoRArsg6PO48Xp1fHn6XlyduxgiL5LGT
+QgpOTZ5S6iQfOembIlm7AgMBAAGjRTBDMBIGA1UdEwEB/wQIMAYBAf8CAQEwDgYD
+VR0PAQH/BAQDAgEGMB0GA1UdDgQWBBT5F51XT/5GNECfqr6eF7XzGsaG/TANBgkq
+hkiG9w0BAQsFAAOCAQEAGL6sU6FO3OlJwMnH1T8KnlGYUK7H2e8riwkXta3F9ico
+TlzEafS1HU2nNNktlUGoSGnb0soeIEq+6f4/Mnq6/zts+IIUlr+b3cr6Wi2o2Ytk
+WXkw9nbqjmiMa7C1H0tnD/W4NT/3gGq09DSjIIde4BBzzVZTlLw73oAbr4zqdeQC
+FoJ+OZw6N4e/Rdpc7dn5azFsJnYKZ62kJ/eLcBuDKPFH2KbQP9+PTS1iATk7yDdE
+kmyD0TzsXkpH4yqNHa8VXbJ/Bm9Myti1d/tOuUYpr6g4Jn6vsqz25ntaIp/vY6N9
+lRYb5behky0JoZYz7XUsaMk6sI97dpTYfjrl/83tVA==
+-----END CERTIFICATE-----`;
 
 export async function GET() {
   try {
-    const certPath = path.join(process.cwd(), 'src/lib/printing/security/certificates/qz-cert.pem');
-    const cert = fs.readFileSync(certPath, 'utf8');
-    
-    return new NextResponse(cert, {
+    return new NextResponse(QZ_CERTIFICATE, {
       headers: { 'Content-Type': 'text/plain' }
     });
   } catch (err: any) {

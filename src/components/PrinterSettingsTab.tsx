@@ -329,6 +329,40 @@ export default function PrinterSettingsTab() {
 
         </div>
 
+        {/* Production Diagnostics (Always visible for troubleshooting) */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-gray-50 bg-gray-50/50 flex items-center justify-between">
+            <h3 className="text-xs font-black text-gray-900 uppercase tracking-wide flex items-center gap-2">
+              <Activity className="w-4 h-4 text-blue-500" />
+              Production Connectivity Audit
+            </h3>
+            <span className="text-[10px] font-bold text-gray-400">Environment: {process.env.NEXT_PUBLIC_QZ_MODE || 'Production'}</span>
+          </div>
+          <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <DiagnosticItem 
+              label="Certificate API" 
+              onClick={async () => {
+                const res = await fetch('/api/qz/certificate');
+                return res.ok ? 'REACHABLE' : `ERROR: ${res.status}`;
+              }}
+            />
+            <DiagnosticItem 
+              label="Signing API" 
+              onClick={async () => {
+                const res = await fetch('/api/qz/sign', { method: 'POST', body: JSON.stringify({ payload: 'test' }) });
+                return res.ok ? 'REACHABLE' : `ERROR: ${res.status}`;
+              }}
+            />
+            <DiagnosticItem 
+              label="Origin Trust" 
+              onClick={async () => {
+                const active = qz.websocket.isActive();
+                return active ? 'ACTIVE' : 'DISCONNECTED';
+              }}
+            />
+          </div>
+        </div>
+
         {/* Footer Help */}
         <div className="bg-gray-100/50 p-4 rounded-xl border border-dashed border-gray-200">
           <p className="text-[10px] text-gray-500 leading-relaxed text-center">
@@ -380,6 +414,38 @@ function MiniUpload({ label, complete, onUpload, accept = ".txt" }: { label: str
       <Upload className={`w-4 h-4 mx-auto mb-1 ${complete ? 'text-emerald-500' : 'text-gray-300'}`} />
       <div className={`text-[10px] font-bold ${complete ? 'text-emerald-700' : 'text-gray-500'}`}>
         {complete ? 'Installed' : label}
+      </div>
+    </div>
+  );
+}
+
+function DiagnosticItem({ label, onClick }: { label: string; onClick: () => Promise<string> }) {
+  const [status, setStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  return (
+    <div className="p-3 rounded-xl bg-gray-50 border border-gray-100 flex flex-col gap-2">
+      <div className="text-[9px] font-black text-gray-400 uppercase tracking-wider">{label}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className={`text-[10px] font-bold ${status?.includes('ERROR') ? 'text-red-500' : status ? 'text-emerald-600' : 'text-gray-400'}`}>
+          {status || 'UNTESTED'}
+        </div>
+        <button 
+          onClick={async () => {
+            setLoading(true);
+            try {
+              const res = await onClick();
+              setStatus(res);
+            } catch (e: any) {
+              setStatus(`FAIL: ${e.message}`);
+            } finally {
+              setLoading(false);
+            }
+          }}
+          className="p-1.5 rounded-lg bg-white border border-gray-200 hover:border-gray-400 transition-all"
+        >
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronRight className="w-3 h-3" />}
+        </button>
       </div>
     </div>
   );

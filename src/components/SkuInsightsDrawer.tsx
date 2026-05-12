@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Loader2, TrendingUp, AlertTriangle, CheckCircle2, Filter } from 'lucide-react';
 import { DOI_THRESHOLDS } from '@/lib/config';
 import { formatStockDate, formatStockDateTime } from '@/lib/date-utils';
+import { calculateDOIInfo } from '@/lib/inventory/consumption';
 import {
   ComposedChart,
   Line,
@@ -89,16 +90,11 @@ const SkuInsightsDrawer = React.memo(({ isOpen, onClose, sku, warehouses }: Prop
     });
   };
 
-  // Helper for DOI formatting
-  const calculateDOIValue = (stock: number, avgDailyOut: number) => {
-    if (avgDailyOut === 0) return { value: '0', status: 'HEALTHY' };
-    const doi = Math.round(stock / avgDailyOut);
-    if (doi <= DOI_THRESHOLDS.CRITICAL) return { value: `${doi}d`, status: 'CRITICAL' };
-    if (doi <= DOI_THRESHOLDS.WARNING) return { value: `${doi}d`, status: 'WARNING' };
-    return { value: `${doi}d`, status: 'HEALTHY' };
-  };
-
-  const overallDOI = sku ? calculateDOIValue(sku.totalStock, overallTotals.avgDailyOut) : null;
+  // Helper for DOI formatting - now using shared logic
+  const overallDOI = useMemo(() => {
+    if (!sku) return null;
+    return calculateDOIInfo(sku.totalStock, overallTotals.avgDailyOut);
+  }, [sku, overallTotals.avgDailyOut]);
 
   // Chart Data preparation
   const chartData = useMemo(() => {
@@ -204,12 +200,12 @@ const SkuInsightsDrawer = React.memo(({ isOpen, onClose, sku, warehouses }: Prop
                     {warehouses.map(wh => {
                       const stock = sku.inventoryByWarehouse[wh.id]?.qty || 0;
                       const avgOut = totalsByWarehouse[wh.id]?.avgDailyOut || 0;
-                      const whDOI = calculateDOIValue(stock, avgOut);
+                      const whDOI = calculateDOIInfo(stock, avgOut);
                       return (
                         <div key={wh.id} className="flex justify-between items-center text-xs">
                           <span className="text-gray-600 truncate mr-2">{wh.name}</span>
                           <span className={`font-bold ${whDOI.status === 'CRITICAL' ? 'text-red-600' : whDOI.status === 'WARNING' ? 'text-amber-600' : 'text-green-600'}`}>
-                            {whDOI.value} <span className="font-normal text-[10px] text-gray-400">({stock})</span>
+                            {whDOI.text} <span className="font-normal text-[10px] text-gray-400">({stock})</span>
                           </span>
                         </div>
                       )
@@ -309,7 +305,7 @@ const SkuInsightsDrawer = React.memo(({ isOpen, onClose, sku, warehouses }: Prop
                       ) : (
                         filteredTableMovements.map(m => {
                           const whAvgOut = totalsByWarehouse[m.warehouseId]?.avgDailyOut || 0;
-                          const whDOI = calculateDOIValue(m.afterQty, whAvgOut);
+                          const whDOI = calculateDOIInfo(m.afterQty, whAvgOut);
                           return (
                             <tr key={m.id} className="hover:bg-blue-50/30 transition-colors">
                               <td className="px-3 py-2 text-gray-500 border-r border-gray-100 whitespace-nowrap">{formatStockDate(m.date)}</td>
@@ -319,7 +315,7 @@ const SkuInsightsDrawer = React.memo(({ isOpen, onClose, sku, warehouses }: Prop
                               <td className={`px-3 py-2 text-center font-bold font-mono border-r border-gray-100 ${m.net > 0 ? 'text-green-700' : m.net < 0 ? 'text-red-700' : 'text-gray-500'}`}>{m.net > 0 ? `+${m.net}` : m.net}</td>
                               <td className="px-3 py-2 text-center font-black font-mono border-r border-gray-100 bg-gray-50/50">{m.afterQty}</td>
                               <td className={`px-3 py-2 text-center font-bold font-mono ${whDOI.status === 'CRITICAL' ? 'text-red-600' : whDOI.status === 'WARNING' ? 'text-amber-600' : 'text-green-600'}`}>
-                                {whDOI.value}
+                                {whDOI.text}
                               </td>
                             </tr>
                           );

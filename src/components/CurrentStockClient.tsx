@@ -1,9 +1,13 @@
 'use client';
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Filter, Box, ChevronDown, Check, X } from 'lucide-react';
+import { Search, Filter, Box, ChevronDown, Check, X, TrendingUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import SkuInsightsDrawer from './SkuInsightsDrawer';
 import { formatStockDate } from '@/lib/date-utils';
+import { DOI_THRESHOLDS } from '@/lib/config';
+import { formatCPDValue, calculateDOIInfo } from '@/lib/inventory/consumption';
+import { exportStockToPDF } from '@/lib/inventory/export-pdf';
+import { FileDown } from 'lucide-react';
 
 interface Warehouse {
   id: string;
@@ -33,6 +37,7 @@ interface SkuItem {
   zohoBooksId2?: string | null;
   categoryId?: string | null;
   inventory: SkuInventory;
+  unit?: string | null;
 }
 
 interface Props {
@@ -40,9 +45,10 @@ interface Props {
   categories: Category[];
   brands: Brand[];
   items: (SkuItem & { brandId?: string | null; caseSize: number })[];
+  consumptionData: Record<string, any>;
 }
 
-export default function CurrentStockClient({ warehouses, categories, brands, items }: Props) {
+export default function CurrentStockClient({ warehouses, categories, brands, items, consumptionData }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -50,11 +56,17 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   const [selectedCaseSizes, setSelectedCaseSizes] = useState<number[]>([]);
   const [selectedWarehouses, setSelectedWarehouses] = useState<string[]>([]);
   const [hideOos, setHideOos] = useState(true);
+
+  const formatDOI = (stock: number, cpd: number) => {
+    return calculateDOIInfo(stock, cpd);
+  };
+
   const [selectedSku, setSelectedSku] = useState<{
     id: string;
     name: string;
     totalStock: number;
     inventoryByWarehouse: SkuInventory;
+    unit?: string | null;
   } | null>(null);
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
 
@@ -108,12 +120,13 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
 
   // Unified computation pass to minimize object creation and property-set pressure (V8 OrderedHashSet growth)
   const { categoryGroups, grandTotals, processedCount } = useMemo(() => {
-    const groups: Record<string, { items: any[], totals: Record<string, number> }> = {};
-    const grand: Record<string, number> = { total: 0 };
+    const groups: Record<string, { items: any[], totals: Record<string, any> }> = {};
+    const grand: Record<string, any> = { total: 0, totalCPD: 0, firstUnit: null, isMixed: false };
     visibleWarehouses.forEach(wh => grand[wh.id] = 0);
     
     let count = 0;
     const q = debouncedSearchQuery.toLowerCase().trim();
+    const isSubset = selectedWarehouses.length > 0 && selectedWarehouses.length < warehouses.length;
 
     // Single pass through items
     for (let i = 0; i < items.length; i++) {
@@ -137,19 +150,67 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
       // 3. OOS Filter
       if (hideOos && rowTotal <= 0) continue;
 
-      // 4. Aggregation
+      // 4. Compute CPD and DOI (Dynamic based on visibleWarehouses)
+      let netCPD = 0;
+      const cData = consumptionData[item.id];
+      if (cData) {
+        if (!isSubset) {
+          // Use pre-aggregated overall data for performance when all WHs shown
+          const denom = calculateDenominator(cData.overallFirstSale, cData.overallActiveDaysCount);
+          netCPD = cData.overallOut / denom;
+        } else {
+          // Aggregate selected warehouses
+          let totalOut = 0;
+          let firstSale: string | null = null;
+          let maxActiveDays = 0;
+
+          selectedWarehouses.forEach(whId => {
+            const whData = cData.warehouses[whId];
+            if (whData) {
+              totalOut += whData.out;
+              if (whData.firstSale && (!firstSale || whData.firstSale < firstSale)) {
+                firstSale = whData.firstSale;
+              }
+              maxActiveDays = Math.max(maxActiveDays, whData.activeDaysCount);
+            }
+          });
+
+          const denom = calculateDenominator(firstSale, maxActiveDays);
+          netCPD = totalOut / denom;
+        }
+      }
+      const doiInfo = calculateDOIInfo(rowTotal, netCPD);
+
+      // 5. Unit Tracking for Subtotals and Grand Totals
+      const unit = item.unit?.toLowerCase().trim() || '';
+      if (grand.firstUnit === null) grand.firstUnit = unit;
+      else if (grand.firstUnit !== unit) grand.isMixed = true;
+
+      // 6. Aggregation
       const catId = item.categoryId || 'uncategorized';
       if (!groups[catId]) {
-        groups[catId] = { items: [], totals: { total: 0 } };
+        groups[catId] = { 
+          items: [], 
+          totals: { 
+            total: 0, 
+            cpd: 0, 
+            firstUnit: unit, 
+            isMixed: false 
+          } 
+        };
         visibleWarehouses.forEach(wh => groups[catId].totals[wh.id] = 0);
+      } else {
+        if (groups[catId].totals.firstUnit !== unit) {
+          groups[catId].totals.isMixed = true;
+        }
       }
       
-      // Use a shallow copy or just augment the existing item reference if safe
-      // Here we create a wrapper to keep the original item ref stable
-      const processedItem = { ...item, rowTotal };
+      const processedItem = { ...item, rowTotal, netCPD, doiInfo };
       groups[catId].items.push(processedItem);
       groups[catId].totals.total += rowTotal;
+      groups[catId].totals.cpd += netCPD;
       grand.total += rowTotal;
+      grand.totalCPD += netCPD;
 
       for (let j = 0; j < visibleWarehouses.length; j++) {
         const whId = visibleWarehouses[j].id;
@@ -160,8 +221,16 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
       count++;
     }
 
+    // Post-process category DOI and shared units
+    Object.values(groups).forEach(g => {
+      g.totals.doiInfo = formatDOI(g.totals.total, g.totals.cpd);
+      g.totals.sharedUnit = g.totals.isMixed ? null : g.totals.firstUnit;
+    });
+    grand.sharedUnit = grand.isMixed ? null : grand.firstUnit;
+    grand.totalDOIInfo = calculateDOIInfo(grand.total, grand.totalCPD);
+
     return { categoryGroups: groups, grandTotals: grand, processedCount: count };
-  }, [items, visibleWarehouses, selectedCategories, selectedBrands, selectedCaseSizes, debouncedSearchQuery, hideOos]);
+  }, [items, visibleWarehouses, selectedWarehouses, warehouses.length, consumptionData, selectedCategories, selectedBrands, selectedCaseSizes, debouncedSearchQuery, hideOos]);
 
 
 
@@ -200,6 +269,23 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   const handleCloseDrawer = React.useCallback(() => {
     setSelectedSku(null);
   }, []);
+
+  const handleDownloadPDF = async () => {
+    const itemsToExport: any[] = [];
+    Object.values(categoryGroups).forEach(g => {
+      itemsToExport.push(...g.items);
+    });
+
+    await exportStockToPDF({
+      warehouses: visibleWarehouses,
+      items: itemsToExport,
+      filters: {
+        categories: selectedCategories,
+        brands: selectedBrands,
+        search: searchQuery
+      }
+    });
+  };
 
   const handleSuggestionClick = (item: SkuItem) => {
     let total = 0;
@@ -370,6 +456,14 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
             />
             Hide OOS
           </label>
+
+          <button 
+            onClick={handleDownloadPDF}
+            className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-bold shadow-sm shrink-0 ml-auto"
+          >
+            <FileDown size={16} />
+            Download PDF
+          </button>
         </div>
       </div>
 
@@ -385,13 +479,15 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                   {wh.name}
                 </th>
               ))}
-              <th className="px-4 py-2 font-semibold border-b border-gray-200 text-center bg-[#1A2766]/5 min-w-[100px]">Total</th>
+              <th className="px-4 py-2 font-semibold border-b border-r border-gray-200 text-center bg-[#1A2766]/5 min-w-[100px]">Total</th>
+              <th className="px-4 py-2 font-semibold border-b border-r border-gray-200 text-center bg-gray-100 min-w-[90px]">Net CPD</th>
+              <th className="px-4 py-2 font-semibold border-b border-gray-200 text-center bg-gray-100 min-w-[90px]">Net DOI</th>
             </tr>
           </thead>
           <tbody>
             {Object.keys(categoryGroups).length === 0 ? (
               <tr>
-                <td colSpan={visibleWarehouses.length + 3} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={visibleWarehouses.length + 5} className="px-4 py-8 text-center text-gray-500">
                   No items found matching your filters.
                 </td>
               </tr>
@@ -406,11 +502,36 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                       </td>
                       {visibleWarehouses.map(wh => (
                         <td key={wh.id} className="px-4 py-1.5 text-center border-r border-gray-200">
-                          {catTotals[wh.id].toLocaleString()}
+                          <div className="flex items-baseline justify-center gap-1">
+                            <span>{catTotals[wh.id].toLocaleString()}</span>
+                            {catTotals[wh.id] > 0 && catTotals.sharedUnit && (
+                              <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{catTotals.sharedUnit}</span>
+                            )}
+                          </div>
                         </td>
                       ))}
-                      <td className="px-4 py-1.5 text-center bg-[#1A2766]/5">
-                        {catTotals.total.toLocaleString()}
+                      <td className="px-4 py-1.5 text-center bg-[#1A2766]/5 border-r border-gray-200">
+                        <div className="flex items-baseline justify-center gap-1">
+                          <span>{catTotals.total.toLocaleString()}</span>
+                          {catTotals.total > 0 && catTotals.sharedUnit && (
+                            <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{catTotals.sharedUnit}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-1.5 text-center border-r border-gray-200">
+                        <div className="flex items-baseline justify-center gap-1">
+                          <span>{formatCPDValue(catTotals.cpd)}</span>
+                          {catTotals.sharedUnit && (
+                            <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{catTotals.sharedUnit}/day</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className={`px-4 py-1.5 text-center ${
+                        catTotals.doiInfo.status === 'CRITICAL' ? 'text-red-600 bg-red-50/30' : 
+                        catTotals.doiInfo.status === 'WARNING' ? 'text-amber-600 bg-amber-50/30' : 
+                        'text-green-600 bg-green-50/30'
+                      }`}>
+                        {catTotals.doiInfo.text}
                       </td>
                     </tr>
 
@@ -425,24 +546,50 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                             id: item.id,
                             name: item.name,
                             totalStock: item.rowTotal,
-                            inventoryByWarehouse: item.inventory
+                            inventoryByWarehouse: item.inventory,
+                            unit: item.unit
                           })}
                         >
-                          <div className="flex items-center gap-2 hover:text-[#1A2766] overflow-hidden">
-                            <span className="font-medium text-gray-900 truncate group-hover:underline decoration-[#1A2766]/30">{item.name}</span>
-                            <span className="text-[10px] text-gray-400 font-mono flex-shrink-0">[{item.id}]</span>
+                          <div className="flex items-baseline gap-2 overflow-hidden">
+                            <span className="font-bold text-gray-900 truncate leading-tight">{item.name}</span>
+                            <span className="text-[10px] text-gray-400 font-mono flex-shrink-0 group-hover:text-[#1A2766] transition-colors">[{item.id}]</span>
                           </div>
                         </td>
                         {visibleWarehouses.map(wh => {
                           const qty = item.inventory[wh.id]?.qty || 0;
                           return (
                             <td key={wh.id} className={`px-4 py-1.5 text-center border-r border-gray-100 font-mono ${qty > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
-                              {qty}
+                              <div className="flex items-baseline justify-center gap-1">
+                                <span className="font-bold">{qty.toLocaleString()}</span>
+                                {qty > 0 && item.unit && (
+                                  <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{item.unit}</span>
+                                )}
+                              </div>
                             </td>
                           );
                         })}
-                        <td className={`px-4 py-1.5 text-center font-bold font-mono bg-[#1A2766]/5 ${item.rowTotal > 0 ? 'text-[#1A2766]' : 'text-gray-300'}`}>
-                          {item.rowTotal}
+                        <td className={`px-4 py-1.5 text-center font-bold font-mono bg-[#1A2766]/5 border-r border-gray-100 ${item.rowTotal > 0 ? 'text-[#1A2766]' : 'text-gray-300'}`}>
+                          <div className="flex items-baseline justify-center gap-1">
+                            <span>{item.rowTotal.toLocaleString()}</span>
+                            {item.rowTotal > 0 && item.unit && (
+                              <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{item.unit}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-1.5 text-center border-r border-gray-100 text-[13px] font-medium text-gray-600">
+                          <div className="flex items-baseline justify-center gap-1">
+                            <span>{formatCPDValue(item.netCPD)}</span>
+                            {item.unit && (
+                              <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{item.unit}/day</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className={`px-4 py-1.5 text-center text-[13px] font-black ${
+                          item.doiInfo.status === 'CRITICAL' ? 'text-red-600 bg-red-50/30' : 
+                          item.doiInfo.status === 'WARNING' ? 'text-amber-600 bg-amber-50/30' : 
+                          'text-green-600 bg-green-50/30'
+                        }`}>
+                          {item.doiInfo.text}
                         </td>
                       </tr>
                     ))}
@@ -461,11 +608,36 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                 </td>
                 {visibleWarehouses.map(wh => (
                   <td key={wh.id} className="px-4 py-2 text-center border-r border-white/20">
-                    {grandTotals[wh.id].toLocaleString()}
+                    <div className="flex items-baseline justify-center gap-1">
+                      <span>{grandTotals[wh.id].toLocaleString()}</span>
+                      {grandTotals[wh.id] > 0 && grandTotals.sharedUnit && (
+                        <span className="text-[10px] text-white/50 font-medium lowercase">{grandTotals.sharedUnit}</span>
+                      )}
+                    </div>
                   </td>
                 ))}
-                <td className="px-4 py-2 text-center text-green-300">
-                  {grandTotals.total.toLocaleString()}
+                <td className="px-4 py-2 text-center border-r border-white/20 bg-white/10">
+                  <div className="flex items-baseline justify-center gap-1">
+                    <span>{grandTotals.total.toLocaleString()}</span>
+                    {grandTotals.total > 0 && grandTotals.sharedUnit && (
+                      <span className="text-[10px] text-white/50 font-medium lowercase">{grandTotals.sharedUnit}</span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-2 text-center border-r border-white/20">
+                  <div className="flex items-baseline justify-center gap-1">
+                    <span>{formatCPDValue(grandTotals.totalCPD)}</span>
+                    {grandTotals.sharedUnit && (
+                      <span className="text-[10px] text-white/50 font-medium lowercase">{grandTotals.sharedUnit}/day</span>
+                    )}
+                  </div>
+                </td>
+                <td className={`px-4 py-2 text-center ${
+                  grandTotals.totalDOIInfo.status === 'CRITICAL' ? 'text-red-300' : 
+                  grandTotals.totalDOIInfo.status === 'WARNING' ? 'text-amber-300' : 
+                  'text-green-300'
+                }`}>
+                  {grandTotals.totalDOIInfo.text}
                 </td>
               </tr>
             </tfoot>

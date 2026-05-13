@@ -410,24 +410,24 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
           console.error('[DIAG_ERROR] Failed to save diagnostics', e);
         }
 
-        // 2. Trigger Silent Thermal Print (Background)
-        console.log(`[DISPATCH_PRINT] Checking silent print readiness... isThermalReady: ${isThermalReady}, hasPayload: ${!!printPayload}`);
-        
+        // 2. Trigger Silent Thermal Print (Background - Non-blocking)
         if (isThermalReady && printPayload) {
-          console.log('[DISPATCH_PRINT] Silent print triggered.');
-          const loadingToast = toast.loading('Sending to thermal printer...');
-          try {
-            console.log('[DISPATCH_PRINT] Rendering slips...');
-            const buffer = renderDispatchSlips(printPayload);
-            
-            console.log(`[DISPATCH_PRINT] Buffer generated (${buffer.length} bytes). Sending to QZ...`);
-            await qzManager.printRaw(buffer);
-            
-            console.log('[DISPATCH_PRINT] QZ Print Success');
-            toast.success('Dispatch note sent to printer', { id: loadingToast });
-          } catch (err: any) {
-            toast.error('Thermal print failed. You can reprint from the next page.', { id: loadingToast });
-          }
+          (async () => {
+            const loadingToast = toast.loading('Sending to thermal printer...');
+            try {
+              const buffer = renderDispatchSlips(printPayload);
+              await qzManager.printRaw(buffer);
+              toast.success('Dispatch note sent to printer', { id: loadingToast });
+            } catch (err: any) {
+              console.warn('[DISPATCH_PRINT] Silent print skipped/failed:', err.message);
+              // If it's just a connection issue, show a subtle warning instead of error
+              if (err.message?.includes('QZ Tray is not running')) {
+                toast.error('Thermal printer offline (QZ Tray not running)', { id: loadingToast, duration: 3000 });
+              } else {
+                toast.error('Thermal print failed. You can reprint from the next page.', { id: loadingToast });
+              }
+            }
+          })();
         }
 
         router.push(`/staff/dashboard/print/${cartId}?debugPerf=${searchParams.get('debugPerf') === 'true'}`);

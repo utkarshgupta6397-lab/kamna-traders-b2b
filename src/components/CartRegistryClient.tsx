@@ -232,29 +232,35 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canMa
             >
               <Eye size={13} />
             </button>
-            {!cart.deletedAt && canManageCarts && (
+            
+            {!cart.deletedAt && (
               <>
-                <button
-                  onClick={() => {
-                    setSelectedCartId(cart.id);
-                    setModalType('edit');
-                  }}
-                  className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
-                  title="Edit Cart"
-                >
-                  <Edit2 size={13} />
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedCartId(cart.id);
-                    setModalType('delete');
-                  }}
-                  className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-red-600 hover:text-white transition-all shadow-sm"
-                  title="Delete Cart"
-                >
-                  <Trash2 size={13} />
-                </button>
-                <div className="w-[1px] h-4 bg-gray-200 mx-0.5" />
+                {canManageCarts && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setSelectedCartId(cart.id);
+                        setModalType('edit');
+                      }}
+                      className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                      title="Edit Cart"
+                    >
+                      <Edit2 size={13} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedCartId(cart.id);
+                        setModalType('delete');
+                      }}
+                      className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                      title="Delete Cart"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                    <div className="w-[1px] h-4 bg-gray-200 mx-0.5" />
+                  </>
+                )}
+                
                 <button
                   onClick={() => router.push(`/staff/dashboard/print/${cart.id}`)}
                   className="p-1.5 rounded-lg bg-[#1A2766] text-white hover:bg-[#003347] transition-all shadow-sm"

@@ -26,19 +26,39 @@ class QZManager {
 
   private connectingPromise: Promise<boolean> | null = null;
 
-  async connect() {
-    if (this.connection && qz.websocket.isActive()) return true;
+  /**
+   * Established a connection to the local QZ Tray application.
+   */
+  async connect(): Promise<boolean> {
+    // If already active, return immediately
+    try {
+      if (qz.websocket.isActive()) {
+        this.connection = true;
+        return true;
+      }
+    } catch (e) {
+      // If isActive() itself fails (internal QZ bug), force a reset
+      this.connection = false;
+    }
+
     if (this.connectingPromise) return this.connectingPromise;
     
     this.connectingPromise = (async () => {
       try {
         console.log('[QZ] Connecting to WebSocket...');
+        
+        // Ensure security is initialized
+        if (typeof window !== 'undefined') {
+          initializeQZSecurity();
+        }
+
         // Safety timeout: 5s max for connection attempt
         await Promise.race([
           qz.websocket.connect(),
           new Promise((_, reject) => setTimeout(() => reject(new Error('QZ Connection Timeout')), 5000))
         ]);
         
+        console.log('[QZ] Connection established successfully.');
         this.connection = true;
 
         // Auto-load printer from storage if not set
@@ -46,14 +66,13 @@ class QZManager {
           const { getQZConfig } = await import('@/lib/print/qz-storage');
           const config = await getQZConfig();
           if (config?.printerName) {
-            console.log(`[QZ] Auto-loaded printer from config: ${config.printerName}`);
             this.printer = config.printerName;
           }
         }
 
         return true;
       } catch (err) {
-        console.warn('[QZ] Connection failed:', err);
+        console.warn('[QZ] Connection failed. Is QZ Tray application running?');
         this.connection = false;
         return false;
       } finally {
@@ -64,70 +83,78 @@ class QZManager {
     return this.connectingPromise;
   }
 
+  /**
+   * Gracefully finds a printer. NEVER throws TypeErrors.
+   */
   async findPrinter(name?: string): Promise<string | null> {
     try {
-      if (!this.connection) await this.connect();
+      const isConnected = await this.connect();
+      if (!isConnected || !qz.websocket.isActive()) {
+        return null;
+      }
       
-      // If no name provided, use the one we have or the default
       const targetName = name || this.printer || 'POS120';
-      
       console.log(`[QZ] Finding printer: ${targetName}`);
-      const printer = await qz.printers.find(targetName);
+      
+      // INTERNAL QZ CALL: Wrap in catch to handle "sendData is not a function" zombie states
+      const printer = await qz.printers.find(targetName).catch(() => null);
+      
       const selected = Array.isArray(printer) ? (printer[0] || null) : (printer || null);
       this.printer = selected;
       return selected;
     } catch (err) {
-      console.error('[QZ] Printer search failed:', err);
+      console.warn('[QZ] Graceful failure in findPrinter:', err);
       return null;
     }
   }
 
   async getAllPrinters(): Promise<string[]> {
     try {
-      if (!this.connection) await this.connect();
-      const list = await qz.printers.find();
+      const isConnected = await this.connect();
+      if (!isConnected || !qz.websocket.isActive()) return [];
+
+      const list = await qz.printers.find().catch(() => []);
       return Array.isArray(list) ? list : (list ? [list] : []);
     } catch (err) {
-      console.error('[QZ] Failed to fetch printers:', err);
       return [];
     }
   }
 
   async printRaw(data: Uint8Array | string[]) {
-    try {
-      if (!this.connection) await this.connect();
-      if (!this.printer) await this.findPrinter();
-      
-      const config = qz.configs.create(this.printer || 'POS120');
-      
-      // CRITICAL DIAGNOSTICS
-      console.log('[QZ_DEBUG]', {
-        type: data instanceof Uint8Array ? 'Uint8Array' : 'string[]',
-        length: data.length,
-        firstBytes: data instanceof Uint8Array ? Array.from(data.slice(0, 10)) : data.slice(0, 2),
-        printer: this.printer
-      });
+    const isConnected = await this.connect();
+    
+    // If we think we are connected but the library is in a zombie state, 
+    // qz.websocket.isActive() might lie or the internal connection might be null.
+    if (!isConnected || !qz.websocket.isActive()) {
+      throw new Error('QZ Tray is not running. Please start the application and try again.');
+    }
 
+    try {
+      if (!this.printer) {
+        const found = await this.findPrinter();
+        if (!found) throw new Error(`Target printer not found. Please check your printer connection.`);
+      }
+      
+      const config = qz.configs.create(this.printer!);
+      
       let payload: any[];
       if (data instanceof Uint8Array) {
-        // Convert binary data to Base64 to ensure proper transmission over WebSocket
-        // and correct interpretation by QZ Tray as raw commands.
         const binary = data.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
         const base64 = btoa(binary);
-        
-        payload = [{
-          type: 'raw',
-          format: 'command',
-          flavor: 'base64',
-          data: base64
-        }];
+        payload = [{ type: 'raw', format: 'command', flavor: 'base64', data: base64 }];
       } else {
-        // If it's already an array of strings/commands, pass as is
         payload = data;
       }
       
-      await qz.print(config, payload);
-    } catch (err) {
+      // Attempt print, catch internal zombie state errors
+      await qz.print(config, payload).catch((err: any) => {
+        if (err?.message?.includes('sendData')) {
+          this.connection = false; // Mark as disconnected to force retry next time
+          throw new Error('Printer connection lost. Please ensure QZ Tray is running.');
+        }
+        throw err;
+      });
+    } catch (err: any) {
       console.error('[QZ] Printing failed:', err);
       throw err;
     }
@@ -138,7 +165,11 @@ class QZManager {
   }
 
   isConnected() {
-    return this.connection && qz.websocket.isActive();
+    try {
+      return qz.websocket.isActive();
+    } catch (e) {
+      return false;
+    }
   }
 
   getSelectedPrinter() {

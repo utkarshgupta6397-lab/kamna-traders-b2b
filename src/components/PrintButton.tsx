@@ -13,10 +13,15 @@ export default function PrintButton({ payload }: { payload?: PrintPayload | null
   // 1. Detect QZ Tray on Mount
   useEffect(() => {
     const checkThermal = async () => {
-      const connected = await qzManager.connect();
-      if (connected) {
-        const printer = await qzManager.findPrinter();
-        setIsThermalReady(!!printer);
+      try {
+        const connected = await qzManager.connect();
+        if (connected) {
+          const printer = await qzManager.findPrinter();
+          setIsThermalReady(!!printer);
+        }
+      } catch (err) {
+        console.warn('[PrintButton] Initial thermal check skipped:', err);
+        setIsThermalReady(false);
       }
     };
     checkThermal();

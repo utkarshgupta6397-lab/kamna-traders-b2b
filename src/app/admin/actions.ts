@@ -137,7 +137,7 @@ export async function createSku(data: FormData) {
   const unit = data.get('unit') as string || undefined;
   const caseSize = Math.max(1, parseInt(data.get('caseSize') as string, 10) || 1);
   const zohoRaw = data.get('zohoBookItemId') as string;
-  const zohoBookItemId = zohoRaw ? BigInt(zohoRaw) : null;
+  const zohoBookItemId = zohoRaw || null;
   const zohoBooksId2 = data.get('zohoBooksId2') as string || null;
 
   await prisma.sku.create({ data: { id, name, categoryId, brandId, price, moq, stepQty, unit, caseSize, zohoBookItemId, zohoBooksId2 } });
@@ -160,7 +160,7 @@ export async function updateSku(data: FormData) {
   const isActive = data.get('isActive') === 'true';
   const caseSize = Math.max(1, parseInt(data.get('caseSize') as string, 10) || 1);
   const zohoRaw = data.get('zohoBookItemId') as string;
-  const zohoBookItemId = zohoRaw ? BigInt(zohoRaw) : null;
+  const zohoBookItemId = zohoRaw || null;
   const zohoBooksId2 = data.get('zohoBooksId2') as string || null;
 
   // If SKU ID is being renamed, verify the new ID is not already taken

@@ -39,6 +39,7 @@ interface Warehouse {
 interface Sku {
   id: string;
   name: string;
+  unit?: string | null;
 }
 
 interface Props {
@@ -404,106 +405,277 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
         </div>
       </div>
 
-      {/* Adjust Inventory Modal (Preserved behavior) */}
+      {/* Adjust Inventory Modal (Enhanced UX) */}
       {showModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowModal(false)} />
-          <div className="relative bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="bg-[#1A2766] p-4 flex items-center justify-between text-white">
-              <h2 className="font-bold flex items-center gap-2 text-lg">
-                <Plus size={20} />
-                Adjust Inventory
-              </h2>
-              <button onClick={() => setShowModal(false)} className="hover:bg-white/10 p-1 rounded-lg transition-colors">
-                <X size={20} />
-              </button>
-            </div>
-            
-            <form action={async (fd) => { 
-              await adjustInventory(fd); 
-              setShowModal(false); 
-              fetchLogs(); // Refresh logs after adjustment
-            }} className="p-6 space-y-5">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">Warehouse *</label>
-                <select name="warehouseId" required className="w-full border rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50">
-                  <option value="">Select Warehouse</option>
-                  {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                </select>
-              </div>
+        <InventoryAdjustModal 
+          warehouses={warehouses}
+          skus={skus}
+          onClose={() => setShowModal(false)}
+          onSuccess={() => {
+            setShowModal(false);
+            fetchLogs();
+          }}
+        />
+      )}
+    </div>
+  );
+}
 
-              <div className="relative space-y-1.5">
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">SKU / Product *</label>
-                <input type="hidden" name="skuId" value={selectedSkuId} required />
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-                  <input 
-                    type="text" 
-                    value={modalSearch}
-                    onChange={(e) => {
-                      setModalSearch(e.target.value);
-                      setSelectedSkuId('');
-                      setShowSkuDropdown(true);
+// ─── INTERNAL MODAL COMPONENT ──────────────────────────────────────────────
+function InventoryAdjustModal({ warehouses, skus, onClose, onSuccess }: { 
+  warehouses: Warehouse[], 
+  skus: Sku[], 
+  onClose: () => void, 
+  onSuccess: () => void 
+}) {
+  const [warehouseId, setWarehouseId] = useState('');
+  const [skuId, setSkuId] = useState('');
+  const [skuSearch, setSkuSearch] = useState('');
+  const [showSkuDropdown, setShowSkuDropdown] = useState(false);
+  
+  const [currentQty, setCurrentQty] = useState<number | null>(null);
+  const [isLoadingStock, setIsLoadingStock] = useState(false);
+  
+  const [adjustmentQty, setAdjustmentQty] = useState<string>('');
+  const [finalQty, setFinalQty] = useState<string>('');
+  const [remarks, setRemarks] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fetch current stock when both Wh and SKU are selected
+  useEffect(() => {
+    if (warehouseId && skuId) {
+      setIsLoadingStock(true);
+      fetch(`/api/staff/inventory/stock?warehouseId=${warehouseId}&skuId=${skuId}`)
+        .then(res => res.json())
+        .then(data => {
+          setCurrentQty(data.qty ?? 0);
+          setAdjustmentQty('');
+          setFinalQty(String(data.qty ?? 0));
+        })
+        .finally(() => setIsLoadingStock(false));
+    } else {
+      setCurrentQty(null);
+      setAdjustmentQty('');
+      setFinalQty('');
+    }
+  }, [warehouseId, skuId]);
+
+  // Sync Logic: Adjust -> Final
+  const handleAdjustmentChange = (val: string) => {
+    setAdjustmentQty(val);
+    if (currentQty === null) return;
+    const delta = parseInt(val) || 0;
+    setFinalQty(String(currentQty + delta));
+  };
+
+  // Sync Logic: Final -> Adjust
+  const handleFinalChange = (val: string) => {
+    setFinalQty(val);
+    if (currentQty === null) return;
+    const target = parseInt(val) || 0;
+    setAdjustmentQty(String(target - currentQty));
+  };
+
+  const selectedSku = useMemo(() => skus.find(s => s.id === skuId), [skus, skuId]);
+  const unit = selectedSku?.unit || 'Units';
+
+  const afterQty = (currentQty ?? 0) + (parseInt(adjustmentQty) || 0);
+  const isInvalid = afterQty < 0 || !warehouseId || !skuId || !remarks || remarks.trim().length < 3;
+
+  const filteredSkus = useMemo(() => {
+    if (!skuSearch || skuSearch.length < 2) return [];
+    return skus.filter(s => 
+      s.id.toLowerCase().includes(skuSearch.toLowerCase()) || 
+      s.name.toLowerCase().includes(skuSearch.toLowerCase())
+    ).slice(0, 10);
+  }, [skuSearch, skus]);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="bg-[#1A2766] p-4 flex items-center justify-between text-white">
+          <h2 className="font-bold flex items-center gap-2 text-lg">
+            <Plus size={20} />
+            Adjust Inventory
+          </h2>
+          <button onClick={onClose} className="hover:bg-white/10 p-1 rounded-lg transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+        
+        <form 
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (isInvalid || isSubmitting) return;
+            setIsSubmitting(true);
+            try {
+              const fd = new FormData();
+              fd.append('warehouseId', warehouseId);
+              fd.append('skuId', skuId);
+              fd.append('delta', adjustmentQty || '0');
+              fd.append('remarks', remarks);
+              
+              const result = await adjustInventory(fd);
+              onSuccess();
+            } catch (err: any) {
+              alert(err.message || 'Failed to adjust inventory');
+            } finally {
+              setIsSubmitting(false);
+            }
+          }} 
+          className="p-6 space-y-5"
+        >
+          {/* 1. Warehouse (Enabled First) */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">Warehouse *</label>
+            <select 
+              value={warehouseId} 
+              onChange={(e) => {
+                setWarehouseId(e.target.value);
+                setSkuId('');
+                setSkuSearch('');
+              }}
+              required 
+              className="w-full border rounded-xl p-2.5 text-sm font-bold focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50"
+            >
+              <option value="">Select Warehouse</option>
+              {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+          </div>
+
+          {/* 2. SKU (Enabled after Warehouse) */}
+          <div className="relative space-y-1.5">
+            <label className={`block text-xs font-bold uppercase tracking-wider ${!warehouseId ? 'text-gray-300' : 'text-gray-400'}`}>
+              SKU / Product * {!warehouseId && '(Select Warehouse First)'}
+            </label>
+            <div className="relative">
+              <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${!warehouseId ? 'text-gray-200' : 'text-gray-400'}`} size={14} />
+              <input 
+                type="text" 
+                value={skuSearch}
+                disabled={!warehouseId}
+                onChange={(e) => {
+                  setSkuSearch(e.target.value);
+                  setSkuId('');
+                  setShowSkuDropdown(true);
+                }}
+                onFocus={() => setShowSkuDropdown(true)}
+                placeholder={warehouseId ? "Search SKU ID or Name..." : "---"}
+                className="w-full border rounded-xl pl-9 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                autoComplete="off"
+              />
+            </div>
+            {showSkuDropdown && skuSearch && !skuId && (
+              <div className="absolute z-[110] mt-1 w-full bg-white border border-gray-100 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                {filteredSkus.map(s => (
+                  <div 
+                    key={s.id} 
+                    className="p-3 text-xs hover:bg-gray-50 cursor-pointer border-b last:border-0"
+                    onClick={() => {
+                      setSkuId(s.id);
+                      setSkuSearch(`${s.id} - ${s.name}`);
+                      setShowSkuDropdown(false);
                     }}
-                    onFocus={() => setShowSkuDropdown(true)}
-                    placeholder="Search by SKU ID or Name..."
-                    className="w-full border rounded-xl pl-9 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50 font-medium"
-                    autoComplete="off"
-                    required={!selectedSkuId}
-                  />
-                </div>
-                {showSkuDropdown && modalSearch && !selectedSkuId && (
-                  <div className="absolute z-[110] mt-1 w-full bg-white border border-gray-100 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                    {filteredSkusForModal.map(s => (
-                      <div 
-                        key={s.id} 
-                        className="p-3 text-xs hover:bg-gray-50 cursor-pointer border-b last:border-0"
-                        onClick={() => {
-                          setSelectedSkuId(s.id);
-                          setModalSearch(`${s.id} - ${s.name}`);
-                          setShowSkuDropdown(false);
-                        }}
-                      >
-                        <div className="font-bold text-[#1A2766]">{s.id}</div>
-                        <div className="text-gray-500 truncate text-[10px]">{s.name}</div>
-                      </div>
-                    ))}
+                  >
+                    <div className="font-bold text-[#1A2766]">{s.id}</div>
+                    <div className="text-gray-500 truncate text-[10px]">{s.name}</div>
                   </div>
+                ))}
+                {filteredSkus.length === 0 && (
+                  <div className="p-4 text-center text-gray-400 text-xs italic">No matching SKUs found</div>
                 )}
               </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">Adjustment Qty *</label>
-                <input 
-                  type="number" 
-                  name="delta" 
-                  required 
-                  placeholder="+20 or -5"
-                  className="w-full border rounded-xl p-2.5 text-sm font-bold focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50" 
-                />
-                <p className="text-[10px] text-gray-400 font-medium ml-1 italic">Use +/- for relative change</p>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">Remarks (Mandatory) *</label>
-                <textarea 
-                  name="remarks" 
-                  required 
-                  rows={2}
-                  placeholder="e.g. Stock recount, Damaged stock, Opening correction..."
-                  className="w-full border rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50"
-                />
-              </div>
-
-              <div className="pt-2">
-                <FormSubmit className="w-full bg-[#1A2766] text-white py-3 rounded-xl font-bold hover:bg-[#AE1B1E] transition-all shadow-lg active:scale-[0.98]">
-                  Submit Adjustment
-                </FormSubmit>
-              </div>
-            </form>
+            )}
           </div>
-        </div>
-      )}
+
+          {/* 3. Stock Context (Visible after SKU) */}
+          {skuId && (
+            <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-200">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Current Qty:</span>
+              <span className={`text-sm font-black ${isLoadingStock ? 'animate-pulse text-gray-300' : 'text-[#1A2766]'}`}>
+                {isLoadingStock ? 'Fetching...' : `${currentQty} ${unit}`}
+              </span>
+            </div>
+          )}
+
+          {/* 4. Adjustment Inputs (Enabled after SKU) */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className={`block text-xs font-bold uppercase tracking-wider ${!skuId ? 'text-gray-300' : 'text-gray-400'}`}>Adjustment Qty</label>
+              <input 
+                type="number" 
+                value={adjustmentQty}
+                onChange={(e) => handleAdjustmentChange(e.target.value)}
+                disabled={!skuId || isLoadingStock}
+                placeholder="+20 or -5"
+                className="w-full border rounded-xl p-2.5 text-sm font-black focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50 disabled:opacity-50" 
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className={`block text-xs font-bold uppercase tracking-wider ${!skuId ? 'text-gray-300' : 'text-gray-400'}`}>Final Qty</label>
+              <input 
+                type="number" 
+                value={finalQty}
+                onChange={(e) => handleFinalChange(e.target.value)}
+                disabled={!skuId || isLoadingStock}
+                placeholder="e.g. 100"
+                className="w-full border rounded-xl p-2.5 text-sm font-black focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50 disabled:opacity-50" 
+              />
+            </div>
+          </div>
+
+          {/* 5. Remarks */}
+          <div className="space-y-1.5">
+            <label className={`block text-xs font-bold uppercase tracking-wider ${!skuId ? 'text-gray-300' : 'text-gray-400'}`}>Remarks *</label>
+            <textarea 
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              disabled={!skuId || isLoadingStock}
+              rows={2}
+              placeholder="Reason for adjustment..."
+              className="w-full border rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50 disabled:opacity-50"
+            />
+          </div>
+
+          {/* 6. Live Preview & Validation */}
+          {skuId && !isLoadingStock && (
+            <div className={`p-3 rounded-xl border flex items-center justify-between transition-all ${afterQty < 0 ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-100'}`}>
+              <div className="flex flex-col">
+                <span className={`text-[10px] font-black uppercase tracking-widest ${afterQty < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                  After Qty
+                </span>
+                {afterQty < 0 && (
+                  <span className="text-[10px] font-bold text-red-600 mt-0.5">Critical: Cannot have negative stock</span>
+                )}
+              </div>
+              <span className={`text-lg font-black tabular-nums ${afterQty < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                {afterQty} {unit}
+              </span>
+            </div>
+          )}
+
+
+          {/* 7. Submit */}
+          <div className="pt-2">
+            <button 
+              type="submit"
+              disabled={isInvalid || isSubmitting || isLoadingStock}
+              className="w-full bg-[#1A2766] text-white py-3.5 rounded-xl font-bold hover:bg-[#AE1B1E] disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-all shadow-lg active:scale-[0.98] flex items-center justify-center gap-2"
+            >
+              {isSubmitting ? (
+                <>
+                  <RefreshCw size={18} className="animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                'Confirm Adjustment'
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+
     </div>
   );
 }

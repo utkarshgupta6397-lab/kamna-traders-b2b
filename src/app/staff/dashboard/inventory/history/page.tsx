@@ -10,7 +10,7 @@ export default async function InventoryHistoryPage() {
   // Fetch only static context; logs are now fetched client-side via API for better UX (loaders, explicit apply)
   const [warehouses, skus] = await Promise.all([
     prisma.warehouse.findMany({ where: { active: true }, select: { id: true, name: true } }),
-    prisma.sku.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { id: 'asc' } }),
+    prisma.sku.findMany({ where: { isActive: true }, select: { id: true, name: true, unit: true }, orderBy: { id: 'asc' } }),
   ]);
 
   return (

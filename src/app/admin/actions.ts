@@ -269,6 +269,10 @@ export async function adjustInventory(data: FormData) {
     const beforeQty = currentInv?.qty ?? 0;
     const afterQty = beforeQty + delta;
 
+    if (afterQty < 0) {
+      throw new Error(`Invalid Adjustment: Resulting stock cannot be negative (Current: ${beforeQty}, Attempted: ${delta})`);
+    }
+
     // 2. Update/Create inventory
     await tx.warehouseInventory.upsert({
       where: { warehouseId_skuId: { warehouseId, skuId } },

@@ -15,7 +15,8 @@ import {
   FileText,
   Eye,
   Edit2,
-  Trash2
+  Trash2,
+  Play
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import CartManagementModals from './CartManagementModals';
@@ -23,6 +24,7 @@ import CartManagementModals from './CartManagementModals';
 
 interface CartData {
   id: string;
+  status: string;
   customerName: string;
   createdAt: string;
   slipNumber: string;
@@ -206,6 +208,11 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canMa
               <div className="w-1 h-1 rounded-full bg-red-500" />
               Deleted
             </span>
+          ) : cart.status === 'ON_HOLD' ? (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-50 text-amber-700 text-[9px] font-black uppercase tracking-wider">
+              <div className="w-1 h-1 rounded-full bg-amber-500" />
+              On Hold
+            </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[9px] font-black uppercase tracking-wider">
               <div className="w-1 h-1 rounded-full bg-emerald-500" />
@@ -222,6 +229,15 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canMa
         </td>
         <td className="px-4 py-2.5 text-right">
           <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            {cart.status === 'ON_HOLD' && !cart.deletedAt && (
+              <button
+                onClick={() => router.push(`/staff/dashboard?resume=${cart.id}`)}
+                className="p-1.5 rounded-lg bg-amber-100 text-amber-600 hover:bg-amber-600 hover:text-white transition-all shadow-sm"
+                title="Resume Drafting"
+              >
+                <Play size={13} fill="currentColor" />
+              </button>
+            )}
             <button
               onClick={() => {
                 setSelectedCartId(cart.id);

@@ -50,6 +50,7 @@ export async function GET(request: Request) {
         where,
         select: {
           id: true,
+          status: true,
           customerName: true,
           createdAt: true,
           dispatchSlipNumber: true,
@@ -83,6 +84,7 @@ export async function GET(request: Request) {
 
       return {
         id: cart.id,
+        status: cart.status,
         customerName: cart.customerName,
         createdAt: cart.createdAt,
         slipNumber: cart.dispatchSlipNumber || cart.id,

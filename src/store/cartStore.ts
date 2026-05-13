@@ -14,10 +14,20 @@ export interface CartItem {
 
 interface CartStore {
   items: CartItem[];
+  draftCartId: string | null;
+  customerName: string;
+  notes: string;
+  warehouseId: string;
+  
   addItem: (item: CartItem) => void;
   removeItem: (skuId: string) => void;
   updateQty: (skuId: string, qty: number) => void;
   clearCart: () => void;
+  
+  setDraftContext: (id: string, customer: string, notes: string, whId: string) => void;
+  clearDraftContext: () => void;
+  hydrateCart: (items: CartItem[]) => void;
+
   getTotalItems: () => number;
   getTotalPrice: () => number;
 }
@@ -26,6 +36,11 @@ export const useCartStore = create<CartStore>()(
   persist(
     (set, get) => ({
       items: [],
+      draftCartId: null,
+      customerName: '',
+      notes: '',
+      warehouseId: '',
+
       addItem: (item) => set((state) => {
         const existing = state.items.find(i => i.skuId === item.skuId);
         if (existing) {
@@ -53,7 +68,26 @@ export const useCartStore = create<CartStore>()(
           )
         };
       }),
-      clearCart: () => set({ items: [] }),
+      clearCart: () => set({ 
+        items: [], 
+        draftCartId: null, 
+        customerName: '', 
+        notes: '', 
+        warehouseId: '' 
+      }),
+      setDraftContext: (id, customer, notes, whId) => set({
+        draftCartId: id,
+        customerName: customer,
+        notes: notes,
+        warehouseId: whId
+      }),
+      clearDraftContext: () => set({
+        draftCartId: null,
+        customerName: '',
+        notes: '',
+        warehouseId: ''
+      }),
+      hydrateCart: (items) => set({ items }),
       getTotalItems: () => get().items.reduce((total, item) => total + item.qty, 0),
       getTotalPrice: () => get().items.reduce((total, item) => total + (item.price * item.qty), 0),
     }),

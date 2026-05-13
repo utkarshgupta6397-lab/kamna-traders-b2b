@@ -6,7 +6,7 @@ import ProductCard, { ProductData } from '@/components/ProductCard';
 import CartPanel from '@/components/CartPanel';
 import { useCartStore } from '@/store/cartStore';
 import { useSkuStore } from '@/store/skuStore';
-import { Printer, Scan, Loader2, RefreshCw, AlertTriangle, Eye, EyeOff, ChevronDown, Check } from 'lucide-react';
+import { Printer, Scan, Loader2, RefreshCw, AlertTriangle, Eye, EyeOff, ChevronDown, Check, Pause } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { qzManager } from '@/lib/print/qz-tray';
 import { renderDispatchSlips } from '@/lib/print/slip-renderer';
@@ -143,9 +143,18 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     setIsClient(true);
   }, []);
 
-  const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
-  const [customerName, setCustomerName] = useState('');
-  const [notes, setNotes] = useState('');
+  // Cart Store
+  const { 
+    items, addItem, clearCart, 
+    draftCartId, customerName: storeCustomer, notes: storeNotes, warehouseId: storeWarehouse,
+    setDraftContext, hydrateCart 
+  } = useCartStore();
+  
+  const totalQty = items.reduce((a, i) => a + i.qty, 0);
+
+  const [warehouseId, setWarehouseId] = useState(storeWarehouse || warehouses[0]?.id || '');
+  const [customerName, setCustomerName] = useState(storeCustomer || '');
+  const [notes, setNotes] = useState(storeNotes || '');
   const [submitting, setSubmitting] = useState(false);
   const [isThermalReady, setIsThermalReady] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
@@ -193,10 +202,6 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   const setSelectedCaseSizes = useSkuStore((s) => s.setSelectedCaseSizes);
   const lastFetchedAt = useSkuStore((s) => s.lastFetchedAt);
   const clearWarehouseState = useSkuStore((s) => s.clearWarehouseState);
-
-  // Cart
-  const { items, addItem, clearCart } = useCartStore();
-  const totalQty = items.reduce((a, i) => a + i.qty, 0);
 
   // Optimized single-pass category counts to reduce object churn
   const dynamicCategories = useMemo(() => {
@@ -299,6 +304,55 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   }, [setSkus, setStatus, warehouseId]);
 
   // Handle Warehouse Switch -> Full Context Refresh (Deterministic Selection)
+  // ─── Draft Resume Logic ─────────────────────────────────────────
+  useEffect(() => {
+    const resumeId = searchParams.get('resume');
+    if (resumeId && isClient) {
+      const fetchDraft = async () => {
+        const loadingToast = toast.loading('Resuming draft cart...');
+        try {
+          const res = await fetch(`/api/staff/carts/${resumeId}`);
+          if (!res.ok) throw new Error('Failed to fetch draft');
+          const cart = await res.json();
+          
+          if (cart.status !== 'ON_HOLD') {
+            toast.error('Only On-Hold carts can be resumed.', { id: loadingToast });
+            return;
+          }
+
+          // Hydrate Store
+          setDraftContext(cart.id, cart.customerName, cart.notes || '', cart.warehouseId);
+          hydrateCart(cart.items.map((i: any) => ({
+            skuId: i.skuId,
+            name: i.sku?.name || i.skuId,
+            unit: i.sku?.unit || '',
+            price: i.sku?.price || 0,
+            qty: i.qty,
+            moq: i.sku?.moq || 1,
+            stepQty: i.sku?.stepQty || 1,
+            caseSize: i.sku?.caseSize || 1
+          })));
+          
+          // Sync local UI state
+          setWarehouseId(cart.warehouseId);
+          setCustomerName(cart.customerName);
+          setNotes(cart.notes || '');
+          
+          toast.success('Draft cart resumed successfully.', { id: loadingToast });
+          
+          // Clear query param
+          const url = new URL(window.location.href);
+          url.searchParams.delete('resume');
+          window.history.replaceState({}, '', url.pathname + url.search);
+        } catch (err) {
+          console.error('Resume error:', err);
+          toast.error('Failed to resume draft.', { id: loadingToast });
+        }
+      };
+      fetchDraft();
+    }
+  }, [searchParams, isClient, setDraftContext, hydrateCart]);
+
   useEffect(() => {
     if (warehouseId) {
       console.log(`[WAREHOUSE] Switch detected -> ${warehouseId}. Triggering race-safe refresh...`);
@@ -400,19 +454,37 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   }, [selectedCategoryId, searchQuery, hideOos, selectedBrands]);
 
   // ─── Cart Submit ───────────────────────────────────────────────
-  const handleSubmit = async () => {
+  const handleSubmit = async (mode: 'dispatch' | 'hold' = 'dispatch') => {
     if (submitting || !customerName || !warehouseId || items.length === 0) return;
+    const isHold = mode === 'hold';
     const tClick = Date.now();
     setSubmitting(true);
     try {
       const res = await fetch('/api/staff/cart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ warehouseId, customerName, notes, staffId, items: items.map((i) => ({ skuId: i.skuId, qty: i.qty })) }),
+        body: JSON.stringify({ 
+          warehouseId, 
+          customerName, 
+          notes, 
+          staffId, 
+          items: items.map((i) => ({ skuId: i.skuId, qty: i.qty })),
+          action: isHold ? 'hold' : undefined,
+          cartId: draftCartId
+        }),
       });
 
       if (res.ok) {
-        const { cartId, printPayload, perf } = await res.json();
+        const data = await res.json();
+        
+        if (isHold) {
+          toast.success('Cart saved on hold successfully.');
+          clearCart();
+          router.push('/staff/dashboard/carts');
+          return;
+        }
+
+        const { cartId, printPayload, perf } = data;
         const tApiEnd = Date.now();
         
         // Comprehensive operational diagnostics persistence
@@ -452,12 +524,12 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
         setTimeout(() => clearCart(), 100);
       } else {
         const data = await res.json().catch(() => null);
-        alert(data?.error || 'Failed to submit cart.');
+        toast.error(data?.error || 'Failed to submit cart.');
         setSubmitting(false);
       }
     } catch (err) {
       console.error('Submission error:', err);
-      alert('An unexpected error occurred. Please check your connection.');
+      toast.error('An unexpected error occurred. Please check your connection.');
       setSubmitting(false);
     }
   };
@@ -751,14 +823,24 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
                       className="w-full bg-white border border-[#E7EAF0] rounded-lg px-3 py-1.5 text-[13px] outline-none focus:ring-2 focus:ring-[#1A2766]/10 focus:border-[#1A2766] h-14 resize-none transition-all"
                     />
                   </div>
-                  <button
-                    onClick={handleSubmit}
-                    disabled={submitting || !customerName}
-                    className="w-full h-11 flex items-center justify-center gap-2 bg-[#1A2766] text-white rounded-lg font-[800] text-[13px] uppercase tracking-widest hover:bg-[#003347] transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
-                  >
-                    <Printer size={18} strokeWidth={2.5} />
-                    {submitting ? 'Processing...' : 'Generate Dispatch Note'}
-                  </button>
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => handleSubmit('dispatch')}
+                      disabled={submitting || !customerName}
+                      className="w-full h-11 flex items-center justify-center gap-2 bg-[#1A2766] text-white rounded-lg font-[800] text-[13px] uppercase tracking-widest hover:bg-[#003347] transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
+                    >
+                      <Printer size={18} strokeWidth={2.5} />
+                      {submitting ? 'Processing...' : 'Generate Dispatch Note'}
+                    </button>
+                    <button
+                      onClick={() => handleSubmit('hold')}
+                      disabled={submitting || !customerName}
+                      className="w-full h-11 flex items-center justify-center gap-2 bg-white text-[#1A2766] border-2 border-[#1A2766] rounded-lg font-[800] text-[13px] uppercase tracking-widest hover:bg-gray-50 transition-all active:scale-[0.98] disabled:opacity-50"
+                    >
+                      <Pause size={18} strokeWidth={2.5} />
+                      {submitting ? 'Processing...' : 'Put On Hold'}
+                    </button>
+                  </div>
                 </>
               )}
             </div>

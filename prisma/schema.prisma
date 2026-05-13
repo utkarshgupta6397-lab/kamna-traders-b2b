@@ -108,6 +108,7 @@ model WarehouseInventory {
 
 model Cart {
   id                   String     @id
+  status               String     @default("COMPLETED")
   warehouseId          String
   customerName         String
   notes                String?

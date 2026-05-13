@@ -29,6 +29,9 @@ export async function GET(
                 name: true,
                 unit: true,
                 price: true,
+                moq: true,
+                stepQty: true,
+                caseSize: true,
               }
             }
           }
@@ -74,61 +77,66 @@ export async function PATCH(
     const staffId = session.userId as string;
 
     await prisma.$transaction(async (tx) => {
-      // 1. Map existing items for comparison
-      const existingItemsMap = new Map(cart.items.map(item => [item.skuId, item]));
-      const newItemsMap = new Map(newItems.map(item => [item.skuId, item.qty]));
+      const isHold = cart.status === 'ON_HOLD';
 
-      // 2. Identify changes and validate
-      const allSkuIds = Array.from(new Set([...existingItemsMap.keys(), ...newItemsMap.keys()]));
+      if (!isHold) {
+        // 1. Map existing items for comparison
+        const existingItemsMap = new Map(cart.items.map(item => [item.skuId, item]));
+        const newItemsMap = new Map(newItems.map(item => [item.skuId, item.qty]));
 
-      for (const skuId of allSkuIds) {
-        const existingItem = existingItemsMap.get(skuId);
-        const oldQty = existingItem?.qty || 0;
-        const newQty = newItemsMap.get(skuId) || 0;
-        
-        // Validation: Cannot exceed original quantity
-        const originalQty = existingItem?.originalQty ?? oldQty; 
-        if (newQty > originalQty) {
-          throw new Error(`Quantity for ${skuId} cannot exceed original quantity (${originalQty})`);
-        }
+        // 2. Identify changes and validate
+        const allSkuIds = Array.from(new Set([...existingItemsMap.keys(), ...newItemsMap.keys()]));
 
-        const diff = oldQty - newQty; // Positive means we add back to stock
-
-
-        if (diff === 0) continue;
-
-        // Fetch current inventory
-        const inventory = await tx.warehouseInventory.findUnique({
-          where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId } },
-          include: { sku: true }
-        });
-
-        const beforeQty = inventory?.qty || 0;
-        const afterQty = beforeQty + diff;
-
-        // Update inventory
-        await tx.warehouseInventory.upsert({
-          where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId } },
-          update: { qty: afterQty, isOos: afterQty <= 0 },
-          create: { warehouseId: cart.warehouseId, skuId, qty: afterQty, isOos: afterQty <= 0 }
-        });
-
-        // Log history
-        await tx.inventoryHistory.create({
-          data: {
-            warehouseId: cart.warehouseId,
-            skuId,
-            productName: inventory?.sku.name || skuId,
-            beforeQty,
-            afterQty,
-            qtyChange: diff,
-            remarks: `Cart Edit ${cart.dispatchSlipNumber || cart.id} | ${diff > 0 ? 'Restored' : 'Deducted'}`,
-            createdBy: staffId,
+        for (const skuId of allSkuIds) {
+          const existingItem = existingItemsMap.get(skuId);
+          const oldQty = existingItem?.qty || 0;
+          const newQty = newItemsMap.get(skuId) || 0;
+          
+          // Validation: Cannot exceed original quantity (Only for COMPLETED carts)
+          const originalQty = existingItem?.originalQty ?? oldQty; 
+          if (newQty > originalQty) {
+            throw new Error(`Quantity for ${skuId} cannot exceed original quantity (${originalQty})`);
           }
-        });
+
+          const diff = oldQty - newQty; // Positive means we add back to stock
+
+
+          if (diff === 0) continue;
+
+          // Fetch current inventory
+          const inventory = await tx.warehouseInventory.findUnique({
+            where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId } },
+            include: { sku: true }
+          });
+
+          const beforeQty = inventory?.qty || 0;
+          const afterQty = beforeQty + diff;
+
+          // Update inventory
+          await tx.warehouseInventory.upsert({
+            where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId } },
+            update: { qty: afterQty, isOos: afterQty <= 0 },
+            create: { warehouseId: cart.warehouseId, skuId, qty: afterQty, isOos: afterQty <= 0 }
+          });
+
+          // Log history
+          await tx.inventoryHistory.create({
+            data: {
+              warehouseId: cart.warehouseId,
+              skuId,
+              productName: inventory?.sku.name || skuId,
+              beforeQty,
+              afterQty,
+              qtyChange: diff,
+              remarks: `Cart Edit ${cart.dispatchSlipNumber || cart.id} | ${diff > 0 ? 'Restored' : 'Deducted'}`,
+              createdBy: staffId,
+            }
+          });
+        }
       }
 
-      // Clear existing and recreate
+      // Clear existing and recreate (Common for both flows)
+      const existingItemsMap = new Map(cart.items.map(item => [item.skuId, item]));
       await tx.cartItem.deleteMany({ where: { cartId: id } });
       
       const itemsToCreate = newItems.filter(i => i.qty > 0);
@@ -193,36 +201,38 @@ export async function DELETE(
     const staffId = session.userId as string;
 
     await prisma.$transaction(async (tx) => {
-      // 1. Restore all inventory
-      // ... (existing inventory logic) ...
+      const isHold = cart.status === 'ON_HOLD';
 
-      for (const item of cart.items) {
-        const inventory = await tx.warehouseInventory.findUnique({
-          where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId: item.skuId } }
-        });
+      if (!isHold) {
+        // 1. Restore all inventory
+        for (const item of cart.items) {
+          const inventory = await tx.warehouseInventory.findUnique({
+            where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId: item.skuId } }
+          });
 
-        const beforeQty = inventory?.qty || 0;
-        const afterQty = beforeQty + item.qty;
+          const beforeQty = inventory?.qty || 0;
+          const afterQty = beforeQty + item.qty;
 
-        await tx.warehouseInventory.upsert({
-          where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId: item.skuId } },
-          update: { qty: afterQty, isOos: afterQty <= 0 },
-          create: { warehouseId: cart.warehouseId, skuId: item.skuId, qty: afterQty, isOos: afterQty <= 0 }
-        });
+          await tx.warehouseInventory.upsert({
+            where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId: item.skuId } },
+            update: { qty: afterQty, isOos: afterQty <= 0 },
+            create: { warehouseId: cart.warehouseId, skuId: item.skuId, qty: afterQty, isOos: afterQty <= 0 }
+          });
 
-        // Log history
-        await tx.inventoryHistory.create({
-          data: {
-            warehouseId: cart.warehouseId,
-            skuId: item.skuId,
-            productName: item.sku.name || item.skuId,
-            beforeQty,
-            afterQty,
-            qtyChange: item.qty,
-            remarks: `Cart Deletion ${cart.dispatchSlipNumber || cart.id} | Full Restore`,
-            createdBy: staffId,
-          }
-        });
+          // Log history
+          await tx.inventoryHistory.create({
+            data: {
+              warehouseId: cart.warehouseId,
+              skuId: item.skuId,
+              productName: item.sku.name || item.skuId,
+              beforeQty,
+              afterQty,
+              qtyChange: item.qty,
+              remarks: `Cart Deletion ${cart.dispatchSlipNumber || cart.id} | Full Restore`,
+              createdBy: staffId,
+            }
+          });
+        }
       }
 
       // 2. Soft delete cart

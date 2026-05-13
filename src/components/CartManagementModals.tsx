@@ -21,6 +21,7 @@ interface CartItem {
 
 interface Cart {
   id: string;
+  status: string;
   customerName: string;
   dispatchSlipNumber: string | null;
   warehouseName: string;
@@ -276,7 +277,9 @@ const CartManagementModals = React.memo(({ cartId, type, onClose, onSuccess }: P
                   <div className="space-y-1">
                     <h4 className="text-lg font-black text-gray-900 uppercase tracking-tight">Delete this cart?</h4>
                     <p className="text-sm text-gray-500 font-medium max-w-sm mx-auto">
-                      Deleting this cart will restore all quantities back to the warehouse inventory. This action cannot be undone.
+                      {cart.status === 'ON_HOLD' 
+                        ? 'Deleting this draft cart will remove it permanently. No inventory restoration is needed as it was never deducted.'
+                        : 'Deleting this cart will restore all quantities back to the warehouse inventory. This action cannot be undone.'}
                     </p>
                   </div>
                 </div>

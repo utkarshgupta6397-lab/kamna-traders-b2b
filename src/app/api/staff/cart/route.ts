@@ -38,12 +38,17 @@ export async function POST(request: Request) {
     perf.auth = performance.now() - tAuthStart;
 
     const body = await request.json();
-    const { warehouseId, customerName, notes, items } = body as {
+    const { warehouseId, customerName, notes, items, action, cartId: providedCartId } = body as {
       warehouseId?: string;
       customerName?: string;
       notes?: string;
       items?: CartItemInput[];
+      action?: 'hold';
+      cartId?: string;
     };
+
+    const isHold = action === 'hold';
+    const isUpdate = !!providedCartId;
 
     if (!warehouseId || !customerName || !items || items.length === 0) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -55,7 +60,21 @@ export async function POST(request: Request) {
       day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata'
     }).replace(/ /g, '/');
     const safeNotes = notes?.trim() || null;
-    const cartId = `KT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+    let cartId = `KT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    if (isUpdate) {
+      const existing = await prisma.cart.findUnique({
+        where: { id: providedCartId },
+        select: { status: true }
+      });
+      if (!existing) {
+        return NextResponse.json({ error: 'Cart not found' }, { status: 404 });
+      }
+      if (existing.status === 'COMPLETED') {
+        return NextResponse.json({ error: 'Finalized dispatches cannot be resumed' }, { status: 400 });
+      }
+      cartId = providedCartId!;
+    }
 
     // ═══════════════════════════════════════════════════════════════
     // 3. ALL READS + SEQUENCE — 3 parallel queries (1 wall-clock roundtrip)
@@ -117,11 +136,14 @@ export async function POST(request: Request) {
       if (item.qty < sku.moq) throw new Error(`Qty for ${item.skuId} is below MOQ (${sku.moq})`);
     }
 
-    // 5. Generate slip number from sequence
-    const seqNum = Number(seqRows[0].sequence);
-    const generatedSlipNumber = `KS-DP-${datePart}-${seqNum.toString().padStart(3, '0')}`;
+    // 5. Generate slip number from sequence (Skip if hold)
+    let generatedSlipNumber: string | null = null;
+    if (!isHold) {
+      const seqNum = Number(seqRows[0].sequence);
+      generatedSlipNumber = `KS-DP-${datePart}-${seqNum.toString().padStart(3, '0')}`;
+    }
 
-    // 6. Pre-compute all write payloads in memory
+    // 6. Pre-compute all write payloads in memory (Skip history calculation if hold)
     const inventoryOps = items.map((item) => {
       const row = skuMap.get(item.skuId)!;
       const hasInv = row.inv_qty !== null;
@@ -130,7 +152,7 @@ export async function POST(request: Request) {
       return { skuId: item.skuId, exists: hasInv, beforeQty, afterQty, deductQty: item.qty };
     });
 
-    const historyRows = items.map((item, i) => {
+    const historyRows = isHold ? [] : items.map((item, i) => {
       const op = inventoryOps[i];
       const sku = skuMap.get(item.skuId)!;
       return {
@@ -147,58 +169,79 @@ export async function POST(request: Request) {
 
     // ═══════════════════════════════════════════════════════════════
     // 7. WRITES — Lean batch tx (cart + items + inventory only)
-    //    InventoryHistory is moved outside the transaction to reduce
-    //    lock duration. History is an audit trail — if it fails after
-    //    a successful inventory update, data integrity is preserved.
     // ═══════════════════════════════════════════════════════════════
     const tWritesStart = performance.now();
 
-    const batchOps: Prisma.PrismaPromise<any>[] = [
-      prisma.cart.create({
-        data: {
-          id: cartId, warehouseId, customerName,
-          notes: safeNotes, staffId,
-          dispatchSlipNumber: generatedSlipNumber,
-        },
-      }),
-      prisma.cartItem.createMany({
-        data: items.map(i => ({ cartId, skuId: i.skuId, qty: i.qty, originalQty: i.qty })),
-      }),
-    ];
+    const batchOps: Prisma.PrismaPromise<any>[] = [];
 
-    // Bulk inventory update (1 raw SQL for all existing)
-    const existingOps = inventoryOps.filter(op => op.exists);
-    if (existingOps.length > 0) {
-      const setClauses = existingOps.map(op =>
-        `WHEN "skuId" = '${op.skuId}' THEN "qty" - ${op.deductQty}`
-      ).join(' ');
-      const oosClauses = existingOps.map(op =>
-        `WHEN "skuId" = '${op.skuId}' THEN ${op.afterQty <= 0}`
-      ).join(' ');
-      const skuIdList = existingOps.map(op => `'${op.skuId}'`).join(',');
-
+    if (isUpdate) {
       batchOps.push(
-        prisma.$executeRawUnsafe(`
-          UPDATE "WarehouseInventory"
-          SET "qty" = CASE ${setClauses} ELSE "qty" END,
-              "isOos" = CASE ${oosClauses} ELSE "isOos" END,
-              "updatedAt" = NOW()
-          WHERE "warehouseId" = '${warehouseId}'
-            AND "skuId" IN (${skuIdList})
-        `)
+        prisma.cart.update({
+          where: { id: cartId },
+          data: {
+            status: isHold ? 'ON_HOLD' : 'COMPLETED',
+            warehouseId, customerName,
+            notes: safeNotes, staffId,
+            dispatchSlipNumber: generatedSlipNumber,
+          },
+        }),
+        prisma.cartItem.deleteMany({ where: { cartId } })
+      );
+    } else {
+      batchOps.push(
+        prisma.cart.create({
+          data: {
+            id: cartId, 
+            status: isHold ? 'ON_HOLD' : 'COMPLETED',
+            warehouseId, customerName,
+            notes: safeNotes, staffId,
+            dispatchSlipNumber: generatedSlipNumber,
+          },
+        })
       );
     }
 
-    const newOps = inventoryOps.filter(op => !op.exists);
-    if (newOps.length > 0) {
-      batchOps.push(
-        prisma.warehouseInventory.createMany({
-          data: newOps.map(op => ({
-            warehouseId, skuId: op.skuId,
-            qty: op.afterQty, isOos: op.afterQty <= 0,
-          })),
-        })
-      );
+    batchOps.push(
+      prisma.cartItem.createMany({
+        data: items.map(i => ({ cartId, skuId: i.skuId, qty: i.qty, originalQty: i.qty })),
+      })
+    );
+
+    // Bulk inventory update (1 raw SQL for all existing) - Skip if hold
+    if (!isHold) {
+      const existingOps = inventoryOps.filter(op => op.exists);
+      if (existingOps.length > 0) {
+        const setClauses = existingOps.map(op =>
+          `WHEN "skuId" = '${op.skuId}' THEN "qty" - ${op.deductQty}`
+        ).join(' ');
+        const oosClauses = existingOps.map(op =>
+          `WHEN "skuId" = '${op.skuId}' THEN ${op.afterQty <= 0}`
+        ).join(' ');
+        const skuIdList = existingOps.map(op => `'${op.skuId}'`).join(',');
+
+        batchOps.push(
+          prisma.$executeRawUnsafe(`
+            UPDATE "WarehouseInventory"
+            SET "qty" = CASE ${setClauses} ELSE "qty" END,
+                "isOos" = CASE ${oosClauses} ELSE "isOos" END,
+                "updatedAt" = NOW()
+            WHERE "warehouseId" = '${warehouseId}'
+              AND "skuId" IN (${skuIdList})
+          `)
+        );
+      }
+
+      const newOps = inventoryOps.filter(op => !op.exists);
+      if (newOps.length > 0) {
+        batchOps.push(
+          prisma.warehouseInventory.createMany({
+            data: newOps.map(op => ({
+              warehouseId, skuId: op.skuId,
+              qty: op.afterQty, isOos: op.afterQty <= 0,
+            })),
+          })
+        );
+      }
     }
 
     queryCount += batchOps.length;
@@ -214,7 +257,7 @@ export async function POST(request: Request) {
     const protocol = request.headers.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
     const baseUrl = `${protocol}://${host}`;
 
-    if (baseUrl) {
+    if (baseUrl && !isHold) {
       // Detached trigger - DO NOT AWAIT to keep response fast
       (async () => {
         const syncUrl = `${baseUrl}/api/zoho/sync-dispatch`;
@@ -255,6 +298,8 @@ export async function POST(request: Request) {
         }
       })();
       console.log(`[DISPATCH][${cartId}] Zoho sync initiated background trigger`);
+    } else if (isHold) {
+      console.log(`[CART][${cartId}] Hold status - skipping Zoho sync`);
     } else {
       const reason = 'NO_BASE_URL';
       console.error(`[ZOHO] Sync skipped: ${reason}`, {
@@ -266,11 +311,13 @@ export async function POST(request: Request) {
     }
 
 
-    // 8. Post-tx audit trail (non-critical, outside transaction)
-    const tHistStart = performance.now();
-    await prisma.inventoryHistory.createMany({ data: historyRows });
-    queryCount += 1;
-    perf.historyWrite = performance.now() - tHistStart;
+    // 8. Post-tx audit trail (non-critical, outside transaction) - Skip if hold
+    if (!isHold) {
+      const tHistStart = performance.now();
+      await prisma.inventoryHistory.createMany({ data: historyRows });
+      queryCount += 1;
+      perf.historyWrite = performance.now() - tHistStart;
+    }
 
     perf.transactionTotal = performance.now() - tWritesStart;
 
@@ -301,7 +348,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       cartId,
-      printPayload: {
+      status: isHold ? 'ON_HOLD' : 'COMPLETED',
+      printPayload: isHold ? null : {
         id: cartId,
         dispatchSlipNumber: generatedSlipNumber,
         customerName,

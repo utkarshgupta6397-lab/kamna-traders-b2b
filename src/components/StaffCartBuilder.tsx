@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Plus, Trash2, Printer, Loader2 } from 'lucide-react';
+import { Search, Plus, Trash2, Printer, Loader2, Pause } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useStaffCartStore } from '@/store/staffCartStore';
@@ -107,7 +107,7 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
     storeUpdateQty(skuId, qty);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, mode: 'dispatch' | 'hold' = 'dispatch') => {
     e.preventDefault();
     if (isSubmitting || !warehouseId || !customerName || cartItems.length === 0) {
       toast.error('Required fields missing. Please select a warehouse and enter customer name.');
@@ -125,12 +125,21 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
           customerName,
           notes,
           staffId,
-          items: cartItems
+          items: cartItems,
+          action: mode === 'hold' ? 'hold' : undefined
         })
       });
 
       if (res.ok) {
         const data = await res.json();
+        
+        if (mode === 'hold') {
+          toast.success('Cart saved on hold successfully.');
+          clearCart();
+          router.push('/staff/dashboard/carts');
+          return;
+        }
+
         const tApiEnd = Date.now();
         
         try {
@@ -311,27 +320,42 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
             </div>
           </div>
           
-          <button 
-            onClick={handleSubmit}
-            disabled={isSubmitting || cartItems.length === 0 || !warehouseId || !customerName}
-            className={`w-full flex items-center justify-center space-x-2 py-3 rounded-xl font-bold transition-colors ${
-              isSubmitting || cartItems.length === 0 || !warehouseId || !customerName 
-                ? 'bg-gray-200 text-gray-500 cursor-not-allowed' 
-                : 'bg-[#1A2766] text-white hover:bg-[#003347]'
-            }`}
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 size={18} className="animate-spin" />
-                <span>Submitting...</span>
-              </>
-            ) : (
-              <>
-                <Printer size={18} />
-                <span>Generate & Print Slips</span>
-              </>
-            )}
-          </button>
+          <div className="space-y-3">
+            <button 
+              onClick={(e) => handleSubmit(e, 'dispatch')}
+              disabled={isSubmitting || cartItems.length === 0 || !warehouseId || !customerName}
+              className={`w-full flex items-center justify-center space-x-2 py-3 rounded-xl font-bold transition-colors ${
+                isSubmitting || cartItems.length === 0 || !warehouseId || !customerName 
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed' 
+                  : 'bg-[#1A2766] text-white hover:bg-[#003347]'
+              }`}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  <span>Submitting...</span>
+                </>
+              ) : (
+                <>
+                  <Printer size={18} />
+                  <span>Generate & Print Slips</span>
+                </>
+              )}
+            </button>
+
+            <button 
+              onClick={(e) => handleSubmit(e, 'hold')}
+              disabled={isSubmitting || cartItems.length === 0 || !warehouseId || !customerName}
+              className={`w-full flex items-center justify-center space-x-2 py-3 rounded-xl font-bold border-2 transition-colors ${
+                isSubmitting || cartItems.length === 0 || !warehouseId || !customerName 
+                  ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed' 
+                  : 'border-[#1A2766] text-[#1A2766] hover:bg-gray-50'
+              }`}
+            >
+              <Pause size={18} />
+              <span>Put On Hold</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

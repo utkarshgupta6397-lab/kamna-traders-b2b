@@ -22,8 +22,11 @@ const navItems = [
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
 
+  console.log(`[AdminLayout] Auth Check: ${session ? 'Valid Session' : 'No Session'}, Role: ${session?.role || 'None'}`);
+
   if (!session || session.role !== 'ADMIN') {
-    redirect('/staff');
+    console.warn(`[AdminLayout] Redirecting to /staff. Reason: ${!session ? 'No session' : 'Role mismatch (' + session.role + ')'}`);
+    redirect('/staff?callbackUrl=%2Fadmin');
   }
 
   return (

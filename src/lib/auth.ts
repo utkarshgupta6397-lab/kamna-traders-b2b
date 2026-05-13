@@ -1,4 +1,4 @@
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { encrypt, decrypt } from './jwt';
 
 export { encrypt, decrypt };
@@ -14,15 +14,12 @@ export async function createSession(params: {
   const { userId, role, deviceType, userAgent, ipAddress } = params;
   const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
   
-  // 1. Generate unique session token
   const sessionToken = (typeof crypto !== 'undefined' && crypto.randomUUID) 
     ? crypto.randomUUID() 
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  // 2. Encrypt JWT
-  const jwt = await encrypt({ userId, role, sessionToken, deviceType, expires: expires.toISOString() });
-  
-  // 3. Register in DB (ONE WRITE)
+  console.log(`[Auth] Creating session for ${userId} (${role}). Token: ${sessionToken.slice(0, 8)}...`);
+
   const { registerSession } = await import('./session');
   await registerSession({
     userId,
@@ -32,7 +29,7 @@ export async function createSession(params: {
     ipAddress
   });
 
-  // 4. Set Cookie
+  const jwt = await encrypt({ userId, role, sessionToken, deviceType, expires: expires.toISOString() });
   const cookieStore = await cookies();
   cookieStore.set('session', jwt, { expires, httpOnly: true, secure: process.env.NODE_ENV === 'production' });
 
@@ -43,6 +40,11 @@ export async function createSession(params: {
 }
 
 export async function getSession(): Promise<Record<string, unknown> | null> {
+  // 1. Bypass during system reset to avoid deadlocks
+  if ((global as any).__SYSTEM_RESET_RUNNING__) {
+    return null; // Or return a mock if needed, but null is safer to force re-auth after reset
+  }
+
   const cookieStore = await cookies();
   const jwt = cookieStore.get('session')?.value;
   if (!jwt) return null;
@@ -54,19 +56,13 @@ export async function getSession(): Promise<Record<string, unknown> | null> {
 
     if (!sessionToken) return payload;
 
-    // 1. Check if middleware already validated this session (De-duplication)
-    const { headers } = await import('next/headers');
-    const headersList = await headers();
-    if (headersList.get('x-session-validated') === 'true') {
-      return payload;
-    }
-
     // 2. Server-side validation (Read-Only)
+    // We do this in the Layout (Node.js runtime)
     const { validateSession } = await import('./session');
     const { isValid } = await validateSession(sessionToken);
     
     if (!isValid) {
-      console.warn(`[Auth] Session token ${sessionToken.slice(0, 8)} invalidated by DB.`);
+      console.warn(`[Auth] Session token ${sessionToken.slice(0, 8)} NOT found in DB.`);
       return null;
     }
 

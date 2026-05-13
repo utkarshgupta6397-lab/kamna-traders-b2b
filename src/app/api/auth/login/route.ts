@@ -37,6 +37,8 @@ export async function POST(request: Request) {
     const { detectDeviceType } = await import('@/lib/session');
     const deviceType = detectDeviceType(userAgent);
 
+    console.log(`[LOGIN_SUCCESS] User: ${user.mobile}, Role: ${user.role}, Device: ${deviceType}`);
+
     await createSession({
       userId: user.id,
       role: user.role,
@@ -47,13 +49,15 @@ export async function POST(request: Request) {
 
     try {
       await prisma.auditLog.create({
-        data: { userId: user.id, action: 'LOGIN', details: 'PIN login' },
+        data: { userId: user.id, action: 'LOGIN', details: `PIN login via ${deviceType}` },
       });
     } catch (err) {
       console.error('[LOGIN] Audit log failed:', err);
     }
 
-    return NextResponse.json({ success: true, role: user.role });
+    // Return explicit redirect target based on role
+    const redirectUrl = user.role === 'ADMIN' ? '/admin' : '/staff/dashboard';
+    return NextResponse.json({ success: true, role: user.role, redirectTo: redirectUrl });
   } catch (error) {
     console.error('[LOGIN_FATAL]', error);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });

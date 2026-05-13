@@ -8,8 +8,11 @@ import DashboardSearchInput from '@/components/DashboardSearchInput';
 export default async function StaffDashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
 
+  console.log(`[StaffLayout] Auth Check: ${session ? 'Valid Session' : 'No Session'}, Role: ${session?.role || 'None'}`);
+
   if (!session) {
-    redirect('/staff');
+    console.warn('[StaffLayout] Redirecting to /staff. Reason: No session');
+    redirect('/staff?callbackUrl=%2Fstaff%2Fdashboard');
   }
 
   return (

@@ -11,18 +11,16 @@ export default async function CartsPage({ searchParams }: { searchParams: Promis
   if (sp.safe === '1') {
     return <div className="p-20 text-center font-bold text-red-600 bg-red-50 rounded-2xl border-2 border-red-200">SAFE MODE ACTIVE: Registry disabled. <a href="?" className="underline ml-2">Exit Safe Mode</a></div>;
   }
-  const [warehouses, staff, user] = await Promise.all([
+  const [warehouses, staff] = await Promise.all([
     prisma.warehouse.findMany({ where: { active: true }, select: { id: true, name: true } }),
     prisma.user.findMany({ 
       where: { active: true }, 
       select: { id: true, name: true },
       orderBy: { name: 'asc' }
-    }),
-    prisma.user.findUnique({
-      where: { id: session.userId as string },
-      select: { canManageCarts: true, role: true }
     })
   ]);
+
+  const canManageCarts = session.canManageCarts || session.role === 'ADMIN';
 
   return (
     <div className="space-y-6">
@@ -34,7 +32,7 @@ export default async function CartsPage({ searchParams }: { searchParams: Promis
         warehouses={warehouses}
         staff={staff}
         zohoOrgId={getZohoOrgId()}
-        canManageCarts={user?.canManageCarts || user?.role === 'ADMIN'}
+        canManageCarts={canManageCarts}
       />
     </div>
   );

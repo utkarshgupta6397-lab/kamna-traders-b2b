@@ -86,11 +86,25 @@ export async function validateSession(sessionToken: string): Promise<{ isValid: 
   // 2. DB Lookup (Strict indexed lookup)
   const session = await prisma.activeSession.findUnique({
     where: { sessionToken },
-    select: { userId: true, deviceType: true }
+    select: { 
+      userId: true, 
+      deviceType: true,
+      user: {
+        select: {
+          role: true,
+          canManageCarts: true,
+        }
+      }
+    }
   });
 
   const result = session 
-    ? { isValid: true, userId: session.userId, deviceType: session.deviceType as DeviceType }
+    ? { 
+        isValid: true, 
+        userId: session.userId, 
+        deviceType: session.deviceType as DeviceType,
+        permissions: session.user 
+      }
     : { isValid: false };
 
   // 3. Update Cache

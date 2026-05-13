@@ -9,15 +9,32 @@ datasource db {
 }
 
 model User {
-  id               String             @id @default(cuid())
-  name             String
-  mobile           String             @unique
-  role             String             @default("STAFF")
-  active           Boolean            @default(true)
-  pin              String?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  canManageCarts   Boolean            @default(false)
+  id                      String             @id @default(cuid())
+  name                    String
+  mobile                  String             @unique
+  role                    String             @default("STAFF")
+  active                  Boolean            @default(true)
+  pin                     String?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  
+  // Permissions Matrix
+  canViewCatalog          Boolean            @default(true)
+  canViewCarts            Boolean            @default(true)
+  canManageCarts          Boolean            @default(false)
+  canCreateOrder          Boolean            @default(true)
+  canViewOrders           Boolean            @default(true)
+  canViewInventory        Boolean            @default(true)
+  canEditInventory        Boolean            @default(false)
+  canViewInventoryHistory Boolean            @default(false)
+  canViewUsers            Boolean            @default(false)
+  canEditUsers            Boolean            @default(false)
+  canViewReports          Boolean            @default(false)
+  canAccessSettings       Boolean            @default(false)
+  canSyncSkus             Boolean            @default(false)
+  canHardReset            Boolean            @default(false)
+  canDebugZoho            Boolean            @default(false)
+
   sessions         ActiveSession[]
   carts            Cart[]
   inventoryHistory InventoryHistory[]

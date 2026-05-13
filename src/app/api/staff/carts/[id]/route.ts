@@ -57,12 +57,8 @@ export async function PATCH(
     const { id } = await params;
     const { items: newItems } = await request.json() as { items: { skuId: string, qty: number }[] };
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.userId as string },
-      select: { canManageCarts: true, role: true }
-    });
-
-    if (!user || (!user.canManageCarts && user.role !== 'ADMIN')) {
+    const canManage = session.canManageCarts || session.role === 'ADMIN';
+    if (!canManage) {
       return NextResponse.json({ error: 'Forbidden: Missing permission to manage carts' }, { status: 403 });
     }
 

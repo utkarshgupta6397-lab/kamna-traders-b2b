@@ -55,21 +55,32 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
     const payload = await decrypt(jwt);
     const sessionToken = payload.sessionToken as string;
 
-    if (!sessionToken) return payload;
+    if (!sessionToken) {
+      console.log(`[Auth] No session token in JWT payload`);
+      return payload;
+    }
 
-    // Server-side validation (Node.js runtime)
-    // Uses 5-min TTL cache internally in session.ts
+    // uses 5-min TTL cache internally in session.ts
     const { validateSession } = await import('./session');
-    const { isValid } = await validateSession(sessionToken);
+    const validation = await validateSession(sessionToken);
     
-    if (!isValid) {
-      console.warn(`[Auth] Session token ${sessionToken.slice(0, 8)} NOT found in DB.`);
+    if (!validation.isValid) {
+      console.warn(`[Auth] Session token ${sessionToken.slice(0, 8)} NOT valid in DB.`);
       return null;
     }
 
-    // console.log(`[Perf] getSession: ${(performance.now() - start).toFixed(2)}ms`);
-    return payload;
+    const merged = { ...payload, ...(validation.permissions || {}) };
+
+    // ── ADMIN OVERRIDE ──
+    // If user is ADMIN, force full access
+    if (merged.role === 'ADMIN') {
+      merged.canManageCarts = true;
+    }
+
+    console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);
+    return merged;
   } catch (err) {
+    console.error(`[Auth] getSession error:`, err);
     return null;
   }
 });

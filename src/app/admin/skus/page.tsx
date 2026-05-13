@@ -20,7 +20,7 @@ export default async function SKUsPage({ searchParams }: { searchParams: Promise
           { name: { contains: q } },
           { zohoBooksId2: { contains: q } },
           // Also allow searching by Zoho Book Item ID (string match)
-          ...(isNaN(Number(q)) ? [] : [{ zohoBookItemId: BigInt(q) }]),
+          { zohoBookItemId: { contains: q } },
         ],
       }
     : {};

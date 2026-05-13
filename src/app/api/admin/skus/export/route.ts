@@ -17,7 +17,7 @@ export async function GET(request: Request) {
           { id: { contains: q, mode: 'insensitive' } },
           { name: { contains: q, mode: 'insensitive' } },
           { zohoBooksId2: { contains: q, mode: 'insensitive' } },
-          ...(isNaN(Number(q)) ? [] : [{ zohoBookItemId: BigInt(q) }]),
+          { zohoBookItemId: { contains: q, mode: 'insensitive' } },
         ],
       }
     : {};

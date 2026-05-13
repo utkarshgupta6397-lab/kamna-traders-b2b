@@ -1,5 +1,6 @@
 import { cookies, headers } from 'next/headers';
 import { encrypt, decrypt } from './jwt';
+import { cache } from 'react';
 
 export { encrypt, decrypt };
 
@@ -33,31 +34,31 @@ export async function createSession(params: {
   const cookieStore = await cookies();
   cookieStore.set('session', jwt, { expires, httpOnly: true, secure: process.env.NODE_ENV === 'production' });
 
-  const duration = performance.now() - start;
-  if (duration > 1000) {
-    console.warn(`[Auth] SLOW LOGIN: ${duration.toFixed(2)}ms`);
-  }
+  console.log(`[Perf] createSession: ${(performance.now() - start).toFixed(2)}ms`);
 }
 
-export async function getSession(): Promise<Record<string, unknown> | null> {
-  // 1. Bypass during system reset to avoid deadlocks
-  if ((global as any).__SYSTEM_RESET_RUNNING__) {
-    return null; // Or return a mock if needed, but null is safer to force re-auth after reset
-  }
+/**
+ * REQUEST-LEVEL MEMOIZED SESSION RETRIEVAL
+ * Ensures exactly ONE database validation per request lifecycle.
+ * (Delegates TTL caching to validateSession in session.ts)
+ */
+export const getSession = cache(async (): Promise<Record<string, any> | null> => {
+  const start = performance.now();
+  
+  if ((global as any).__SYSTEM_RESET_RUNNING__) return null;
 
   const cookieStore = await cookies();
   const jwt = cookieStore.get('session')?.value;
   if (!jwt) return null;
   
   try {
-    const start = performance.now();
     const payload = await decrypt(jwt);
     const sessionToken = payload.sessionToken as string;
 
     if (!sessionToken) return payload;
 
-    // 2. Server-side validation (Read-Only)
-    // We do this in the Layout (Node.js runtime)
+    // Server-side validation (Node.js runtime)
+    // Uses 5-min TTL cache internally in session.ts
     const { validateSession } = await import('./session');
     const { isValid } = await validateSession(sessionToken);
     
@@ -66,16 +67,12 @@ export async function getSession(): Promise<Record<string, unknown> | null> {
       return null;
     }
 
-    const duration = performance.now() - start;
-    if (duration > 300) {
-      console.warn(`[Auth] SLOW SESSION RETRIEVAL: ${duration.toFixed(2)}ms`);
-    }
-
+    // console.log(`[Perf] getSession: ${(performance.now() - start).toFixed(2)}ms`);
     return payload;
   } catch (err) {
     return null;
   }
-}
+});
 
 export async function logout() {
   const cookieStore = await cookies();

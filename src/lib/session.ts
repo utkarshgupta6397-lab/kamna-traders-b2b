@@ -4,6 +4,12 @@ import { UAParser } from 'ua-parser-js';
 export type DeviceType = 'desktop' | 'mobile';
 
 /**
+ * LIGHTWEIGHT IN-MEMORY SESSION CACHE (Shared across lib)
+ */
+const validationCache = new Map<string, { result: any; expires: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/**
  * Detects device type from User Agent string.
  */
 export function detectDeviceType(uaString: string | null): DeviceType {
@@ -21,7 +27,6 @@ export function detectDeviceType(uaString: string | null): DeviceType {
 
 /**
  * Registers a new session in the database.
- * Model: Single Desktop + Single Mobile enforcement.
  */
 export async function registerSession(params: {
   userId: string;
@@ -34,12 +39,12 @@ export async function registerSession(params: {
   const start = performance.now();
 
   try {
-    // 1. Invalidate existing sessions of the same type (Simple, Fast Delete)
+    // 1. Invalidate existing sessions of the same type
     await prisma.activeSession.deleteMany({
       where: { userId, deviceType },
     });
 
-    // 2. Create new session (ONE WRITE per login)
+    // 2. Create new session
     const session = await prisma.activeSession.create({
       data: {
         userId,
@@ -51,10 +56,7 @@ export async function registerSession(params: {
       },
     });
 
-    const duration = performance.now() - start;
-    if (duration > 1000) {
-      console.warn(`[Session] SLOW REGISTRATION: ${duration.toFixed(2)}ms`);
-    }
+    console.log(`[Perf] registerSession: ${(performance.now() - start).toFixed(2)}ms`);
     return session;
   } catch (err) {
     console.error('[Session] Registration failed:', err);
@@ -63,43 +65,51 @@ export async function registerSession(params: {
 }
 
 /**
- * Validates session token existence using strictly indexed lookup.
- * NO SIDE EFFECTS: No lastSeen updates, no stale cleanup, no writes.
+ * Validates session token existence.
+ * OPTIMIZATION: Uses 5-min in-memory cache to skip DB roundtrips.
  */
 export async function validateSession(sessionToken: string): Promise<{ isValid: boolean; userId?: string; deviceType?: DeviceType }> {
-  // Bypass during system reset to prevent deadlock
+  // Bypass during system reset
   if ((global as any).__SYSTEM_RESET_RUNNING__) {
     return { isValid: true };
   }
 
-  const start = performance.now();
+  // 1. Check Cache
+  const cached = validationCache.get(sessionToken);
+  if (cached && cached.expires > Date.now()) {
+    // console.log(`[Perf] validateSession: CACHE HIT`);
+    return cached.result;
+  }
+
+  const startTotal = performance.now();
   
-  // Strict indexed lookup on sessionToken
+  // 2. DB Lookup (Strict indexed lookup)
   const session = await prisma.activeSession.findUnique({
     where: { sessionToken },
     select: { userId: true, deviceType: true }
   });
 
-  const duration = performance.now() - start;
-  if (duration > 300) {
-    console.warn(`[Session] SLOW VALIDATION: ${duration.toFixed(2)}ms (Token: ${sessionToken.slice(0, 8)}...)`);
-  }
+  const result = session 
+    ? { isValid: true, userId: session.userId, deviceType: session.deviceType as DeviceType }
+    : { isValid: false };
 
-  if (!session) {
-    return { isValid: false };
-  }
+  // 3. Update Cache
+  validationCache.set(sessionToken, {
+    result,
+    expires: Date.now() + CACHE_TTL
+  });
 
-  return { 
-    isValid: true, 
-    userId: session.userId,
-    deviceType: session.deviceType as DeviceType
-  };
+  const totalDuration = performance.now() - startTotal;
+  console.log(`[Perf] validateSession (DB): ${totalDuration.toFixed(2)}ms`);
+
+  return result;
 }
 
 /**
  * Removes a specific session (Logout).
  */
 export async function invalidateSession(sessionToken: string) {
+  validationCache.delete(sessionToken);
   return await prisma.activeSession.delete({
     where: { sessionToken },
   }).catch(() => null); 
@@ -107,19 +117,13 @@ export async function invalidateSession(sessionToken: string) {
 
 /**
  * Lightweight cleanup: Only deletes rows older than 7 days.
- * To be called infrequently (e.g. background worker or manual trigger).
  */
 export async function cleanupStaleSessions() {
-  const start = performance.now();
   const threshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
   try {
-    const deleted = await prisma.activeSession.deleteMany({
-      where: {
-        lastSeenAt: { lt: threshold },
-      },
+    await prisma.activeSession.deleteMany({
+      where: { lastSeenAt: { lt: threshold } },
     });
-    console.log(`[Session] Purged ${deleted.count} stale sessions in ${(performance.now() - start).toFixed(2)}ms`);
   } catch (err) {
     console.error('[Session] Cleanup failed:', err);
   }

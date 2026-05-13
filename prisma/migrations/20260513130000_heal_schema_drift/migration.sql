@@ -39,7 +39,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS "SkuIdentityRegistry_zohoBookItemId_key" ON "S
 CREATE INDEX IF NOT EXISTS "SkuIdentityRegistry_zohoBookItemId_idx" ON "SkuIdentityRegistry"("zohoBookItemId");
 CREATE INDEX IF NOT EXISTS "SkuIdentityRegistry_skuId_idx" ON "SkuIdentityRegistry"("skuId");
 
--- 3. InventoryHistory
+-- 3. Fix Sku Type Mismatch (BIGINT -> TEXT)
+-- This prevents JS precision corruption for large Zoho IDs
+ALTER TABLE "Sku" ALTER COLUMN "zohoBookItemId" TYPE TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS "Sku_zohoBookItemId_key" ON "Sku"("zohoBookItemId");
+
+-- 4. InventoryHistory
 CREATE TABLE IF NOT EXISTS "InventoryHistory" (
     "id" TEXT NOT NULL,
     "warehouseId" TEXT NOT NULL,
@@ -54,7 +59,7 @@ CREATE TABLE IF NOT EXISTS "InventoryHistory" (
     CONSTRAINT "InventoryHistory_pkey" PRIMARY KEY ("id")
 );
 
--- 4. ZohoToken
+-- 5. ZohoToken
 CREATE TABLE IF NOT EXISTS "ZohoToken" (
     "id" TEXT NOT NULL DEFAULT 'singleton',
     "accessToken" TEXT NOT NULL,
@@ -64,7 +69,7 @@ CREATE TABLE IF NOT EXISTS "ZohoToken" (
     CONSTRAINT "ZohoToken_pkey" PRIMARY KEY ("id")
 );
 
--- 5. SyncLock
+-- 6. SyncLock
 CREATE TABLE IF NOT EXISTS "SyncLock" (
     "id" TEXT NOT NULL DEFAULT 'singleton',
     "name" TEXT NOT NULL,
@@ -75,7 +80,7 @@ CREATE TABLE IF NOT EXISTS "SyncLock" (
     CONSTRAINT "SyncLock_pkey" PRIMARY KEY ("id")
 );
 
--- 6. DispatchSequence
+-- 7. DispatchSequence
 CREATE TABLE IF NOT EXISTS "DispatchSequence" (
     "date" TEXT NOT NULL,
     "sequence" INTEGER NOT NULL DEFAULT 0,

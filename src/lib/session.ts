@@ -68,7 +68,12 @@ export async function registerSession(params: {
  * Validates session token existence.
  * OPTIMIZATION: Uses 5-min in-memory cache to skip DB roundtrips.
  */
-export async function validateSession(sessionToken: string): Promise<{ isValid: boolean; userId?: string; deviceType?: DeviceType }> {
+export async function validateSession(sessionToken: string): Promise<{ 
+  isValid: boolean; 
+  userId?: string; 
+  deviceType?: DeviceType;
+  permissions?: any; 
+}> {
   // Bypass during system reset
   if ((global as any).__SYSTEM_RESET_RUNNING__) {
     return { isValid: true };

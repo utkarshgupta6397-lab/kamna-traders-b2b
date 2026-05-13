@@ -103,6 +103,7 @@ export default function SkuSyncPage() {
   }, []);
 
   const fetchHistory = async () => {
+    if (isResetting) return; // Block refreshes during hard reset
     setIsLoading(true);
     try {
       const res = await fetch('/api/admin/sku-sync/last-run');
@@ -119,6 +120,10 @@ export default function SkuSyncPage() {
   };
 
   const runSync = async () => {
+    if (isResetting) {
+      toast.error('System is currently being reset. Please wait.');
+      return;
+    }
     if (!confirm(`Are you sure you want to run the SKU sync with a limit of ${syncLimit || 'unlimited'}?`)) return;
     
     console.log('[SYNC_UI] Starting sync lifecycle');
@@ -167,6 +172,7 @@ export default function SkuSyncPage() {
     }
 
     setIsResetting(true);
+    (window as any).__SYSTEM_RESET_MODE__ = true;
     try {
       const res = await fetch('/api/admin/hard-reset', {
         method: 'POST',
@@ -189,6 +195,7 @@ export default function SkuSyncPage() {
       toast.error(err.message || 'Reset failed');
     } finally {
       setIsResetting(false);
+      (window as any).__SYSTEM_RESET_MODE__ = false;
     }
   };
 

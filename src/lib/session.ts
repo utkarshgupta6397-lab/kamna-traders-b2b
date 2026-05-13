@@ -70,6 +70,11 @@ export async function registerSession(params: {
  * FORENSIC: Logs lookup duration.
  */
 export async function validateSession(sessionToken: string): Promise<{ isValid: boolean; userId?: string; deviceType?: DeviceType }> {
+  // 1. Safety: Disable validation during hard reset to prevent lock contention
+  if ((global as any).__HARD_RESET_RUNNING__) {
+    return { isValid: true }; // Optimistic bypass during reset
+  }
+
   const start = performance.now();
   
   // Lookup using ONLY indexed sessionToken
@@ -99,6 +104,7 @@ export async function validateSession(sessionToken: string): Promise<{ isValid: 
  * FORENSIC: Measures heartbeat check vs write timings.
  */
 export async function heartbeatSession(sessionToken: string) {
+  if ((global as any).__HARD_RESET_RUNNING__) return;
   const start = performance.now();
   
   try {

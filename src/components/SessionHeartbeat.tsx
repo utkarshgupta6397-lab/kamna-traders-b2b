@@ -13,6 +13,9 @@ export default function SessionHeartbeat() {
   const lastPing = useRef<number>(0);
 
   const triggerHeartbeat = async () => {
+    // 0. Safety: Stop heartbeats during system reset
+    if ((window as any).__SYSTEM_RESET_MODE__) return;
+
     const now = Date.now();
     // Throttle client-side pings to once every 2 minutes
     if (now - lastPing.current < 120_000) return;

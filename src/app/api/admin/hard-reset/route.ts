@@ -15,18 +15,18 @@ export async function POST(request: Request) {
   }
 
   // 1. Mutex: Prevent parallel resets
-  if ((global as any).__HARD_RESET_RUNNING__) {
-    return NextResponse.json({ error: 'A hard reset is already in progress. Please wait.' }, { status: 409 });
+  if ((global as any).__SYSTEM_RESET_RUNNING__) {
+    return NextResponse.json({ error: 'A system reset is already in progress. Please wait.' }, { status: 409 });
   }
 
-  (global as any).__HARD_RESET_RUNNING__ = true;
+  (global as any).__SYSTEM_RESET_RUNNING__ = true;
   const startTotal = performance.now();
 
   try {
     const { phrase, pin, mode = 'SOFT' } = await request.json();
 
     if (phrase !== 'RESET EVERYTHING' && phrase !== 'PURGE FORENSICS') {
-      (global as any).__HARD_RESET_RUNNING__ = false;
+      (global as any).__SYSTEM_RESET_RUNNING__ = false;
       return NextResponse.json({ error: 'Invalid confirmation phrase' }, { status: 400 });
     }
 
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     });
 
     if (!admin || admin.pin !== pin) {
-      (global as any).__HARD_RESET_RUNNING__ = false;
+      (global as any).__SYSTEM_RESET_RUNNING__ = false;
       return NextResponse.json({ error: 'Invalid admin PIN' }, { status: 403 });
     }
 
@@ -94,6 +94,6 @@ export async function POST(request: Request) {
     }, { status: 500 });
   } finally {
     // 5. Release Mutex
-    (global as any).__HARD_RESET_RUNNING__ = false;
+    (global as any).__SYSTEM_RESET_RUNNING__ = false;
   }
 }

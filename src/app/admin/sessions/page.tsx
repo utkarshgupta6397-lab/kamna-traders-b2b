@@ -11,7 +11,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
   const [sessions, total] = await Promise.all([
     prisma.activeSession.findMany({
       include: { user: true },
-      orderBy: { lastSeenAt: 'desc' },
+      orderBy: { createdAt: 'desc' },
       skip: (page - 1) * perPage,
       take: perPage,
     }),
@@ -41,7 +41,7 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
             <div className="w-48 p-4">User</div>
             <div className="w-32 p-4">Device Type</div>
             <div className="w-48 p-4">IP Address</div>
-            <div className="w-64 p-4">Last Active</div>
+            <div className="w-64 p-4">Login Time</div>
             <div className="flex-1 p-4 text-right">Action</div>
           </div>
 
@@ -83,13 +83,13 @@ export default async function SessionsPage({ searchParams }: { searchParams: Pro
 
                 {/* Time */}
                 <div className="w-64 p-4">
-                  <div className="text-xs text-gray-600">
-                    {new Date(s.lastSeenAt).toLocaleString('en-IN', {
+                  <div className="text-xs text-gray-600 font-bold">
+                    {new Date(s.createdAt).toLocaleString('en-IN', {
                       day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
                     })}
                   </div>
                   <div className="text-[10px] text-gray-400 mt-0.5">
-                    Started: {new Date(s.createdAt).toLocaleDateString()}
+                    Session Established
                   </div>
                 </div>
 

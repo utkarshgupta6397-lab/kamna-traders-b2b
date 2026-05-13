@@ -1,87 +1,70 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { decrypt } from '@/lib/jwt';
+import { validateSession } from '@/lib/session';
 
-/**
- * Middleware to protect /admin/* and /staff/* routes.
- * - Redirects unauthenticated users to the login page.
- * - Enforces role checks where applicable.
- * - Leaves public routes and assets untouched.
- */
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow access to the login page itself to avoid infinite redirects
-  if (pathname === '/staff') {
+  // 1. Bypass all checks during system reset
+  if ((global as any).__SYSTEM_RESET_RUNNING__) {
     return NextResponse.next();
   }
 
-  // Apply protection only to admin and staff sections
-  if (pathname.startsWith('/admin') || pathname.startsWith('/staff')) {
+  // Define protected routes
+  const isAdminPath = pathname.startsWith('/admin');
+  const isStaffPath = pathname.startsWith('/staff/dashboard');
+
+  if (isAdminPath || isStaffPath) {
     const sessionCookie = request.cookies.get('session')?.value;
-    let session = null;
-    if (sessionCookie) {
-      session = await decrypt(sessionCookie).catch(() => null);
+
+    if (!sessionCookie) {
+      return NextResponse.redirect(new URL('/staff', request.url));
     }
 
-    // No session → redirect to login (preserve intended URL)
-    if (!session?.userId || !session?.sessionToken) {
-      const loginUrl = request.nextUrl.clone();
-      loginUrl.pathname = '/staff'; 
-      loginUrl.searchParams.set('callbackUrl', pathname);
-      return NextResponse.redirect(loginUrl);
-    }
-
-    // Server-side source of truth validation
-    // We call the internal API because Prisma is not Edge-compatible
     try {
-      const validateUrl = new URL('/api/auth/session/validate', request.url);
-      const validateRes = await fetch(validateUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionToken: session.sessionToken })
-      });
-      const validation = await validateRes.json();
+      // 2. Decode JWT (Read-only)
+      const session = await decrypt(sessionCookie);
       
+      if (!session) {
+        throw new Error('Invalid JWT');
+      }
+
+      // 3. Source of Truth Validation (Read-only lookup)
+      // This is fast due to indexing on sessionToken
+      const validation = await validateSession(session.sessionToken as string);
+
       if (!validation.isValid) {
-        console.warn(`[Middleware] Session ${session.sessionToken} invalidated by DB.`);
+        console.warn(`[Middleware] Session ${session.sessionToken} invalidated.`);
         const loginUrl = new URL('/staff', request.url);
-        loginUrl.searchParams.set('error', 'superseded');
-        
-        // Clear the stale cookie
+        loginUrl.searchParams.set('error', 'expired');
         const response = NextResponse.redirect(loginUrl);
         response.cookies.set('session', '', { expires: new Date(0) });
         return response;
       }
 
-      // 3. Success: Continue with validated header to skip duplicate lookups in layout/components
+      // 4. Role Authorization
+      if (isAdminPath && session.role !== 'ADMIN') {
+        return NextResponse.redirect(new URL('/staff/dashboard', request.url));
+      }
+
+      // 5. Success: Set validation header to skip redundant DB calls in Layouts
       const response = NextResponse.next();
       response.headers.set('x-session-validated', 'true');
       return response;
+
     } catch (err) {
-      console.error('[Middleware] Session validation failed:', err);
-    }
-
-    // Admin routes require ADMIN role
-    if (pathname.startsWith('/admin') && session.role !== 'ADMIN') {
-      const unauthorizedUrl = request.nextUrl.clone();
-      unauthorizedUrl.pathname = '/unauthorized';
-      return NextResponse.redirect(unauthorizedUrl);
-    }
-
-    // Staff routes allow STAFF or ADMIN roles
-    if (pathname.startsWith('/staff') && !['STAFF', 'ADMIN'].includes(session.role as string)) {
-      const unauthorizedUrl = request.nextUrl.clone();
-      unauthorizedUrl.pathname = '/unauthorized';
-      return NextResponse.redirect(unauthorizedUrl);
+      console.error('[Middleware] Auth failure:', err);
+      const loginUrl = new URL('/staff', request.url);
+      const response = NextResponse.redirect(loginUrl);
+      response.cookies.set('session', '', { expires: new Date(0) });
+      return response;
     }
   }
 
-  // Allow all other requests (public pages, assets, API routes) to continue
   return NextResponse.next();
 }
 
-// Restrict matcher to the two protected prefixes
 export const config = {
-  matcher: ['/admin/:path*', '/staff/:path*'],
+  matcher: ['/admin/:path*', '/staff/dashboard/:path*'],
 };

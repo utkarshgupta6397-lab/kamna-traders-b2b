@@ -4,7 +4,6 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { LogOut, Home, ClipboardList, History, Box, Settings } from 'lucide-react';
 import DashboardSearchInput from '@/components/DashboardSearchInput';
-import SessionHeartbeat from '@/components/SessionHeartbeat';
 
 export default async function StaffDashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -15,7 +14,6 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
 
   return (
     <div className="min-h-screen bg-[#f8f9fb] print:bg-white flex flex-col">
-      <SessionHeartbeat />
       <header className="print:hidden sticky top-0 z-50 bg-gradient-to-r from-[#1A2766] via-[#1f3180] to-[#AE1B1E] shadow-lg">
         <div className="max-w-screen-2xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
           {/* Logo */}

@@ -8,26 +8,20 @@ export type DeviceType = 'desktop' | 'mobile';
  */
 export function detectDeviceType(uaString: string | null): DeviceType {
   if (!uaString) return 'desktop';
-  
   const parser = new UAParser(uaString);
   const device = parser.getDevice();
   const os = parser.getOS();
 
-  if (device.type === 'mobile' || device.type === 'tablet') {
-    return 'mobile';
-  }
-
+  if (device.type === 'mobile' || device.type === 'tablet') return 'mobile';
   const mobileOS = ['iOS', 'Android', 'Windows Phone', 'BlackBerry'];
-  if (os.name && mobileOS.includes(os.name)) {
-    return 'mobile';
-  }
+  if (os.name && mobileOS.includes(os.name)) return 'mobile';
 
   return 'desktop';
 }
 
 /**
  * Registers a new session in the database.
- * FORENSIC: Measures registration duration.
+ * Model: Single Desktop + Single Mobile enforcement.
  */
 export async function registerSession(params: {
   userId: string;
@@ -40,12 +34,12 @@ export async function registerSession(params: {
   const start = performance.now();
 
   try {
-    // 1. Invalidate existing sessions of the same type
+    // 1. Invalidate existing sessions of the same type (Simple, Fast Delete)
     await prisma.activeSession.deleteMany({
       where: { userId, deviceType },
     });
 
-    // 2. Create new session
+    // 2. Create new session (ONE WRITE per login)
     const session = await prisma.activeSession.create({
       data: {
         userId,
@@ -57,7 +51,10 @@ export async function registerSession(params: {
       },
     });
 
-    console.log(`[Session] Register duration: ${(performance.now() - start).toFixed(2)}ms`);
+    const duration = performance.now() - start;
+    if (duration > 1000) {
+      console.warn(`[Session] SLOW REGISTRATION: ${duration.toFixed(2)}ms`);
+    }
     return session;
   } catch (err) {
     console.error('[Session] Registration failed:', err);
@@ -66,26 +63,26 @@ export async function registerSession(params: {
 }
 
 /**
- * Validates session token existence using strict indexed lookup.
- * FORENSIC: Logs lookup duration.
+ * Validates session token existence using strictly indexed lookup.
+ * NO SIDE EFFECTS: No lastSeen updates, no stale cleanup, no writes.
  */
 export async function validateSession(sessionToken: string): Promise<{ isValid: boolean; userId?: string; deviceType?: DeviceType }> {
-  // 1. Safety: Disable validation during hard reset to prevent lock contention
-  if ((global as any).__HARD_RESET_RUNNING__) {
-    return { isValid: true }; // Optimistic bypass during reset
+  // Bypass during system reset to prevent deadlock
+  if ((global as any).__SYSTEM_RESET_RUNNING__) {
+    return { isValid: true };
   }
 
   const start = performance.now();
   
-  // Lookup using ONLY indexed sessionToken
+  // Strict indexed lookup on sessionToken
   const session = await prisma.activeSession.findUnique({
     where: { sessionToken },
     select: { userId: true, deviceType: true }
   });
 
   const duration = performance.now() - start;
-  if (duration > 50) {
-    console.warn(`[Session] FORENSIC: Slow validation query: ${duration.toFixed(2)}ms`);
+  if (duration > 300) {
+    console.warn(`[Session] SLOW VALIDATION: ${duration.toFixed(2)}ms (Token: ${sessionToken.slice(0, 8)}...)`);
   }
 
   if (!session) {
@@ -100,52 +97,6 @@ export async function validateSession(sessionToken: string): Promise<{ isValid: 
 }
 
 /**
- * Throttled Heartbeat: Updates lastSeenAt ONLY if > 5 minutes have passed.
- * FORENSIC: Measures heartbeat check vs write timings.
- */
-export async function heartbeatSession(sessionToken: string) {
-  if ((global as any).__HARD_RESET_RUNNING__) return;
-  const start = performance.now();
-  
-  try {
-    // 1. Read check
-    const session = await prisma.activeSession.findUnique({
-      where: { sessionToken },
-      select: { lastSeenAt: true }
-    });
-
-    const readDuration = performance.now() - start;
-    if (!session) return;
-
-    const fiveMinutes = 5 * 60 * 1000;
-    const timeSinceLastSeen = Date.now() - session.lastSeenAt.getTime();
-
-    // 2. Throttle
-    if (timeSinceLastSeen < fiveMinutes) {
-      return;
-    }
-
-    // 3. Write update (Non-Blocking)
-    const writeStart = performance.now();
-    prisma.activeSession.update({
-      where: { sessionToken },
-      data: { lastSeenAt: new Date() }
-    }).then(() => {
-      const writeDuration = performance.now() - writeStart;
-      const total = performance.now() - start;
-      if (total > 500) {
-        console.warn(`[Session] FORENSIC: Slow heartbeat (Read: ${readDuration.toFixed(2)}ms, Write: ${writeDuration.toFixed(2)}ms, Total: ${total.toFixed(2)}ms)`);
-      }
-    }).catch(err => {
-      console.error('[Session] Heartbeat write failed:', err);
-    });
-
-  } catch (err) {
-    console.error('[Session] Heartbeat process failed:', err);
-  }
-}
-
-/**
  * Removes a specific session (Logout).
  */
 export async function invalidateSession(sessionToken: string) {
@@ -155,28 +106,20 @@ export async function invalidateSession(sessionToken: string) {
 }
 
 /**
- * Expire stale sessions.
- * 1. Mobile: 15 days
- * 2. Desktop: 7 days
- * 3. Orphaned/Stale: 7 days (Hard cleanup)
+ * Lightweight cleanup: Only deletes rows older than 7 days.
+ * To be called infrequently (e.g. background worker or manual trigger).
  */
 export async function cleanupStaleSessions() {
   const start = performance.now();
-  const desktopThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const mobileThreshold = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
-  const hardCleanupThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const threshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   try {
     const deleted = await prisma.activeSession.deleteMany({
       where: {
-        OR: [
-          { deviceType: 'desktop', lastSeenAt: { lt: desktopThreshold } },
-          { deviceType: 'mobile', lastSeenAt: { lt: mobileThreshold } },
-          { lastSeenAt: { lt: hardCleanupThreshold } }, // 7-day hard purge for orphans
-        ],
+        lastSeenAt: { lt: threshold },
       },
     });
-    console.log(`[Session] Cleanup completed in ${(performance.now() - start).toFixed(2)}ms. Deleted: ${deleted.count}`);
+    console.log(`[Session] Purged ${deleted.count} stale sessions in ${(performance.now() - start).toFixed(2)}ms`);
   } catch (err) {
     console.error('[Session] Cleanup failed:', err);
   }

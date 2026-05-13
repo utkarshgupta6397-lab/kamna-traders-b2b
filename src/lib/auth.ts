@@ -10,6 +10,7 @@ export async function createSession(params: {
   userAgent: string | null;
   ipAddress: string | null;
 }) {
+  const start = performance.now();
   const { userId, role, deviceType, userAgent, ipAddress } = params;
   const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
   
@@ -21,7 +22,7 @@ export async function createSession(params: {
   // 2. Encrypt JWT
   const jwt = await encrypt({ userId, role, sessionToken, deviceType, expires: expires.toISOString() });
   
-  // 3. Register in DB
+  // 3. Register in DB (ONE WRITE)
   const { registerSession } = await import('./session');
   await registerSession({
     userId,
@@ -34,6 +35,11 @@ export async function createSession(params: {
   // 4. Set Cookie
   const cookieStore = await cookies();
   cookieStore.set('session', jwt, { expires, httpOnly: true, secure: process.env.NODE_ENV === 'production' });
+
+  const duration = performance.now() - start;
+  if (duration > 1000) {
+    console.warn(`[Auth] SLOW LOGIN: ${duration.toFixed(2)}ms`);
+  }
 }
 
 export async function getSession(): Promise<Record<string, unknown> | null> {
@@ -42,25 +48,31 @@ export async function getSession(): Promise<Record<string, unknown> | null> {
   if (!jwt) return null;
   
   try {
+    const start = performance.now();
     const payload = await decrypt(jwt);
     const sessionToken = payload.sessionToken as string;
 
     if (!sessionToken) return payload;
 
-    // 1. De-duplication: Check if middleware already validated this session
+    // 1. Check if middleware already validated this session (De-duplication)
     const { headers } = await import('next/headers');
     const headersList = await headers();
     if (headersList.get('x-session-validated') === 'true') {
       return payload;
     }
 
-    // 2. Server-side validation (Source of Truth)
+    // 2. Server-side validation (Read-Only)
     const { validateSession } = await import('./session');
     const { isValid } = await validateSession(sessionToken);
     
     if (!isValid) {
-      console.warn(`[Auth] Session token ${sessionToken} is no longer valid in DB.`);
+      console.warn(`[Auth] Session token ${sessionToken.slice(0, 8)} invalidated by DB.`);
       return null;
+    }
+
+    const duration = performance.now() - start;
+    if (duration > 300) {
+      console.warn(`[Auth] SLOW SESSION RETRIEVAL: ${duration.toFixed(2)}ms`);
     }
 
     return payload;
@@ -81,7 +93,7 @@ export async function logout() {
         await invalidateSession(payload.sessionToken as string);
       }
     } catch (err) {
-      // Ignore decryption errors
+      // Ignore
     }
   }
 

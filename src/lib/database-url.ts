@@ -72,6 +72,7 @@ function buildSupabasePoolerUrl() {
   url.password = password;
   url.searchParams.set('schema', 'public');
   url.searchParams.set('sslmode', 'require');
+  url.searchParams.set('pgbouncer', 'true'); // Required for Prisma + Supabase Pooler (Transaction Mode)
 
   return url.toString();
 }

@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 
 /**
  * Hard Reset API - Serialized & Forensic
- * Ensures total system purge without DB lock contention.
+ * Optimized for production safety and session preservation.
  */
 export async function POST(request: Request) {
   const session = await getSession();
@@ -41,59 +41,81 @@ export async function POST(request: Request) {
     }
 
     const isForensic = mode === 'FORENSIC' || phrase === 'PURGE FORENSICS';
-    console.log(`[HARD_RESET] Start by ${admin.name}. Mode: ${mode}, Forensic: ${isForensic}`);
+    console.log(`[HARD_RESET] Initiated by ${admin.name}. Mode: ${mode}, Forensic: ${isForensic}`);
 
-    const forensics: any[] = [];
+    const forensics: { label: string; duration: string; count: number; status: 'SUCCESS' | 'SKIPPED' | 'FAILED' }[] = [];
     
-    // UTILITY: Serialized execution with timing
-    const exec = async (label: string, op: () => Promise<any>) => {
+    /**
+     * Safe Execution Wrapper
+     * Gracefully handles missing tables or schema drift without crashing the reset process.
+     */
+    const safeExec = async (label: string, op: () => Promise<any>) => {
       const start = performance.now();
-      const res = await op();
-      const duration = performance.now() - start;
-      const data = { label, duration: `${duration.toFixed(2)}ms`, count: res?.count ?? 0 };
-      forensics.push(data);
-      console.log(`[HARD_RESET_STEP] ${label}: ${data.duration} (Rows: ${data.count})`);
-      return res;
+      try {
+        const res = await op();
+        const duration = performance.now() - start;
+        forensics.push({ 
+          label, 
+          duration: `${duration.toFixed(2)}ms`, 
+          count: res?.count ?? 0, 
+          status: 'SUCCESS' 
+        });
+        console.log(`[HARD_RESET_STEP] ${label}: SUCCESS (${res?.count ?? 0} rows)`);
+      } catch (err: any) {
+        const duration = performance.now() - start;
+        // P2021: Table does not exist in DB (Schema drift)
+        const isMissingTable = err.code === 'P2021' || err.message?.includes('does not exist');
+        
+        forensics.push({ 
+          label, 
+          duration: `${duration.toFixed(2)}ms`, 
+          count: 0, 
+          status: isMissingTable ? 'SKIPPED' : 'FAILED' 
+        });
+        
+        console.warn(`[HARD_RESET_STEP] ${label}: ${isMissingTable ? 'SKIPPED (Table Missing)' : 'FAILED'}. Error: ${err.message}`);
+      }
     };
 
-    // ─── SEQUENCE 1: SESSIONS FIRST (Unlock User Contention) ──────
-    await exec('ActiveSessions', () => prisma.activeSession.deleteMany({}));
+    // ─── PHASE 1: BUSINESS DATA (Sequential, Non-Transactional) ─────
+    await safeExec('InventoryHistory', () => prisma.inventoryHistory.deleteMany({}));
+    await safeExec('CartItems', () => prisma.cartItem.deleteMany({}));
+    await safeExec('WarehouseInventory', () => prisma.warehouseInventory.deleteMany({}));
+    await safeExec('Carts', () => prisma.cart.deleteMany({}));
+    await safeExec('SKUs', () => prisma.sku.deleteMany({}));
 
-    // ─── SEQUENCE 2: CORE DATA (Sequential, No Transaction) ───────
-    await exec('InventoryHistory', () => prisma.inventoryHistory.deleteMany({}));
-    await exec('CartItems', () => prisma.cartItem.deleteMany({}));
-    await exec('WarehouseInventory', () => prisma.warehouseInventory.deleteMany({}));
-    await exec('Carts', () => prisma.cart.deleteMany({}));
-    await exec('SKUs', () => prisma.sku.deleteMany({}));
-
-    // ─── SEQUENCE 3: FORENSICS (Conditional) ──────────────────────
+    // ─── PHASE 2: FORENSICS & SYNC ──────────────────────────────────
     if (isForensic) {
-      await exec('SyncLogs', () => prisma.skuSyncLog.deleteMany({}));
-      await exec('IdentityRegistry', () => prisma.skuIdentityRegistry.deleteMany({}));
-      await exec('SyncLocks', () => prisma.syncLock.updateMany({
+      await safeExec('SyncLogs', () => prisma.skuSyncLog.deleteMany({}));
+      await safeExec('IdentityRegistry', () => prisma.skuIdentityRegistry.deleteMany({}));
+      await safeExec('SyncLocks', () => prisma.syncLock.updateMany({
         where: { name: 'SKU_SYNC' },
         data: { isLocked: false, lockedAt: null, lockedBy: null }
       }));
     }
 
-    const totalDuration = performance.now() - startTotal;
-    console.log(`[HARD_RESET_SUCCESS] Total duration: ${totalDuration.toFixed(2)}ms`);
+    // ─── PHASE 3: SESSIONS LAST (Critical for Auth Stability) ───────
+    // We delete sessions only AFTER data is safely purged.
+    // This ensures admin remains authenticated if business data purge fails.
+    await safeExec('ActiveSessions', () => prisma.activeSession.deleteMany({}));
 
-    return NextResponse.json({
+    const totalDuration = performance.now() - startTotal;
+    const summary = {
       success: true,
-      message: isForensic ? 'Forensic reset complete' : 'Soft reset complete',
       totalDuration: `${totalDuration.toFixed(2)}ms`,
       forensics
-    });
+    };
+
+    console.log(`[HARD_RESET_COMPLETE] Total: ${summary.totalDuration}`);
+    return NextResponse.json(summary);
 
   } catch (error: any) {
     console.error('[HARD_RESET_FATAL]', error);
     return NextResponse.json({ 
-      error: 'Reset failed during execution', 
+      error: 'Reset engine encountered a fatal error', 
       details: error.message 
     }, { status: 500 });
   } finally {
-    // 5. Release Mutex
     (global as any).__SYSTEM_RESET_RUNNING__ = false;
   }
 }

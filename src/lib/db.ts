@@ -5,19 +5,24 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
 const datasourceUrl = getDatabaseUrl() || process.env.DATABASE_URL;
 
+/**
+ * Prisma Client Singleton
+ * Ensures only one instance of Prisma is created across the entire application lifecycle.
+ * In production, this maximizes connection reuse during serverless warm starts.
+ */
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     datasourceUrl,
-    log: ['error'], // Only log errors to save CPU/Memory
+    log: ['error'], 
   });
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
-}
+// Always attach to global in all environments to prevent churn
+globalForPrisma.prisma = prisma;
 
- 
-// Idempotent initialization lock (Global-safe for HMR)
+/**
+ * Idempotent Database Initialization
+ */
 const globalForInit = globalThis as unknown as { __db_initialized?: boolean };
 
 export async function initializeDatabase() {
@@ -29,9 +34,6 @@ export async function initializeDatabase() {
     await ensureInitialUsers();
   } catch (err) {
     console.error('[DB] Initialization failed:', err);
-    globalForInit.__db_initialized = false; // Allow retry on failure
+    globalForInit.__db_initialized = false; 
   }
 }
-
-// Do NOT trigger initial setup at top-level module evaluation
-// as it causes HMR memory leaks and promise cascades.

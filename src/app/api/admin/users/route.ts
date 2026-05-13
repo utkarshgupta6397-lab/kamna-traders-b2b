@@ -17,6 +17,7 @@ export async function GET() {
         mobile: true,
         role: true,
         canManageCarts: true,
+        canAdjustInventory: true,
       },
       orderBy: { name: 'asc' },
     });

@@ -44,9 +44,10 @@ interface Sku {
 interface Props {
   warehouses: Warehouse[];
   skus: Sku[];
+  canAdjust?: boolean;
 }
 
-export default function InventoryHistoryClient({ warehouses, skus }: Props) {
+export default function InventoryHistoryClient({ warehouses, skus, canAdjust = false }: Props) {
   // --- Applied Filter States (Actual state of truth for data fetch) ---
   const [appliedFilters, setAppliedFilters] = useState({
     q: '',
@@ -164,13 +165,15 @@ export default function InventoryHistoryClient({ warehouses, skus }: Props) {
           </h1>
           <p className="text-sm text-gray-500 mt-1">Audit trail of stock deductions and manual adjustments.</p>
         </div>
-        <button 
-          onClick={() => setShowModal(true)}
-          className="bg-[#1A2766] text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-[#AE1B1E] transition-all shadow-md active:scale-95"
-        >
-          <Plus size={18} />
-          Adjust Inventory
-        </button>
+        {canAdjust && (
+          <button 
+            onClick={() => setShowModal(true)}
+            className="bg-[#1A2766] text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-[#AE1B1E] transition-all shadow-md active:scale-95"
+          >
+            <Plus size={18} />
+            Adjust Inventory
+          </button>
+        )}
       </div>
 
       {/* Filter Bar */}

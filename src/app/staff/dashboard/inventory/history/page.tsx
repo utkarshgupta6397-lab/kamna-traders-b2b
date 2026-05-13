@@ -17,6 +17,7 @@ export default async function InventoryHistoryPage() {
     <InventoryHistoryClient 
       warehouses={warehouses} 
       skus={skus} 
+      canAdjust={!!session.canAdjustInventory}
     />
   );
 }

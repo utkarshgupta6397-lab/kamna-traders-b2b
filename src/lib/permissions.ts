@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -17,6 +17,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     label: 'Cart Edit/Delete', 
     description: 'Ability to edit items or delete completed carts' 
   },
+  {
+    key: 'canAdjustInventory',
+    label: 'Inventory Adjust',
+    description: 'Ability to manually adjust stock levels in warehouses'
+  }
 ];
 
-export const ALL_PERMISSION_KEYS: PermissionKey[] = ['canManageCarts'];
+export const ALL_PERMISSION_KEYS: PermissionKey[] = ['canManageCarts', 'canAdjustInventory'];

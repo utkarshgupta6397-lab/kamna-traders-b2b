@@ -189,6 +189,10 @@ export async function updateInventory(data: FormData) {
   const session = await getSession();
   if (!session) throw new Error('Unauthorized');
   
+  if (!session.canAdjustInventory) {
+    throw new Error('Permission Denied: You do not have rights to adjust inventory.');
+  }
+  
   const warehouseId = data.get('warehouseId') as string;
   const skuId = data.get('skuId') as string;
   const qty = parseInt(data.get('qty') as string, 10);
@@ -238,6 +242,10 @@ export async function updateInventory(data: FormData) {
 export async function adjustInventory(data: FormData) {
   const session = await getSession();
   if (!session) throw new Error('Unauthorized');
+
+  if (!session.canAdjustInventory) {
+    throw new Error('Permission Denied: You do not have rights to adjust inventory.');
+  }
   
   const warehouseId = data.get('warehouseId') as string;
   const skuId = data.get('skuId') as string;

@@ -75,6 +75,7 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
     // If user is ADMIN, force full access
     if (merged.role === 'ADMIN') {
       merged.canManageCarts = true;
+      merged.canAdjustInventory = true;
     }
 
     console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);

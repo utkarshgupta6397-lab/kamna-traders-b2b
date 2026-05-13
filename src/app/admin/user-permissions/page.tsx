@@ -11,6 +11,7 @@ interface User {
   mobile: string;
   role: string;
   canManageCarts: boolean;
+  canAdjustInventory: boolean;
   [key: string]: any;
 }
 
@@ -44,7 +45,7 @@ export default function UserPermissionsPage() {
     
     // Optimistic Update
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, [key]: newValue } : u));
-    setUpdatingId(userId);
+    setUpdatingId(`${userId}-${key}`);
 
     try {
       const res = await fetch(`/api/admin/users/${userId}/permissions`, {
@@ -99,7 +100,7 @@ export default function UserPermissionsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto pb-10">
+    <div className="space-y-6 max-w-5xl mx-auto pb-10">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -107,7 +108,7 @@ export default function UserPermissionsPage() {
             <Lock size={28} />
             User Permissions
           </h1>
-          <p className="text-sm text-gray-500 font-medium">Manage cart editing and deletion rights</p>
+          <p className="text-sm text-gray-500 font-medium">Manage operational access rights for staff members</p>
         </div>
       </div>
 
@@ -164,20 +165,29 @@ export default function UserPermissionsPage() {
         <table className="w-full border-collapse">
           <thead className="bg-[#F8FAFC]">
             <tr>
-              <th className="p-4 text-left border-b border-gray-200">
+              <th className="p-4 text-left border-b border-gray-200 min-w-[240px]">
                 <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest">User Details</span>
               </th>
-              <th className="p-4 text-center border-b border-gray-200 w-48">
-                <div className="flex flex-col items-center gap-1 group cursor-help">
-                  <span className="text-[11px] font-black text-gray-500 uppercase tracking-widest">Cart Edit/Delete</span>
-                </div>
-              </th>
+              {PERMISSIONS.map(p => (
+                <th key={p.key} className="p-4 text-center border-b border-gray-200 min-w-[160px]">
+                  <div className="flex flex-col items-center gap-1 group cursor-help">
+                    <span className="text-[11px] font-black text-gray-500 uppercase tracking-widest">{p.label}</span>
+                    {p.description && (
+                      <div className="relative">
+                        <Info size={12} className="text-gray-300 group-hover:text-blue-500 transition-colors" />
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-gray-900 text-white text-[10px] rounded shadow-xl z-50 pointer-events-none normal-case font-medium">
+                          {p.description}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {filteredUsers.map((user) => {
               const isAdmin = user.role === 'ADMIN';
-              const isUpdating = updatingId === user.id;
               
               return (
                 <tr key={user.id} className="hover:bg-blue-50/30 transition-colors group">
@@ -200,30 +210,37 @@ export default function UserPermissionsPage() {
                     </div>
                   </td>
 
-                  <td className="p-4 border-b border-gray-100 text-center">
-                    {isAdmin ? (
-                      <div className="flex items-center justify-center gap-2 text-amber-600 bg-amber-50 py-1.5 px-3 rounded-full mx-auto w-fit">
-                        <Check size={14} strokeWidth={3} />
-                        <span className="text-[10px] font-black uppercase tracking-wider">Full Access</span>
-                      </div>
-                    ) : (
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          className="sr-only peer"
-                          checked={!!user.canManageCarts}
-                          onChange={() => handleToggle(user.id, 'canManageCarts', !!user.canManageCarts)}
-                          disabled={isUpdating}
-                        />
-                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#1A2766]/10 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                        {isUpdating && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded-full">
-                            <Loader2 size={12} className="animate-spin text-[#1A2766]" />
+                  {PERMISSIONS.map(p => {
+                    const isUpdating = updatingId === `${user.id}-${p.key}`;
+                    const hasPermission = !!user[p.key];
+
+                    return (
+                      <td key={p.key} className="p-4 border-b border-gray-100 text-center">
+                        {isAdmin ? (
+                          <div className="flex items-center justify-center gap-2 text-amber-600 bg-amber-50 py-1.5 px-3 rounded-full mx-auto w-fit">
+                            <Check size={14} strokeWidth={3} />
+                            <span className="text-[10px] font-black uppercase tracking-wider">Full Access</span>
                           </div>
+                        ) : (
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="sr-only peer"
+                              checked={hasPermission}
+                              onChange={() => handleToggle(user.id, p.key, hasPermission)}
+                              disabled={isUpdating}
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#1A2766]/10 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                            {isUpdating && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded-full">
+                                <Loader2 size={12} className="animate-spin text-[#1A2766]" />
+                              </div>
+                            )}
+                          </label>
                         )}
-                      </label>
-                    )}
-                  </td>
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}

@@ -53,6 +53,11 @@ export async function middleware(request: NextRequest) {
         response.cookies.set('session', '', { expires: new Date(0) });
         return response;
       }
+
+      // 3. Success: Continue with validated header to skip duplicate lookups in layout/components
+      const response = NextResponse.next();
+      response.headers.set('x-session-validated', 'true');
+      return response;
     } catch (err) {
       console.error('[Middleware] Session validation failed:', err);
     }

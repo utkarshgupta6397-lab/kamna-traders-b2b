@@ -45,9 +45,16 @@ export async function getSession(): Promise<Record<string, unknown> | null> {
     const payload = await decrypt(jwt);
     const sessionToken = payload.sessionToken as string;
 
-    if (!sessionToken) return payload; // Fallback for old sessions without tokens during transition
+    if (!sessionToken) return payload;
 
-    // Server-side validation (Source of Truth)
+    // 1. De-duplication: Check if middleware already validated this session
+    const { headers } = await import('next/headers');
+    const headersList = await headers();
+    if (headersList.get('x-session-validated') === 'true') {
+      return payload;
+    }
+
+    // 2. Server-side validation (Source of Truth)
     const { validateSession } = await import('./session');
     const { isValid } = await validateSession(sessionToken);
     

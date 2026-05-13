@@ -237,5 +237,8 @@ model ActiveSession {
   createdAt    DateTime @default(now())
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
+  @@index([sessionToken])
+  @@index([lastSeenAt])
   @@index([userId, deviceType])
 }

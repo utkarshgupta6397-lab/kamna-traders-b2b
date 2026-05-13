@@ -4,6 +4,7 @@ import { Package, Users, Warehouse, Tags, Database, LayoutDashboard, LogOut, Boo
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { Toaster } from 'react-hot-toast';
+import SessionHeartbeat from '@/components/SessionHeartbeat';
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -28,6 +29,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <div className="flex h-screen bg-[#f8f9fb]">
+      <SessionHeartbeat />
       <Toaster position="top-right" />
       {/* Sidebar */}
       <div className="w-60 bg-[#1A2766] flex flex-col flex-shrink-0">

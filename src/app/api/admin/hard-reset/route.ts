@@ -9,9 +9,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { phrase, pin } = await request.json();
+    const { phrase, pin, mode = 'SOFT' } = await request.json();
 
-    if (phrase !== 'RESET EVERYTHING') {
+    if (phrase !== 'RESET EVERYTHING' && phrase !== 'PURGE FORENSICS') {
       return NextResponse.json({ error: 'Invalid confirmation phrase' }, { status: 400 });
     }
 
@@ -24,56 +24,57 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid admin PIN' }, { status: 403 });
     }
 
-    console.log(`[HARD_RESET] Started by admin ${admin.name} (${admin.id})`);
+    const isForensic = mode === 'FORENSIC' || phrase === 'PURGE FORENSICS';
+    console.log(`[PURGE_${mode}] Started by admin ${admin.name} (Forensic: ${isForensic})`);
 
-    // Use a transaction for the deletion sequence to handle FK constraints and atomicity
     const results = await prisma.$transaction(async (tx) => {
-      // 1. Delete History
+      // 1. Core Data Deletion (Always in both modes)
       const hist = await tx.inventoryHistory.deleteMany();
-      
-      // 2. Delete Cart Items
       const cartItems = await tx.cartItem.deleteMany();
-      
-      // 3. Delete Warehouse Inventory
       const inv = await tx.warehouseInventory.deleteMany();
-      
-      // 4. Delete Carts
       const carts = await tx.cart.deleteMany();
-      
-      // 5. Delete SKUs
       const skus = await tx.sku.deleteMany();
-      
-      // 6. Delete Brands
-      const brands = await tx.brand.deleteMany();
-      
-      // 7. Delete Categories
-      const cats = await tx.category.deleteMany();
 
-      // 8. Delete SKU Sync Logs
-      const logs = await tx.skuSyncLog.deleteMany();
+      let logsCount = 0;
+      let identityCount = 0;
+
+      if (isForensic) {
+        // 2. Forensic/Memory Deletion (Sync History + Identity Registry)
+        const logs = await tx.skuSyncLog.deleteMany();
+        logsCount = logs.count;
+
+        const identities = await tx.skuIdentityRegistry.deleteMany();
+        identityCount = identities.count;
+
+        // Reset Sync Lock
+        await tx.syncLock.updateMany({
+          where: { name: 'SKU_SYNC' },
+          data: { isLocked: false, lockedAt: null, lockedBy: null }
+        });
+      }
 
       return {
-        hist: hist.count,
-        cartItems: cartItems.count,
-        inv: inv.count,
-        carts: carts.count,
         skus: skus.count,
-        brands: brands.count,
-        cats: cats.count,
-        logs: logs.count
+        inventory: inv.count,
+        history: hist.count,
+        carts: carts.count,
+        cartItems: cartItems.count,
+        syncLogs: logsCount,
+        identities: identityCount,
+        mode: isForensic ? 'FORENSIC' : 'SOFT'
       };
     });
 
-    console.log(`[HARD_RESET] Completed. Deleted:`, results);
+    console.log(`[PURGE_COMPLETE]`, results);
 
     return NextResponse.json({
       success: true,
-      message: 'System reset successfully',
-      deleted: results
+      message: isForensic ? 'Forensic reset complete' : 'Soft reset complete',
+      results
     });
 
   } catch (error: any) {
-    console.error('[HARD_RESET_ERROR]', error);
+    console.error('[PURGE_ERROR]', error);
     return NextResponse.json({ error: error.message || 'Reset failed' }, { status: 500 });
   }
 }

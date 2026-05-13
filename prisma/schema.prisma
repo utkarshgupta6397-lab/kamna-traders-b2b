@@ -69,7 +69,7 @@ model Sku {
   description    String?
   caseSize       Int                  @default(1)
   lastSyncedAt   DateTime?
-  zohoBookItemId BigInt?
+  zohoBookItemId String?              @unique // String to prevent JS precision corruption
   zohoBooksId2   String?
   categoryId     String?
   isActive       Boolean              @default(true)
@@ -183,6 +183,19 @@ model SkuSyncLog {
   metadata      Json?     // Raw API request/response metadata
   logs          Json?     // Backwards compatibility for errors
   executionTrace Json?    // Detailed per-SKU logs
+}
+
+model SkuIdentityRegistry {
+  id               String   @id @default(cuid())
+  skuId            String   @unique
+  zohoBookItemId   String   @unique
+  firstSeenAt      DateTime @default(now())
+  lastSeenAt       DateTime @updatedAt
+  isActive         Boolean  @default(true)
+  syncGeneration   Int      @default(1)
+  
+  @@index([zohoBookItemId])
+  @@index([skuId])
 }
 
 model InventoryHistory {

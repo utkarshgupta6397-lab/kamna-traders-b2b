@@ -1,15 +1,18 @@
 import { prisma } from '@/lib/db';
 import { getZohoSyncUrl } from '@/lib/zoho';
 
+/**
+ * Normalizes strings for comparison.
+ */
 const normalizeStr = (s: string) => {
   if (!s) return '';
   return s.trim().replace(/\s+/g, ' ').toLowerCase();
 };
 
 /**
- * Recursively converts BigInt values to strings to prevent JSON serialization crashes.
+ * Recursively converts any BigInt values to strings (Failsafe).
  */
-function safeJson(value: any) {
+export function safeJson(value: any) {
   if (value === undefined || value === null) return value;
   return JSON.parse(
     JSON.stringify(value, (_, v) =>
@@ -19,33 +22,79 @@ function safeJson(value: any) {
 }
 
 /**
- * Creates a simple checksum of SKU data to detect changes.
+ * Calculates granular diff between old and new SKU data using strict business logic.
+ * IDENTITY IS STRINGS ONLY.
  */
-function getSkuChecksum(sku: any) {
-  const data = {
-    name: sku.name,
-    price: sku.price,
-    unit: sku.unit,
-    caseSize: sku.caseSize,
-    isActive: sku.isActive,
-    brandId: sku.brandId,
-    categoryId: sku.categoryId,
-    zohoBooksId2: sku.zohoBooksId2
-  };
-  return JSON.stringify(data);
+function calculateSkuDiff(oldData: any, newData: any) {
+  const fields = [
+    'name', 'price', 'unit', 'caseSize', 'isActive', 
+    'zohoBooksId2', 'brandId', 'categoryId', 'gstPercent', 'hsnCode', 'description'
+  ];
+  
+  const diff: Record<string, { old: any, new: any }> = {};
+  let hasChanges = false;
+
+  fields.forEach(field => {
+    let oldVal = oldData[field];
+    let newVal = newData[field];
+
+    // Normalize Old Value
+    let normalizedOld = oldVal;
+    if (typeof normalizedOld === 'string') normalizedOld = normalizedOld.trim();
+    if (normalizedOld === null || normalizedOld === undefined) normalizedOld = '';
+
+    // Normalize New Value
+    let normalizedNew = newVal;
+    if (typeof normalizedNew === 'string') normalizedNew = normalizedNew.trim();
+    if (normalizedNew === null || normalizedNew === undefined) normalizedNew = '';
+
+    // Strict string-based comparison
+    if (normalizedOld.toString() !== normalizedNew.toString()) {
+      diff[field] = { old: oldVal, new: newVal };
+      hasChanges = true;
+    }
+  });
+
+  return { hasChanges, diff };
+}
+
+/**
+ * Hard verification of persisted state after DB write.
+ * Enforces String-only identity.
+ */
+async function verifyPersistence(skuId: string, expectedData: any) {
+  const actual = await prisma.sku.findUnique({ where: { id: skuId } });
+  if (!actual) return { success: false, reason: 'Record not found in DB after commit' };
+
+  const mismatches: string[] = [];
+  const trackedFields = Object.keys(expectedData);
+
+  for (const field of trackedFields) {
+    let actualVal = (actual as any)[field];
+    let expectedVal = expectedData[field];
+
+    // String Normalization
+    if (typeof actualVal === 'string') actualVal = actualVal.trim();
+    if (actualVal === null || actualVal === undefined) actualVal = '';
+
+    if (typeof expectedVal === 'string') expectedVal = expectedVal.trim();
+    if (expectedVal === null || expectedVal === undefined) expectedVal = '';
+
+    if (actualVal.toString() !== expectedVal.toString()) {
+      mismatches.push(`${field}: expected "${expectedVal}", found "${actualVal}"`);
+    }
+  }
+
+  return { success: mismatches.length === 0, mismatches, persistedState: safeJson(actual) };
 }
 
 export async function runSkuSync(options: { limit?: number; trigger?: 'USER' | 'CRON' } = {}) {
   const { limit = 0, trigger = 'CRON' } = options;
-  const startTime = Date.now();
   const zohoUrl = getZohoSyncUrl();
 
-  if (!zohoUrl) {
-    console.error('Zoho sync failed: No URL found in environment');
-    throw new Error('Zoho sync environment variables missing');
-  }
+  if (!zohoUrl) throw new Error('Zoho sync environment variables missing');
 
-  // --- TASK 4: VERIFY SYNC CONCURRENCY SAFETY (SyncLock) ---
+  // CONCURRENCY LOCK
   const lock = await prisma.syncLock.upsert({
     where: { name: 'SKU_SYNC' },
     update: {},
@@ -53,18 +102,15 @@ export async function runSkuSync(options: { limit?: number; trigger?: 'USER' | '
   });
 
   if (lock.isLocked && lock.lockedAt && (Date.now() - lock.lockedAt.getTime() < 10 * 60 * 1000)) {
-    console.warn('[SYNC_LOCK] Sync already in progress. Aborting.');
-    throw new Error('Synchronization already in progress. Please wait.');
+    throw new Error('Synchronization already in progress.');
   }
 
-  // Acquire Lock
   await prisma.syncLock.update({
     where: { name: 'SKU_SYNC' },
     data: { isLocked: true, lockedAt: new Date(), lockedBy: trigger }
   });
 
   try {
-    // --- TASK 3: PRE-SYNC CONSISTENCY AUDIT ---
     const [skuCount, invCount, brandCount, catCount] = await Promise.all([
       prisma.sku.count(),
       prisma.warehouseInventory.count(),
@@ -72,337 +118,170 @@ export async function runSkuSync(options: { limit?: number; trigger?: 'USER' | '
       prisma.category.count()
     ]);
 
-    const existingSkuSamples = await prisma.sku.findMany({
-      take: 10,
-      select: { id: true, zohoBookItemId: true }
-    });
-
-    const preSyncAudit = {
-      skuCount,
-      invCount,
-      brandCount,
-      catCount,
-      existingSkuSamples: safeJson(existingSkuSamples),
-      timestamp: new Date().toISOString()
-    };
-
-    console.log('[SYNC_AUDIT] Pre-Sync DB State:', preSyncAudit);
-
-    // Extract Metadata for Debugging (Mask sensitive info)
-    const urlObj = new URL(zohoUrl);
-    const metadata: any = {
-      url: zohoUrl.split('?')[0],
-      params: Object.fromEntries(urlObj.searchParams),
-      requestedAt: new Date().toISOString(),
-      syncLimit: limit,
-      trigger,
-      preSyncAudit
-    };
+    // PRE-SYNC AUDIT (STRINGS ONLY)
+    const preExistingIdentities = new Set<string>();
     
-    if (metadata.params.publickey) {
-      metadata.params.publickey = metadata.params.publickey.substring(0, 5) + '...';
+    // Defensive check for stale Prisma Client
+    if (!prisma.skuIdentityRegistry) {
+      throw new Error('Database schema mismatch: SkuIdentityRegistry missing. Restart dev server.');
     }
 
+    const registryCount = await prisma.skuIdentityRegistry.count();
+    if (registryCount > 0) {
+      const allRegistry = await prisma.skuIdentityRegistry.findMany({ select: { zohoBookItemId: true } });
+      allRegistry.forEach(r => preExistingIdentities.add(String(r.zohoBookItemId)));
+    }
+
+    const preSyncAudit = { skuCount, registryCount, timestamp: new Date().toISOString() };
+    const metadata: any = { requestedAt: new Date().toISOString(), syncLimit: limit, trigger, preSyncAudit };
+
     const syncLog = await prisma.skuSyncLog.create({
-      data: { 
-        startedAt: new Date(),
-        trigger,
-        syncLimit: limit,
-        metadata: safeJson(metadata)
-      }
+      data: { startedAt: new Date(), trigger, syncLimit: limit, metadata: safeJson(metadata) }
     });
 
     try {
-      const fetchStart = Date.now();
-      const response = await fetch(zohoUrl, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store',
-      });
-
-      const responseTime = Date.now() - fetchStart;
-
-      if (!response.ok) {
-        throw new Error(`Zoho API error: ${response.status}`);
-      }
+      const response = await fetch(zohoUrl, { method: 'GET', headers: { 'Content-Type': 'application/json' }, cache: 'no-store' });
+      if (!response.ok) throw new Error(`Zoho API error: ${response.status}`);
 
       const data = await response.json();
-      
-      // --- TASK 9: LOG FULL RESPONSE ON EMPTY ---
-      if (!data?.result?.data || data.result.data.length === 0) {
-        console.warn('[SYNC_DEBUG] Zoho returned 0 records. Full Body:', JSON.stringify(data));
-        metadata.fullEmptyResponse = data;
-      }
-
       const rawSkus = data?.result?.data;
-      
-      metadata.responseTimeMs = responseTime;
       metadata.totalItemsInResponse = Array.isArray(rawSkus) ? rawSkus.length : 0;
-      metadata.rawResponseSize = JSON.stringify(data).length;
-      metadata.hasMorePage = data?.result?.has_more_page || false;
-      metadata.sampleItemIds = Array.isArray(rawSkus) ? rawSkus.slice(0, 5).map((s: any) => s.sku_id || s.zoho_book_item_id) : [];
 
       if (!Array.isArray(rawSkus) || rawSkus.length === 0) {
-        await prisma.skuSyncLog.update({
-          where: { id: syncLog.id },
-          data: { 
-            completedAt: new Date(), 
-            totalReceived: 0,
-            metadata: safeJson(metadata)
-          }
-        });
+        await prisma.skuSyncLog.update({ where: { id: syncLog.id }, data: { completedAt: new Date(), totalReceived: 0, metadata: safeJson(metadata) } });
         return { created: 0, updated: 0, failed: 0, totalReceived: 0, skipped: 0, processed: 0 };
       }
 
       const executionTrace: any[] = [];
-      let created = 0;
-      let updated = 0;
-      let failed = 0;
-      let skipped = 0;
-      let processed = 0;
-      
-      const batchSize = 10;
-      let currentBatch: any[] = [];
-      const batches: any[] = [];
-      let batchStartTime = Date.now();
+      let created = 0, updated = 0, failed = 0, skipped = 0, processed = 0;
+      const sessionCreatedIdentities = new Set<string>();
 
-      // --- TASK 6: ENFORCE SERIAL SYNC ---
       for (let i = 0; i < rawSkus.length; i++) {
         const raw = rawSkus[i];
         const skuId = raw.sku_id?.trim() || 'N/A';
         const productName = raw.name || 'Unknown';
         
         if (limit > 0 && processed >= limit) {
-          executionTrace.push({
-            sku: skuId,
-            product: productName,
-            status: 'SKIPPED',
-            action: 'limit_reached',
-            reason: `Sync limit of ${limit} reached`,
-            duration: 0,
-            timestamp: new Date().toISOString()
-          });
+          executionTrace.push({ sku: skuId, product: productName, status: 'SKIPPED', action: 'LIMIT_REACHED', duration: 0, timestamp: new Date().toISOString() });
           skipped++;
           continue;
         }
 
         processed++;
         const itemStartTime = Date.now();
-        let traceStatus = 'FETCHED';
-        let traceAction = 'none';
-        let traceReason = '';
-        let errorDetails = null;
+        let traceStatus: 'FETCHED' | 'SKIPPED' | 'UPDATED' | 'CREATED' | 'FAILED' = 'FETCHED';
+        let traceAction = 'NONE', traceReason = '', errorDetails = null;
 
-        // --- TASK 1: FORENSIC DECISION LOGGING ---
-        const forensic: any = {
-          sku: skuId,
-          zohoId: raw.zoho_book_item_id?.toString(),
-          decision: 'PENDING',
-          lookupField: 'zohoBookItemId',
-          lookupValue: raw.zoho_book_item_id?.toString()
-        };
+        const forensic: any = { sku: skuId, zohoId: String(raw.zoho_book_item_id), decision: 'PENDING' };
 
         try {
-          if (!raw.zoho_book_item_id) {
-            throw new Error('Zoho Internal ID missing');
+          // --- MANDATORY IDENTITY FIDELITY CHECK ---
+          if (!raw.zoho_book_item_id) throw new Error('Zoho Internal ID missing');
+          
+          const rawId = raw.zoho_book_item_id;
+          if (typeof rawId === 'number') {
+            forensic.warning = 'UNSAFE_NUMERIC_ID_DETECTED';
+            // Even if it's a number, we convert to string, but it might already be rounded by JS JSON.parse!
           }
           
-          const zohoIdStr = raw.zoho_book_item_id.toString();
-          const zohoIdBigInt = BigInt(zohoIdStr);
+          const zohoIdStr = String(rawId);
 
-          let brandId = null;
-          if (raw.brand) {
-            const brand = await prisma.brand.upsert({
-              where: { name: raw.brand },
-              update: {},
-              create: { name: raw.brand }
-            });
-            brandId = brand.id;
-          }
-
-          let categoryId = null;
-          if (raw.category) {
-            const category = await prisma.category.upsert({
-              where: { name: raw.category },
-              update: {},
-              create: { name: raw.category }
-            });
-            categoryId = category.id;
-          }
-
-          const price = typeof raw.price === 'number' ? raw.price : parseFloat(raw.price) || 0;
-          const caseSize = typeof raw.case_size === 'number' ? raw.case_size : parseInt(raw.case_size, 10) || 1;
-          const status = raw.status || 'Inactive';
+          // Resolve dependencies
+          const brandId = raw.brand ? (await prisma.brand.upsert({ where: { name: raw.brand }, update: {}, create: { name: raw.brand } })).id : null;
+          const categoryId = raw.category ? (await prisma.category.upsert({ where: { name: raw.category }, update: {}, create: { name: raw.category } })).id : null;
 
           const baseData = {
             name: raw.name || '',
-            price,
+            price: typeof raw.price === 'number' ? raw.price : parseFloat(raw.price) || 0,
             unit: raw.uom || '',
-            caseSize: caseSize > 0 ? caseSize : 1,
-            isActive: status === 'Active',
-            zohoBooksId2: raw.zoho_books_id ? raw.zoho_books_id.toString() : null,
-            brandId,
-            categoryId,
+            caseSize: (typeof raw.case_size === 'number' ? raw.case_size : parseInt(raw.case_size, 10) || 1) || 1,
+            isActive: raw.status === 'Active',
+            zohoBooksId2: raw.zoho_books_id ? String(raw.zoho_books_id) : null,
+            brandId, categoryId,
+            gstPercent: typeof raw.gst_percent === 'number' ? raw.gst_percent : parseFloat(raw.gst_percent) || 0,
+            hsnCode: raw.hsn_code || null,
+            description: raw.description || null
           };
 
-          // Identity Priority: Check existing by Zoho ID
-          const existingSku = await prisma.sku.findFirst({
-            where: { zohoBookItemId: zohoIdBigInt }
+          // --- STRING-ONLY IDENTITY RESOLUTION ---
+          const identity = await prisma.skuIdentityRegistry.findUnique({
+            where: { zohoBookItemId: zohoIdStr }
           });
 
-          if (existingSku) {
-            forensic.matchedRecordId = existingSku.id;
-            forensic.decision = 'UPDATE';
-            forensic.reason = `Found existing SKU with Zoho ID ${zohoIdStr}`;
-
-            const currentChecksum = getSkuChecksum({ ...existingSku, id: existingSku.id });
-            const newChecksum = getSkuChecksum({ ...baseData, id: existingSku.id });
-
-            if (currentChecksum === newChecksum) {
-              traceStatus = 'SKIPPED';
-              traceAction = 'no_change';
-              traceReason = 'Data matches local database exactly';
-              skipped++;
-            } else {
-              await prisma.sku.update({
-                where: { id: existingSku.id },
-                data: { ...baseData, lastSyncedAt: new Date() }
-              });
-              traceStatus = 'UPDATED';
-              traceAction = 'data_refresh';
-              updated++;
-            }
-          } else {
-            // --- TASK 4: VERIFY ID CONFLICT ---
-            const idConflict = await prisma.sku.findUnique({ where: { id: skuId } });
-            if (idConflict) {
-              forensic.idConflict = true;
-              forensic.conflictRecordId = idConflict.id;
-              forensic.conflictZohoId = idConflict.zohoBookItemId?.toString();
-              throw new Error(`SKU ID conflict: ${skuId} already exists with different Zoho ID (${forensic.conflictZohoId})`);
+          if (identity) {
+            if (identity.skuId !== skuId && skuId !== 'N/A') {
+              throw new Error(`IDENTITY_CONFLICT: Zoho ID ${zohoIdStr} matches SKU ${identity.skuId}, but payload claims ${skuId}`);
             }
 
-            forensic.decision = 'CREATE';
-            forensic.reason = 'No existing SKU found with this Zoho ID or SKU code';
+            const existingSku = await prisma.sku.findUnique({ where: { id: identity.skuId } });
 
-            await prisma.sku.create({
-              data: {
-                id: skuId === 'N/A' ? `SKU-${zohoIdStr}` : skuId,
-                zohoBookItemId: zohoIdBigInt,
-                ...baseData,
-                lastSyncedAt: new Date()
+            if (existingSku) {
+              const diffResult = calculateSkuDiff(existingSku, baseData);
+              if (!diffResult.hasChanges) {
+                traceStatus = 'SKIPPED'; traceAction = 'RECONCILED'; skipped++;
+              } else {
+                await prisma.sku.update({ where: { id: existingSku.id }, data: { ...baseData, lastSyncedAt: new Date() } });
+                const verification = await verifyPersistence(existingSku.id, baseData);
+                if (!verification.success) {
+                  traceStatus = 'FAILED'; traceAction = 'FAILED_PERSISTENCE'; failed++;
+                } else {
+                  traceStatus = 'UPDATED'; traceAction = 'DATA_SYNC'; updated++;
+                }
               }
-            });
-            traceStatus = 'CREATED';
-            traceAction = 'new_product';
-            created++;
+            } else {
+              await prisma.sku.create({ data: { id: identity.skuId, zohoBookItemId: zohoIdStr, ...baseData, lastSyncedAt: new Date() } });
+              traceStatus = 'CREATED'; traceAction = 'IDENTITY_RESTORED'; created++;
+            }
+
+            await prisma.skuIdentityRegistry.update({ where: { id: identity.id }, data: { lastSeenAt: new Date(), syncGeneration: { increment: 1 } } });
+
+          } else {
+            const codeReuse = await prisma.skuIdentityRegistry.findUnique({ where: { skuId } });
+            if (codeReuse) throw new Error(`SKU CODE REUSE: Code ${skuId} is already mapped to Zoho ID ${codeReuse.zohoBookItemId}`);
+
+            const finalId = skuId === 'N/A' ? `SKU-${zohoIdStr}` : skuId;
+            await prisma.$transaction([
+              prisma.skuIdentityRegistry.create({ data: { skuId: finalId, zohoBookItemId: zohoIdStr } }),
+              prisma.sku.create({ data: { id: finalId, zohoBookItemId: zohoIdStr, ...baseData, lastSyncedAt: new Date() } })
+            ]);
+
+            const verification = await verifyPersistence(finalId, baseData);
+            if (!verification.success) {
+              traceStatus = 'FAILED'; traceAction = 'FAILED_PERSISTENCE'; failed++;
+            } else {
+              traceStatus = 'CREATED'; traceAction = 'IDENTITY_RESOLVED'; created++;
+              sessionCreatedIdentities.add(zohoIdStr);
+            }
           }
         } catch (e: any) {
-          traceStatus = 'FAILED';
-          traceAction = 'error';
-          traceReason = e.message || 'Unknown processing error';
-          errorDetails = safeJson({ message: e.message, stack: e.stack, raw, forensic });
-          failed++;
+          traceStatus = 'FAILED'; traceAction = 'EXCEPTION'; traceReason = e.message;
+          errorDetails = safeJson({ message: e.message, forensic }); failed++;
         }
 
-        const duration = Date.now() - itemStartTime;
-        executionTrace.push({
-          sku: skuId,
-          product: productName,
-          status: traceStatus,
-          action: traceAction,
-          reason: traceReason,
-          duration,
-          timestamp: new Date().toISOString(),
-          error: errorDetails,
-          forensic 
-        });
-
-        currentBatch.push(skuId);
-        if (currentBatch.length >= batchSize || i === rawSkus.length - 1) {
-          batches.push({
-            index: batches.length + 1,
-            skus: currentBatch,
-            duration: Date.now() - batchStartTime,
-            timestamp: new Date().toISOString()
-          });
-          currentBatch = [];
-          batchStartTime = Date.now();
-        }
+        executionTrace.push({ sku: skuId, product: productName, status: traceStatus, action: traceAction, reason: traceReason, duration: Date.now() - itemStartTime, timestamp: new Date().toISOString(), error: errorDetails, forensic });
       }
 
-      // --- TASK 8: POST-SYNC RECONCILIATION ---
       const finalSkuCount = await prisma.sku.count();
-      const reconciliation = {
-        zohoReturned: rawSkus.length,
-        processed,
-        created,
-        updated,
-        skipped,
-        failed,
-        preSyncCount: skuCount,
-        postSyncCount: finalSkuCount,
-        netChange: finalSkuCount - skuCount,
-        isConsistent: (created + updated + skipped + failed) === processed
-      };
-
-      metadata.batches = batches;
-      metadata.reconciliation = reconciliation;
-
-      if (!reconciliation.isConsistent) {
-        console.error('[SYNC_ALERT] Reconciliation mismatch!', reconciliation);
-      }
-
-      const finalResult = {
-        created,
-        updated,
-        failed,
-        skipped,
-        processed,
-        totalReceived: rawSkus.length,
-        duration: Date.now() - startTime,
-        reconciliation
-      };
+      metadata.reconciliation = { processed, created, updated, skipped, failed, preSyncCount: skuCount, postSyncCount: finalSkuCount, isConsistent: (created + updated + failed) === processed };
 
       await prisma.skuSyncLog.update({
         where: { id: syncLog.id },
         data: {
           completedAt: new Date(),
           totalReceived: rawSkus.length,
-          processedCount: processed,
-          createdCount: created,
-          updatedCount: updated,
-          skippedCount: skipped,
-          failedCount: failed,
+          processedCount: processed, createdCount: created, updatedCount: updated, skippedCount: skipped, failedCount: failed,
           metadata: safeJson(metadata),
-          executionTrace: safeJson(executionTrace),
-          logs: failed > 0 ? { errors: executionTrace.filter(t => t.status === 'FAILED') } : undefined
+          executionTrace: safeJson(executionTrace)
         }
       });
 
-      return finalResult;
+      return { created, updated, failed, skipped, processed, totalReceived: rawSkus.length, reconciliation: metadata.reconciliation };
 
     } catch (error: any) {
-      console.error('Inner Sync Error:', error);
-      await prisma.skuSyncLog.update({
-        where: { id: syncLog.id },
-        data: {
-          completedAt: new Date(),
-          metadata: safeJson({ ...metadata, fatalError: error.message }),
-          logs: { error: error.message || 'Unknown error' }
-        }
-      }).catch(console.error);
+      await prisma.skuSyncLog.update({ where: { id: syncLog.id }, data: { completedAt: new Date(), metadata: safeJson({ ...metadata, fatalError: error.message }) } }).catch(console.error);
       throw error;
     }
-
-  } catch (error: any) {
-    console.error('Outer Sync Engine Error:', error);
-    throw error;
   } finally {
-    // Release Lock
-    await prisma.syncLock.update({
-      where: { name: 'SKU_SYNC' },
-      data: { isLocked: false, lockedAt: null, lockedBy: null }
-    }).catch(console.error);
+    await prisma.syncLock.update({ where: { name: 'SKU_SYNC' }, data: { isLocked: false, lockedAt: null, lockedBy: null } }).catch(console.error);
   }
 }

@@ -1,6 +1,6 @@
 import { getSession } from '@/lib/auth';
 import { NextResponse } from 'next/server';
-import { runSkuSync } from '@/lib/sku-sync';
+import { runSkuSync, safeJson } from '@/lib/sku-sync';
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -17,10 +17,10 @@ export async function POST(request: Request) {
       trigger: 'USER' 
     });
 
-    return NextResponse.json({
+    return NextResponse.json(safeJson({
       success: true,
       summary: result
-    });
+    }));
   } catch (error: any) {
     console.error('[Admin Sync] Manual run failed:', error);
     return NextResponse.json({ error: error.message || 'Sync failed' }, { status: 500 });

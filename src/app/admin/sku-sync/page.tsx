@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { formatCurrency } from '@/lib/utils';
 import { 
   RefreshCw, AlertCircle, CheckCircle2, Download, Clock, Trash2, 
   Lock, X, Copy, FileJson, ChevronDown, ChevronRight, ClipboardCheck,
   Activity, Info, Filter, Search, History, Terminal, Database, ArrowRight,
-  ShieldCheck, ShieldAlert, BarChart3, ScanEye
+  ShieldCheck, ShieldAlert, BarChart3, ScanEye, FileText
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -121,22 +121,41 @@ export default function SkuSyncPage() {
   const runSync = async () => {
     if (!confirm(`Are you sure you want to run the SKU sync with a limit of ${syncLimit || 'unlimited'}?`)) return;
     
+    console.log('[SYNC_UI] Starting sync lifecycle');
     setIsSyncing(true);
+
+    // Emergency Failsafe: Reset UI after 60s regardless of result
+    const failsafe = setTimeout(() => {
+      if (isSyncing) {
+        console.warn('[SYNC_UI] Failsafe triggered: forcing isSyncing to false');
+        setIsSyncing(false);
+        toast.error('Sync request timed out in UI. Check history for results.');
+      }
+    }, 60000);
+
     try {
+      console.log('[SYNC_UI] Sending POST request');
       const res = await fetch('/api/admin/sku-sync/run', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: syncLimit })
       });
+      
+      console.log('[SYNC_UI] Response received status:', res.status);
       const json = await res.json();
+      console.log('[SYNC_UI] Payload parsed');
 
       if (!res.ok) throw new Error(json.error || 'Sync failed');
 
       toast.success('Synchronization completed');
+      console.log('[SYNC_UI] Refreshing history');
       await fetchHistory();
     } catch (err: any) {
+      console.error('[SYNC_UI] Error in sync lifecycle:', err);
       toast.error(err.message || 'Sync failed');
     } finally {
+      clearTimeout(failsafe);
+      console.log('[SYNC_UI] Finalizing lifecycle: setting isSyncing to false');
       setIsSyncing(false);
     }
   };
@@ -152,7 +171,11 @@ export default function SkuSyncPage() {
       const res = await fetch('/api/admin/hard-reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phrase: resetPhrase, pin: adminPin }),
+        body: JSON.stringify({ 
+          phrase: resetPhrase, 
+          pin: adminPin,
+          mode: 'FORENSIC' 
+        }),
       });
       if (!res.ok) throw new Error('Reset failed');
 
@@ -171,11 +194,16 @@ export default function SkuSyncPage() {
 
   const formatDateIST = (dateStr: string) => {
     const date = new Date(dateStr);
-    return date.toLocaleString('en-IN', { 
-      day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: true, timeZone: 'Asia/Kolkata' 
-    }).toUpperCase();
+    return {
+      date: date.toLocaleString('en-IN', { 
+        day: '2-digit', month: 'short', year: 'numeric',
+        timeZone: 'Asia/Kolkata' 
+      }).toUpperCase(),
+      time: date.toLocaleString('en-IN', { 
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: true, timeZone: 'Asia/Kolkata' 
+      }).toUpperCase() + ' IST'
+    };
   };
 
   const copyToClipboard = (text: any, label: string) => {
@@ -255,7 +283,7 @@ export default function SkuSyncPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Sidebar: History */}
         <div className="lg:col-span-3 space-y-4">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[700px]">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[800px]">
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
               <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
                 <History size={16} />
@@ -265,34 +293,53 @@ export default function SkuSyncPage() {
                 <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
               </button>
             </div>
-            <div className="flex-1 overflow-auto divide-y divide-gray-50">
-              {history.map((log) => (
-                <button
-                  key={log.id}
-                  onClick={() => setSelectedLog(log)}
-                  className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors relative group ${selectedLog?.id === log.id ? 'bg-blue-50/50' : ''}`}
-                >
-                  <div className="flex justify-between items-start">
-                    <span className="text-[10px] font-bold text-gray-400 tracking-tighter">
-                      {formatDateIST(log.startedAt).split(' ')[0]}
-                    </span>
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${log.trigger === 'USER' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                      {log.trigger}
-                    </span>
-                  </div>
-                  <p className="text-xs font-bold text-gray-900 mt-1 line-clamp-1">
-                    {formatDateIST(log.startedAt).split(' ')[1]} {formatDateIST(log.startedAt).split(' ')[2]}
-                  </p>
-                  <div className="flex gap-2 mt-2">
-                    <span className="text-[10px] text-emerald-600 font-bold">+{log.createdCount}</span>
-                    <span className="text-[10px] text-blue-600 font-bold">~{log.updatedCount}</span>
-                    <span className="text-[10px] text-red-600 font-bold">!{log.failedCount}</span>
-                  </div>
-                  {selectedLog?.id === log.id && (
-                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600" />
-                  )}
-                </button>
-              ))}
+            <div className="flex-1 overflow-auto divide-y divide-gray-50 no-scrollbar">
+              {history.map((log) => {
+                const ts = formatDateIST(log.startedAt);
+                return (
+                  <button
+                    key={log.id}
+                    onClick={() => setSelectedLog(log)}
+                    className={`w-full px-4 py-4 text-left hover:bg-gray-50 transition-all relative group ${selectedLog?.id === log.id ? 'bg-blue-50/50' : ''}`}
+                  >
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="text-[10px] font-black text-gray-900 tracking-wider">
+                        {ts.date}
+                      </span>
+                      <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest ${log.trigger === 'USER' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {log.trigger} SYNC
+                      </span>
+                    </div>
+                    
+                    <p className="text-xs font-bold text-[#1A2766] font-mono leading-none mb-3">
+                      {ts.time}
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-y-2 gap-x-4">
+                      <div className="flex flex-col">
+                        <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">Fetched</span>
+                        <span className="text-[10px] font-black text-gray-700">{log.totalReceived}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">Duration</span>
+                        <span className="text-[10px] font-black text-gray-700 font-mono">{log.metadata?.responseTimeMs || '—'}ms</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">Results</span>
+                        <div className="flex gap-1.5">
+                          <span className="text-[10px] text-emerald-600 font-black">+{log.createdCount}</span>
+                          <span className="text-[10px] text-blue-600 font-black">~{log.updatedCount}</span>
+                          <span className="text-[10px] text-red-600 font-black">!{log.failedCount}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {selectedLog?.id === log.id && (
+                      <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#1A2766]" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -421,110 +468,154 @@ export default function SkuSyncPage() {
                 </div>
               </div>
 
-              {/* Execution Trace Table */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[500px]">
-                <div className="px-4 py-3 border-b border-gray-100 bg-white flex flex-col md:flex-row md:items-center justify-between gap-3 sticky top-0 z-20">
-                  <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                    <Activity size={16} className="text-blue-600" />
-                    Forensic Execution Trace
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <div className="relative">
-                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                      <input 
-                        type="text" 
-                        placeholder="Search SKU or Name..."
-                        value={traceSearch}
-                        onChange={(e) => setTraceSearch(e.target.value)}
-                        className="pl-9 pr-3 py-1.5 bg-gray-100 border-none rounded-lg text-xs focus:ring-1 focus:ring-blue-500 w-48"
-                      />
+              {/* Forensic Execution Trace Console */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[600px]">
+                <div className="px-4 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between sticky top-0 z-10">
+                  <div className="flex items-center gap-4">
+                    <h3 className="text-sm font-black text-gray-700 uppercase tracking-widest flex items-center gap-2">
+                      <Search size={16} className="text-[#1A2766]" />
+                      Forensic Execution Trace
+                    </h3>
+                    <div className="flex bg-gray-200 p-1 rounded-lg">
+                      {['ALL', 'CREATED', 'UPDATED', 'SKIPPED', 'FAILED'].map((f) => (
+                        <button
+                          key={f}
+                          onClick={() => setTraceFilter(f)}
+                          className={`px-3 py-1 rounded-md text-[10px] font-black tracking-tight transition-all ${traceFilter === f ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                          {f}
+                        </button>
+                      ))}
                     </div>
-                    <select 
-                      value={traceFilter}
-                      onChange={(e) => setTraceFilter(e.target.value)}
-                      className="px-2 py-1.5 bg-gray-100 border-none rounded-lg text-xs font-bold text-gray-600 focus:ring-1 focus:ring-blue-500"
-                    >
-                      <option value="ALL">All Status</option>
-                      <option value="CREATED">Created</option>
-                      <option value="UPDATED">Updated</option>
-                      <option value="SKIPPED">Skipped</option>
-                      <option value="FAILED">Failed</option>
-                    </select>
+                  </div>
+                  <div className="relative">
+                    <input 
+                      type="text"
+                      placeholder="Filter by SKU or Product..."
+                      value={traceSearch}
+                      onChange={(e) => setTraceSearch(e.target.value)}
+                      className="pl-9 pr-4 py-2 bg-gray-100 border-none rounded-lg text-xs font-medium focus:ring-2 focus:ring-blue-500 w-64"
+                    />
+                    <Search className="absolute left-3 top-2.5 text-gray-400" size={14} />
                   </div>
                 </div>
                 
-                <div className="flex-1 overflow-auto">
-                  <table className="w-full text-left border-collapse min-w-[1000px]">
-                    <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm border-b">
+                <div className="flex-1 overflow-auto no-scrollbar">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-gray-50 sticky top-0 z-10 border-b border-gray-100">
                       <tr>
-                        <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Identity</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Forensic Decision</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Status</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Lookup Logic</th>
-                        <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider text-right">Actions</th>
+                        <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">SKU Identity</th>
+                        <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Decision</th>
+                        <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Match Basis</th>
+                        <th className="px-4 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Duration</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {filteredTrace.map((trace, idx) => (
-                        <tr key={idx} className={`hover:bg-gray-50/50 transition-colors ${trace.status === 'FAILED' ? 'bg-red-50/20' : ''}`}>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-col">
-                              <span className="text-xs font-black text-[#1A2766] font-mono">{trace.sku}</span>
-                              <span className="text-[10px] text-gray-500 line-clamp-1" title={trace.product}>{trace.product}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${trace.forensic?.decision === 'CREATE' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
-                                {trace.forensic?.decision || 'SKIP'}
-                              </span>
-                              <span className="text-[10px] text-gray-500 max-w-[200px] line-clamp-1" title={trace.forensic?.reason}>
-                                {trace.forensic?.reason || trace.reason}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded border text-[9px] font-black uppercase ${getStatusColor(trace.status)}`}>
-                              {trace.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[9px] font-bold text-gray-400 uppercase">Field:</span>
-                                <span className="text-[10px] font-mono text-gray-700">{trace.forensic?.lookupField}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[9px] font-bold text-gray-400 uppercase">Value:</span>
-                                <span className="text-[10px] font-mono text-gray-700">{trace.forensic?.lookupValue}</span>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-right space-x-2">
-                            {trace.forensic?.matchedRecordId && (
-                              <button 
-                                onClick={() => copyToClipboard(trace.forensic!.matchedRecordId!, 'Matched ID')}
-                                className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
-                                title="Copy Matched ID"
-                              >
-                                <ScanEye size={14} />
-                              </button>
+                      {filteredTrace.map((trace: any, idx) => {
+                        const isExpanded = expandedTrace === `${selectedLog.id}-${trace.sku}-${idx}`;
+                        const forensic = trace.forensic || {};
+                        return (
+                          <Fragment key={`${trace.sku}-${idx}`}>
+                            <tr 
+                              onClick={() => setExpandedTrace(isExpanded ? null : `${selectedLog.id}-${trace.sku}-${idx}`)}
+                              className={`hover:bg-gray-50/80 cursor-pointer transition-colors group ${isExpanded ? 'bg-blue-50/30' : ''}`}
+                            >
+                              <td className="px-4 py-4">
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-black text-gray-900 leading-tight tracking-tight">{trace.sku}</span>
+                                  <span className="text-[10px] font-bold text-gray-500 truncate max-w-[200px]">{trace.product}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-4">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-black tracking-widest border ${getStatusColor(trace.status)}`}>
+                                  {trace.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] font-bold text-gray-700 uppercase">{forensic.matchBasis || 'N/A'}</span>
+                                  <span className="text-[9px] text-gray-400 italic mt-0.5">{trace.action || 'NONE'}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-4 text-right">
+                                <span className="text-[11px] font-mono font-black text-gray-400">{trace.duration}ms</span>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr className="bg-blue-50/20">
+                                <td colSpan={4} className="px-8 py-6 border-b border-blue-100/50">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <div className="space-y-4">
+                                      <div>
+                                        <h4 className="text-[10px] font-black text-[#1A2766] uppercase tracking-widest mb-2 flex items-center gap-2">
+                                          <FileText size={14} />
+                                          Forensic Reasoning
+                                        </h4>
+                                        <div className="p-4 bg-white rounded-xl border border-blue-100 shadow-sm space-y-3">
+                                          <div className="flex flex-col">
+                                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Decision Summary</span>
+                                            <span className="text-xs font-black text-gray-800">{forensic.changeSummary || trace.reason || 'No specific reasoning provided'}</span>
+                                          </div>
+                                          <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-50">
+                                            <div className="flex flex-col">
+                                              <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Identity Resolution</span>
+                                              <span className="text-[10px] font-mono font-black text-gray-700">{forensic.zohoId || 'Unknown'}</span>
+                                            </div>
+                                            <div className="flex flex-col">
+                                              <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Local Mapping</span>
+                                              <span className="text-[10px] font-mono font-black text-gray-700">{forensic.matchedRecordId || 'NEW_RECORD'}</span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {trace.error && (
+                                        <div className="p-4 bg-red-50 rounded-xl border border-red-100">
+                                          <h5 className="text-[10px] font-black text-red-700 uppercase tracking-widest mb-2">Error Payload</h5>
+                                          <pre className="text-[10px] font-mono text-red-600 overflow-auto max-h-40">{JSON.stringify(trace.error, null, 2)}</pre>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div>
+                                      <h4 className="text-[10px] font-black text-[#1A2766] uppercase tracking-widest mb-2 flex items-center gap-2">
+                                        <Activity size={14} />
+                                        Field Level Reconciliation
+                                      </h4>
+                                      <div className="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden">
+                                        {forensic.fieldDiff && Object.keys(forensic.fieldDiff).length > 0 ? (
+                                          <div className="divide-y divide-gray-50">
+                                            <div className="grid grid-cols-3 px-4 py-2 bg-gray-50 text-[9px] font-black text-gray-400 uppercase">
+                                              <span>Field</span>
+                                              <span>Old Value</span>
+                                              <span>New Value</span>
+                                            </div>
+                                            {Object.entries(forensic.fieldDiff).map(([field, values]: any) => (
+                                              <div key={field} className="grid grid-cols-3 px-4 py-3 text-[11px] items-center group hover:bg-gray-50 transition-colors">
+                                                <span className="font-black text-gray-600 uppercase tracking-tighter">{field}</span>
+                                                <span className="text-gray-400 line-through decoration-red-300/50 truncate pr-2">{values.old?.toString() || '—'}</span>
+                                                <span className="font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded inline-block w-fit truncate">{values.new?.toString() || '—'}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <div className="p-8 text-center">
+                                            <CheckCircle2 size={32} className="mx-auto text-emerald-400 mb-2 opacity-50" />
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase">Data is perfectly reconciled</p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
                             )}
-                            {trace.error && (
-                              <button 
-                                onClick={() => copyToClipboard(trace.error, `Error Trace: ${trace.sku}`)}
-                                className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-100 rounded transition-all"
-                                title="Copy Error Payload"
-                              >
-                                <Terminal size={14} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                          </Fragment>
+                        );
+                      })}
                       {filteredTrace.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="px-4 py-20 text-center text-gray-400 italic">No forensic records found matching your filters.</td>
+                          <td colSpan={4} className="px-4 py-20 text-center text-gray-400 italic font-medium">No forensic records found matching your filters.</td>
                         </tr>
                       )}
                     </tbody>

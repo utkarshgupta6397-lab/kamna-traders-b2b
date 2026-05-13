@@ -4,8 +4,8 @@ import { runSkuSync, safeJson } from '@/lib/sku-sync';
 
 export async function POST(request: Request) {
   const session = await getSession();
-  if (!session || session.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session || (session.role !== 'ADMIN' && !session.canRunSkuSync)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
   try {

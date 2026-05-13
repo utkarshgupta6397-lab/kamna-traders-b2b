@@ -99,6 +99,7 @@ export async function validateSession(sessionToken: string): Promise<{
           role: true,
           canManageCarts: true,
           canAdjustInventory: true,
+          canRunSkuSync: true,
         }
       }
     }
@@ -107,6 +108,7 @@ export async function validateSession(sessionToken: string): Promise<{
   if (session?.user?.role === 'ADMIN') {
     session.user.canManageCarts = true;
     session.user.canAdjustInventory = true;
+    session.user.canRunSkuSync = true;
   }
 
   const result = session 

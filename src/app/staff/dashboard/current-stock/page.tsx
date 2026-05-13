@@ -170,6 +170,7 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
       brands={brands}
       items={items}
       consumptionData={consumptionData}
+      canSync={!!session.canRunSkuSync}
     />
   );
 }

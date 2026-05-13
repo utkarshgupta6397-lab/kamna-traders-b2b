@@ -18,6 +18,7 @@ export async function GET() {
         role: true,
         canManageCarts: true,
         canAdjustInventory: true,
+        canRunSkuSync: true,
       },
       orderBy: { name: 'asc' },
     });

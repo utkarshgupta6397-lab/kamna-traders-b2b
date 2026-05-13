@@ -76,6 +76,7 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
     if (merged.role === 'ADMIN') {
       merged.canManageCarts = true;
       merged.canAdjustInventory = true;
+      merged.canRunSkuSync = true;
     }
 
     console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);

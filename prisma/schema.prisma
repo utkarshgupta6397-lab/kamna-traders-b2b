@@ -21,6 +21,7 @@ model User {
   // Permissions Matrix
   canManageCarts          Boolean            @default(false)
   canAdjustInventory      Boolean            @default(false)
+  canRunSkuSync           Boolean            @default(false)
 
   sessions         ActiveSession[]
   carts            Cart[]

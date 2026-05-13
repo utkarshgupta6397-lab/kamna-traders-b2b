@@ -12,6 +12,7 @@ interface User {
   role: string;
   canManageCarts: boolean;
   canAdjustInventory: boolean;
+  canRunSkuSync: boolean;
   [key: string]: any;
 }
 

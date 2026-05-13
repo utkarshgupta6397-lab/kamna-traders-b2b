@@ -1,13 +1,16 @@
 'use client';
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Filter, Box, ChevronDown, Check, X, TrendingUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { 
+  Search, Filter, Box, ChevronDown, Check, X, TrendingUp, AlertTriangle, 
+  CheckCircle2, FileDown, RefreshCw, Loader2, Info 
+} from 'lucide-react';
 import SkuInsightsDrawer from './SkuInsightsDrawer';
 import { formatStockDate } from '@/lib/date-utils';
 import { DOI_THRESHOLDS } from '@/lib/config';
 import { formatCPDValue, calculateDOIInfo, calculateConsumptionDenominator } from '@/lib/inventory/consumption';
 import { exportStockToPDF } from '@/lib/inventory/export-pdf';
-import { FileDown } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 interface Warehouse {
   id: string;
@@ -46,9 +49,20 @@ interface Props {
   brands: Brand[];
   items: (SkuItem & { brandId?: string | null; caseSize: number })[];
   consumptionData: Record<string, any>;
+  canSync?: boolean;
 }
 
-export default function CurrentStockClient({ warehouses, categories, brands, items, consumptionData }: Props) {
+interface SyncResult {
+  created: number;
+  updated: number;
+  failed: number;
+  skipped: number;
+  processed: number;
+  totalReceived: number;
+  duration?: number;
+}
+
+export default function CurrentStockClient({ warehouses, categories, brands, items, consumptionData, canSync = false }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -56,6 +70,12 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   const [selectedCaseSizes, setSelectedCaseSizes] = useState<number[]>([]);
   const [selectedWarehouses, setSelectedWarehouses] = useState<string[]>([]);
   const [hideOos, setHideOos] = useState(true);
+
+  // Sync State
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [showSyncModal, setShowSyncModal] = useState(false);
 
   const formatDOI = (stock: number, cpd: number) => {
     return calculateDOIInfo(stock, cpd);
@@ -296,10 +316,43 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
       id: item.id,
       name: item.name,
       totalStock: total,
-      inventoryByWarehouse: item.inventory
+      inventoryByWarehouse: item.inventory,
+      unit: item.unit
     });
     setSearchQuery('');
     setShowSearchSuggestions(false);
+  };
+
+  const handleSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    setSyncError(null);
+    setSyncResult(null);
+    setShowSyncModal(true);
+    
+    const startTime = Date.now();
+    
+    try {
+      const res = await fetch('/api/admin/sku-sync/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trigger: 'USER' })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Synchronization failed');
+      
+      const endTime = Date.now();
+      const result = data.summary;
+      result.duration = (endTime - startTime) / 1000;
+      setSyncResult(result);
+      toast.success('SKU Sync Complete');
+    } catch (err: any) {
+      setSyncError(err.message);
+      toast.error(err.message);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   return (
@@ -311,8 +364,24 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
             <Box size={20} />
             <h1 className="text-lg font-bold tracking-tight">Current Stock</h1>
           </div>
-          <div className="text-[10px] text-gray-500 font-medium">
-            Last Updated: {formatStockDate(new Date())}
+          <div className="flex items-center gap-4">
+            <div className="text-[10px] text-gray-500 font-medium">
+              Last Updated: {formatStockDate(new Date())}
+            </div>
+            {canSync && (
+              <button 
+                onClick={handleSync}
+                disabled={isSyncing}
+                className={`flex items-center gap-2 px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition-all shadow-sm ${
+                  isSyncing 
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                  : 'bg-[#1A2766] text-white hover:bg-[#AE1B1E]'
+                }`}
+              >
+                {isSyncing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                Sync SKUs
+              </button>
+            )}
           </div>
         </div>
         
@@ -645,6 +714,96 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
         </table>
       </div>
       
+      {/* Sync Status Modal */}
+      {showSyncModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !isSyncing && setShowSyncModal(false)} />
+          <div className="relative bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-[#1A2766] p-4 flex items-center justify-between text-white">
+              <h2 className="font-bold flex items-center gap-2 text-lg">
+                <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} />
+                SKU Catalog Sync
+              </h2>
+              {!isSyncing && (
+                <button onClick={() => setShowSyncModal(false)} className="hover:bg-white/10 p-1 rounded-lg transition-colors">
+                  <X size={20} />
+                </button>
+              )}
+            </div>
+
+            <div className="p-8">
+              {isSyncing ? (
+                <div className="flex flex-col items-center gap-6 py-4">
+                  <div className="relative">
+                    <div className="w-20 h-20 border-4 border-gray-100 border-t-[#1A2766] rounded-full animate-spin" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <RefreshCw size={24} className="text-[#1A2766] animate-pulse" />
+                    </div>
+                  </div>
+                  <div className="text-center space-y-2">
+                    <p className="text-lg font-black text-[#1A2766] uppercase tracking-tight">Syncing in Progress</p>
+                    <p className="text-sm text-gray-500 font-medium animate-pulse">Fetching latest SKU catalog from Zoho...</p>
+                  </div>
+                </div>
+              ) : syncError ? (
+                <div className="flex flex-col items-center gap-6 py-4">
+                  <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center text-red-600">
+                    <AlertTriangle size={40} />
+                  </div>
+                  <div className="text-center space-y-2">
+                    <p className="text-lg font-black text-red-600 uppercase tracking-tight">Sync Failed</p>
+                    <p className="text-sm text-gray-600 font-medium px-4">{syncError}</p>
+                  </div>
+                  <button 
+                    onClick={() => setShowSyncModal(false)}
+                    className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-black transition-all"
+                  >
+                    Close
+                  </button>
+                </div>
+              ) : syncResult ? (
+                <div className="space-y-6">
+                  <div className="flex flex-col items-center gap-4 py-2">
+                    <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600">
+                      <CheckCircle2 size={32} />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg font-black text-emerald-600 uppercase tracking-tight">Sync Complete</p>
+                      <p className="text-xs text-gray-500 font-bold">Processed in {syncResult.duration?.toFixed(1)}s</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: 'Fetched', value: syncResult.totalReceived, color: 'text-blue-600', bg: 'bg-blue-50' },
+                      { label: 'Created', value: syncResult.created, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                      { label: 'Updated', value: syncResult.updated, color: 'text-amber-600', bg: 'bg-amber-50' },
+                      { label: 'Skipped', value: syncResult.skipped, color: 'text-gray-600', bg: 'bg-gray-50' },
+                      { label: 'Failed', value: syncResult.failed, color: syncResult.failed > 0 ? 'text-red-600' : 'text-gray-600', bg: syncResult.failed > 0 ? 'bg-red-50' : 'bg-gray-50' },
+                    ].map(stat => (
+                      <div key={stat.label} className={`${stat.bg} p-3 rounded-xl border border-black/5`}>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{stat.label}</p>
+                        <p className={`text-xl font-black ${stat.color}`}>{stat.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      setShowSyncModal(false);
+                      window.location.reload(); // Reload to show new data
+                    }}
+                    className="w-full bg-[#1A2766] text-white py-4 rounded-xl font-black uppercase tracking-widest hover:bg-[#AE1B1E] transition-all shadow-lg shadow-[#1A2766]/20 active:scale-[0.98]"
+                  >
+                    Done
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Drawer */}
       <SkuInsightsDrawer 
         isOpen={!!selectedSku} 

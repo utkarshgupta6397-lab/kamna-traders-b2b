@@ -37,7 +37,7 @@ model Warehouse {
 
 model Brand {
   id        String   @id @default(cuid())
-  name      String
+  name      String   @unique
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -46,7 +46,7 @@ model Brand {
 
 model Category {
   id        String     @id @default(cuid())
-  name      String
+  name      String     @unique
   active    Boolean    @default(true)
   parentId  String?
   createdAt DateTime   @default(now())
@@ -159,15 +159,30 @@ model DispatchSequence {
   sequence Int    @default(0)
 }
 
+model SyncLock {
+  id        String   @id @default("singleton")
+  name      String   @unique
+  isLocked  Boolean  @default(false)
+  lockedAt  DateTime?
+  lockedBy  String?
+  updatedAt DateTime @updatedAt
+}
+
 model SkuSyncLog {
   id            String    @id @default(cuid())
   startedAt     DateTime  @default(now())
   completedAt   DateTime?
+  trigger       String    @default("CRON") // "CRON" | "USER"
+  syncLimit     Int?      @default(0)
   totalReceived Int       @default(0)
+  processedCount Int      @default(0)
   createdCount  Int       @default(0)
   updatedCount  Int       @default(0)
+  skippedCount  Int       @default(0)
   failedCount   Int       @default(0)
-  logs          Json?
+  metadata      Json?     // Raw API request/response metadata
+  logs          Json?     // Backwards compatibility for errors
+  executionTrace Json?    // Detailed per-SKU logs
 }
 
 model InventoryHistory {

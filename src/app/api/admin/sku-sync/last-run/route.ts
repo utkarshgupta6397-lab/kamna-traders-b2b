@@ -9,14 +9,15 @@ export async function GET() {
   }
 
   try {
-    const lastLog = await prisma.skuSyncLog.findFirst({
-      where: { completedAt: { not: null } },
+    const logs = await prisma.skuSyncLog.findMany({
       orderBy: { startedAt: 'desc' },
+      take: 20
     });
 
     return NextResponse.json({
       success: true,
-      lastLog
+      lastLog: logs[0] || null,
+      history: logs
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Failed to fetch status' }, { status: 500 });

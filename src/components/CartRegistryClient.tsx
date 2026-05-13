@@ -253,16 +253,18 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canMa
               <>
                 {canManageCarts && (
                   <>
-                    <button
-                      onClick={() => {
-                        setSelectedCartId(cart.id);
-                        setModalType('edit');
-                      }}
-                      className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
-                      title="Edit Cart"
-                    >
-                      <Edit2 size={13} />
-                    </button>
+                    {cart.status !== 'ON_HOLD' && (
+                      <button
+                        onClick={() => {
+                          setSelectedCartId(cart.id);
+                          setModalType('edit');
+                        }}
+                        className="p-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                        title="Edit Cart"
+                      >
+                        <Edit2 size={13} />
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setSelectedCartId(cart.id);
@@ -277,21 +279,25 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canMa
                   </>
                 )}
                 
-                <button
-                  onClick={() => router.push(`/staff/dashboard/print/${cart.id}`)}
-                  className="p-1.5 rounded-lg bg-[#1A2766] text-white hover:bg-[#003347] transition-all shadow-sm"
-                  title="Print Slip"
-                >
-                  <Printer size={13} />
-                </button>
-                <a
-                  href={`/staff/dashboard/print/${cart.id}`}
-                  target="_blank"
-                  className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-[#1A2766] hover:border-[#1A2766]/30 transition-all"
-                  title="Open in New Tab"
-                >
-                  <ExternalLink size={13} />
-                </a>
+                {cart.status !== 'ON_HOLD' && (
+                  <>
+                    <button
+                      onClick={() => router.push(`/staff/dashboard/print/${cart.id}`)}
+                      className="p-1.5 rounded-lg bg-[#1A2766] text-white hover:bg-[#003347] transition-all shadow-sm"
+                      title="Print Slip"
+                    >
+                      <Printer size={13} />
+                    </button>
+                    <a
+                      href={`/staff/dashboard/print/${cart.id}`}
+                      target="_blank"
+                      className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-[#1A2766] hover:border-[#1A2766]/30 transition-all"
+                      title="Open in New Tab"
+                    >
+                      <ExternalLink size={13} />
+                    </a>
+                  </>
+                )}
               </>
             )}
           </div>

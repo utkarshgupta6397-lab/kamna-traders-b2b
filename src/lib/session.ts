@@ -104,10 +104,9 @@ export async function validateSession(sessionToken: string): Promise<{
     }
   });
 
-  const merged = session?.user || {};
-  if (merged.role === 'ADMIN') {
-    merged.canManageCarts = true;
-    merged.canAdjustInventory = true;
+  if (session?.user?.role === 'ADMIN') {
+    session.user.canManageCarts = true;
+    session.user.canAdjustInventory = true;
   }
 
   const result = session 

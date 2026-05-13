@@ -22,13 +22,14 @@ interface Props {
 }
 
 /** Fetch all active SKUs from the lightweight API endpoint */
-async function fetchAllSkus(): Promise<ProductData[]> {
+async function fetchAllSkus(warehouseId?: string, signal?: AbortSignal): Promise<ProductData[]> {
   const start = performance.now();
-  const res = await fetch('/api/staff/skus');
+  const url = warehouseId ? `/api/staff/skus?warehouseId=${warehouseId}` : '/api/staff/skus';
+  const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`Failed to fetch SKUs: ${res.status}`);
   const data = await res.json();
   const end = performance.now();
-  console.log(`[PERF] fetchAllSkus: ${(end - start).toFixed(2)}ms`);
+  console.log(`[PERF] fetchAllSkus (${warehouseId ?? 'GLOBAL'}): ${(end - start).toFixed(2)}ms`);
   return data;
 }
 
@@ -173,8 +174,8 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     checkQZReadiness();
   }, []);
   const [showCaseFilter, setShowCaseFilter] = useState(false);
-  const fetchInProgress = useRef(false);
   const lastFetchTime = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // SKU store (local cache)
   const status = useSkuStore((s) => s.status);
@@ -191,6 +192,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   const selectedCaseSizes = useSkuStore((s) => s.selectedCaseSizes);
   const setSelectedCaseSizes = useSkuStore((s) => s.setSelectedCaseSizes);
   const lastFetchedAt = useSkuStore((s) => s.lastFetchedAt);
+  const clearWarehouseState = useSkuStore((s) => s.clearWarehouseState);
 
   // Cart
   const { items, addItem, clearCart } = useCartStore();
@@ -262,42 +264,58 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
 
   // ─── Initial Load ──────────────────────────────────────────────
   const loadSkus = useCallback(async (silent = false) => {
-    // 1. Prevent overlapping requests
-    if (fetchInProgress.current) {
-      console.log(`[SYNC] Fetch already in progress, skipping`);
-      return;
+    // 1. Cancel any existing in-flight request to prevent race conditions
+    if (abortControllerRef.current) {
+      console.log(`[SYNC] Aborting previous in-flight request for warehouse: ${warehouseId}`);
+      abortControllerRef.current.abort();
     }
     
-    // 2. Throttle: Don't fetch more than once every 5s
-    const now = Date.now();
-    if (now - lastFetchTime.current < 5000) {
-      console.log(`[SYNC] Throttled (last fetch was ${(now - lastFetchTime.current)/1000}s ago)`);
-      return;
-    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`[SYNC] ${timestamp} - loadSkus start (silent: ${silent})`);
+    console.log(`[SYNC] ${timestamp} - loadSkus start (warehouse: ${warehouseId}, silent: ${silent})`);
     
-    fetchInProgress.current = true;
     if (!silent) setStatus('loading');
     try {
-      const data = await fetchAllSkus() as any;
+      const data = await fetchAllSkus(warehouseId, controller.signal) as any;
+      
+      // If we reached here without an AbortError, this is the latest valid response
       lastFetchTime.current = Date.now();
       setSkus(data); 
       setStatus('ready');
       console.log(`[SYNC] ${timestamp} - loadSkus success`);
-    } catch (err) {
+      abortControllerRef.current = null;
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        console.log(`[SYNC] ${timestamp} - Request aborted (stale)`);
+        return;
+      }
       console.error(`[SYNC] ${timestamp} - loadSkus failed:`, err);
       if (!silent) {
         setStatus('error', err instanceof Error ? err.message : 'Failed to load products');
       }
-    } finally {
-      fetchInProgress.current = false;
     }
-  }, [setSkus, setStatus]);
+  }, [setSkus, setStatus, warehouseId]);
+
+  // Handle Warehouse Switch -> Full Context Refresh (Deterministic Selection)
+  useEffect(() => {
+    if (warehouseId) {
+      console.log(`[WAREHOUSE] Switch detected -> ${warehouseId}. Triggering race-safe refresh...`);
+      clearWarehouseState();
+      loadSkus(false);
+      // Reset some UI state
+      setSelectedIndex(-1);
+    }
+    
+    // Cleanup on unmount or next change
+    return () => {
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+    };
+  }, [warehouseId]);
 
   useEffect(() => {
-    // Only fetch on first mount if not already loaded
+    // Only fetch on first mount if not already loaded (initial warehouse)
     if (status === 'idle') {
       loadSkus();
     }

@@ -34,6 +34,7 @@ interface SkuStore {
   setHideOos: (val: boolean) => void;
   setSelectedCaseSizes: (sizes: number[]) => void;
   toggleBrand: (brandName: string) => void;
+  clearWarehouseState: () => void;
 
   /** Derived: filtered view (computed on the fly, no extra storage) */
   getFiltered: () => ProductData[];
@@ -81,6 +82,11 @@ export const useSkuStore = create<SkuStore>((set, get) => ({
       : [...selectedBrands, brandName];
     set({ selectedBrands: next });
   },
+  clearWarehouseState: () => set({ 
+    selectedBrands: [], 
+    selectedCaseSizes: [],
+    selectedIndex: -1, // Reset keyboard selection if stored (though it's in Client state)
+  } as any),
 
   getFiltered: () => {
     const { allSkus, selectedCategoryId, searchQuery, hideOos, selectedCaseSizes, selectedBrands } = get();

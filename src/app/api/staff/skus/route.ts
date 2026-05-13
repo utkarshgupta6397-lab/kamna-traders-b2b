@@ -3,8 +3,11 @@ import { getSession } from '@/lib/auth';
 import { NextResponse } from 'next/server';
 
 /** GET /api/staff/skus — returns all active SKUs with minimal fields for POS local cache */
-export async function GET() {
-  console.log(`[API] /api/staff/skus hit at ${new Date().toISOString()}`);
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const warehouseId = searchParams.get('warehouseId');
+  
+  console.log(`[API] /api/staff/skus hit at ${new Date().toISOString()} | Warehouse: ${warehouseId ?? 'GLOBAL'}`);
   
   const session = await getSession();
   if (!session) {
@@ -26,14 +29,28 @@ export async function GET() {
         isActive: true,
         zohoBooksId2: true,
         brand: { select: { name: true } },
-        inventory: { select: { qty: true, isOos: true } },
+        inventory: {
+          where: warehouseId ? { warehouseId } : undefined,
+          select: { qty: true, isOos: true }
+        },
       },
       orderBy: { name: 'asc' },
     });
 
     const products = skus.map((sku) => {
-      const totalQty = sku.inventory.reduce((s, inv) => s + inv.qty, 0);
-      const anyOos = sku.inventory.some((inv) => inv.isOos);
+      // If warehouseId is provided, inventory will contain at most 1 item due to @@unique([warehouseId, skuId])
+      const targetInv = warehouseId ? sku.inventory[0] : null;
+      
+      const inventoryQty = targetInv 
+        ? targetInv.qty 
+        : sku.inventory.reduce((s, inv) => s + inv.qty, 0);
+
+      const isOos = targetInv
+        ? targetInv.isOos || targetInv.qty <= 0
+        : sku.inventory.length > 0 
+          ? sku.inventory.some((inv) => inv.isOos) || sku.inventory.reduce((s, inv) => s + inv.qty, 0) <= 0
+          : false;
+
       return {
         id: sku.id,
         name: sku.name,
@@ -45,8 +62,8 @@ export async function GET() {
         price: sku.price,
         caseSize: sku.caseSize,
         categoryId: sku.categoryId,
-        inventoryQty: totalQty,
-        isOos: sku.inventory.length > 0 ? anyOos || totalQty <= 0 : false,
+        inventoryQty,
+        isOos,
         isActive: sku.isActive,
         zohoBooksId2: sku.zohoBooksId2,
       };
@@ -57,7 +74,9 @@ export async function GET() {
     const categoryBrandCounts: Record<string, Record<string, number>> = {};
 
     products.forEach((p) => {
-      if (p.brand) {
+      // ── CONTEXTUAL BRAND FILTER ──
+      // Only count brands for items that are actually available in this warehouse context
+      if (p.brand && !p.isOos && (p.inventoryQty ?? 0) > 0) {
         brandCounts[p.brand] = (brandCounts[p.brand] || 0) + 1;
         if (p.categoryId) {
           if (!categoryBrandCounts[p.categoryId]) categoryBrandCounts[p.categoryId] = {};

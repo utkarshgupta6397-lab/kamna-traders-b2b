@@ -103,9 +103,10 @@ const ProductCard = memo(function ProductCard({ product, isSelected }: { product
           {qty === 0 ? (
             <button
               onClick={add}
-              className="w-[82px] h-[34px] rounded-[10px] text-[14px] font-[700] transition-all active:scale-95 disabled:opacity-50 shadow-sm flex items-center justify-center bg-[#1A2766] text-white hover:bg-[#003347]"
+              disabled={product.isOos}
+              className="w-[82px] h-[34px] rounded-[10px] text-[14px] font-[700] transition-all active:scale-95 disabled:opacity-40 disabled:grayscale disabled:cursor-not-allowed shadow-sm flex items-center justify-center bg-[#1A2766] text-white hover:bg-[#003347]"
             >
-              ADD
+              {product.isOos ? 'OOS' : 'ADD'}
             </button>
           ) : (
             <div className="w-[96px] h-[34px] flex items-center bg-[#F1F3F7] rounded-[10px] p-0.5 border border-transparent">
@@ -118,7 +119,8 @@ const ProductCard = memo(function ProductCard({ product, isSelected }: { product
               <span className="flex-1 text-center text-[14px] font-[800] text-[#1A2766] tabular-nums">{qty}</span>
               <button
                 onClick={add}
-                className="w-7 h-full flex items-center justify-center rounded-lg text-[#1A2766] hover:bg-white hover:shadow-sm transition-all disabled:opacity-30"
+                disabled={product.isOos}
+                className="w-7 h-full flex items-center justify-center rounded-lg text-[#1A2766] hover:bg-white hover:shadow-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <Plus size={14} strokeWidth={3} />
               </button>

@@ -54,8 +54,16 @@ export const useSkuStore = create<SkuStore>((set, get) => ({
   lastFetchedAt: null,
 
   setSkus: ({ skus, topBrandsByCategory, topBrandsFullCatalog }) => {
+    // ── DEFENSIVE QUANTITY NORMALIZATION ──
+    // Ensures any SKU with qty <= 0 is treated as OOS regardless of backend flag
+    const normalizedSkus = skus.map(s => {
+      const effectiveQty = (typeof s.inventoryQty === 'number' && !isNaN(s.inventoryQty)) ? s.inventoryQty : 0;
+      const effectiveIsOos = s.isOos || effectiveQty <= 0;
+      return { ...s, isOos: effectiveIsOos, inventoryQty: effectiveQty };
+    });
+
     set({ 
-      allSkus: skus, 
+      allSkus: normalizedSkus, 
       topBrandsByCategory, 
       topBrandsFullCatalog,
       lastFetchedAt: Date.now() 
@@ -85,9 +93,9 @@ export const useSkuStore = create<SkuStore>((set, get) => ({
       list = list.filter((s) => s.categoryId === selectedCategoryId);
     }
 
-    // 2. Hide OOS
+    // 2. Hide OOS (Defensive: Re-check effective quantity)
     if (hideOos) {
-      list = list.filter((s) => !s.isOos);
+      list = list.filter((s) => !s.isOos && (s.inventoryQty ?? 0) > 0);
     }
 
     // 3. Case Size

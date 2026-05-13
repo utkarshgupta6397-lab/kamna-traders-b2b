@@ -82,12 +82,23 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
   if (!mounted) return null;
 
   // Filter SKUs based on debounced search
-  const filteredSkus = skus.filter((sku) =>
-    sku.id.toLowerCase().includes(debouncedQuery.toLowerCase()) || 
-    sku.name.toLowerCase().includes(debouncedQuery.toLowerCase())
-  ).slice(0, 10);
+  const filteredSkus = skus
+    .map(sku => {
+      // ── DEFENSIVE QUANTITY NORMALIZATION ──
+      // This SKU type doesn't have inventoryQty in the prop, but let's re-verify isOos
+      // In case we want to be safe, we'll keep the current isOos but ensure it blocks adding
+      return sku;
+    })
+    .filter((sku) =>
+      sku.id.toLowerCase().includes(debouncedQuery.toLowerCase()) || 
+      sku.name.toLowerCase().includes(debouncedQuery.toLowerCase())
+    ).slice(0, 10);
 
   const addItem = (sku: StaffSku) => {
+    if (sku.isOos) {
+      toast.error(`${sku.name} is Out of Stock`, { id: `oos-${sku.id}` });
+      return;
+    }
     storeAddItem({ skuId: sku.id, name: sku.name, unit: sku.unit, qty: 1 });
     setSearchQuery('');
   };

@@ -423,7 +423,7 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
 
         <ThermalSlip lines={masterSlipLines} />
 
-        {showZoneSlips && Object.entries(payload.zoneGroups).map(([zone, zItems], idx) => (
+        {showZoneSlips && payload.printZonalSlips !== false && Object.entries(payload.zoneGroups).map(([zone, zItems], idx) => (
           <ThermalSlip key={idx} lines={generateZoneSlip(zone, zItems, payload)} />
         ))}
       </div>

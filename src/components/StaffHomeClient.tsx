@@ -630,7 +630,16 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
             <div className="flex-shrink-0">
               <select
                 value={warehouseId}
-                onChange={(e) => setWarehouseId(e.target.value)}
+                onChange={(e) => {
+                  const newWid = e.target.value;
+                  if (newWid !== warehouseId) {
+                    console.log(`[WAREHOUSE] Manual switch to ${newWid}. Resetting current session.`);
+                    clearCart();
+                    setCustomerName('');
+                    setNotes('');
+                    setWarehouseId(newWid);
+                  }
+                }}
                 className="bg-[#F9FAFB] border border-[#E7EAF0] rounded-lg px-3 py-1.5 text-[12px] font-[800] text-[#1A2766] outline-none hover:border-[#1A2766]/30 transition-colors cursor-pointer"
               >
                 {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}

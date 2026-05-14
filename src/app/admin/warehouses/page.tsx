@@ -29,6 +29,12 @@ export default async function WarehousesPage({ searchParams }: { searchParams: P
             <input type="text" name="name" required className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
           <div><label className="block text-xs font-medium text-gray-500 mb-1">Address</label>
             <input type="text" name="address" required className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
+          <div><label className="block text-xs font-medium text-gray-500 mb-1">Print Zonal Slips</label>
+            <select name="printZonalSlips" defaultValue="true" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none bg-white">
+              <option value="true">Yes (Master + Zonal)</option>
+              <option value="false">No (Master Only)</option>
+            </select>
+          </div>
           <FormSubmit className="bg-[#AE1B1E] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">Add Warehouse</FormSubmit>
         </ActionForm>
       </div>
@@ -39,9 +45,9 @@ export default async function WarehousesPage({ searchParams }: { searchParams: P
           <div className="flex bg-gray-50 border-b text-gray-500 uppercase tracking-wider text-xs font-medium">
             <div className="w-64 p-3">Name</div>
             <div className="flex-1 p-3">Address</div>
-            <div className="w-32 p-3">Status</div>
-            <div className="w-32 p-3">Mapped</div>
-            <div className="w-32 p-3 text-right">Actions</div>
+            <div className="w-40 p-3">Zonal Slips</div>
+            <div className="w-24 p-3">Status</div>
+            <div className="w-24 p-3 text-right">Actions</div>
           </div>
           
           {/* Body */}
@@ -55,15 +61,18 @@ export default async function WarehousesPage({ searchParams }: { searchParams: P
                 <div className="flex-1 p-2">
                   <input type="text" name="address" defaultValue={w.address ?? ''} className="w-full border rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#1A2766] outline-none" />
                 </div>
-                <div className="w-32 p-2">
+                <div className="w-40 p-2">
+                  <select name="printZonalSlips" defaultValue={String(w.printZonalSlips)} className="w-full border rounded px-2 py-1.5 text-xs bg-white">
+                    <option value="true">Master + Zonal</option>
+                    <option value="false">Master Only</option>
+                  </select>
+                </div>
+                <div className="w-24 p-2">
                   <select name="active" defaultValue={String(w.active)} className="w-full border rounded px-2 py-1.5 text-xs bg-white">
                     <option value="true">Active</option><option value="false">Inactive</option>
                   </select>
                 </div>
-                <div className="w-32 p-2 text-[10px] text-gray-400">
-                  {w._count.inventory} inv · {w._count.carts} carts
-                </div>
-                <div className="w-32 p-2 flex justify-end items-center gap-1">
+                <div className="w-24 p-2 flex justify-end items-center gap-1">
                   <FormSubmit className="text-[#1A2766] hover:bg-blue-50 p-1.5 rounded transition-colors" icon={<Save size={14} />} />
                   <SafeDeleteButton action={deleteWarehouse} id={w.id} label="warehouse" className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded disabled:opacity-30 transition-colors">
                     <Trash2 size={14} />

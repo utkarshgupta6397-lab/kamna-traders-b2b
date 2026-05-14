@@ -49,7 +49,8 @@ export async function createWarehouse(data: FormData) {
   await requireAdmin();
   const name = data.get('name') as string;
   const address = data.get('address') as string;
-  await prisma.warehouse.create({ data: { name, address } });
+  const printZonalSlips = data.get('printZonalSlips') === 'true';
+  await prisma.warehouse.create({ data: { name, address, printZonalSlips } });
   revalidatePath('/admin/warehouses');
 }
 
@@ -59,7 +60,8 @@ export async function updateWarehouse(data: FormData) {
   const name = data.get('name') as string;
   const address = data.get('address') as string;
   const active = data.get('active') === 'true';
-  await prisma.warehouse.update({ where: { id }, data: { name, address, active } });
+  const printZonalSlips = data.get('printZonalSlips') === 'true';
+  await prisma.warehouse.update({ where: { id }, data: { name, address, active, printZonalSlips } });
   revalidatePath('/admin/warehouses');
 }
 

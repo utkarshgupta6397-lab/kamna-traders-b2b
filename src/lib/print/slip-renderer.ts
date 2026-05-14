@@ -15,6 +15,7 @@ export type PrintPayload = {
   notes: string | null;
   createdAt: string;
   warehouseName: string;
+  printZonalSlips?: boolean;
   staffName: string;
   items: PrintItem[];
   zoneGroups: Record<string, PrintItem[]>;
@@ -260,10 +261,12 @@ export function renderDispatchSlips(payload: PrintPayload): Uint8Array {
   renderer.cut();
 
   // 2. Zone Slips
-  Object.entries(payload.zoneGroups).forEach(([zone, items]) => {
-    renderVirtualSlip(generateZoneSlip(zone, items, payload));
-    renderer.cut();
-  });
+  if (payload.printZonalSlips !== false) {
+    Object.entries(payload.zoneGroups).forEach(([zone, items]) => {
+      renderVirtualSlip(generateZoneSlip(zone, items, payload));
+      renderer.cut();
+    });
+  }
 
   return renderer.build();
 }

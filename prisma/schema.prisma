@@ -33,6 +33,7 @@ model Warehouse {
   name             String
   address          String?
   active           Boolean              @default(true)
+  printZonalSlips  Boolean              @default(true)
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
   carts            Cart[]

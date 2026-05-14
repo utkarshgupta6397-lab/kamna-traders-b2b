@@ -161,10 +161,11 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
         if (!item.name.toLowerCase().includes(q) && !item.id.toLowerCase().includes(q)) continue;
       }
 
-      // 2. Compute Row Total
+      // 2. Compute Row Total (Ignore negative values for math)
       let rowTotal = 0;
       for (let j = 0; j < visibleWarehouses.length; j++) {
-        rowTotal += item.inventory[visibleWarehouses[j].id]?.qty || 0;
+        const qty = item.inventory[visibleWarehouses[j].id]?.qty || 0;
+        rowTotal += Math.max(0, qty);
       }
 
       // 3. OOS Filter
@@ -235,8 +236,9 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
       for (let j = 0; j < visibleWarehouses.length; j++) {
         const whId = visibleWarehouses[j].id;
         const val = item.inventory[whId]?.qty || 0;
-        groups[catId].totals[whId] += val;
-        grand[whId] += val;
+        const nonNegativeVal = Math.max(0, val);
+        groups[catId].totals[whId] += nonNegativeVal;
+        grand[whId] += nonNegativeVal;
       }
       count++;
     }
@@ -626,12 +628,14 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                         </td>
                         {visibleWarehouses.map(wh => {
                           const qty = item.inventory[wh.id]?.qty || 0;
+                          const isNegative = qty < 0;
                           return (
-                            <td key={wh.id} className={`px-4 py-1.5 text-center border-r border-gray-100 font-mono ${qty > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                            <td key={wh.id} className={`px-4 py-1.5 text-center border-r border-gray-100 font-mono ${isNegative ? 'text-red-600' : qty > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
                               <div className="flex items-baseline justify-center gap-1">
+                                {isNegative && <AlertTriangle size={10} className="text-red-600 mb-0.5" />}
                                 <span className="font-bold">{qty.toLocaleString()}</span>
-                                {qty > 0 && item.unit && (
-                                  <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{item.unit}</span>
+                                {qty !== 0 && item.unit && (
+                                  <span className={`text-[10px] font-medium opacity-70 lowercase ${isNegative ? 'text-red-400' : 'text-gray-400'}`}>{item.unit}</span>
                                 )}
                               </div>
                             </td>

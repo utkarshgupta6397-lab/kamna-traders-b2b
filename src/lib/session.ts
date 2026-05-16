@@ -100,6 +100,7 @@ export async function validateSession(sessionToken: string): Promise<{
           canManageCarts: true,
           canAdjustInventory: true,
           canRunSkuSync: true,
+          canManageZoneMappings: true,
         }
       }
     }
@@ -109,7 +110,9 @@ export async function validateSession(sessionToken: string): Promise<{
     session.user.canManageCarts = true;
     session.user.canAdjustInventory = true;
     session.user.canRunSkuSync = true;
+    session.user.canManageZoneMappings = true;
   }
+
 
   const result = session 
     ? { 

@@ -18,9 +18,13 @@ export async function PATCH(
     const { key, value } = body;
 
     // Validate permission key
+    console.log('[API] Permission Key:', key);
+    console.log('[API] All Permission Keys:', ALL_PERMISSION_KEYS);
     if (!ALL_PERMISSION_KEYS.includes(key)) {
+      console.error('[API] Invalid permission key:', key);
       return NextResponse.json({ error: 'Invalid permission key' }, { status: 400 });
     }
+
 
     // Update user
     const updatedUser = await prisma.user.update({

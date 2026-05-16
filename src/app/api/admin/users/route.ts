@@ -19,6 +19,8 @@ export async function GET() {
         canManageCarts: true,
         canAdjustInventory: true,
         canRunSkuSync: true,
+        canManageZoneMappings: true,
+
       },
       orderBy: { name: 'asc' },
     });

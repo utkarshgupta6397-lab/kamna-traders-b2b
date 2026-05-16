@@ -2,7 +2,7 @@ import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { LogOut, Home, ClipboardList, History, Box, Settings } from 'lucide-react';
+import { LogOut, Home, ClipboardList, History, Box, Settings, MapPin } from 'lucide-react';
 import DashboardSearchInput from '@/components/DashboardSearchInput';
 
 export default async function StaffDashboardLayout({ children }: { children: React.ReactNode }) {
@@ -44,6 +44,7 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
             <Link href="/staff/dashboard/current-stock" className="flex items-center gap-1.5 hover:text-white transition-colors">
               <Box size={16} /><span className="hidden md:inline text-xs">Current Stock</span>
             </Link>
+
             <Link href="/staff/settings" className="flex items-center gap-1.5 hover:text-white transition-colors">
               <Settings size={16} /><span className="hidden md:inline text-xs">Settings</span>
             </Link>

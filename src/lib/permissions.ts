@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -26,7 +26,12 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'canRunSkuSync',
     label: 'SKU Sync',
     description: 'Ability to trigger SKU catalog synchronization from Zoho'
+  },
+  {
+    key: 'canManageZoneMappings',
+    label: 'Zone Mapping',
+    description: 'Ability to map products to warehouse zones'
   }
 ];
 
-export const ALL_PERMISSION_KEYS: PermissionKey[] = ['canManageCarts', 'canAdjustInventory', 'canRunSkuSync'];
+export const ALL_PERMISSION_KEYS: PermissionKey[] = ['canManageCarts', 'canAdjustInventory', 'canRunSkuSync', 'canManageZoneMappings'];

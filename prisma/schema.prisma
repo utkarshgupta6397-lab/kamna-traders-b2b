@@ -22,11 +22,15 @@ model User {
   canManageCarts          Boolean            @default(false)
   canAdjustInventory      Boolean            @default(false)
   canRunSkuSync           Boolean            @default(false)
+  canManageZoneMappings   Boolean            @default(false)
+
 
   sessions         ActiveSession[]
   carts            Cart[]
   inventoryHistory InventoryHistory[]
+  zoneMappingsUpdated WarehouseInventory[] @relation("ZoneMappingUpdatedBy")
 }
+
 
 model Warehouse {
   id               String               @id @default(cuid())
@@ -101,11 +105,14 @@ model WarehouseInventory {
   isOos       Boolean   @default(false)
   zone        String?
   updatedAt   DateTime  @updatedAt
+  updatedById String?
   sku         Sku       @relation(fields: [skuId], references: [id])
   warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  updatedBy   User?     @relation("ZoneMappingUpdatedBy", fields: [updatedById], references: [id])
 
   @@unique([warehouseId, skuId])
 }
+
 
 model Cart {
   id                   String     @id

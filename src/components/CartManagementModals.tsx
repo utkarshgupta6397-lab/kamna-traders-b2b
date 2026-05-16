@@ -317,7 +317,7 @@ const CartManagementModals = React.memo(({ cartId, type, onClose, onSuccess }: P
               className="px-6 py-2 bg-[#1A2766] text-white text-[11px] font-black uppercase tracking-widest rounded-xl hover:shadow-lg hover:shadow-blue-900/20 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50"
             >
               {loading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              Save Changes
+              {loading ? 'Saving Changes...' : 'Save Changes'}
             </button>
           )}
 
@@ -328,10 +328,10 @@ const CartManagementModals = React.memo(({ cartId, type, onClose, onSuccess }: P
                 else setConfirmDelete(true);
               }}
               disabled={isDeleting}
-              className={`px-6 py-2 ${confirmDelete ? 'bg-red-600' : 'bg-red-50 text-red-600'} text-[11px] font-black uppercase tracking-widest rounded-xl hover:shadow-lg transition-all flex items-center gap-2`}
+              className={`px-6 py-2 ${confirmDelete ? 'bg-red-600' : 'bg-red-50 text-red-600'} text-[11px] font-black uppercase tracking-widest rounded-xl hover:shadow-lg transition-all flex items-center gap-2 disabled:opacity-50`}
             >
               {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-              {confirmDelete ? 'Yes, Delete Permanently' : 'Delete Cart'}
+              {isDeleting ? 'Deleting...' : (confirmDelete ? 'Yes, Delete Permanently' : 'Delete Cart')}
             </button>
           )}
         </div>

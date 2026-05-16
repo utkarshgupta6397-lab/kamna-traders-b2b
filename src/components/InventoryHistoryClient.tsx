@@ -666,7 +666,7 @@ function InventoryAdjustModal({ warehouses, skus, onClose, onSuccess }: {
               {isSubmitting ? (
                 <>
                   <RefreshCw size={18} className="animate-spin" />
-                  Processing...
+                  Adjusting Inventory...
                 </>
               ) : (
                 'Confirm Adjustment'

@@ -838,16 +838,16 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
                       disabled={submitting || !customerName}
                       className="w-full h-11 flex items-center justify-center gap-2 bg-[#1A2766] text-white rounded-lg font-[800] text-[13px] uppercase tracking-widest hover:bg-[#003347] transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
                     >
-                      <Printer size={18} strokeWidth={2.5} />
-                      {submitting ? 'Processing...' : 'Generate Dispatch Note'}
+                      {submitting ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} strokeWidth={2.5} />}
+                      {submitting ? 'Generating Dispatch...' : 'Generate Dispatch Note'}
                     </button>
                     <button
                       onClick={() => handleSubmit('hold')}
                       disabled={submitting || !customerName}
                       className="w-full h-11 flex items-center justify-center gap-2 bg-white text-[#1A2766] border-2 border-[#1A2766] rounded-lg font-[800] text-[13px] uppercase tracking-widest hover:bg-gray-50 transition-all active:scale-[0.98] disabled:opacity-50"
                     >
-                      <Pause size={18} strokeWidth={2.5} />
-                      {submitting ? 'Processing...' : 'Put On Hold'}
+                      {submitting ? <Loader2 size={18} className="animate-spin" /> : <Pause size={18} strokeWidth={2.5} />}
+                      {submitting ? 'Holding Cart...' : 'Put On Hold'}
                     </button>
                   </div>
                 </>

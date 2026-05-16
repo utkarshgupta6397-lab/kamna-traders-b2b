@@ -46,6 +46,8 @@ export default function ZoneMappingClient() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -138,6 +140,7 @@ export default function ZoneMappingClient() {
   };
 
   const handleSave = async (skuId: string) => {
+    setIsSaving(true);
     try {
       const res = await fetch('/api/staff/zone-mapping', {
         method: 'POST',
@@ -154,12 +157,15 @@ export default function ZoneMappingClient() {
       }
     } catch (err) {
       console.error('Failed to save mapping:', err);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   // Bulk Save
   const handleBulkAction = async (zoneName: string | null) => {
     if (selectedSkuIds.size === 0) return;
+    setIsBulkUpdating(true);
     try {
       const updates = Array.from(selectedSkuIds).map(skuId => ({
         skuId,
@@ -178,6 +184,7 @@ export default function ZoneMappingClient() {
         fetchMappings();
         setShowBulkAssign(false);
         setBulkZoneInput('');
+        setSelectedSkuIds(new Set());
       } else {
         const text = await res.text();
         console.error('Bulk update failed:', text);
@@ -185,6 +192,8 @@ export default function ZoneMappingClient() {
       }
     } catch (err) {
       console.error('Bulk update failed:', err);
+    } finally {
+      setIsBulkUpdating(false);
     }
   };
 
@@ -476,10 +485,18 @@ export default function ZoneMappingClient() {
                   <td className="px-2 py-1 text-right">
                     {editingSku === m.skuId ? (
                       <div className="flex gap-1 justify-end">
-                        <button onClick={() => handleSave(m.skuId)} className="text-emerald-600 hover:text-emerald-800">
-                          <Check size={14} />
+                        <button 
+                          onClick={() => handleSave(m.skuId)} 
+                          className="text-emerald-600 hover:text-emerald-800 disabled:opacity-50"
+                          disabled={isSaving}
+                        >
+                          {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Check size={14} />}
                         </button>
-                        <button onClick={() => setEditingSku(null)} className="text-red-600 hover:text-red-800">
+                        <button 
+                          onClick={() => setEditingSku(null)} 
+                          className="text-red-600 hover:text-red-800 disabled:opacity-50"
+                          disabled={isSaving}
+                        >
                           <X size={14} />
                         </button>
                       </div>
@@ -560,13 +577,16 @@ export default function ZoneMappingClient() {
               />
               <button 
                 onClick={() => handleBulkAction(bulkZoneInput)}
-                className="bg-white text-[#1A2766] px-3 py-1 rounded text-sm font-bold hover:bg-gray-100"
+                className="bg-white text-[#1A2766] px-3 py-1 rounded text-sm font-bold hover:bg-gray-100 disabled:opacity-50 flex items-center gap-1"
+                disabled={isBulkUpdating}
               >
-                Apply
+                {isBulkUpdating ? <Loader2 className="animate-spin" size={12} /> : null}
+                {isBulkUpdating ? 'Applying...' : 'Apply'}
               </button>
               <button 
                 onClick={() => setShowBulkAssign(false)}
-                className="p-1 text-white/70 hover:text-white"
+                className="p-1 text-white/70 hover:text-white disabled:opacity-50"
+                disabled={isBulkUpdating}
               >
                 <X size={16} />
               </button>
@@ -581,9 +601,11 @@ export default function ZoneMappingClient() {
               </button>
               <button 
                 onClick={() => handleBulkAction(null)}
-                className="bg-red-500/20 hover:bg-red-500/40 text-red-100 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                className="bg-red-500/20 hover:bg-red-500/40 text-red-100 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-1"
+                disabled={isBulkUpdating}
               >
-                Clear Zones
+                {isBulkUpdating ? <Loader2 className="animate-spin" size={14} /> : null}
+                {isBulkUpdating ? 'Clearing...' : 'Clear Zones'}
               </button>
             </div>
           )}

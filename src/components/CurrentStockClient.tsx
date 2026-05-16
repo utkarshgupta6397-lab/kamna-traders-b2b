@@ -746,7 +746,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                   </div>
                   <div className="text-center space-y-2">
                     <p className="text-lg font-black text-[#1A2766] uppercase tracking-tight">Syncing in Progress</p>
-                    <p className="text-sm text-gray-500 font-medium animate-pulse">Fetching latest SKU catalog from Zoho...</p>
+                    <p className="text-sm text-gray-500 font-medium animate-pulse">Syncing latest stock from source...</p>
                   </div>
                 </div>
               ) : syncError ? (

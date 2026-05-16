@@ -150,11 +150,12 @@ function StaffLoginContent() {
                     inputMode="numeric"
                     value={pin}
                     onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2.5 text-sm text-center tracking-[0.5em] font-mono focus:ring-2 focus:ring-[#1A2766] outline-none"
+                    className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2.5 text-sm text-center tracking-[0.5em] font-mono focus:ring-2 focus:ring-[#1A2766] outline-none disabled:bg-gray-50 disabled:text-gray-400"
                     placeholder="••••••"
                     maxLength={6}
                     required
                     autoFocus
+                    disabled={loading || isTransitioning}
                   />
                 </div>
                 <p className="text-xs text-gray-400 mt-1.5">Enter your secure 6-digit PIN to access the portal.</p>
@@ -167,7 +168,7 @@ function StaffLoginContent() {
                 {loading || isTransitioning ? (
                   <>
                     <RefreshCw size={16} className="animate-spin" />
-                    {isTransitioning ? 'Redirecting...' : 'Signing In...'}
+                    {isTransitioning ? 'Redirecting...' : 'Logging In...'}
                   </>
                 ) : (
                   'Login'

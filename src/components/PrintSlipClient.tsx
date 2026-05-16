@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { CheckCircle2, AlertCircle, ExternalLink, ChevronDown, Info, Loader2, Copy, Activity, XCircle, Printer, RefreshCw } from 'lucide-react';
 import PrintButton from '@/components/PrintButton';
-import { generateMasterSlip, generateZoneSlip, PrintPayload } from '@/lib/print/slip-renderer';
+import { generateDispatchSlip, PrintPayload } from '@/lib/print/slip-renderer';
 import ThermalSlip from '@/components/thermal-preview/ThermalSlip';
 
 export default function PrintSlipClient({
@@ -218,7 +218,8 @@ ${JSON.stringify(zohoStatus.response, null, 2)}
     );
   };
 
-  const masterSlipLines = useMemo(() => payload ? generateMasterSlip(payload) : [], [payload]);
+  const masterSlipLines = useMemo(() => payload ? generateDispatchSlip(payload, false) : [], [payload]);
+
 
   const handleCopyDiag = () => {
     const text = `Dispatch Performance Report
@@ -423,9 +424,6 @@ Runtime: ${backendPerf?.dbType || 'unknown'}`;
 
         <ThermalSlip lines={masterSlipLines} />
 
-        {showZoneSlips && payload.printZonalSlips !== false && Object.entries(payload.zoneGroups).map(([zone, zItems], idx) => (
-          <ThermalSlip key={idx} lines={generateZoneSlip(zone, zItems, payload)} />
-        ))}
       </div>
 
       {/* ── ZOHO DETAILS MODAL ────────────────────────────────────────── */}

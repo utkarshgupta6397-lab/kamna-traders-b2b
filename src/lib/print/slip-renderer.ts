@@ -91,154 +91,120 @@ function wrapText(text: string, width: number): string[] {
 }
 
 /**
- * Generates the "Virtual Slip" (list of styled lines) for a Master Slip.
+ * Generates the unified Dispatch Slip (Master or Duplicate).
  */
-export function generateMasterSlip(payload: PrintPayload): StyledLine[] {
+export function generateDispatchSlip(payload: PrintPayload, isDuplicate: boolean): StyledLine[] {
   const lines: StyledLine[] = [];
-  const width = 46; // Safe buffer to prevent right-edge overflow
+  const width = 46; // 4-inch / 80mm standard width
+  
   const dateStr = new Date(payload.createdAt).toLocaleString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
   });
 
-  // Extract dispatch sequence (e.g., KS-DP-...-004 -> 004)
-  const dispatchSeq = payload.dispatchSlipNumber?.split('-').pop() || '000';
+  const dispatchSeq = payload.dispatchSlipNumber || payload.id;
 
-  // Header
-  lines.push({ text: 'KAMNA TRADERS', size: 'double-width', bold: true, align: 'center' });
-  lines.push({ text: 'Master Dispatch Slip', align: 'center' });
-  lines.push({ text: '='.repeat(width) });
+  // 1. TOP TITLE (Customer Name)
+  // Ensure we truncate gracefully if it's too long for quad size (which is very wide)
+  const custName = payload.customerName.toUpperCase();
+  // Using double-width or quad for very large font as requested
+  lines.push({ text: custName.substring(0, 22), size: 'double-width', bold: true, align: 'center' });
+  if (custName.length > 22) {
+    lines.push({ text: custName.substring(22, 44), size: 'double-width', bold: true, align: 'center' });
+  }
+  lines.push({ text: '' });
 
-  // Info Section
-  lines.push({ text: `SLIP # : ${payload.dispatchSlipNumber || payload.id}`, bold: true });
+  // 2. COPY DECLARATION
+  const slipType = isDuplicate ? 'DUPLICATE' : 'MASTER';
+  lines.push({ text: `---------- ${slipType} DISPATCH SLIP ----------`, align: 'center' });
+  lines.push({ text: '' });
+
+  // 3. DETAILS SECTION
   lines.push({ text: `DATE   : ${dateStr}` });
-  lines.push({ text: `CUST   : ${payload.customerName.toUpperCase()}` });
   lines.push({ text: `WH     : ${payload.warehouseName}` });
   lines.push({ text: `STAFF  : ${payload.staffName}` });
   
-  // ZOHO SO LINKAGE (ONLY ON MASTER) - REMOVED "Zoho SO:" LABEL
   if (payload.zohoSalesorderNumber) {
-    lines.push({ text: payload.zohoSalesorderNumber, bold: true });
+    lines.push({ text: `SO     : ${payload.zohoSalesorderNumber}` });
   } else if (payload.zohoSyncStatus === 'FAILED') {
-    lines.push({ text: 'SYNC FAILED', bold: true });
+    lines.push({ text: `SO     : SYNC FAILED` });
   } else {
-    lines.push({ text: 'PENDING SYNC', bold: true });
+    lines.push({ text: `SO     : PENDING SYNC` });
   }
 
   if (payload.notes) {
     lines.push({ text: `NOTES  : ${payload.notes}` });
   }
-  lines.push({ text: '-'.repeat(width) });
+  
+  lines.push({ text: '' });
 
-  // Items Table: # | ITEM [SKU] | QTY
-  // CALIBRATION: Standard 80mm paper is ~48 chars. 
-  // We use 48 as our base and ensure columns fit perfectly.
+  // 4. VEHICLE NUMBER AREA
+  lines.push({ text: `VEHICLE NO. : ________________________` });
+  lines.push({ text: '' });
+
+  // 5. PRODUCT TABLE FORMAT
+  // Header
+  // # SKU_ID                     QTY & UOM
   const COL_INDEX = 4;
-  const COL_QTY = 12;
-  const COL_NAME = width - COL_INDEX - COL_QTY - 1; // 48 - 4 - 12 - 1 = 31
-
-  lines.push({ text: '#   ITEM [SKU]'.padEnd(COL_INDEX + COL_NAME) + ' '.repeat(1) + 'QTY/UOM'.padStart(COL_QTY), bold: true });
+  const COL_SKU = 15;
+  const COL_QTY = width - COL_INDEX - COL_SKU; // 27
+  
+  lines.push({ text: '#   SKU_ID'.padEnd(COL_INDEX + COL_SKU) + 'QTY & UOM'.padStart(COL_QTY), bold: true });
   lines.push({ text: '-'.repeat(width) });
-
-  const ITEM_INDENT = '    '; // 4 spaces for consistent hanging indent
 
   let totalItems = 0;
-  Object.entries(payload.zoneGroups).forEach(([zone, items]) => {
-    lines.push({ text: `[ ZONE: ${zone.toUpperCase()} ]`, bold: true });
-    lines.push({ text: '' }); // Spacing after zone header
-    
-    items.forEach((item) => {
-      totalItems++;
-      const indexStr = `${totalItems}`.padEnd(4); // e.g. "1   "
-      const qtyStr = `${item.qty} ${item.unit}`.padStart(12);
-      
-      // Inline SKU: "Item Name [SKU]"
-      const fullName = `${item.name} [${item.skuId}]`;
-      
-      // Name width: width - 4 (index) - 12 (qty) - 1 (spacer)
-      const nameLines = wrapText(fullName, COL_NAME);
+  
+  Object.entries(payload.zoneGroups).forEach(([zone, items], zoneIdx) => {
+    // ZONE SEPARATOR
+    if (zoneIdx > 0) lines.push({ text: '' });
+    lines.push({ text: `---- zone: ${zone.toLowerCase()} ----`, align: 'center' });
 
-      nameLines.forEach((nameLine, lineIdx) => {
-        if (lineIdx === 0) {
-          // First line includes index and qty
-          lines.push({ text: `${indexStr}${nameLine.padEnd(COL_NAME)} ${qtyStr}` });
-        } else {
-          // Subsequent lines use the fixed indentation to align with name start
-          lines.push({ text: `${ITEM_INDENT}${nameLine}` });
-        }
-      });
-    });
     lines.push({ text: '' });
+
+    items.forEach((item, itemIdx) => {
+      totalItems++;
+      const indexStr = `${totalItems}`.padEnd(COL_INDEX);
+      const skuStr = `[${item.skuId}]`.padEnd(COL_SKU);
+      const qtyStr = `${item.qty} ${item.unit}`.padStart(COL_QTY);
+      
+      // LINE 1: # SKU_ID QTY & UOM
+      lines.push({ text: `${indexStr}${skuStr}${qtyStr}`, bold: true });
+      
+      // LINE 2: Full Product Name
+      const nameLines = wrapText(item.name.toUpperCase(), width);
+      nameLines.forEach(nl => lines.push({ text: nl }));
+      
+      // Dotted Separator between products
+      lines.push({ text: '.'.repeat(width) });
+    });
   });
 
-  lines.push({ text: '-'.repeat(width) });
+  // 6. BLANK SPACE REQUIREMENT (for 2 extra products)
+  lines.push({ text: '' });
+  lines.push({ text: '.'.repeat(width) });
+  lines.push({ text: '' });
+  lines.push({ text: '.'.repeat(width) });
+  lines.push({ text: '' });
+  lines.push({ text: '.'.repeat(width) });
 
-  // REDIRECT QR (ONLY ON MASTER)
-  if (payload.qrPayload) {
-    lines.push({ text: 'Scan for Sales Order / Tracking', align: 'center' });
-    lines.push({ text: payload.qrPayload, type: 'qr', align: 'center' });
+  // 7. FOOTER
+  lines.push({ text: '' });
+  lines.push({ text: 'SLIP NO.', align: 'center', bold: true });
+  lines.push({ text: dispatchSeq, size: 'double-width', align: 'center', bold: true });
+  lines.push({ text: '' });
+
+  // 8. DUPLICATE COPY FOOTER
+  if (isDuplicate) {
+    lines.push({ text: 'THIS IS A DUPLICATE COPY OF', align: 'center' });
+    lines.push({ text: `SLIP NO. ${dispatchSeq}`, align: 'center', bold: true });
     lines.push({ text: '' });
   }
-
-  lines.push({ text: `-- End of Master Slip : ${dispatchSeq} --`, align: 'center', bold: true });
-
-  return lines;
-}
-
-/**
- * Generates the "Virtual Slip" for a Zone Slip.
- */
-export function generateZoneSlip(zone: string, items: PrintItem[], payload: PrintPayload): StyledLine[] {
-  const lines: StyledLine[] = [];
-  const width = 46;
-  const dateStr = new Date(payload.createdAt).toLocaleString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-  });
-
-  const dispatchSeq = payload.dispatchSlipNumber?.split('-').pop() || '000';
-  const ITEM_INDENT = '    ';
-
-  lines.push({ text: `ZONE SLIP: ${zone.toUpperCase()}`, size: 'double-width', bold: true, align: 'center' });
-  lines.push({ text: `REF: ${payload.dispatchSlipNumber || payload.id}`, align: 'center', bold: true });
-  lines.push({ text: '='.repeat(width) });
-
-  lines.push({ text: `DATE : ${dateStr}` });
-  lines.push({ text: `WH   : ${payload.warehouseName}` });
-  lines.push({ text: `CUST : ${payload.customerName.toUpperCase()}` });
-  lines.push({ text: '-'.repeat(width) });
-
-  // Zone slip: NO SKU column, just ITEM and QTY
-  const COL_INDEX = 4;
-  const COL_QTY = 12;
-  const COL_NAME = width - COL_INDEX - COL_QTY - 1;
-
-  lines.push({ text: '#   ITEM'.padEnd(COL_INDEX + COL_NAME) + ' '.repeat(1) + 'QTY/UOM'.padStart(COL_QTY), bold: true });
-  lines.push({ text: '-'.repeat(width) });
-
-  items.forEach((item, idx) => {
-    const indexStr = `${idx + 1}`.padEnd(COL_INDEX);
-    const qtyStr = `${item.qty} ${item.unit}`.padStart(COL_QTY);
-    
-    const nameLines = wrapText(item.name, COL_NAME);
-
-    nameLines.forEach((nameLine, lineIdx) => {
-      if (lineIdx === 0) {
-        lines.push({ text: `${indexStr}${nameLine.padEnd(COL_NAME)} ${qtyStr}`, bold: true });
-      } else {
-        lines.push({ text: `${ITEM_INDENT}${nameLine}`, bold: true });
-      }
-    });
-  });
-
-  lines.push({ text: '' }); // Spacing before footer
-  lines.push({ text: '-'.repeat(width) });
-  lines.push({ text: `-- End of Zone Slip : ${dispatchSeq} --`, align: 'center', bold: true });
 
   return lines;
 }
 
 /**
  * High-level renderer for Kamna Traders dispatch slips.
- * Converts a PrintPayload into a single ESC/POS command stream using the shared formatters.
+ * Converts a PrintPayload into a single ESC/POS command stream.
  */
 export function renderDispatchSlips(payload: PrintPayload): Uint8Array {
   const renderer = new EscPosRenderer();
@@ -256,17 +222,9 @@ export function renderDispatchSlips(payload: PrintPayload): Uint8Array {
     });
   };
 
-  // 1. Master Slip
-  renderVirtualSlip(generateMasterSlip(payload));
+  // 1. MASTER DISPATCH SLIP
+  renderVirtualSlip(generateDispatchSlip(payload, false));
   renderer.cut();
-
-  // 2. Zone Slips
-  if (payload.printZonalSlips !== false) {
-    Object.entries(payload.zoneGroups).forEach(([zone, items]) => {
-      renderVirtualSlip(generateZoneSlip(zone, items, payload));
-      renderer.cut();
-    });
-  }
 
   return renderer.build();
 }

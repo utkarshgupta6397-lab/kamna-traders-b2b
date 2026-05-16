@@ -24,11 +24,7 @@ export default function ThermalSlip({ lines }: Props) {
       <div className="flex flex-col">
         {lines.map((line, idx) => {
           if (line.type === 'qr') {
-            return (
-              <div key={idx} className="flex justify-center my-4">
-                <QRCodeSVG value={line.text} size={128} level="L" />
-              </div>
-            );
+            return null;
           }
 
           const alignmentClass = 
@@ -38,24 +34,23 @@ export default function ThermalSlip({ lines }: Props) {
           const sizeClass = 
             line.size === 'double-width' ? 'text-lg tracking-tight scale-x-125 origin-center' :
             line.size === 'quad' ? 'text-2xl font-black' : 'text-[12px]';
+          
+          const isZoneHeader = line.text?.trim().startsWith('---- zone:');
 
           return (
             <div 
               key={idx} 
-              className={`${alignmentClass} ${sizeClass} ${line.bold ? 'font-bold' : 'font-medium'} whitespace-pre min-h-[1.15em] overflow-hidden`}
+              className={`${alignmentClass} ${isZoneHeader ? 'text-[10px] text-gray-400 font-light' : `${sizeClass} ${line.bold ? 'font-bold' : 'font-medium'}`} whitespace-pre min-h-[1.15em] overflow-hidden`}
             >
               {line.text || '\u00A0'}
             </div>
           );
+
         })}
       </div>
       
-      {/* Visual indicator of a cut */}
-      <div className="mt-8 border-t-2 border-dashed border-gray-200 relative">
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white px-2 text-[10px] text-gray-300 uppercase tracking-widest">
-          Hardware Cut
-        </div>
-      </div>
+      {/* End of slip */}
+
     </div>
   );
 }

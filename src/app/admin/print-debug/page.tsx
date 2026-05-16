@@ -5,7 +5,7 @@ import * as qz from 'qz-tray';
 import { qzManager } from '@/lib/print/qz-tray';
 import { getQZConfig, clearQZConfig } from '@/lib/print/qz-storage';
 import { EscPosRenderer } from '@/lib/print/esc-pos-renderer';
-import { generateMasterSlip, generateZoneSlip } from '@/lib/print/slip-renderer';
+import { generateDispatchSlip } from '@/lib/print/slip-renderer';
 import { Printer, Wifi, WifiOff, Terminal, Play, Scissors, QrCode, Trash2, CheckCircle2, AlertCircle, Loader2, Search, Activity, ChevronRight } from 'lucide-react';
 
 export default function PrintDebugPage() {
@@ -146,15 +146,13 @@ export default function PrintDebugPage() {
 
       // Master
       addLog('Rendering Master Slip...');
-      renderVirtualSlip(generateMasterSlip(testPayload));
+      renderVirtualSlip(generateDispatchSlip(testPayload, false));
       renderer.cut();
 
-      // Zones
-      addLog('Rendering Zone Slips...');
-      Object.entries(testPayload.zoneGroups).forEach(([zone, items]: [any, any]) => {
-        renderVirtualSlip(generateZoneSlip(zone, items, testPayload));
-        renderer.cut();
-      });
+      // Duplicate
+      addLog('Rendering Duplicate Slip...');
+      renderVirtualSlip(generateDispatchSlip(testPayload, true));
+      renderer.cut();
 
       addLog('Sending New Flow job to printer...');
       await qzManager.printRaw(renderer.build());

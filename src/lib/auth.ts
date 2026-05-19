@@ -79,6 +79,8 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.canRunSkuSync = true;
       merged.canManageZoneMappings = true;
       merged.canManageUnlimitedSkus = true;
+      merged.canManageTransfers = true;
+      merged.canDeleteTransfers = true;
     }
 
 

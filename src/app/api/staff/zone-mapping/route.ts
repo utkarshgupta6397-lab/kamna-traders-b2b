@@ -20,6 +20,10 @@ export async function GET(request: Request) {
   }
 
   try {
+    const warehouse = await prisma.warehouse.findUnique({ where: { id: warehouseId } });
+    if (warehouse?.isSystemWarehouse) {
+      return NextResponse.json({ error: 'System warehouses are protected.' }, { status: 403 });
+    }
     // Fetch all active SKUs and their inventory record for the selected warehouse
     const skus = await prisma.sku.findMany({
       where: { isActive: true },
@@ -73,6 +77,11 @@ export async function POST(request: Request) {
 
     if (!warehouseId || !skuId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    const warehouse = await prisma.warehouse.findUnique({ where: { id: warehouseId } });
+    if (warehouse?.isSystemWarehouse) {
+      return NextResponse.json({ error: 'System warehouses are protected.' }, { status: 403 });
     }
 
     // Upsert the zone in WarehouseInventory

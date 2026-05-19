@@ -12,17 +12,32 @@ export async function GET(req: NextRequest) {
   const warehouseId = searchParams.get('warehouseId');
   const skuId = searchParams.get('skuId');
 
-  if (!warehouseId || !skuId) {
-    return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
+  if (!warehouseId) {
+    return NextResponse.json({ error: 'Missing warehouseId parameter' }, { status: 400 });
   }
 
   try {
-    const inventory = await prisma.warehouseInventory.findUnique({
-      where: { warehouseId_skuId: { warehouseId, skuId } },
-      select: { qty: true }
+    if (skuId) {
+      const inventory = await prisma.warehouseInventory.findUnique({
+        where: { warehouseId_skuId: { warehouseId, skuId } },
+        select: { qty: true }
+      });
+
+      return NextResponse.json({ qty: inventory?.qty ?? 0 });
+    }
+
+    // Fetch all stock mappings for the warehouse
+    const inventoryList = await prisma.warehouseInventory.findMany({
+      where: { warehouseId },
+      select: { skuId: true, qty: true }
     });
 
-    return NextResponse.json({ qty: inventory?.qty ?? 0 });
+    const stockMap: Record<string, number> = {};
+    for (const inv of inventoryList) {
+      stockMap[inv.skuId] = inv.qty;
+    }
+
+    return NextResponse.json(stockMap);
   } catch (error) {
     console.error('Stock fetch error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

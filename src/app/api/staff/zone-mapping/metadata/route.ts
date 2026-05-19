@@ -10,7 +10,7 @@ export async function GET() {
 
   try {
     const warehouses = await prisma.warehouse.findMany({
-      where: { active: true },
+      where: { active: true, isSystemWarehouse: false },
       select: { id: true, name: true },
       orderBy: { name: 'asc' }
     });

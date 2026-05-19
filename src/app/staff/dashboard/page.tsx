@@ -8,7 +8,7 @@ export default async function StaffDashboardPage() {
   const staffId = session?.userId as string;
 
   const [warehouses, categories] = await Promise.all([
-    prisma.warehouse.findMany({ where: { active: true } }),
+    prisma.warehouse.findMany({ where: { active: true, isSystemWarehouse: false } }),
     prisma.category.findMany({
       orderBy: { name: 'asc' },
       include: { _count: { select: { skus: { where: { isActive: true } } } } },

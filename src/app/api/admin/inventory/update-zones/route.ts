@@ -17,10 +17,11 @@ export async function POST(req: Request) {
 
     const trimmedZone = zone?.trim().toUpperCase() || null;
 
-    // Bulk update zones
+    // Bulk update zones (excluding system warehouses)
     await prisma.warehouseInventory.updateMany({
       where: {
-        id: { in: inventoryIds }
+        id: { in: inventoryIds },
+        warehouse: { isSystemWarehouse: false }
       },
       data: {
         zone: trimmedZone

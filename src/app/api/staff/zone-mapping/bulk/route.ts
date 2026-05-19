@@ -16,6 +16,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    const warehouse = await prisma.warehouse.findUnique({ where: { id: warehouseId } });
+    if (warehouse?.isSystemWarehouse) {
+      return NextResponse.json({ error: 'System warehouses are protected.' }, { status: 403 });
+    }
+
     let updated = 0;
     let created = 0;
     let removed = 0;

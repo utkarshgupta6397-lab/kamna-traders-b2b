@@ -228,3 +228,105 @@ export function renderDispatchSlips(payload: PrintPayload): Uint8Array {
 
   return renderer.build();
 }
+
+export type TransferPrintPayload = {
+  transferNumber: string;
+  sourceWarehouseName: string;
+  destinationWarehouseName: string;
+  responsiblePerson: string;
+  remarks: string | null;
+  createdAt: string;
+  dispatchedAt: string | null;
+  staffName: string;
+  dispatchedByName?: string | null;
+  items: {
+    skuId: string;
+    name: string;
+    requestedQty: number;
+    dispatchedQty: number;
+    unit: string;
+  }[];
+};
+
+export function generateTransferSlip(payload: TransferPrintPayload): StyledLine[] {
+  const lines: StyledLine[] = [];
+  const width = 46;
+
+  const dateStr = new Date(payload.dispatchedAt || payload.createdAt).toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata'
+  });
+
+  // 1. TOP TITLE
+  lines.push({ text: 'KAMNA TRADERS', size: 'double-width', bold: true, align: 'center' });
+  lines.push({ text: 'STOCK TRANSFER', bold: true, align: 'center' });
+  lines.push({ text: '' });
+
+  // 2. DETAILS
+  lines.push({ text: `TR NO     : ${payload.transferNumber}`, bold: true });
+  lines.push({ text: `FROM      : ${payload.sourceWarehouseName}` });
+  lines.push({ text: `TO        : ${payload.destinationWarehouseName}` });
+  lines.push({ text: `RESP      : ${payload.responsiblePerson.toUpperCase()}` });
+  lines.push({ text: `DATE      : ${dateStr}` });
+  lines.push({ text: `BY        : ${payload.dispatchedByName || payload.staffName}` });
+  if (payload.remarks) {
+    lines.push({ text: `REMARKS   : ${payload.remarks}` });
+  }
+  lines.push({ text: '' });
+
+  // 3. PRODUCT TABLE
+  const colIndexSku = `#  SKU_ID`;
+  const colDispReq = `DISP / REQ`;
+  const headerText = colIndexSku.padEnd(width - colDispReq.length) + colDispReq;
+  
+  lines.push({ text: headerText, bold: true });
+  lines.push({ text: '.'.repeat(width) });
+
+  payload.items.forEach((item, index) => {
+    if (index > 0) {
+      lines.push({ text: '.'.repeat(width) });
+    }
+
+    const indexStr = `${index + 1}`.padEnd(3); // e.g. "1  "
+    const skuStr = `[${item.skuId}]`;
+    const prefixStr = `${indexStr}${skuStr}`;
+
+    const unitLower = item.unit.toLowerCase();
+    const showUnit = !(unitLower === 'pcs' || unitLower === 'nos' || unitLower === 'unit');
+    const formattedQty = showUnit 
+      ? `${item.dispatchedQty} / ${item.requestedQty} ${unitLower}` 
+      : `${item.dispatchedQty} / ${item.requestedQty}`;
+
+    const itemRow = prefixStr.padEnd(width - formattedQty.length) + formattedQty;
+    lines.push({ text: itemRow, bold: true });
+
+    // Truncate name to 43 characters and indent by 3 spaces
+    const cleanName = item.name.toUpperCase().substring(0, 43);
+    lines.push({ text: `   ${cleanName}` });
+  });
+
+  // 4. FOOTER STATS
+  const pendingCount = payload.items.filter(item => item.requestedQty - item.dispatchedQty > 0).length;
+  const totalDispQty = payload.items.reduce((sum, item) => sum + item.dispatchedQty, 0);
+
+  lines.push({ text: '' });
+  lines.push({ text: '.'.repeat(width) });
+  lines.push({ text: `PENDING ITEMS     : ${pendingCount}`, bold: true });
+  lines.push({ text: `TOTAL DISP QTY    : ${totalDispQty}`, bold: true });
+
+  return lines;
+}
+
+export function renderTransferSlips(payload: TransferPrintPayload): Uint8Array {
+  const renderer = new EscPosRenderer();
+
+  const lines = generateTransferSlip(payload);
+  lines.forEach(line => {
+    renderer.align(line.align || 'left');
+    renderer.bold(!!line.bold);
+    renderer.size(line.size || 'normal');
+    renderer.line(line.text);
+  });
+  renderer.cut();
+
+  return renderer.build();
+}

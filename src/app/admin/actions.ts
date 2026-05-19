@@ -50,13 +50,17 @@ export async function createWarehouse(data: FormData) {
   const name = data.get('name') as string;
   const address = data.get('address') as string;
   const printZonalSlips = data.get('printZonalSlips') === 'true';
-  await prisma.warehouse.create({ data: { name, address, printZonalSlips } });
+  await prisma.warehouse.create({ data: { name, address, printZonalSlips, isSystemWarehouse: false } });
   revalidatePath('/admin/warehouses');
 }
 
 export async function updateWarehouse(data: FormData) {
   await requireAdmin();
   const id = data.get('id') as string;
+  const warehouse = await prisma.warehouse.findUnique({ where: { id } });
+  if (warehouse?.isSystemWarehouse) {
+    throw new Error('System warehouses are protected and cannot be edited.');
+  }
   const name = data.get('name') as string;
   const address = data.get('address') as string;
   const active = data.get('active') === 'true';
@@ -67,6 +71,10 @@ export async function updateWarehouse(data: FormData) {
 
 export async function deleteWarehouse(id: string) {
   await requireAdmin();
+  const warehouse = await prisma.warehouse.findUnique({ where: { id } });
+  if (warehouse?.isSystemWarehouse) {
+    throw new Error('System warehouses are protected and cannot be deleted.');
+  }
   const invCount = await prisma.warehouseInventory.count({ where: { warehouseId: id } });
   const cartCount = await prisma.cart.count({ where: { warehouseId: id } });
   if (invCount > 0 || cartCount > 0) throw new Error('Cannot delete warehouse with mapped inventory or carts');
@@ -196,6 +204,10 @@ export async function updateInventory(data: FormData) {
   }
   
   const warehouseId = data.get('warehouseId') as string;
+  const warehouse = await prisma.warehouse.findUnique({ where: { id: warehouseId } });
+  if (warehouse?.isSystemWarehouse) {
+    throw new Error('System warehouses are protected and inventory adjustments are not allowed.');
+  }
   const skuId = data.get('skuId') as string;
   const qty = parseInt(data.get('qty') as string, 10);
   const zone = data.get('zone') as string;
@@ -250,6 +262,10 @@ export async function adjustInventory(data: FormData) {
   }
   
   const warehouseId = data.get('warehouseId') as string;
+  const warehouse = await prisma.warehouse.findUnique({ where: { id: warehouseId } });
+  if (warehouse?.isSystemWarehouse) {
+    throw new Error('System warehouses are protected and inventory adjustments are not allowed.');
+  }
   const skuId = data.get('skuId') as string;
   const delta = parseInt(data.get('delta') as string, 10);
   const remarks = data.get('remarks') as string;

@@ -2,8 +2,9 @@ import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { LogOut, Home, ClipboardList, History, Box, Settings, MapPin } from 'lucide-react';
+import { LogOut, Home, ClipboardList, History, Box, Settings, MapPin, Truck } from 'lucide-react';
 import DashboardSearchInput from '@/components/DashboardSearchInput';
+import { Toaster } from 'react-hot-toast';
 
 export default async function StaffDashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -17,6 +18,7 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
 
   return (
     <div className="min-h-screen bg-[#f8f9fb] print:bg-white flex flex-col">
+      <Toaster position="top-right" />
       <header className="print:hidden sticky top-0 z-50 bg-gradient-to-r from-[#1A2766] via-[#1f3180] to-[#AE1B1E] shadow-lg">
         <div className="max-w-screen-2xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
           {/* Logo */}
@@ -44,6 +46,11 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
             <Link href="/staff/dashboard/current-stock" className="flex items-center gap-1.5 hover:text-white transition-colors">
               <Box size={16} /><span className="hidden md:inline text-xs">Current Stock</span>
             </Link>
+            {(session.canManageTransfers || session.role === 'ADMIN') && (
+              <Link href="/staff/dashboard/transfers" className="flex items-center gap-1.5 hover:text-white transition-colors">
+                <Truck size={16} /><span className="hidden md:inline text-xs">Transfers</span>
+              </Link>
+            )}
 
             <Link href="/staff/settings" className="flex items-center gap-1.5 hover:text-white transition-colors">
               <Settings size={16} /><span className="hidden md:inline text-xs">Settings</span>

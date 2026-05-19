@@ -41,6 +41,25 @@ const ZONES = ['A1','A2','B1','B2','C1','C2','D1']
 async function main() {
   console.log('🌱 Seeding Kamna Traders (Solar Edition)...')
 
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('🧹 Purging local database tables...')
+    await prisma.transferItem.deleteMany({}).catch(() => {})
+    await prisma.transfer.deleteMany({}).catch(() => {})
+    await prisma.warehouseInventory.deleteMany({}).catch(() => {})
+    await prisma.cartItem.deleteMany({}).catch(() => {})
+    await prisma.cartHistory.deleteMany({}).catch(() => {})
+    await prisma.cart.deleteMany({}).catch(() => {})
+    await prisma.skuIdentityRegistry.deleteMany({}).catch(() => {})
+    await prisma.skuSyncLog.deleteMany({}).catch(() => {})
+    await prisma.syncLock.deleteMany({}).catch(() => {})
+    await prisma.inventoryHistory.deleteMany({}).catch(() => {})
+    await prisma.sku.deleteMany({}).catch(() => {})
+    await prisma.category.deleteMany({}).catch(() => {})
+    await prisma.brand.deleteMany({}).catch(() => {})
+    await prisma.warehouse.deleteMany({}).catch(() => {})
+    await prisma.activeSession.deleteMany({}).catch(() => {})
+  }
+
   // ── Users ──────────────────────────────────────────────────────────────────
   const isProd = process.env.NODE_ENV === 'production'
   
@@ -49,12 +68,16 @@ async function main() {
     where: { mobile: '8744832318' },
     update: { 
       role: 'ADMIN',
+      canManageTransfers: true,
+      canDeleteTransfers: true,
       ...(isProd ? {} : { pin: '000000' })
     }, // Ensure role is ADMIN and PIN is reset in local
     create: { 
       name: 'Master Admin', 
       mobile: '8744832318', 
       role: 'ADMIN', 
+      canManageTransfers: true,
+      canDeleteTransfers: true,
       pin: isProd ? (process.env.ADMIN_PIN || null) : '000000' 
     },
   })
@@ -65,9 +88,18 @@ async function main() {
       where: { mobile: '1234567890' },
       update: { 
         role: 'STAFF',
+        canManageTransfers: true,
+        canDeleteTransfers: true,
         pin: '000000'
       },
-      create: { name: 'Dummy Staff', mobile: '1234567890', role: 'STAFF', pin: '000000' },
+      create: { 
+        name: 'Dummy Staff', 
+        mobile: '1234567890', 
+        role: 'STAFF', 
+        canManageTransfers: true, 
+        canDeleteTransfers: true, 
+        pin: '000000' 
+      },
     })
   }
   console.log('✅ Users setup complete')
@@ -79,6 +111,13 @@ async function main() {
     create: { id: 'WH001', name: 'Main Solar Warehouse', address: 'Sector 62, Noida' },
   })
   console.log('✅ Warehouse seeded')
+
+  const transitWarehouse = await prisma.warehouse.upsert({
+    where: { id: 'IN_TRANSIT' },
+    update: { isSystemWarehouse: true },
+    create: { id: 'IN_TRANSIT', name: 'In Transit', address: 'System Transit Warehouse', printZonalSlips: false, isSystemWarehouse: true },
+  })
+  console.log('✅ System Transit Warehouse seeded')
 
   const brand = await prisma.brand.upsert({
     where: { id: 'BR_GENERIC' },

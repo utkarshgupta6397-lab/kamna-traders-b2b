@@ -11,10 +11,11 @@ export default async function WarehousesPage({ searchParams }: { searchParams: P
   const perPage = 20;
   const [warehouses, total] = await Promise.all([
     prisma.warehouse.findMany({
+      where: { isSystemWarehouse: false },
       orderBy: { createdAt: 'desc' }, skip: (page - 1) * perPage, take: perPage,
       include: { _count: { select: { inventory: true, carts: true } } },
     }),
-    prisma.warehouse.count(),
+    prisma.warehouse.count({ where: { isSystemWarehouse: false } }),
   ]);
   const totalPages = Math.ceil(total / perPage);
 

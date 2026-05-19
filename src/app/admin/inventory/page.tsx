@@ -10,7 +10,9 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   const whFilter = sp.wh ?? '';
   const perPage = 30;
 
-  const whereClause: Record<string, unknown> = {};
+  const whereClause: Record<string, any> = {
+    warehouse: { isSystemWarehouse: false }
+  };
   if (whFilter) whereClause.warehouseId = whFilter;
   if (q) {
     whereClause.OR = [
@@ -28,7 +30,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
       take: perPage,
     }),
     prisma.warehouseInventory.count({ where: whereClause }),
-    prisma.warehouse.findMany({ where: { active: true } }),
+    prisma.warehouse.findMany({ where: { active: true, isSystemWarehouse: false } }),
     prisma.sku.findMany({ where: { isActive: true }, orderBy: { id: 'asc' } }),
   ]);
   const totalPages = Math.ceil(total / perPage);

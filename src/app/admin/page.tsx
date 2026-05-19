@@ -5,7 +5,7 @@ import { Package, Users, Warehouse, Database } from 'lucide-react';
 export default async function AdminDashboard() {
   const [userCount, warehouseCount, skuCount, oosCount] = await Promise.all([
     prisma.user.count(),
-    prisma.warehouse.count(),
+    prisma.warehouse.count({ where: { isSystemWarehouse: false } }),
     prisma.sku.count(),
     prisma.warehouseInventory.count({ where: { isOos: true } }),
   ]);

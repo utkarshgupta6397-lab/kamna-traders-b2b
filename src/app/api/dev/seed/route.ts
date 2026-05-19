@@ -26,6 +26,19 @@ export async function GET() {
 
   try {
     console.log("HARD RESET: Purging all data...");
+
+    // Make sure WH001 and IN_TRANSIT warehouses exist
+    await prisma.warehouse.upsert({
+      where: { id: 'WH001' },
+      update: {},
+      create: { id: 'WH001', name: 'Main Solar Warehouse', address: 'Sector 62, Noida' },
+    });
+
+    await prisma.warehouse.upsert({
+      where: { id: 'IN_TRANSIT' },
+      update: { isSystemWarehouse: true },
+      create: { id: 'IN_TRANSIT', name: 'In Transit', address: 'System Transit Warehouse', printZonalSlips: false, isSystemWarehouse: true },
+    });
     
     // 1. Purge Existing Data (Foreign Key safe order)
     await prisma.warehouseInventory.deleteMany({});

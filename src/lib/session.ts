@@ -102,6 +102,8 @@ export async function validateSession(sessionToken: string): Promise<{
           canRunSkuSync: true,
           canManageZoneMappings: true,
           canManageUnlimitedSkus: true,
+          canManageTransfers: true,
+          canDeleteTransfers: true,
         }
       }
     }
@@ -113,6 +115,8 @@ export async function validateSession(sessionToken: string): Promise<{
     session.user.canRunSkuSync = true;
     session.user.canManageZoneMappings = true;
     session.user.canManageUnlimitedSkus = true;
+    session.user.canManageTransfers = true;
+    session.user.canDeleteTransfers = true;
   }
 
 

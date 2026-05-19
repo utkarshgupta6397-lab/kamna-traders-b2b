@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -36,7 +36,25 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'canManageUnlimitedSkus',
     label: 'Unlimited SKUs',
     description: 'Ability to toggle unlimited stock status on SKUs'
+  },
+  {
+    key: 'canManageTransfers',
+    label: 'Stock Transfers',
+    description: 'Ability to create, edit, and merge stock transfers',
+  },
+  {
+    key: 'canDeleteTransfers',
+    label: 'Delete Transfers',
+    description: 'Ability to delete stock transfers'
   }
 ];
 
-export const ALL_PERMISSION_KEYS: PermissionKey[] = ['canManageCarts', 'canAdjustInventory', 'canRunSkuSync', 'canManageZoneMappings', 'canManageUnlimitedSkus'];
+export const ALL_PERMISSION_KEYS: PermissionKey[] = [
+  'canManageCarts',
+  'canAdjustInventory',
+  'canRunSkuSync',
+  'canManageZoneMappings',
+  'canManageUnlimitedSkus',
+  'canManageTransfers',
+  'canDeleteTransfers'
+];

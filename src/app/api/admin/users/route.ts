@@ -21,6 +21,8 @@ export async function GET() {
         canRunSkuSync: true,
         canManageZoneMappings: true,
         canManageUnlimitedSkus: true,
+        canManageTransfers: true,
+        canDeleteTransfers: true,
       },
       orderBy: { name: 'asc' },
     });

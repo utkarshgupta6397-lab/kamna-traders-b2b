@@ -12,7 +12,8 @@ interface User {
   role: string;
   canManageCarts: boolean;
   canAdjustInventory: boolean;
-  canRunSkuSync: boolean;
+  canManageTransfers: boolean;
+  canDeleteTransfers: boolean;
   [key: string]: any;
 }
 
@@ -163,90 +164,92 @@ export default function UserPermissionsPage() {
 
       {/* Simplified List Table */}
       <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden">
-        <table className="w-full border-collapse">
-          <thead className="bg-[#F8FAFC]">
-            <tr>
-              <th className="p-4 text-left border-b border-gray-200 min-w-[240px]">
-                <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest">User Details</span>
-              </th>
-              {PERMISSIONS.map(p => (
-                <th key={p.key} className="p-4 text-center border-b border-gray-200 min-w-[160px]">
-                  <div className="flex flex-col items-center gap-1 group cursor-help">
-                    <span className="text-[11px] font-black text-gray-500 uppercase tracking-widest">{p.label}</span>
-                    {p.description && (
-                      <div className="relative">
-                        <Info size={12} className="text-gray-300 group-hover:text-blue-500 transition-colors" />
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-gray-900 text-white text-[10px] rounded shadow-xl z-50 pointer-events-none normal-case font-medium">
-                          {p.description}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead className="bg-[#F8FAFC]">
+              <tr>
+                <th className="p-4 text-left border-b border-gray-200 min-w-[240px]">
+                  <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest">User Details</span>
                 </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredUsers.map((user) => {
-              const isAdmin = user.role === 'ADMIN';
-              
-              return (
-                <tr key={user.id} className="hover:bg-blue-50/30 transition-colors group">
-                  <td className="p-4 border-b border-gray-100">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-[#1A2766] text-white flex items-center justify-center font-bold text-sm shadow-sm">
-                        {user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-gray-900">{user.name}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-xs font-mono text-gray-500">{formatPhone(user.mobile)}</span>
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter ${
-                            isAdmin ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
-                          }`}>
-                            {user.role}
-                          </span>
+                {PERMISSIONS.map(p => (
+                  <th key={p.key} className="p-4 text-center border-b border-gray-200 min-w-[160px]">
+                    <div className="flex flex-col items-center gap-1 group cursor-help">
+                      <span className="text-[11px] font-black text-gray-500 uppercase tracking-widest">{p.label}</span>
+                      {p.description && (
+                        <div className="relative">
+                          <Info size={12} className="text-gray-300 group-hover:text-blue-500 transition-colors" />
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-gray-900 text-white text-[10px] rounded shadow-xl z-50 pointer-events-none normal-case font-medium">
+                            {p.description}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredUsers.map((user) => {
+                const isAdmin = user.role === 'ADMIN';
+                
+                return (
+                  <tr key={user.id} className="hover:bg-blue-50/30 transition-colors group">
+                    <td className="p-4 border-b border-gray-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-[#1A2766] text-white flex items-center justify-center font-bold text-sm shadow-sm">
+                          {user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-gray-900">{user.name}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-xs font-mono text-gray-500">{formatPhone(user.mobile)}</span>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter ${
+                              isAdmin ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
+                            }`}>
+                              {user.role}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </td>
+                    </td>
 
-                  {PERMISSIONS.map(p => {
-                    const isUpdating = updatingId === `${user.id}-${p.key}`;
-                    const hasPermission = !!user[p.key];
+                    {PERMISSIONS.map(p => {
+                      const isUpdating = updatingId === `${user.id}-${p.key}`;
+                      const hasPermission = !!user[p.key];
 
-                    return (
-                      <td key={p.key} className="p-4 border-b border-gray-100 text-center">
-                        {isAdmin ? (
-                          <div className="flex items-center justify-center gap-2 text-amber-600 bg-amber-50 py-1.5 px-3 rounded-full mx-auto w-fit">
-                            <Check size={14} strokeWidth={3} />
-                            <span className="text-[10px] font-black uppercase tracking-wider">Full Access</span>
-                          </div>
-                        ) : (
-                          <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                              type="checkbox"
-                              className="sr-only peer"
-                              checked={hasPermission}
-                              onChange={() => handleToggle(user.id, p.key, hasPermission)}
-                              disabled={isUpdating}
-                            />
-                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#1A2766]/10 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                            {isUpdating && (
-                              <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded-full">
-                                <Loader2 size={12} className="animate-spin text-[#1A2766]" />
-                              </div>
-                            )}
-                          </label>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                      return (
+                        <td key={p.key} className="p-4 border-b border-gray-100 text-center">
+                          {isAdmin ? (
+                            <div className="flex items-center justify-center gap-2 text-amber-600 bg-amber-50 py-1.5 px-3 rounded-full mx-auto w-fit">
+                              <Check size={14} strokeWidth={3} />
+                              <span className="text-[10px] font-black uppercase tracking-wider">Full Access</span>
+                            </div>
+                          ) : (
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="sr-only peer"
+                                checked={hasPermission}
+                                onChange={() => handleToggle(user.id, p.key, hasPermission)}
+                                disabled={isUpdating}
+                              />
+                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#1A2766]/10 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                              {isUpdating && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded-full">
+                                  <Loader2 size={12} className="animate-spin text-[#1A2766]" />
+                                </div>
+                              )}
+                            </label>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
         
         {filteredUsers.length === 0 && (
           <div className="p-20 text-center flex flex-col items-center gap-4">

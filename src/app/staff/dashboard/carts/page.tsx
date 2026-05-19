@@ -23,11 +23,7 @@ export default async function CartsPage({ searchParams }: { searchParams: Promis
   const canManageCarts = session.canManageCarts || session.role === 'ADMIN';
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-black text-[#1A2766] uppercase tracking-tight">Carts</h1>
-      </div>
-
+    <div className="max-w-[96vw] mx-auto w-full px-1 py-1">
       <CartRegistryClient 
         warehouses={warehouses}
         staff={staff}

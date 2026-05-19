@@ -70,7 +70,7 @@ export async function POST(request: Request) {
       if (!existing) {
         return NextResponse.json({ error: 'Cart not found' }, { status: 404 });
       }
-      if (existing.status === 'COMPLETED') {
+      if (existing.status === 'COMPLETED' || existing.status === 'COMPLETED_FINAL') {
         return NextResponse.json({ error: 'Finalized dispatches cannot be resumed' }, { status: 400 });
       }
       cartId = providedCartId!;
@@ -198,6 +198,30 @@ export async function POST(request: Request) {
             notes: safeNotes, staffId,
             dispatchSlipNumber: generatedSlipNumber,
           },
+        })
+      );
+    }
+
+    if (!isUpdate) {
+      batchOps.push(
+        prisma.cartHistory.create({
+          data: {
+            cartId,
+            userId: staffId,
+            action: 'CREATED'
+          }
+        })
+      );
+    }
+
+    if (!isHold) {
+      batchOps.push(
+        prisma.cartHistory.create({
+          data: {
+            cartId,
+            userId: staffId,
+            action: 'COMPLETED'
+          }
         })
       );
     }
@@ -376,6 +400,7 @@ export async function POST(request: Request) {
     });
 
   } catch (error: any) {
+    console.error('[CART_POST_ERROR]', error);
     const message = error instanceof Error ? error.message : 'Internal Server Error';
     return NextResponse.json({ error: message }, { status: 500 });
   }

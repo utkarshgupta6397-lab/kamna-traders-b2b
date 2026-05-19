@@ -33,6 +33,7 @@ model User {
   updatedSkus      Sku[]              @relation("SkuUnlimitedUpdatedBy")
   cartsHeld        Cart[]             @relation("CartHeldBy")
   cartsResumed     Cart[]             @relation("CartResumedBy")
+  cartHistory      CartHistory[]      @relation("CartHistoryByUser")
 }
 
 
@@ -152,6 +153,7 @@ model Cart {
   items                CartItem[]
   heldBy               User?      @relation("CartHeldBy", fields: [heldById], references: [id])
   resumedBy            User?      @relation("CartResumedBy", fields: [resumedById], references: [id])
+  history              CartHistory[] @relation("CartHistoryByCart")
 }
 
 model CartItem {
@@ -242,8 +244,24 @@ model InventoryHistory {
 
   @@index([warehouseId])
   @@index([skuId])
+}
+
+model CartHistory {
+  id        String   @id @default(cuid())
+  cartId    String
+  userId    String
+  action    String   // "CREATED" | "COMPLETED" | "HOLD" | "RESUME" | "PRINTED" | "DELETED" | "EDITED"
+  remarks   String?
+  metadata  Json?    // Structured change details for edits (added/removed/updated items)
+  createdAt DateTime @default(now())
+  
+  cart      Cart     @relation("CartHistoryByCart", fields: [cartId], references: [id], onDelete: Cascade)
+  user      User     @relation("CartHistoryByUser", fields: [userId], references: [id])
+
+  @@index([cartId])
   @@index([createdAt])
 }
+
 
 model ZohoToken {
   id           String   @id @default("singleton")

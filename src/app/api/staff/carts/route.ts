@@ -21,6 +21,8 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
+    const status = searchParams.get('status') || '';
+
     const where: Prisma.CartWhereInput = {};
 
     // 1. Search
@@ -43,8 +45,29 @@ export async function GET(request: Request) {
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
 
-    // 4. Optimized Query
-    const [totalCount, carts] = await Promise.all([
+    // 4. Status Filter
+    if (status) {
+      if (status === 'COMPLETED') {
+        where.status = { in: ['COMPLETED', 'COMPLETED_FINAL'] };
+        where.deletedAt = null;
+      } else if (status === 'DISPATCH_HOLD') {
+        where.status = 'DISPATCH_HOLD';
+        where.deletedAt = null;
+      } else if (status === 'ON_HOLD') {
+        where.status = 'ON_HOLD';
+        where.deletedAt = null;
+      } else if (status === 'CANCELLED') {
+        where.deletedAt = { not: null };
+      }
+    }
+
+    // 5. Global counts matching other filters
+    const baseWhere = { ...where };
+    delete baseWhere.status;
+    delete baseWhere.deletedAt;
+
+    // 6. Optimized Query
+    const [totalCount, carts, countAll, countCompleted, countOnHold, countDraft, countCancelled] = await Promise.all([
       prisma.cart.count({ where }),
       prisma.cart.findMany({
         where,
@@ -71,6 +94,11 @@ export async function GET(request: Request) {
         skip,
         take: limit,
       }),
+      prisma.cart.count({ where: baseWhere }),
+      prisma.cart.count({ where: { ...baseWhere, status: { in: ['COMPLETED', 'COMPLETED_FINAL'] }, deletedAt: null } }),
+      prisma.cart.count({ where: { ...baseWhere, status: 'DISPATCH_HOLD', deletedAt: null } }),
+      prisma.cart.count({ where: { ...baseWhere, status: 'ON_HOLD', deletedAt: null } }),
+      prisma.cart.count({ where: { ...baseWhere, deletedAt: { not: null } } }),
     ]);
 
     // 5. Compute totals for the slice (Lightweight since items are selected minimally)
@@ -107,6 +135,13 @@ export async function GET(request: Request) {
         limit,
         pages: Math.ceil(totalCount / limit),
       },
+      counts: {
+        all: countAll,
+        completed: countCompleted,
+        onHold: countOnHold,
+        draft: countDraft,
+        cancelled: countCancelled
+      }
     });
   } catch (error: any) {
     console.error('[CARTS_API_ERROR]', {

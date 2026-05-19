@@ -38,10 +38,24 @@ export default function PrintButton({ payload }: { payload?: PrintPayload | null
         const buffer = renderDispatchSlips(payload);
         await qzManager.printRaw(buffer);
         toast.success('Print job sent successfully', { id: loadingToast });
+
+        fetch(`/api/staff/carts/${payload.id}/history`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'PRINTED' })
+        }).catch(err => console.error('Failed to log printed history:', err));
+
       } catch (err: any) {
         console.error('[PRINT_ERROR] Thermal failed, falling back', err);
         toast.error('Thermal printer failed. Using browser print.', { id: loadingToast });
         window.print();
+
+        fetch(`/api/staff/carts/${payload.id}/history`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'PRINTED' })
+        }).catch(err => console.error('Failed to log printed history:', err));
+
       } finally {
         setIsPrinting(false);
       }
@@ -50,6 +64,13 @@ export default function PrintButton({ payload }: { payload?: PrintPayload | null
 
     // B. Fallback to Browser Print
     window.print();
+    if (payload?.id) {
+      fetch(`/api/staff/carts/${payload.id}/history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'PRINTED' })
+      }).catch(err => console.error('Failed to log printed history:', err));
+    }
   };
 
   return (

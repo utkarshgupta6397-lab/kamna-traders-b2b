@@ -16,10 +16,13 @@ import {
   Eye,
   Edit2,
   Trash2,
-  Play
+  Play,
+  Pause,
+  Check
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import CartManagementModals from './CartManagementModals';
+import toast from 'react-hot-toast';
 
 
 interface CartData {
@@ -75,6 +78,10 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canMa
   // Modal state
   const [modalType, setModalType] = useState<'view' | 'edit' | 'delete' | null>(null);
   const [selectedCartId, setSelectedCartId] = useState<string | null>(null);
+
+  // Transition state
+  const [transitioningCartId, setTransitioningCartId] = useState<string | null>(null);
+  const [transitionAction, setTransitionAction] = useState<'hold' | 'resume' | null>(null);
 
 
   const updateUrl = useCallback((updates: Record<string, any>) => {
@@ -152,6 +159,42 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canMa
     fetchData();
   }, [fetchData]);
 
+  const handleHoldToggle = useCallback(async (cartId: string, action: 'hold' | 'resume') => {
+    if (transitioningCartId) return;
+
+    setTransitioningCartId(cartId);
+    setTransitionAction(action);
+
+    const loadingToast = toast.loading(
+      action === 'hold' ? 'Moving to hold & restoring inventory...' : 'Re-completing & deducting inventory...'
+    );
+
+    try {
+      const res = await fetch(`/api/staff/carts/${cartId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Operation failed');
+      }
+
+      toast.success(
+        action === 'hold' ? 'Cart moved to Dispatch Hold successfully' : 'Cart completed successfully',
+        { id: loadingToast }
+      );
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message || 'Operation failed', { id: loadingToast });
+    } finally {
+      setTransitioningCartId(null);
+      setTransitionAction(null);
+    }
+  }, [transitioningCartId, fetchData]);
+
   const cartRows = useMemo(() => {
     return carts.map((cart) => (
       <tr 
@@ -213,6 +256,11 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canMa
               <div className="w-1 h-1 rounded-full bg-amber-500" />
               On Hold
             </span>
+          ) : cart.status === 'DISPATCH_HOLD' ? (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-orange-50 border border-orange-200 text-orange-700 text-[9px] font-black uppercase tracking-wider">
+              <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+              DISPATCH HOLD
+            </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[9px] font-black uppercase tracking-wider">
               <div className="w-1 h-1 rounded-full bg-emerald-500" />
@@ -251,9 +299,39 @@ export default function CartRegistryClient({ warehouses, staff, zohoOrgId, canMa
             
             {!cart.deletedAt && (
               <>
+                {cart.status === 'COMPLETED' && (
+                  <button
+                    onClick={() => handleHoldToggle(cart.id, 'hold')}
+                    disabled={transitioningCartId !== null}
+                    className="p-1.5 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-600 hover:text-white transition-all shadow-sm disabled:opacity-50"
+                    title="Put On Hold"
+                  >
+                    {transitioningCartId === cart.id && transitionAction === 'hold' ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Pause size={13} />
+                    )}
+                  </button>
+                )}
+
+                {cart.status === 'DISPATCH_HOLD' && (
+                  <button
+                    onClick={() => handleHoldToggle(cart.id, 'resume')}
+                    disabled={transitioningCartId !== null}
+                    className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all shadow-sm disabled:opacity-50"
+                    title="Mark Completed"
+                  >
+                    {transitioningCartId === cart.id && transitionAction === 'resume' ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Check size={13} strokeWidth={3} />
+                    )}
+                  </button>
+                )}
+
                 {canManageCarts && (
                   <>
-                    {cart.status !== 'ON_HOLD' && (
+                    {cart.status !== 'ON_HOLD' && cart.status !== 'DISPATCH_HOLD' && (
                       <button
                         onClick={() => {
                           setSelectedCartId(cart.id);

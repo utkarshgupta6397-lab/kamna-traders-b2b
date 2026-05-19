@@ -31,6 +31,8 @@ model User {
   inventoryHistory InventoryHistory[]
   zoneMappingsUpdated WarehouseInventory[] @relation("ZoneMappingUpdatedBy")
   updatedSkus      Sku[]              @relation("SkuUnlimitedUpdatedBy")
+  cartsHeld        Cart[]             @relation("CartHeldBy")
+  cartsResumed     Cart[]             @relation("CartResumedBy")
 }
 
 
@@ -140,9 +142,16 @@ model Cart {
   zohoResponse         Json?
   zohoExecutionTrace   Json?
   deletedAt            DateTime?
+  heldAt               DateTime?
+  heldById             String?
+  resumedAt            DateTime?
+  resumedById          String?
+  holdReason           String?
   staff                User       @relation(fields: [staffId], references: [id])
   warehouse            Warehouse  @relation(fields: [warehouseId], references: [id])
   items                CartItem[]
+  heldBy               User?      @relation("CartHeldBy", fields: [heldById], references: [id])
+  resumedBy            User?      @relation("CartResumedBy", fields: [resumedById], references: [id])
 }
 
 model CartItem {

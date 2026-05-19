@@ -58,11 +58,182 @@ export async function PATCH(
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { id } = await params;
-    const { items: newItems } = await request.json() as { items: { skuId: string, qty: number }[] };
+    const body = await request.json();
+    const { items: newItems, action } = body as { items?: { skuId: string, qty: number }[], action?: 'hold' | 'resume' };
+
+    if (action) {
+      const staffId = session.userId as string;
+
+      const cart = await prisma.cart.findUnique({
+        where: { id },
+        include: {
+          items: {
+            include: {
+              sku: true
+            }
+          }
+        }
+      });
+
+      if (!cart) return NextResponse.json({ error: 'Cart not found' }, { status: 404 });
+      if (cart.deletedAt) return NextResponse.json({ error: 'Cannot modify a deleted cart' }, { status: 400 });
+
+      if (action === 'hold') {
+        if (cart.status === 'DISPATCH_HOLD') {
+          return NextResponse.json({ success: true, message: 'Cart already on hold' });
+        }
+        if (cart.status !== 'COMPLETED') {
+          return NextResponse.json({ error: 'Only completed dispatches can be put on hold' }, { status: 400 });
+        }
+
+        await prisma.$transaction(async (tx) => {
+          for (const item of cart.items) {
+            if (item.sku.isUnlimited) {
+              await tx.inventoryHistory.create({
+                data: {
+                  warehouseId: cart.warehouseId,
+                  skuId: item.skuId,
+                  productName: item.sku.name || item.skuId,
+                  beforeQty: 999999999,
+                  afterQty: 999999999,
+                  qtyChange: 0,
+                  remarks: `Dispatch Hold ${cart.dispatchSlipNumber || cart.id} | Unlimited SKU ignored`,
+                  createdBy: staffId,
+                }
+              });
+              continue;
+            }
+
+            const inventory = await tx.warehouseInventory.findUnique({
+              where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId: item.skuId } }
+            });
+
+            const beforeQty = inventory?.qty || 0;
+            const afterQty = beforeQty + item.qty;
+
+            await tx.warehouseInventory.upsert({
+              where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId: item.skuId } },
+              update: { qty: afterQty, isOos: afterQty <= 0 },
+              create: { warehouseId: cart.warehouseId, skuId: item.skuId, qty: afterQty, isOos: afterQty <= 0 }
+            });
+
+            await tx.inventoryHistory.create({
+              data: {
+                warehouseId: cart.warehouseId,
+                skuId: item.skuId,
+                productName: item.sku.name || item.skuId,
+                beforeQty,
+                afterQty,
+                qtyChange: item.qty,
+                remarks: `Dispatch Hold ${cart.dispatchSlipNumber || cart.id} | Inventory Restored`,
+                createdBy: staffId,
+              }
+            });
+          }
+
+          await tx.cart.update({
+            where: { id },
+            data: {
+              status: 'DISPATCH_HOLD',
+              heldAt: new Date(),
+              heldById: staffId
+            }
+          });
+        });
+
+        return NextResponse.json({ success: true });
+      }
+
+      if (action === 'resume') {
+        if (cart.status === 'COMPLETED') {
+          return NextResponse.json({ success: true, message: 'Cart already completed' });
+        }
+        if (cart.status !== 'DISPATCH_HOLD') {
+          return NextResponse.json({ error: 'Only dispatch hold carts can be completed' }, { status: 400 });
+        }
+
+        await prisma.$transaction(async (tx) => {
+          // 1. Validate stock first
+          for (const item of cart.items) {
+            if (item.sku.isUnlimited) continue;
+
+            const inventory = await tx.warehouseInventory.findUnique({
+              where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId: item.skuId } }
+            });
+
+            const currentQty = inventory?.qty || 0;
+            if (currentQty < item.qty) {
+              throw new Error(`Insufficient inventory to re-complete this dispatch.`);
+            }
+          }
+
+          // 2. Perform inventory update & logs
+          for (const item of cart.items) {
+            if (item.sku.isUnlimited) {
+              await tx.inventoryHistory.create({
+                data: {
+                  warehouseId: cart.warehouseId,
+                  skuId: item.skuId,
+                  productName: item.sku.name || item.skuId,
+                  beforeQty: 999999999,
+                  afterQty: 999999999,
+                  qtyChange: 0,
+                  remarks: `Dispatch Resume ${cart.dispatchSlipNumber || cart.id} | Unlimited SKU ignored`,
+                  createdBy: staffId,
+                }
+              });
+              continue;
+            }
+
+            const inventory = await tx.warehouseInventory.findUnique({
+              where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId: item.skuId } }
+            });
+
+            const beforeQty = inventory?.qty || 0;
+            const afterQty = beforeQty - item.qty;
+
+            await tx.warehouseInventory.update({
+              where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId: item.skuId } },
+              data: { qty: afterQty, isOos: afterQty <= 0 }
+            });
+
+            await tx.inventoryHistory.create({
+              data: {
+                warehouseId: cart.warehouseId,
+                skuId: item.skuId,
+                productName: item.sku.name || item.skuId,
+                beforeQty,
+                afterQty,
+                qtyChange: -item.qty,
+                remarks: `Dispatch Resume ${cart.dispatchSlipNumber || cart.id} | Inventory Deducted`,
+                createdBy: staffId,
+              }
+            });
+          }
+
+          await tx.cart.update({
+            where: { id },
+            data: {
+              status: 'COMPLETED',
+              resumedAt: new Date(),
+              resumedById: staffId
+            }
+          });
+        });
+
+        return NextResponse.json({ success: true });
+      }
+
+      return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+    }
 
     const canManage = session.canManageCarts || session.role === 'ADMIN';
     if (!canManage) {
       return NextResponse.json({ error: 'Forbidden: Missing permission to manage carts' }, { status: 403 });
+    }
+
+    if (!newItems) {
+      return NextResponse.json({ error: 'Missing items' }, { status: 400 });
     }
 
     const cart = await prisma.cart.findUnique({
@@ -165,8 +336,11 @@ export async function PATCH(
     });
 
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[CART_PATCH_ERROR]', error);
+    if (error instanceof Error && error.message.includes('Insufficient inventory')) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
@@ -201,7 +375,7 @@ export async function DELETE(
     const staffId = session.userId as string;
 
     await prisma.$transaction(async (tx) => {
-      const isHold = cart.status === 'ON_HOLD';
+      const isHold = cart.status === 'ON_HOLD' || cart.status === 'DISPATCH_HOLD';
 
       if (!isHold) {
         // 1. Restore all inventory

@@ -1,27 +1,17 @@
-'use client';
+import SettingsPageClient from '@/components/SettingsPageClient';
+import { getSession } from '@/lib/auth';
+import { redirect } from 'next/navigation';
 
-import SettingsShell from '@/components/SettingsShell';
-import PrinterSettingsTab from '@/components/PrinterSettingsTab';
-import ZoneMappingClient from '@/components/ZoneMappingClient';
-import { Printer, MapPin } from 'lucide-react';
+export default async function SettingsPage() {
+  const session = await getSession();
+  if (!session) {
+    redirect('/staff');
+  }
 
-export default function SettingsPage() {
-  const tabs = [
-    {
-      id: 'printer',
-      label: 'Printer',
-      icon: Printer,
-      description: 'Configure machine-local thermal printing and QZ Tray handshake.',
-      component: <PrinterSettingsTab />
-    },
-    {
-      id: 'zone-mapping',
-      label: 'Zone Mapping',
-      icon: MapPin,
-      description: 'Map products (SKUs) to warehouse-specific picking zones.',
-      component: <ZoneMappingClient />
-    }
-  ];
+  const permissions = {
+    canManageZoneMappings: !!session.canManageZoneMappings || session.role === 'ADMIN',
+    canManageUnlimitedSkus: !!session.canManageUnlimitedSkus || session.role === 'ADMIN',
+  };
 
-  return <SettingsShell tabs={tabs} />;
+  return <SettingsPageClient permissions={permissions} />;
 }

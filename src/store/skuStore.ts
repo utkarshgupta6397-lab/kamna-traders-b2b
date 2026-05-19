@@ -57,11 +57,23 @@ export const useSkuStore = create<SkuStore>((set, get) => ({
   setSkus: ({ skus, topBrandsByCategory, topBrandsFullCatalog }) => {
     // ── DEFENSIVE QUANTITY NORMALIZATION ──
     // Ensures any SKU with qty <= 0 is treated as OOS regardless of backend flag
+    // Bypassed if the SKU is marked isUnlimited
     const normalizedSkus = skus.map(s => {
       const effectiveQty = (typeof s.inventoryQty === 'number' && !isNaN(s.inventoryQty)) ? s.inventoryQty : 0;
-      const effectiveIsOos = s.isOos || effectiveQty <= 0;
+      const effectiveIsOos = s.isUnlimited ? false : (s.isOos || effectiveQty <= 0);
       return { ...s, isOos: effectiveIsOos, inventoryQty: effectiveQty };
     });
+
+    // Debug target SKU logging
+    const targetSku = normalizedSkus.find(s => s.id === 'R0NQ7L1V');
+    if (targetSku) {
+      console.log('[DEBUG R0NQ7L1V] setSkus:', {
+        sku: targetSku,
+        isUnlimited: targetSku.isUnlimited,
+        inventoryQty: targetSku.inventoryQty,
+        isOos: targetSku.isOos
+      });
+    }
 
     set({ 
       allSkus: normalizedSkus, 
@@ -94,24 +106,59 @@ export const useSkuStore = create<SkuStore>((set, get) => ({
     // Pipeline Order: Category -> Hide OOS -> Case Size -> Brand Pills -> Search
     let list = allSkus;
 
+    const debugTarget = allSkus.find(s => s.id === 'R0NQ7L1V');
+    if (debugTarget) {
+      console.log('[DEBUG R0NQ7L1V] getFiltered - initial:', {
+        sku: debugTarget,
+        isUnlimited: debugTarget.isUnlimited,
+        totalQty: debugTarget.inventoryQty,
+        isOos: debugTarget.isOos
+      });
+    }
+
     // 1. Category
     if (selectedCategoryId) {
       list = list.filter((s) => s.categoryId === selectedCategoryId);
+      if (debugTarget && !list.some(s => s.id === 'R0NQ7L1V')) {
+        console.log('[DEBUG R0NQ7L1V] Hidden by: selectedCategoryId mismatch', {
+          skuCategory: debugTarget.categoryId,
+          selectedCategoryId
+        });
+      }
     }
 
-    // 2. Hide OOS (Defensive: Re-check effective quantity)
+    // 2. Hide OOS (Defensive: Re-check effective quantity, bypassed if isUnlimited)
     if (hideOos) {
-      list = list.filter((s) => !s.isOos && (s.inventoryQty ?? 0) > 0);
+      list = list.filter((s) => s.isUnlimited || (!s.isOos && (s.inventoryQty ?? 0) > 0));
+      if (debugTarget && !list.some(s => s.id === 'R0NQ7L1V')) {
+        console.log('[DEBUG R0NQ7L1V] Hidden by: Hide OOS condition', {
+          isOos: debugTarget.isOos,
+          inventoryQty: debugTarget.inventoryQty,
+          isUnlimited: debugTarget.isUnlimited
+        });
+      }
     }
 
     // 3. Case Size
     if (selectedCaseSizes.length > 0) {
       list = list.filter((s) => s.caseSize && selectedCaseSizes.includes(s.caseSize));
+      if (debugTarget && !list.some(s => s.id === 'R0NQ7L1V')) {
+        console.log('[DEBUG R0NQ7L1V] Hidden by: caseSize mismatch', {
+          skuCaseSize: debugTarget.caseSize,
+          selectedCaseSizes
+        });
+      }
     }
 
     // 4. Brand Pills (Multi-select)
     if (selectedBrands.length > 0) {
       list = list.filter((s) => s.brand && selectedBrands.includes(s.brand));
+      if (debugTarget && !list.some(s => s.id === 'R0NQ7L1V')) {
+        console.log('[DEBUG R0NQ7L1V] Hidden by: brand mismatch', {
+          skuBrand: debugTarget.brand,
+          selectedBrands
+        });
+      }
     }
 
     // 5. Search
@@ -123,6 +170,14 @@ export const useSkuStore = create<SkuStore>((set, get) => ({
           s.id.toLowerCase().includes(q) ||
           (s.brand ?? '').toLowerCase().includes(q)
       );
+      if (debugTarget && !list.some(s => s.id === 'R0NQ7L1V')) {
+        console.log('[DEBUG R0NQ7L1V] Hidden by: searchQuery mismatch', {
+          searchQuery: q,
+          skuName: debugTarget.name,
+          skuId: debugTarget.id,
+          skuBrand: debugTarget.brand
+        });
+      }
     }
 
     return list;

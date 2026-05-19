@@ -17,6 +17,7 @@ export interface ProductData {
   caseSize?: number;
   isOos: boolean;
   inventoryQty?: number;
+  isUnlimited?: boolean;
   categoryId?: string | null;
   category?: { name: string } | null;
 }
@@ -64,7 +65,12 @@ const ProductCard = memo(function ProductCard({ product, isSelected }: { product
       {/* 1. Header: Brand + Stock Badge */}
       <div className="flex items-center justify-between mb-1 h-3.5">
         <span className="text-[10px] font-bold text-[#1A2766] uppercase tracking-[0.05em] truncate pr-2">{product.brand || 'Industrial'}</span>
-        {product.isOos ? (
+        {product.isUnlimited ? (
+          <div className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span className="text-[9px] font-[800] text-emerald-600 uppercase tabular-nums">∞ AVAILABLE</span>
+          </div>
+        ) : product.isOos ? (
           <div className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
             <span className="text-[9px] font-bold text-red-500 uppercase">Out of Stock</span>

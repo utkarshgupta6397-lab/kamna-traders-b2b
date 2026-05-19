@@ -20,7 +20,7 @@ export async function GET() {
         canAdjustInventory: true,
         canRunSkuSync: true,
         canManageZoneMappings: true,
-
+        canManageUnlimitedSkus: true,
       },
       orderBy: { name: 'asc' },
     });

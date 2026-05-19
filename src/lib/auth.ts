@@ -78,6 +78,7 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.canAdjustInventory = true;
       merged.canRunSkuSync = true;
       merged.canManageZoneMappings = true;
+      merged.canManageUnlimitedSkus = true;
     }
 
 

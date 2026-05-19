@@ -347,7 +347,7 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
                     {log.productName}
                   </td>
                   <td className="p-4 text-right font-mono text-gray-400 text-xs">
-                    {log.beforeQty}
+                    {log.beforeQty >= 999999999 ? '∞' : log.beforeQty}
                   </td>
                   <td className="p-4 text-center">
                     <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold min-w-[40px] border ${log.qtyChange > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
@@ -355,7 +355,7 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
                     </span>
                   </td>
                   <td className="p-4 text-right font-mono font-bold text-gray-900 text-xs">
-                    {log.afterQty}
+                    {log.afterQty >= 999999999 ? '∞' : log.afterQty}
                   </td>
                   <td className="p-4 text-[11px] text-gray-500 leading-relaxed max-w-xs break-words italic">
                     {log.remarks}

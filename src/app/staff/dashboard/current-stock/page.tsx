@@ -41,7 +41,7 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
       orderBy: { name: 'asc' }
     }),
     prisma.sku.findMany({ 
-      where: { isActive: true }, 
+      where: { isActive: true, isUnlimited: false }, 
       select: { id: true, name: true, zohoBooksId2: true, categoryId: true, brandId: true, caseSize: true, unit: true },
       orderBy: { name: 'asc' }
     }),

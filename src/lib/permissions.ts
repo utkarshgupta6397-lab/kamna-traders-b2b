@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -31,7 +31,12 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'canManageZoneMappings',
     label: 'Zone Mapping',
     description: 'Ability to map products to warehouse zones'
+  },
+  {
+    key: 'canManageUnlimitedSkus',
+    label: 'Unlimited SKUs',
+    description: 'Ability to toggle unlimited stock status on SKUs'
   }
 ];
 
-export const ALL_PERMISSION_KEYS: PermissionKey[] = ['canManageCarts', 'canAdjustInventory', 'canRunSkuSync', 'canManageZoneMappings'];
+export const ALL_PERMISSION_KEYS: PermissionKey[] = ['canManageCarts', 'canAdjustInventory', 'canRunSkuSync', 'canManageZoneMappings', 'canManageUnlimitedSkus'];

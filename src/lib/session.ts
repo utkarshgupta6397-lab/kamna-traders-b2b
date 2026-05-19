@@ -101,6 +101,7 @@ export async function validateSession(sessionToken: string): Promise<{
           canAdjustInventory: true,
           canRunSkuSync: true,
           canManageZoneMappings: true,
+          canManageUnlimitedSkus: true,
         }
       }
     }
@@ -111,6 +112,7 @@ export async function validateSession(sessionToken: string): Promise<{
     session.user.canAdjustInventory = true;
     session.user.canRunSkuSync = true;
     session.user.canManageZoneMappings = true;
+    session.user.canManageUnlimitedSkus = true;
   }
 
 

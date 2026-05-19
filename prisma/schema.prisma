@@ -23,12 +23,14 @@ model User {
   canAdjustInventory      Boolean            @default(false)
   canRunSkuSync           Boolean            @default(false)
   canManageZoneMappings   Boolean            @default(false)
+  canManageUnlimitedSkus  Boolean            @default(false)
 
 
   sessions         ActiveSession[]
   carts            Cart[]
   inventoryHistory InventoryHistory[]
   zoneMappingsUpdated WarehouseInventory[] @relation("ZoneMappingUpdatedBy")
+  updatedSkus      Sku[]              @relation("SkuUnlimitedUpdatedBy")
 }
 
 
@@ -85,9 +87,12 @@ model Sku {
   isActive       Boolean              @default(true)
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
+  isUnlimited    Boolean              @default(false)
+  updatedById    String?
   cartItems      CartItem[]
   brand          Brand?               @relation(fields: [brandId], references: [id])
   category       Category?            @relation(fields: [categoryId], references: [id])
+  updatedBy      User?                @relation("SkuUnlimitedUpdatedBy", fields: [updatedById], references: [id])
   inventory      WarehouseInventory[]
 
   @@index([categoryId])

@@ -211,7 +211,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
 
     for (let i = 0; i < allSkus.length; i++) {
       const s = allSkus[i];
-      if (hideOos && s.isOos) continue;
+      if (hideOos && s.isOos && !s.isUnlimited) continue;
       
       if (q) {
         const match = s.name.toLowerCase().includes(q) ||

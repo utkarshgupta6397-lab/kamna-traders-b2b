@@ -27,6 +27,7 @@ export async function GET(request: Request) {
         caseSize: true,
         categoryId: true,
         isActive: true,
+        isUnlimited: true,
         zohoBooksId2: true,
         brand: { select: { name: true } },
         inventory: {
@@ -45,11 +46,13 @@ export async function GET(request: Request) {
         ? targetInv.qty 
         : sku.inventory.reduce((s, inv) => s + inv.qty, 0);
 
-      const isOos = targetInv
-        ? targetInv.isOos || targetInv.qty <= 0
-        : sku.inventory.length > 0 
-          ? sku.inventory.some((inv) => inv.isOos) || sku.inventory.reduce((s, inv) => s + inv.qty, 0) <= 0
-          : false;
+      const isOos = sku.isUnlimited 
+        ? false 
+        : targetInv
+          ? targetInv.isOos || targetInv.qty <= 0
+          : sku.inventory.length > 0 
+            ? sku.inventory.some((inv) => inv.isOos) || sku.inventory.reduce((s, inv) => s + inv.qty, 0) <= 0
+            : false;
 
       return {
         id: sku.id,
@@ -64,6 +67,7 @@ export async function GET(request: Request) {
         categoryId: sku.categoryId,
         inventoryQty,
         isOos,
+        isUnlimited: sku.isUnlimited,
         isActive: sku.isActive,
         zohoBooksId2: sku.zohoBooksId2,
       };
@@ -76,7 +80,7 @@ export async function GET(request: Request) {
     products.forEach((p) => {
       // ── CONTEXTUAL BRAND FILTER ──
       // Only count brands for items that are actually available in this warehouse context
-      if (p.brand && !p.isOos && (p.inventoryQty ?? 0) > 0) {
+      if (p.brand && !p.isOos && ((p.inventoryQty ?? 0) > 0 || p.isUnlimited)) {
         brandCounts[p.brand] = (brandCounts[p.brand] || 0) + 1;
         if (p.categoryId) {
           if (!categoryBrandCounts[p.categoryId]) categoryBrandCounts[p.categoryId] = {};

@@ -99,10 +99,10 @@ export async function POST(request: Request) {
       ),
       // Query 2: SKU details + inventory via LEFT JOIN
       prisma.$queryRawUnsafe<Array<{
-        id: string; name: string; unit: string | null; moq: number;
+        id: string; name: string; unit: string | null; moq: number; is_unlimited: boolean;
         inv_qty: number | null; inv_zone: string | null;
       }>>(
-        `SELECT s."id", s."name", s."unit", s."moq",
+        `SELECT s."id", s."name", s."unit", s."moq", s."isUnlimited" AS "is_unlimited",
                 wi."qty" AS "inv_qty", wi."zone" AS "inv_zone"
          FROM "Sku" s
          LEFT JOIN "WarehouseInventory" wi
@@ -147,9 +147,10 @@ export async function POST(request: Request) {
     const inventoryOps = items.map((item) => {
       const row = skuMap.get(item.skuId)!;
       const hasInv = row.inv_qty !== null;
+      const isUnlimited = !!row.is_unlimited;
       const beforeQty = hasInv ? Number(row.inv_qty) : 999;
       const afterQty = beforeQty - item.qty;
-      return { skuId: item.skuId, exists: hasInv, beforeQty, afterQty, deductQty: item.qty };
+      return { skuId: item.skuId, exists: hasInv, beforeQty, afterQty, deductQty: item.qty, isUnlimited };
     });
 
     const historyRows = isHold ? [] : items.map((item, i) => {
@@ -159,8 +160,8 @@ export async function POST(request: Request) {
         warehouseId,
         skuId: item.skuId,
         productName: sku.name || item.skuId,
-        beforeQty: op.beforeQty,
-        afterQty: op.afterQty,
+        beforeQty: op.isUnlimited ? 999999999 : op.beforeQty,
+        afterQty: op.isUnlimited ? 999999999 : op.afterQty,
         qtyChange: -item.qty,
         remarks: `Dispatch ${generatedSlipNumber} | Customer: ${customerName}`,
         createdBy: staffId,
@@ -209,7 +210,7 @@ export async function POST(request: Request) {
 
     // Bulk inventory update (1 raw SQL for all existing) - Skip if hold
     if (!isHold) {
-      const existingOps = inventoryOps.filter(op => op.exists);
+      const existingOps = inventoryOps.filter(op => op.exists && !op.isUnlimited);
       if (existingOps.length > 0) {
         const setClauses = existingOps.map(op =>
           `WHEN "skuId" = '${op.skuId}' THEN "qty" - ${op.deductQty}`
@@ -231,7 +232,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const newOps = inventoryOps.filter(op => !op.exists);
+      const newOps = inventoryOps.filter(op => !op.exists && !op.isUnlimited);
       if (newOps.length > 0) {
         batchOps.push(
           prisma.warehouseInventory.createMany({

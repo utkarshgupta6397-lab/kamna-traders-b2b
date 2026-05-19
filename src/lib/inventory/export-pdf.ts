@@ -51,6 +51,7 @@ export async function exportStockToPDF(data: {
     '#',
     'Product [SKU]',
     ...warehouses.map(w => w.name),
+    'In Transit',
     'Total',
     'Net CPD',
     'Net DOI'
@@ -64,6 +65,7 @@ export async function exportStockToPDF(data: {
         const inv = item.inventory[w.id];
         return inv ? `${inv.qty} ${item.unit || ''}` : '0';
       }),
+      `${item.inventory['IN_TRANSIT']?.qty ?? 0} ${item.unit || ''}`,
       `${item.rowTotal} ${item.unit || ''}`,
       `${formatCPDValue(item.netCPD)} ${item.unit || ''}/day`,
       item.doiInfo.text

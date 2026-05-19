@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
   Plus, Search, Filter, Calendar, CheckCircle2, AlertCircle, XCircle, 
-  Printer, Trash2, GitMerge, Loader2, X, Eye, ArrowRightLeft, ArrowRight
+  Printer, Trash2, GitMerge, Loader2, X, Eye, ArrowRightLeft, ArrowRight, ArrowDownToLine
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -43,7 +43,7 @@ type TransferFormatted = {
   sourceWarehouseName: string;
   destinationWarehouseId: string;
   destinationWarehouseName: string;
-  status: 'INITIATED' | 'PARTIALLY_DISPATCHED' | 'IN_TRANSIT' | 'CANCELLED' | 'MERGED' | 'DISPATCHED_PARTIAL_CLOSED';
+  status: 'INITIATED' | 'PARTIALLY_DISPATCHED' | 'IN_TRANSIT' | 'CANCELLED' | 'MERGED' | 'DISPATCHED_PARTIAL_CLOSED' | 'PARTIALLY_RECEIVED' | 'COMPLETED' | 'SHORT_CLOSED';
   responsiblePerson: string;
   remarks: string | null;
   createdByName: string;
@@ -54,6 +54,10 @@ type TransferFormatted = {
   parentTransferNumber?: string | null;
   totalSKUs: number;
   totalUnits: number;
+  totalDispatched?: number;
+  totalReceived?: number;
+  totalShort?: number;
+  canReceive?: boolean;
 };
 
 type Props = {
@@ -84,6 +88,12 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
   const [selectedTransferId, setSelectedTransferId] = useState<string | null>(null);
   const [detailedTransfer, setDetailedTransfer] = useState<any | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+
+  // Form State - Receive Transfer
+  const [showReceiveModal, setShowReceiveModal] = useState(false);
+  const [receiveQuantities, setReceiveQuantities] = useState<Record<string, string>>({});
+  const [receiveMode, setReceiveMode] = useState<'partial' | 'complete'>('complete');
+  const [submittingReceive, setSubmittingReceive] = useState(false);
 
   // Form State - Initiate Transfer
   const [initSourceWh, setInitSourceWh] = useState('');
@@ -398,6 +408,93 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
     }
   };
 
+  const handleOpenReceive = async (transferId: string) => {
+    setLoadingDetails(true);
+    setShowReceiveModal(true);
+    try {
+      const res = await fetch(`/api/staff/transfers/${transferId}`);
+      if (!res.ok) throw new Error('Failed to fetch details');
+      const data = await res.json();
+      setDetailedTransfer(data);
+      
+      const initialQtys: Record<string, string> = {};
+      data.items.forEach((item: any) => {
+        const pending = item.dispatchedQty - item.receivedQty - item.shortQty;
+        initialQtys[item.skuId] = String(pending);
+      });
+      setReceiveQuantities(initialQtys);
+      setReceiveMode('complete');
+    } catch (err: any) {
+      toast.error(err.message || 'Error loading details');
+      setShowReceiveModal(false);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const handleConfirmReceive = async () => {
+    if (!detailedTransfer) return;
+
+    const itemsToReceive = Object.entries(receiveQuantities)
+      .map(([skuId, val]) => {
+        const receiveQty = Number(val);
+        return { skuId, receiveQty };
+      });
+
+    const itemMap = new Map<string, any>(detailedTransfer.items.map((i: any) => [i.skuId, i]));
+    for (const item of itemsToReceive) {
+      const trItem = itemMap.get(item.skuId);
+      if (!trItem) continue;
+      const pending = trItem.dispatchedQty - trItem.receivedQty - trItem.shortQty;
+      if (isNaN(item.receiveQty) || item.receiveQty < 0 || !Number.isInteger(item.receiveQty)) {
+        toast.error(`Invalid quantity for ${trItem.sku.name}`);
+        return;
+      }
+      if (item.receiveQty > pending) {
+        toast.error(`Received quantity for ${trItem.sku.name} cannot exceed pending (${pending})`);
+        return;
+      }
+    }
+
+    setSubmittingReceive(true);
+    try {
+      const res = await fetch(`/api/staff/transfers/${detailedTransfer.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'receive',
+          mode: receiveMode,
+          items: itemsToReceive
+        })
+      });
+
+      let errorMsg = 'Failed to receive transfer';
+      let data: any = null;
+      try {
+        const text = await res.text();
+        data = JSON.parse(text);
+        if (data && data.error) errorMsg = data.error;
+      } catch {}
+
+      if (!res.ok) throw new Error(errorMsg);
+
+      toast.success('Transfer received successfully');
+      setShowReceiveModal(false);
+
+      if (data && data.transfer) {
+        if (window.confirm('Transfer received successfully. Would you like to print the Receive Slip?')) {
+          router.push(`/staff/dashboard/transfers/print-receive/${detailedTransfer.id}`);
+        }
+      }
+
+      fetchTransfers();
+    } catch (err: any) {
+      toast.error(err.message || 'Error receiving transfer');
+    } finally {
+      setSubmittingReceive(false);
+    }
+  };
+
   // Cancel Transfer
   const handleCancelTransfer = async (id: string) => {
     const confirmCancel = window.confirm('Are you sure you want to cancel this transfer? This will lock it and prevent dispatch.');
@@ -536,22 +633,97 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
     }
   };
 
-  const getStatusBadge = (status: TransferFormatted['status']) => {
+  const getStatusBadge = (status: TransferFormatted['status'] | any) => {
     switch (status) {
       case 'INITIATED':
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">INITIATED</span>;
       case 'PARTIALLY_DISPATCHED':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-50 text-yellow-700 border border-yellow-200">PARTIAL DISPATCH</span>;
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-200">PARTIAL DISPATCH</span>;
       case 'IN_TRANSIT':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200">IN TRANSIT</span>;
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">IN TRANSIT</span>;
       case 'CANCELLED':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-50 text-gray-500 border border-gray-200">CANCELLED</span>;
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">CANCELLED</span>;
       case 'MERGED':
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">MERGED</span>;
       case 'DISPATCHED_PARTIAL_CLOSED':
         return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-200">PARTIAL CLOSED</span>;
+      case 'PARTIALLY_RECEIVED':
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-yellow-50 text-yellow-700 border border-yellow-200">PARTIALLY RECEIVED</span>;
+      case 'COMPLETED':
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">COMPLETED</span>;
+      case 'SHORT_CLOSED':
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">SHORT CLOSED</span>;
+      default:
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-gray-50 text-gray-700 border border-gray-200">{String(status)}</span>;
     }
   };
+
+  const historyTimeline = useMemo(() => {
+    if (!detailedTransfer) return [];
+    
+    if (detailedTransfer.history && detailedTransfer.history.length > 0) {
+      return detailedTransfer.history.map((h: any) => {
+        let details = '';
+        try {
+          if (h.metadata) {
+            const meta = JSON.parse(h.metadata);
+            if (h.action === 'CREATED') {
+              details = meta.remarks ? `Remarks: "${meta.remarks}"` : 'Initial request created';
+            } else if (h.action === 'DISPATCHED') {
+              const count = meta.items ? meta.items.reduce((sum: number, i: any) => sum + i.qty, 0) : 0;
+              details = `Dispatched ${count} units to transit`;
+            } else if (h.action === 'PARTIALLY_RECEIVED' || h.action === 'COMPLETED' || h.action === 'SHORT_CLOSED') {
+              details = `Received ${meta.totalReceived || 0} units. Short: ${meta.totalShort || 0} units (returned to source)`;
+            } else if (h.action === 'MERGED') {
+              details = meta.remarks || 'Merged into another transfer';
+            }
+          }
+        } catch (e) {}
+        return {
+          action: h.action,
+          performedBy: h.performedBy,
+          timestamp: new Date(h.timestamp),
+          details: details || h.action
+        };
+      });
+    }
+
+    const list: any[] = [];
+    list.push({
+      action: 'CREATED',
+      performedBy: detailedTransfer.createdBy?.name || 'Staff',
+      timestamp: new Date(detailedTransfer.createdAt),
+      details: detailedTransfer.remarks ? `Remarks: "${detailedTransfer.remarks}"` : 'Initial request created'
+    });
+
+    if (detailedTransfer.dispatchedAt) {
+      const totalDisp = detailedTransfer.items.reduce((sum: number, item: any) => sum + (item.dispatchedQty || 0), 0);
+      list.push({
+        action: 'DISPATCHED',
+        performedBy: detailedTransfer.dispatchedBy?.name || 'Staff',
+        timestamp: new Date(detailedTransfer.dispatchedAt),
+        details: `Dispatched ${totalDisp} units to transit`
+      });
+    }
+
+    if (detailedTransfer.receivedAt || ['COMPLETED', 'SHORT_CLOSED', 'PARTIALLY_RECEIVED'].includes(detailedTransfer.status)) {
+      const time = detailedTransfer.receivedAt ? new Date(detailedTransfer.receivedAt) : new Date();
+      const totalRec = detailedTransfer.items.reduce((sum: number, item: any) => sum + (item.receivedQty || 0), 0);
+      const totalShort = detailedTransfer.items.reduce((sum: number, item: any) => sum + (item.shortQty || 0), 0);
+      
+      let actionName = detailedTransfer.status;
+      if (actionName === 'IN_TRANSIT') actionName = 'PARTIALLY_RECEIVED';
+      
+      list.push({
+        action: actionName,
+        performedBy: detailedTransfer.receivedBy?.name || 'Staff',
+        timestamp: time,
+        details: `Received ${totalRec} units. Short: ${totalShort} units (returned to source)`
+      });
+    }
+
+    return list;
+  }, [detailedTransfer]);
 
   const isWarehouseSectionInvalid = !initSourceWh || !initDestWh || (initSourceWh === initDestWh);
 
@@ -708,7 +880,7 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100 text-gray-400 font-bold uppercase tracking-wider">
-                  <th className="p-3 w-10 text-center">
+                  <th className="py-1.5 px-3 align-middle w-10 text-center">
                     <input
                       type="checkbox"
                       onChange={(e) => handleSelectAll(e.target.checked)}
@@ -719,100 +891,141 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
                       className="rounded border-gray-300 text-red-600 focus:ring-red-500"
                     />
                   </th>
-                  <th className="p-3">Transfer No</th>
-                  <th className="p-3">Source Warehouse</th>
-                  <th className="p-3">Destination</th>
-                  <th className="p-3">Responsible</th>
-                  <th className="p-3">SKUs / Units</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Created At</th>
-                  <th className="p-3 text-right">Actions</th>
+                  <th className="py-1.5 px-3 align-middle">Transfer No</th>
+                  <th className="py-1.5 px-3 align-middle">Source</th>
+                  <th className="py-1.5 px-3 align-middle">Destination</th>
+                  <th className="py-1.5 px-3 align-middle">Responsible</th>
+                  <th className="py-1.5 px-3 align-middle">Items</th>
+                  <th className="py-1.5 px-3 align-middle">Status</th>
+                  <th className="py-1.5 px-3 align-middle" title="D = Dispatched, R = Received, P = Pending">Progress (D/R/P)</th>
+                  <th className="py-1.5 px-3 align-middle">Created</th>
+                  <th className="py-1.5 px-3 align-middle text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {transfers.map(t => (
-                  <tr 
-                    key={t.id} 
-                    className={`hover:bg-gray-50/50 transition-colors ${
-                      t.status === 'CANCELLED' || t.status === 'MERGED' ? 'opacity-60 bg-gray-50/10' : ''
-                    }`}
-                  >
-                    <td className="p-3 text-center">
-                      {t.status === 'INITIATED' ? (
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(t.id)}
-                          onChange={() => handleSelectRow(t.id)}
-                          className="rounded border-gray-300 text-red-600 focus:ring-red-500"
-                        />
-                      ) : (
-                        <div className="w-4 h-4" />
-                      )}
-                    </td>
-                    <td className="p-3 font-mono font-bold text-gray-900">
-                      <div>{t.transferNumber}</div>
-                      {t.parentTransferNumber && (
-                        <div className="text-[10px] text-gray-500 font-normal mt-0.5">
-                          Child of {t.parentTransferNumber}
+                {transfers.map(t => {
+                  const pending = (t.totalDispatched ?? 0) - (t.totalReceived ?? 0) - (t.totalShort ?? 0);
+                  return (
+                    <tr 
+                      key={t.id} 
+                      className={`hover:bg-gray-50/50 transition-colors ${
+                        t.status === 'CANCELLED' || t.status === 'MERGED' ? 'opacity-60 bg-gray-50/10' : ''
+                      }`}
+                    >
+                      <td className="py-1.5 px-3 align-middle text-center">
+                        {t.status === 'INITIATED' ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(t.id)}
+                            onChange={() => handleSelectRow(t.id)}
+                            className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                          />
+                        ) : (
+                          <div className="w-4 h-4" />
+                        )}
+                      </td>
+                      <td className="py-1.5 px-3 align-middle font-mono font-bold text-gray-900">
+                        <div>{t.transferNumber}</div>
+                        {t.parentTransferNumber && (
+                          <div className="text-[10px] text-gray-500 font-normal mt-0.5">
+                            Child of {t.parentTransferNumber}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-3 align-middle font-medium">{t.sourceWarehouseName}</td>
+                      <td className="py-1.5 px-3 align-middle font-medium">{t.destinationWarehouseName}</td>
+                      <td className="py-1.5 px-3 align-middle text-gray-700">{t.responsiblePerson}</td>
+                      <td className="py-1.5 px-3 align-middle text-gray-500 font-medium">
+                        {t.totalSKUs} SKUs ({t.totalUnits} Units)
+                      </td>
+                      <td className="py-1.5 px-3 align-middle">
+                        {getStatusBadge(t.status)}
+                      </td>
+                      <td 
+                        className="py-1.5 px-3 align-middle cursor-help"
+                        title="D = Dispatched, R = Received, P = Pending"
+                      >
+                        {t.status === 'INITIATED' || t.status === 'CANCELLED' ? (
+                          <span className="text-gray-400">-</span>
+                        ) : t.status === 'COMPLETED' ? (
+                          <span className="text-emerald-600 font-bold">✔ 100%</span>
+                        ) : (
+                          <span className="font-mono text-gray-700 bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100 text-[10px] inline-block whitespace-nowrap">
+                            D:{t.totalDispatched ?? 0} | R:{t.totalReceived ?? 0} | P:{pending}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-3 align-middle text-gray-400">
+                        {new Date(t.createdAt).toLocaleDateString('en-IN', {
+                          day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+                        })}
+                      </td>
+                      <td className="py-1.5 px-3 align-middle text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleOpenDetails(t.id)}
+                            className="p-1 hover:bg-gray-100 rounded text-gray-600"
+                            title="View Details"
+                          >
+                            <Eye size={14} />
+                          </button>
+                          
+                          {(t.status === 'INITIATED' || t.status === 'PARTIALLY_DISPATCHED') && (
+                            <button
+                              onClick={() => handleOpenDispatch(t.id)}
+                              className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded font-bold flex items-center gap-1 px-2 py-0.5 text-[10px]"
+                              title="Dispatch Stock"
+                            >
+                              <ArrowRight size={10} />
+                              Dispatch
+                            </button>
+                          )}
+
+                          {t.canReceive && (
+                            <button
+                              onClick={() => handleOpenReceive(t.id)}
+                              className="p-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded font-bold flex items-center gap-1 px-2 py-0.5 text-[10px]"
+                              title="Receive Stock"
+                            >
+                              <ArrowDownToLine size={10} />
+                              Receive
+                            </button>
+                          )}
+
+                          {['PARTIALLY_RECEIVED', 'COMPLETED', 'SHORT_CLOSED'].includes(t.status) && (
+                            <Link
+                              href={`/staff/dashboard/transfers/print-receive/${t.id}`}
+                              className="p-1 hover:bg-blue-50 text-blue-600 rounded"
+                              title="Print Receive Slip"
+                            >
+                              <Printer size={14} />
+                            </Link>
+                          )}
+
+                          {(t.status === 'PARTIALLY_DISPATCHED' || t.status === 'IN_TRANSIT' || t.status === 'DISPATCHED_PARTIAL_CLOSED') && (
+                            <Link
+                              href={`/staff/dashboard/transfers/print/${t.id}`}
+                              className="p-1 hover:bg-gray-100 rounded text-gray-600"
+                              title="Print Slip"
+                            >
+                              <Printer size={14} />
+                            </Link>
+                          )}
+
+                          {t.status === 'INITIATED' && (session.canDeleteTransfers || session.role === 'ADMIN') && (
+                            <button
+                              onClick={() => handleCancelTransfer(t.id)}
+                              className="p-1 hover:bg-red-50 text-red-500 rounded"
+                              title="Cancel Transfer"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </div>
-                      )}
-                    </td>
-                    <td className="p-3 font-medium">{t.sourceWarehouseName}</td>
-                    <td className="p-3 font-medium">{t.destinationWarehouseName}</td>
-                    <td className="p-3 text-gray-700">{t.responsiblePerson}</td>
-                    <td className="p-3 text-gray-500 font-medium">
-                      {t.totalSKUs} SKUs ({t.totalUnits} Units)
-                    </td>
-                    <td className="p-3">{getStatusBadge(t.status)}</td>
-                    <td className="p-3 text-gray-400">
-                      {new Date(t.createdAt).toLocaleDateString('en-IN', {
-                        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
-                      })}
-                    </td>
-                    <td className="p-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => handleOpenDetails(t.id)}
-                          className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
-                          title="View Details"
-                        >
-                          <Eye size={14} />
-                        </button>
-                        
-                        {(t.status === 'INITIATED' || t.status === 'PARTIALLY_DISPATCHED') && (
-                          <button
-                            onClick={() => handleOpenDispatch(t.id)}
-                            className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded font-bold flex items-center gap-1 px-2.5 py-1 text-[10px]"
-                            title="Dispatch Stock"
-                          >
-                            <ArrowRight size={10} />
-                            Dispatch
-                          </button>
-                        )}
-
-                        {(t.status === 'PARTIALLY_DISPATCHED' || t.status === 'IN_TRANSIT') && (
-                          <Link
-                            href={`/staff/dashboard/transfers/print/${t.id}`}
-                            className="p-1.5 hover:bg-gray-100 rounded text-gray-600"
-                            title="Print Slip"
-                          >
-                            <Printer size={14} />
-                          </Link>
-                        )}
-
-                        {t.status === 'INITIATED' && (session.canDeleteTransfers || session.role === 'ADMIN') && (
-                          <button
-                            onClick={() => handleCancelTransfer(t.id)}
-                            className="p-1.5 hover:bg-red-50 text-red-500 rounded"
-                            title="Cancel Transfer"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1182,7 +1395,7 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="bg-gray-50/50 p-3 rounded-lg border border-gray-100">
                     <span className="text-[10px] text-gray-400 uppercase font-bold block">Created By</span>
                     <span className="font-medium text-gray-700 mt-0.5 block">{detailedTransfer.createdBy.name}</span>
@@ -1199,12 +1412,38 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
                       </span>
                     </div>
                   )}
+                  {detailedTransfer.receivedAt && (
+                    <div className="bg-gray-50/50 p-3 rounded-lg border border-gray-100">
+                      <span className="text-[10px] text-gray-400 uppercase font-bold block">Received By</span>
+                      <span className="font-medium text-gray-700 mt-0.5 block">{detailedTransfer.receivedBy?.name || 'Unknown'}</span>
+                      <span className="text-[10px] text-gray-400 block">
+                        {new Date(detailedTransfer.receivedAt).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  )}
                 </div>
+
+                {detailedTransfer.dispatchedAt && (
+                  <div className="bg-emerald-50/50 p-3 rounded-lg border border-emerald-100 flex flex-col gap-1">
+                    <span className="text-[10px] text-emerald-700 font-bold uppercase block">Inventory Movement</span>
+                    <div className="flex items-center gap-2 mt-0.5 text-xs">
+                      <span className="font-bold text-gray-800">{detailedTransfer.sourceWarehouse.name}</span>
+                      <span className="text-gray-400">→</span>
+                      <span className="font-bold text-gray-800">In Transit</span>
+                      {['COMPLETED', 'SHORT_CLOSED', 'PARTIALLY_RECEIVED'].includes(detailedTransfer.status) && (
+                        <>
+                          <span className="text-gray-400">→</span>
+                          <span className="font-bold text-gray-800">{detailedTransfer.destinationWarehouse.name}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {detailedTransfer.remarks && (
                   <div className="bg-gray-50/50 p-3 rounded-lg border border-gray-100">
                     <span className="text-[10px] text-gray-400 uppercase font-bold block">Remarks</span>
-                    <p className="text-gray-700 mt-1">{detailedTransfer.remarks}</p>
+                    <p className="text-gray-700 mt-1 whitespace-pre-wrap">{detailedTransfer.remarks}</p>
                   </div>
                 )}
 
@@ -1219,25 +1458,88 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
                           <th className="p-2.5">Product Name</th>
                           <th className="p-2.5 text-right">Requested</th>
                           <th className="p-2.5 text-right">Dispatched</th>
-                          <th className="p-2.5 text-right">Balance</th>
+                          <th className="p-2.5 text-right">Received</th>
+                          <th className="p-2.5 text-right">Short</th>
+                          <th className="p-2.5 text-right">Pending</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {detailedTransfer.items.map((item: any) => (
-                          <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/20">
-                            <td className="p-2.5 font-mono text-[10px] text-gray-500">{item.skuId}</td>
-                            <td className="p-2.5 font-medium">{item.sku.name} {item.sku.isUnlimited ? ' (∞)' : ''}</td>
-                            <td className="p-2.5 text-right font-medium">{item.requestedQty} {item.sku.unit || 'PCS'}</td>
-                            <td className="p-2.5 text-right font-medium text-emerald-600">{item.dispatchedQty} {item.sku.unit || 'PCS'}</td>
-                            <td className="p-2.5 text-right font-bold text-red-600">{item.balanceQty} {item.sku.unit || 'PCS'}</td>
-                          </tr>
-                        ))}
+                        {detailedTransfer.items.map((item: any) => {
+                          const pending = item.dispatchedQty - (item.receivedQty || 0) - (item.shortQty || 0);
+                          return (
+                            <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/20">
+                              <td className="p-2.5 font-mono text-[10px] text-gray-500">{item.skuId}</td>
+                              <td className="p-2.5 font-medium">{item.sku.name} {item.sku.isUnlimited ? ' (∞)' : ''}</td>
+                              <td className="p-2.5 text-right font-medium">{item.requestedQty} {item.sku.unit || 'PCS'}</td>
+                              <td className="p-2.5 text-right font-medium text-emerald-600">{item.dispatchedQty} {item.sku.unit || 'PCS'}</td>
+                              <td className="p-2.5 text-right font-medium text-blue-600">{item.receivedQty || 0} {item.sku.unit || 'PCS'}</td>
+                              <td className="p-2.5 text-right font-medium text-amber-600">{item.shortQty || 0} {item.sku.unit || 'PCS'}</td>
+                              <td className={`p-2.5 text-right font-bold ${pending > 0 ? 'text-red-600' : 'text-gray-500'}`}>{pending} {item.sku.unit || 'PCS'}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 </div>
 
+                {/* Timeline */}
+                {historyTimeline.length > 0 && (
+                  <div className="space-y-3 border-t border-gray-100 pt-4">
+                    <h4 className="text-xs font-bold text-gray-800">Transfer History Timeline</h4>
+                    <div className="flow-root">
+                      <ul className="-mb-8">
+                        {historyTimeline.map((event: any, eventIdx: number) => (
+                          <li key={eventIdx}>
+                            <div className="relative pb-8">
+                              {eventIdx !== historyTimeline.length - 1 ? (
+                                <span className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200" aria-hidden="true" />
+                              ) : null}
+                              <div className="relative flex space-x-3">
+                                <div>
+                                  <span className={`h-8 w-8 rounded-full flex items-center justify-center ring-8 ring-white ${
+                                    event.action === 'CREATED' ? 'bg-blue-50 text-blue-600' :
+                                    event.action === 'DISPATCHED' ? 'bg-indigo-50 text-indigo-600' :
+                                    event.action === 'PARTIALLY_RECEIVED' ? 'bg-yellow-50 text-yellow-600' :
+                                    event.action === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600' :
+                                    event.action === 'SHORT_CLOSED' ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-600'
+                                  }`}>
+                                    <span className="font-bold text-[9px]">{event.action.substring(0, 3)}</span>
+                                  </span>
+                                </div>
+                                <div className="flex-1 min-w-0 pt-1.5 flex justify-between space-x-4">
+                                  <div>
+                                    <p className="text-xs text-gray-800 font-medium">
+                                      {event.details}
+                                    </p>
+                                    <span className="text-[10px] text-gray-400 font-medium block mt-0.5">
+                                      by <span className="font-bold text-gray-600">{event.performedBy}</span>
+                                    </span>
+                                  </div>
+                                  <div className="text-right text-[10px] whitespace-nowrap text-gray-400">
+                                    <time dateTime={event.timestamp.toISOString()}>
+                                      {event.timestamp.toLocaleString('en-IN')}
+                                    </time>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+                  {['PARTIALLY_RECEIVED', 'COMPLETED', 'SHORT_CLOSED'].includes(detailedTransfer.status) && (
+                    <button
+                      onClick={() => router.push(`/staff/dashboard/transfers/print-receive/${detailedTransfer.id}`)}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors"
+                    >
+                      Print Receive Slip
+                    </button>
+                  )}
                   <button
                     onClick={() => setShowDetailModal(false)}
                     className="px-5 py-2 bg-gray-900 text-white rounded-lg text-xs font-bold hover:bg-black transition-colors"
@@ -1308,38 +1610,63 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
                           <th className="p-2.5 text-right w-24">Requested</th>
                           <th className="p-2.5 text-right w-24">Prev Dispatched</th>
                           <th className="p-2.5 text-right w-24">Remaining Bal</th>
+                          <th className="p-2.5 text-right w-28">Available Stock</th>
                           <th className="p-2.5 text-right w-36">Dispatch Now</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {detailedTransfer.items.map((item: any) => (
-                          <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/20">
-                            <td className="p-2.5 font-mono text-[10px] text-gray-500">{item.skuId}</td>
-                            <td className="p-2.5 font-medium">
-                              {item.sku.name} {item.sku.isUnlimited ? ' (∞)' : ''}
-                            </td>
-                            <td className="p-2.5 text-right text-gray-500">{item.requestedQty} {item.sku.unit || 'PCS'}</td>
-                            <td className="p-2.5 text-right text-emerald-600">{item.dispatchedQty} {item.sku.unit || 'PCS'}</td>
-                            <td className="p-2.5 text-right text-red-600 font-bold">{item.balanceQty} {item.sku.unit || 'PCS'}</td>
-                            <td className="p-2.5 text-right">
-                              <input
-                                type="number"
-                                min={0}
-                                max={item.balanceQty}
-                                disabled={submittingDispatch}
-                                value={dispatchQuantities[item.skuId] ?? 0}
-                                onChange={(e) => {
-                                  const val = Math.min(item.balanceQty, Math.max(0, Number(e.target.value)));
-                                  setDispatchQuantities(prev => ({
-                                    ...prev,
-                                    [item.skuId]: val
-                                  }));
-                                }}
-                                className="w-24 px-2 py-1 border border-gray-200 rounded text-right font-bold focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-50 disabled:text-gray-400"
-                              />
-                            </td>
-                          </tr>
-                        ))}
+                        {detailedTransfer.items.map((item: any) => {
+                          const qtyVal = dispatchQuantities[item.skuId] ?? 0;
+                          const hasError = !item.sku.isUnlimited && qtyVal > (item.sourceStock ?? 0);
+
+                          return (
+                            <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/20">
+                              <td className="p-2.5 font-mono text-[10px] text-gray-500">{item.skuId}</td>
+                              <td className="p-2.5 font-medium">
+                                {item.sku.name} {item.sku.isUnlimited ? ' (∞)' : ''}
+                              </td>
+                              <td className="p-2.5 text-right text-gray-500">{item.requestedQty} {item.sku.unit || 'PCS'}</td>
+                              <td className="p-2.5 text-right text-emerald-600">{item.dispatchedQty} {item.sku.unit || 'PCS'}</td>
+                              <td className="p-2.5 text-right text-red-600 font-bold">{item.balanceQty} {item.sku.unit || 'PCS'}</td>
+                              <td className="p-2.5 text-right font-medium text-gray-700">
+                                {item.sku.isUnlimited ? '∞' : `${item.sourceStock ?? 0} ${item.sku.unit || 'PCS'}`}
+                              </td>
+                              <td className="p-2.5 text-right">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={item.balanceQty}
+                                  disabled={submittingDispatch}
+                                  value={dispatchQuantities[item.skuId] === 0 ? '' : (dispatchQuantities[item.skuId] ?? '')}
+                                  onChange={(e) => {
+                                    const rawVal = e.target.value;
+                                    if (rawVal === '') {
+                                      setDispatchQuantities(prev => ({
+                                        ...prev,
+                                        [item.skuId]: 0
+                                      }));
+                                      return;
+                                    }
+                                    const num = Number(rawVal);
+                                    const val = isNaN(num) ? 0 : Math.min(item.balanceQty, Math.max(0, num));
+                                    setDispatchQuantities(prev => ({
+                                      ...prev,
+                                      [item.skuId]: val
+                                    }));
+                                  }}
+                                  className={`w-24 px-2 py-1 border rounded text-right font-bold focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-50 disabled:text-gray-400 ${
+                                    hasError ? 'border-red-500 focus:border-red-500 focus:ring-red-500 bg-red-50' : 'border-gray-200'
+                                  }`}
+                                />
+                                {hasError && (
+                                  <div className="text-[10px] text-red-500 font-bold mt-1 text-right">
+                                    Dispatch qty exceeds available stock
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1355,8 +1682,15 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
                   </button>
                   <button
                     onClick={handleConfirmDispatch}
-                    disabled={submittingDispatch}
-                    className="px-6 py-2 bg-[#AE1B1E] hover:bg-red-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
+                    disabled={
+                      submittingDispatch || 
+                      Object.values(dispatchQuantities).reduce((a, b) => a + b, 0) === 0 || 
+                      detailedTransfer.items.some((item: any) => {
+                        const qtyVal = dispatchQuantities[item.skuId] ?? 0;
+                        return !item.sku.isUnlimited && qtyVal > (item.sourceStock ?? 0);
+                      })
+                    }
+                    className="px-6 py-2 bg-[#AE1B1E] hover:bg-red-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {submittingDispatch ? (
                       <>
@@ -1365,6 +1699,193 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
                       </>
                     ) : (
                       'Confirm & Print Slip'
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: RECEIVE TRANSFER ────────────────────────────────────── */}
+      {showReceiveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col border border-gray-100 animate-in zoom-in-95 duration-200">
+            <div className="p-4 bg-[#1A2766] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ArrowDownToLine size={18} />
+                <h3 className="font-bold text-sm">
+                  Receive Inventory: {detailedTransfer?.transferNumber || 'Loading...'}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setShowReceiveModal(false)}
+                className="hover:bg-white/10 p-1 rounded"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {loadingDetails ? (
+              <div className="p-20 flex flex-col items-center justify-center gap-2 text-gray-500">
+                <Loader2 className="animate-spin text-red-600" size={24} />
+                <p className="text-xs">Loading transfer details...</p>
+              </div>
+            ) : !detailedTransfer ? (
+              <div className="p-10 text-center text-gray-500">Error loading data.</div>
+            ) : (
+              <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+                {/* Meta Summary */}
+                <div className="grid grid-cols-3 gap-4 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                  <div>
+                    <span className="text-[10px] text-gray-400 uppercase font-bold block">Source Warehouse</span>
+                    <span className="font-medium text-gray-800">{detailedTransfer.sourceWarehouse.name}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 uppercase font-bold block">Destination Warehouse</span>
+                    <span className="font-medium text-gray-800">{detailedTransfer.destinationWarehouse.name}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 uppercase font-bold block">Responsible Person</span>
+                    <span className="font-medium text-gray-800">{detailedTransfer.responsiblePerson}</span>
+                  </div>
+                </div>
+
+                {/* Closure Mode Selection */}
+                <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 space-y-3">
+                  <span className="text-[10px] text-blue-700 font-bold uppercase block">Receive Mode</span>
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="receiveMode"
+                        value="complete"
+                        checked={receiveMode === 'complete'}
+                        onChange={() => setReceiveMode('complete')}
+                        className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div>
+                        <span className="font-bold text-gray-800 block">Full Closure (Shortage Reconciliation)</span>
+                        <span className="text-[10px] text-gray-400 block mt-0.5">Any quantities not received now will be marked as short and automatically returned to the source warehouse inventory. This closes the transfer.</span>
+                      </div>
+                    </label>
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="receiveMode"
+                        value="partial"
+                        checked={receiveMode === 'partial'}
+                        onChange={() => setReceiveMode('partial')}
+                        className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div>
+                        <span className="font-bold text-gray-800 block">Keep Open (Partial Receive)</span>
+                        <span className="text-[10px] text-gray-400 block mt-0.5">Receive quantities now, but keep the transfer open. The remaining unreceived quantities will remain in transit for later receiving.</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-gray-800">Specify Receive Quantities</h4>
+                  <p className="text-[10px] text-gray-400 italic">Enter the physical quantity received at the destination warehouse.</p>
+                  
+                  <div className="border border-gray-100 rounded-lg overflow-hidden">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-100 text-gray-500 font-bold">
+                          <th className="p-2.5">SKU ID</th>
+                          <th className="p-2.5">Product Name</th>
+                          <th className="p-2.5 text-right w-20">Dispatched</th>
+                          <th className="p-2.5 text-right w-20">Prev Rec</th>
+                          <th className="p-2.5 text-right w-24">Pending Transit</th>
+                          <th className="p-2.5 text-right w-36">Receive Now</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailedTransfer.items.map((item: any) => {
+                          const pending = item.dispatchedQty - (item.receivedQty || 0) - (item.shortQty || 0);
+                          const qtyVal = Number(receiveQuantities[item.skuId] ?? 0);
+                          const hasError = qtyVal > pending;
+
+                          return (
+                            <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/20">
+                              <td className="p-2.5 font-mono text-[10px] text-gray-500">{item.skuId}</td>
+                              <td className="p-2.5 font-medium">
+                                {item.sku.name} {item.sku.isUnlimited ? ' (∞)' : ''}
+                              </td>
+                              <td className="p-2.5 text-right text-gray-500">{item.dispatchedQty} {item.sku.unit || 'PCS'}</td>
+                              <td className="p-2.5 text-right text-gray-400">{item.receivedQty || 0} {item.sku.unit || 'PCS'}</td>
+                              <td className="p-2.5 text-right text-red-600 font-bold">{pending} {item.sku.unit || 'PCS'}</td>
+                              <td className="p-2.5 text-right">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={pending}
+                                  disabled={submittingReceive}
+                                  value={receiveQuantities[item.skuId] === '0' ? '' : (receiveQuantities[item.skuId] ?? '')}
+                                  onChange={(e) => {
+                                    const rawVal = e.target.value;
+                                    if (rawVal === '') {
+                                      setReceiveQuantities(prev => ({
+                                        ...prev,
+                                        [item.skuId]: '0'
+                                      }));
+                                      return;
+                                    }
+                                    const num = Number(rawVal);
+                                    const val = isNaN(num) ? 0 : Math.max(0, num);
+                                    setReceiveQuantities(prev => ({
+                                      ...prev,
+                                      [item.skuId]: String(val)
+                                    }));
+                                  }}
+                                  className={`w-24 px-2 py-1 border rounded text-right font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400 ${
+                                    hasError ? 'border-red-500 focus:border-red-500 focus:ring-red-500 bg-red-50' : 'border-gray-200'
+                                  }`}
+                                />
+                                {hasError && (
+                                  <div className="text-[10px] text-red-500 font-bold mt-1 text-right">
+                                    Receive qty exceeds pending transit
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t border-gray-100 bg-white sticky bottom-0">
+                  <button
+                    onClick={() => setShowReceiveModal(false)}
+                    disabled={submittingReceive}
+                    className="px-4 py-2 border border-gray-200 rounded-lg text-xs hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmReceive}
+                    disabled={
+                      submittingReceive || 
+                      detailedTransfer.items.some((item: any) => {
+                        const pending = item.dispatchedQty - (item.receivedQty || 0) - (item.shortQty || 0);
+                        const qtyVal = Number(receiveQuantities[item.skuId] ?? 0);
+                        return qtyVal > pending || isNaN(qtyVal) || qtyVal < 0 || !Number.isInteger(qtyVal);
+                      })
+                    }
+                    className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {submittingReceive ? (
+                      <>
+                        <Loader2 className="animate-spin" size={14} />
+                        Receiving...
+                      </>
+                    ) : (
+                      'Confirm Receive'
                     )}
                   </button>
                 </div>

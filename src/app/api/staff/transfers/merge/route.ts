@@ -106,6 +106,16 @@ export async function POST(request: Request) {
         data: itemsData
       });
 
+      // Log CREATED history for the new merged transfer
+      await tx.transferHistory.create({
+        data: {
+          transferId: newTransfer.id,
+          action: 'CREATED',
+          performedBy: session.name || 'Staff',
+          metadata: JSON.stringify({ remarks: `Merged from: ${transfers.map(t => t.transferNumber).join(', ')}` })
+        }
+      });
+
       // Mark old transfers as MERGED and link to new transfer
       await tx.transfer.updateMany({
         where: { id: { in: transferIds } },
@@ -114,6 +124,18 @@ export async function POST(request: Request) {
           mergedIntoTransferId: newTransfer.id
         }
       });
+
+      // Log MERGED history for the source transfers
+      for (const tId of transferIds) {
+        await tx.transferHistory.create({
+          data: {
+            transferId: tId,
+            action: 'MERGED',
+            performedBy: session.name || 'Staff',
+            metadata: JSON.stringify({ remarks: `Merged into ${transferNumber}` })
+          }
+        });
+      }
 
       return newTransfer;
     });

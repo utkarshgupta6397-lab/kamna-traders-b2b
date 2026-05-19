@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 interface Warehouse {
   id: string;
   name: string;
+  isSystemWarehouse?: boolean;
 }
 
 interface Category {
@@ -116,9 +117,12 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   // Determine which warehouses to show as columns - Memoized to prevent busting down-stream memos
   const visibleWarehouses = useMemo(() => {
     return selectedWarehouses.length > 0
-      ? warehouses.filter(w => selectedWarehouses.includes(w.id))
-      : warehouses;
+      ? warehouses.filter(w => selectedWarehouses.includes(w.id) && !w.isSystemWarehouse)
+      : warehouses.filter(w => !w.isSystemWarehouse);
   }, [warehouses, selectedWarehouses]);
+
+  const operationalWarehouses = useMemo(() => warehouses.filter(w => !w.isSystemWarehouse), [warehouses]);
+  const systemWarehouses = useMemo(() => warehouses.filter(w => w.isSystemWarehouse), [warehouses]);
 
   // Filter items for suggestions
   const suggestions = useMemo(() => {
@@ -141,7 +145,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   // Unified computation pass to minimize object creation and property-set pressure (V8 OrderedHashSet growth)
   const { categoryGroups, grandTotals, processedCount } = useMemo(() => {
     const groups: Record<string, { items: any[], totals: Record<string, any> }> = {};
-    const grand: Record<string, any> = { total: 0, totalCPD: 0, firstUnit: null, isMixed: false };
+    const grand: Record<string, any> = { total: 0, totalCPD: 0, firstUnit: null, isMixed: false, IN_TRANSIT: 0 };
     visibleWarehouses.forEach(wh => grand[wh.id] = 0);
     
     let count = 0;
@@ -167,6 +171,8 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
         const qty = item.inventory[visibleWarehouses[j].id]?.qty || 0;
         rowTotal += Math.max(0, qty);
       }
+      const inTransitQty = item.inventory['IN_TRANSIT']?.qty || 0;
+      rowTotal += Math.max(0, inTransitQty);
 
       // 3. OOS Filter
       if (hideOos && rowTotal <= 0) continue;
@@ -216,7 +222,8 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
             total: 0, 
             cpd: 0, 
             firstUnit: unit, 
-            isMixed: false 
+            isMixed: false,
+            IN_TRANSIT: 0
           } 
         };
         visibleWarehouses.forEach(wh => groups[catId].totals[wh.id] = 0);
@@ -240,6 +247,11 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
         groups[catId].totals[whId] += nonNegativeVal;
         grand[whId] += nonNegativeVal;
       }
+      
+      const nonNegativeInTransit = Math.max(0, inTransitQty);
+      groups[catId].totals['IN_TRANSIT'] += nonNegativeInTransit;
+      grand['IN_TRANSIT'] += nonNegativeInTransit;
+      
       count++;
     }
 
@@ -501,8 +513,8 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
               <ChevronDown size={14} className="text-gray-400" />
             </button>
             <div className="absolute left-0 mt-1 z-50 w-48 bg-white border border-gray-200 rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
-              <div className="p-1 max-h-60 overflow-auto">
-                {warehouses.map(w => (
+              <div className="p-1 max-h-60 overflow-auto space-y-1">
+                {operationalWarehouses.map(w => (
                   <button
                     key={w.id}
                     onClick={() => toggleWarehouse(w.id)}
@@ -514,6 +526,27 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                     <span className="truncate">{w.name}</span>
                   </button>
                 ))}
+
+                {systemWarehouses.length > 0 && (
+                  <>
+                    <div className="border-t border-gray-100 my-1" />
+                    <div className="px-3 py-1 text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                      System Warehouses
+                    </div>
+                    {systemWarehouses.map(w => (
+                      <button
+                        key={w.id}
+                        onClick={() => toggleWarehouse(w.id)}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 rounded text-left bg-gray-50/50"
+                      >
+                        <div className={`w-4 h-4 border rounded shrink-0 flex items-center justify-center ${selectedWarehouses.includes(w.id) ? 'bg-[#1A2766] border-[#1A2766]' : 'bg-white border-gray-300'}`}>
+                          {selectedWarehouses.includes(w.id) && <Check size={10} className="text-white" />}
+                        </div>
+                        <span className="truncate text-gray-500 font-medium">{w.name}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -550,6 +583,9 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                   {wh.name}
                 </th>
               ))}
+              <th className="px-4 py-2 font-semibold border-b border-r border-indigo-200 text-center bg-indigo-50 text-indigo-900 min-w-[100px]">
+                In Transit
+              </th>
               <th className="px-4 py-2 font-semibold border-b border-r border-gray-200 text-center bg-[#1A2766]/5 min-w-[100px]">Total</th>
               <th className="px-4 py-2 font-semibold border-b border-r border-gray-200 text-center bg-gray-100 min-w-[90px]">Net CPD</th>
               <th className="px-4 py-2 font-semibold border-b border-gray-200 text-center bg-gray-100 min-w-[90px]">Net DOI</th>
@@ -558,7 +594,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
           <tbody>
             {Object.keys(categoryGroups).length === 0 ? (
               <tr>
-                <td colSpan={visibleWarehouses.length + 5} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={visibleWarehouses.length + 6} className="px-4 py-8 text-center text-gray-500">
                   No items found matching your filters.
                 </td>
               </tr>
@@ -581,6 +617,14 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                           </div>
                         </td>
                       ))}
+                      <td className="px-4 py-1.5 text-center border-r border-indigo-200 bg-indigo-50/50 text-indigo-900">
+                        <div className="flex items-baseline justify-center gap-1">
+                          <span>{catTotals['IN_TRANSIT'].toLocaleString()}</span>
+                          {catTotals['IN_TRANSIT'] > 0 && catTotals.sharedUnit && (
+                            <span className="text-[10px] text-indigo-400/70 font-medium lowercase">{catTotals.sharedUnit}</span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-1.5 text-center bg-[#1A2766]/5 border-r border-gray-200">
                         <div className="flex items-baseline justify-center gap-1">
                           <span>{catTotals.total.toLocaleString()}</span>
@@ -641,6 +685,21 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                             </td>
                           );
                         })}
+                        {(() => {
+                          const inTransitQty = item.inventory['IN_TRANSIT']?.qty || 0;
+                          const isNegative = inTransitQty < 0;
+                          return (
+                            <td className={`px-4 py-1.5 text-center border-r border-indigo-100 font-mono bg-indigo-50/30 group-hover:bg-indigo-50/50 ${isNegative ? 'text-red-600 font-bold' : inTransitQty > 0 ? 'text-indigo-900 font-semibold' : 'text-gray-300'}`}>
+                              <div className="flex items-baseline justify-center gap-1">
+                                {isNegative && <AlertTriangle size={10} className="text-red-600 mb-0.5" />}
+                                <span>{inTransitQty.toLocaleString()}</span>
+                                {inTransitQty !== 0 && item.unit && (
+                                  <span className={`text-[10px] font-medium opacity-70 lowercase ${isNegative ? 'text-red-400' : 'text-indigo-400'}`}>{item.unit}</span>
+                                )}
+                              </div>
+                            </td>
+                          );
+                        })()}
                         <td className={`px-4 py-1.5 text-center font-bold font-mono bg-[#1A2766]/5 border-r border-gray-100 ${item.rowTotal > 0 ? 'text-[#1A2766]' : 'text-gray-300'}`}>
                           <div className="flex items-baseline justify-center gap-1">
                             <span>{item.rowTotal.toLocaleString()}</span>
@@ -673,7 +732,6 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
           </tbody>
           {/* Grand Totals Footer */}
           {Object.keys(categoryGroups).length > 0 && (
-
             <tfoot className="sticky bottom-0 z-20 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
               <tr className="bg-[#1A2766] text-white font-bold">
                 <td colSpan={2} className="px-4 py-2 text-right border-r border-white/20 uppercase tracking-wider text-[10px]">
@@ -689,6 +747,14 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                     </div>
                   </td>
                 ))}
+                <td className="px-4 py-2 text-center border-r border-white/20 bg-indigo-900/50 text-indigo-100 font-mono">
+                  <div className="flex items-baseline justify-center gap-1">
+                    <span>{grandTotals['IN_TRANSIT'].toLocaleString()}</span>
+                    {grandTotals['IN_TRANSIT'] > 0 && grandTotals.sharedUnit && (
+                      <span className="text-[10px] text-indigo-200/60 font-medium lowercase">{grandTotals.sharedUnit}</span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-4 py-2 text-center border-r border-white/20 bg-white/10">
                   <div className="flex items-baseline justify-center gap-1">
                     <span>{grandTotals.total.toLocaleString()}</span>

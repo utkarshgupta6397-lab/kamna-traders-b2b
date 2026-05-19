@@ -70,6 +70,8 @@ export async function GET(request: Request) {
             requestedQty: true,
             dispatchedQty: true,
             balanceQty: true,
+            receivedQty: true,
+            shortQty: true,
             skuId: true
           }
         }
@@ -81,6 +83,11 @@ export async function GET(request: Request) {
     const formatted = transfers.map(t => {
       const totalSKUs = t.items.length;
       const totalUnits = t.items.reduce((sum, item) => sum + item.requestedQty, 0);
+      const totalDispatched = t.items.reduce((sum, item) => sum + (item.dispatchedQty || 0), 0);
+      const totalReceived = t.items.reduce((sum, item) => sum + (item.receivedQty || 0), 0);
+      const totalShort = t.items.reduce((sum, item) => sum + (item.shortQty || 0), 0);
+      const canReceive = totalDispatched > totalReceived && !['COMPLETED', 'CANCELLED', 'SHORT_CLOSED'].includes(t.status);
+
       return {
         id: t.id,
         transferNumber: t.transferNumber,
@@ -98,7 +105,11 @@ export async function GET(request: Request) {
         parentTransferId: t.parentTransferId,
         parentTransferNumber: t.parentTransfer?.transferNumber || null,
         totalSKUs,
-        totalUnits
+        totalUnits,
+        totalDispatched,
+        totalReceived,
+        totalShort,
+        canReceive
       };
     });
 
@@ -272,6 +283,16 @@ export async function POST(request: Request) {
             }))
           });
           console.log("[TRANSFER] 8. Transfer items created successfully");
+
+          await tx.transferHistory.create({
+            data: {
+              transferId: transfer.id,
+              action: 'CREATED',
+              performedBy: session.name || 'Staff',
+              metadata: JSON.stringify({ remarks })
+            }
+          });
+          console.log("[TRANSFER] 8b. Transfer history CREATED logged");
         } catch (e: any) {
           console.error("[TRANSFER] Transaction sub-phase error (transfer items insert):", e);
           throw new Error(`Failed to insert TransferItem records: ${e.message}`);

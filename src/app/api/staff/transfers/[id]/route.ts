@@ -26,7 +26,9 @@ export async function GET(
         destinationWarehouse: { select: { name: true } },
         createdBy: { select: { name: true } },
         dispatchedBy: { select: { name: true } },
+        receivedBy: { select: { name: true } },
         parentTransfer: { select: { transferNumber: true } },
+        history: { orderBy: { timestamp: 'asc' } },
         items: {
           include: {
             sku: {
@@ -45,7 +47,34 @@ export async function GET(
       return NextResponse.json({ error: 'Transfer not found' }, { status: 404 });
     }
 
-    return NextResponse.json(transfer);
+    // Fetch source warehouse stock for all items
+    const itemsWithStock = await Promise.all(
+      transfer.items.map(async (item) => {
+        const inv = await prisma.warehouseInventory.findUnique({
+          where: {
+            warehouseId_skuId: {
+              warehouseId: transfer.sourceWarehouseId,
+              skuId: item.skuId
+            }
+          },
+          select: { qty: true }
+        });
+        return {
+          ...item,
+          sourceStock: inv?.qty ?? 0
+        };
+      })
+    );
+
+    const totalDispatched = transfer.items.reduce((sum, item) => sum + (item.dispatchedQty || 0), 0);
+    const totalReceived = transfer.items.reduce((sum, item) => sum + (item.receivedQty || 0), 0);
+    const canReceive = totalDispatched > totalReceived && !['COMPLETED', 'CANCELLED', 'SHORT_CLOSED'].includes(transfer.status);
+
+    return NextResponse.json({
+      ...transfer,
+      items: itemsWithStock,
+      canReceive
+    });
   } catch (error: any) {
     console.error('[TRANSFER_GET_DETAIL_ERROR]', error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
@@ -110,9 +139,10 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { action, items } = body as {
-      action: 'dispatch' | 'cancel';
-      items?: { skuId: string; dispatchQty: number }[];
+    const { action, items, mode } = body as {
+      action: 'dispatch' | 'cancel' | 'receive';
+      items?: any[];
+      mode?: 'partial' | 'complete';
     };
 
     if (action === 'cancel') {
@@ -133,7 +163,343 @@ export async function POST(
         where: { id },
         data: { status: 'CANCELLED' }
       });
+
+      // Log CANCELLED history record
+      await prisma.transferHistory.create({
+        data: {
+          transferId: transfer.id,
+          action: 'CANCELLED',
+          performedBy: session.name || 'Staff',
+          metadata: JSON.stringify({ remarks: 'Manual cancellation' })
+        }
+      });
+
       return NextResponse.json({ success: true, transfer: updated });
+    }
+
+    if (action === 'receive') {
+      if (!items || items.length === 0) {
+        return NextResponse.json({ error: 'Missing items to receive' }, { status: 400 });
+      }
+
+      // Load transfer details
+      const transfer = await prisma.transfer.findUnique({
+        where: { id },
+        include: {
+          items: {
+            include: {
+              sku: true
+            }
+          },
+          sourceWarehouse: true,
+          destinationWarehouse: true
+        }
+      });
+
+      if (!transfer) {
+        return NextResponse.json({ error: 'Transfer not found' }, { status: 404 });
+      }
+
+      const totalDispatched = transfer.items.reduce((sum, item) => sum + (item.dispatchedQty || 0), 0);
+      const totalReceived = transfer.items.reduce((sum, item) => sum + (item.receivedQty || 0), 0);
+      const canReceive = totalDispatched > totalReceived && !['COMPLETED', 'CANCELLED', 'SHORT_CLOSED'].includes(transfer.status);
+
+      if (!canReceive) {
+        return NextResponse.json({ error: 'Transfer is not eligible for receiving (either no pending quantities to receive or status is completed, cancelled, or short-closed).' }, { status: 400 });
+      }
+
+      // Validate quantities BEFORE performing any writes
+      const itemMap = new Map(transfer.items.map(item => [item.skuId, item]));
+      const valResults: {
+        transferItemId: string;
+        skuId: string;
+        productName: string;
+        receiveQty: number;
+        shortQtyForThisTime: number;
+        isUnlimited: boolean;
+      }[] = [];
+
+      for (const val of items) {
+        const trItem = itemMap.get(val.skuId);
+        if (!trItem) {
+          return NextResponse.json({ error: `SKU ${val.skuId} is not part of this transfer` }, { status: 400 });
+        }
+
+        const receiveQty = Number(val.receiveQty);
+        if (isNaN(receiveQty) || receiveQty < 0 || !Number.isInteger(receiveQty)) {
+          return NextResponse.json({ error: `Invalid receive quantity for SKU ${val.skuId}: ${val.receiveQty}` }, { status: 400 });
+        }
+
+        const pendingQty = trItem.dispatchedQty - trItem.receivedQty - trItem.shortQty;
+        if (receiveQty > pendingQty) {
+          return NextResponse.json({ error: `Receive quantity ${receiveQty} exceeds pending quantity ${pendingQty} for SKU [${val.skuId}]` }, { status: 400 });
+        }
+
+        const shortQtyForThisTime = mode === 'complete' ? (pendingQty - receiveQty) : 0;
+
+        valResults.push({
+          transferItemId: trItem.id,
+          skuId: val.skuId,
+          productName: trItem.sku.name,
+          receiveQty,
+          shortQtyForThisTime,
+          isUnlimited: trItem.sku.isUnlimited
+        });
+      }
+
+      // Execute atomic transaction
+      const updatedTransfer = await prisma.$transaction(async (tx) => {
+        for (const item of valResults) {
+          // Fetch current IN_TRANSIT warehouse inventory inside the transaction block
+          const transitInv = await tx.warehouseInventory.findUnique({
+            where: {
+              warehouseId_skuId: {
+                warehouseId: 'IN_TRANSIT',
+                skuId: item.skuId
+              }
+            }
+          });
+          const currentTransitQty = transitInv?.qty || 0;
+
+          // 1. Deduct stock from In Transit warehouse (IN_TRANSIT) for all SKUs (since it was added there during dispatch)
+          if (item.receiveQty > 0 || item.shortQtyForThisTime > 0) {
+            const totalDeduction = item.receiveQty + item.shortQtyForThisTime;
+            await tx.warehouseInventory.update({
+              where: {
+                warehouseId_skuId: {
+                  warehouseId: 'IN_TRANSIT',
+                  skuId: item.skuId
+                }
+              },
+              data: {
+                qty: { decrement: totalDeduction }
+              }
+            });
+          }
+
+          // 2. Add received qty to Destination warehouse if not unlimited SKU
+          if (item.receiveQty > 0) {
+            if (!item.isUnlimited) {
+              const destInv = await tx.warehouseInventory.findUnique({
+                where: {
+                  warehouseId_skuId: {
+                    warehouseId: transfer.destinationWarehouseId,
+                    skuId: item.skuId
+                  }
+                }
+              });
+              const currentDestQty = destInv?.qty || 0;
+
+              await tx.warehouseInventory.upsert({
+                where: {
+                  warehouseId_skuId: {
+                    warehouseId: transfer.destinationWarehouseId,
+                    skuId: item.skuId
+                  }
+                },
+                update: {
+                  qty: { increment: item.receiveQty }
+                },
+                create: {
+                  warehouseId: transfer.destinationWarehouseId,
+                  skuId: item.skuId,
+                  qty: item.receiveQty,
+                  isOos: false
+                }
+              });
+
+              // Create inventory history entry for destination warehouse (non-unlimited)
+              await tx.inventoryHistory.create({
+                data: {
+                  warehouseId: transfer.destinationWarehouseId,
+                  skuId: item.skuId,
+                  productName: item.productName,
+                  beforeQty: currentDestQty,
+                  afterQty: currentDestQty + item.receiveQty,
+                  qtyChange: item.receiveQty,
+                  remarks: `TRANSFER_RECEIVE: Received stock from transit for transfer ${transfer.transferNumber}`,
+                  createdBy: session.userId as string,
+                  referenceType: 'TRANSFER',
+                  referenceId: transfer.id
+                }
+              });
+            } else {
+              // Create inventory history entry for destination warehouse (unlimited)
+              await tx.inventoryHistory.create({
+                data: {
+                  warehouseId: transfer.destinationWarehouseId,
+                  skuId: item.skuId,
+                  productName: item.productName,
+                  beforeQty: 0,
+                  afterQty: 0,
+                  qtyChange: item.receiveQty,
+                  remarks: `TRANSFER_RECEIVE: Received stock from transit for transfer ${transfer.transferNumber} (UNLIMITED SKU)`,
+                  createdBy: session.userId as string,
+                  referenceType: 'TRANSFER',
+                  referenceId: transfer.id
+                }
+              });
+            }
+
+            // Create inventory history entry for IN_TRANSIT warehouse for the receive part
+            await tx.inventoryHistory.create({
+              data: {
+                warehouseId: 'IN_TRANSIT',
+                skuId: item.skuId,
+                productName: item.productName,
+                beforeQty: currentTransitQty,
+                afterQty: currentTransitQty - item.receiveQty,
+                qtyChange: -item.receiveQty,
+                remarks: `TRANSFER_RECEIVE_OUT: Stock receive out to ${transfer.destinationWarehouse.name} for transfer ${transfer.transferNumber}`,
+                createdBy: session.userId as string,
+                referenceType: 'TRANSFER',
+                referenceId: transfer.id
+              }
+            });
+          }
+
+          // 3. Auto-return short qty to Source warehouse if not unlimited SKU
+          if (item.shortQtyForThisTime > 0) {
+            if (!item.isUnlimited) {
+              const sourceInv = await tx.warehouseInventory.findUnique({
+                where: {
+                  warehouseId_skuId: {
+                    warehouseId: transfer.sourceWarehouseId,
+                    skuId: item.skuId
+                  }
+                }
+              });
+              const currentSourceQty = sourceInv?.qty || 0;
+
+              await tx.warehouseInventory.upsert({
+                where: {
+                  warehouseId_skuId: {
+                    warehouseId: transfer.sourceWarehouseId,
+                    skuId: item.skuId
+                  }
+                },
+                update: {
+                  qty: { increment: item.shortQtyForThisTime }
+                },
+                create: {
+                  warehouseId: transfer.sourceWarehouseId,
+                  skuId: item.skuId,
+                  qty: item.shortQtyForThisTime,
+                  isOos: false
+                }
+              });
+
+              // Create inventory history entry for source warehouse (non-unlimited)
+              await tx.inventoryHistory.create({
+                data: {
+                  warehouseId: transfer.sourceWarehouseId,
+                  skuId: item.skuId,
+                  productName: item.productName,
+                  beforeQty: currentSourceQty,
+                  afterQty: currentSourceQty + item.shortQtyForThisTime,
+                  qtyChange: item.shortQtyForThisTime,
+                  remarks: `TRANSFER_SHORT_RETURN: Stock shortage returned from transit for transfer ${transfer.transferNumber}`,
+                  createdBy: session.userId as string,
+                  referenceType: 'TRANSFER',
+                  referenceId: transfer.id
+                }
+              });
+            } else {
+              // Create inventory history entry for source warehouse (unlimited)
+              await tx.inventoryHistory.create({
+                data: {
+                  warehouseId: transfer.sourceWarehouseId,
+                  skuId: item.skuId,
+                  productName: item.productName,
+                  beforeQty: 0,
+                  afterQty: 0,
+                  qtyChange: item.shortQtyForThisTime,
+                  remarks: `TRANSFER_SHORT_RETURN: Stock shortage returned from transit for transfer ${transfer.transferNumber} (UNLIMITED SKU)`,
+                  createdBy: session.userId as string,
+                  referenceType: 'TRANSFER',
+                  referenceId: transfer.id
+                }
+              });
+            }
+
+            // Create inventory history entry for IN_TRANSIT warehouse for the short return part
+            await tx.inventoryHistory.create({
+              data: {
+                warehouseId: 'IN_TRANSIT',
+                skuId: item.skuId,
+                productName: item.productName,
+                beforeQty: currentTransitQty - item.receiveQty,
+                afterQty: currentTransitQty - item.receiveQty - item.shortQtyForThisTime,
+                qtyChange: -item.shortQtyForThisTime,
+                remarks: `TRANSFER_SHORT_RETURN_OUT: Stock shortage returned to ${transfer.sourceWarehouse.name} for transfer ${transfer.transferNumber}`,
+                createdBy: session.userId as string,
+                referenceType: 'TRANSFER',
+                referenceId: transfer.id
+              }
+            });
+          }
+
+          // 4. Update the transfer item details
+          await tx.transferItem.update({
+            where: { id: item.transferItemId },
+            data: {
+              receivedQty: { increment: item.receiveQty },
+              shortQty: { increment: item.shortQtyForThisTime }
+            }
+          });
+        }
+
+        // Re-load transfer items to determine overall status
+        const updatedItems = await tx.transferItem.findMany({
+          where: { transferId: transfer.id }
+        });
+
+        const totalPending = updatedItems.reduce((sum, item) => sum + (item.dispatchedQty - item.receivedQty - item.shortQty), 0);
+        const totalShort = updatedItems.reduce((sum, item) => sum + item.shortQty, 0);
+        const totalReceived = updatedItems.reduce((sum, item) => sum + item.receivedQty, 0);
+
+        let newStatus: 'PARTIALLY_RECEIVED' | 'COMPLETED' | 'SHORT_CLOSED';
+
+        if (totalPending === 0) {
+          if (totalShort > 0) {
+            newStatus = 'SHORT_CLOSED';
+          } else {
+            newStatus = 'COMPLETED';
+          }
+        } else {
+          newStatus = 'PARTIALLY_RECEIVED';
+        }
+
+        const isFinalStatus = newStatus === 'COMPLETED' || newStatus === 'SHORT_CLOSED';
+
+        const updated = await tx.transfer.update({
+          where: { id: transfer.id },
+          data: {
+            status: newStatus,
+            receivedAt: isFinalStatus ? new Date() : null,
+            receivedById: isFinalStatus ? (session.userId as string) : null
+          }
+        });
+
+        // Log history
+        await tx.transferHistory.create({
+          data: {
+            transferId: transfer.id,
+            action: newStatus,
+            performedBy: session.name || 'Staff',
+            metadata: JSON.stringify({
+              mode,
+              items: items.map(i => ({ skuId: i.skuId, receiveQty: i.receiveQty })),
+              totalReceived,
+              totalShort
+            })
+          }
+        });
+
+        return updated;
+      });
+
+      return NextResponse.json({ success: true, transfer: updatedTransfer });
     }
 
     if (action !== 'dispatch') {
@@ -213,7 +579,7 @@ export async function POST(
       const destInv = await prisma.warehouseInventory.findUnique({
         where: {
           warehouseId_skuId: {
-            warehouseId: transfer.destinationWarehouseId,
+            warehouseId: 'IN_TRANSIT',
             skuId: dItem.skuId
           }
         }
@@ -258,7 +624,7 @@ export async function POST(
         const destInvRecord = await tx.warehouseInventory.findUnique({
           where: {
             warehouseId_skuId: {
-              warehouseId: transfer.destinationWarehouseId,
+              warehouseId: 'IN_TRANSIT',
               skuId: val.skuId
             }
           }
@@ -319,11 +685,11 @@ export async function POST(
           });
         }
 
-        // 2. Add stock to destination warehouse (normally IN_TRANSIT)
+        // 2. Add stock to In Transit warehouse (IN_TRANSIT)
         await tx.warehouseInventory.upsert({
           where: {
             warehouseId_skuId: {
-              warehouseId: transfer.destinationWarehouseId,
+              warehouseId: 'IN_TRANSIT',
               skuId: val.skuId
             }
           },
@@ -331,17 +697,17 @@ export async function POST(
             qty: { increment: val.dispatchQty }
           },
           create: {
-            warehouseId: transfer.destinationWarehouseId,
+            warehouseId: 'IN_TRANSIT',
             skuId: val.skuId,
             qty: val.dispatchQty,
             isOos: false
           }
         });
 
-        // Create inventory history entry for destination warehouse
+        // Create inventory history entry for destination warehouse (IN_TRANSIT)
         await tx.inventoryHistory.create({
           data: {
-            warehouseId: transfer.destinationWarehouseId,
+            warehouseId: 'IN_TRANSIT',
             skuId: val.skuId,
             productName: val.productName,
             beforeQty: currentDestQty,
@@ -370,13 +736,13 @@ export async function POST(
       });
 
       const totalBalance = updatedItems.reduce((sum, item) => sum + item.balanceQty, 0);
-      let newStatus: 'IN_TRANSIT' | 'DISPATCHED_PARTIAL_CLOSED';
+      let newStatus: 'IN_TRANSIT' | 'PARTIALLY_DISPATCHED';
       let updatedRemarks = transfer.remarks;
 
       if (totalBalance === 0) {
         newStatus = 'IN_TRANSIT';
       } else {
-        newStatus = 'DISPATCHED_PARTIAL_CLOSED';
+        newStatus = 'PARTIALLY_DISPATCHED';
 
         // Atomically generate new sequential transferNumber for child
         const kolkataTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
@@ -427,6 +793,16 @@ export async function POST(
           data: childItems
         });
 
+        // Log CREATED history for the new child transfer
+        await tx.transferHistory.create({
+          data: {
+            transferId: childTransfer.id,
+            action: 'CREATED',
+            performedBy: session.name || 'Staff',
+            metadata: JSON.stringify({ remarks: `Auto-generated remainder from parent transfer ${transfer.transferNumber}` })
+          }
+        });
+
         // Update parent's remarks to log the auto-generation details
         const prefix = transfer.remarks ? `${transfer.remarks}\n` : '';
         updatedRemarks = `${prefix}Partial dispatch completed. Remaining qty auto-created in: ${childTransferNumber}`;
@@ -439,6 +815,19 @@ export async function POST(
           remarks: updatedRemarks,
           dispatchedAt: new Date(),
           dispatchedById: session.userId as string
+        }
+      });
+
+      // Log DISPATCHED history for the parent transfer
+      await tx.transferHistory.create({
+        data: {
+          transferId: transfer.id,
+          action: 'DISPATCHED',
+          performedBy: session.name || 'Staff',
+          metadata: JSON.stringify({
+            status: newStatus,
+            items: items.map(i => ({ skuId: i.skuId, qty: i.dispatchQty }))
+          })
         }
       });
 

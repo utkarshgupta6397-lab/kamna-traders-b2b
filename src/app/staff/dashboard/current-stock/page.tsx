@@ -26,8 +26,8 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
 
   const [warehouses, categories, brands, skus, inventory, recentSales] = await Promise.all([
     prisma.warehouse.findMany({ 
-      where: { active: true, isSystemWarehouse: false }, 
-      select: { id: true, name: true },
+      where: { active: true }, 
+      select: { id: true, name: true, isSystemWarehouse: true },
       orderBy: { name: 'asc' }
     }),
     prisma.category.findMany({ 

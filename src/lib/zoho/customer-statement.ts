@@ -11,6 +11,7 @@ export type CustomerStatementCustomer = {
   email?: string;
   outstandingReceivable?: number;
   outstandingReceivableFormatted?: string;
+  unusedCreditsReceivable?: number;
   billingAddress?: string;
 };
 
@@ -30,6 +31,7 @@ export type CustomerStatementInvoice = {
 export type StatementTransaction = {
   id: string;
   type: 'invoice' | 'payment';
+  datetime?: string;
   date: string;
   description: string;
   amount: number;
@@ -153,6 +155,7 @@ export async function getCustomerPayments(contactId: string): Promise<{
     console.log('[Zoho Payments] Raw payment count:', raw.length);
     
     const items: CustomerStatementPayment[] = raw
+      .filter((pmt: any) => !(pmt.deleted === true || pmt.status === 'void' || pmt.status === 'cancelled'))
       .map((pmt: any) => ({
         paymentId: pmt.payment_id,
         paymentNumber: pmt.payment_number,
@@ -218,6 +221,7 @@ export async function getCustomerStatement(contactId: string): Promise<{
       id: inv.invoiceId,
       type: 'invoice' as const,
       date: inv.invoiceDate,
+      datetime: inv.invoiceDate,
       description: `Invoice ${inv.invoiceNumber}`,
       amount: inv.total,
       direction: 'dr' as const
@@ -226,6 +230,7 @@ export async function getCustomerStatement(contactId: string): Promise<{
       id: pmt.paymentId,
       type: 'payment' as const,
       date: pmt.date,
+      datetime: pmt.date,
       description: pmt.paymentMode ? `Payment - ${pmt.paymentMode}` : 'Customer Payment',
       amount: pmt.amount,
       direction: 'cr' as const
@@ -234,8 +239,8 @@ export async function getCustomerStatement(contactId: string): Promise<{
 
   console.log('[Zoho Statement] Merged transaction count:', mergedRaw.length);
 
-  // 4. Sort chronologically NEWEST FIRST
-  mergedRaw.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  // 4. Sort chronologically NEWEST FIRST by datetime
+  mergedRaw.sort((a, b) => new Date(b.datetime!).getTime() - new Date(a.datetime!).getTime());
 
   // 5. Take latest 10 merged transactions
   const latest10 = mergedRaw.slice(0, 10);
@@ -243,7 +248,7 @@ export async function getCustomerStatement(contactId: string): Promise<{
   console.log('[Zoho Statement] Final rendered transaction count:', latest10.length);
 
   // 6. Reverse-balance calculation
-  const closingBalance = customer.outstandingReceivable ?? 0;
+  const closingBalance = (customer.outstandingReceivable ?? 0) - (customer.unusedCreditsReceivable ?? 0);
   
   // We need to work backwards from closing balance to opening balance for these 10 items.
   // We have the latest 10 items in `latest10` (newest first).
@@ -345,6 +350,7 @@ export async function getCustomerById(contactId: string): Promise<{ success: boo
       mobile: contact.mobile,
       email: contact.email,
       outstandingReceivable: contact.outstanding_receivable_amount,
+      unusedCreditsReceivable: contact.unused_credits_receivable_amount,
       outstandingReceivableFormatted: contact.outstanding_receivable_amount_formatted,
       billingAddress: billingAddr
     };

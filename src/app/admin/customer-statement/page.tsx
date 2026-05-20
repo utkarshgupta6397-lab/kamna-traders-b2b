@@ -26,6 +26,7 @@ type Transaction = {
   id: string;
   type: 'invoice' | 'payment';
   date: string;
+  datetime?: string;
   description: string;
   amount: number;
   direction: 'dr' | 'cr';
@@ -69,9 +70,10 @@ function fmt(n: number) {
  *   zero     → "₹0.00"
  */
 function fmtBalance(n: number) {
-  if (n === 0) return '₹0.00';
-  return `${fmt(n)} ${n > 0 ? 'DR' : 'CR'}`;
+  if (n === 0) return 'Settled';
+  return n > 0 ? `${fmt(n)} Due` : `${fmt(Math.abs(n))} Advance`;
 }
+
 
 /** Format date as "18 May 2026" */
 function fmtDate(iso: string) {
@@ -79,6 +81,17 @@ function fmtDate(iso: string) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/** Format datetime as "8 May 2026 1:23 PM" */
+function fmtDateTime(iso: string) {
+  if (!iso) return '—';
+  if (iso.length === 10 || (!iso.includes('T') && !iso.includes(':'))) return fmtDate(iso);
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const datePart = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const timePart = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: 'numeric', hour12: true });
+  return `${datePart} ${timePart}`;
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────
@@ -131,14 +144,9 @@ export default function CustomerStatementPage() {
   const s = statement?.data;
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-
-      {/* ── Header ─────────────────────────────────────────────────────── */}
+    <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-          <FileText size={20} className="text-[#1A2766]" />
-          Customer Statement Preview
-        </h1>
+        <h1 className="text-2xl font-bold">Customer Statement Preview</h1>
         <p className="text-xs text-gray-400 mt-0.5">
           Prototype · Reverse-calculated opening balance · Latest 10 invoices · Payments excluded
         </p>
@@ -278,7 +286,7 @@ export default function CustomerStatementPage() {
                         {idx + 1}
                       </td>
                       <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
-                        {fmtDate(tx.date)}
+                        {fmtDateTime(tx.datetime || tx.date)}
                       </td>
                       <td className="px-4 py-2.5 text-xs">
                         {tx.type === 'invoice' ? (
@@ -294,7 +302,7 @@ export default function CustomerStatementPage() {
                       <td className="px-4 py-2.5 text-xs font-medium text-gray-800">
                         {tx.description}
                       </td>
-                      <td className={`px-4 py-2.5 text-right text-xs font-semibold whitespace-nowrap ${tx.direction === 'dr' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                      <td className={`px-4 py-2.5 text-right text-xs font-semibold whitespace-nowrap ${tx.direction === 'dr' ? 'text-rose-600' : 'text-emerald-700'}`}>
                         {tx.direction === 'dr' ? '+' : '-'} {fmt(tx.amount)}
                       </td>
                       <td className="px-4 py-2.5 text-right text-xs font-medium text-gray-700 whitespace-nowrap">
@@ -317,7 +325,9 @@ export default function CustomerStatementPage() {
                     <td className="px-4 py-3 text-xs text-gray-400">—</td>
                     <td className="px-4 py-3 text-xs text-gray-400">—</td>
                     <td className="px-4 py-3">
-                      <div className="font-bold text-[#1A2766] text-sm">Net Payable</div>
+                      <div className="font-bold text-[#1A2766] text-sm">
+                        {s.closingBalance > 0 ? 'Balance Due' : s.closingBalance < 0 ? 'Customer Advance' : 'Account Settled'}
+                      </div>
                       <div className="text-[10px] text-gray-400">
                         Closing balance
                       </div>

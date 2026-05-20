@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { Package, Users, Warehouse, Tags, Database, LayoutDashboard, LogOut, Bookmark, RefreshCw, Terminal, Printer, Shield, Lock } from 'lucide-react';
+import { Package, Users, Warehouse, Tags, Database, LayoutDashboard, LogOut, Bookmark, RefreshCw, Terminal, Printer, Shield, Lock, FileText } from 'lucide-react';
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { Toaster } from 'react-hot-toast';
@@ -17,6 +17,7 @@ const navItems = [
   { href: '/admin/inventory', label: 'Inventory', icon: Database },
   { href: '/admin/zoho-debug', label: 'Zoho Debug', icon: Terminal },
   { href: '/admin/print-debug', label: 'Print Debug', icon: Printer },
+  { href: '/admin/customer-statement', label: 'Customer Statement', icon: FileText },
   { href: '/admin/sessions', label: 'Sessions', icon: Shield },
 ];
 

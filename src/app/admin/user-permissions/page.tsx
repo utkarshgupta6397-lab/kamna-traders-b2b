@@ -17,6 +17,7 @@ interface User {
   [key: string]: any;
 }
 
+
 export default function UserPermissionsPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,64 +96,64 @@ export default function UserPermissionsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="animate-spin text-[#1A2766]" size={32} />
+      <div className="flex items-center justify-center h-48">
+        <Loader2 className="animate-spin text-[#1A2766]" size={24} />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-10">
+    <div className="space-y-3 w-full max-w-screen-2xl mx-auto px-4 pb-8 mt-4">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-[#1A2766] uppercase tracking-tight flex items-center gap-3">
-            <Lock size={28} />
+          <h1 className="text-lg font-bold text-[#1A2766] uppercase tracking-tight flex items-center gap-2 leading-none">
+            <Lock size={20} />
             User Permissions
           </h1>
-          <p className="text-sm text-gray-500 font-medium">Manage operational access rights for staff members</p>
+          <p className="text-xs text-gray-500 mt-0.5">Manage operational access rights for staff members</p>
         </div>
       </div>
 
-      {/* Summary Cards - Simplified */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* Summary Cards - High Density */}
+      <div className="grid grid-cols-3 gap-3">
         {[
           { label: 'Total Users', value: stats.total, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
           { label: 'Admin', value: stats.admins, icon: Shield, color: 'text-amber-600', bg: 'bg-amber-50' },
           { label: 'Staff', value: stats.staff, icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50' },
         ].map((card) => (
-          <div key={card.label} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
-            <div className={`p-3 rounded-xl ${card.bg} ${card.color}`}>
-              <card.icon size={20} />
+          <div key={card.label} className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 flex items-center gap-2">
+            <div className={`p-1.5 rounded-lg ${card.bg} ${card.color}`}>
+              <card.icon size={14} />
             </div>
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{card.label}</p>
-              <p className="text-lg font-black text-gray-900">{card.value}</p>
+              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider leading-none">{card.label}</p>
+              <p className="text-sm font-black text-gray-900 mt-0.5 leading-none">{card.value}</p>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Filters */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-4 items-center">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+      {/* Compressed Toolbar */}
+      <div className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
           <input
             type="text"
             placeholder="Search by name or phone..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[#1A2766]/10 focus:border-[#1A2766] transition-all text-sm"
+            className="w-full pl-8 pr-3 py-1 h-7 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-[#1A2766] transition-all text-xs"
           />
         </div>
-        <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-xl border border-gray-200">
+        <div className="flex items-center gap-0.5 bg-gray-50 p-0.5 rounded-lg border border-gray-200">
           {(['ALL', 'ADMIN', 'STAFF'] as const).map((role) => (
             <button
               key={role}
               onClick={() => setRoleFilter(role)}
-              className={`px-4 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+              className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all h-6 flex items-center justify-center ${
                 roleFilter === role 
-                  ? 'bg-[#1A2766] text-white shadow-md' 
+                  ? 'bg-[#1A2766] text-white shadow-sm' 
                   : 'text-gray-500 hover:text-[#1A2766]'
               }`}
             >
@@ -162,48 +163,45 @@ export default function UserPermissionsPage() {
         </div>
       </div>
 
-      {/* Simplified List Table */}
-      <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
-            <thead className="bg-[#F8FAFC]">
+      {/* Simplified List Table - High Density */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="overflow-x-auto max-h-[calc(100vh-200px)]">
+          <table className="w-full border-collapse relative">
+            <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
               <tr>
-                <th className="p-4 text-left border-b border-gray-200 min-w-[240px]">
-                  <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest">User Details</span>
+                <th className="py-2 px-2.5 text-left border-b border-gray-200 min-w-[180px] bg-gray-50/95 backdrop-blur-sm">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">User Details</span>
                 </th>
                 {PERMISSIONS.map(p => (
-                  <th key={p.key} className="p-4 text-center border-b border-gray-200 min-w-[160px]">
-                    <div className="flex flex-col items-center gap-1 group cursor-help">
-                      <span className="text-[11px] font-black text-gray-500 uppercase tracking-widest">{p.label}</span>
+                  <th key={p.key} className="py-2 px-1 text-center border-b border-gray-200 min-w-[90px] bg-gray-50/95 backdrop-blur-sm">
+                    <div className="flex items-center justify-center gap-0.5 group cursor-help relative" title={p.description || p.label}>
+                      <span className="text-[10px] font-black text-gray-500 uppercase tracking-tight">
+                        {p.label}
+                      </span>
                       {p.description && (
-                        <div className="relative">
-                          <Info size={12} className="text-gray-300 group-hover:text-blue-500 transition-colors" />
-                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-gray-900 text-white text-[10px] rounded shadow-xl z-50 pointer-events-none normal-case font-medium">
-                            {p.description}
-                          </div>
-                        </div>
+                        <Info size={10} className="text-gray-300 group-hover:text-blue-500 transition-colors" />
                       )}
                     </div>
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-gray-100 text-gray-700">
               {filteredUsers.map((user) => {
                 const isAdmin = user.role === 'ADMIN';
                 
                 return (
-                  <tr key={user.id} className="hover:bg-blue-50/30 transition-colors group">
-                    <td className="p-4 border-b border-gray-100">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-[#1A2766] text-white flex items-center justify-center font-bold text-sm shadow-sm">
+                  <tr key={user.id} className="hover:bg-blue-50/20 transition-colors group">
+                    <td className="py-1.5 px-2.5 border-b border-gray-100">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-[#1A2766] text-white flex items-center justify-center font-bold text-[10px] shadow-sm flex-shrink-0">
                           {user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                         </div>
-                        <div>
-                          <p className="text-sm font-bold text-gray-900">{user.name}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-xs font-mono text-gray-500">{formatPhone(user.mobile)}</span>
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tighter ${
+                        <div className="truncate">
+                          <p className="text-xs font-bold text-gray-900 truncate" title={user.name}>{user.name}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[10px] font-mono text-gray-400">{formatPhone(user.mobile)}</span>
+                            <span className={`text-[8px] px-1 py-0.2 rounded-full font-bold uppercase tracking-tighter ${
                               isAdmin ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
                             }`}>
                               {user.role}
@@ -218,28 +216,30 @@ export default function UserPermissionsPage() {
                       const hasPermission = !!user[p.key];
 
                       return (
-                        <td key={p.key} className="p-4 border-b border-gray-100 text-center">
+                        <td key={p.key} className="py-1.5 px-1 border-b border-gray-100 text-center">
                           {isAdmin ? (
-                            <div className="flex items-center justify-center gap-2 text-amber-600 bg-amber-50 py-1.5 px-3 rounded-full mx-auto w-fit">
-                              <Check size={14} strokeWidth={3} />
-                              <span className="text-[10px] font-black uppercase tracking-wider">Full Access</span>
+                            <div className="flex items-center justify-center gap-0.5 text-amber-600 bg-amber-50 py-0.5 px-1.5 rounded-full mx-auto w-fit border border-amber-100">
+                              <Check size={10} strokeWidth={3} />
+                              <span className="text-[8px] font-black uppercase tracking-wider">Full Access</span>
                             </div>
                           ) : (
-                            <label className="relative inline-flex items-center cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="sr-only peer"
-                                checked={hasPermission}
-                                onChange={() => handleToggle(user.id, p.key, hasPermission)}
-                                disabled={isUpdating}
-                              />
-                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#1A2766]/10 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                              {isUpdating && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded-full">
-                                  <Loader2 size={12} className="animate-spin text-[#1A2766]" />
-                                </div>
-                              )}
-                            </label>
+                            <div className="flex items-center justify-center">
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  className="sr-only peer"
+                                  checked={hasPermission}
+                                  onChange={() => handleToggle(user.id, p.key, hasPermission)}
+                                  disabled={isUpdating}
+                                />
+                                <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-3 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
+                                {isUpdating && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded-full">
+                                    <Loader2 size={10} className="animate-spin text-[#1A2766]" />
+                                  </div>
+                                )}
+                              </label>
+                            </div>
                           )}
                         </td>
                       );
@@ -252,13 +252,13 @@ export default function UserPermissionsPage() {
         </div>
         
         {filteredUsers.length === 0 && (
-          <div className="p-20 text-center flex flex-col items-center gap-4">
-            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center text-gray-300">
-              <Search size={32} />
+          <div className="p-12 text-center flex flex-col items-center gap-2">
+            <div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center text-gray-300">
+              <Search size={20} />
             </div>
             <div>
-              <p className="text-gray-900 font-bold">No users found</p>
-              <p className="text-sm text-gray-500">Try adjusting your search or filters</p>
+              <p className="text-gray-900 font-bold text-xs">No users found</p>
+              <p className="text-[11px] text-gray-500">Try adjusting your search or filters</p>
             </div>
           </div>
         )}

@@ -305,14 +305,11 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   }, []);
 
   const handleDownloadPDF = async () => {
-    const itemsToExport: any[] = [];
-    Object.values(categoryGroups).forEach(g => {
-      itemsToExport.push(...g.items);
-    });
-
     await exportStockToPDF({
       warehouses: visibleWarehouses,
-      items: itemsToExport,
+      categoryGroups,
+      categoryMap,
+      grandTotals,
       filters: {
         categories: selectedCategories,
         brands: selectedBrands,
@@ -603,37 +600,38 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                 return (
                   <React.Fragment key={categoryId}>
                     {/* Category Header Row */}
-                    <tr className="bg-gray-50/80 font-bold border-b border-gray-200 text-[#1A2766] text-xs">
-                      <td colSpan={2} className="px-4 py-1.5 border-r border-gray-200 sticky left-0 z-10 bg-gray-50/90 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    {/* Category Header Row */}
+                    <tr className="bg-indigo-50/70 font-bold border-b border-indigo-100 text-[#1A2766] text-xs transition-colors hover:bg-indigo-50">
+                      <td colSpan={2} className="px-4 py-2 border-r border-indigo-100 sticky left-0 z-10 bg-indigo-50/90 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                         {categoryMap[categoryId] || 'Unknown Category'} <span className="text-[10px] font-normal text-gray-500 ml-2">({catItems.length} items)</span>
                       </td>
                       {visibleWarehouses.map(wh => (
-                        <td key={wh.id} className="px-4 py-1.5 text-center border-r border-gray-200">
+                        <td key={wh.id} className="px-4 py-2 text-center border-r border-indigo-100">
                           <div className="flex items-baseline justify-center gap-1">
-                            <span>{catTotals[wh.id].toLocaleString()}</span>
-                            {catTotals[wh.id] > 0 && catTotals.sharedUnit && (
+                            <span>{catTotals[wh.id] >= 999999999 ? '∞' : catTotals[wh.id].toLocaleString()}</span>
+                            {catTotals[wh.id] > 0 && catTotals[wh.id] < 999999999 && catTotals.sharedUnit && (
                               <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{catTotals.sharedUnit}</span>
                             )}
                           </div>
                         </td>
                       ))}
-                      <td className="px-4 py-1.5 text-center border-r border-indigo-200 bg-indigo-50/50 text-indigo-900">
+                      <td className="px-4 py-2 text-center border-r border-indigo-200 bg-indigo-100/50 text-indigo-900">
                         <div className="flex items-baseline justify-center gap-1">
-                          <span>{catTotals['IN_TRANSIT'].toLocaleString()}</span>
-                          {catTotals['IN_TRANSIT'] > 0 && catTotals.sharedUnit && (
+                          <span>{catTotals['IN_TRANSIT'] >= 999999999 ? '∞' : catTotals['IN_TRANSIT'].toLocaleString()}</span>
+                          {catTotals['IN_TRANSIT'] > 0 && catTotals['IN_TRANSIT'] < 999999999 && catTotals.sharedUnit && (
                             <span className="text-[10px] text-indigo-400/70 font-medium lowercase">{catTotals.sharedUnit}</span>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-1.5 text-center bg-[#1A2766]/5 border-r border-gray-200">
+                      <td className="px-4 py-2 text-center bg-indigo-100 text-indigo-950 font-extrabold border-r border-indigo-200">
                         <div className="flex items-baseline justify-center gap-1">
-                          <span>{catTotals.total.toLocaleString()}</span>
-                          {catTotals.total > 0 && catTotals.sharedUnit && (
-                            <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{catTotals.sharedUnit}</span>
+                          <span>{catTotals.total >= 999999999 ? '∞' : catTotals.total.toLocaleString()}</span>
+                          {catTotals.total > 0 && catTotals.total < 999999999 && catTotals.sharedUnit && (
+                            <span className="text-[10px] text-indigo-900 font-medium opacity-70 lowercase">{catTotals.sharedUnit}</span>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-1.5 text-center border-r border-gray-200">
+                      <td className="px-4 py-2 text-center border-r border-indigo-100">
                         <div className="flex items-baseline justify-center gap-1">
                           <span>{formatCPDValue(catTotals.cpd)}</span>
                           {catTotals.sharedUnit && (
@@ -641,90 +639,113 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                           )}
                         </div>
                       </td>
-                      <td className={`px-4 py-1.5 text-center ${
-                        catTotals.doiInfo.status === 'CRITICAL' ? 'text-red-600 bg-red-50/30' : 
-                        catTotals.doiInfo.status === 'WARNING' ? 'text-amber-600 bg-amber-50/30' : 
-                        'text-green-600 bg-green-50/30'
+                      <td className={`px-4 py-2 text-center ${
+                        catTotals.doiInfo.status === 'CRITICAL' ? 'text-red-600 bg-red-50/50' : 
+                        catTotals.doiInfo.status === 'WARNING' ? 'text-amber-600 bg-amber-50/50' : 
+                        'text-green-600 bg-green-50/50'
                       }`}>
                         {catTotals.doiInfo.text}
                       </td>
                     </tr>
 
-                    
                     {/* Item Rows */}
-                    {catItems.map((item, idx) => (
-                      <tr key={item.id} className="border-b border-gray-100 hover:bg-blue-50/50 transition-colors group">
-                        <td className="px-4 py-1.5 text-gray-400 text-center border-r border-gray-100 sticky left-0 z-10 bg-white group-hover:bg-blue-50/30">{idx + 1}</td>
-                        <td 
-                          className="px-4 py-1.5 border-r border-gray-100 sticky left-[40px] z-10 bg-white group-hover:bg-blue-50/30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] cursor-pointer"
-                          onClick={() => setSelectedSku({
-                            id: item.id,
-                            name: item.name,
-                            totalStock: item.rowTotal,
-                            inventoryByWarehouse: item.inventory,
-                            unit: item.unit
-                          })}
-                        >
-                          <div className="flex items-baseline gap-2 overflow-hidden">
-                            <span className="font-bold text-gray-900 truncate leading-tight">{item.name}</span>
-                            <span className="text-[10px] text-gray-400 font-mono flex-shrink-0 group-hover:text-[#1A2766] transition-colors">[{item.id}]</span>
-                          </div>
-                        </td>
-                        {visibleWarehouses.map(wh => {
-                          const qty = item.inventory[wh.id]?.qty || 0;
-                          const isNegative = qty < 0;
-                          return (
-                            <td key={wh.id} className={`px-4 py-1.5 text-center border-r border-gray-100 font-mono ${isNegative ? 'text-red-600' : qty > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
-                              <div className="flex items-baseline justify-center gap-1">
-                                {isNegative && <AlertTriangle size={10} className="text-red-600 mb-0.5" />}
-                                <span className="font-bold">{qty.toLocaleString()}</span>
-                                {qty !== 0 && item.unit && (
-                                  <span className={`text-[10px] font-medium opacity-70 lowercase ${isNegative ? 'text-red-400' : 'text-gray-400'}`}>{item.unit}</span>
+                    {(() => {
+                      const maxQty = Math.max(...catItems.filter(i => i.rowTotal < 999999999).map(i => i.rowTotal), 0);
+                      return catItems.map((item, idx) => {
+                        const percentile = item.rowTotal >= 999999999 ? 100 : maxQty > 0 ? (item.rowTotal / maxQty) * 100 : 0;
+                        return (
+                          <tr key={item.id} className="border-b border-gray-100 hover:bg-blue-50/50 transition-colors group">
+                            <td className="px-4 py-1.5 text-gray-400 text-center border-r border-gray-100 sticky left-0 z-10 bg-white group-hover:bg-blue-50/30">{idx + 1}</td>
+                            <td 
+                              className="px-4 py-1.5 border-r border-gray-100 sticky left-[40px] z-10 bg-white group-hover:bg-blue-50/30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] cursor-pointer"
+                              onClick={() => setSelectedSku({
+                                id: item.id,
+                                name: item.name,
+                                totalStock: item.rowTotal,
+                                inventoryByWarehouse: item.inventory,
+                                unit: item.unit
+                              })}
+                            >
+                              <div className="flex items-baseline gap-2 overflow-hidden">
+                                <span className="font-bold text-gray-900 truncate leading-tight">{item.name}</span>
+                                <span className="text-[10px] text-gray-400 font-mono flex-shrink-0 group-hover:text-[#1A2766] transition-colors">[{item.id}]</span>
+                              </div>
+                            </td>
+                            {visibleWarehouses.map(wh => {
+                              const qty = item.inventory[wh.id]?.qty || 0;
+                              const isNegative = qty < 0;
+                              const isInfinite = qty >= 999999999;
+                              return (
+                                <td key={wh.id} className={`px-4 py-1.5 text-center border-r border-gray-100 font-mono ${isNegative ? 'text-red-600 bg-red-50/20' : qty > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                                  <div className="flex items-baseline justify-center gap-1">
+                                    {isNegative && <AlertTriangle size={10} className="text-red-600 mb-0.5" />}
+                                    <span className="font-bold">{isInfinite ? '∞' : qty.toLocaleString()}</span>
+                                    {!isInfinite && qty !== 0 && item.unit && (
+                                      <span className={`text-[10px] font-medium opacity-70 lowercase ${isNegative ? 'text-red-400' : 'text-gray-400'}`}>{item.unit}</span>
+                                    )}
+                                  </div>
+                                </td>
+                              );
+                            })}
+                            {(() => {
+                              const inTransitQty = item.inventory['IN_TRANSIT']?.qty || 0;
+                              const isNegative = inTransitQty < 0;
+                              const isInfinite = inTransitQty >= 999999999;
+                              return (
+                                <td className={`px-4 py-1.5 text-center border-r border-indigo-100 font-mono bg-indigo-50/30 group-hover:bg-indigo-50/50 ${isNegative ? 'text-red-600 font-bold bg-red-50/20' : inTransitQty > 0 ? 'text-indigo-900 font-semibold' : 'text-gray-300'}`}>
+                                  <div className="flex items-baseline justify-center gap-1">
+                                    {isNegative && <AlertTriangle size={10} className="text-red-600 mb-0.5" />}
+                                    <span>{isInfinite ? '∞' : inTransitQty.toLocaleString()}</span>
+                                    {!isInfinite && inTransitQty !== 0 && item.unit && (
+                                      <span className={`text-[10px] font-medium opacity-70 lowercase ${isNegative ? 'text-red-400' : 'text-indigo-400'}`}>{item.unit}</span>
+                                    )}
+                                  </div>
+                                </td>
+                              );
+                            })()}
+                            <td className={`px-4 py-1.5 border-r border-gray-100 font-mono bg-[#1A2766]/5 text-center ${item.rowTotal > 0 ? 'text-[#1A2766]' : 'text-gray-300'}`}>
+                              <div className="flex items-center justify-center gap-2">
+                                <div className="flex items-baseline gap-0.5 font-bold text-gray-900 justify-end min-w-[50px]">
+                                  <span>{item.rowTotal >= 999999999 ? '∞' : item.rowTotal.toLocaleString()}</span>
+                                  {item.rowTotal > 0 && item.rowTotal < 999999999 && item.unit && (
+                                    <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{item.unit}</span>
+                                  )}
+                                </div>
+                                {item.rowTotal > 0 && item.rowTotal < 999999999 && (
+                                  <div className="w-10 h-1.5 bg-gray-200/50 rounded-full overflow-hidden flex-shrink-0 relative">
+                                    <div 
+                                      className={`h-full rounded-full ${
+                                        percentile <= 20 ? 'bg-red-500' :
+                                        percentile <= 40 ? 'bg-orange-500' :
+                                        percentile <= 60 ? 'bg-yellow-500' :
+                                        percentile <= 80 ? 'bg-lime-500' :
+                                        'bg-green-600'
+                                      }`}
+                                      style={{ width: `${percentile}%` }}
+                                    />
+                                  </div>
                                 )}
                               </div>
                             </td>
-                          );
-                        })}
-                        {(() => {
-                          const inTransitQty = item.inventory['IN_TRANSIT']?.qty || 0;
-                          const isNegative = inTransitQty < 0;
-                          return (
-                            <td className={`px-4 py-1.5 text-center border-r border-indigo-100 font-mono bg-indigo-50/30 group-hover:bg-indigo-50/50 ${isNegative ? 'text-red-600 font-bold' : inTransitQty > 0 ? 'text-indigo-900 font-semibold' : 'text-gray-300'}`}>
+                            <td className="px-4 py-1.5 text-center border-r border-gray-100 text-[13px] font-medium text-gray-600">
                               <div className="flex items-baseline justify-center gap-1">
-                                {isNegative && <AlertTriangle size={10} className="text-red-600 mb-0.5" />}
-                                <span>{inTransitQty.toLocaleString()}</span>
-                                {inTransitQty !== 0 && item.unit && (
-                                  <span className={`text-[10px] font-medium opacity-70 lowercase ${isNegative ? 'text-red-400' : 'text-indigo-400'}`}>{item.unit}</span>
+                                <span>{formatCPDValue(item.netCPD)}</span>
+                                {item.unit && (
+                                  <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{item.unit}/day</span>
                                 )}
                               </div>
                             </td>
-                          );
-                        })()}
-                        <td className={`px-4 py-1.5 text-center font-bold font-mono bg-[#1A2766]/5 border-r border-gray-100 ${item.rowTotal > 0 ? 'text-[#1A2766]' : 'text-gray-300'}`}>
-                          <div className="flex items-baseline justify-center gap-1">
-                            <span>{item.rowTotal.toLocaleString()}</span>
-                            {item.rowTotal > 0 && item.unit && (
-                              <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{item.unit}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-1.5 text-center border-r border-gray-100 text-[13px] font-medium text-gray-600">
-                          <div className="flex items-baseline justify-center gap-1">
-                            <span>{formatCPDValue(item.netCPD)}</span>
-                            {item.unit && (
-                              <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{item.unit}/day</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className={`px-4 py-1.5 text-center text-[13px] font-black ${
-                          item.doiInfo.status === 'CRITICAL' ? 'text-red-600 bg-red-50/30' : 
-                          item.doiInfo.status === 'WARNING' ? 'text-amber-600 bg-amber-50/30' : 
-                          'text-green-600 bg-green-50/30'
-                        }`}>
-                          {item.doiInfo.text}
-                        </td>
-                      </tr>
-                    ))}
+                            <td className={`px-4 py-1.5 text-center text-[13px] font-black ${
+                              item.doiInfo.status === 'CRITICAL' ? 'text-red-600 bg-red-50/30' : 
+                              item.doiInfo.status === 'WARNING' ? 'text-amber-600 bg-amber-50/30' : 
+                              'text-green-600 bg-green-50/30'
+                            }`}>
+                              {item.doiInfo.text}
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
                   </React.Fragment>
                 );
               })
@@ -740,8 +761,8 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                 {visibleWarehouses.map(wh => (
                   <td key={wh.id} className="px-4 py-2 text-center border-r border-white/20">
                     <div className="flex items-baseline justify-center gap-1">
-                      <span>{grandTotals[wh.id].toLocaleString()}</span>
-                      {grandTotals[wh.id] > 0 && grandTotals.sharedUnit && (
+                      <span>{grandTotals[wh.id] >= 999999999 ? '∞' : grandTotals[wh.id].toLocaleString()}</span>
+                      {grandTotals[wh.id] > 0 && grandTotals[wh.id] < 999999999 && grandTotals.sharedUnit && (
                         <span className="text-[10px] text-white/50 font-medium lowercase">{grandTotals.sharedUnit}</span>
                       )}
                     </div>
@@ -749,16 +770,16 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                 ))}
                 <td className="px-4 py-2 text-center border-r border-white/20 bg-indigo-900/50 text-indigo-100 font-mono">
                   <div className="flex items-baseline justify-center gap-1">
-                    <span>{grandTotals['IN_TRANSIT'].toLocaleString()}</span>
-                    {grandTotals['IN_TRANSIT'] > 0 && grandTotals.sharedUnit && (
+                    <span>{grandTotals['IN_TRANSIT'] >= 999999999 ? '∞' : grandTotals['IN_TRANSIT'].toLocaleString()}</span>
+                    {grandTotals['IN_TRANSIT'] > 0 && grandTotals['IN_TRANSIT'] < 999999999 && grandTotals.sharedUnit && (
                       <span className="text-[10px] text-indigo-200/60 font-medium lowercase">{grandTotals.sharedUnit}</span>
                     )}
                   </div>
                 </td>
-                <td className="px-4 py-2 text-center border-r border-white/20 bg-white/10">
+                <td className="px-4 py-2 text-center border-r border-white/20 bg-white/20">
                   <div className="flex items-baseline justify-center gap-1">
-                    <span>{grandTotals.total.toLocaleString()}</span>
-                    {grandTotals.total > 0 && grandTotals.sharedUnit && (
+                    <span>{grandTotals.total >= 999999999 ? '∞' : grandTotals.total.toLocaleString()}</span>
+                    {grandTotals.total > 0 && grandTotals.total < 999999999 && grandTotals.sharedUnit && (
                       <span className="text-[10px] text-white/50 font-medium lowercase">{grandTotals.sharedUnit}</span>
                     )}
                   </div>

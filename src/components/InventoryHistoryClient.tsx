@@ -49,13 +49,24 @@ interface Props {
 }
 
 export default function InventoryHistoryClient({ warehouses, skus, canAdjust = false }: Props) {
+  // Helper to get YYYY-MM-DD in local time
+  const getTodayString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayStr = getTodayString();
+
   // --- Applied Filter States (Actual state of truth for data fetch) ---
   const [appliedFilters, setAppliedFilters] = useState({
     q: '',
     warehouseId: '',
     remark: '',
-    from: '',
-    to: '',
+    from: todayStr,
+    to: todayStr,
     page: 1,
     pageSize: 25
   });
@@ -64,10 +75,14 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
   const [pendingQ, setPendingQ] = useState('');
   const [pendingWh, setPendingWh] = useState('');
   const [pendingRemark, setPendingRemark] = useState('');
-  const [pendingFrom, setPendingFrom] = useState('');
-  const [pendingTo, setPendingTo] = useState('');
+  const [pendingFrom, setPendingFrom] = useState(todayStr);
+  const [pendingTo, setPendingTo] = useState(todayStr);
   const [showFilterSkuDropdown, setShowFilterSkuDropdown] = useState(false);
   const [skuSearchText, setSkuSearchText] = useState('');
+
+  // Searchable Warehouse Dropdown States
+  const [showWhDropdown, setShowWhDropdown] = useState(false);
+  const [whSearchText, setWhSearchText] = useState('');
 
   // --- Data State ---
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -79,6 +94,21 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
   const [modalSearch, setModalSearch] = useState('');
   const [selectedSkuId, setSelectedSkuId] = useState('');
   const [showSkuDropdown, setShowSkuDropdown] = useState(false);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.wh-dropdown-container')) {
+        setShowWhDropdown(false);
+      }
+      if (!target.closest('.sku-dropdown-container')) {
+        setShowFilterSkuDropdown(false);
+      }
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => document.removeEventListener('click', handleOutsideClick);
+  }, []);
 
   // Fetch Logic
   const fetchLogs = useCallback(async () => {
@@ -127,15 +157,16 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
     setPendingQ('');
     setPendingWh('');
     setPendingRemark('');
-    setPendingFrom('');
-    setPendingTo('');
+    setPendingFrom(todayStr);
+    setPendingTo(todayStr);
     setSkuSearchText('');
+    setWhSearchText('');
     setAppliedFilters({
       q: '',
       warehouseId: '',
       remark: '',
-      from: '',
-      to: '',
+      from: todayStr,
+      to: todayStr,
       page: 1,
       pageSize: 25
     });
@@ -153,224 +184,294 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
   const filteredSkusForFilter = useMemo(() => filterSkus(skuSearchText), [skuSearchText]);
   const filteredSkusForModal = useMemo(() => filterSkus(modalSearch), [modalSearch]);
 
+  const filteredWarehouses = useMemo(() => {
+    return warehouses.filter(w => w.name.toLowerCase().includes(whSearchText.toLowerCase()));
+  }, [warehouses, whSearchText]);
+
   const totalPages = Math.ceil(total / appliedFilters.pageSize);
 
+  // Helper to map log remarks to movement badges
+  const getMovementType = (log: LogEntry) => {
+    const remarks = (log.remarks || '').toUpperCase();
+    const change = log.qtyChange;
+
+    if (remarks.includes('DISPATCH HOLD')) {
+      return { text: 'CART HOLD', bg: 'bg-amber-50', fg: 'text-amber-700', border: 'border-amber-100' };
+    }
+    if (remarks.includes('DISPATCH RESUME')) {
+      return { text: 'CART RESUME', bg: 'bg-amber-50', fg: 'text-amber-700', border: 'border-amber-100' };
+    }
+    if (remarks.includes('CART EDIT')) {
+      return change > 0 
+        ? { text: 'STOCK ADD', bg: 'bg-emerald-50', fg: 'text-emerald-700', border: 'border-emerald-100' }
+        : { text: 'STOCK LESS', bg: 'bg-red-50', fg: 'text-red-700', border: 'border-red-100' };
+    }
+    if (remarks.includes('CART DELETION')) {
+      return { text: 'STOCK ADD', bg: 'bg-emerald-50', fg: 'text-emerald-700', border: 'border-emerald-100' };
+    }
+    if (remarks.includes('MANUAL ADJUSTMENT')) {
+      return { text: 'MANUAL ADJUSTMENT', bg: 'bg-gray-50', fg: 'text-gray-700', border: 'border-gray-100' };
+    }
+    if (remarks.includes('TRANSFER_DISPATCH') || remarks.includes('TRANSFER_DISPATCH_IN')) {
+      return change < 0 
+        ? { text: 'TRANSFER OUT', bg: 'bg-blue-50', fg: 'text-blue-700', border: 'border-blue-100' }
+        : { text: 'TRANSFER IN', bg: 'bg-blue-50', fg: 'text-blue-700', border: 'border-blue-100' };
+    }
+    if (remarks.includes('TRANSFER_RECEIVE_OUT')) {
+      return { text: 'TRANSFER OUT', bg: 'bg-blue-50', fg: 'text-blue-700', border: 'border-blue-100' };
+    }
+    if (remarks.includes('TRANSFER_RECEIVE')) {
+      return { text: 'RECEIVE', bg: 'bg-blue-50', fg: 'text-blue-700', border: 'border-blue-100' };
+    }
+    if (remarks.startsWith('DISPATCH') || remarks.includes('DISPATCH ')) {
+      return { text: 'DISPATCH', bg: 'bg-red-50', fg: 'text-red-700', border: 'border-red-100' };
+    }
+
+    return change > 0 
+      ? { text: 'STOCK ADD', bg: 'bg-emerald-50', fg: 'text-emerald-700', border: 'border-emerald-100' }
+      : { text: 'STOCK LESS', bg: 'bg-red-50', fg: 'text-red-700', border: 'border-red-100' };
+  };
+
   return (
-    <div className="max-w-screen-2xl mx-auto space-y-6 pb-20 px-4 mt-6">
+    <div className="max-w-screen-2xl mx-auto space-y-3 pb-8 px-4 mt-4">
       {/* Header & Adjust Button */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <History className="text-[#1A2766]" size={24} />
+          <h1 className="text-lg font-bold text-gray-900 flex items-center gap-1.5 leading-none">
+            <History className="text-[#1A2766]" size={20} />
             Inventory History
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Audit trail of stock deductions and manual adjustments.</p>
+          <p className="text-xs text-gray-500 mt-0.5">Audit trail of stock deductions and manual adjustments.</p>
         </div>
         {canAdjust && (
           <button 
             onClick={() => setShowModal(true)}
-            className="bg-[#1A2766] text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-[#AE1B1E] transition-all shadow-md active:scale-95"
+            className="bg-[#1A2766] text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:bg-[#AE1B1E] transition-all shadow-sm active:scale-95 h-7"
           >
-            <Plus size={18} />
+            <Plus size={14} />
             Adjust Inventory
           </button>
         )}
       </div>
 
-      {/* Filter Bar */}
-      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Product Search (Dropdown) */}
-          <div className="relative">
-            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">Product / SKU</label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-              <input 
-                type="text" 
-                placeholder={pendingQ || "Search SKU or Name..."}
-                value={skuSearchText}
-                onChange={(e) => {
-                  setSkuSearchText(e.target.value);
-                  setShowFilterSkuDropdown(true);
-                }}
-                onFocus={() => setShowFilterSkuDropdown(true)}
-                className="w-full pl-9 pr-4 py-2 text-sm border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50/50 font-medium"
-              />
-              {pendingQ && (
-                <button onClick={() => { setPendingQ(''); setSkuSearchText(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500">
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-            {showFilterSkuDropdown && skuSearchText && (
-              <div className="absolute z-[20] mt-1 w-full bg-white border border-gray-100 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                {filteredSkusForFilter.map(s => (
-                  <div 
-                    key={s.id} 
-                    className="p-3 text-xs hover:bg-gray-50 cursor-pointer border-b last:border-0"
-                    onClick={() => {
-                      setPendingQ(s.id);
-                      setSkuSearchText(s.id);
-                      setShowFilterSkuDropdown(false);
-                    }}
-                  >
-                    <div className="font-bold text-[#1A2766]">{s.id}</div>
-                    <div className="text-gray-500 truncate">{s.name}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">Warehouse</label>
-            <select 
-              value={pendingWh}
-              onChange={(e) => setPendingWh(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50/50 appearance-none font-medium"
+      {/* Compact Toolbar Layout (Height ~ 40px) */}
+      <div className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 flex flex-wrap items-center gap-2 text-xs">
+        {/* Search SKU/Product */}
+        <div className="relative w-44 sku-dropdown-container">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={13} />
+          <input 
+            type="text" 
+            placeholder="Search SKU, Product, ref..."
+            value={skuSearchText}
+            onChange={(e) => {
+              setSkuSearchText(e.target.value);
+              setShowFilterSkuDropdown(true);
+            }}
+            onFocus={() => setShowFilterSkuDropdown(true)}
+            className="w-full pl-7 pr-6 py-1 h-7 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-[#1A2766] outline-none bg-gray-50/50 font-medium"
+          />
+          {(skuSearchText || pendingQ) && (
+            <button 
+              onClick={() => { setPendingQ(''); setSkuSearchText(''); }} 
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500"
             >
-              <option value="">All Warehouses</option>
-              {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">Remarks Search</label>
-            <input 
-              type="text" 
-              placeholder="e.g. Damaged, Supplier..."
-              value={pendingRemark}
-              onChange={(e) => setPendingRemark(e.target.value)}
-              className="w-full px-4 py-2 text-sm border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50/50 font-medium"
-            />
-          </div>
-
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">From Date</label>
-              <input 
-                type="date" 
-                value={pendingFrom}
-                onChange={(e) => setPendingFrom(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50/50 font-medium"
-              />
+              <X size={12} />
+            </button>
+          )}
+          {showFilterSkuDropdown && skuSearchText && (
+            <div className="absolute z-[20] mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+              {filteredSkusForFilter.map(s => (
+                <div 
+                  key={s.id} 
+                  className="p-2 text-xs hover:bg-gray-50 cursor-pointer border-b last:border-0"
+                  onClick={() => {
+                    setPendingQ(s.id);
+                    setSkuSearchText(s.id);
+                    setShowFilterSkuDropdown(false);
+                  }}
+                >
+                  <div className="font-bold text-[#1A2766]">{s.id}</div>
+                  <div className="text-gray-500 truncate">{s.name}</div>
+                </div>
+              ))}
             </div>
-            <div className="flex-1">
-              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1.5 ml-1">To Date</label>
-              <input 
-                type="date" 
-                value={pendingTo}
-                onChange={(e) => setPendingTo(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-100 rounded-xl focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50/50 font-medium"
-              />
-            </div>
-          </div>
+          )}
         </div>
 
-        <div className="flex items-center justify-between pt-2 border-t border-gray-50">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-gray-400 uppercase">Rows:</span>
-              <select 
-                value={appliedFilters.pageSize}
-                onChange={(e) => setAppliedFilters(p => ({ ...p, pageSize: parseInt(e.target.value), page: 1 }))}
-                className="text-xs font-bold bg-gray-50 border rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-[#1A2766]"
+        {/* Compact Searchable Warehouse Dropdown */}
+        <div className="relative w-36 wh-dropdown-container">
+          <button 
+            type="button"
+            onClick={() => setShowWhDropdown(!showWhDropdown)}
+            className="w-full text-left px-2.5 py-1 h-7 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-[#1A2766] outline-none bg-gray-50/50 font-medium truncate flex items-center justify-between"
+          >
+            <span>{warehouses.find(w => w.id === pendingWh)?.name || 'All Warehouses'}</span>
+            <span className="text-gray-400 text-[9px]">▼</span>
+          </button>
+          {showWhDropdown && (
+            <div className="absolute z-[20] mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto p-1">
+              <input 
+                type="text" 
+                placeholder="Search..." 
+                value={whSearchText}
+                onChange={(e) => setWhSearchText(e.target.value)}
+                className="w-full px-2 py-1 text-xs border border-gray-200 rounded mb-1 outline-none focus:ring-1 focus:ring-[#1A2766] bg-gray-50"
+              />
+              <div 
+                onClick={() => { setPendingWh(''); setWhSearchText(''); setShowWhDropdown(false); }}
+                className={`p-1.5 text-xs hover:bg-gray-50 cursor-pointer rounded ${!pendingWh ? 'font-bold bg-gray-50 text-[#1A2766]' : ''}`}
               >
-                {[10, 25, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}
-              </select>
+                All Warehouses
+              </div>
+              {filteredWarehouses.map(w => (
+                <div 
+                  key={w.id}
+                  onClick={() => { setPendingWh(w.id); setWhSearchText(''); setShowWhDropdown(false); }}
+                  className={`p-1.5 text-xs hover:bg-gray-50 cursor-pointer rounded ${pendingWh === w.id ? 'font-bold bg-gray-50 text-[#1A2766]' : ''}`}
+                >
+                  {w.name}
+                </div>
+              ))}
             </div>
-          </div>
+          )}
+        </div>
 
-          <div className="flex gap-3">
-            <button 
-              onClick={handleReset}
-              className="px-4 py-2 text-sm font-bold text-gray-500 hover:text-gray-900 flex items-center gap-2 transition-colors"
-            >
-              <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-              Reset
-            </button>
-            <button 
-              onClick={handleApply}
-              className="bg-[#1A2766] text-white px-6 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-[#AE1B1E] transition-all shadow-md active:scale-95"
-            >
-              <Check size={16} />
-              Apply Filters
-            </button>
-          </div>
+        {/* Remarks filter */}
+        <div className="w-32">
+          <input 
+            type="text" 
+            placeholder="Remarks keyword..."
+            value={pendingRemark}
+            onChange={(e) => setPendingRemark(e.target.value)}
+            className="w-full px-2 py-1 h-7 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-[#1A2766] outline-none bg-gray-50/50 font-medium"
+          />
+        </div>
+
+        {/* Dates */}
+        <div className="flex items-center gap-1.5 text-gray-500">
+          <span>From:</span>
+          <input 
+            type="date" 
+            value={pendingFrom}
+            onChange={(e) => setPendingFrom(e.target.value)}
+            className="px-1.5 py-1 h-7 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-[#1A2766] outline-none bg-gray-50/50 font-medium"
+          />
+          <span>To:</span>
+          <input 
+            type="date" 
+            value={pendingTo}
+            onChange={(e) => setPendingTo(e.target.value)}
+            className="px-1.5 py-1 h-7 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-[#1A2766] outline-none bg-gray-50/50 font-medium"
+          />
+        </div>
+
+        {/* Rows selector */}
+        <div className="flex items-center gap-1 text-gray-500">
+          <span>Rows:</span>
+          <select 
+            value={appliedFilters.pageSize}
+            onChange={(e) => setAppliedFilters(p => ({ ...p, pageSize: parseInt(e.target.value), page: 1 }))}
+            className="px-1 py-1 h-7 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-[#1A2766] outline-none bg-gray-50/50 font-bold"
+          >
+            {[25, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}
+          </select>
+        </div>
+
+        {/* Buttons */}
+        <div className="ml-auto flex items-center gap-1.5">
+          <button 
+            onClick={handleReset}
+            className="px-2.5 h-7 text-xs font-bold text-gray-500 hover:text-gray-900 border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 transition-colors"
+          >
+            <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
+            Reset
+          </button>
+          <button 
+            onClick={handleApply}
+            className="bg-[#1A2766] text-white px-3.5 h-7 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:bg-[#AE1B1E] transition-all shadow-sm active:scale-95"
+          >
+            <Check size={12} />
+            Apply
+          </button>
         </div>
       </div>
 
-      {/* Table Section */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative">
+      {/* Table Section (Operational High Density) */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative">
         {/* Loading Overlay */}
         {isLoading && (
           <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-[30] flex items-center justify-center">
             <div className="flex flex-col items-center gap-2">
-              <div className="w-10 h-10 border-4 border-[#1A2766]/20 border-t-[#1A2766] rounded-full animate-spin" />
-              <span className="text-[10px] font-bold text-[#1A2766] uppercase tracking-widest">Loading Audit Logs...</span>
+              <div className="w-8 h-8 border-3 border-[#1A2766]/20 border-t-[#1A2766] rounded-full animate-spin" />
+              <span className="text-[9px] font-bold text-[#1A2766] uppercase tracking-widest">Loading...</span>
             </div>
           </div>
         )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm min-w-[1100px] border-collapse">
+        <div className="overflow-x-auto max-h-[calc(100vh-220px)] overflow-y-auto">
+          <table className="w-full text-left text-xs min-w-[1100px] border-collapse relative">
             <thead>
-              <tr className="bg-gray-50/80 border-b text-gray-500 text-[10px] uppercase tracking-wider font-bold sticky top-0 z-10 backdrop-blur-sm">
-                <th className="p-4">Date & Time</th>
-                <th className="p-4">Warehouse</th>
-                <th className="p-4">SKU ID</th>
-                <th className="p-4">Product Name</th>
-                <th className="p-4 text-right">Before</th>
-                <th className="p-4 text-center">Change</th>
-                <th className="p-4 text-right">After</th>
-                <th className="p-4">Remarks</th>
-                <th className="p-4">By</th>
+              <tr className="bg-gray-50 border-b text-gray-500 text-[10px] uppercase tracking-wider font-bold sticky top-0 z-10 shadow-sm">
+                <th className="py-2 px-2.5 bg-gray-50">Time</th>
+                <th className="py-2 px-2.5 bg-gray-50">SKU</th>
+                <th className="py-2 px-2.5 bg-gray-50">Product</th>
+                <th className="py-2 px-2.5 bg-gray-50">Warehouse</th>
+                <th className="py-2 px-2.5 text-right bg-gray-50">Before</th>
+                <th className="py-2 px-2.5 text-center bg-gray-50">Change</th>
+                <th className="py-2 px-2.5 text-right bg-gray-50">After</th>
+                <th className="py-2 px-2.5 bg-gray-50">Type</th>
+                <th className="py-2 px-2.5 bg-gray-50">User</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50 text-gray-700">
-              {logs.map((log) => (
-                <tr key={log.id} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="p-4 whitespace-nowrap text-[11px] font-medium text-gray-400">
-                    {new Date(log.createdAt).toLocaleString('en-IN', { 
-                      day: '2-digit', month: 'short', year: 'numeric',
-                      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
-                      timeZone: 'Asia/Kolkata'
-                    }).toLowerCase()}
-                  </td>
-                  <td className="p-4 whitespace-nowrap font-bold text-xs text-gray-700">
-                    {log.warehouse.name}
-                  </td>
-                  <td className="p-4 whitespace-nowrap font-mono font-bold text-xs text-[#1A2766]">
-                    {log.skuId}
-                  </td>
-                  <td className="p-4 font-medium text-xs text-gray-800">
-                    {log.productName}
-                  </td>
-                  <td className="p-4 text-right font-mono text-gray-400 text-xs">
-                    {log.beforeQty >= 999999999 ? '∞' : log.beforeQty}
-                  </td>
-                  <td className="p-4 text-center">
-                    <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold min-w-[40px] border ${log.qtyChange > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
-                      {log.qtyChange > 0 ? '+' : ''}{log.qtyChange}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right font-mono font-bold text-gray-900 text-xs">
-                    {log.afterQty >= 999999999 ? '∞' : log.afterQty}
-                  </td>
-                  <td className="p-4 text-[11px] text-gray-500 leading-relaxed max-w-xs break-words italic">
-                    {log.remarks}
-                  </td>
-                  <td className="p-4 whitespace-nowrap text-[11px] font-bold text-gray-600">
-                    {log.user.name}
-                  </td>
-                </tr>
-              ))}
+            <tbody className="divide-y divide-gray-100 text-gray-700">
+              {logs.map((log) => {
+                const typeInfo = getMovementType(log);
+                return (
+                  <tr key={log.id} className="hover:bg-gray-50/70 transition-colors odd:bg-white even:bg-gray-50/10 text-xs">
+                    <td className="py-1.5 px-2.5 whitespace-nowrap text-[10px] font-medium text-gray-400">
+                      {new Date(log.createdAt).toLocaleString('en-IN', { 
+                        day: '2-digit', month: 'short',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+                        timeZone: 'Asia/Kolkata'
+                      }).toLowerCase()}
+                    </td>
+                    <td className="py-1.5 px-2.5 whitespace-nowrap font-mono font-bold text-xs text-[#1A2766]">
+                      {log.skuId}
+                    </td>
+                    <td className="py-1.5 px-2.5 font-medium text-xs text-gray-800 truncate max-w-xs" title={log.productName}>
+                      {log.productName}
+                    </td>
+                    <td className="py-1.5 px-2.5 whitespace-nowrap font-bold text-xs text-gray-700">
+                      {log.warehouse.name}
+                    </td>
+                    <td className="py-1.5 px-2.5 text-right font-mono text-gray-400 text-xs">
+                      {log.beforeQty >= 999999999 ? '∞' : log.beforeQty}
+                    </td>
+                    <td className="py-1.5 px-2.5 text-center font-mono">
+                      <span className={`inline-block font-bold text-xs ${log.qtyChange > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {log.qtyChange > 0 ? '+' : ''}{log.qtyChange}
+                      </span>
+                    </td>
+                    <td className="py-1.5 px-2.5 text-right font-mono font-bold text-gray-900 text-xs">
+                      {log.afterQty >= 999999999 ? '∞' : log.afterQty}
+                    </td>
+                    <td className="py-1.5 px-2.5 whitespace-nowrap">
+                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border ${typeInfo.bg} ${typeInfo.fg} ${typeInfo.border}`} title={log.remarks}>
+                        {typeInfo.text}
+                      </span>
+                    </td>
+                    <td className="py-1.5 px-2.5 whitespace-nowrap text-[10px] font-bold text-gray-600">
+                      {log.user.name}
+                    </td>
+                  </tr>
+                );
+              })}
 
               {!isLoading && logs.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="p-20 text-center text-gray-400">
-                    <History size={64} strokeWidth={1} className="mx-auto mb-4 opacity-10" />
-                    <p className="text-lg font-medium text-gray-300 uppercase tracking-widest">No matching history found.</p>
+                  <td colSpan={9} className="p-12 text-center text-gray-400">
+                    <History size={48} strokeWidth={1} className="mx-auto mb-2 opacity-10" />
+                    <p className="text-sm font-medium text-gray-300 uppercase tracking-widest">No matching history found.</p>
                   </td>
                 </tr>
               )}

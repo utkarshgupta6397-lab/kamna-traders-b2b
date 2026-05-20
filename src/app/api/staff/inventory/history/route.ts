@@ -23,7 +23,9 @@ export async function GET(request: Request) {
     where.AND.push({
       OR: [
         { skuId: { contains: q, mode: 'insensitive' } },
-        { productName: { contains: q, mode: 'insensitive' } }
+        { productName: { contains: q, mode: 'insensitive' } },
+        { remarks: { contains: q, mode: 'insensitive' } },
+        { referenceId: { contains: q, mode: 'insensitive' } }
       ]
     });
   }

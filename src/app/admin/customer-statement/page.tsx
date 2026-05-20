@@ -24,17 +24,18 @@ type Customer = {
 
 type Transaction = {
   id: string;
-  type: 'invoice';
+  type: 'invoice' | 'payment';
   date: string;
-  reference: string;
-  narration: string;
+  description: string;
   amount: number;
+  direction: 'dr' | 'cr';
   balanceAfter: number;
 };
 
 type Telemetry = {
   customerApiCalls: number;
   invoiceApiCalls: number;
+  paymentApiCalls: number;
   totalApiCalls: number;
   rawInvoicesFetched: number;
   validInvoicesAfterFilter: number;
@@ -45,7 +46,7 @@ type Statement = {
   openingBalance: number;
   closingBalance: number;
   transactions: Transaction[];
-  invoiceCount: number;
+  transactionCount: number;
   isTruncated: boolean;
   telemetry: Telemetry;
 };
@@ -229,7 +230,7 @@ export default function CustomerStatementPage() {
                   Statement Preview
                 </span>
                 <span className="text-[10px] text-gray-400 font-medium">
-                  ({s.invoiceCount} invoice{s.invoiceCount !== 1 ? 's' : ''}
+                  ({s.transactionCount} transaction{s.transactionCount !== 1 ? 's' : ''}
                   {s.isTruncated ? ', older history not shown' : ''})
                 </span>
               </div>
@@ -246,8 +247,9 @@ export default function CustomerStatementPage() {
                   <tr className="bg-gray-50 text-[11px] uppercase text-gray-400 font-bold">
                     <th className="px-4 py-2 text-center w-10">#</th>
                     <th className="px-4 py-2 text-left w-28">Date</th>
+                    <th className="px-4 py-2 text-left w-24">Type</th>
                     <th className="px-4 py-2 text-left">Description</th>
-                    <th className="px-4 py-2 text-right whitespace-nowrap">Amount (Dr)</th>
+                    <th className="px-4 py-2 text-right whitespace-nowrap">Amount</th>
                     <th className="px-4 py-2 text-right">Balance</th>
                   </tr>
                 </thead>
@@ -256,11 +258,12 @@ export default function CustomerStatementPage() {
                   <tr className="border-t border-gray-100 bg-blue-50/40">
                     <td className="px-4 py-2.5 text-center text-[11px] text-gray-400">—</td>
                     <td className="px-4 py-2.5 text-xs text-gray-400 whitespace-nowrap">—</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-400 whitespace-nowrap">—</td>
                     <td className="px-4 py-2.5">
                       <span className="font-bold text-gray-600 text-xs">
                         Approx. Opening Balance
                       </span>
-                      <span className="ml-2 text-[10px] text-gray-400">(invoices only)</span>
+                      <span className="ml-2 text-[10px] text-gray-400">(calculated)</span>
                     </td>
                     <td className="px-4 py-2.5 text-right text-xs text-gray-400">—</td>
                     <td className="px-4 py-2.5 text-right font-bold text-gray-700 text-sm">
@@ -268,7 +271,7 @@ export default function CustomerStatementPage() {
                     </td>
                   </tr>
 
-                  {/* Invoice rows */}
+                  {/* Transaction rows */}
                   {s.transactions.map((tx, idx) => (
                     <tr key={tx.id} className="border-t border-gray-100 hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-2.5 text-center text-[11px] text-gray-400 font-medium">
@@ -277,11 +280,22 @@ export default function CustomerStatementPage() {
                       <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
                         {fmtDate(tx.date)}
                       </td>
-                      <td className="px-4 py-2.5 text-xs font-medium text-gray-800">
-                        {tx.narration}
+                      <td className="px-4 py-2.5 text-xs">
+                        {tx.type === 'invoice' ? (
+                          <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-md font-bold text-[10px] uppercase">
+                            Invoice
+                          </span>
+                        ) : (
+                          <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-md font-bold text-[10px] uppercase">
+                            Payment
+                          </span>
+                        )}
                       </td>
-                      <td className="px-4 py-2.5 text-right text-xs font-semibold text-emerald-700 whitespace-nowrap">
-                        + {fmt(tx.amount)}
+                      <td className="px-4 py-2.5 text-xs font-medium text-gray-800">
+                        {tx.description}
+                      </td>
+                      <td className={`px-4 py-2.5 text-right text-xs font-semibold whitespace-nowrap ${tx.direction === 'dr' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                        {tx.direction === 'dr' ? '+' : '-'} {fmt(tx.amount)}
                       </td>
                       <td className="px-4 py-2.5 text-right text-xs font-medium text-gray-700 whitespace-nowrap">
                         {fmtBalance(tx.balanceAfter)}
@@ -291,8 +305,8 @@ export default function CustomerStatementPage() {
 
                   {s.transactions.length === 0 && (
                     <tr className="border-t border-gray-100">
-                      <td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-400">
-                        No invoices in window.
+                      <td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">
+                        No transactions in window.
                       </td>
                     </tr>
                   )}
@@ -301,10 +315,11 @@ export default function CustomerStatementPage() {
                   <tr className="border-t-2 border-[#1A2766]/20 bg-[#1A2766]/5">
                     <td className="px-4 py-3 text-center text-gray-400 text-xs">—</td>
                     <td className="px-4 py-3 text-xs text-gray-400">—</td>
+                    <td className="px-4 py-3 text-xs text-gray-400">—</td>
                     <td className="px-4 py-3">
                       <div className="font-bold text-[#1A2766] text-sm">Net Payable</div>
                       <div className="text-[10px] text-gray-400">
-                        Closing balance · excludes payments &amp; credits
+                        Closing balance
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right text-xs text-gray-400">—</td>
@@ -326,7 +341,7 @@ export default function CustomerStatementPage() {
             {/* Prototype notice */}
             <div className="px-5 py-2 border-t border-gray-100 flex items-center gap-2 text-[10px] text-gray-400 bg-gray-50/40">
               <Info size={11} className="shrink-0" />
-              Prototype: Opening balance is reverse-calculated. Payments &amp; credits not included.
+              Prototype: Opening balance is reverse-calculated. Includes invoices and payments.
             </div>
           </div>
 
@@ -342,8 +357,9 @@ export default function CustomerStatementPage() {
               {[
                 { label: 'Customer API Calls', value: s.telemetry.customerApiCalls },
                 { label: 'Invoice API Calls', value: s.telemetry.invoiceApiCalls },
+                { label: 'Payment API Calls', value: s.telemetry.paymentApiCalls },
                 { label: 'Total APIs Used', value: s.telemetry.totalApiCalls },
-                { label: 'Raw Invoices Fetched', value: s.telemetry.rawInvoicesFetched },
+                { label: 'Raw Trx Fetched', value: s.telemetry.rawInvoicesFetched },
                 { label: 'Valid After Filter', value: s.telemetry.validInvoicesAfterFilter },
               ].map(({ label, value }) => (
                 <div key={label} className="text-center">

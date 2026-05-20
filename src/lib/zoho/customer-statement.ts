@@ -29,12 +29,12 @@ export type CustomerStatementInvoice = {
 
 export type StatementTransaction = {
   id: string;
-  type: 'invoice';
+  type: 'invoice' | 'payment';
   date: string;
-  reference: string;       // invoice number
-  narration: string;       // e.g. "Invoice INV-001"
-  amount: number;          // invoice total (positive = charge)
-  balanceAfter: number;    // running balance after this line
+  description: string;
+  amount: number;
+  direction: 'dr' | 'cr';
+  balanceAfter: number;
 };
 
 export type CustomerStatement = {
@@ -42,13 +42,14 @@ export type CustomerStatement = {
   openingBalance: number;
   closingBalance: number;
   transactions: StatementTransaction[];
-  invoiceCount: number;
-  /** true when fewer than all invoices are shown */
+  transactionCount: number;
+  /** true when fewer than all transactions are shown */
   isTruncated: boolean;
   /** API telemetry for the debug card */
   telemetry: {
     customerApiCalls: number;
     invoiceApiCalls: number;
+    paymentApiCalls: number;
     totalApiCalls: number;
     rawInvoicesFetched: number;
     validInvoicesAfterFilter: number;
@@ -73,8 +74,8 @@ export async function getCustomerInvoices(contactId: string): Promise<{
 
     // Fetch invoices — no custom sort/status params (Zoho rejects unsupported enums)
     // We filter void and sort locally after receiving the response
-    // Fetch 15 as buffer — void invoices are filtered in-app, so 15 ensures we always have 10 valid
-    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&contact_id=${contactId}&per_page=15`;
+    // Fetch 15 as buffer — void invoices are filtered in-app
+    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${contactId}&per_page=15`;
     const response = await fetch(url, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
@@ -86,27 +87,87 @@ export async function getCustomerInvoices(contactId: string): Promise<{
     const raw: any[] = data.invoices ?? [];
     const items: CustomerStatementInvoice[] = raw
       .filter((inv: any) => inv.status !== 'void')       // exclude void in app-layer
-      .sort((a: any, b: any) =>                          // newest-first
-        new Date(b.invoice_date).getTime() - new Date(a.invoice_date).getTime()
-      )
-      .slice(0, 10)                                       // take latest 10 valid invoices
-      .map((inv: any) => ({
-        invoiceId: inv.invoice_id,
-        invoiceNumber: inv.invoice_number,
-        invoiceDate: inv.invoice_date,
-        dueDate: inv.due_date,
-        status: inv.status,
-        total: Number(inv.total),
-        balance: Number(inv.balance_amount),
-        currencyCode: inv.currency_code,
-        referenceNumber: inv.reference_number,
-        salespersonName: inv.salesperson_name,
-      }));
+      .map((inv: any) => {
+        if (!inv.date) {
+          console.warn('[Zoho] Invoice missing date field. Raw object:', inv);
+        }
+        return {
+          invoiceId: inv.invoice_id,
+          invoiceNumber: inv.invoice_number,
+          invoiceDate: inv.date || inv.created_time || inv.last_modified_time || '', // fallback to created_time
+          dueDate: inv.due_date,
+          status: inv.status,
+          total: Number(inv.total),
+          balance: Number(inv.balance_amount),
+          currencyCode: inv.currency_code,
+          referenceNumber: inv.reference_number,
+          salespersonName: inv.salesperson_name,
+        };
+      });
     return {
       success: true,
       data: items,
       raw: data,
       // telemetry fields for caller
+      _meta: { rawFetched: raw.length, validCount: items.length },
+    } as any;
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Internal Server Error' };
+  }
+}
+
+export type CustomerStatementPayment = {
+  paymentId: string;
+  paymentNumber: string;
+  paymentMode: string;
+  date: string;
+  amount: number;
+  referenceNumber?: string;
+};
+
+export async function getCustomerPayments(contactId: string): Promise<{
+  success: boolean;
+  data?: CustomerStatementPayment[];
+  raw?: any;
+  error?: string;
+}> {
+  try {
+    const orgId = getZohoOrgId();
+    if (!orgId) throw new Error('Missing ZOHO_BOOKS_ORG_ID or ZOHO_ORGANIZATION_ID in environment variables');
+    const accessToken = await getZohoTokens();
+    if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
+
+    const url = `${API_BASE_URL}/books/v3/customerpayments?organization_id=${orgId}&customer_id=${contactId}&per_page=15`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+    });
+    const data = await response.json();
+    console.log('[Zoho Payments] API URL:', url);
+    
+    if (!response.ok) {
+      console.warn('[Zoho Payments] Failed to fetch payments:', data);
+      return { success: false, error: data.message || 'Failed to fetch payments', raw: data };
+    }
+    const raw: any[] = data.customerpayments ?? [];
+    console.log('[Zoho Payments] Raw payment count:', raw.length);
+    
+    const items: CustomerStatementPayment[] = raw
+      .map((pmt: any) => ({
+        paymentId: pmt.payment_id,
+        paymentNumber: pmt.payment_number,
+        paymentMode: pmt.payment_mode,
+        date: pmt.date,
+        amount: Number(pmt.amount),
+        referenceNumber: pmt.reference_number,
+      }));
+      
+    console.log('[Zoho Payments] Normalized payment count:', items.length);
+    
+    return {
+      success: true,
+      data: items,
+      raw: data,
       _meta: { rawFetched: raw.length, validCount: items.length },
     } as any;
   } catch (error: any) {
@@ -138,37 +199,83 @@ export async function getCustomerStatement(contactId: string): Promise<{
   }
   const customer = customerResult.data;
 
-  // 2. Fetch latest 10 invoices
-  const invoicesResult = await getCustomerInvoices(contactId);
+  // 2. Fetch latest 15 invoices and 15 payments
+  const [invoicesResult, paymentsResult] = await Promise.all([
+    getCustomerInvoices(contactId),
+    getCustomerPayments(contactId)
+  ]);
+  
   if (!invoicesResult.success) {
     return { success: false, error: invoicesResult.error, raw: invoicesResult.raw };
   }
 
   const invoices = invoicesResult.data ?? [];
+  const payments = (paymentsResult.success ? paymentsResult.data : []) ?? [];
 
-  // 3. Reverse-balance calculation
-  const closingBalance = customer.outstandingReceivable ?? 0;
-  const invoiceTotal = invoices.reduce((sum, inv) => sum + inv.total, 0);
-  const openingBalance = closingBalance - invoiceTotal;
-
-  // 4. Build forward-running transactions
-  let runningBalance = openingBalance;
-  // Invoices come newest-first from Zoho; reverse to display chronologically
-  const chronological = [...invoices].reverse();
-  const transactions: StatementTransaction[] = chronological.map((inv) => {
-    runningBalance = runningBalance + inv.total;
-    return {
+  // 3. Merge into unified timeline
+  const mergedRaw = [
+    ...invoices.map(inv => ({
       id: inv.invoiceId,
-      type: 'invoice',
+      type: 'invoice' as const,
       date: inv.invoiceDate,
-      reference: inv.invoiceNumber,
-      narration: `Invoice ${inv.invoiceNumber}`,   // Ref excluded — cleaner statement rows
+      description: `Invoice ${inv.invoiceNumber}`,
       amount: inv.total,
-      balanceAfter: runningBalance,
-    };
-  });
+      direction: 'dr' as const
+    })),
+    ...payments.map(pmt => ({
+      id: pmt.paymentId,
+      type: 'payment' as const,
+      date: pmt.date,
+      description: pmt.paymentMode ? `Payment - ${pmt.paymentMode}` : 'Customer Payment',
+      amount: pmt.amount,
+      direction: 'cr' as const
+    }))
+  ];
 
-  const meta = (invoicesResult as any)._meta ?? { rawFetched: invoices.length, validCount: invoices.length };
+  console.log('[Zoho Statement] Merged transaction count:', mergedRaw.length);
+
+  // 4. Sort chronologically NEWEST FIRST
+  mergedRaw.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  // 5. Take latest 10 merged transactions
+  const latest10 = mergedRaw.slice(0, 10);
+  
+  console.log('[Zoho Statement] Final rendered transaction count:', latest10.length);
+
+  // 6. Reverse-balance calculation
+  const closingBalance = customer.outstandingReceivable ?? 0;
+  
+  // We need to work backwards from closing balance to opening balance for these 10 items.
+  // We have the latest 10 items in `latest10` (newest first).
+  // The balance BEFORE the newest item = closingBalance - (if invoice, add amount; if payment, subtract amount) wait.
+  // Actually, to build the balances on the transactions:
+  // We can go from index 0 (newest) to 9 (oldest).
+  // After item 0 is processed, balance is closingBalance.
+  // Balance before item 0 = closingBalance - (item 0 DR) + (item 0 CR)
+  
+  let currentBalance = closingBalance;
+  const transactions: StatementTransaction[] = [];
+  
+  for (const item of latest10) {
+    transactions.push({
+      ...item,
+      balanceAfter: currentBalance
+    });
+    // Reverse movement to get the balance *before* this transaction
+    if (item.direction === 'dr') {
+      currentBalance = currentBalance - item.amount;
+    } else {
+      currentBalance = currentBalance + item.amount;
+    }
+  }
+  
+  const openingBalance = currentBalance;
+  
+  // To display correctly (oldest first), reverse the array
+  transactions.reverse();
+
+  const invMeta = (invoicesResult as any)._meta ?? { rawFetched: invoices.length, validCount: invoices.length };
+  const pmtMeta = paymentsResult.success ? (paymentsResult as any)._meta : { rawFetched: 0, validCount: 0 };
 
   return {
     success: true,
@@ -177,14 +284,15 @@ export async function getCustomerStatement(contactId: string): Promise<{
       openingBalance,
       closingBalance,
       transactions,
-      invoiceCount: invoices.length,
-      isTruncated: (invoicesResult.raw?.page_context?.has_more_page) ?? false,
+      transactionCount: transactions.length,
+      isTruncated: true,
       telemetry: {
         customerApiCalls: 1,
         invoiceApiCalls: 1,
-        totalApiCalls: 2,
-        rawInvoicesFetched: meta.rawFetched,
-        validInvoicesAfterFilter: meta.validCount,
+        paymentApiCalls: 1,
+        totalApiCalls: 3,
+        rawInvoicesFetched: invMeta.rawFetched + pmtMeta.rawFetched,
+        validInvoicesAfterFilter: invMeta.validCount + pmtMeta.validCount,
       },
     },
     raw: { customer: customerResult.raw, invoices: invoicesResult.raw },

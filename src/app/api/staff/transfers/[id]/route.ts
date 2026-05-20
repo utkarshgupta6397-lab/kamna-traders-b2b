@@ -66,14 +66,24 @@ export async function GET(
       })
     );
 
+    const totalRequested = transfer.items.reduce((sum, item) => sum + item.requestedQty, 0);
     const totalDispatched = transfer.items.reduce((sum, item) => sum + (item.dispatchedQty || 0), 0);
     const totalReceived = transfer.items.reduce((sum, item) => sum + (item.receivedQty || 0), 0);
-    const canReceive = totalDispatched > totalReceived && !['COMPLETED', 'CANCELLED', 'SHORT_CLOSED'].includes(transfer.status);
+    const totalShort = transfer.items.reduce((sum, item) => sum + (item.shortQty || 0), 0);
+    const totalPendingDispatch = totalRequested - totalDispatched - totalShort;
+
+    const canReceive = totalDispatched > totalReceived && 
+      ['IN_TRANSIT', 'PARTIALLY_DISPATCHED', 'PARTIALLY_RECEIVED'].includes(transfer.status) &&
+      totalPendingDispatch === 0;
+
+    const canDispatch = totalPendingDispatch > 0 && 
+      !['COMPLETED', 'CANCELLED', 'SHORT_CLOSED', 'MERGED'].includes(transfer.status);
 
     return NextResponse.json({
       ...transfer,
       items: itemsWithStock,
-      canReceive
+      canReceive,
+      canDispatch
     });
   } catch (error: any) {
     console.error('[TRANSFER_GET_DETAIL_ERROR]', error);
@@ -200,12 +210,18 @@ export async function POST(
         return NextResponse.json({ error: 'Transfer not found' }, { status: 404 });
       }
 
+      const totalRequested = transfer.items.reduce((sum, item) => sum + item.requestedQty, 0);
       const totalDispatched = transfer.items.reduce((sum, item) => sum + (item.dispatchedQty || 0), 0);
       const totalReceived = transfer.items.reduce((sum, item) => sum + (item.receivedQty || 0), 0);
-      const canReceive = totalDispatched > totalReceived && !['COMPLETED', 'CANCELLED', 'SHORT_CLOSED'].includes(transfer.status);
+      const totalShort = transfer.items.reduce((sum, item) => sum + (item.shortQty || 0), 0);
+      const totalPendingDispatch = totalRequested - totalDispatched - totalShort;
+
+      const canReceive = totalDispatched > totalReceived && 
+        ['IN_TRANSIT', 'PARTIALLY_DISPATCHED', 'PARTIALLY_RECEIVED'].includes(transfer.status) &&
+        totalPendingDispatch === 0;
 
       if (!canReceive) {
-        return NextResponse.json({ error: 'Transfer is not eligible for receiving (either no pending quantities to receive or status is completed, cancelled, or short-closed).' }, { status: 400 });
+        return NextResponse.json({ error: 'Transfer is not eligible for receiving (it has remaining pending dispatch quantities or invalid status).' }, { status: 400 });
       }
 
       // Validate quantities BEFORE performing any writes
@@ -520,6 +536,15 @@ export async function POST(
       return NextResponse.json({ error: 'Transfer not found' }, { status: 404 });
     }
 
+    const totalRequested = transfer.items.reduce((sum, item) => sum + item.requestedQty, 0);
+    const totalDispatched = transfer.items.reduce((sum, item) => sum + (item.dispatchedQty || 0), 0);
+    const totalShort = transfer.items.reduce((sum, item) => sum + (item.shortQty || 0), 0);
+    const totalPendingDispatch = totalRequested - totalDispatched - totalShort;
+
+    if (totalPendingDispatch <= 0) {
+      return NextResponse.json({ error: 'No pending dispatch quantities remain for this transfer.' }, { status: 400 });
+    }
+
     if (transfer.status !== 'INITIATED' && transfer.status !== 'PARTIALLY_DISPATCHED') {
       return NextResponse.json({ error: `Cannot dispatch a transfer in ${transfer.status} status` }, { status: 400 });
     }
@@ -735,6 +760,17 @@ export async function POST(
         newStatus = 'IN_TRANSIT';
       } else {
         newStatus = 'PARTIALLY_DISPATCHED';
+
+        // Update parent items to match what was actually dispatched
+        for (const item of updatedItems) {
+          await tx.transferItem.update({
+            where: { id: item.id },
+            data: {
+              requestedQty: item.dispatchedQty,
+              balanceQty: 0
+            }
+          });
+        }
 
         // Atomically generate new sequential transferNumber for child
         const kolkataTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });

@@ -58,6 +58,7 @@ type TransferFormatted = {
   totalReceived?: number;
   totalShort?: number;
   canReceive?: boolean;
+  canDispatch?: boolean;
 };
 
 type Props = {
@@ -904,7 +905,7 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {transfers.map(t => {
-                  const pending = (t.totalDispatched ?? 0) - (t.totalReceived ?? 0) - (t.totalShort ?? 0);
+                  const pending = (t.totalUnits ?? 0) - (t.totalDispatched ?? 0) - (t.totalShort ?? 0);
                   return (
                     <tr 
                       key={t.id} 
@@ -970,7 +971,7 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
                             <Eye size={14} />
                           </button>
                           
-                          {(t.status === 'INITIATED' || t.status === 'PARTIALLY_DISPATCHED') && (
+                          {t.canDispatch && (
                             <button
                               onClick={() => handleOpenDispatch(t.id)}
                               className="p-1 bg-red-50 hover:bg-red-100 text-red-600 rounded font-bold flex items-center gap-1 px-2 py-0.5 text-[10px]"
@@ -1460,12 +1461,14 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
                           <th className="p-2.5 text-right">Dispatched</th>
                           <th className="p-2.5 text-right">Received</th>
                           <th className="p-2.5 text-right">Short</th>
-                          <th className="p-2.5 text-right">Pending</th>
+                          <th className="p-2.5 text-right">Pending Dispatch</th>
+                          <th className="p-2.5 text-right">In Transit</th>
                         </tr>
                       </thead>
                       <tbody>
                         {detailedTransfer.items.map((item: any) => {
-                          const pending = item.dispatchedQty - (item.receivedQty || 0) - (item.shortQty || 0);
+                          const pendingDispatch = item.requestedQty - item.dispatchedQty - (item.shortQty || 0);
+                          const inTransit = item.dispatchedQty - (item.receivedQty || 0) - (item.shortQty || 0);
                           return (
                             <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/20">
                               <td className="p-2.5 font-mono text-[10px] text-gray-500">{item.skuId}</td>
@@ -1474,7 +1477,8 @@ export default function TransfersConsoleClient({ session, warehouses, skus }: Pr
                               <td className="p-2.5 text-right font-medium text-emerald-600">{item.dispatchedQty} {item.sku.unit || 'PCS'}</td>
                               <td className="p-2.5 text-right font-medium text-blue-600">{item.receivedQty || 0} {item.sku.unit || 'PCS'}</td>
                               <td className="p-2.5 text-right font-medium text-amber-600">{item.shortQty || 0} {item.sku.unit || 'PCS'}</td>
-                              <td className={`p-2.5 text-right font-bold ${pending > 0 ? 'text-red-600' : 'text-gray-500'}`}>{pending} {item.sku.unit || 'PCS'}</td>
+                              <td className={`p-2.5 text-right font-bold ${pendingDispatch > 0 ? 'text-red-600' : 'text-gray-500'}`}>{pendingDispatch} {item.sku.unit || 'PCS'}</td>
+                              <td className={`p-2.5 text-right font-bold ${inTransit > 0 ? 'text-blue-600' : 'text-gray-500'}`}>{inTransit} {item.sku.unit || 'PCS'}</td>
                             </tr>
                           );
                         })}

@@ -86,7 +86,15 @@ export async function GET(request: Request) {
       const totalDispatched = t.items.reduce((sum, item) => sum + (item.dispatchedQty || 0), 0);
       const totalReceived = t.items.reduce((sum, item) => sum + (item.receivedQty || 0), 0);
       const totalShort = t.items.reduce((sum, item) => sum + (item.shortQty || 0), 0);
-      const canReceive = totalDispatched > totalReceived && !['COMPLETED', 'CANCELLED', 'SHORT_CLOSED'].includes(t.status);
+      
+      const totalPendingDispatch = totalUnits - totalDispatched - totalShort;
+
+      const canReceive = totalDispatched > totalReceived && 
+        ['IN_TRANSIT', 'PARTIALLY_DISPATCHED', 'PARTIALLY_RECEIVED'].includes(t.status) &&
+        totalPendingDispatch === 0;
+
+      const canDispatch = totalPendingDispatch > 0 && 
+        !['COMPLETED', 'CANCELLED', 'SHORT_CLOSED', 'MERGED'].includes(t.status);
 
       return {
         id: t.id,
@@ -109,7 +117,8 @@ export async function GET(request: Request) {
         totalDispatched,
         totalReceived,
         totalShort,
-        canReceive
+        canReceive,
+        canDispatch
       };
     });
 

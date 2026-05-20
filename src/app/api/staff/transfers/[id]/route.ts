@@ -249,17 +249,27 @@ export async function POST(
 
       // Execute atomic transaction
       const updatedTransfer = await prisma.$transaction(async (tx) => {
+        const skuIds = valResults.map(item => item.skuId);
+        
+        // Bulk fetch all relevant inventories inside transaction to minimize database roundtrips
+        const transitInvs = await tx.warehouseInventory.findMany({
+          where: { warehouseId: 'IN_TRANSIT', skuId: { in: skuIds } }
+        });
+        const destInvs = await tx.warehouseInventory.findMany({
+          where: { warehouseId: transfer.destinationWarehouseId, skuId: { in: skuIds } }
+        });
+        const sourceInvs = await tx.warehouseInventory.findMany({
+          where: { warehouseId: transfer.sourceWarehouseId, skuId: { in: skuIds } }
+        });
+
+        const transitInvMap = new Map(transitInvs.map(i => [i.skuId, i.qty]));
+        const destInvMap = new Map(destInvs.map(i => [i.skuId, i.qty]));
+        const sourceInvMap = new Map(sourceInvs.map(i => [i.skuId, i.qty]));
+
         for (const item of valResults) {
-          // Fetch current IN_TRANSIT warehouse inventory inside the transaction block
-          const transitInv = await tx.warehouseInventory.findUnique({
-            where: {
-              warehouseId_skuId: {
-                warehouseId: 'IN_TRANSIT',
-                skuId: item.skuId
-              }
-            }
-          });
-          const currentTransitQty = transitInv?.qty || 0;
+          const currentTransitQty = transitInvMap.get(item.skuId) || 0;
+          const currentDestQty = destInvMap.get(item.skuId) || 0;
+          const currentSourceQty = sourceInvMap.get(item.skuId) || 0;
 
           // 1. Deduct stock from In Transit warehouse (IN_TRANSIT) for all SKUs (since it was added there during dispatch)
           if (item.receiveQty > 0 || item.shortQtyForThisTime > 0) {
@@ -275,21 +285,12 @@ export async function POST(
                 qty: { decrement: totalDeduction }
               }
             });
+            transitInvMap.set(item.skuId, currentTransitQty - totalDeduction);
           }
 
           // 2. Add received qty to Destination warehouse if not unlimited SKU
           if (item.receiveQty > 0) {
             if (!item.isUnlimited) {
-              const destInv = await tx.warehouseInventory.findUnique({
-                where: {
-                  warehouseId_skuId: {
-                    warehouseId: transfer.destinationWarehouseId,
-                    skuId: item.skuId
-                  }
-                }
-              });
-              const currentDestQty = destInv?.qty || 0;
-
               await tx.warehouseInventory.upsert({
                 where: {
                   warehouseId_skuId: {
@@ -307,6 +308,7 @@ export async function POST(
                   isOos: false
                 }
               });
+              destInvMap.set(item.skuId, currentDestQty + item.receiveQty);
 
               // Create inventory history entry for destination warehouse (non-unlimited)
               await tx.inventoryHistory.create({
@@ -361,16 +363,6 @@ export async function POST(
           // 3. Auto-return short qty to Source warehouse if not unlimited SKU
           if (item.shortQtyForThisTime > 0) {
             if (!item.isUnlimited) {
-              const sourceInv = await tx.warehouseInventory.findUnique({
-                where: {
-                  warehouseId_skuId: {
-                    warehouseId: transfer.sourceWarehouseId,
-                    skuId: item.skuId
-                  }
-                }
-              });
-              const currentSourceQty = sourceInv?.qty || 0;
-
               await tx.warehouseInventory.upsert({
                 where: {
                   warehouseId_skuId: {
@@ -388,6 +380,7 @@ export async function POST(
                   isOos: false
                 }
               });
+              sourceInvMap.set(item.skuId, currentSourceQty + item.shortQtyForThisTime);
 
               // Create inventory history entry for source warehouse (non-unlimited)
               await tx.inventoryHistory.create({
@@ -497,6 +490,9 @@ export async function POST(
         });
 
         return updated;
+      }, {
+        maxWait: 15000,
+        timeout: 30000
       });
 
       return NextResponse.json({ success: true, transfer: updatedTransfer });
@@ -608,28 +604,22 @@ export async function POST(
 
     // Execute transactional database update
     const updatedTransfer = await prisma.$transaction(async (tx) => {
-      for (const val of dispatchValidations) {
-        // Fetch current source warehouse inventory inside the transaction block
-        const sourceInv = await tx.warehouseInventory.findUnique({
-          where: {
-            warehouseId_skuId: {
-              warehouseId: transfer.sourceWarehouseId,
-              skuId: val.skuId
-            }
-          }
-        });
-        const currentSourceQty = sourceInv?.qty || 0;
+      const skuIds = dispatchValidations.map(v => v.skuId);
+      
+      // Bulk fetch all relevant inventories inside transaction to minimize database roundtrips
+      const sourceInvs = await tx.warehouseInventory.findMany({
+        where: { warehouseId: transfer.sourceWarehouseId, skuId: { in: skuIds } }
+      });
+      const destInvs = await tx.warehouseInventory.findMany({
+        where: { warehouseId: 'IN_TRANSIT', skuId: { in: skuIds } }
+      });
 
-        // Fetch destination warehouse inventory inside the transaction block
-        const destInvRecord = await tx.warehouseInventory.findUnique({
-          where: {
-            warehouseId_skuId: {
-              warehouseId: 'IN_TRANSIT',
-              skuId: val.skuId
-            }
-          }
-        });
-        const currentDestQty = destInvRecord?.qty || 0;
+      const sourceInvMap = new Map(sourceInvs.map(i => [i.skuId, i.qty]));
+      const destInvMap = new Map(destInvs.map(i => [i.skuId, i.qty]));
+
+      for (const val of dispatchValidations) {
+        const currentSourceQty = sourceInvMap.get(val.skuId) || 0;
+        const currentDestQty = destInvMap.get(val.skuId) || 0;
 
         // Double check stock levels for non-unlimited SKUs inside transaction block
         if (!val.isUnlimited) {
@@ -651,6 +641,7 @@ export async function POST(
               qty: { decrement: val.dispatchQty }
             }
           });
+          sourceInvMap.set(val.skuId, currentSourceQty - val.dispatchQty);
 
           // Create inventory history entry for source warehouse
           await tx.inventoryHistory.create({
@@ -703,6 +694,7 @@ export async function POST(
             isOos: false
           }
         });
+        destInvMap.set(val.skuId, currentDestQty + val.dispatchQty);
 
         // Create inventory history entry for destination warehouse (IN_TRANSIT)
         await tx.inventoryHistory.create({
@@ -832,6 +824,9 @@ export async function POST(
       });
 
       return updated;
+    }, {
+      maxWait: 15000,
+      timeout: 30000
     });
 
     return NextResponse.json({ success: true, transfer: updatedTransfer });

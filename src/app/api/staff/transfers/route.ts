@@ -299,6 +299,9 @@ export async function POST(request: Request) {
         }
 
         return transfer;
+      }, {
+        maxWait: 15000,
+        timeout: 30000
       });
       console.log("[TRANSFER] 9. Transaction committed successfully");
     } catch (error: any) {

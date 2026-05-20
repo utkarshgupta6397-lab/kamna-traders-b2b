@@ -138,6 +138,9 @@ export async function POST(request: Request) {
       }
 
       return newTransfer;
+    }, {
+      maxWait: 15000,
+      timeout: 30000
     });
 
     return NextResponse.json({ success: true, transfer: mergedTransfer });

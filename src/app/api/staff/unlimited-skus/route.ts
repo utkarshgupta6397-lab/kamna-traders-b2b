@@ -30,17 +30,23 @@ export async function GET(request: Request) {
   }
 
   if (categoryId && categoryId !== 'ALL') {
-    where.categoryId = categoryId;
+    const ids = categoryId.split(',').filter(Boolean);
+    if (ids.length > 0) {
+      where.categoryId = { in: ids };
+    }
   }
 
   if (brandId && brandId !== 'ALL') {
     where.brandId = brandId;
   }
 
-  if (unlimitedFilter === 'UNLIMITED') {
-    where.isUnlimited = true;
-  } else if (unlimitedFilter === 'NORMAL') {
-    where.isUnlimited = false;
+  if (unlimitedFilter && unlimitedFilter !== 'ALL') {
+    const filters = unlimitedFilter.split(',').map(f => f.trim()).filter(Boolean);
+    if (filters.includes('UNLIMITED') && !filters.includes('NORMAL')) {
+      where.isUnlimited = true;
+    } else if (filters.includes('NORMAL') && !filters.includes('UNLIMITED')) {
+      where.isUnlimited = false;
+    }
   }
 
   try {

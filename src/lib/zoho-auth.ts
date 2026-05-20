@@ -175,7 +175,8 @@ export function getAuthorizationUrl(): string {
   const scopes = [
     'ZohoBooks.salesorders.CREATE',
     'ZohoBooks.items.READ',
-    'ZohoBooks.contacts.READ'
+    'ZohoBooks.contacts.READ',
+    'ZohoBooks.invoices.READ'
   ];
 
   console.log('ZOHO REDIRECT URI', process.env.ZOHO_REDIRECT_URI);

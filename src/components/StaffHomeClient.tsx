@@ -143,12 +143,16 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     setIsClient(true);
   }, []);
 
-  // Cart Store
-  const { 
-    items, addItem, clearCart, 
-    draftCartId, customerName: storeCustomer, notes: storeNotes, warehouseId: storeWarehouse,
-    setDraftContext, hydrateCart 
-  } = useCartStore();
+  // Cart Store - Individual selectors to prevent over-rendering
+  const items = useCartStore((s) => s.items);
+  const addItem = useCartStore((s) => s.addItem);
+  const clearCart = useCartStore((s) => s.clearCart);
+  const draftCartId = useCartStore((s) => s.draftCartId);
+  const storeCustomer = useCartStore((s) => s.customerName);
+  const storeNotes = useCartStore((s) => s.notes);
+  const storeWarehouse = useCartStore((s) => s.warehouseId);
+  const setDraftContext = useCartStore((s) => s.setDraftContext);
+  const hydrateCart = useCartStore((s) => s.hydrateCart);
   
   const totalQty = items.reduce((a, i) => a + i.qty, 0);
 
@@ -268,10 +272,18 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   }, [selectedCategoryId, topBrandsByCategory, topBrandsFullCatalog]);
 
   // ─── Initial Load ──────────────────────────────────────────────
+  const warehouseIdRef = useRef(warehouseId);
+  useEffect(() => {
+    warehouseIdRef.current = warehouseId;
+  }, [warehouseId]);
+
   const loadSkus = useCallback(async (silent = false) => {
+    const currentWarehouseId = warehouseIdRef.current;
+    if (!currentWarehouseId) return;
+
     // 1. Cancel any existing in-flight request to prevent race conditions
     if (abortControllerRef.current) {
-      console.log(`[SYNC] Aborting previous in-flight request for warehouse: ${warehouseId}`);
+      console.log(`[SYNC] Aborting previous in-flight request for warehouse: ${currentWarehouseId}`);
       abortControllerRef.current.abort();
     }
     
@@ -279,11 +291,11 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     abortControllerRef.current = controller;
 
     const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    console.log(`[SYNC] ${timestamp} - loadSkus start (warehouse: ${warehouseId}, silent: ${silent})`);
+    console.log(`[SYNC] ${timestamp} - loadSkus start (warehouse: ${currentWarehouseId}, silent: ${silent})`);
     
     if (!silent) setStatus('loading');
     try {
-      const data = await fetchAllSkus(warehouseId, controller.signal) as any;
+      const data = await fetchAllSkus(currentWarehouseId, controller.signal) as any;
       
       // If we reached here without an AbortError, this is the latest valid response
       lastFetchTime.current = Date.now();
@@ -301,7 +313,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
         setStatus('error', err instanceof Error ? err.message : 'Failed to load products');
       }
     }
-  }, [setSkus, setStatus, warehouseId]);
+  }, [setSkus, setStatus]);
 
   // Handle Warehouse Switch -> Full Context Refresh (Deterministic Selection)
   // ─── Draft Resume Logic ─────────────────────────────────────────
@@ -366,14 +378,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     return () => {
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
-  }, [warehouseId]);
-
-  useEffect(() => {
-    // Only fetch on first mount if not already loaded (initial warehouse)
-    if (status === 'idle') {
-      loadSkus();
-    }
-  }, [status, loadSkus]);
+  }, [warehouseId, clearWarehouseState, loadSkus]);
 
   // ─── Background Refresh (Tab Visibility Aware) ─────────────────
   useEffect(() => {
@@ -418,18 +423,32 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   }, [loadSkus]); // loadSkus is stable from useCallback
 
   // ─── Speed Mode (keyboard nav) ────────────────────────────────
+  const productsRef = useRef(products);
+  const selectedIndexRef = useRef(selectedIndex);
+
+  useEffect(() => {
+    productsRef.current = products;
+  }, [products]);
+
+  useEffect(() => {
+    selectedIndexRef.current = selectedIndex;
+  }, [selectedIndex]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement?.id === 'global-search') {
+        const currentProducts = productsRef.current;
+        const currentIdx = selectedIndexRef.current;
+
         if (e.key === 'ArrowDown') {
           e.preventDefault();
-          setSelectedIndex((prev) => Math.min(prev + 1, products.length - 1));
+          setSelectedIndex(Math.min(currentIdx + 1, currentProducts.length - 1));
         } else if (e.key === 'ArrowUp') {
           e.preventDefault();
-          setSelectedIndex((prev) => Math.max(prev - 1, 0));
-        } else if (e.key === 'Enter' && selectedIndex >= 0) {
+          setSelectedIndex(Math.max(currentIdx - 1, 0));
+        } else if (e.key === 'Enter' && currentIdx >= 0) {
           e.preventDefault();
-          const p = products[selectedIndex];
+          const p = currentProducts[currentIdx];
           if (p) {
             addItem({
               skuId: p.id,
@@ -446,7 +465,7 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [products, selectedIndex, addItem]);
+  }, [addItem]);
 
   // Reset selection when filters change
   useEffect(() => {

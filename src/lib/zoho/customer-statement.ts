@@ -147,6 +147,7 @@ export type CustomerStatementPayment = {
   date: string;
   amount: number;
   referenceNumber?: string;
+  isVerified?: boolean;
 };
 
 export async function getCustomerPayments(contactId: string): Promise<{
@@ -178,14 +179,19 @@ export async function getCustomerPayments(contactId: string): Promise<{
     
     const items: CustomerStatementPayment[] = raw
       .filter((pmt: any) => !(pmt.deleted === true || pmt.status === 'void' || pmt.status === 'cancelled'))
-      .map((pmt: any) => ({
-        paymentId: pmt.payment_id,
-        paymentNumber: pmt.payment_number,
-        paymentMode: pmt.payment_mode,
-        date: pmt.date,
-        amount: Number(pmt.amount),
-        referenceNumber: pmt.reference_number,
-      }));
+      .map((pmt: any) => {
+        const verifiedVal = String(pmt.custom_field_hash?.cf_is_verified ?? pmt.cf_is_verified ?? '').toLowerCase();
+        const isVerified = ['true', '1'].includes(verifiedVal);
+        return {
+          paymentId: pmt.payment_id,
+          paymentNumber: pmt.payment_number,
+          paymentMode: pmt.payment_mode,
+          date: pmt.date,
+          amount: Number(pmt.amount),
+          referenceNumber: pmt.reference_number,
+          isVerified,
+        };
+      });
       
     console.log('[Zoho Payments] Normalized payment count:', items.length);
     
@@ -346,16 +352,21 @@ export async function getCustomerStatement(contactId: string): Promise<{
       amount: inv.total,
       netEffect: inv.total,
     })),
-    ...payments.map((pmt: any) => ({
-      id: pmt.paymentId,
-      type: 'payment' as const,
-      date: pmt.date,
-      datetime: pmt.date,
-      timestamp: new Date(pmt.date || 0).getTime(),
-      description: pmt.paymentMode ? `Payment - ${pmt.paymentMode}` : 'Customer Payment',
-      amount: pmt.amount,
-      netEffect: -pmt.amount,
-    })),
+    ...payments.map((pmt: any) => {
+      let desc = pmt.paymentMode ? `Payment - ${pmt.paymentMode}` : 'Customer Payment';
+      if (pmt.isVerified) desc += ' ✅';
+      
+      return {
+        id: pmt.paymentId,
+        type: 'payment' as const,
+        date: pmt.date,
+        datetime: pmt.date,
+        timestamp: new Date(pmt.date || 0).getTime(),
+        description: desc,
+        amount: pmt.amount,
+        netEffect: -pmt.amount,
+      };
+    }),
     ...bills.map((b: any) => ({
       id: b.billId,
       type: 'bill' as const,

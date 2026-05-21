@@ -23,6 +23,7 @@ export async function GET() {
         canManageUnlimitedSkus: true,
         canManageTransfers: true,
         canDeleteTransfers: true,
+        accountsAccess: true,
       },
       orderBy: { name: 'asc' },
     });

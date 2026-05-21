@@ -23,7 +23,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
       {/* Add */}
       <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
         <h2 className="text-sm font-semibold mb-3 text-gray-600 uppercase tracking-wider">Add New User</h2>
-        <ActionForm action={createUser} successMessage="User created!" resetOnSuccess className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
+        <ActionForm action={createUser} successMessage="User created!" resetOnSuccess className="grid grid-cols-2 md:grid-cols-7 gap-3 items-end">
           <div><label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
             <input type="text" name="name" required className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" /></div>
           <div><label className="block text-xs font-medium text-gray-500 mb-1">Mobile</label>
@@ -38,13 +38,17 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
             <select name="canManageCarts" className="w-full border rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-[#1A2766] outline-none">
               <option value="false">Read Only</option><option value="true">Edit/Delete</option>
             </select></div>
+          <div><label className="block text-xs font-medium text-gray-500 mb-1">Accounts</label>
+            <select name="accountsAccess" className="w-full border rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-[#1A2766] outline-none">
+              <option value="false">No Access</option><option value="true">View Statements</option>
+            </select></div>
           <FormSubmit className="bg-[#AE1B1E] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">Add User</FormSubmit>
         </ActionForm>
       </div>
 
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden overflow-x-auto">
-        <div className="min-w-[900px]">
+        <div className="min-w-[1020px]">
           {/* Header */}
           <div className="flex bg-gray-50 border-b text-gray-500 uppercase tracking-wider text-xs font-medium">
             <div className="w-40 p-3">Name</div>
@@ -52,6 +56,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
             <div className="w-24 p-3">PIN</div>
             <div className="w-24 p-3">Role</div>
             <div className="w-28 p-3">Cart Manage</div>
+            <div className="w-28 p-3">Accounts</div>
             <div className="w-24 p-3">Status</div>
             <div className="flex-1 p-3 text-right">Actions</div>
           </div>
@@ -79,6 +84,11 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                 <div className="w-28 p-2">
                   <select name="canManageCarts" defaultValue={String(u.canManageCarts)} className="w-full border rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#1A2766] outline-none">
                     <option value="false">Read Only</option><option value="true">Edit/Delete</option>
+                  </select>
+                </div>
+                <div className="w-28 p-2">
+                  <select name="accountsAccess" defaultValue={String(u.accountsAccess)} className="w-full border rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#1A2766] outline-none">
+                    <option value="false">No Access</option><option value="true">View Statements</option>
                   </select>
                 </div>
                 <div className="w-24 p-2">

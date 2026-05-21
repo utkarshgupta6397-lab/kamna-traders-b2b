@@ -19,7 +19,8 @@ export async function createUser(data: FormData) {
   const role = data.get('role') as string;
   const pin = data.get('pin') as string || undefined;
   const canManageCarts = data.get('canManageCarts') === 'true';
-  await prisma.user.create({ data: { name, mobile, role, pin, canManageCarts } });
+  const accountsAccess = data.get('accountsAccess') === 'true';
+  await prisma.user.create({ data: { name, mobile, role, pin, canManageCarts, accountsAccess } });
   revalidatePath('/admin/users');
 }
 
@@ -32,7 +33,8 @@ export async function updateUser(data: FormData) {
   const pin = data.get('pin') as string || undefined;
   const active = data.get('active') === 'true';
   const canManageCarts = data.get('canManageCarts') === 'true';
-  await prisma.user.update({ where: { id }, data: { name, mobile, role, pin, active, canManageCarts } });
+  const accountsAccess = data.get('accountsAccess') === 'true';
+  await prisma.user.update({ where: { id }, data: { name, mobile, role, pin, active, canManageCarts, accountsAccess } });
   revalidatePath('/admin/users');
 }
 

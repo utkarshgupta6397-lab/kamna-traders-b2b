@@ -26,6 +26,7 @@ model User {
   canManageUnlimitedSkus  Boolean            @default(false)
   canManageTransfers      Boolean            @default(false)
   canDeleteTransfers      Boolean            @default(false)
+  accountsAccess          Boolean            @default(false)
 
 
   sessions         ActiveSession[]

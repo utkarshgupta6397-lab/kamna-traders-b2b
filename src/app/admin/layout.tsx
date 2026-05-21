@@ -17,6 +17,7 @@ const navItems = [
   { href: '/admin/inventory', label: 'Inventory', icon: Database },
   { href: '/admin/zoho-debug', label: 'Zoho Debug', icon: Terminal },
   { href: '/admin/print-debug', label: 'Print Debug', icon: Printer },
+  { href: '/admin/printers', label: 'Printer Management', icon: Printer },
   { href: '/admin/customer-statement', label: 'Customer Statement', icon: FileText },
   { href: '/admin/transactions', label: 'Transactions', icon: Database },
   { href: '/admin/sessions', label: 'Sessions', icon: Shield },

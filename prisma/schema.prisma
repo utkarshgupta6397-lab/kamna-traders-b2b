@@ -373,3 +373,17 @@ model TransferHistory {
   // Relations
   transfer    Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
 }
+
+// ─── Printer Management ───────────────────────────────────────────────────────
+// Phase 1: Centralized printer registry. No warehouse mapping yet.
+// Phase 2: Add warehouseId FK, printerType, agentUrl fields.
+model Printer {
+  id          String   @id @default(cuid())
+  name        String
+  ipAddress   String
+  port        Int      @default(9100)
+  enabled     Boolean  @default(true)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

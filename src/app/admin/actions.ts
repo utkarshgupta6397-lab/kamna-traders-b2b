@@ -322,3 +322,44 @@ export async function adjustInventory(data: FormData) {
   revalidatePath('/admin/inventory');
   revalidatePath('/staff/dashboard/inventory/history');
 }
+
+// ─── Printer Actions ──────────────────────────────────────────────────────────
+
+export async function createPrinter(data: FormData) {
+  await requireAdmin();
+  const name = data.get('name') as string;
+  const ipAddress = data.get('ipAddress') as string;
+  const port = parseInt(data.get('port') as string) || 9100;
+  const description = (data.get('description') as string) || undefined;
+  const enabled = data.get('enabled') !== 'false';
+
+  if (!name?.trim()) throw new Error('Printer name is required');
+  if (!ipAddress?.trim()) throw new Error('IP address is required');
+  if (isNaN(port) || port < 1 || port > 65535) throw new Error('Port must be a valid number (1–65535)');
+
+  await prisma.printer.create({ data: { name: name.trim(), ipAddress: ipAddress.trim(), port, description: description?.trim() || null, enabled } });
+  revalidatePath('/admin/printers');
+}
+
+export async function updatePrinter(data: FormData) {
+  await requireAdmin();
+  const id = data.get('id') as string;
+  const name = data.get('name') as string;
+  const ipAddress = data.get('ipAddress') as string;
+  const port = parseInt(data.get('port') as string) || 9100;
+  const description = (data.get('description') as string) || undefined;
+  const enabled = data.get('enabled') === 'true';
+
+  if (!name?.trim()) throw new Error('Printer name is required');
+  if (!ipAddress?.trim()) throw new Error('IP address is required');
+  if (isNaN(port) || port < 1 || port > 65535) throw new Error('Port must be a valid number (1–65535)');
+
+  await prisma.printer.update({ where: { id }, data: { name: name.trim(), ipAddress: ipAddress.trim(), port, description: description?.trim() || null, enabled } });
+  revalidatePath('/admin/printers');
+}
+
+export async function setPrinterEnabled(id: string, enabled: boolean) {
+  await requireAdmin();
+  await prisma.printer.update({ where: { id }, data: { enabled } });
+  revalidatePath('/admin/printers');
+}

@@ -5,7 +5,7 @@ export default async function AccountsLayout({ children }: { children: React.Rea
   const session = await getSession();
 
   if (!session || (!session.accountsAccess && session.role !== 'ADMIN')) {
-    redirect('/staff/dashboard');
+    redirect('/staff/dashboard?error=unauthorized_accounts');
   }
 
   return <>{children}</>;

@@ -287,7 +287,7 @@ export async function getVendorBills(vendorId: string): Promise<{
  * This is NOT full reconciliation. Payments, credits and adjustments are
  * excluded and will be added in a future ledger engine phase.
  */
-export async function getCustomerStatement(contactId: string): Promise<{
+export async function getCustomerStatement(contactId: string, minDate?: string): Promise<{
   success: boolean;
   data?: CustomerStatement;
   raw?: any;
@@ -332,7 +332,7 @@ export async function getCustomerStatement(contactId: string): Promise<{
   const bills = (billsResult.success ? billsResult.data : []) ?? [];
 
   // 3. Merge into unified timeline with signed netEffect and memoized timestamp
-  const mergedRaw: Array<{
+  let mergedRaw: Array<{
     id: string;
     type: 'invoice' | 'payment' | 'bill';
     date: string;
@@ -378,6 +378,14 @@ export async function getCustomerStatement(contactId: string): Promise<{
       netEffect: -b.amount,
     })),
   ];
+
+  if (minDate) {
+    mergedRaw = mergedRaw.filter(tx => {
+      const txDate = new Date(tx.date);
+      const limit = new Date(minDate);
+      return txDate >= limit;
+    });
+  }
 
   console.log('[Zoho Statement] Merged transaction count:', mergedRaw.length);
 

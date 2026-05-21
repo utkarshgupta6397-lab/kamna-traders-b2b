@@ -20,7 +20,8 @@ export async function GET(request: Request) {
     );
   }
 
-  const result = await getCustomerStatement(customerId.trim());
+  const minDate = session.role === 'STAFF' ? '2026-03-01' : undefined;
+  const result = await getCustomerStatement(customerId.trim(), minDate);
   if (!result.success) {
     return NextResponse.json({ error: result.error, raw: result.raw }, { status: 400 });
   }

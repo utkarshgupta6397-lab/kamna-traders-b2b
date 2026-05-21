@@ -141,7 +141,13 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
 
   useEffect(() => {
     setIsClient(true);
-  }, []);
+    
+    // Check for authorization redirects
+    if (searchParams?.get('error') === 'unauthorized_accounts') {
+      toast.error('You are not allowed to visit the page. Please contact admin.', { duration: 5000 });
+      router.replace('/staff/dashboard');
+    }
+  }, [searchParams, router]);
 
   // Cart Store - Individual selectors to prevent over-rendering
   const items = useCartStore((s) => s.items);

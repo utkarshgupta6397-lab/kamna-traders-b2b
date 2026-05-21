@@ -2,6 +2,15 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  async redirects() {
+    return [
+      {
+        source: '/staff/accounts',
+        destination: '/staff/dashboard/accounts',
+        permanent: true, // Will cache the redirect and preserve query params natively
+      },
+    ];
+  },
   /* config options here */
   turbopack: {
     rules: {

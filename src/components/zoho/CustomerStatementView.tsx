@@ -4,8 +4,10 @@ import { useState } from 'react';
 import {
   Search, RefreshCw, ChevronDown, ChevronRight,
   FileJson, Copy, AlertCircle, User, MapPin, Phone,
-  FileText, TrendingUp, Info, Activity,
+  FileText, TrendingUp, Info, Activity, Lock,
 } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 import toast from 'react-hot-toast';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -111,7 +113,11 @@ function fmtDateTime(iso: string) {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function CustomerStatementView() {
-  const [customerId, setCustomerId] = useState('');
+  const searchParams = useSearchParams();
+  const initialCustomerId = searchParams?.get('customerId') || '';
+  const isLocked = !!initialCustomerId;
+
+  const [customerId, setCustomerId] = useState(initialCustomerId);
   const [loading, setLoading] = useState(false);
   const [statement, setStatement] = useState<{
     success: boolean;
@@ -122,8 +128,9 @@ export default function CustomerStatementView() {
   const [debugOpen, setDebugOpen] = useState(false);
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
-  const handleFetch = async () => {
-    if (!customerId || !/^\d+$/.test(customerId.trim()) || customerId.trim().length < 15) {
+  const handleFetch = async (overrideId?: string) => {
+    const idToFetch = (overrideId || customerId).trim();
+    if (!idToFetch || !/^\d+$/.test(idToFetch) || idToFetch.length < 15) {
       toast.error('Please enter a valid Zoho Customer ID.');
       return;
     }
@@ -132,7 +139,7 @@ export default function CustomerStatementView() {
     setStatement(null);
     try {
       const res = await fetch(
-        `/api/admin/customer-statement/statement?customerId=${encodeURIComponent(customerId.trim())}`
+        `/api/admin/customer-statement/statement?customerId=${encodeURIComponent(idToFetch)}`
       );
       const data = await res.json();
       setStatement(data);
@@ -147,6 +154,13 @@ export default function CustomerStatementView() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (initialCustomerId) {
+      handleFetch(initialCustomerId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCustomerId]);
 
   const copyRaw = async () => {
     if (!statement) return;
@@ -198,8 +212,13 @@ export default function CustomerStatementView() {
       {/* ── Search bar ─────────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-col sm:flex-row items-end gap-3">
         <div className="flex-1 w-full">
-          <label className="block text-xs font-bold text-gray-600 mb-1">
+          <label className="flex items-center gap-2 text-xs font-bold text-gray-600 mb-1">
             Zoho Customer / Contact ID
+            {isLocked && (
+              <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                <Lock size={10} /> Prefilled from Zoho Books
+              </span>
+            )}
           </label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -209,14 +228,17 @@ export default function CustomerStatementView() {
               placeholder="e.g. 1759923000018618057"
               value={customerId}
               onChange={(e) => setCustomerId(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleFetch()}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1A2766] focus:border-transparent"
+              onKeyDown={(e) => !isLocked && e.key === 'Enter' && handleFetch()}
+              disabled={isLocked}
+              className={`w-full pl-9 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1A2766] focus:border-transparent ${
+                isLocked ? 'bg-gray-50 text-gray-500 border-gray-200 cursor-not-allowed' : 'border-gray-200'
+              }`}
             />
           </div>
         </div>
         <button
           id="fetch-statement-btn"
-          onClick={handleFetch}
+          onClick={() => handleFetch()}
           disabled={loading}
           className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-[#1A2766] text-white rounded-lg text-sm font-bold hover:bg-[#25368a] transition-colors disabled:opacity-50 h-[38px]"
         >

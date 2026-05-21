@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import CustomerStatementView from '@/components/zoho/CustomerStatementView';
+import { Suspense } from 'react';
 
 export default function AccountsPage() {
   const [activeTab, setActiveTab] = useState<'statement' | 'transactions'>('statement');
@@ -32,7 +33,11 @@ export default function AccountsPage() {
       </div>
 
       <div>
-        {activeTab === 'statement' && <CustomerStatementView />}
+        {activeTab === 'statement' && (
+          <Suspense fallback={<div className="p-12 text-center text-gray-500">Loading statement...</div>}>
+            <CustomerStatementView />
+          </Suspense>
+        )}
         {activeTab === 'transactions' && (
           <div className="p-12 text-center bg-white rounded-xl shadow-sm border border-gray-100">
             <h3 className="text-lg font-medium text-gray-600">Coming Soon</h3>

@@ -36,9 +36,14 @@ export type StatementTransaction = {
   type: 'invoice' | 'payment' | 'bill';
   datetime?: string;
   date: string;
+  timestamp?: number;
   description: string;
   amount: number;
-  direction: 'dr' | 'cr';
+  /**
+   * Signed net effect on the party's receivable position.
+   * invoice => +amount, payment => -amount, bill => -amount, vendor_payment => +amount
+   */
+  netEffect: number;
   balanceAfter: number;
 };
 
@@ -46,6 +51,12 @@ export type CustomerStatement = {
   customer: CustomerStatementCustomer;
   openingBalance: number;
   closingBalance: number;
+  /** For hybrid accounts: raw outstanding_receivable_amount from Zoho */
+  outstandingReceivable: number;
+  /** For hybrid accounts: raw outstanding_payable_amount from Zoho */
+  outstandingPayable: number;
+  /** true for hybrid contacts (customer + vendor) */
+  isHybrid: boolean;
   transactions: StatementTransaction[];
   transactionCount: number;
   /** true when fewer than all transactions are shown */
@@ -61,6 +72,11 @@ export type CustomerStatement = {
     validInvoicesAfterFilter: number;
     rawBillsFetched: number;
     validBillsAfterFilter: number;
+    // Net position debug
+    debugReceivable: number;
+    debugPayable: number;
+    debugNetClosingBalance: number;
+    debugIsHybrid: boolean;
   };
 };
 
@@ -83,7 +99,7 @@ export async function getCustomerInvoices(contactId: string): Promise<{
     // Fetch invoices — no custom sort/status params (Zoho rejects unsupported enums)
     // We filter void and sort locally after receiving the response
     // Fetch 15 as buffer — void invoices are filtered in-app
-    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${contactId}&per_page=15`;
+    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=10&sort_column=date&sort_order=D`;
     const response = await fetch(url, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
@@ -145,7 +161,7 @@ export async function getCustomerPayments(contactId: string): Promise<{
     const accessToken = await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    const url = `${API_BASE_URL}/books/v3/customerpayments?organization_id=${orgId}&customer_id=${contactId}&per_page=15`;
+    const url = `${API_BASE_URL}/books/v3/customerpayments?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=10&sort_column=date&sort_order=D`;
     const response = await fetch(url, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
@@ -204,7 +220,7 @@ export async function getVendorBills(vendorId: string): Promise<{
     const accessToken = await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    const url = `${API_BASE_URL}/books/v3/bills?organization_id=${orgId}&vendor_id=${vendorId}&per_page=15`;
+    const url = `${API_BASE_URL}/books/v3/bills?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=10&sort_column=date&sort_order=D`;
     console.log('[Zoho Bills] Vendor ID Used:', vendorId);
     console.log('[Zoho Bills] API URL:', url);
     const response = await fetch(url, {
@@ -212,7 +228,6 @@ export async function getVendorBills(vendorId: string): Promise<{
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
     });
     const data = await response.json();
-    console.log('[Zoho Bills] API URL:', url);
     
     if (!response.ok) {
       console.warn('[Zoho Bills] Failed to fetch bills:', data);
@@ -220,16 +235,27 @@ export async function getVendorBills(vendorId: string): Promise<{
     }
     const raw: any[] = data.bills ?? [];
     console.log('[Zoho Bills] Raw bill count:', raw.length);
+    if (raw.length > 0) {
+      console.log('RAW BILL PAYLOAD (First Bill):', JSON.stringify(raw[0], null, 2));
+    }
     
     const items: CustomerStatementBill[] = raw
       .filter((b: any) => !(b.deleted === true || b.status === 'void' || b.status === 'cancelled'))
-      .map((b: any) => ({
-        billId: b.bill_id,
-        billNumber: b.bill_number,
-        date: b.date || b.created_time || b.last_modified_time || '',
-        amount: Number(b.total),
-        referenceNumber: b.reference_number,
-      }));
+      .map((b: any) => {
+        console.log('BILL DEBUG', {
+          bill_id: b.bill_id,
+          bill_number: b.bill_number,
+          reference_number: b.reference_number,
+          vendor_name: b.vendor_name
+        });
+        return {
+          billId: b.bill_id,
+          billNumber: b.bill_number,
+          date: b.date || b.created_time || b.last_modified_time || '',
+          amount: Number(b.total),
+          referenceNumber: b.reference_number,
+        };
+      });
       
     console.log('[Zoho Bills] Normalized bill count:', items.length);
     
@@ -261,26 +287,35 @@ export async function getCustomerStatement(contactId: string): Promise<{
   raw?: any;
   error?: string;
 }> {
-  // 1. Fetch customer master
-  const customerResult = await getCustomerById(contactId);
+  // 1. Parallelize base API calls
+  console.time('customer');
+  const customerPromise = getCustomerById(contactId).finally(() => console.timeEnd('customer'));
+  
+  console.time('invoices');
+  const invoicesPromise = getCustomerInvoices(contactId).finally(() => console.timeEnd('invoices'));
+  
+  console.time('payments');
+  const paymentsPromise = getCustomerPayments(contactId).finally(() => console.timeEnd('payments'));
+
+  const [customerResult, invoicesResult, paymentsResult] = await Promise.all([
+    customerPromise,
+    invoicesPromise,
+    paymentsPromise
+  ]);
+
   if (!customerResult.success || !customerResult.data) {
     return { success: false, error: customerResult.error, raw: customerResult.raw };
   }
   const customer = customerResult.data;
 
-  // 2. Fetch latest 15 invoices and 15 payments, plus 15 bills if vendor
-  const fetches: Promise<any>[] = [
-    getCustomerInvoices(contactId),
-    getCustomerPayments(contactId)
-  ];
-  if (customer.associatedVendorId) {
-    fetches.push(getVendorBills(customer.associatedVendorId));
+  // 2. Conditionally fetch bills only if hybrid AND payable > 0
+  let billsResult: any = { success: true, data: [] };
+  const outstandingPayable = customer.outstandingPayable ?? 0;
+  if (customer.associatedVendorId && outstandingPayable > 0) {
+    console.time('bills');
+    billsResult = await getVendorBills(customer.associatedVendorId);
+    console.timeEnd('bills');
   }
-
-  const results = await Promise.all(fetches);
-  const invoicesResult = results[0];
-  const paymentsResult = results[1];
-  const billsResult = customer.associatedVendorId ? results[2] : { success: true, data: [] };
   
   if (!invoicesResult.success) {
     return { success: false, error: invoicesResult.error, raw: invoicesResult.raw };
@@ -290,91 +325,106 @@ export async function getCustomerStatement(contactId: string): Promise<{
   const payments = (paymentsResult.success ? paymentsResult.data : []) ?? [];
   const bills = (billsResult.success ? billsResult.data : []) ?? [];
 
-  // 3. Merge into unified timeline
-  const mergedRaw = [
+  // 3. Merge into unified timeline with signed netEffect and memoized timestamp
+  const mergedRaw: Array<{
+    id: string;
+    type: 'invoice' | 'payment' | 'bill';
+    date: string;
+    datetime: string;
+    timestamp: number;
+    description: string;
+    amount: number;
+    netEffect: number;
+  }> = [
     ...invoices.map((inv: any) => ({
       id: inv.invoiceId,
       type: 'invoice' as const,
       date: inv.invoiceDate,
       datetime: inv.invoiceDate,
+      timestamp: new Date(inv.invoiceDate || 0).getTime(),
       description: `Invoice ${inv.invoiceNumber}`,
       amount: inv.total,
-      direction: 'dr' as const
+      netEffect: inv.total,
     })),
     ...payments.map((pmt: any) => ({
       id: pmt.paymentId,
       type: 'payment' as const,
       date: pmt.date,
       datetime: pmt.date,
+      timestamp: new Date(pmt.date || 0).getTime(),
       description: pmt.paymentMode ? `Payment - ${pmt.paymentMode}` : 'Customer Payment',
       amount: pmt.amount,
-      direction: 'cr' as const
+      netEffect: -pmt.amount,
     })),
     ...bills.map((b: any) => ({
       id: b.billId,
       type: 'bill' as const,
       date: b.date,
       datetime: b.date,
-      description: `Purchase Bill - ${b.billNumber}`,
+      timestamp: new Date(b.date || 0).getTime(),
+      description: b.referenceNumber ? `Purchase Bill - ${b.referenceNumber}` : `Purchase Bill - ${b.billNumber}`,
       amount: b.amount,
-      direction: 'cr' as const
-    }))
+      netEffect: -b.amount,
+    })),
   ];
 
   console.log('[Zoho Statement] Merged transaction count:', mergedRaw.length);
 
-  // 4. Sort chronologically NEWEST FIRST by datetime
-  mergedRaw.sort((a, b) => new Date(b.datetime!).getTime() - new Date(a.datetime!).getTime());
+  // 4. Sort chronologically NEWEST FIRST using memoized timestamp
+  mergedRaw.sort((a, b) => b.timestamp - a.timestamp);
 
   // 5. Take latest 10 merged transactions
   const latest10 = mergedRaw.slice(0, 10);
-  
   console.log('[Zoho Statement] Final rendered transaction count:', latest10.length);
 
-  // 6. Reverse-balance calculation
-  const netReceivable = (customer.outstandingReceivable ?? 0) - (customer.unusedCreditsReceivable ?? 0);
-  const netPayable = (customer.outstandingPayable ?? 0) - (customer.unusedCreditsPayable ?? 0);
-  const closingBalance = netReceivable - netPayable;
-  
-  // We need to work backwards from closing balance to opening balance for these 10 items.
-  // We have the latest 10 items in `latest10` (newest first).
-  // The balance BEFORE the newest item = closingBalance - (if invoice, add amount; if payment, subtract amount) wait.
-  // Actually, to build the balances on the transactions:
-  // We can go from index 0 (newest) to 9 (oldest).
-  // After item 0 is processed, balance is closingBalance.
-  // Balance before item 0 = closingBalance - (item 0 DR) + (item 0 CR)
-  
-  let currentBalance = closingBalance;
+  // 6. NET ACCOUNT POSITION anchor
+  //    receivable = outstanding_receivable_amount (raw, no credit offset — Zoho already nets it)
+  //    payable    = outstanding_payable_amount from vendor side
+  const outstandingReceivable = customer.outstandingReceivable ?? 0;
+  // outstandingPayable is already defined above
+  const netClosingBalance     = outstandingReceivable - outstandingPayable;
+  const isHybrid              = !!customer.associatedVendorId;
+
+  console.log('[Zoho Statement] NET POSITION:', {
+    outstandingReceivable,
+    outstandingPayable,
+    netClosingBalance,
+    isHybrid,
+  });
+
+  // 7. Reverse-calculate running balances from newest → oldest
+  //    runningBalance starts at netClosingBalance (after the last transaction)
+  //    For each transaction (newest first): balanceAfter = runningBalance, then runningBalance -= tx.netEffect
+  let runningBalance = netClosingBalance;
   const transactions: StatementTransaction[] = [];
-  
+
   for (const item of latest10) {
     transactions.push({
       ...item,
-      balanceAfter: currentBalance
+      balanceAfter: runningBalance,
     });
-    // Reverse movement to get the balance *before* this transaction
-    if (item.direction === 'dr') {
-      currentBalance = currentBalance - item.amount;
-    } else {
-      currentBalance = currentBalance + item.amount;
-    }
+    // Reverse the netEffect to get balance before this transaction
+    runningBalance -= item.netEffect;
   }
-  
-  const openingBalance = currentBalance;
-  
-  // To display correctly (oldest first), reverse the array
+
+  const openingBalance = runningBalance;
+
+  // Display oldest → newest
   transactions.reverse();
 
-  const invMeta = (invoicesResult as any)._meta ?? { rawFetched: invoices.length, validCount: invoices.length };
-  const pmtMeta = paymentsResult.success ? (paymentsResult as any)._meta : { rawFetched: 0, validCount: 0 };
-  const billMeta = billsResult.success ? (billsResult as any)._meta : { rawFetched: 0, validCount: 0 };
+  const invMeta  = (invoicesResult as any)._meta  ?? { rawFetched: invoices.length, validCount: invoices.length };
+  const pmtMeta  = paymentsResult.success ? ((paymentsResult as any)._meta ?? { rawFetched: 0, validCount: 0 }) : { rawFetched: 0, validCount: 0 };
+  const billMeta = (billsResult.success && (billsResult as any)._meta) ? (billsResult as any)._meta : { rawFetched: 0, validCount: 0 };
 
   return {
     success: true,
     data: {
       customer,
       openingBalance,
-      closingBalance,
+      closingBalance: netClosingBalance,
+      outstandingReceivable,
+      outstandingPayable,
+      isHybrid,
       transactions,
       transactionCount: transactions.length,
       isTruncated: true,
@@ -382,12 +432,16 @@ export async function getCustomerStatement(contactId: string): Promise<{
         customerApiCalls: 1,
         invoiceApiCalls: 1,
         paymentApiCalls: 1,
-        billApiCalls: customer.associatedVendorId ? 1 : 0,
-        totalApiCalls: customer.associatedVendorId ? 4 : 3,
+        billApiCalls: isHybrid ? 1 : 0,
+        totalApiCalls: isHybrid ? 4 : 3,
         rawInvoicesFetched: invMeta.rawFetched + pmtMeta.rawFetched,
         validInvoicesAfterFilter: invMeta.validCount + pmtMeta.validCount,
         rawBillsFetched: billMeta.rawFetched,
         validBillsAfterFilter: billMeta.validCount,
+        debugReceivable: outstandingReceivable,
+        debugPayable: outstandingPayable,
+        debugNetClosingBalance: netClosingBalance,
+        debugIsHybrid: isHybrid,
       },
     },
     raw: { customer: customerResult.raw, invoices: invoicesResult.raw, bills: billsResult.raw },
@@ -443,8 +497,9 @@ export async function getCustomerById(contactId: string): Promise<{ success: boo
       unusedCreditsReceivable: contact.unused_credits_receivable_amount,
       outstandingReceivableFormatted: contact.outstanding_receivable_amount_formatted,
       associatedVendorId: contact.associated_vendor_details?.vendor_id,
-      outstandingPayable: contact.outstanding_payable_amount,
-      unusedCreditsPayable: contact.unused_credits_payable_amount,
+      // NOTE: outstanding_payable_amount lives inside associated_vendor_details, NOT at top level
+      outstandingPayable: contact.associated_vendor_details?.outstanding_payable_amount ?? 0,
+      unusedCreditsPayable: contact.associated_vendor_details?.unused_credits_payable_amount ?? 0,
       billingAddress: billingAddr
     };
 

@@ -32,7 +32,8 @@ type Transaction = {
   datetime?: string;
   description: string;
   amount: number;
-  direction: 'dr' | 'cr';
+  /** Signed net effect: +invoice, -payment, -bill */
+  netEffect: number;
   balanceAfter: number;
 };
 
@@ -46,12 +47,19 @@ type Telemetry = {
   validInvoicesAfterFilter: number;
   rawBillsFetched: number;
   validBillsAfterFilter: number;
+  debugReceivable: number;
+  debugPayable: number;
+  debugNetClosingBalance: number;
+  debugIsHybrid: boolean;
 };
 
 type Statement = {
   customer: Customer;
   openingBalance: number;
   closingBalance: number;
+  outstandingReceivable: number;
+  outstandingPayable: number;
+  isHybrid: boolean;
   transactions: Transaction[];
   transactionCount: number;
   isTruncated: boolean;
@@ -71,9 +79,9 @@ function fmt(n: number) {
 
 /**
  * Render a balance in accounting style:
- *   positive → "₹X DR"  (amount owed by customer)
- *   negative → "₹X CR"  (credit balance)
- *   zero     → "₹0.00"
+ *   positive → "₹X Due"      (they owe us)
+ *   negative → "₹X Advance"  (we owe them / excess credit)
+ *   zero     → "Settled"
  */
 function fmtBalance(n: number) {
   if (n === 0) return 'Settled';
@@ -265,6 +273,37 @@ export default function CustomerStatementPage() {
             </div>
           </div>
 
+          {/* ── Section 1b: Net Account Position summary (hybrid only) ── */}
+          {s.isHybrid && (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
+                <TrendingUp size={14} className="text-[#1A2766]" />
+                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Net Account Position</span>
+              </div>
+              <div className="px-5 py-4 grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <div className="text-[10px] uppercase text-gray-400 font-bold mb-1">Outstanding Receivables</div>
+                  <div className="text-base font-extrabold text-rose-600">{fmt(s.outstandingReceivable)}</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">Customer owes us</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase text-gray-400 font-bold mb-1">Outstanding Payables</div>
+                  <div className="text-base font-extrabold text-amber-600">{fmt(s.outstandingPayable)}</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">We owe vendor</div>
+                </div>
+                <div className="border-l border-gray-100 pl-4">
+                  <div className="text-[10px] uppercase text-gray-400 font-bold mb-1">Net Position</div>
+                  <div className={`text-base font-extrabold ${
+                    s.closingBalance > 0 ? 'text-[#1A2766]' : s.closingBalance < 0 ? 'text-amber-600' : 'text-gray-400'
+                  }`}>
+                    {fmtBalance(s.closingBalance)}
+                  </div>
+                  <div className="text-[10px] text-gray-400 mt-0.5">Receivables − Payables</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── Section 2: Statement table ────────────────────────────── */}
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             {/* Table header bar */}
@@ -343,8 +382,10 @@ export default function CustomerStatementPage() {
                       <td className="px-4 py-2.5 text-xs font-medium text-gray-800">
                         {tx.description}
                       </td>
-                      <td className={`px-4 py-2.5 text-right text-xs font-semibold whitespace-nowrap ${tx.direction === 'dr' ? 'text-rose-600' : 'text-emerald-700'}`}>
-                        {tx.direction === 'dr' ? '+' : '-'} {fmt(tx.amount)}
+                      <td className={`px-4 py-2.5 text-right text-xs font-semibold whitespace-nowrap ${
+                        tx.netEffect > 0 ? 'text-rose-600' : 'text-emerald-700'
+                      }`}>
+                        {tx.netEffect > 0 ? '+' : '−'} {fmt(tx.amount)}
                       </td>
                       <td className="px-4 py-2.5 text-right text-xs font-medium text-gray-700 whitespace-nowrap">
                         {fmtBalance(tx.balanceAfter)}
@@ -360,7 +401,7 @@ export default function CustomerStatementPage() {
                     </tr>
                   )}
 
-                  {/* Net Payable / Closing row */}
+                  {/* Net Position / Closing row */}
                   <tr className="border-t-2 border-[#1A2766]/20 bg-[#1A2766]/5">
                     <td className="px-4 py-3 text-center text-gray-400 text-xs">—</td>
                     <td className="px-4 py-3 text-xs text-gray-400">—</td>
@@ -370,17 +411,19 @@ export default function CustomerStatementPage() {
                         {s.closingBalance > 0 ? 'Balance Due' : s.closingBalance < 0 ? 'Customer Advance' : 'Account Settled'}
                       </div>
                       <div className="text-[10px] text-gray-400">
-                        Closing balance
+                        {s.isHybrid ? 'Net account position' : 'Closing balance'}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right text-xs text-gray-400">—</td>
                     <td className="px-4 py-3 text-right">
-                      <div className="text-base font-extrabold text-[#1A2766]">
+                      <div className={`text-base font-extrabold ${
+                        s.closingBalance > 0 ? 'text-[#1A2766]' : s.closingBalance < 0 ? 'text-amber-700' : 'text-gray-400'
+                      }`}>
                         {fmtBalance(s.closingBalance)}
                       </div>
-                      {s.customer.outstandingReceivableFormatted && (
+                      {s.isHybrid && (
                         <div className="text-[10px] text-gray-400">
-                          Zoho: {s.customer.outstandingReceivableFormatted}
+                          {fmt(s.outstandingReceivable)} − {fmt(s.outstandingPayable)}
                         </div>
                       )}
                     </td>
@@ -409,13 +452,13 @@ export default function CustomerStatementPage() {
                 { label: 'Customer API', value: s.telemetry.customerApiCalls },
                 { label: 'Invoice API', value: s.telemetry.invoiceApiCalls },
                 { label: 'Payment API', value: s.telemetry.paymentApiCalls },
-                ...(s.customer.associatedVendorId ? [{ label: 'Bill API', value: s.telemetry.billApiCalls }] : []),
+                ...(s.isHybrid ? [{ label: 'Bill API', value: s.telemetry.billApiCalls }] : []),
                 { label: 'Total APIs', value: s.telemetry.totalApiCalls },
                 { label: 'Raw Invoices/Pmts', value: s.telemetry.rawInvoicesFetched },
                 { label: 'Valid Invoices/Pmts', value: s.telemetry.validInvoicesAfterFilter },
-                ...(s.customer.associatedVendorId ? [
+                ...(s.isHybrid ? [
                   { label: 'Raw Bills', value: s.telemetry.rawBillsFetched },
-                  { label: 'Valid Bills', value: s.telemetry.validBillsAfterFilter }
+                  { label: 'Valid Bills', value: s.telemetry.validBillsAfterFilter },
                 ] : []),
               ].map(({ label, value }, idx) => (
                 <div key={`${label}-${idx}`} className="text-center">
@@ -423,6 +466,30 @@ export default function CustomerStatementPage() {
                   <div className="text-[10px] text-gray-400 leading-tight">{label}</div>
                 </div>
               ))}
+            </div>
+            {/* Net position debug strip */}
+            <div className="px-5 py-2.5 border-t border-gray-100 bg-gray-50/60 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+              <div>
+                <div className="text-[10px] text-gray-400">Receivable (Zoho)</div>
+                <div className="text-sm font-bold text-rose-600">{fmt(s.telemetry.debugReceivable)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-gray-400">Payable (Zoho)</div>
+                <div className="text-sm font-bold text-amber-600">{fmt(s.telemetry.debugPayable)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-gray-400">Net Closing Balance</div>
+                <div className={`text-sm font-bold ${
+                  s.telemetry.debugNetClosingBalance > 0 ? 'text-[#1A2766]' :
+                  s.telemetry.debugNetClosingBalance < 0 ? 'text-amber-700' : 'text-gray-400'
+                }`}>{fmtBalance(s.telemetry.debugNetClosingBalance)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-gray-400">Hybrid Account</div>
+                <div className={`text-sm font-bold ${s.telemetry.debugIsHybrid ? 'text-emerald-600' : 'text-gray-400'}`}>
+                  {s.telemetry.debugIsHybrid ? 'Yes' : 'No'}
+                </div>
+              </div>
             </div>
           </div>
 

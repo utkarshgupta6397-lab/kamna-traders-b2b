@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -48,9 +48,14 @@ export const PERMISSIONS: PermissionDefinition[] = [
     description: 'Ability to delete stock transfers'
   },
   {
-    key: 'accountsAccess',
-    label: 'Accounts',
-    description: 'Ability to view customer statements and financial accounts'
+    key: 'accounts_customer_statement',
+    label: 'Customer Statement',
+    description: 'Ability to view and print customer account statements'
+  },
+  {
+    key: 'accounts_transactions',
+    label: 'Bank Transactions',
+    description: 'Ability to view live incoming bank feeds and transactions'
   }
 ];
 
@@ -62,5 +67,6 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'canManageUnlimitedSkus',
   'canManageTransfers',
   'canDeleteTransfers',
-  'accountsAccess'
+  'accounts_customer_statement',
+  'accounts_transactions'
 ];

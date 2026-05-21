@@ -178,7 +178,8 @@ export function getAuthorizationUrl(): string {
     'ZohoBooks.contacts.READ',
     'ZohoBooks.invoices.READ',
     'ZohoBooks.customerpayments.READ',
-    'ZohoBooks.bills.READ'
+    'ZohoBooks.bills.READ',
+    'ZohoBooks.banking.READ'
   ];
 
   console.log('ZOHO REDIRECT URI', process.env.ZOHO_REDIRECT_URI);
@@ -193,6 +194,7 @@ export function getAuthorizationUrl(): string {
   });
 
   const authUrl = `${ACCOUNTS_URL}/oauth/v2/auth?${params.toString()}`;
+  console.log('[ZOHO SCOPES]', scopes);
   console.log('FINAL_SCOPE_STRING=' + scopes.join(','));
   console.log('FINAL_AUTH_URL=' + authUrl);
   

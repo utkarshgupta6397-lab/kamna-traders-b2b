@@ -38,9 +38,13 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
             <select name="canManageCarts" className="w-full border rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-[#1A2766] outline-none">
               <option value="false">Read Only</option><option value="true">Edit/Delete</option>
             </select></div>
-          <div><label className="block text-xs font-medium text-gray-500 mb-1">Accounts</label>
-            <select name="accountsAccess" className="w-full border rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-[#1A2766] outline-none">
-              <option value="false">No Access</option><option value="true">View Statements</option>
+          <div><label className="block text-xs font-medium text-gray-500 mb-1">Statement Access</label>
+            <select name="accounts_customer_statement" className="w-full border rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-[#1A2766] outline-none">
+              <option value="false">No</option><option value="true">Yes</option>
+            </select></div>
+          <div><label className="block text-xs font-medium text-gray-500 mb-1">Transactions Access</label>
+            <select name="accounts_transactions" className="w-full border rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-[#1A2766] outline-none">
+              <option value="false">No</option><option value="true">Yes</option>
             </select></div>
           <FormSubmit className="bg-[#AE1B1E] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">Add User</FormSubmit>
         </ActionForm>
@@ -55,8 +59,9 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
             <div className="w-32 p-3">Mobile</div>
             <div className="w-24 p-3">PIN</div>
             <div className="w-24 p-3">Role</div>
-            <div className="w-28 p-3">Cart Manage</div>
-            <div className="w-28 p-3">Accounts</div>
+            <div className="w-24 p-3">Cart Manage</div>
+            <div className="w-20 p-3">Statement</div>
+            <div className="w-24 p-3">Transactions</div>
             <div className="w-24 p-3">Status</div>
             <div className="flex-1 p-3 text-right">Actions</div>
           </div>
@@ -81,14 +86,19 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                     <option value="STAFF">Staff</option><option value="ADMIN">Admin</option>
                   </select>
                 </div>
-                <div className="w-28 p-2">
+                <div className="w-24 p-2">
                   <select name="canManageCarts" defaultValue={String(u.canManageCarts)} className="w-full border rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#1A2766] outline-none">
-                    <option value="false">Read Only</option><option value="true">Edit/Delete</option>
+                    <option value="false">Read</option><option value="true">Write</option>
                   </select>
                 </div>
-                <div className="w-28 p-2">
-                  <select name="accountsAccess" defaultValue={String(u.accountsAccess)} className="w-full border rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#1A2766] outline-none">
-                    <option value="false">No Access</option><option value="true">View Statements</option>
+                <div className="w-20 p-2">
+                  <select name="accounts_customer_statement" defaultValue={String(u.accounts_customer_statement)} className="w-full border rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#1A2766] outline-none">
+                    <option value="false">No</option><option value="true">Yes</option>
+                  </select>
+                </div>
+                <div className="w-24 p-2">
+                  <select name="accounts_transactions" defaultValue={String(u.accounts_transactions)} className="w-full border rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#1A2766] outline-none">
+                    <option value="false">No</option><option value="true">Yes</option>
                   </select>
                 </div>
                 <div className="w-24 p-2">

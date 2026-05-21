@@ -20,7 +20,9 @@ export async function createUser(data: FormData) {
   const pin = data.get('pin') as string || undefined;
   const canManageCarts = data.get('canManageCarts') === 'true';
   const accountsAccess = data.get('accountsAccess') === 'true';
-  await prisma.user.create({ data: { name, mobile, role, pin, canManageCarts, accountsAccess } });
+  const accounts_customer_statement = data.get('accounts_customer_statement') === 'true';
+  const accounts_transactions = data.get('accounts_transactions') === 'true';
+  await prisma.user.create({ data: { name, mobile, role, pin, canManageCarts, accountsAccess, accounts_customer_statement, accounts_transactions } });
   revalidatePath('/admin/users');
 }
 
@@ -34,7 +36,9 @@ export async function updateUser(data: FormData) {
   const active = data.get('active') === 'true';
   const canManageCarts = data.get('canManageCarts') === 'true';
   const accountsAccess = data.get('accountsAccess') === 'true';
-  await prisma.user.update({ where: { id }, data: { name, mobile, role, pin, active, canManageCarts, accountsAccess } });
+  const accounts_customer_statement = data.get('accounts_customer_statement') === 'true';
+  const accounts_transactions = data.get('accounts_transactions') === 'true';
+  await prisma.user.update({ where: { id }, data: { name, mobile, role, pin, active, canManageCarts, accountsAccess, accounts_customer_statement, accounts_transactions } });
   revalidatePath('/admin/users');
 }
 

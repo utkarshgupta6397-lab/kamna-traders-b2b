@@ -81,7 +81,8 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.canManageUnlimitedSkus = true;
       merged.canManageTransfers = true;
       merged.canDeleteTransfers = true;
-      merged.accountsAccess = true;
+      merged.accounts_customer_statement = true;
+      merged.accounts_transactions = true;
     }
 
 

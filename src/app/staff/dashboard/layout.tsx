@@ -51,7 +51,7 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
                 <Truck size={16} /><span className="hidden md:inline text-xs">Transfers</span>
               </Link>
             )}
-            {(session.accountsAccess || session.role === 'ADMIN') && (
+            {(session.accounts_customer_statement || session.accounts_transactions || session.role === 'ADMIN') && (
               <Link href="/staff/dashboard/accounts" className="flex items-center gap-1.5 hover:text-white transition-colors">
                 <FileText size={16} /><span className="hidden md:inline text-xs">Accounts</span>
               </Link>

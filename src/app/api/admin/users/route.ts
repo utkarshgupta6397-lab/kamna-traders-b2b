@@ -23,7 +23,9 @@ export async function GET() {
         canManageUnlimitedSkus: true,
         canManageTransfers: true,
         canDeleteTransfers: true,
-        accountsAccess: true,
+        accountsAccess: true, // Keep for backward compatibility if needed, or UI might throw error
+        accounts_customer_statement: true,
+        accounts_transactions: true,
       },
       orderBy: { name: 'asc' },
     });

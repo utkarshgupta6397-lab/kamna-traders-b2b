@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 export default async function AccountsLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
 
-  if (!session || (!session.accountsAccess && session.role !== 'ADMIN')) {
+  if (!session || (!session.accounts_customer_statement && !session.accounts_transactions && session.role !== 'ADMIN')) {
     redirect('/staff/dashboard?error=unauthorized_accounts');
   }
 

@@ -12,6 +12,9 @@ export type CustomerStatementCustomer = {
   outstandingReceivable?: number;
   outstandingReceivableFormatted?: string;
   unusedCreditsReceivable?: number;
+  associatedVendorId?: string;
+  outstandingPayable?: number;
+  unusedCreditsPayable?: number;
   billingAddress?: string;
 };
 
@@ -30,7 +33,7 @@ export type CustomerStatementInvoice = {
 
 export type StatementTransaction = {
   id: string;
-  type: 'invoice' | 'payment';
+  type: 'invoice' | 'payment' | 'bill';
   datetime?: string;
   date: string;
   description: string;
@@ -52,9 +55,12 @@ export type CustomerStatement = {
     customerApiCalls: number;
     invoiceApiCalls: number;
     paymentApiCalls: number;
+    billApiCalls: number;
     totalApiCalls: number;
     rawInvoicesFetched: number;
     validInvoicesAfterFilter: number;
+    rawBillsFetched: number;
+    validBillsAfterFilter: number;
   };
 };
 
@@ -178,6 +184,66 @@ export async function getCustomerPayments(contactId: string): Promise<{
   }
 }
 
+export type CustomerStatementBill = {
+  billId: string;
+  billNumber: string;
+  date: string;
+  amount: number;
+  referenceNumber?: string;
+};
+
+export async function getVendorBills(vendorId: string): Promise<{
+  success: boolean;
+  data?: CustomerStatementBill[];
+  raw?: any;
+  error?: string;
+}> {
+  try {
+    const orgId = getZohoOrgId();
+    if (!orgId) throw new Error('Missing ZOHO_BOOKS_ORG_ID or ZOHO_ORGANIZATION_ID in environment variables');
+    const accessToken = await getZohoTokens();
+    if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
+
+    const url = `${API_BASE_URL}/books/v3/bills?organization_id=${orgId}&vendor_id=${vendorId}&per_page=15`;
+    console.log('[Zoho Bills] Vendor ID Used:', vendorId);
+    console.log('[Zoho Bills] API URL:', url);
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+    });
+    const data = await response.json();
+    console.log('[Zoho Bills] API URL:', url);
+    
+    if (!response.ok) {
+      console.warn('[Zoho Bills] Failed to fetch bills:', data);
+      return { success: false, error: data.message || 'Failed to fetch bills', raw: data };
+    }
+    const raw: any[] = data.bills ?? [];
+    console.log('[Zoho Bills] Raw bill count:', raw.length);
+    
+    const items: CustomerStatementBill[] = raw
+      .filter((b: any) => !(b.deleted === true || b.status === 'void' || b.status === 'cancelled'))
+      .map((b: any) => ({
+        billId: b.bill_id,
+        billNumber: b.bill_number,
+        date: b.date || b.created_time || b.last_modified_time || '',
+        amount: Number(b.total),
+        referenceNumber: b.reference_number,
+      }));
+      
+    console.log('[Zoho Bills] Normalized bill count:', items.length);
+    
+    return {
+      success: true,
+      data: items,
+      raw: data,
+      _meta: { rawFetched: raw.length, validCount: items.length },
+    } as any;
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Internal Server Error' };
+  }
+}
+
 /**
  * Build a reverse-calculated statement prototype.
  *
@@ -202,11 +268,19 @@ export async function getCustomerStatement(contactId: string): Promise<{
   }
   const customer = customerResult.data;
 
-  // 2. Fetch latest 15 invoices and 15 payments
-  const [invoicesResult, paymentsResult] = await Promise.all([
+  // 2. Fetch latest 15 invoices and 15 payments, plus 15 bills if vendor
+  const fetches: Promise<any>[] = [
     getCustomerInvoices(contactId),
     getCustomerPayments(contactId)
-  ]);
+  ];
+  if (customer.associatedVendorId) {
+    fetches.push(getVendorBills(customer.associatedVendorId));
+  }
+
+  const results = await Promise.all(fetches);
+  const invoicesResult = results[0];
+  const paymentsResult = results[1];
+  const billsResult = customer.associatedVendorId ? results[2] : { success: true, data: [] };
   
   if (!invoicesResult.success) {
     return { success: false, error: invoicesResult.error, raw: invoicesResult.raw };
@@ -214,10 +288,11 @@ export async function getCustomerStatement(contactId: string): Promise<{
 
   const invoices = invoicesResult.data ?? [];
   const payments = (paymentsResult.success ? paymentsResult.data : []) ?? [];
+  const bills = (billsResult.success ? billsResult.data : []) ?? [];
 
   // 3. Merge into unified timeline
   const mergedRaw = [
-    ...invoices.map(inv => ({
+    ...invoices.map((inv: any) => ({
       id: inv.invoiceId,
       type: 'invoice' as const,
       date: inv.invoiceDate,
@@ -226,13 +301,22 @@ export async function getCustomerStatement(contactId: string): Promise<{
       amount: inv.total,
       direction: 'dr' as const
     })),
-    ...payments.map(pmt => ({
+    ...payments.map((pmt: any) => ({
       id: pmt.paymentId,
       type: 'payment' as const,
       date: pmt.date,
       datetime: pmt.date,
       description: pmt.paymentMode ? `Payment - ${pmt.paymentMode}` : 'Customer Payment',
       amount: pmt.amount,
+      direction: 'cr' as const
+    })),
+    ...bills.map((b: any) => ({
+      id: b.billId,
+      type: 'bill' as const,
+      date: b.date,
+      datetime: b.date,
+      description: `Purchase Bill - ${b.billNumber}`,
+      amount: b.amount,
       direction: 'cr' as const
     }))
   ];
@@ -248,7 +332,9 @@ export async function getCustomerStatement(contactId: string): Promise<{
   console.log('[Zoho Statement] Final rendered transaction count:', latest10.length);
 
   // 6. Reverse-balance calculation
-  const closingBalance = (customer.outstandingReceivable ?? 0) - (customer.unusedCreditsReceivable ?? 0);
+  const netReceivable = (customer.outstandingReceivable ?? 0) - (customer.unusedCreditsReceivable ?? 0);
+  const netPayable = (customer.outstandingPayable ?? 0) - (customer.unusedCreditsPayable ?? 0);
+  const closingBalance = netReceivable - netPayable;
   
   // We need to work backwards from closing balance to opening balance for these 10 items.
   // We have the latest 10 items in `latest10` (newest first).
@@ -281,6 +367,7 @@ export async function getCustomerStatement(contactId: string): Promise<{
 
   const invMeta = (invoicesResult as any)._meta ?? { rawFetched: invoices.length, validCount: invoices.length };
   const pmtMeta = paymentsResult.success ? (paymentsResult as any)._meta : { rawFetched: 0, validCount: 0 };
+  const billMeta = billsResult.success ? (billsResult as any)._meta : { rawFetched: 0, validCount: 0 };
 
   return {
     success: true,
@@ -295,12 +382,15 @@ export async function getCustomerStatement(contactId: string): Promise<{
         customerApiCalls: 1,
         invoiceApiCalls: 1,
         paymentApiCalls: 1,
-        totalApiCalls: 3,
+        billApiCalls: customer.associatedVendorId ? 1 : 0,
+        totalApiCalls: customer.associatedVendorId ? 4 : 3,
         rawInvoicesFetched: invMeta.rawFetched + pmtMeta.rawFetched,
         validInvoicesAfterFilter: invMeta.validCount + pmtMeta.validCount,
+        rawBillsFetched: billMeta.rawFetched,
+        validBillsAfterFilter: billMeta.validCount,
       },
     },
-    raw: { customer: customerResult.raw, invoices: invoicesResult.raw },
+    raw: { customer: customerResult.raw, invoices: invoicesResult.raw, bills: billsResult.raw },
   };
 }
 
@@ -352,6 +442,9 @@ export async function getCustomerById(contactId: string): Promise<{ success: boo
       outstandingReceivable: contact.outstanding_receivable_amount,
       unusedCreditsReceivable: contact.unused_credits_receivable_amount,
       outstandingReceivableFormatted: contact.outstanding_receivable_amount_formatted,
+      associatedVendorId: contact.associated_vendor_details?.vendor_id,
+      outstandingPayable: contact.outstanding_payable_amount,
+      unusedCreditsPayable: contact.unused_credits_payable_amount,
       billingAddress: billingAddr
     };
 

@@ -19,12 +19,15 @@ type Customer = {
   email?: string;
   outstandingReceivable?: number;
   outstandingReceivableFormatted?: string;
+  associatedVendorId?: string;
+  outstandingPayable?: number;
+  unusedCreditsPayable?: number;
   billingAddress?: string;
 };
 
 type Transaction = {
   id: string;
-  type: 'invoice' | 'payment';
+  type: 'invoice' | 'payment' | 'bill';
   date: string;
   datetime?: string;
   description: string;
@@ -37,9 +40,12 @@ type Telemetry = {
   customerApiCalls: number;
   invoiceApiCalls: number;
   paymentApiCalls: number;
+  billApiCalls: number;
   totalApiCalls: number;
   rawInvoicesFetched: number;
   validInvoicesAfterFilter: number;
+  rawBillsFetched: number;
+  validBillsAfterFilter: number;
 };
 
 type Statement = {
@@ -134,10 +140,39 @@ export default function CustomerStatementPage() {
     }
   };
 
-  const copyRaw = () => {
+  const copyRaw = async () => {
     if (!statement) return;
-    navigator.clipboard.writeText(JSON.stringify(statement.raw ?? statement, null, 2));
-    toast.success('Raw JSON copied!');
+    const textToCopy = JSON.stringify(statement.raw ?? statement, null, 2);
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(textToCopy);
+        toast.success('Raw JSON copied!');
+      } else {
+        // Fallback for environments where clipboard API is unavailable
+        const textArea = document.createElement('textarea');
+        textArea.value = textToCopy;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        
+        const successful = document.execCommand('copy');
+        textArea.remove();
+        
+        if (successful) {
+          toast.success('Raw JSON copied!');
+        } else {
+          toast.error('Failed to copy to clipboard.');
+          console.error('Fallback clipboard copy failed.');
+        }
+      }
+    } catch (err) {
+      console.error('Clipboard copy error:', err);
+      toast.error('Failed to copy to clipboard.');
+    }
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -195,7 +230,9 @@ export default function CustomerStatementPage() {
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
               <User size={14} className="text-[#1A2766]" />
-              <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Customer</span>
+              <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
+                {s.customer.associatedVendorId ? 'Hybrid Account' : 'Customer'}
+              </span>
             </div>
             <div className="px-5 py-4 grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
               <div className="col-span-2 sm:col-span-1">
@@ -293,9 +330,13 @@ export default function CustomerStatementPage() {
                           <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-md font-bold text-[10px] uppercase">
                             Invoice
                           </span>
-                        ) : (
-                          <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-md font-bold text-[10px] uppercase">
+                        ) : tx.type === 'payment' ? (
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md font-bold text-[10px] uppercase">
                             Payment
+                          </span>
+                        ) : (
+                          <span className="bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5 rounded-md font-bold text-[10px] uppercase">
+                            Bill
                           </span>
                         )}
                       </td>
@@ -363,16 +404,21 @@ export default function CustomerStatementPage() {
                 API Consumption
               </span>
             </div>
-            <div className="px-5 py-3 grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="px-5 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { label: 'Customer API Calls', value: s.telemetry.customerApiCalls },
-                { label: 'Invoice API Calls', value: s.telemetry.invoiceApiCalls },
-                { label: 'Payment API Calls', value: s.telemetry.paymentApiCalls },
-                { label: 'Total APIs Used', value: s.telemetry.totalApiCalls },
-                { label: 'Raw Trx Fetched', value: s.telemetry.rawInvoicesFetched },
-                { label: 'Valid After Filter', value: s.telemetry.validInvoicesAfterFilter },
-              ].map(({ label, value }) => (
-                <div key={label} className="text-center">
+                { label: 'Customer API', value: s.telemetry.customerApiCalls },
+                { label: 'Invoice API', value: s.telemetry.invoiceApiCalls },
+                { label: 'Payment API', value: s.telemetry.paymentApiCalls },
+                ...(s.customer.associatedVendorId ? [{ label: 'Bill API', value: s.telemetry.billApiCalls }] : []),
+                { label: 'Total APIs', value: s.telemetry.totalApiCalls },
+                { label: 'Raw Invoices/Pmts', value: s.telemetry.rawInvoicesFetched },
+                { label: 'Valid Invoices/Pmts', value: s.telemetry.validInvoicesAfterFilter },
+                ...(s.customer.associatedVendorId ? [
+                  { label: 'Raw Bills', value: s.telemetry.rawBillsFetched },
+                  { label: 'Valid Bills', value: s.telemetry.validBillsAfterFilter }
+                ] : []),
+              ].map(({ label, value }, idx) => (
+                <div key={`${label}-${idx}`} className="text-center">
                   <div className="text-lg font-bold text-gray-700">{value}</div>
                   <div className="text-[10px] text-gray-400 leading-tight">{label}</div>
                 </div>

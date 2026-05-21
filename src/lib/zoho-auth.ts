@@ -177,7 +177,8 @@ export function getAuthorizationUrl(): string {
     'ZohoBooks.items.READ',
     'ZohoBooks.contacts.READ',
     'ZohoBooks.invoices.READ',
-    'ZohoBooks.customerpayments.READ'
+    'ZohoBooks.customerpayments.READ',
+    'ZohoBooks.bills.READ'
   ];
 
   console.log('ZOHO REDIRECT URI', process.env.ZOHO_REDIRECT_URI);

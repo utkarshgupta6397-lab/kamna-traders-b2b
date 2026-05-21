@@ -51,7 +51,7 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isThermalReady, setIsThermalReady] = useState(false);
 
-  // Detect Thermal Printer for Silent Printing
+  // Detect print agent + printer on mount
   useEffect(() => {
     const checkThermal = async () => {
       try {
@@ -61,7 +61,7 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
           setIsThermalReady(!!printer);
         }
       } catch (e) {
-        console.warn('[PRINT] Thermal detection failed', e);
+        console.warn('[PRINT] Agent detection failed', e);
       }
     };
     checkThermal();
@@ -161,9 +161,10 @@ export default function StaffCartBuilder({ warehouses, skus, staffId }: StaffCar
             const buffer = renderDispatchSlips(data.printPayload);
             await qzManager.printRaw(buffer);
             toast.success('Dispatch note sent to printer', { id: loadingToast });
-          } catch (err: any) {
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Printing Failed';
             console.error('[PRINT_ERROR] Silent thermal print failed', err);
-            toast.error('Thermal print failed. You can reprint from the next page.', { id: loadingToast });
+            toast.error(msg, { id: loadingToast });
           }
         }
 

@@ -19,7 +19,7 @@ export default function SettingsPageClient({ permissions }: SettingsPageClientPr
       id: 'printer',
       label: 'Printer',
       icon: Printer,
-      description: 'Configure machine-local thermal printing and QZ Tray handshake.',
+      description: 'Configure network thermal printing via the local print agent.',
       component: <PrinterSettingsTab />
     }
   ];

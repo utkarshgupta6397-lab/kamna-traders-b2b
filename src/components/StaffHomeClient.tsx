@@ -174,20 +174,18 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
   useEffect(() => {
     async function checkQZReadiness() {
       try {
-        const { getQZConfig } = await import('@/lib/print/qz-storage');
-        const config = await getQZConfig();
-        
-        if (config?.certificate && config?.privateKey && config?.printerName) {
-          console.log(`[QZ_INIT] Found valid local config for ${config.printerName}. Pre-connecting...`);
-          setIsThermalReady(true);
-          // Pre-warm the connection
-          qzManager.connect().catch(() => {});
+        // Check if local print agent is running and a printer is configured
+        const connected = await qzManager.connect();
+        if (connected) {
+          const printer = await qzManager.findPrinter();
+          setIsThermalReady(!!printer);
+          console.log(`[PrintAgent] Ready: ${printer || 'no printer found'}`);
         } else {
-          console.log('[QZ_INIT] No valid local config found for silent printing.');
+          console.log('[PrintAgent] Agent not running — silent printing disabled');
           setIsThermalReady(false);
         }
       } catch (err) {
-        console.warn('[QZ_INIT] Readiness check failed:', err);
+        console.warn('[PrintAgent] Readiness check failed:', err);
       }
     }
     checkQZReadiness();
@@ -533,14 +531,10 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
               const buffer = renderDispatchSlips(printPayload);
               await qzManager.printRaw(buffer);
               toast.success('Dispatch note sent to printer', { id: loadingToast });
-            } catch (err: any) {
-              console.warn('[DISPATCH_PRINT] Silent print skipped/failed:', err.message);
-              // If it's just a connection issue, show a subtle warning instead of error
-              if (err.message?.includes('QZ Tray is not running')) {
-                toast.error('Thermal printer offline (QZ Tray not running)', { id: loadingToast, duration: 3000 });
-              } else {
-                toast.error('Thermal print failed. You can reprint from the next page.', { id: loadingToast });
-              }
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : 'Printing Failed';
+              console.warn('[DISPATCH_PRINT] Print failed:', msg);
+              toast.error(msg, { id: loadingToast, duration: 3000 });
             }
           })();
         }

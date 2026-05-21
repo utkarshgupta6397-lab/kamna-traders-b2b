@@ -1,80 +1,92 @@
-import qz from 'qz-tray';
-import { initializeQZSecurity } from '@/lib/printing/security/qz-security';
-
 /**
- * QZ Tray Singleton
- * Manages WebSocket lifecycle and silent printing capabilities.
+ * qz-tray.ts  (Phase 3 — Agent Transport Replacement)
+ *
+ * Exports the same `qzManager` singleton used throughout the app.
+ * Internals are now backed by the warehouse-print-agent (localhost:3001)
+ * instead of the QZ Tray WebSocket.
+ *
+ * ESC/POS rendering is NOT changed. Only the transport layer is replaced.
  */
-class QZManager {
-  private static instance: QZManager;
-  private connection: boolean = false;
-  private printer: string | null = null;
 
-  private constructor() {
-    // Only initialize security certificates once
-    if (typeof window !== 'undefined') {
-      initializeQZSecurity();
-    }
+import { checkAgentHealth, checkPrinterStatus, printViaAgent, AgentPrinterTarget } from './agent-transport';
+
+// ── Printer source ──────────────────────────────────────────────────────────
+// Loaded once per session from /api/printers (DB). Avoids hardcoding.
+
+interface PrinterRecord {
+  id: string;
+  name: string;
+  ipAddress: string;
+  port: number;
+}
+
+async function fetchFirstEnabledPrinter(): Promise<PrinterRecord | null> {
+  try {
+    const res = await fetch('/api/printers', { credentials: 'include' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const list: PrinterRecord[] = data?.printers ?? [];
+    return list[0] ?? null;
+  } catch {
+    return null;
   }
+}
 
-  public static getInstance(): QZManager {
-    if (!QZManager.instance) {
-      QZManager.instance = new QZManager();
-    }
-    return QZManager.instance;
-  }
+// ── Manager ─────────────────────────────────────────────────────────────────
 
+class PrintAgentManager {
+  private static instance: PrintAgentManager;
+
+  /** true after a successful agent health check */
+  private agentOnline = false;
+
+  /** Loaded from DB on first connect() */
+  private activePrinter: PrinterRecord | null = null;
+
+  /** De-duplicate concurrent connect() calls */
   private connectingPromise: Promise<boolean> | null = null;
 
+  private constructor() {}
+
+  public static getInstance(): PrintAgentManager {
+    if (!PrintAgentManager.instance) {
+      PrintAgentManager.instance = new PrintAgentManager();
+    }
+    return PrintAgentManager.instance;
+  }
+
   /**
-   * Established a connection to the local QZ Tray application.
+   * Check agent liveness + load printer from DB.
+   * Mirrors QZManager.connect() — safe to call multiple times.
    */
   async connect(): Promise<boolean> {
-    // If already active, return immediately
-    try {
-      if (qz.websocket.isActive()) {
-        this.connection = true;
-        return true;
-      }
-    } catch (e) {
-      // If isActive() itself fails (internal QZ bug), force a reset
-      this.connection = false;
-    }
-
+    if (this.agentOnline && this.activePrinter) return true;
     if (this.connectingPromise) return this.connectingPromise;
-    
+
     this.connectingPromise = (async () => {
       try {
-        console.log('[QZ] Connecting to WebSocket...');
-        
-        // Ensure security is initialized
-        if (typeof window !== 'undefined') {
-          initializeQZSecurity();
+        const healthy = await checkAgentHealth();
+        if (!healthy) {
+          console.warn('[PrintAgent] Local print agent not reachable at localhost:3001');
+          this.agentOnline = false;
+          return false;
         }
 
-        // Safety timeout: 5s max for connection attempt
-        await Promise.race([
-          qz.websocket.connect(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('QZ Connection Timeout')), 5000))
-        ]);
-        
-        console.log('[QZ] Connection established successfully.');
-        this.connection = true;
+        this.agentOnline = true;
+        console.log('[PrintAgent] Agent reachable');
 
-        // Auto-load printer from storage if not set
-        if (!this.printer) {
-          const { getQZConfig } = await import('@/lib/print/qz-storage');
-          const config = await getQZConfig();
-          if (config?.printerName) {
-            this.printer = config.printerName;
+        // Load printer from DB if not already set
+        if (!this.activePrinter) {
+          const printer = await fetchFirstEnabledPrinter();
+          if (printer) {
+            this.activePrinter = printer;
+            console.log(`[PrintAgent] Active printer: ${printer.name} (${printer.ipAddress}:${printer.port})`);
+          } else {
+            console.warn('[PrintAgent] No enabled printers found in DB');
           }
         }
 
-        return true;
-      } catch (err) {
-        console.warn('[QZ] Connection failed. Is QZ Tray application running?');
-        this.connection = false;
-        return false;
+        return this.agentOnline && !!this.activePrinter;
       } finally {
         this.connectingPromise = null;
       }
@@ -84,97 +96,108 @@ class QZManager {
   }
 
   /**
-   * Gracefully finds a printer. NEVER throws TypeErrors.
+   * Returns the active printer name, or null.
+   * Mirrors QZManager.findPrinter() — call sites unchanged.
    */
   async findPrinter(name?: string): Promise<string | null> {
-    try {
-      const isConnected = await this.connect();
-      if (!isConnected || !qz.websocket.isActive()) {
-        return null;
-      }
-      
-      const targetName = name || this.printer || 'POS120';
-      console.log(`[QZ] Finding printer: ${targetName}`);
-      
-      // INTERNAL QZ CALL: Wrap in catch to handle "sendData is not a function" zombie states
-      const printer = await qz.printers.find(targetName).catch(() => null);
-      
-      const selected = Array.isArray(printer) ? (printer[0] || null) : (printer || null);
-      this.printer = selected;
-      return selected;
-    } catch (err) {
-      console.warn('[QZ] Graceful failure in findPrinter:', err);
+    await this.connect();
+    if (!this.activePrinter) return null;
+
+    // If a specific name was requested, check it matches (informational only)
+    if (name && name !== this.activePrinter.name) {
+      console.warn(`[PrintAgent] Requested printer "${name}" but active is "${this.activePrinter.name}"`);
+    }
+
+    // Probe TCP connectivity
+    const online = await checkPrinterStatus({
+      ip: this.activePrinter.ipAddress,
+      port: this.activePrinter.port,
+    });
+
+    if (!online) {
+      console.warn(`[PrintAgent] Printer ${this.activePrinter.name} is offline`);
       return null;
     }
+
+    return this.activePrinter.name;
   }
 
+  /**
+   * List available printers — returns array of name strings.
+   * Mirrors QZManager.getAllPrinters().
+   */
   async getAllPrinters(): Promise<string[]> {
     try {
-      const isConnected = await this.connect();
-      if (!isConnected || !qz.websocket.isActive()) return [];
-
-      const list = await qz.printers.find().catch(() => []);
-      return Array.isArray(list) ? list : (list ? [list] : []);
-    } catch (err) {
+      const res = await fetch('/api/printers', { credentials: 'include' });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const list: PrinterRecord[] = data?.printers ?? [];
+      return list.map((p) => p.name);
+    } catch {
       return [];
     }
   }
 
-  async printRaw(data: Uint8Array | string[]) {
-    const isConnected = await this.connect();
-    
-    // If we think we are connected but the library is in a zombie state, 
-    // qz.websocket.isActive() might lie or the internal connection might be null.
-    if (!isConnected || !qz.websocket.isActive()) {
-      throw new Error('QZ Tray is not running. Please start the application and try again.');
+  /**
+   * Send ESC/POS data to the active printer via the local agent.
+   * Accepts both Uint8Array (from EscPosRenderer) and string[] (legacy).
+   * Mirrors QZManager.printRaw() — call sites unchanged.
+   */
+  async printRaw(data: Uint8Array | string[]): Promise<void> {
+    const ready = await this.connect();
+
+    if (!this.agentOnline) {
+      throw new Error('Local Print Service Not Running — start warehouse-print-agent on this machine');
+    }
+    if (!this.activePrinter) {
+      throw new Error('Printer Offline — no enabled printer found in Printer Management');
+    }
+    if (!ready) {
+      throw new Error('Printer Offline — unable to reach printer');
     }
 
-    try {
-      if (!this.printer) {
-        const found = await this.findPrinter();
-        if (!found) throw new Error(`Target printer not found. Please check your printer connection.`);
-      }
-      
-      const config = qz.configs.create(this.printer!);
-      
-      let payload: any[];
-      if (data instanceof Uint8Array) {
-        const binary = data.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
-        const base64 = btoa(binary);
-        payload = [{ type: 'raw', format: 'command', flavor: 'base64', data: base64 }];
-      } else {
-        payload = data;
-      }
-      
-      // Attempt print, catch internal zombie state errors
-      await qz.print(config, payload).catch((err: any) => {
-        if (err?.message?.includes('sendData')) {
-          this.connection = false; // Mark as disconnected to force retry next time
-          throw new Error('Printer connection lost. Please ensure QZ Tray is running.');
-        }
-        throw err;
-      });
-    } catch (err: any) {
-      console.error('[QZ] Printing failed:', err);
-      throw err;
+    const target: AgentPrinterTarget = {
+      ip: this.activePrinter.ipAddress,
+      port: this.activePrinter.port,
+    };
+
+    console.log(`[PrintAgent] Sending job to ${target.ip}:${target.port}`);
+    const result = await printViaAgent(target, data);
+
+    if (!result.success) {
+      throw new Error(result.error ?? 'Printing Failed');
     }
+
+    console.log('[PrintAgent] ✓ Print job sent successfully');
   }
 
-  setPrinter(name: string) {
-    this.printer = name;
-  }
-
-  isConnected() {
-    try {
-      return qz.websocket.isActive();
-    } catch (e) {
-      return false;
+  /**
+   * Override the active printer by name.
+   * Looks up the printer record from DB. Mirrors QZManager.setPrinter().
+   */
+  setPrinter(name: string): void {
+    // Optimistic local set — name only; next printRaw will re-validate
+    if (this.activePrinter) {
+      this.activePrinter = { ...this.activePrinter, name };
     }
+    console.log(`[PrintAgent] Printer target set to: ${name}`);
   }
 
-  getSelectedPrinter() {
-    return this.printer;
+  /** Returns true if agent was successfully contacted. Mirrors QZManager.isConnected(). */
+  isConnected(): boolean {
+    return this.agentOnline;
+  }
+
+  /** Returns the active printer name, or null. Mirrors QZManager.getSelectedPrinter(). */
+  getSelectedPrinter(): string | null {
+    return this.activePrinter?.name ?? null;
+  }
+
+  /** Returns the active printer's IP:port for display purposes. */
+  getActivePrinterTarget(): AgentPrinterTarget | null {
+    if (!this.activePrinter) return null;
+    return { ip: this.activePrinter.ipAddress, port: this.activePrinter.port };
   }
 }
 
-export const qzManager = QZManager.getInstance();
+export const qzManager = PrintAgentManager.getInstance();

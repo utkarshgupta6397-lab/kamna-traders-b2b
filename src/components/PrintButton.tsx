@@ -3,14 +3,14 @@
 import { useEffect, useState } from 'react';
 import { qzManager } from '@/lib/print/qz-tray';
 import { renderDispatchSlips, PrintPayload } from '@/lib/print/slip-renderer';
-import { Printer, Loader2, AlertCircle } from 'lucide-react';
+import { Printer, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function PrintButton({ payload }: { payload?: PrintPayload | null }) {
   const [isThermalReady, setIsThermalReady] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
 
-  // 1. Detect QZ Tray on Mount
+  // Detect print agent + printer on mount
   useEffect(() => {
     const checkThermal = async () => {
       try {
@@ -20,7 +20,7 @@ export default function PrintButton({ payload }: { payload?: PrintPayload | null
           setIsThermalReady(!!printer);
         }
       } catch (err) {
-        console.warn('[PrintButton] Initial thermal check skipped:', err);
+        console.warn('[PrintButton] Thermal check skipped:', err);
         setIsThermalReady(false);
       }
     };
@@ -30,7 +30,7 @@ export default function PrintButton({ payload }: { payload?: PrintPayload | null
   const handlePrint = async () => {
     if (isPrinting) return;
 
-    // A. Use Thermal POS Infrastructure (Preferred)
+    // A. Use network print agent (Preferred)
     if (isThermalReady && payload) {
       setIsPrinting(true);
       const loadingToast = toast.loading('Sending to thermal printer...');
@@ -45,9 +45,10 @@ export default function PrintButton({ payload }: { payload?: PrintPayload | null
           body: JSON.stringify({ action: 'PRINTED' })
         }).catch(err => console.error('Failed to log printed history:', err));
 
-      } catch (err: any) {
-        console.error('[PRINT_ERROR] Thermal failed, falling back', err);
-        toast.error('Thermal printer failed. Using browser print.', { id: loadingToast });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Printing Failed';
+        console.error('[PRINT_ERROR] Thermal failed:', err);
+        toast.error(msg, { id: loadingToast });
         window.print();
 
         fetch(`/api/staff/carts/${payload.id}/history`, {

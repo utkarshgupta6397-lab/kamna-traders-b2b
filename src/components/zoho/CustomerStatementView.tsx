@@ -162,9 +162,10 @@ export default function CustomerStatementView() {
       const bytes = renderStatementSlip(payload);
       await qzManager.printRaw(bytes);
       toast.success('Statement sent to printer successfully');
-    } catch (error: any) {
-      console.error('Print error:', error);
-      toast.error('Failed to print statement');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Printing Failed';
+      console.error('Print error:', err);
+      toast.error(msg);
     } finally {
       setPrinting(false);
     }

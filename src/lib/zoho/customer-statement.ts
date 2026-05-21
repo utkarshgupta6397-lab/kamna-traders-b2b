@@ -45,6 +45,7 @@ export type StatementTransaction = {
    */
   netEffect: number;
   balanceAfter: number;
+  isVerified?: boolean;
 };
 
 export type CustomerStatement = {
@@ -99,7 +100,7 @@ export async function getCustomerInvoices(contactId: string): Promise<{
     // Fetch invoices — no custom sort/status params (Zoho rejects unsupported enums)
     // We filter void and sort locally after receiving the response
     // Fetch 15 as buffer — void invoices are filtered in-app
-    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=10&sort_column=date&sort_order=D`;
+    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=15&sort_column=date&sort_order=D`;
     const response = await fetch(url, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
@@ -162,7 +163,7 @@ export async function getCustomerPayments(contactId: string): Promise<{
     const accessToken = await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    const url = `${API_BASE_URL}/books/v3/customerpayments?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=10&sort_column=date&sort_order=D`;
+    const url = `${API_BASE_URL}/books/v3/customerpayments?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=15&sort_column=date&sort_order=D`;
     const response = await fetch(url, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
@@ -226,7 +227,7 @@ export async function getVendorBills(vendorId: string): Promise<{
     const accessToken = await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    const url = `${API_BASE_URL}/books/v3/bills?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=10&sort_column=date&sort_order=D`;
+    const url = `${API_BASE_URL}/books/v3/bills?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=15&sort_column=date&sort_order=D`;
     console.log('[Zoho Bills] Vendor ID Used:', vendorId);
     console.log('[Zoho Bills] API URL:', url);
     const response = await fetch(url, {
@@ -341,6 +342,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
     description: string;
     amount: number;
     netEffect: number;
+    isVerified?: boolean;
   }> = [
     ...invoices.map((inv: any) => ({
       id: inv.invoiceId,
@@ -354,7 +356,6 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
     })),
     ...payments.map((pmt: any) => {
       let desc = pmt.paymentMode ? `Payment - ${pmt.paymentMode}` : 'Customer Payment';
-      if (pmt.isVerified) desc += ' ✅';
       
       return {
         id: pmt.paymentId,
@@ -365,6 +366,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
         description: desc,
         amount: pmt.amount,
         netEffect: -pmt.amount,
+        isVerified: pmt.isVerified,
       };
     }),
     ...bills.map((b: any) => ({
@@ -392,23 +394,30 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
   // 4. Sort chronologically NEWEST FIRST using memoized timestamp
   mergedRaw.sort((a, b) => b.timestamp - a.timestamp);
 
-  // 5. Take latest 10 merged transactions
-  const latest10 = mergedRaw.slice(0, 10);
-  console.log('[Zoho Statement] Final rendered transaction count:', latest10.length);
+  // 5. Take latest 15 merged transactions
+  const latest15 = mergedRaw.slice(0, 15);
+  console.log('[Zoho Statement] Final rendered transaction count:', latest15.length);
 
-  // 6. NET ACCOUNT POSITION anchor
-  //    receivable = outstanding_receivable_amount (raw, no credit offset — Zoho already nets it)
-  //    payable    = outstanding_payable_amount from vendor side
   const outstandingReceivable = customer.outstandingReceivable ?? 0;
-  // outstandingPayable is already defined above
-  const netClosingBalance     = outstandingReceivable - outstandingPayable;
-  const isHybrid              = !!customer.associatedVendorId;
+  const customerUnusedCredits = customer.unusedCreditsReceivable ?? 0;
+  // outstandingPayable is already declared above (line ~319)
+  const vendorUnusedCredits = customer.unusedCreditsPayable ?? 0;
 
-  console.log('[Zoho Statement] NET POSITION:', {
-    outstandingReceivable,
-    outstandingPayable,
-    netClosingBalance,
-    isHybrid,
+  const customerNet = outstandingReceivable - customerUnusedCredits;
+  const vendorNet = outstandingPayable - vendorUnusedCredits;
+  const isHybrid = !!customer.associatedVendorId;
+
+  const netClosingBalance = isHybrid ? (customerNet - vendorNet) : customerNet;
+
+  console.debug('[Statement Balance Debug]', {
+    outstandingReceivables: outstandingReceivable,
+    customerUnusedCredits,
+    outstandingPayables: outstandingPayable,
+    vendorUnusedCredits,
+    customerNet,
+    vendorNet,
+    finalClosingBalance: netClosingBalance,
+    isHybrid
   });
 
   // 7. Reverse-calculate running balances from newest → oldest
@@ -417,7 +426,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
   let runningBalance = netClosingBalance;
   const transactions: StatementTransaction[] = [];
 
-  for (const item of latest10) {
+  for (const item of latest15) {
     transactions.push({
       ...item,
       balanceAfter: runningBalance,

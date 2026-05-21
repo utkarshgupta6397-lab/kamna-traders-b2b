@@ -4,7 +4,7 @@ import { useState } from 'react';
 import {
   Search, RefreshCw, ChevronDown, ChevronRight,
   FileJson, Copy, AlertCircle, User, MapPin, Phone,
-  FileText, TrendingUp, Info, Activity, Lock, Printer,
+  FileText, TrendingUp, Info, Activity, Lock, Printer, Check
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
@@ -39,6 +39,7 @@ type Transaction = {
   /** Signed net effect: +invoice, -payment, -bill */
   netEffect: number;
   balanceAfter: number;
+  isVerified?: boolean;
 };
 
 type Telemetry = {
@@ -83,13 +84,18 @@ function fmt(n: number) {
 
 /**
  * Render a balance in accounting style:
- *   positive → "₹X Due"      (they owe us)
- *   negative → "₹X Advance"  (we owe them / excess credit)
- *   zero     → "Settled"
+ *   positive -> positive
+ *   negative -> negative
  */
 function fmtBalance(n: number) {
-  if (n === 0) return 'Settled';
-  return n > 0 ? `${fmt(n)} Due` : `${fmt(Math.abs(n))} Advance`;
+  if (n === 0) return '₹0.00';
+  const val = new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(n));
+  return n > 0 ? val : `-${val}`;
 }
 
 
@@ -237,6 +243,14 @@ export default function CustomerStatementView() {
   // ── Render ─────────────────────────────────────────────────────────────────
   const s = statement?.data;
 
+  if (s) {
+    console.debug('[Statement Ledger Render]', {
+      transactionCount: s.transactionCount,
+      closingBalance: s.closingBalance,
+      isHybrid: s.isHybrid
+    });
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -311,21 +325,21 @@ export default function CustomerStatementView() {
                 {s.customer.associatedVendorId ? 'Hybrid Account' : 'Customer'}
               </span>
             </div>
-            <div className="px-5 py-4 grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+            <div className="px-4 py-2.5 grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
               <div className="col-span-2 sm:col-span-1">
                 <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Name</div>
-                <div className="font-semibold text-gray-900">{s.customer.contactName}</div>
+                <div className="font-semibold text-gray-900 leading-tight">{s.customer.contactName}</div>
                 {s.customer.companyName && (
-                  <div className="text-xs text-gray-500">{s.customer.companyName}</div>
+                  <div className="text-[11px] text-gray-500 leading-tight">{s.customer.companyName}</div>
                 )}
               </div>
               <div>
                 <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">GST No</div>
-                <div className="font-mono text-xs text-gray-700">{s.customer.gstNo || '—'}</div>
+                <div className="font-mono text-[11px] text-gray-700">{s.customer.gstNo || '—'}</div>
               </div>
               <div>
                 <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Mobile</div>
-                <div className="flex items-center gap-1 text-xs text-gray-700">
+                <div className="flex items-center gap-1 text-[11px] text-gray-700">
                   <Phone size={11} className="text-gray-400" />
                   {s.customer.mobile || '—'}
                 </div>
@@ -333,8 +347,8 @@ export default function CustomerStatementView() {
               {s.customer.billingAddress && (
                 <div className="col-span-2 sm:col-span-3">
                   <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Billing Address</div>
-                  <div className="flex items-start gap-1 text-xs text-gray-600">
-                    <MapPin size={11} className="text-gray-400 mt-0.5 shrink-0" />
+                  <div className="flex items-start gap-1 text-[11px] text-gray-600 leading-tight">
+                    <MapPin size={10} className="text-gray-400 mt-0.5 shrink-0" />
                     {s.customer.billingAddress}
                   </div>
                 </div>
@@ -394,118 +408,104 @@ export default function CustomerStatementView() {
               )}
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
               <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 text-[11px] uppercase text-gray-400 font-bold">
-                    <th className="px-4 py-2 text-center w-10">#</th>
-                    <th className="px-4 py-2 text-left w-28">Date</th>
-                    <th className="px-4 py-2 text-left w-24">Type</th>
-                    <th className="px-4 py-2 text-left">Description</th>
-                    <th className="px-4 py-2 text-right whitespace-nowrap">Amount</th>
-                    <th className="px-4 py-2 text-right">Balance</th>
+                <thead className="sticky top-0 bg-gray-50 text-[10px] uppercase text-gray-500 font-bold border-b border-gray-200 z-10 shadow-sm">
+                  <tr>
+                    <th className="px-3 py-2 text-left w-24">Date</th>
+                    <th className="px-3 py-2 text-left min-w-[140px] whitespace-nowrap">Transaction Type</th>
+                    <th className="px-3 py-2 text-left">Transaction Details</th>
+                    <th className="px-3 py-2 text-right whitespace-nowrap">Invoice Amount</th>
+                    <th className="px-3 py-2 text-right whitespace-nowrap">Payment Amount</th>
+                    <th className="px-3 py-2 text-right">Balance</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-gray-100">
                   {/* Opening balance row */}
-                  <tr className="border-t border-gray-100 bg-blue-50/40">
-                    <td className="px-4 py-2.5 text-center text-[11px] text-gray-400">—</td>
-                    <td className="px-4 py-2.5 text-xs text-gray-400 whitespace-nowrap">—</td>
-                    <td className="px-4 py-2.5 text-xs text-gray-400 whitespace-nowrap">—</td>
-                    <td className="px-4 py-2.5">
-                      <span className="font-bold text-gray-600 text-xs">
-                        Approx. Opening Balance
-                      </span>
-                      <span className="ml-2 text-[10px] text-gray-400">(calculated)</span>
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-xs text-gray-400">—</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-gray-700 text-sm">
+                  <tr className="bg-blue-50/20">
+                    <td className="px-3 py-1.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
+                    <td className="px-3 py-1.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
+                    <td className="px-3 py-1.5 font-bold text-gray-800 text-[11px]">Opening Balance</td>
+                    <td className="px-3 py-1.5 text-right text-[11px] text-gray-400">—</td>
+                    <td className="px-3 py-1.5 text-right text-[11px] text-gray-400">—</td>
+                    <td className="px-3 py-1.5 text-right font-bold text-gray-900 text-xs tabular-nums">
                       {fmtBalance(s.openingBalance)}
                     </td>
                   </tr>
 
                   {/* Transaction rows */}
-                  {s.transactions.map((tx, idx) => (
-                    <tr key={tx.id} className="border-t border-gray-100 hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-2.5 text-center text-[11px] text-gray-400 font-medium">
-                        {idx + 1}
-                      </td>
-                      <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
-                        {fmtDateTime(tx.datetime || tx.date)}
-                      </td>
-                      <td className="px-4 py-2.5 text-xs">
-                        {tx.type === 'invoice' ? (
-                          <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-md font-bold text-[10px] uppercase">
-                            Invoice
-                          </span>
-                        ) : tx.type === 'payment' ? (
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md font-bold text-[10px] uppercase">
-                            Payment
-                          </span>
-                        ) : (
-                          <span className="bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5 rounded-md font-bold text-[10px] uppercase">
-                            Bill
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-xs font-medium text-gray-800">
-                        {tx.description}
-                      </td>
-                      <td className={`px-4 py-2.5 text-right text-xs font-semibold whitespace-nowrap ${
-                        tx.netEffect > 0 ? 'text-rose-600' : 'text-emerald-700'
-                      }`}>
-                        {tx.netEffect > 0 ? '+' : '−'} {fmt(tx.amount)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-xs font-medium text-gray-700 whitespace-nowrap">
-                        {fmtBalance(tx.balanceAfter)}
-                      </td>
-                    </tr>
-                  ))}
+                  {s.transactions.map((tx) => {
+                    const isSettled = Math.abs(tx.balanceAfter) <= 100;
+                    return (
+                      <tr key={tx.id} className="even:bg-gray-50/40 hover:bg-gray-100/80 transition-colors">
+                        <td className="px-3 py-1.5 text-[11px] text-gray-500 whitespace-nowrap align-middle">
+                          {fmtDateTime(tx.datetime || tx.date)}
+                        </td>
+                        <td className="px-3 py-1.5 text-[10px] font-semibold text-gray-600 align-middle uppercase tracking-wider whitespace-nowrap">
+                          {tx.type === 'invoice' ? 'Invoice' : tx.type === 'payment' ? 'Payment Received' : 'Purchase Bill'}
+                        </td>
+                        <td className="px-3 py-1.5 text-[11px] font-medium text-gray-800 align-middle">
+                          <div className="flex items-center gap-1.5">
+                            <span>{tx.description}</span>
+                            {tx.isVerified && (
+                              <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
+                                <Check size={9} strokeWidth={4} />
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-1.5 text-right text-[11px] font-semibold text-gray-700 whitespace-nowrap align-middle tabular-nums">
+                          {tx.netEffect > 0 ? fmt(tx.amount) : '—'}
+                        </td>
+                        <td className="px-3 py-1.5 text-right text-[11px] font-semibold text-gray-700 whitespace-nowrap align-middle tabular-nums">
+                          {tx.netEffect <= 0 ? fmt(tx.amount) : '—'}
+                        </td>
+                        <td className="px-3 py-1.5 text-right whitespace-nowrap align-middle">
+                          <div className={`flex flex-col items-end justify-center ${isSettled ? 'bg-emerald-50/80 -my-1 -mx-2 px-2 py-1 rounded border border-emerald-200/60' : ''}`}>
+                            <span className={`text-[11px] tabular-nums ${
+                              isSettled ? 'font-extrabold text-emerald-700' :
+                              tx.balanceAfter > 0 ? 'font-semibold text-rose-600' :
+                              tx.balanceAfter < 0 ? 'font-semibold text-emerald-600' : 'font-medium text-gray-900'
+                            }`}>
+                              {fmtBalance(tx.balanceAfter)}
+                            </span>
+                            {isSettled && <span className="text-[7px] font-bold text-emerald-600 tracking-widest uppercase leading-none mt-0.5">Near Settled</span>}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
 
                   {s.transactions.length === 0 && (
-                    <tr className="border-t border-gray-100">
-                      <td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">
+                    <tr>
+                      <td colSpan={6} className="px-3 py-6 text-center text-xs text-gray-400 font-medium">
                         No transactions in window.
                       </td>
                     </tr>
                   )}
 
                   {/* Net Position / Closing row */}
-                  <tr className="border-t-2 border-[#1A2766]/20 bg-[#1A2766]/5">
-                    <td className="px-4 py-3 text-center text-gray-400 text-xs">—</td>
-                    <td className="px-4 py-3 text-xs text-gray-400">—</td>
-                    <td className="px-4 py-3 text-xs text-gray-400">—</td>
-                    <td className="px-4 py-3">
-                      <div className="font-bold text-[#1A2766] text-sm">
-                        {s.closingBalance > 0 ? 'Balance Due' : s.closingBalance < 0 ? 'Customer Advance' : 'Account Settled'}
-                      </div>
-                      <div className="text-[10px] text-gray-400">
-                        {s.isHybrid ? 'Net account position' : 'Closing balance'}
+                  <tr className="border-t-2 border-gray-200 bg-gray-50/80">
+                    <td className="px-3 py-2.5 text-[11px] text-gray-400">—</td>
+                    <td className="px-3 py-2.5 text-[11px] text-gray-400">—</td>
+                    <td className="px-3 py-2.5">
+                      <div className="font-extrabold text-gray-900 text-xs uppercase tracking-wide">
+                        Closing Balance
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right text-xs text-gray-400">—</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className={`text-base font-extrabold ${
-                        s.closingBalance > 0 ? 'text-[#1A2766]' : s.closingBalance < 0 ? 'text-amber-700' : 'text-gray-400'
-                      }`}>
+                    <td className="px-3 py-2.5 text-right text-[11px] text-gray-400">—</td>
+                    <td className="px-3 py-2.5 text-right text-[11px] text-gray-400">—</td>
+                    <td className="px-3 py-2.5 text-right">
+                      <div className={`font-extrabold text-sm tabular-nums ${s.closingBalance > 0 ? 'text-rose-600' : s.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
                         {fmtBalance(s.closingBalance)}
                       </div>
-                      {s.isHybrid && (
-                        <div className="text-[10px] text-gray-400">
-                          {fmt(s.outstandingReceivable)} − {fmt(s.outstandingPayable)}
-                        </div>
-                      )}
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
 
-            {/* Prototype notice */}
-            <div className="px-5 py-2 border-t border-gray-100 flex items-center gap-2 text-[10px] text-gray-400 bg-gray-50/40">
-              <Info size={11} className="shrink-0" />
-              Prototype: Opening balance is reverse-calculated. Includes invoices and payments.
-            </div>
+            {/* Notice removed to match cleaner ledger style */}
           </div>
 
           {/* ── Section 3: API Telemetry card ─────────────────────────── */}

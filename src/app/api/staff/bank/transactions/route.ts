@@ -28,39 +28,87 @@ export async function GET(request: Request) {
     const accountId = '1759923000003416718';
     const accountName = 'KAMNA TRADERS ICICI';
     
-    // Using the Bank Transactions API for the specific account
-    const url = `${apiBase}/books/v3/banktransactions?organization_id=${orgId}&account_id=${accountId}`;
-    
-    const response = await fetch(url, {
-      method,
-      headers: {
-        'Authorization': `Zoho-oauthtoken ${token}`,
-        'Content-Type': 'application/json'
+    let allStatements: any[] = [];
+    let page = 1;
+    let hasMorePage = true;
+    let isTargetFound = false;
+    let statementsLastStatus = 200;
+
+    console.log(`[Bank Transactions API] Starting fetch for account ${accountId}`);
+
+    // Fetch Statements
+    const fetchStatements = async () => {
+      while (hasMorePage && page <= 10) {
+        const url = `${apiBase}/books/v3/bankaccounts/${accountId}/statements?organization_id=${orgId}&page=${page}&per_page=200`;
+        const response = await fetch(url, {
+          method,
+          headers: {
+            'Authorization': `Zoho-oauthtoken ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        statementsLastStatus = response.status;
+        const data = await response.json();
+
+        if (!response.ok) {
+          console.error(`[Bank Transactions API] Error Response on statements page ${page}:`, data);
+          if (page === 1) throw new Error(data.message || `Zoho API Error (${response.status})`);
+          break;
+        }
+
+        const txns = data.bankstatements || [];
+        allStatements = allStatements.concat(txns);
+        
+        const pageContext = data.page_context || {};
+        hasMorePage = pageContext.has_more_page;
+        page++;
       }
-    });
+    };
 
-    const data = await response.json();
+    // Fetch Customer Payments for today
+    let allPayments: any[] = [];
+    const fetchPayments = async () => {
+      const today = new Date().toISOString().split('T')[0];
+      const url = `${apiBase}/books/v3/customerpayments?organization_id=${orgId}&date=${today}&per_page=200`;
+      
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Zoho-oauthtoken ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        allPayments = data.customerpayments || [];
+      } else {
+        console.error(`[Bank Transactions API] Error fetching payments:`, data);
+      }
+    };
+
+    // Run both fetches in parallel
+    await Promise.all([fetchStatements(), fetchPayments()]);
+
     const fetchCompletedAt = Date.now();
-
-    if (!response.ok) {
-      console.error('[Bank Transactions API] Error Response:', data);
-      return NextResponse.json({
-        success: false,
-        error: data.message || `Zoho API Error (${response.status})`,
-      }, { status: response.status });
-    }
+    console.log(`[Bank Transactions API] Total statements: ${allStatements.length} | Total payments: ${allPayments.length}`);
 
     return NextResponse.json({
       success: true,
-      data: data.banktransactions || [],
+      data: {
+        statements: allStatements,
+        payments: allPayments
+      },
       telemetry: {
         accountName,
         accountId,
-        endpoint: url,
         method: method,
-        status: response.status,
+        status: statementsLastStatus,
         durationMs: fetchCompletedAt - fetchStartedAt,
-        recordCount: data.banktransactions?.length || 0
+        statementsCount: allStatements.length,
+        paymentsCount: allPayments.length,
+        pagesFetched: page - 1
       }
     });
 

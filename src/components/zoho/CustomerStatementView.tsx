@@ -4,11 +4,13 @@ import { useState } from 'react';
 import {
   Search, RefreshCw, ChevronDown, ChevronRight,
   FileJson, Copy, AlertCircle, User, MapPin, Phone,
-  FileText, TrendingUp, Info, Activity, Lock,
+  FileText, TrendingUp, Info, Activity, Lock, Printer,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 import toast from 'react-hot-toast';
+import { qzManager } from '@/lib/print/qz-tray';
+import { renderStatementSlip } from '@/lib/print/slip-renderer';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -126,6 +128,41 @@ export default function CustomerStatementView() {
     error?: string;
   } | null>(null);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [printing, setPrinting] = useState(false);
+
+  const handleThermalPrint = async () => {
+    const s = statement?.data;
+    if (!s) return;
+    setPrinting(true);
+    try {
+      const payload = {
+        customerName: s.customer.contactName || s.customer.companyName || '',
+        mobile: s.customer.mobile || '',
+        gst: s.customer.gstNo || '',
+        openingBalance: s.openingBalance,
+        closingBalance: s.closingBalance,
+        totalInvoices: s.transactions.filter((t: any) => t.type === 'invoice').reduce((sum: number, t: any) => sum + Math.abs(t.netEffect), 0),
+        totalPayments: s.transactions.filter((t: any) => t.type === 'payment').reduce((sum: number, t: any) => sum + Math.abs(t.netEffect), 0),
+        totalBills: s.transactions.filter((t: any) => t.type === 'bill').reduce((sum: number, t: any) => sum + Math.abs(t.netEffect), 0),
+        transactions: s.transactions.map((t: any) => ({
+          date: t.date,
+          type: t.type,
+          description: t.referenceNumber || t.description || '',
+          amount: Math.abs(t.netEffect),
+          balance: t.balanceAfter
+        }))
+      };
+
+      const bytes = renderStatementSlip(payload);
+      await qzManager.printRaw(bytes);
+      toast.success('Statement sent to printer successfully');
+    } catch (error: any) {
+      console.error('Print error:', error);
+      toast.error('Failed to print statement');
+    } finally {
+      setPrinting(false);
+    }
+  };
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   const handleFetch = async (overrideId?: string) => {
@@ -244,6 +281,16 @@ export default function CustomerStatementView() {
         >
           {loading ? <RefreshCw size={15} className="animate-spin" /> : 'Load Statement'}
         </button>
+        {s && (
+          <button
+            onClick={handleThermalPrint}
+            disabled={printing}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-black transition-colors disabled:opacity-50 h-[38px] print:hidden"
+          >
+            {printing ? <RefreshCw size={15} className="animate-spin" /> : <Printer size={15} />}
+            {printing ? 'Printing...' : 'Print Statement'}
+          </button>
+        )}
       </div>
 
       {/* ── Error state ────────────────────────────────────────────────── */}

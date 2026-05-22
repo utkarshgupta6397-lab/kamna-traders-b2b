@@ -6,7 +6,7 @@
  * All functions are safe to call from client components.
  */
 
-const AGENT_BASE = 'http://localhost:3001';
+const AGENT_BASE = 'https://localhost:3001';
 const AGENT_TIMEOUT_MS = 6000;
 
 // ── Diagnostics Telemetry ──────────────────────────────────────────────────────
@@ -20,6 +20,7 @@ export interface DiagnosticLog {
   latencyMs: number;
   error?: string;
   raw?: unknown;
+  isTlsError?: boolean;
 }
 
 type LogListener = (log: DiagnosticLog) => void;
@@ -67,6 +68,7 @@ async function fetchWithTimeout(url: string, options: RequestInit, ms = AGENT_TI
   } catch (err: unknown) {
     const latencyMs = Math.round(performance.now() - start);
     const errorMsg = err instanceof Error ? err.message : String(err);
+    const isTlsError = errorMsg.toLowerCase().includes('cert') || errorMsg.toLowerCase().includes('tls') || errorMsg.toLowerCase().includes('ssl');
     
     emitLog({
       timestamp: new Date(),
@@ -75,7 +77,8 @@ async function fetchWithTimeout(url: string, options: RequestInit, ms = AGENT_TI
       status: 'FAILED',
       latencyMs,
       error: errorMsg,
-      raw: err
+      raw: err,
+      isTlsError
     });
     
     throw err;
@@ -242,9 +245,11 @@ export async function printViaAgent(
     const msg = err instanceof Error ? err.message : String(err);
     const isTimeout = msg.toLowerCase().includes('abort') || msg.toLowerCase().includes('timeout');
     const isNetwork = msg.toLowerCase().includes('network') || msg.toLowerCase().includes('fetch');
+    const isTlsError = msg.toLowerCase().includes('cert') || msg.toLowerCase().includes('tls') || msg.toLowerCase().includes('ssl');
     
     let preciseError = 'Unable To Reach Print Service';
-    if (isTimeout) preciseError = 'Timeout reaching Print Service';
+    if (isTlsError) preciseError = 'TLS/Certificate Rejected by Browser';
+    else if (isTimeout) preciseError = 'Timeout reaching Print Service';
     else if (isNetwork) preciseError = 'Browser Blocked Localhost OR Service Not Running';
 
     return {

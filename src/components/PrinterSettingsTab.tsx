@@ -4,10 +4,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { checkAgentHealth, probePrinterConnection, PrinterConnectivityStatus, shutdownAgent, DEV_DEBUG, subscribeToLogs, DiagnosticLog } from '@/lib/print/agent-transport';
 import { qzManager } from '@/lib/print/qz-tray';
 import { toast } from 'react-hot-toast';
-import { Activity, CheckCircle2, XCircle, Download, Terminal, Loader2, Printer, Wifi, AlertTriangle, PowerOff, RefreshCw, Bug, Network } from 'lucide-react';
+import { Activity, CheckCircle2, XCircle, Download, Terminal, Loader2, Printer, Wifi, AlertTriangle, PowerOff, RefreshCw, Bug, ShieldAlert } from 'lucide-react';
 
 export default function PrinterSettingsTab() {
-  const [serviceStatus, setServiceStatus] = useState<'checking' | 'running' | 'stopped'>('checking');
+  const [serviceStatus, setServiceStatus] = useState<'checking' | 'running' | 'stopped' | 'tls-blocked'>('checking');
   const [printerStatus, setPrinterStatus] = useState<PrinterConnectivityStatus | null>(null);
   const [testing, setTesting] = useState(false);
   const [controlling, setControlling] = useState(false);
@@ -19,15 +19,21 @@ export default function PrinterSettingsTab() {
   // References to prevent request stacking
   const isHealthPolling = useRef(false);
   const isPrinterPolling = useRef(false);
+  const timers = useRef<{ health?: NodeJS.Timeout; printer?: NodeJS.Timeout }>({});
 
-  // Core status checks
   const checkHealth = async () => {
     if (document.visibilityState === 'hidden' || isHealthPolling.current) return;
     isHealthPolling.current = true;
     try {
       const isHealthy = await checkAgentHealth();
-      setServiceStatus(isHealthy ? 'running' : 'stopped');
-      if (!isHealthy) setPrinterStatus(null);
+      if (isHealthy) {
+        setServiceStatus('running');
+      } else {
+        // If there was a TLS error in the most recent log, assume it's blocked. 
+        // Or if not healthy, default to stopped. The logs will catch TLS specific errors
+        setServiceStatus(prev => prev === 'tls-blocked' ? 'tls-blocked' : 'stopped');
+        setPrinterStatus(null);
+      }
     } finally {
       isHealthPolling.current = false;
     }
@@ -57,7 +63,7 @@ export default function PrinterSettingsTab() {
   const manualRefresh = async () => {
     setServiceStatus('checking');
     await checkHealth();
-    if (isHealthPolling.current === false && serviceStatus !== 'stopped') {
+    if (isHealthPolling.current === false && serviceStatus !== 'stopped' && serviceStatus !== 'tls-blocked') {
       await checkPrinter();
     }
   };
@@ -70,8 +76,8 @@ export default function PrinterSettingsTab() {
     setMounted(true);
     manualRefresh();
 
-    const healthInterval = setInterval(checkHealth, 30000); // 30s
-    const printerInterval = setInterval(checkPrinter, 60000); // 60s
+    timers.current.health = setInterval(checkHealth, 25000); // 25s
+    timers.current.printer = setInterval(checkPrinter, 35000); // 35s
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') manualRefresh();
@@ -79,12 +85,15 @@ export default function PrinterSettingsTab() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const unsubscribe = subscribeToLogs((newLog) => {
-      setLogs((prev) => [newLog, ...prev].slice(0, 50)); // keep last 50 logs
+      setLogs((prev) => [newLog, ...prev].slice(0, 50));
+      if (newLog.isTlsError) {
+         setServiceStatus('tls-blocked');
+      }
     });
 
     return () => {
-      clearInterval(healthInterval);
-      clearInterval(printerInterval);
+      if (timers.current.health) clearInterval(timers.current.health);
+      if (timers.current.printer) clearInterval(timers.current.printer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       unsubscribe();
     };
@@ -128,8 +137,6 @@ export default function PrinterSettingsTab() {
     }
   };
 
-
-
   if (!mounted) return null; // Prevent hydration mismatch
 
   return (
@@ -143,20 +150,20 @@ export default function PrinterSettingsTab() {
           </div>
           <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-red-900 font-mono">
             <div>
-              <div className="font-bold mb-1 opacity-70">Protocol</div>
+              <div className="font-bold mb-1 opacity-70">Frontend Protocol</div>
               {window.location.protocol}
             </div>
             <div>
-              <div className="font-bold mb-1 opacity-70">Origin</div>
+              <div className="font-bold mb-1 opacity-70">Frontend Origin</div>
               {window.location.origin}
+            </div>
+            <div>
+              <div className="font-bold mb-1 opacity-70">Agent Protocol</div>
+              https:
             </div>
             <div>
               <div className="font-bold mb-1 opacity-70">SecureContext</div>
               {window.isSecureContext ? 'Yes' : 'No'}
-            </div>
-            <div>
-              <div className="font-bold mb-1 opacity-70">Browser</div>
-              {navigator.userAgent.split(' ')[0]}
             </div>
           </div>
           <div className="px-4 py-3 border-t border-red-200 flex flex-wrap gap-2">
@@ -166,7 +173,7 @@ export default function PrinterSettingsTab() {
           {logs.length > 0 && (
             <div className="h-48 overflow-y-auto bg-gray-900 p-3 text-[10px] font-mono leading-tight space-y-1.5">
               {logs.map((log, i) => (
-                <div key={i} className={log.status === 'FAILED' ? 'text-red-400' : 'text-green-400'}>
+                <div key={i} className={log.status === 'FAILED' ? (log.isTlsError ? 'text-amber-400' : 'text-red-400') : 'text-green-400'}>
                   <span className="text-gray-500">[{log.timestamp.toLocaleTimeString()}]</span>{' '}
                   <span className="font-bold">{log.method}</span> {log.url} →{' '}
                   {log.status} ({log.latencyMs}ms){' '}
@@ -176,6 +183,29 @@ export default function PrinterSettingsTab() {
             </div>
           )}
         </div>
+      )}
+
+      {serviceStatus === 'tls-blocked' && (
+         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+            <ShieldAlert className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+               <h3 className="text-amber-800 font-bold text-sm">Self-Signed Certificate Not Trusted</h3>
+               <p className="text-amber-700 text-xs mt-1">
+                 Your browser is blocking the secure connection to the local print service. This usually happens on first-time setup or after a browser reset.
+               </p>
+               <a 
+                 href="https://localhost:3001/health" 
+                 target="_blank" 
+                 rel="noreferrer"
+                 className="inline-block mt-3 text-xs font-bold bg-amber-100 hover:bg-amber-200 text-amber-800 px-3 py-1.5 rounded-md transition-colors"
+               >
+                 Open Local Agent Secure Link
+               </a>
+               <p className="text-amber-600/70 text-[10px] mt-2">
+                 Click the link above, bypass the security warning (e.g. Advanced &gt; Proceed to localhost), then return here and refresh.
+               </p>
+            </div>
+         </div>
       )}
 
       {/* 1. Status Section */}
@@ -202,7 +232,7 @@ export default function PrinterSettingsTab() {
               </button>
               <button 
                 onClick={handleStopService}
-                disabled={controlling || serviceStatus === 'stopped'}
+                disabled={controlling || serviceStatus === 'stopped' || serviceStatus === 'tls-blocked'}
                 title="Stop Service"
                 className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
               >
@@ -216,25 +246,28 @@ export default function PrinterSettingsTab() {
           <div className="flex items-start gap-4">
             {serviceStatus === 'checking' && <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />}
             {serviceStatus === 'running' && <CheckCircle2 className="w-8 h-8 text-green-500" />}
+            {serviceStatus === 'tls-blocked' && <ShieldAlert className="w-8 h-8 text-amber-500" />}
             {serviceStatus === 'stopped' && <XCircle className="w-8 h-8 text-red-500" />}
             
             <div>
-              <div className={`font-bold text-lg ${serviceStatus === 'running' ? 'text-green-700' : serviceStatus === 'stopped' ? 'text-red-700' : 'text-gray-500'}`}>
+              <div className={`font-bold text-lg ${serviceStatus === 'running' ? 'text-green-700' : serviceStatus === 'tls-blocked' ? 'text-amber-700' : serviceStatus === 'stopped' ? 'text-red-700' : 'text-gray-500'}`}>
                 {serviceStatus === 'checking' ? 'Checking service...' : 
+                 serviceStatus === 'tls-blocked' ? 'TLS Blocked' :
                  serviceStatus === 'running' ? 'Print Service Running' : 
-                 'Print Service Offline'}
+                 'Agent Offline'}
               </div>
               <div className="text-sm font-medium mt-0.5">
                 {serviceStatus === 'checking' ? <span className="text-gray-400">Please wait...</span> : 
-                 serviceStatus === 'running' ? <span className="text-green-600">Local agent responding</span> : 
-                 <span className="text-red-600">Service manually stopped</span>}
+                 serviceStatus === 'tls-blocked' ? <span className="text-amber-600">Requires trust acceptance</span> :
+                 serviceStatus === 'running' ? <span className="text-green-600">Secure connection active</span> : 
+                 <span className="text-red-600">Fetch blocked or unreachable</span>}
               </div>
-              <div className="text-xs text-gray-400 font-mono mt-1">localhost:3001</div>
+              <div className="text-xs text-gray-400 font-mono mt-1">https://localhost:3001</div>
             </div>
           </div>
 
           <div className="flex items-start gap-4 border-t md:border-t-0 md:border-l pt-6 md:pt-0 md:pl-6">
-            {!printerStatus ? (
+            {!printerStatus || serviceStatus !== 'running' ? (
                <Wifi className="w-8 h-8 text-gray-300" />
             ) : printerStatus.status === 'online' ? (
                <CheckCircle2 className="w-8 h-8 text-green-500" />
@@ -245,24 +278,24 @@ export default function PrinterSettingsTab() {
             )}
             
             <div>
-              <div className={`font-bold text-lg ${!printerStatus ? 'text-gray-400' : printerStatus.status === 'online' ? 'text-green-700' : printerStatus.status === 'unstable' ? 'text-yellow-700' : 'text-red-700'}`}>
-                {!printerStatus ? 'Printer Status Unknown' : 
+              <div className={`font-bold text-lg ${(!printerStatus || serviceStatus !== 'running') ? 'text-gray-400' : printerStatus.status === 'online' ? 'text-green-700' : printerStatus.status === 'unstable' ? 'text-yellow-700' : 'text-red-700'}`}>
+                {(!printerStatus || serviceStatus !== 'running') ? 'Printer Status Unknown' : 
                  printerStatus.status === 'online' ? 'Stable Connection' : 
                  printerStatus.status === 'unstable' ? 'Unstable Connection' :
-                 'Printer Offline'}
+                 'Printer Unreachable'}
               </div>
               <div className="text-sm font-medium mt-0.5">
-                {!printerStatus ? (
-                  <span className="text-gray-400">Requires local service</span>
+                {(!printerStatus || serviceStatus !== 'running') ? (
+                  <span className="text-gray-400">Requires secure service</span>
                 ) : printerStatus.status === 'online' ? (
                   <span className="text-green-600">{printerStatus.latencyMs}ms avg response</span>
                 ) : printerStatus.status === 'unstable' ? (
                   <span className="text-yellow-600">High latency ({printerStatus.latencyMs}ms) or drops</span>
                 ) : (
-                  <span className="text-red-600">TCP socket unreachable</span>
+                  <span className="text-red-600">TCP socket connection timeout</span>
                 )}
               </div>
-              {printerStatus && (
+              {printerStatus && serviceStatus === 'running' && (
                 <div className="text-xs text-gray-400 font-mono mt-1">IP: {printerStatus.ip}</div>
               )}
             </div>

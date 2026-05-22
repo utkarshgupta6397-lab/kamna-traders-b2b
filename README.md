@@ -2,19 +2,19 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+## Local Development (Print Service Architecture)
+
+Due to browser mixed-content security policies, when working with the thermal printer agent on localhost, you MUST run the Next.js frontend on HTTPS. We have provided a dedicated script for this:
 
 ```bash
+# Standard dev server (HTTP)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+
+# Secure dev server for Print Agent testing (HTTPS)
+npm run dev:https
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Make sure the background `warehouse-print-agent` is running simultaneously.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

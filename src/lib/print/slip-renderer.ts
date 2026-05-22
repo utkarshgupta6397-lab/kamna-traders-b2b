@@ -468,75 +468,169 @@ export function generateStatementSlip(payload: StatementPrintPayload): StyledLin
   const width = 46;
 
   const dateStr = new Date().toLocaleString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata'
+    day: '2-digit', month: 'short', year: 'numeric'
   });
+  const timeStr = new Date().toLocaleString('en-IN', {
+    hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata'
+  });
+
+  // Dynamic Transaction Window Logic
+  // Look back up to 10 transactions. Stop earlier if we find a settled point (abs(balance) <= 100).
+  const maxItems = 10;
+  const minItems = 5;
+  const maxBackIndex = Math.max(0, payload.transactions.length - maxItems);
+  let startIndex = maxBackIndex;
+  
+  for (let i = payload.transactions.length - 1; i >= maxBackIndex; i--) {
+    if (Math.abs(payload.transactions[i].balance) <= 100) {
+      startIndex = i;
+      break;
+    }
+  }
+
+  // Enforce minimum 5 transactions (or total available if less than 5)
+  const minBackIndex = Math.max(0, payload.transactions.length - minItems);
+  if (startIndex > minBackIndex) {
+    startIndex = minBackIndex;
+  }
+
+  const displayTx = payload.transactions.slice(startIndex);
+  const tableOpeningBalance = startIndex > 0 ? payload.transactions[startIndex - 1].balance : payload.openingBalance;
 
   // 1. TOP TITLE
   lines.push({ text: 'KAMNA TRADERS', size: 'double-width', bold: true, align: 'center' });
-  lines.push({ text: 'CUSTOMER ACCOUNT STATEMENT', bold: true, align: 'center' });
+  lines.push({ text: 'CUSTOMER STATEMENT', bold: true, align: 'center' });
   lines.push({ text: '' });
 
   // 2. DETAILS
   lines.push({ text: `NAME : ${payload.customerName.toUpperCase().substring(0, 38)}` });
   lines.push({ text: `MOB  : ${payload.mobile || 'N/A'}` });
   lines.push({ text: `GST  : ${payload.gst || 'N/A'}` });
-  lines.push({ text: `DATE : ${dateStr}` });
+  lines.push({ text: `DATE : ${dateStr}         TIME: ${timeStr}` });
   lines.push({ text: '' });
 
-  // 3. PRODUCT TABLE
-  lines.push({ text: 'DATE   DESC                   AMT      BAL', bold: true });
+  // 3. STATEMENT PERIOD BOX
+  lines.push({ text: '-'.repeat(width) });
+  if (displayTx.length > 0) {
+    const dStart = new Date(displayTx[0].date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const dEnd = new Date(displayTx[displayTx.length - 1].date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    lines.push({ text: 'STATEMENT PERIOD', bold: true, align: 'center' });
+    lines.push({ text: `${dStart} TO ${dEnd}`, align: 'center' });
+  } else {
+    lines.push({ text: 'STATEMENT PERIOD', bold: true, align: 'center' });
+    lines.push({ text: `AS OF ${dateStr}`, align: 'center' });
+  }
+  lines.push({ text: '-'.repeat(width) });
+  lines.push({ text: '' });
+
+  // 4. PRODUCT TABLE (COLUMNAR LAYOUT)
+  // Columns: DATE(6) + " " + DETAILS(18) + " " + AMT(9) + " " + BAL(10) = 46
+  lines.push({ text: 'DATE   DETAILS               AMOUNT    BALANCE', bold: true });
   lines.push({ text: '-'.repeat(width) });
 
-  payload.transactions.forEach(t => {
+  // Opening Balance Row
+  lines.push({ 
+    text: `--     OPENING BAL.     -- ${formatINR(tableOpeningBalance).padStart(14)}` 
+  });
+  lines.push({ text: '' }); // Spacing between rows
+
+  displayTx.forEach(t => {
     const d = new Date(t.date);
     const dateFormatted = `${d.getDate().toString().padStart(2, '0')}-${d.toLocaleString('en-IN', { month: 'short' })}`; // "20-May"
     
     // Convert descriptions
-    let typeShort = t.type;
-    if (t.type === 'invoice') typeShort = 'INV';
-    if (t.type === 'payment') typeShort = 'PMT';
-    if (t.type === 'bill') typeShort = 'BILL';
-    if (t.type === 'vendor_payment') typeShort = 'V.PMT';
+    let typeShort = t.type === 'invoice' ? 'INV' : t.type === 'payment' ? 'PMT' : t.type === 'bill' ? 'BILL' : 'V.PMT';
 
-    const fullDesc = `${typeShort} ${t.description.replace('✅', '').trim()}`;
-    const descWrapped = wrapText(fullDesc, 19);
-
-    const amtStr = formatINR(Math.abs(t.amount)).padStart(8);
+    // Sign logic
+    const isIncrease = t.type === 'invoice' || t.type === 'bill';
+    const signChar = isIncrease ? '+' : '-';
+    
+    // Explicit signed amount
+    const signedAmtStr = (signChar + formatINR(Math.abs(t.amount))).padStart(10);
     const balStr = formatINR(t.balance).padStart(10);
     
-    // First line: DATE + First line of DESC + AMT + BAL
-    const firstDesc = (descWrapped[0] || '').padEnd(19);
-    lines.push({ text: `${dateFormatted} ${firstDesc} ${amtStr} ${balStr}` });
+    // Line 1: DATE + TYPE + AMT + BAL
+    // DATE(6) + " " + TYPE(17) + " " + AMT(10) + " " + BAL(10) = 46
+    const l1Type = typeShort.padEnd(17);
+    lines.push({ text: `${dateFormatted} ${l1Type} ${signedAmtStr} ${balStr}` });
     
-    // Subsequent lines of DESC
-    for (let i = 1; i < descWrapped.length; i++) {
-      lines.push({ text: `       ${descWrapped[i]}` });
+    // Line 2: Details
+    const cleanDesc = t.description.replace('✅', '').trim();
+    // Do not repeat type prefixes, just use the cleaned description
+    const fullDesc = cleanDesc;
+    
+    // 9 spaces padding: 46 - 9 = 37 char width for wrapped text
+    const descWrapped = wrapText(fullDesc, 37);
+    for (let i = 0; i < descWrapped.length; i++) {
+      lines.push({ text: `         ${descWrapped[i]}` });
     }
+    
+    lines.push({ text: '' }); // Section divider between transactions
   });
 
-  lines.push({ text: '-'.repeat(width) });
-
-  // 4. FOOTER STATS
-  lines.push({ text: `OPENING BALANCE     : ${formatINR(payload.openingBalance).padStart(12)}` });
-  lines.push({ text: `TOTAL INVOICES      : ${formatINR(payload.totalInvoices).padStart(12)}` });
-  lines.push({ text: `TOTAL PAYMENTS REC  : ${formatINR(payload.totalPayments).padStart(12)}` });
-  lines.push({ text: `TOTAL VENDOR BILLS  : ${formatINR(payload.totalBills).padStart(12)}` });
+  if (payload.transactions.length > maxItems) {
+    lines.push({ text: '(Showing latest relevant transactions)', align: 'center' });
+  }
   
   lines.push({ text: '-'.repeat(width) });
+  lines.push({ text: '' });
 
-  const netLabel = payload.closingBalance >= 0 ? 'NET RECEIVABLE' : 'NET PAYABLE';
-  lines.push({ text: netLabel, size: 'double-width', bold: true, align: 'center' });
-  lines.push({ text: formatINR(Math.abs(payload.closingBalance)), size: 'double-width', bold: true, align: 'center' });
+  // 5. SUMMARY SECTION (Right Aligned Values)
+  lines.push({ text: 'STATEMENT SUMMARY', bold: true, align: 'center' });
+  lines.push({ text: '' });
+  
+  const printStat = (label: string, amt: number) => {
+    lines.push({ text: `${label.padEnd(25)} ${formatINR(amt).padStart(20)}` });
+  };
 
-  if (payload.closingBalance > 0) {
+  // Calculate visible summary values from displayed subset
+  const visibleInvoices = displayTx.filter(t => t.type === 'invoice').reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  const visiblePayments = displayTx.filter(t => t.type === 'payment' || t.type === 'vendor_payment').reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  const visibleBills = displayTx.filter(t => t.type === 'bill').reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+  printStat('OPENING BALANCE', tableOpeningBalance);
+  printStat('TOTAL INVOICES', visibleInvoices);
+  printStat('TOTAL PAYMENTS', visiblePayments);
+  printStat('TOTAL BILLS', visibleBills);
+  
+  lines.push({ text: '-'.repeat(width) });
+  lines.push({ text: '' });
+
+  // 6. FINAL STATUS & CLOSING BALANCE LOGIC
+  const bal = payload.closingBalance;
+  
+  if (Math.abs(bal) <= 100) {
+    // Settled
+    lines.push({ text: 'ACCOUNT SETTLED', size: 'double-width', bold: true, align: 'center' });
+  } else if (bal > 100) {
+    // Receivable
+    lines.push({ text: 'AMOUNT DUE', size: 'double-width', bold: true, align: 'center' });
+    lines.push({ text: `Rs. ${formatINR(bal)}`, size: 'double-width', bold: true, align: 'center' });
     lines.push({ text: '' });
-    lines.push({ text: `upi://pay?pa=ibkPOS.EP208232@icici&pn=Kamna Traders&am=${Math.abs(payload.closingBalance)}&cu=INR`, type: 'qr' });
+    lines.push({ text: '-'.repeat(width) });
+    lines.push({ text: '' });
+    lines.push({ text: 'PAYMENT DUE - SCAN TO PAY', bold: true, align: 'center' });
+    
+    if (bal < 99999) {
+      lines.push({ text: `upi://pay?pa=ibkPOS.EP208232@icici&pn=Kamna Traders&am=${bal}&cu=INR&tn=Kamna Traders Statement Payment`, type: 'qr' });
+      lines.push({ text: 'Scan to pay instantly', align: 'center' });
+    } else {
+      // Omit amount parameter for large dues to prevent UPI limit failures
+      lines.push({ text: `upi://pay?pa=ibkPOS.EP208232@icici&pn=Kamna Traders&cu=INR&tn=Kamna Traders Statement Payment`, type: 'qr' });
+      lines.push({ text: 'Enter payment amount manually after scanning', align: 'center' });
+    }
+    
     lines.push({ text: 'UPI ID: ibkPOS.EP208232@icici', align: 'center', bold: true });
-    lines.push({ text: 'Scan to pay balance securely', align: 'center' });
+  } else {
+    // Payable (Customer Credit)
+    lines.push({ text: 'CUSTOMER CREDIT', size: 'double-width', bold: true, align: 'center' });
+    lines.push({ text: `Rs. ${formatINR(Math.abs(bal))} CR`, size: 'double-width', bold: true, align: 'center' });
   }
 
   lines.push({ text: '' });
-  lines.push({ text: '** System Generated Statement **', align: 'center' });
+  lines.push({ text: '-'.repeat(width) });
+  lines.push({ text: 'This is a computer generated statement', align: 'center' });
+  lines.push({ text: 'Thank you for your business', align: 'center' });
   lines.push({ text: '' });
   
   return lines;
@@ -548,7 +642,7 @@ export function renderStatementSlip(payload: StatementPrintPayload): Uint8Array 
   lines.forEach(line => {
     if (line.type === 'qr') {
       renderer.align('center');
-      renderer.qr(line.text);
+      renderer.qr(line.text, 6);
     } else {
       renderer.align(line.align || 'left');
       renderer.bold(!!line.bold);

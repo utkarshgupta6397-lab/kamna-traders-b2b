@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { checkAgentHealth, probePrinterConnection, PrinterConnectivityStatus, shutdownAgent, restartAgent } from '@/lib/print/agent-transport';
+import { checkAgentHealth, probePrinterConnection, PrinterConnectivityStatus, shutdownAgent, DEV_DEBUG, subscribeToLogs, DiagnosticLog } from '@/lib/print/agent-transport';
 import { qzManager } from '@/lib/print/qz-tray';
 import { toast } from 'react-hot-toast';
-import { Activity, CheckCircle2, XCircle, Download, Terminal, Loader2, Printer, Wifi, AlertTriangle, PowerOff, RefreshCw } from 'lucide-react';
+import { Activity, CheckCircle2, XCircle, Download, Terminal, Loader2, Printer, Wifi, AlertTriangle, PowerOff, RefreshCw, Bug, Network } from 'lucide-react';
 
 export default function PrinterSettingsTab() {
   const [serviceStatus, setServiceStatus] = useState<'checking' | 'running' | 'stopped'>('checking');
@@ -12,6 +12,9 @@ export default function PrinterSettingsTab() {
   const [testing, setTesting] = useState(false);
   const [controlling, setControlling] = useState(false);
   const [lastPrint, setLastPrint] = useState<Date | null>(null);
+
+  // Diagnostic Logs State
+  const [logs, setLogs] = useState<DiagnosticLog[]>([]);
 
   // References to prevent request stacking
   const isHealthPolling = useRef(false);
@@ -59,31 +62,34 @@ export default function PrinterSettingsTab() {
     }
   };
 
-  // Polling loops
+  // Prevent hydration mismatch
+  const [mounted, setMounted] = useState(false);
+
+  // Polling loops & Log Subscription
   useEffect(() => {
-    // Initial fetch
+    setMounted(true);
     manualRefresh();
 
-    // Setup separated intervals to reduce aggressive CPU/network usage
     const healthInterval = setInterval(checkHealth, 30000); // 30s
     const printerInterval = setInterval(checkPrinter, 60000); // 60s
 
-    // Resume polling immediately when tab becomes visible
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        manualRefresh();
-      }
+      if (document.visibilityState === 'visible') manualRefresh();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const unsubscribe = subscribeToLogs((newLog) => {
+      setLogs((prev) => [newLog, ...prev].slice(0, 50)); // keep last 50 logs
+    });
 
     return () => {
       clearInterval(healthInterval);
       clearInterval(printerInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      unsubscribe();
     };
   }, []);
 
-  // Service Controls
   const handleStopService = async () => {
     setControlling(true);
     const success = await shutdownAgent();
@@ -97,59 +103,81 @@ export default function PrinterSettingsTab() {
     setControlling(false);
   };
 
-  const handleRestartService = async () => {
-    setControlling(true);
-    setServiceStatus('checking');
-    const success = await restartAgent();
-    if (success) {
-      toast.success('Restart command sent');
-      // Wait for it to come back up
-      setTimeout(() => manualRefresh(), 3000);
-    } else {
-      toast.error('Failed to restart service');
-      setServiceStatus('stopped');
-    }
-    setControlling(false);
-  };
-
   const handleTestPrint = async () => {
     setTesting(true);
     try {
-      const commands = [
-        '\x1B\x40',
-        '\x1B\x61\x01',
-        '\x1D\x21\x11', 'TEST PRINT\n',
-        '\x1D\x21\x00', '\x1B\x61\x00',
-        '--------------------------------\n',
-        `Time: ${new Date().toLocaleString()}\n`,
-        'Service: warehouse-print-agent\n',
-        'Status: Operational\n',
-        '--------------------------------\n',
-        '\x1B\x64\x03',
-        '\x1D\x56\x41\x00'
-      ];
-      await qzManager.printRaw(commands);
+      const commands = ['\x1B\x40', 'TEST PRINT\n', '\x1D\x56\x41\x00'];
+      const res = await import('@/lib/print/agent-transport').then(m => m.printViaAgent({
+         ip: printerStatus?.ip || '',
+         port: 9100
+      }, commands));
+      
+      if (!res.success) {
+         toast.error(res.error || 'Print Failed');
+         checkPrinter();
+         return;
+      }
       toast.success('Test print sent to agent');
-      setLastPrint(qzManager.getLastSuccessfulPrint());
+      setLastPrint(new Date());
       checkPrinter();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Print failed';
-      if (msg.includes('Not Reachable') || msg.includes('Failed to fetch') || msg.includes('Offline')) {
-        toast.error('Printer Offline / Connection Failed');
-      } else if (msg.includes('Timeout') || msg.includes('timeout')) {
-        toast.error('TCP Connection Timeout');
-      } else {
-        toast.error(msg);
-      }
+      toast.error('Unexpected error sending test print');
       checkPrinter();
     } finally {
       setTesting(false);
     }
   };
 
+
+
+  if (!mounted) return null; // Prevent hydration mismatch
+
   return (
     <div className="max-w-3xl space-y-6">
       
+      {DEV_DEBUG && (
+        <div className="bg-red-50 border border-red-200 rounded-xl overflow-hidden shadow-sm">
+          <div className="p-3 border-b border-red-200 bg-red-100 flex items-center gap-2 font-bold text-red-800 text-sm">
+            <Bug className="w-4 h-4 text-red-600" />
+            Local Agent Diagnostics (DEV_DEBUG)
+          </div>
+          <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-red-900 font-mono">
+            <div>
+              <div className="font-bold mb-1 opacity-70">Protocol</div>
+              {window.location.protocol}
+            </div>
+            <div>
+              <div className="font-bold mb-1 opacity-70">Origin</div>
+              {window.location.origin}
+            </div>
+            <div>
+              <div className="font-bold mb-1 opacity-70">SecureContext</div>
+              {window.isSecureContext ? 'Yes' : 'No'}
+            </div>
+            <div>
+              <div className="font-bold mb-1 opacity-70">Browser</div>
+              {navigator.userAgent.split(' ')[0]}
+            </div>
+          </div>
+          <div className="px-4 py-3 border-t border-red-200 flex flex-wrap gap-2">
+             <button onClick={() => manualRefresh()} className="px-3 py-1 bg-white border border-red-300 text-red-700 text-xs rounded hover:bg-red-50 font-bold">Refresh Health</button>
+             <button onClick={() => checkPrinter()} className="px-3 py-1 bg-white border border-red-300 text-red-700 text-xs rounded hover:bg-red-50 font-bold">TCP Probe</button>
+          </div>
+          {logs.length > 0 && (
+            <div className="h-48 overflow-y-auto bg-gray-900 p-3 text-[10px] font-mono leading-tight space-y-1.5">
+              {logs.map((log, i) => (
+                <div key={i} className={log.status === 'FAILED' ? 'text-red-400' : 'text-green-400'}>
+                  <span className="text-gray-500">[{log.timestamp.toLocaleTimeString()}]</span>{' '}
+                  <span className="font-bold">{log.method}</span> {log.url} →{' '}
+                  {log.status} ({log.latencyMs}ms){' '}
+                  {log.error && <div className="text-red-300 ml-4">Err: {log.error}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 1. Status Section */}
       <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
         <div className="p-4 border-b bg-gray-50 flex items-center justify-between font-bold text-gray-700">
@@ -173,14 +201,6 @@ export default function PrinterSettingsTab() {
                 <RefreshCw className={`w-4 h-4 ${serviceStatus === 'checking' ? 'animate-spin' : ''}`} />
               </button>
               <button 
-                onClick={handleRestartService}
-                disabled={controlling}
-                title="Restart Service"
-                className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-              <button 
                 onClick={handleStopService}
                 disabled={controlling || serviceStatus === 'stopped'}
                 title="Stop Service"
@@ -193,7 +213,6 @@ export default function PrinterSettingsTab() {
         </div>
         
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Layer 1: Print Service */}
           <div className="flex items-start gap-4">
             {serviceStatus === 'checking' && <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />}
             {serviceStatus === 'running' && <CheckCircle2 className="w-8 h-8 text-green-500" />}
@@ -214,7 +233,6 @@ export default function PrinterSettingsTab() {
             </div>
           </div>
 
-          {/* Layer 2: Printer Connection */}
           <div className="flex items-start gap-4 border-t md:border-t-0 md:border-l pt-6 md:pt-0 md:pl-6">
             {!printerStatus ? (
                <Wifi className="w-8 h-8 text-gray-300" />
@@ -252,7 +270,6 @@ export default function PrinterSettingsTab() {
         </div>
       </div>
 
-      {/* 2. Download Section */}
       <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
         <div className="p-4 border-b bg-gray-50 flex items-center gap-2 font-bold text-gray-700">
           <Download className="w-5 h-5 text-gray-400" />
@@ -271,7 +288,6 @@ export default function PrinterSettingsTab() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* 3. Install Instructions */}
         <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
           <div className="p-4 border-b bg-gray-50 flex items-center gap-2 font-bold text-gray-700">
             <Terminal className="w-5 h-5 text-gray-400" />
@@ -286,9 +302,6 @@ export default function PrinterSettingsTab() {
                 <li>Allow in Security Settings if blocked</li>
                 <li>Restart browser after installation</li>
               </ol>
-              <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-100">
-                macOS may show a security warning because the app is internally distributed and unsigned.
-              </div>
             </div>
             <div className="pt-2 border-t">
               <h4 className="font-bold text-sm text-gray-800 mb-2 mt-2">Windows</h4>
@@ -297,14 +310,10 @@ export default function PrinterSettingsTab() {
                 <li>Run installer</li>
                 <li>Restart browser if needed</li>
               </ol>
-              <div className="text-xs text-green-600 bg-green-50 p-2 rounded border border-green-100 mt-2">
-                Printing works automatically after installation.
-              </div>
             </div>
           </div>
         </div>
 
-        {/* 4. Test Print */}
         <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
           <div className="p-4 border-b bg-gray-50 flex items-center gap-2 font-bold text-gray-700">
             <Printer className="w-5 h-5 text-gray-400" />
@@ -313,7 +322,6 @@ export default function PrinterSettingsTab() {
           <div className="p-6 flex flex-col justify-center h-[calc(100%-57px)]">
             <p className="text-sm text-gray-500 mb-4 text-center">
               Send a test payload to the local print service. 
-              The service will route it to the active warehouse printer.
             </p>
             <button
               onClick={handleTestPrint}

@@ -9,12 +9,79 @@
 const AGENT_BASE = 'http://localhost:3001';
 const AGENT_TIMEOUT_MS = 6000;
 
+// ── Diagnostics Telemetry ──────────────────────────────────────────────────────
+export const DEV_DEBUG = true;
+
+export interface DiagnosticLog {
+  timestamp: Date;
+  method: string;
+  url: string;
+  status: string;
+  latencyMs: number;
+  error?: string;
+  raw?: unknown;
+}
+
+type LogListener = (log: DiagnosticLog) => void;
+const logListeners = new Set<LogListener>();
+
+export function subscribeToLogs(listener: LogListener) {
+  logListeners.add(listener);
+  return () => logListeners.delete(listener);
+}
+
+function emitLog(log: DiagnosticLog) {
+  if (DEV_DEBUG) {
+    logListeners.forEach(fn => fn(log));
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fetchWithTimeout(url: string, options: RequestInit, ms = AGENT_TIMEOUT_MS): Promise<Response> {
+async function fetchWithTimeout(url: string, options: RequestInit, ms = AGENT_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
-  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+  const start = performance.now();
+  
+  // Explicitly prevent rogue credentials
+  const safeOptions: RequestInit = {
+    ...options,
+    mode: 'cors',
+    credentials: 'omit',
+    signal: controller.signal
+  };
+
+  try {
+    const res = await fetch(url, safeOptions);
+    const latencyMs = Math.round(performance.now() - start);
+    
+    emitLog({
+      timestamp: new Date(),
+      method: options.method || 'GET',
+      url,
+      status: res.status.toString(),
+      latencyMs
+    });
+    
+    return res;
+  } catch (err: unknown) {
+    const latencyMs = Math.round(performance.now() - start);
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    
+    emitLog({
+      timestamp: new Date(),
+      method: options.method || 'GET',
+      url,
+      status: 'FAILED',
+      latencyMs,
+      error: errorMsg,
+      raw: err
+    });
+    
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -66,18 +133,6 @@ export async function checkAgentHealth(): Promise<boolean> {
 export async function shutdownAgent(): Promise<boolean> {
   try {
     const res = await fetchWithTimeout(`${AGENT_BASE}/shutdown`, { method: 'POST' }, 2000);
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Commands the local print agent to safely restart.
- */
-export async function restartAgent(): Promise<boolean> {
-  try {
-    const res = await fetchWithTimeout(`${AGENT_BASE}/restart`, { method: 'POST' }, 2000);
     return res.ok;
   } catch {
     return false;
@@ -186,15 +241,27 @@ export async function printViaAgent(
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     const isTimeout = msg.toLowerCase().includes('abort') || msg.toLowerCase().includes('timeout');
+    const isNetwork = msg.toLowerCase().includes('network') || msg.toLowerCase().includes('fetch');
+    
+    let preciseError = 'Unable To Reach Print Service';
+    if (isTimeout) preciseError = 'Timeout reaching Print Service';
+    else if (isNetwork) preciseError = 'Browser Blocked Localhost OR Service Not Running';
+
     return {
       success: false,
-      error: isTimeout ? 'Local Print Service Not Running' : 'Unable To Reach Print Service',
+      error: preciseError,
     };
   }
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json?.success) {
-    return { success: false, error: json?.error || 'Printing Failed' };
+    const backendError = json?.error || 'Printing Failed';
+    let preciseError = backendError;
+    if (backendError.includes('ETIMEDOUT')) preciseError = 'Printer Offline (TCP Timeout)';
+    else if (backendError.includes('EHOSTUNREACH')) preciseError = 'Printer IP Unreachable';
+    else if (backendError.includes('ECONNREFUSED')) preciseError = 'Printer Connection Refused';
+    
+    return { success: false, error: preciseError };
   }
 
   return { success: true };

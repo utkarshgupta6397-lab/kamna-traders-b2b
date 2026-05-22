@@ -6,7 +6,7 @@
  * All functions are safe to call from client components.
  */
 
-const AGENT_BASE = 'http://127.0.0.1:3001';
+const AGENT_BASE = 'http://localhost:3001';
 const AGENT_TIMEOUT_MS = 6000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -55,6 +55,30 @@ export async function checkAgentHealth(): Promise<boolean> {
     if (!res.ok) return false;
     const json = await res.json();
     return json?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Commands the local print agent to safely shutdown.
+ */
+export async function shutdownAgent(): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout(`${AGENT_BASE}/shutdown`, { method: 'POST' }, 2000);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Commands the local print agent to safely restart.
+ */
+export async function restartAgent(): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout(`${AGENT_BASE}/restart`, { method: 'POST' }, 2000);
+    return res.ok;
   } catch {
     return false;
   }

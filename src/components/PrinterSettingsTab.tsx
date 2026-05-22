@@ -1,30 +1,39 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { checkAgentHealth, probePrinterConnection, PrinterConnectivityStatus } from '@/lib/print/agent-transport';
+import React, { useState, useEffect, useRef } from 'react';
+import { checkAgentHealth, probePrinterConnection, PrinterConnectivityStatus, shutdownAgent, restartAgent } from '@/lib/print/agent-transport';
 import { qzManager } from '@/lib/print/qz-tray';
 import { toast } from 'react-hot-toast';
-import { Activity, CheckCircle2, XCircle, Download, Terminal, Loader2, Printer, Wifi, AlertTriangle } from 'lucide-react';
+import { Activity, CheckCircle2, XCircle, Download, Terminal, Loader2, Printer, Wifi, AlertTriangle, PowerOff, RefreshCw } from 'lucide-react';
 
 export default function PrinterSettingsTab() {
   const [serviceStatus, setServiceStatus] = useState<'checking' | 'running' | 'stopped'>('checking');
   const [printerStatus, setPrinterStatus] = useState<PrinterConnectivityStatus | null>(null);
   const [testing, setTesting] = useState(false);
+  const [controlling, setControlling] = useState(false);
   const [lastPrint, setLastPrint] = useState<Date | null>(null);
 
-  const checkStatus = async () => {
-    setServiceStatus('checking');
+  // References to prevent request stacking
+  const isHealthPolling = useRef(false);
+  const isPrinterPolling = useRef(false);
+
+  // Core status checks
+  const checkHealth = async () => {
+    if (document.visibilityState === 'hidden' || isHealthPolling.current) return;
+    isHealthPolling.current = true;
     try {
-      // 1. Check Service
       const isHealthy = await checkAgentHealth();
       setServiceStatus(isHealthy ? 'running' : 'stopped');
-      
-      if (!isHealthy) {
-        setPrinterStatus(null);
-        return;
-      }
+      if (!isHealthy) setPrinterStatus(null);
+    } finally {
+      isHealthPolling.current = false;
+    }
+  };
 
-      // 2. Connect to agent & fetch fresh IP from DB
+  const checkPrinter = async () => {
+    if (document.visibilityState === 'hidden' || isPrinterPolling.current || serviceStatus !== 'running') return;
+    isPrinterPolling.current = true;
+    try {
       await qzManager.connect(true);
       const target = qzManager.getActivePrinterTarget();
       setLastPrint(qzManager.getLastSuccessfulPrint());
@@ -36,16 +45,72 @@ export default function PrinterSettingsTab() {
         setPrinterStatus(null);
       }
     } catch {
-      setServiceStatus('stopped');
       setPrinterStatus(null);
+    } finally {
+      isPrinterPolling.current = false;
     }
   };
 
+  const manualRefresh = async () => {
+    setServiceStatus('checking');
+    await checkHealth();
+    if (isHealthPolling.current === false && serviceStatus !== 'stopped') {
+      await checkPrinter();
+    }
+  };
+
+  // Polling loops
   useEffect(() => {
-    checkStatus();
-    const interval = setInterval(checkStatus, 15000); // Poll every 15s
-    return () => clearInterval(interval);
+    // Initial fetch
+    manualRefresh();
+
+    // Setup separated intervals to reduce aggressive CPU/network usage
+    const healthInterval = setInterval(checkHealth, 30000); // 30s
+    const printerInterval = setInterval(checkPrinter, 60000); // 60s
+
+    // Resume polling immediately when tab becomes visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        manualRefresh();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(healthInterval);
+      clearInterval(printerInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
+
+  // Service Controls
+  const handleStopService = async () => {
+    setControlling(true);
+    const success = await shutdownAgent();
+    if (success) {
+      toast.success('Print Service Stopped');
+      setServiceStatus('stopped');
+      setPrinterStatus(null);
+    } else {
+      toast.error('Failed to stop service');
+    }
+    setControlling(false);
+  };
+
+  const handleRestartService = async () => {
+    setControlling(true);
+    setServiceStatus('checking');
+    const success = await restartAgent();
+    if (success) {
+      toast.success('Restart command sent');
+      // Wait for it to come back up
+      setTimeout(() => manualRefresh(), 3000);
+    } else {
+      toast.error('Failed to restart service');
+      setServiceStatus('stopped');
+    }
+    setControlling(false);
+  };
 
   const handleTestPrint = async () => {
     setTesting(true);
@@ -66,11 +131,9 @@ export default function PrinterSettingsTab() {
       await qzManager.printRaw(commands);
       toast.success('Test print sent to agent');
       setLastPrint(qzManager.getLastSuccessfulPrint());
-      // Re-probe immediately after print to verify connection is still good
-      checkStatus();
+      checkPrinter();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Print failed';
-      // Specific error mapping based on user reqs
       if (msg.includes('Not Reachable') || msg.includes('Failed to fetch') || msg.includes('Offline')) {
         toast.error('Printer Offline / Connection Failed');
       } else if (msg.includes('Timeout') || msg.includes('timeout')) {
@@ -78,7 +141,7 @@ export default function PrinterSettingsTab() {
       } else {
         toast.error(msg);
       }
-      checkStatus(); // Force status refresh on failure
+      checkPrinter();
     } finally {
       setTesting(false);
     }
@@ -100,13 +163,32 @@ export default function PrinterSettingsTab() {
                 Last Print: {lastPrint.toLocaleTimeString()}
               </span>
             )}
-            <button 
-              onClick={checkStatus} 
-              disabled={serviceStatus === 'checking'}
-              className="px-3 py-1 bg-white border rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-1"
-            >
-              {serviceStatus === 'checking' ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Refresh'}
-            </button>
+            <div className="flex items-center gap-1 border-l pl-3 border-gray-300">
+              <button 
+                onClick={manualRefresh} 
+                disabled={serviceStatus === 'checking' || controlling}
+                title="Refresh Status"
+                className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${serviceStatus === 'checking' ? 'animate-spin' : ''}`} />
+              </button>
+              <button 
+                onClick={handleRestartService}
+                disabled={controlling}
+                title="Restart Service"
+                className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={handleStopService}
+                disabled={controlling || serviceStatus === 'stopped'}
+                title="Stop Service"
+                className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
+              >
+                <PowerOff className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
         
@@ -126,9 +208,9 @@ export default function PrinterSettingsTab() {
               <div className="text-sm font-medium mt-0.5">
                 {serviceStatus === 'checking' ? <span className="text-gray-400">Please wait...</span> : 
                  serviceStatus === 'running' ? <span className="text-green-600">Local agent responding</span> : 
-                 <span className="text-red-600">Please start print service</span>}
+                 <span className="text-red-600">Service manually stopped</span>}
               </div>
-              <div className="text-xs text-gray-400 font-mono mt-1">127.0.0.1:3001</div>
+              <div className="text-xs text-gray-400 font-mono mt-1">localhost:3001</div>
             </div>
           </div>
 

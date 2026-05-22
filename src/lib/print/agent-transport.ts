@@ -65,27 +65,73 @@ export interface AgentPrinterTarget {
   port: number;
 }
 
+export interface PrinterConnectivityStatus {
+  status: 'online' | 'unstable' | 'offline';
+  latencyMs: number;
+  lastCheck: Date;
+  ip: string;
+}
+
 /**
- * Probe a printer's TCP availability via the local agent.
- * Returns true if the printer is reachable.
+ * Perform a deep diagnostic probe of a printer's TCP connection via the local agent.
+ * Sends multiple rapid checks to calculate stability and latency.
+ */
+export async function probePrinterConnection(printer: AgentPrinterTarget): Promise<PrinterConnectivityStatus> {
+  let successes = 0;
+  let totalLatency = 0;
+  const checks = 2; // 2 rapid checks to prevent UI hanging too long
+  
+  for (let i = 0; i < checks; i++) {
+    const start = performance.now();
+    try {
+      const res = await fetchWithTimeout(
+        `${AGENT_BASE}/status`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ip: printer.ip, port: printer.port }),
+        },
+        2000 // strict 2-second timeout per probe
+      );
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.connected) {
+          successes++;
+          totalLatency += (performance.now() - start);
+        }
+      }
+    } catch {
+      // Offline or timeout
+    }
+    
+    if (i < checks - 1 && successes > 0) {
+      await new Promise(r => setTimeout(r, 200)); // slight backoff between checks
+    }
+  }
+
+  const avgLatency = successes > 0 ? totalLatency / successes : 0;
+  
+  let status: 'online' | 'unstable' | 'offline' = 'offline';
+  if (successes === checks && avgLatency < 1000) {
+    status = 'online';
+  } else if (successes > 0) {
+    status = 'unstable';
+  }
+
+  return {
+    status,
+    latencyMs: Math.round(avgLatency),
+    lastCheck: new Date(),
+    ip: printer.ip
+  };
+}
+
+/**
+ * Simple check for printer status.
  */
 export async function checkPrinterStatus(printer: AgentPrinterTarget): Promise<boolean> {
-  try {
-    const res = await fetchWithTimeout(
-      `${AGENT_BASE}/status`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ip: printer.ip, port: printer.port }),
-      },
-      4000
-    );
-    if (!res.ok) return false;
-    const json = await res.json();
-    return json?.connected === true;
-  } catch {
-    return false;
-  }
+  const probe = await probePrinterConnection(printer);
+  return probe.status !== 'offline';
 }
 
 export interface AgentPrintResult {

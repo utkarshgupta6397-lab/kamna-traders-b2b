@@ -43,6 +43,9 @@ class PrintAgentManager {
   /** Loaded from DB on first connect() */
   private activePrinter: PrinterRecord | null = null;
 
+  /** Track last successful print timestamp */
+  private lastSuccessfulPrint: Date | null = null;
+
   /** De-duplicate concurrent connect() calls */
   private connectingPromise: Promise<boolean> | null = null;
 
@@ -58,10 +61,11 @@ class PrintAgentManager {
   /**
    * Check agent liveness + load printer from DB.
    * Mirrors QZManager.connect() — safe to call multiple times.
+   * @param forceRefresh - If true, bypasses the cached printer IP and forces a DB lookup
    */
-  async connect(): Promise<boolean> {
-    if (this.agentOnline && this.activePrinter) return true;
-    if (this.connectingPromise) return this.connectingPromise;
+  async connect(forceRefresh = false): Promise<boolean> {
+    if (this.agentOnline && this.activePrinter && !forceRefresh) return true;
+    if (this.connectingPromise && !forceRefresh) return this.connectingPromise;
 
     this.connectingPromise = (async () => {
       try {
@@ -75,8 +79,8 @@ class PrintAgentManager {
         this.agentOnline = true;
         console.log('[PrintAgent] Agent reachable');
 
-        // Load printer from DB if not already set
-        if (!this.activePrinter) {
+        // Load printer from DB if not already set, or if forced
+        if (!this.activePrinter || forceRefresh) {
           const printer = await fetchFirstEnabledPrinter();
           if (printer) {
             this.activePrinter = printer;
@@ -168,6 +172,7 @@ class PrintAgentManager {
       throw new Error(result.error ?? 'Printing Failed');
     }
 
+    this.lastSuccessfulPrint = new Date();
     console.log('[PrintAgent] ✓ Print job sent successfully');
   }
 
@@ -197,6 +202,11 @@ class PrintAgentManager {
   getActivePrinterTarget(): AgentPrinterTarget | null {
     if (!this.activePrinter) return null;
     return { ip: this.activePrinter.ipAddress, port: this.activePrinter.port };
+  }
+
+  /** Returns the last successful print timestamp */
+  getLastSuccessfulPrint(): Date | null {
+    return this.lastSuccessfulPrint;
   }
 }
 

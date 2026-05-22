@@ -250,16 +250,18 @@ export default function PrinterSettingsTab() {
             {serviceStatus === 'stopped' && <XCircle className="w-8 h-8 text-red-500" />}
             
             <div>
-              <div className={`font-bold text-lg ${serviceStatus === 'running' ? 'text-green-700' : serviceStatus === 'tls-blocked' ? 'text-amber-700' : serviceStatus === 'stopped' ? 'text-red-700' : 'text-gray-500'}`}>
+              <div className={`font-bold text-lg ${(serviceStatus === 'running' && printerStatus?.status === 'online') ? 'text-green-700' : serviceStatus === 'tls-blocked' ? 'text-amber-700' : serviceStatus === 'stopped' ? 'text-red-700' : serviceStatus === 'running' ? 'text-yellow-700' : 'text-gray-500'}`}>
                 {serviceStatus === 'checking' ? 'Checking service...' : 
                  serviceStatus === 'tls-blocked' ? 'TLS Blocked' :
-                 serviceStatus === 'running' ? 'Print Service Running' : 
+                 (serviceStatus === 'running' && printerStatus?.status === 'online') ? 'Print Service Running' :
+                 serviceStatus === 'running' ? 'Agent Online (Printer Pending)' : 
                  'Agent Offline'}
               </div>
               <div className="text-sm font-medium mt-0.5">
                 {serviceStatus === 'checking' ? <span className="text-gray-400">Please wait...</span> : 
                  serviceStatus === 'tls-blocked' ? <span className="text-amber-600">Requires trust acceptance</span> :
-                 serviceStatus === 'running' ? <span className="text-green-600">Secure connection active</span> : 
+                 (serviceStatus === 'running' && printerStatus?.status === 'online') ? <span className="text-green-600">Secure connection & printer active</span> : 
+                 serviceStatus === 'running' ? <span className="text-yellow-600">Checking printer TCP...</span> :
                  <span className="text-red-600">Fetch blocked or unreachable</span>}
               </div>
               <div className="text-xs text-gray-400 font-mono mt-1">https://localhost:3001</div>

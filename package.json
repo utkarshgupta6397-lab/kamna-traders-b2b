@@ -19,6 +19,7 @@
     "@supabase/supabase-js": "^2.104.1",
     "@types/jsrsasign": "^10.5.15",
     "date-fns": "^4.1.0",
+    "html-to-image": "^1.11.13",
     "jose": "^6.2.2",
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.1",

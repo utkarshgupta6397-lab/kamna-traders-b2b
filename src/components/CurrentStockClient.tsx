@@ -9,7 +9,7 @@ import SkuInsightsDrawer from './SkuInsightsDrawer';
 import { formatStockDate } from '@/lib/date-utils';
 import { DOI_THRESHOLDS } from '@/lib/config';
 import { formatCPDValue, calculateDOIInfo, calculateConsumptionDenominator } from '@/lib/inventory/consumption';
-import { exportStockToPDF } from '@/lib/inventory/export-pdf';
+import { toJpeg } from 'html-to-image';
 import toast from 'react-hot-toast';
 
 interface Warehouse {
@@ -77,6 +77,9 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [showSyncModal, setShowSyncModal] = useState(false);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const formatDOI = (stock: number, cpd: number) => {
     return calculateDOIInfo(stock, cpd);
@@ -304,18 +307,65 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
     setSelectedSku(null);
   }, []);
 
-  const handleDownloadPDF = async () => {
-    await exportStockToPDF({
-      warehouses: visibleWarehouses,
-      categoryGroups,
-      categoryMap,
-      grandTotals,
-      filters: {
-        categories: selectedCategories,
-        brands: selectedBrands,
-        search: searchQuery
+  const handleDownloadIMG = async () => {
+    if (!containerRef.current) return;
+    setIsExporting(true);
+    const toastId = toast.loading('Generating Image...');
+    
+    try {
+      const node = containerRef.current;
+      
+      // Temporarily expand the node to capture full width/height
+      const originalWidth = node.style.width;
+      const originalHeight = node.style.height;
+      const originalOverflow = node.style.overflow;
+      const tableContainer = node.querySelector('.flex-1.overflow-auto');
+      const origTableOverflow = tableContainer ? (tableContainer as HTMLElement).style.overflow : '';
+      const origTableHeight = tableContainer ? (tableContainer as HTMLElement).style.height : '';
+      
+      // Force expansion to scroll size
+      node.style.width = `${Math.max(node.scrollWidth, node.clientWidth)}px`;
+      node.style.height = 'max-content';
+      node.style.overflow = 'visible';
+      if (tableContainer) {
+        (tableContainer as HTMLElement).style.overflow = 'visible';
+        (tableContainer as HTMLElement).style.height = 'max-content';
       }
-    });
+
+      // Small delay to allow browser to re-render layout
+      await new Promise(r => setTimeout(r, 100));
+
+      const dataUrl = await toJpeg(node, { 
+        quality: 1.0, 
+        backgroundColor: '#ffffff',
+        pixelRatio: 2 // Scale 2 or higher
+      });
+      
+      // Restore styles
+      node.style.width = originalWidth;
+      node.style.height = originalHeight;
+      node.style.overflow = originalOverflow;
+      if (tableContainer) {
+        (tableContainer as HTMLElement).style.overflow = origTableOverflow;
+        (tableContainer as HTMLElement).style.height = origTableHeight;
+      }
+
+      // Download
+      const link = document.createElement('a');
+      const date = new Date();
+      // Format: YYYY-MM-DD-HH-mm
+      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}-${String(date.getHours()).padStart(2, '0')}-${String(date.getMinutes()).padStart(2, '0')}`;
+      link.download = `current-stock-${dateStr}.jpg`;
+      link.href = dataUrl;
+      link.click();
+      
+      toast.success('Image downloaded successfully', { id: toastId });
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to generate image', { id: toastId });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleSuggestionClick = (item: SkuItem) => {
@@ -367,7 +417,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+    <div ref={containerRef} className="flex flex-col h-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
       {/* Header & Filters */}
       <div className="p-4 border-b border-gray-200 bg-gray-50 flex flex-col gap-4 shrink-0">
         <div className="flex items-center justify-between">
@@ -559,11 +609,12 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
           </label>
 
           <button 
-            onClick={handleDownloadPDF}
-            className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-bold shadow-sm shrink-0 ml-auto"
+            onClick={handleDownloadIMG}
+            disabled={isExporting}
+            className={`flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-bold shadow-sm shrink-0 ml-auto ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            <FileDown size={16} />
-            Download PDF
+            {isExporting ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+            {isExporting ? 'Generating Image...' : 'Download IMG (JPEG)'}
           </button>
         </div>
       </div>

@@ -16,7 +16,6 @@ export default function PrintSlipClient({
   serverPayload: PrintPayload | null;
 }) {
   const [payload, setPayload] = useState<PrintPayload | null>(serverPayload);
-  const [showZoneSlips, setShowZoneSlips] = useState(false);
   const [copied, setCopied] = useState(false);
   const [timings, setTimings] = useState<Record<string, number>>({});
   const [mountTimePerf, setMountTimePerf] = useState<number | null>(null);
@@ -58,19 +57,17 @@ export default function PrintSlipClient({
       const nowPerf = performance.now();
       const renderDuration = nowPerf - mountTimePerf;
       setTimings(prev => ({ ...prev, firstPaint: renderDuration }));
-      const timer = setTimeout(() => setShowZoneSlips(true), 300);
-      return () => clearTimeout(timer);
     }
   }, [payload, mountTimePerf]);
 
   useEffect(() => {
-    if (showZoneSlips && timings.apiRequest && timings.navigation && timings.firstPaint) {
+    if (timings.apiRequest && timings.navigation && timings.firstPaint) {
       setTimings(prev => ({
         ...prev,
         totalPerceived: (prev.apiRequest || 0) + (prev.navigation || 0) + (prev.firstPaint || 0)
       }));
     }
-  }, [showZoneSlips, timings.apiRequest, timings.navigation, timings.firstPaint]);
+  }, [timings.apiRequest, timings.navigation, timings.firstPaint]);
 
   // Zoho Sync State
   const [zohoStatus, setZohoStatus] = useState<{

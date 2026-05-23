@@ -50,7 +50,7 @@ model Warehouse {
   name             String
   address          String?
   active           Boolean              @default(true)
-  printZonalSlips  Boolean              @default(true)
+  printZonalSlips  Boolean              @default(true) // Deprecated
   isSystemWarehouse Boolean             @default(false)
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt

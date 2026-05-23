@@ -37,7 +37,7 @@ export async function GET() {
     await prisma.warehouse.upsert({
       where: { id: 'IN_TRANSIT' },
       update: { isSystemWarehouse: true },
-      create: { id: 'IN_TRANSIT', name: 'In Transit', address: 'System Transit Warehouse', printZonalSlips: false, isSystemWarehouse: true },
+      create: { id: 'IN_TRANSIT', name: 'In Transit', address: 'System Transit Warehouse', isSystemWarehouse: true },
     });
     
     // 1. Purge Existing Data (Foreign Key safe order)

@@ -57,3 +57,5 @@ no_turbo.log
 dev.log
 .env*.local
 public/downloads/*
+
+certificates

@@ -18,11 +18,7 @@ export async function createUser(data: FormData) {
   const mobile = data.get('mobile') as string;
   const role = data.get('role') as string;
   const pin = data.get('pin') as string || undefined;
-  const canManageCarts = data.get('canManageCarts') === 'true';
-  const accountsAccess = data.get('accountsAccess') === 'true';
-  const accounts_customer_statement = data.get('accounts_customer_statement') === 'true';
-  const accounts_transactions = data.get('accounts_transactions') === 'true';
-  await prisma.user.create({ data: { name, mobile, role, pin, canManageCarts, accountsAccess, accounts_customer_statement, accounts_transactions } });
+  await prisma.user.create({ data: { name, mobile, role, pin } });
   revalidatePath('/admin/users');
 }
 
@@ -34,11 +30,7 @@ export async function updateUser(data: FormData) {
   const role = data.get('role') as string;
   const pin = data.get('pin') as string || undefined;
   const active = data.get('active') === 'true';
-  const canManageCarts = data.get('canManageCarts') === 'true';
-  const accountsAccess = data.get('accountsAccess') === 'true';
-  const accounts_customer_statement = data.get('accounts_customer_statement') === 'true';
-  const accounts_transactions = data.get('accounts_transactions') === 'true';
-  await prisma.user.update({ where: { id }, data: { name, mobile, role, pin, active, canManageCarts, accountsAccess, accounts_customer_statement, accounts_transactions } });
+  await prisma.user.update({ where: { id }, data: { name, mobile, role, pin, active } });
   revalidatePath('/admin/users');
 }
 
@@ -55,8 +47,7 @@ export async function createWarehouse(data: FormData) {
   await requireAdmin();
   const name = data.get('name') as string;
   const address = data.get('address') as string;
-  const printZonalSlips = data.get('printZonalSlips') === 'true';
-  await prisma.warehouse.create({ data: { name, address, printZonalSlips, isSystemWarehouse: false } });
+  await prisma.warehouse.create({ data: { name, address, isSystemWarehouse: false } });
   revalidatePath('/admin/warehouses');
 }
 
@@ -70,8 +61,7 @@ export async function updateWarehouse(data: FormData) {
   const name = data.get('name') as string;
   const address = data.get('address') as string;
   const active = data.get('active') === 'true';
-  const printZonalSlips = data.get('printZonalSlips') === 'true';
-  await prisma.warehouse.update({ where: { id }, data: { name, address, active, printZonalSlips } });
+  await prisma.warehouse.update({ where: { id }, data: { name, address, active } });
   revalidatePath('/admin/warehouses');
 }
 

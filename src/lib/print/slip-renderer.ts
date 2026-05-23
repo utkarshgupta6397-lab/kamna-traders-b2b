@@ -15,7 +15,6 @@ export type PrintPayload = {
   notes: string | null;
   createdAt: string;
   warehouseName: string;
-  printZonalSlips?: boolean;
   staffName: string;
   items: PrintItem[];
   zoneGroups: Record<string, PrintItem[]>;

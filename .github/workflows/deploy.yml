@@ -19,4 +19,5 @@ jobs:
           script: |
             set -e
             cd ~/kamna-traders-b2b
+            chmod +x deploy.sh
             ./deploy.sh

@@ -3,8 +3,9 @@ set -e
 
 echo "Starting deployment pipeline..."
 
-echo "1. Pulling latest code..."
-git pull origin main
+echo "1. Fetching latest code..."
+git fetch origin
+git reset --hard origin/main
 
 echo "2. Installing dependencies..."
 npm install

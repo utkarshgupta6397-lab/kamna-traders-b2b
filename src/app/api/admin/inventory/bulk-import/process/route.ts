@@ -75,7 +75,7 @@ export async function POST(req: Request) {
         try {
           await prisma.inventoryHistory.create({
             data: {
-              warehouseId,
+              warehouse: { connect: { id: warehouseId } },
               skuId,
               productName,
               beforeQty,

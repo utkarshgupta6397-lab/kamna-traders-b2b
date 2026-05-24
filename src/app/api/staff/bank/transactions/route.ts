@@ -69,8 +69,19 @@ export async function GET(request: Request) {
     // Fetch Customer Payments for today
     let allPayments: any[] = [];
     const fetchPayments = async () => {
-      const today = new Date().toISOString().split('T')[0];
-      const url = `${apiBase}/books/v3/customerpayments?organization_id=${orgId}&date=${today}&per_page=200`;
+      const formatter = new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      const parts = formatter.formatToParts(new Date());
+      const d = parts.find(p => p.type === 'day')?.value;
+      const m = parts.find(p => p.type === 'month')?.value;
+      const y = parts.find(p => p.type === 'year')?.value;
+      const todayIST = `${y}-${m}-${d}`;
+      
+      const url = `${apiBase}/books/v3/customerpayments?organization_id=${orgId}&date=${todayIST}&per_page=200`;
       
       const response = await fetch(url, {
         method,

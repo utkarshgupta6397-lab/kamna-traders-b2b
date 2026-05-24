@@ -48,11 +48,18 @@ const ICICI_ACCOUNT_ID = '1759923000003416718';
 
 type SortOption = 'Latest First' | 'Oldest First' | 'Highest Amount' | 'Lowest Amount';
 
-function getTodayIST() {
-  const date = new Date();
-  const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
-  const nd = new Date(utc + (3600000 * 5.5)); // IST is +5:30
-  return nd.toISOString().split('T')[0];
+function getTodayIST(): string {
+  const formatter = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const parts = formatter.formatToParts(new Date());
+  const d = parts.find(p => p.type === 'day')?.value;
+  const m = parts.find(p => p.type === 'month')?.value;
+  const y = parts.find(p => p.type === 'year')?.value;
+  return `${y}-${m}-${d}`;
 }
 
 function formatINR(amount: number): string {
@@ -102,16 +109,39 @@ function parseCompanyName(description: string): string | null {
 
 // Safely extract datetime combined string
 function extractDateTime(txn: any): { displayDate: string, timestamp: number } {
-  const d = new Date(txn.date);
+  let day = '01';
+  let month = 'Jan';
+  let year = '2026';
+  
+  const rawDate = txn.date || txn.created_time || '';
+  const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  
+  if (match) {
+    const [, y, mStr, d] = match;
+    const mNum = parseInt(mStr, 10);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    year = y;
+    month = months[mNum - 1];
+    day = d;
+  } else {
+    const d = new Date(rawDate);
+    if (!isNaN(d.getTime())) {
+      day = d.getDate().toString().padStart(2, '0');
+      month = d.toLocaleString('en-IN', { month: 'short' });
+      year = d.getFullYear().toString();
+    }
+  }
+
   let timeStr = '—';
-  let timestamp = d.getTime();
+  let timestamp = new Date(rawDate).getTime();
+  if (isNaN(timestamp)) timestamp = 0;
 
   // If it's a customer payment with created_time
   if (txn.created_time) {
     const parsed = new Date(txn.created_time);
     if (!isNaN(parsed.getTime())) {
       timestamp = parsed.getTime();
-      timeStr = parsed.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
+      timeStr = parsed.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
     }
   }
   // Try to find time in imported_transactions if it's an ISO string
@@ -121,7 +151,7 @@ function extractDateTime(txn: any): { displayDate: string, timestamp: number } {
       const parsed = new Date(importedDate);
       if (!isNaN(parsed.getTime())) {
         timestamp = parsed.getTime();
-        timeStr = parsed.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
+        timeStr = parsed.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
       }
     }
   }
@@ -142,10 +172,6 @@ function extractDateTime(txn: any): { displayDate: string, timestamp: number } {
     }
   }
 
-  const day = d.getDate().toString().padStart(2, '0');
-  const month = d.toLocaleString('en-IN', { month: 'short' });
-  const year = d.getFullYear();
-  
   const displayDate = timeStr !== '—' 
     ? `${day}-${month}-${year} ${timeStr}`
     : `${day}-${month}-${year}`;
@@ -210,43 +236,29 @@ export default function LiveBankTransactionsView() {
     const cachedData = localStorage.getItem(CACHE_KEY);
     const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
     
-    const now = Date.now();
-    
     if (cachedData && cachedTime) {
-      const timeParsed = parseInt(cachedTime, 10);
-      const age = now - timeParsed;
-      
-      if (age < CACHE_DURATION_MS) {
-        try {
-          const parsed = JSON.parse(cachedData);
-          if (Array.isArray(parsed.data)) {
-            setStatements(parsed.data);
-            setPayments([]);
-          } else if (parsed.data) {
-            setStatements(parsed.data.statements || []);
-            setPayments(parsed.data.payments || []);
-          }
-          setTelemetry(parsed.telemetry || null);
-          setLastRefresh(timeParsed);
-          setCooldownRemaining(Math.ceil((CACHE_DURATION_MS - age) / 1000));
-          return;
-        } catch (e) {
-          console.error('Cache parse error', e);
+      try {
+        const parsed = JSON.parse(cachedData);
+        if (Array.isArray(parsed.data)) {
+          setStatements(parsed.data);
+          setPayments([]);
+        } else if (parsed.data) {
+          setStatements(parsed.data.statements || []);
+          setPayments(parsed.data.payments || []);
         }
+        setTelemetry(parsed.telemetry || null);
+        setLastRefresh(parseInt(cachedTime, 10));
+        // Reset cooldown since we loaded from cache instantly
+        setCooldownRemaining(0);
+        return; // ALWAYS render from cache. Never auto-fetch.
+      } catch (e) {
+        console.error('Cache parse error', e);
       }
     }
     
+    // Only fetch if absolutely no cache exists
     handleFetch();
   }, []);
-
-  // Update cooldown timer
-  useEffect(() => {
-    if (cooldownRemaining <= 0) return;
-    const interval = setInterval(() => {
-      setCooldownRemaining(prev => Math.max(0, prev - 1));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [cooldownRemaining]);
 
   // Merge and Deduplicate Logic
   const { mergedTransactions, mergeStats } = useMemo(() => {
@@ -361,11 +373,6 @@ export default function LiveBankTransactionsView() {
   }, [mergedTransactions, sortOption]);
 
   const handleFetch = async () => {
-    if (cooldownRemaining > 0) {
-      toast.error(`Please wait ${cooldownRemaining}s before refreshing`);
-      return;
-    }
-
     setLoading(true);
     setError(null);
     
@@ -389,7 +396,6 @@ export default function LiveBankTransactionsView() {
       
       const now = Date.now();
       setLastRefresh(now);
-      setCooldownRemaining(120);
       
       localStorage.setItem(CACHE_KEY, JSON.stringify({ data: json.data, telemetry: json.telemetry }));
       localStorage.setItem(CACHE_TIME_KEY, now.toString());
@@ -472,21 +478,21 @@ export default function LiveBankTransactionsView() {
         
         <div className="flex items-center gap-3">
           {lastRefresh && (
-            <span className="text-xs text-gray-500">
-              Updated: {new Date(lastRefresh).toLocaleTimeString()}
+            <span className="text-xs text-gray-500 font-medium bg-gray-50 px-2 py-1 rounded border border-gray-100">
+              Last synced at {new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date(lastRefresh))}
             </span>
           )}
           <button
             onClick={handleFetch}
-            disabled={loading || cooldownRemaining > 0}
+            disabled={loading}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm ${
-              cooldownRemaining > 0
+              loading
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                 : 'bg-[#1A2766] text-white hover:bg-[#003347]'
             }`}
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            {loading ? 'Syncing...' : cooldownRemaining > 0 ? `Wait ${cooldownRemaining}s` : 'Refresh Feed'}
+            {loading ? 'Syncing...' : 'Fetch Feed'}
           </button>
         </div>
       </div>

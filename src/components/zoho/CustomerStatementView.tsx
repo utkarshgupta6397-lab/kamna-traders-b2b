@@ -100,9 +100,24 @@ function fmtBalance(n: number) {
 }
 
 
+/** Extract YYYY-MM-DD explicitly to avoid timezone shift */
+function parseRawDate(iso: string) {
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, y, mStr, d] = match;
+    const mNum = parseInt(mStr, 10);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return { y, m: months[mNum - 1], d };
+  }
+  return null;
+}
+
 /** Format date as "18 May 2026" */
 function fmtDate(iso: string) {
   if (!iso) return '—';
+  const raw = parseRawDate(iso);
+  if (raw) return `${raw.d} ${raw.m} ${raw.y}`;
+  
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -111,11 +126,22 @@ function fmtDate(iso: string) {
 /** Format datetime as "8 May 2026 1:23 PM" */
 function fmtDateTime(iso: string) {
   if (!iso) return '—';
-  if (iso.length === 10 || (!iso.includes('T') && !iso.includes(':'))) return fmtDate(iso);
+  
+  let datePart = '';
+  const raw = parseRawDate(iso);
+  if (raw) {
+    datePart = `${raw.d} ${raw.m} ${raw.y}`;
+  } else {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    datePart = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  if (iso.length === 10 || (!iso.includes('T') && !iso.includes(':'))) return datePart;
+  
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
-  const datePart = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-  const timePart = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: 'numeric', hour12: true });
+  const timePart = d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: 'numeric', hour12: true });
   return `${datePart} ${timePart}`;
 }
 

@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { updateInventory } from '../actions';
 import InventoryClient from '@/components/InventoryClient';
 import InventoryTableClient from '@/components/InventoryTableClient';
+import BulkInventoryImportClient from '@/components/BulkInventoryImportClient';
 
 export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ page?: string; q?: string; wh?: string }> }) {
   const sp = await searchParams;
@@ -49,6 +50,9 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
           {(q || whFilter) && <a href="/admin/inventory" className="text-xs text-gray-400 hover:text-gray-600">Clear</a>}
         </form>
       </div>
+
+      {/* Bulk Import System */}
+      <BulkInventoryImportClient />
 
       {/* Update form with searchable SKU select */}
       <InventoryClient warehouses={warehouses} skus={skus} updateAction={updateInventory} />

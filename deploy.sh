@@ -1,18 +1,35 @@
 #!/bin/bash
+set -e
 
-echo "Pulling latest code..."
+echo "Starting deployment pipeline..."
+
+echo "1. Pulling latest code..."
 git pull origin main
 
-echo "Installing dependencies..."
+echo "2. Installing dependencies..."
 npm install
 
-echo "Generating Prisma client..."
+echo "3. Generating Prisma client..."
 npx prisma generate
 
-echo "Building Next.js app..."
-npm run build
+echo "4. Backing up old production build..."
+cp -r .next .next.backup || true
 
-echo "Restarting PM2..."
+echo "5. Building Next.js app..."
+if ! npm run build; then
+  echo "❌ Build failed! Restoring old production build..."
+  rm -rf .next
+  mv .next.backup .next || true
+  exit 1
+fi
+rm -rf .next.backup
+
+echo "6. Restarting PM2..."
 pm2 restart kamna --update-env
 
-echo "Done!"
+echo "7. Verifying deployment health..."
+# Wait for PM2 to bring the app up
+sleep 5
+curl -f http://localhost:3000/api/health
+
+echo "Deployment completed successfully! ✅"

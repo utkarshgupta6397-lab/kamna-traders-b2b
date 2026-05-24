@@ -23,13 +23,13 @@ if ! npm run build; then
   mv .next.backup .next || true
   exit 1
 fi
+
 rm -rf .next.backup
 
 echo "6. Restarting PM2..."
 pm2 restart kamna --update-env
 
 echo "7. Verifying deployment health..."
-# Wait for PM2 to bring the app up
 sleep 5
 curl -f http://localhost:3000/api/health
 

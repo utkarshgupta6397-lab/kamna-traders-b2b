@@ -46,6 +46,7 @@ export type StatementTransaction = {
   netEffect: number;
   balanceAfter: number;
   isVerified?: boolean;
+  zohoUrl?: string;
 };
 
 export type CustomerStatement = {
@@ -60,6 +61,7 @@ export type CustomerStatement = {
   isHybrid: boolean;
   transactions: StatementTransaction[];
   transactionCount: number;
+  unpaidInvoices: CustomerStatementInvoice[];
   /** true when fewer than all transactions are shown */
   isTruncated: boolean;
   /** API telemetry for the debug card */
@@ -100,7 +102,7 @@ export async function getCustomerInvoices(contactId: string): Promise<{
     // Fetch invoices — no custom sort/status params (Zoho rejects unsupported enums)
     // We filter void and sort locally after receiving the response
     // Fetch 15 as buffer — void invoices are filtered in-app
-    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=15&sort_column=date&sort_order=D`;
+    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=30&sort_column=date&sort_order=D`;
     const response = await fetch(url, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
@@ -123,7 +125,7 @@ export async function getCustomerInvoices(contactId: string): Promise<{
           dueDate: inv.due_date,
           status: inv.status,
           total: Number(inv.total),
-          balance: Number(inv.balance_amount),
+          balance: Number(inv.balance !== undefined ? inv.balance : inv.balance_amount),
           currencyCode: inv.currency_code,
           referenceNumber: inv.reference_number,
           salespersonName: inv.salesperson_name,
@@ -163,7 +165,7 @@ export async function getCustomerPayments(contactId: string): Promise<{
     const accessToken = await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    const url = `${API_BASE_URL}/books/v3/customerpayments?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=15&sort_column=date&sort_order=D`;
+    const url = `${API_BASE_URL}/books/v3/customerpayments?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=30&sort_column=date&sort_order=D`;
     const response = await fetch(url, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
@@ -227,7 +229,7 @@ export async function getVendorBills(vendorId: string): Promise<{
     const accessToken = await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    const url = `${API_BASE_URL}/books/v3/bills?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=15&sort_column=date&sort_order=D`;
+    const url = `${API_BASE_URL}/books/v3/bills?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=30&sort_column=date&sort_order=D`;
     console.log('[Zoho Bills] Vendor ID Used:', vendorId);
     console.log('[Zoho Bills] API URL:', url);
     const response = await fetch(url, {
@@ -333,6 +335,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
   const bills = (billsResult.success ? billsResult.data : []) ?? [];
 
   // 3. Merge into unified timeline with signed netEffect and memoized timestamp
+  const orgId = getZohoOrgId() || process.env.ZOHO_BOOKS_ORG_ID;
   let mergedRaw: Array<{
     id: string;
     type: 'invoice' | 'payment' | 'bill';
@@ -343,6 +346,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
     amount: number;
     netEffect: number;
     isVerified?: boolean;
+    zohoUrl?: string;
   }> = [
     ...invoices.map((inv: any) => ({
       id: inv.invoiceId,
@@ -353,6 +357,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
       description: `Invoice ${inv.invoiceNumber}`,
       amount: inv.total,
       netEffect: inv.total,
+      zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/invoices/${inv.invoiceId}` : undefined,
     })),
     ...payments.map((pmt: any) => {
       let desc = pmt.paymentMode ? `Payment - ${pmt.paymentMode}` : 'Customer Payment';
@@ -367,6 +372,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
         amount: pmt.amount,
         netEffect: -pmt.amount,
         isVerified: pmt.isVerified,
+        zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/paymentsreceived/${pmt.paymentId}` : undefined,
       };
     }),
     ...bills.map((b: any) => ({
@@ -378,6 +384,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
       description: b.referenceNumber ? `Purchase Bill - ${b.referenceNumber}` : `Purchase Bill - ${b.billNumber}`,
       amount: b.amount,
       netEffect: -b.amount,
+      zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/bills/${b.billId}` : undefined,
     })),
   ];
 
@@ -394,9 +401,9 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
   // 4. Sort chronologically NEWEST FIRST using memoized timestamp
   mergedRaw.sort((a, b) => b.timestamp - a.timestamp);
 
-  // 5. Take latest 15 merged transactions
-  const latest15 = mergedRaw.slice(0, 15);
-  console.log('[Zoho Statement] Final rendered transaction count:', latest15.length);
+  // We keep all fetched transactions after the date limit filter
+  const renderedTransactions = mergedRaw;
+  console.log('[Zoho Statement] Final rendered transaction count:', renderedTransactions.length);
 
   const outstandingReceivable = customer.outstandingReceivable ?? 0;
   const customerUnusedCredits = customer.unusedCreditsReceivable ?? 0;
@@ -426,7 +433,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
   let runningBalance = netClosingBalance;
   const transactions: StatementTransaction[] = [];
 
-  for (const item of latest15) {
+  for (const item of renderedTransactions) {
     transactions.push({
       ...item,
       balanceAfter: runningBalance,
@@ -439,6 +446,10 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
 
   // Display oldest → newest
   transactions.reverse();
+
+  // Extract unpaid invoices and sort oldest first
+  const unpaidInvoices = invoices.filter((i: any) => i.balance > 0);
+  unpaidInvoices.sort((a, b) => new Date(a.invoiceDate).getTime() - new Date(b.invoiceDate).getTime());
 
   const invMeta  = (invoicesResult as any)._meta  ?? { rawFetched: invoices.length, validCount: invoices.length };
   const pmtMeta  = paymentsResult.success ? ((paymentsResult as any)._meta ?? { rawFetched: 0, validCount: 0 }) : { rawFetched: 0, validCount: 0 };
@@ -455,7 +466,8 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
       isHybrid,
       transactions,
       transactionCount: transactions.length,
-      isTruncated: true,
+      unpaidInvoices,
+      isTruncated: false,
       telemetry: {
         customerApiCalls: 1,
         invoiceApiCalls: 1,

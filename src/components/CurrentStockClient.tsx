@@ -9,7 +9,8 @@ import SkuInsightsDrawer from './SkuInsightsDrawer';
 import { formatStockDate } from '@/lib/date-utils';
 import { DOI_THRESHOLDS } from '@/lib/config';
 import { formatCPDValue, calculateDOIInfo, calculateConsumptionDenominator } from '@/lib/inventory/consumption';
-import { toJpeg } from 'html-to-image';
+import { toPng } from 'html-to-image';
+import { jsPDF } from 'jspdf';
 import toast from 'react-hot-toast';
 
 interface Warehouse {
@@ -307,10 +308,10 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
     setSelectedSku(null);
   }, []);
 
-  const handleDownloadIMG = async () => {
+  const handleDownloadPDF = async () => {
     if (!containerRef.current) return;
     setIsExporting(true);
-    const toastId = toast.loading('Generating Image...');
+    const toastId = toast.loading('Generating PDF...');
     
     try {
       const node = containerRef.current;
@@ -335,10 +336,11 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
       // Small delay to allow browser to re-render layout
       await new Promise(r => setTimeout(r, 100));
 
-      const dataUrl = await toJpeg(node, { 
-        quality: 1.0, 
+      const dataUrl = await toPng(node, {
+        quality: 1.0,
         backgroundColor: '#ffffff',
-        pixelRatio: 2 // Scale 2 or higher
+        pixelRatio: 2,
+        cacheBust: true
       });
       
       // Restore styles
@@ -350,19 +352,52 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
         (tableContainer as HTMLElement).style.height = origTableHeight;
       }
 
-      // Download
-      const link = document.createElement('a');
-      const date = new Date();
-      // Format: YYYY-MM-DD-HH-mm
-      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}-${String(date.getHours()).padStart(2, '0')}-${String(date.getMinutes()).padStart(2, '0')}`;
-      link.download = `current-stock-${dateStr}.jpg`;
-      link.href = dataUrl;
-      link.click();
       
-      toast.success('Image downloaded successfully', { id: toastId });
+      // Calculate PDF dimensions (Landscape A4)
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'px',
+        format: 'a4'
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const imgWidth = pdfWidth;
+      const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // Add timestamp
+      const date = new Date();
+      const timestamp = `Generated: ${date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} ${date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+      
+      // Add first page
+      pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
+      pdf.setFontSize(10);
+      pdf.setTextColor(150);
+      pdf.text(timestamp, 10, pdfHeight - 10);
+      heightLeft -= pdfHeight;
+
+      // Add subsequent pages if needed
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
+        pdf.text(timestamp, 10, pdfHeight - 10);
+        heightLeft -= pdfHeight;
+      }
+      
+      // Filename format: Current_Stock_YYYY-MM-DD.pdf
+      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      pdf.save(`Current_Stock_${dateStr}.pdf`);
+      
+      toast.success('PDF downloaded successfully', { id: toastId });
     } catch (err) {
       console.error(err);
-      toast.error('Failed to generate image', { id: toastId });
+      toast.error('Failed to generate PDF', { id: toastId });
     } finally {
       setIsExporting(false);
     }
@@ -609,12 +644,12 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
           </label>
 
           <button 
-            onClick={handleDownloadIMG}
+            onClick={handleDownloadPDF}
             disabled={isExporting}
-            className={`flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-bold shadow-sm shrink-0 ml-auto ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-bold shadow-sm shrink-0 ml-auto ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {isExporting ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
-            {isExporting ? 'Generating Image...' : 'Download IMG (JPEG)'}
+            {isExporting ? 'Generating PDF...' : 'Download PDF'}
           </button>
         </div>
       </div>

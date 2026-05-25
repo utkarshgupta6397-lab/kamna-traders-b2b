@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Settings, Printer, CheckCircle2, AlertCircle, Loader2, Info } from 'lucide-react';
+import { Printer, CheckCircle2, AlertCircle, Loader2, Info, Check, Wifi, WifiOff } from 'lucide-react';
 import { qzManager } from '@/lib/print/qz-tray';
-import { checkAgentHealth, checkPrinterStatus } from '@/lib/print/agent-transport';
+import { EscPosRenderer } from '@/lib/print/esc-pos-renderer';
 import { toast } from 'react-hot-toast';
 
 interface PrinterRecord {
@@ -11,208 +11,300 @@ interface PrinterRecord {
   name: string;
   ipAddress: string;
   port: number;
+  printerType: string;
+  isActive: boolean;
 }
 
 export default function PrinterSetupClient() {
-  const [agentOnline, setAgentOnline] = useState(false);
+  const [qzConnected, setQzConnected] = useState(false);
   const [printers, setPrinters] = useState<PrinterRecord[]>([]);
-  const [selectedPrinter, setSelectedPrinter] = useState<PrinterRecord | null>(null);
-  const [printerOnline, setPrinterOnline] = useState<boolean | null>(null);
+  const [selectedPrinterId, setSelectedPrinterId] = useState('');
+  const [activePrinter, setActivePrinter] = useState<PrinterRecord | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [pingStatus, setPingStatus] = useState<'idle' | 'pinging' | 'reachable' | 'unreachable'>('idle');
   const [testPrinting, setTestPrinting] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const healthy = await checkAgentHealth();
-      setAgentOnline(healthy);
+      // 1. Fetch active printers from database
+      const listRes = await fetch('/api/staff/printers');
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        setPrinters(listData || []);
+      }
 
-      const res = await fetch('/api/printers', { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        const list: PrinterRecord[] = data?.printers ?? [];
-        setPrinters(list);
-        if (list.length > 0 && !selectedPrinter) {
-          setSelectedPrinter(list[0]);
-          const online = await checkPrinterStatus({ ip: list[0].ipAddress, port: list[0].port });
-          setPrinterOnline(online);
+      // 2. Fetch logged-in user's mapped printer setup
+      const userPrinterRes = await fetch('/api/staff/printer');
+      if (userPrinterRes.ok) {
+        const printer = await userPrinterRes.json();
+        if (printer) {
+          setSelectedPrinterId(printer.id);
+          setActivePrinter(printer);
         }
       }
+      
+      const connected = await qzManager.connect();
+      setQzConnected(connected);
     } catch (err) {
       console.error('[PRINTER_SETUP] Load failed:', err);
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(() => {
+      setQzConnected(qzManager.isConnected());
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [loadData]);
 
-  const handlePrinterChange = async (id: string) => {
-    const p = printers.find(p => p.id === id);
-    if (!p) return;
-    setSelectedPrinter(p);
-    setPrinterOnline(null);
-    qzManager.setPrinter(p.name);
-    const online = await checkPrinterStatus({ ip: p.ipAddress, port: p.port });
-    setPrinterOnline(online);
+  // Handle printer selection from dropdown
+  const handleSelectPrinter = async (id: string) => {
+    setSelectedPrinterId(id);
+    const p = printers.find(x => x.id === id) || null;
+    setActivePrinter(p);
+    setPingStatus('idle');
+
+    setSaving(true);
+    try {
+      const res = await fetch('/api/staff/printer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ printerId: id || null }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to map printer');
+      }
+
+      toast.success(id ? 'Printer mapped successfully!' : 'Printer unmapped.');
+      // Refresh the printer in qzManager
+      await qzManager.loadPrinter(true);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save printer mapping');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePingPrinter = async () => {
+    if (!activePrinter) {
+      toast.error('Please select a printer first');
+      return;
+    }
+    setPingStatus('pinging');
+    try {
+      const res = await fetch('/api/staff/printer/ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          printerIp: activePrinter.ipAddress,
+          printerPort: activePrinter.port,
+        }),
+      });
+      if (!res.ok) throw new Error('Ping failed');
+      const data = await res.json();
+      setPingStatus(data.reachable ? 'reachable' : 'unreachable');
+      if (data.reachable) {
+        toast.success('Printer is reachable!');
+      } else {
+        toast.error('Printer is unreachable.');
+      }
+    } catch (err) {
+      setPingStatus('unreachable');
+      toast.error('Ping check failed');
+    }
   };
 
   const handleTestPrint = async () => {
-    if (!selectedPrinter || !agentOnline) {
-      toast.error(!agentOnline ? 'Local Print Service Not Running' : 'Please select a printer first');
+    if (!activePrinter) {
+      toast.error('Please configure and select a printer first');
       return;
     }
     setTestPrinting(true);
     try {
-      const timestamp = new Date().toLocaleString();
-      const commands = [
-        '\x1B\x40', '\x1B\x61\x01', '\x1D\x21\x11', 'TEST PRINT SUCCESS\n',
-        '\x1D\x21\x00', '\x1B\x61\x00', '--------------------------------\n',
-        `Time: ${timestamp}\n`, `Printer: ${selectedPrinter.name}\n`,
-        `IP: ${selectedPrinter.ipAddress}:${selectedPrinter.port}\n`,
-        '--------------------------------\n', '\x1B\x64\x03', '\x1D\x56\x41\x00'
-      ];
-      await qzManager.printRaw(commands);
+      const renderer = new EscPosRenderer();
+      renderer
+        .align('center').bold().text('KAMNA TRADERS').bold(false)
+        .line().text('TEST PRINT SUCCESS').line()
+        .line('--------------------------------')
+        .align('left')
+        .line(`Time: ${new Date().toLocaleString()}`)
+        .line(`Printer: ${activePrinter.name}`)
+        .line(`IP: ${activePrinter.ipAddress}:${activePrinter.port}`)
+        .line('--------------------------------')
+        .feed(3).cut();
+
+      await qzManager.printRaw(renderer.build());
       toast.success('Test print sent!');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Test Print Failed';
+    } catch (err: any) {
       console.error('[TEST_PRINT] Error:', err);
-      toast.error(msg);
+      toast.error(err.message || 'Print failed');
     } finally {
       setTestPrinting(false);
     }
   };
 
+  // Filter printers based on search text
+  const filteredPrinters = printers.filter(p =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    p.ipAddress.includes(searchQuery)
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-[#1A2766]" />
+        <Loader2 className="w-8 h-8 animate-spin text-[#AE1B1E]" />
       </div>
     );
   }
 
-  const isSilentReady = agentOnline && !!selectedPrinter && printerOnline === true;
+  const isReady = qzConnected && !!activePrinter;
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 text-[#1A2766]">
-          <Settings className="w-8 h-8" />
-          <h1 className="text-2xl font-bold">Printer Setup</h1>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b pb-4">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">Personal Printer Configuration</h2>
+          <p className="text-xs text-gray-500">Configure your direct Ethernet printing settings.</p>
         </div>
-        <div className={`px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 ${agentOnline ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-          <div className={`w-2 h-2 rounded-full ${agentOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-          Print Agent {agentOnline ? 'Running' : 'Not Running'}
+        <div className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 ${qzConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+          {qzConnected ? <Wifi size={14} /> : <WifiOff size={14} />}
+          QZ Tray: {qzConnected ? 'Online' : 'Offline'}
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Left: agent status + info */}
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center gap-2 font-bold text-gray-700">
-              <Info className="w-4 h-4" />
-              <span>Network Print Agent</span>
+        <div className="space-y-4 bg-white p-5 rounded-xl border shadow-sm">
+          <h3 className="text-xs font-black text-gray-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+            <Printer size={14} /> Printer Selection
+          </h3>
+          
+          <div className="space-y-2">
+            <label className="block text-xs font-bold text-gray-500 uppercase">Search & Select Printer</label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Filter printers by name or IP..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-[#AE1B1E] mb-2"
+              />
             </div>
-            <div className="p-6 space-y-4">
-              <p className="text-sm text-gray-500 flex items-start gap-2">
-                <Info className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
-                <span>
-                  Printing uses <strong>warehouse-print-agent</strong> running on this machine at{' '}
-                  <code className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">localhost:3001</code>.
-                  No certificates or browser storage needed.
-                </span>
-              </p>
-              <div className={`p-4 rounded-lg border flex items-center gap-3 ${agentOnline ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
-                {agentOnline ? (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                ) : (
-                  <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
-                )}
+            
+            <select
+              value={selectedPrinterId}
+              onChange={(e) => handleSelectPrinter(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-[#AE1B1E] bg-white"
+            >
+              <option value="">-- No Printer Configured --</option>
+              {filteredPrinters.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.ipAddress})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Read-Only Selected Printer Metadata */}
+          {activePrinter && (
+            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100 space-y-2">
+              <div className="text-[10px] uppercase font-bold text-gray-400">Selected Printer Specs</div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <div className={`text-sm font-bold ${agentOnline ? 'text-emerald-800' : 'text-red-700'}`}>
-                    {agentOnline ? 'Agent Running' : 'Agent Not Running'}
-                  </div>
-                  {!agentOnline && (
-                    <p className="text-xs text-red-600 mt-0.5">
-                      Run <code className="font-mono">npm run dev</code> in the <code className="font-mono">warehouse-print-agent</code> directory.
-                    </p>
-                  )}
+                  <span className="text-gray-400 block">Printer Name</span>
+                  <span className="font-bold text-gray-700">{activePrinter.name}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400 block">IP Address</span>
+                  <span className="font-mono font-bold text-gray-700">{activePrinter.ipAddress}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400 block">Port</span>
+                  <span className="font-mono font-bold text-gray-700">{activePrinter.port}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400 block">Command Set</span>
+                  <span className="font-bold text-gray-700">{activePrinter.printerType}</span>
                 </div>
               </div>
-              {!agentOnline && (
-                <button onClick={loadData} className="w-full py-2 rounded-lg border border-[#1A2766] text-[#1A2766] text-sm font-bold hover:bg-gray-50 transition-all">
-                  Retry Connection
+            </div>
+          )}
+
+          {saving && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-600 font-medium">
+              <Loader2 size={12} className="animate-spin" />
+              Saving mapping settings to your user account...
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          <div className="bg-white p-5 rounded-xl border shadow-sm space-y-4">
+            <h3 className="text-xs font-black text-gray-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+              <Info size={14} /> Diagnostic Tools
+            </h3>
+
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handlePingPrinter}
+                  disabled={pingStatus === 'pinging' || !activePrinter}
+                  className="flex-1 bg-gray-900 hover:bg-black text-white font-bold text-xs py-2 rounded-lg transition-all disabled:opacity-50"
+                >
+                  {pingStatus === 'pinging' ? 'Testing Connection...' : 'Ping Printer'}
                 </button>
+
+                <button
+                  type="button"
+                  onClick={handleTestPrint}
+                  disabled={!isReady || testPrinting}
+                  className={`flex-1 font-bold text-xs py-2 rounded-lg border transition-all ${
+                    isReady 
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
+                      : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                  }`}
+                >
+                  {testPrinting ? 'Printing...' : 'Test Print'}
+                </button>
+              </div>
+
+              {pingStatus === 'reachable' && (
+                <div className="flex items-center gap-2 text-[11px] text-emerald-700 bg-emerald-50 p-2.5 rounded-lg border border-emerald-100">
+                  <CheckCircle2 size={14} className="shrink-0" />
+                  <span>Printer is REACHABLE! Ready to print.</span>
+                </div>
+              )}
+
+              {pingStatus === 'unreachable' && (
+                <div className="flex items-center gap-2 text-[11px] text-red-700 bg-red-50 p-2.5 rounded-lg border border-red-100">
+                  <AlertCircle size={14} className="shrink-0" />
+                  <span>Printer is UNREACHABLE. Check printer power & network.</span>
+                </div>
               )}
             </div>
           </div>
-        </div>
 
-        {/* Right: Printer selection and test */}
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center gap-2 font-bold text-gray-700">
-              <Printer className="w-4 h-4" />
-              <span>Printer Configuration</span>
-            </div>
-            <div className="p-6 space-y-6">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-500 uppercase">Select Target Printer</label>
-                <select
-                  className="w-full border border-gray-300 rounded-lg py-2.5 px-4 text-sm focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] outline-none"
-                  value={selectedPrinter?.id ?? ''}
-                  onChange={(e) => handlePrinterChange(e.target.value)}
-                  disabled={!agentOnline || printers.length === 0}
-                >
-                  <option value="">Select a printer...</option>
-                  {printers.map(p => (
-                    <option key={p.id} value={p.id}>{p.name} ({p.ipAddress})</option>
-                  ))}
-                </select>
-                {printers.length === 0 && (
-                  <p className="text-[10px] text-amber-600 font-medium">
-                    No printers configured. Go to Admin → Printer Management to add one.
-                  </p>
-                )}
-                {selectedPrinter && (
-                  <div className={`text-[10px] font-bold ${printerOnline === true ? 'text-emerald-600' : printerOnline === false ? 'text-red-500' : 'text-gray-400'}`}>
-                    {printerOnline === true ? '● Printer Online' : printerOnline === false ? '● Printer Offline' : '● Checking...'}
-                  </div>
-                )}
-              </div>
-
-              <div className="p-4 rounded-lg bg-gray-50 border border-gray-100 space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-600">Silent Print Ready</span>
-                  {isSilentReady ? (
-                    <CheckCircle2 className="w-5 h-5 text-green-500" />
-                  ) : (
-                    <AlertCircle className="w-5 h-5 text-amber-500" />
-                  )}
-                </div>
-
-                <button
-                  onClick={handleTestPrint}
-                  disabled={!isSilentReady || testPrinting}
-                  className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${isSilentReady ? 'bg-[#1A2766] text-white hover:bg-[#1A2766]/90' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
-                >
-                  {testPrinting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
-                  Test Print
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl bg-[#1A2766]/5 border border-[#1A2766]/10 flex gap-3">
-            <Info className="w-5 h-5 text-[#1A2766] shrink-0" />
-            <div className="space-y-1">
-              <div className="text-sm font-bold text-[#1A2766]">Infrastructure Note</div>
-              <p className="text-xs text-gray-600 leading-relaxed">
-                Printers are managed centrally in <strong>Admin → Printer Management</strong>.
-                No per-browser setup required.
+          <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 flex gap-2.5">
+            <Info className="w-4 h-4 text-gray-600 shrink-0 mt-0.5" />
+            <div className="space-y-2">
+              <p className="text-[11px] text-gray-600 leading-relaxed">
+                Printers are configured centrally by Administrators. Select your assigned physical POS terminal from the list to enable ticket printing in your warehouse terminal.
               </p>
+              <a
+                href="/staff/print-debug"
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-[#AE1B1E] hover:underline"
+              >
+                Open Advanced POS Diagnostics Console ↗
+              </a>
             </div>
           </div>
         </div>

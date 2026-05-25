@@ -1,7 +1,7 @@
 'use client';
 
 import SettingsShell from '@/components/SettingsShell';
-import PrinterSettingsTab from '@/components/PrinterSettingsTab';
+import PrinterSetupClient from '@/components/PrinterSetupClient';
 import ZoneMappingClient from '@/components/ZoneMappingClient';
 import UnlimitedSkusClient from '@/components/UnlimitedSkusClient';
 import { Printer, MapPin, Infinity } from 'lucide-react';
@@ -19,8 +19,8 @@ export default function SettingsPageClient({ permissions }: SettingsPageClientPr
       id: 'printer',
       label: 'Printer',
       icon: Printer,
-      description: 'Configure network thermal printing via the local print agent.',
-      component: <PrinterSettingsTab />
+      description: 'Configure network thermal printing via QZ Tray.',
+      component: <PrinterSetupClient />
     }
   ];
 

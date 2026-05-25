@@ -313,21 +313,22 @@ export async function adjustInventory(data: FormData) {
   revalidatePath('/staff/dashboard/inventory/history');
 }
 
-// ─── Printer Actions ──────────────────────────────────────────────────────────
-
+// ─── Printer Management Actions ──────────────────────────────────────────────
 export async function createPrinter(data: FormData) {
   await requireAdmin();
   const name = data.get('name') as string;
   const ipAddress = data.get('ipAddress') as string;
   const port = parseInt(data.get('port') as string) || 9100;
-  const description = (data.get('description') as string) || undefined;
-  const enabled = data.get('enabled') !== 'false';
+  const printerType = data.get('printerType') as string || 'ESC_POS';
+  const isActive = data.get('isActive') !== 'false';
 
   if (!name?.trim()) throw new Error('Printer name is required');
   if (!ipAddress?.trim()) throw new Error('IP address is required');
   if (isNaN(port) || port < 1 || port > 65535) throw new Error('Port must be a valid number (1–65535)');
 
-  await prisma.printer.create({ data: { name: name.trim(), ipAddress: ipAddress.trim(), port, description: description?.trim() || null, enabled } });
+  await prisma.printer.create({
+    data: { name: name.trim(), ipAddress: ipAddress.trim(), port, printerType, isActive }
+  });
   revalidatePath('/admin/printers');
 }
 
@@ -337,19 +338,39 @@ export async function updatePrinter(data: FormData) {
   const name = data.get('name') as string;
   const ipAddress = data.get('ipAddress') as string;
   const port = parseInt(data.get('port') as string) || 9100;
-  const description = (data.get('description') as string) || undefined;
-  const enabled = data.get('enabled') === 'true';
+  const printerType = data.get('printerType') as string || 'ESC_POS';
+  const isActive = data.get('isActive') === 'true';
 
   if (!name?.trim()) throw new Error('Printer name is required');
   if (!ipAddress?.trim()) throw new Error('IP address is required');
   if (isNaN(port) || port < 1 || port > 65535) throw new Error('Port must be a valid number (1–65535)');
 
-  await prisma.printer.update({ where: { id }, data: { name: name.trim(), ipAddress: ipAddress.trim(), port, description: description?.trim() || null, enabled } });
+  await prisma.printer.update({
+    where: { id },
+    data: { name: name.trim(), ipAddress: ipAddress.trim(), port, printerType, isActive }
+  });
   revalidatePath('/admin/printers');
 }
 
-export async function setPrinterEnabled(id: string, enabled: boolean) {
+export async function deletePrinter(id: string) {
   await requireAdmin();
-  await prisma.printer.update({ where: { id }, data: { enabled } });
+  await prisma.user.updateMany({
+    where: { printerId: id },
+    data: { printerId: null },
+  });
+  await prisma.printer.delete({ where: { id } });
   revalidatePath('/admin/printers');
 }
+
+export async function assignPrinterToUser(data: FormData) {
+  await requireAdmin();
+  const userId = data.get('userId') as string;
+  const printerId = data.get('printerId') as string || null;
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { printerId: printerId || null },
+  });
+  revalidatePath('/admin/printers');
+}
+

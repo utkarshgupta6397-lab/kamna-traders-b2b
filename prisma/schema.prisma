@@ -42,6 +42,10 @@ model User {
   transfersCreated    Transfer[]       @relation("TransferCreatedBy")
   transfersDispatched Transfer[]       @relation("TransferDispatchedBy")
   transfersReceived   Transfer[]       @relation("TransferReceivedBy")
+
+  printerId           String?
+  printer             Printer?           @relation(fields: [printerId], references: [id])
+  qzCertificate       QzCertificate?
 }
 
 
@@ -382,8 +386,19 @@ model Printer {
   name        String
   ipAddress   String
   port        Int      @default(9100)
-  enabled     Boolean  @default(true)
-  description String?
+  printerType String   @default("ESC_POS")
+  isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  users       User[]
+}
+
+model QzCertificate {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  publicCert String
+  privateKey String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

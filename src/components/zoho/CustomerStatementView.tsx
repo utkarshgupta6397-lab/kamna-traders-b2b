@@ -26,6 +26,7 @@ type Customer = {
   associatedVendorId?: string;
   outstandingPayable?: number;
   unusedCreditsPayable?: number;
+  unusedCreditsReceivable?: number;
   billingAddress?: string;
 };
 
@@ -163,6 +164,7 @@ export default function CustomerStatementView() {
   const [debugOpen, setDebugOpen] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [cachedAt, setCachedAt] = useState<number | null>(null);
 
   const handleThermalPrint = async () => {
     const s = statement?.data;
@@ -200,23 +202,44 @@ export default function CustomerStatementView() {
   };
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
-  const handleFetch = async (overrideId?: string) => {
+  const handleFetch = async (overrideId?: string, force = false) => {
     const idToFetch = (overrideId || customerId).trim();
     if (!idToFetch || !/^\d+$/.test(idToFetch) || idToFetch.length < 15) {
       toast.error('Please enter a valid Zoho Customer ID.');
       return;
     }
 
+    const cacheKey = `customer-statement-${idToFetch}`;
+    
+    if (!force) {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setStatement({ success: true, data: parsed.data });
+          setCachedAt(parsed.cachedAt);
+          // Optional: toast.success('Loaded from cache');
+          return;
+        } catch (e) {
+          console.error('Failed to parse cache', e);
+        }
+      }
+    }
+
     setLoading(true);
     setStatement(null);
+    setCachedAt(null);
     try {
       const res = await fetch(
         `/api/admin/customer-statement/statement?customerId=${encodeURIComponent(idToFetch)}`
       );
       const data = await res.json();
       setStatement(data);
-      if (data.success) {
-        toast.success('Statement loaded.');
+      if (data.success && data.data) {
+        const now = Date.now();
+        setCachedAt(now);
+        sessionStorage.setItem(cacheKey, JSON.stringify({ data: data.data, cachedAt: now }));
+        toast.success(force ? 'Statement refreshed.' : 'Statement loaded.');
       } else {
         toast.error(data.error || 'Failed to load statement.');
       }
@@ -308,17 +331,23 @@ export default function CustomerStatementView() {
               placeholder="e.g. 1759923000018618057"
               value={customerId}
               onChange={(e) => setCustomerId(e.target.value)}
-              onKeyDown={(e) => !isLocked && e.key === 'Enter' && handleFetch()}
+              onKeyDown={(e) => !isLocked && e.key === 'Enter' && handleFetch(undefined, true)}
               disabled={isLocked}
               className={`w-full pl-9 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1A2766] focus:border-transparent ${
                 isLocked ? 'bg-gray-50 text-gray-500 border-gray-200 cursor-not-allowed' : 'border-gray-200'
               }`}
             />
           </div>
+          {cachedAt && (
+            <div className="absolute -bottom-5 left-0 flex items-center gap-1.5 text-[10px] text-gray-500 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+              Cached {Math.floor((Date.now() - cachedAt) / 60000) === 0 ? 'just now' : `${Math.floor((Date.now() - cachedAt) / 60000)}m ago`}
+            </div>
+          )}
         </div>
         <button
           id="fetch-statement-btn"
-          onClick={() => handleFetch()}
+          onClick={() => handleFetch(undefined, true)}
           disabled={loading}
           className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-[#1A2766] text-white rounded-lg text-sm font-bold hover:bg-[#25368a] transition-colors disabled:opacity-50 h-[38px]"
         >
@@ -373,7 +402,13 @@ export default function CustomerStatementView() {
                 <div className="px-4 py-2.5 grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
                   <div className="col-span-2 sm:col-span-1">
                     <div className="text-[10px] uppercase text-gray-500 font-bold mb-0.5">Name</div>
-                    <div className="text-sm font-extrabold text-gray-900 leading-tight">{s.customer.contactName}</div>
+                    <a 
+                      href={`https://books.zoho.in/app/60027595766#/contacts/${s.customer.contactId}`}
+                      target="_blank" rel="noreferrer"
+                      className="text-sm font-extrabold text-blue-700 hover:text-blue-900 hover:underline leading-tight flex items-center gap-1 w-fit"
+                    >
+                      {s.customer.contactName} ↗
+                    </a>
                     {s.customer.companyName && (
                       <div className="text-[11px] font-medium text-gray-500 leading-tight mt-0.5">{s.customer.companyName}</div>
                     )}
@@ -644,9 +679,16 @@ export default function CustomerStatementView() {
                         Outstanding Invoices
                       </span>
                     </div>
-                    <span className="bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                      {s.unpaidInvoices.length} Due
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {s.unpaidInvoices.length > 0 && (
+                        <span className="text-[10px] font-bold text-rose-600 border border-rose-200 px-2 py-0.5 rounded-md bg-white">
+                          Oldest Due: {Math.max(...s.unpaidInvoices.map((inv: any) => Math.floor((Date.now() - new Date(inv.invoiceDate).getTime()) / (1000 * 60 * 60 * 24))))}d
+                        </span>
+                      )}
+                      <span className="bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        {s.unpaidInvoices.length} Due
+                      </span>
+                    </div>
                   </div>
                   
                   {/* Card Table Header */}
@@ -697,11 +739,25 @@ export default function CustomerStatementView() {
                         + {s.unpaidInvoices.length - 8} more
                       </div>
                     )}
-                    <div className="px-4 py-3 bg-rose-50/30 border-t border-rose-100 flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-gray-600 uppercase tracking-wider">Total Pending</span>
-                      <span className="text-sm font-extrabold text-rose-700 tabular-nums">
-                        {fmt(s.unpaidInvoices.reduce((sum, i) => sum + i.balance, 0))}
-                      </span>
+                    <div className="px-4 py-3 bg-rose-50/10 border-t border-rose-100 flex flex-col gap-1.5">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Total Pending</span>
+                        <span className="text-xs font-bold text-rose-600 tabular-nums">
+                          {fmt(s.unpaidInvoices.reduce((sum, i) => sum + i.balance, 0))}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Unused Credits</span>
+                        <span className="text-xs font-bold text-emerald-600 tabular-nums">
+                          − {fmt(s.customer.unusedCreditsReceivable || 0)}
+                        </span>
+                      </div>
+                      <div className="pt-2 mt-1 border-t border-gray-100 flex justify-between items-center">
+                        <span className="text-[11px] font-bold text-gray-900 uppercase tracking-wider">Net Receivable</span>
+                        <span className="text-sm font-extrabold text-gray-900 tabular-nums">
+                          {fmt((s.unpaidInvoices.reduce((sum, i) => sum + i.balance, 0)) - (s.customer.unusedCreditsReceivable || 0))}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -124,7 +124,7 @@ export async function checkAgentHealth(): Promise<boolean> {
     );
     if (!res.ok) return false;
     const json = await res.json();
-    return json?.ok === true;
+    return json?.ok === true || json?.success === true;
   } catch {
     return false;
   }

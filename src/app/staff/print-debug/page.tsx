@@ -175,6 +175,12 @@ export default function StaffPrinterDebugPage() {
           }
         });
 
+        // Register state transition logging hook
+        qzManager.onStateTransition((entry) => {
+          addLog(`[STATE] ${entry.event} - ${entry.details || 'No details'}`, entry.event.includes('FAILED') || entry.event === 'DISCONNECTED' ? 'error' : entry.event.includes('SUCCESS') || entry.event === 'TRUSTED_READY' ? 'success' : 'info');
+          refreshTelemetry();
+        });
+
         // 3. Connect QZ websocket
         const ok = await qzManager.connect(true);
         setQzConnected(ok);
@@ -201,6 +207,7 @@ export default function StaffPrinterDebugPage() {
     return () => {
       clearInterval(interval);
       qzManager.setSignDebugCallback(() => {});
+      qzManager.onStateTransition(() => {});
     };
   }, []);
 
@@ -1209,9 +1216,8 @@ export default function StaffPrinterDebugPage() {
         </div>
         {/* RIGHT COLUMN - CRYPTOGRAPHIC DIAGNOSTICS & TRUST STATE */}
         <div className="lg:col-span-5 space-y-6">
-
-          {/* Row 1: Dev Mode & Trust Indicators */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Row 1: Dev Mode & Trust Indicators & Live WebSocket State */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* DEVELOPMENT MODE CARD */}
             <div className="bg-white border border-gray-200 p-4 rounded-2xl shadow-sm space-y-3 flex flex-col justify-between">
               <div>
@@ -1250,7 +1256,7 @@ export default function StaffPrinterDebugPage() {
                 </div>
                 <div className="p-1.5 border rounded-lg bg-gray-50 flex flex-col justify-between">
                   <span className="text-gray-400 font-bold block">Certificate</span>
-                  <span className={`font-bold text-[10px] ${publicCert ? 'text-green-600' : 'text-amber-500'}`}>
+                  <span className={`font-bold text-[10px] ${publicCert ? 'text-green-650' : 'text-amber-500'}`}>
                     {publicCert ? 'LOADED' : 'MISSING'}
                   </span>
                 </div>
@@ -1264,6 +1270,41 @@ export default function StaffPrinterDebugPage() {
                   <span className="text-gray-400 font-bold block">Silent Print</span>
                   <span className={`font-bold text-[10px] ${isTrusted && !unsignedMode ? 'text-green-600' : 'text-amber-500'}`}>
                     {isTrusted && !unsignedMode ? 'ACTIVE' : 'POPUP'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* LIVE WEBSOCKET STATE CARD */}
+            <div className="bg-white border border-gray-200 p-4 rounded-2xl shadow-sm space-y-3">
+              <h2 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5 border-b pb-2">
+                <Wifi size={13} className="text-[#AE1B1E]" /> Live WS State
+              </h2>
+              <div className="text-[9px] space-y-1 font-mono">
+                <div className="flex justify-between">
+                  <span className="text-gray-400 font-bold">ACTIVE:</span>
+                  <span className={`font-bold ${sessionInfo.isWsConnected ? 'text-green-600' : 'text-red-500'}`}>
+                    {String(sessionInfo.isWsConnected).toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400 font-bold">DAEMON URL:</span>
+                  <span className="text-gray-800 font-bold">wss://localhost:8181</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400 font-bold">CONNECT TS:</span>
+                  <span className="text-gray-700 truncate max-w-[80px]">
+                    {sessionInfo.connectionTimestamp ? new Date(sessionInfo.connectionTimestamp).toLocaleTimeString() : 'N/A'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400 font-bold">RECONNECTS:</span>
+                  <span className="text-gray-800">{sessionInfo.reconnectCount}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400 font-bold">SESSION ID:</span>
+                  <span className="text-gray-800 font-bold truncate max-w-[80px]" title={sessionInfo.activeSessionId}>
+                    {sessionInfo.activeSessionId || 'N/A'}
                   </span>
                 </div>
               </div>

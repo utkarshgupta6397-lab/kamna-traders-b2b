@@ -39,12 +39,76 @@ class QzManager {
   private certificatePromiseRegistered = false;
   private signaturePromiseRegistered = false;
 
+  // Tracing State Transitions History
+  private stateTransitions: Array<{ event: string; timestamp: string; sessionId: string; details?: string }> = [];
+  private stateTransitionCallback: ((entry: any) => void) | null = null;
+  private isTransitioningConnection = false;
+  private disconnectDebounceTimer: any = null;
+  private isWsConnected = false;
+
   private constructor() {
     if (typeof window !== 'undefined') {
       this.unsignedMode = localStorage.getItem('qz_unsigned_mode') === 'true';
       this.activeSessionId = 'QZ_SESS_' + Math.random().toString(36).substring(2, 10).toUpperCase();
       this.configureSecurity();
+      this.setupConnectionCallbacks();
     }
+  }
+
+  private setupConnectionCallbacks() {
+    qz.websocket.setClosedCallbacks((evt: any) => {
+      if (this.isTransitioningConnection) {
+        console.log('[QzManager] WebSocket Close event ignored (planned connection transition)');
+        return;
+      }
+      this.handleDisconnectEvent(evt);
+    });
+
+    qz.websocket.setErrorCallbacks((evt: any) => {
+      if (this.isTransitioningConnection) {
+        console.log('[QzManager] WebSocket Error event ignored (planned connection transition)');
+        return;
+      }
+      this.logStateTransition('CONNECT_FAILED', evt?.message || String(evt));
+    });
+  }
+
+  private handleDisconnectEvent(evt: any) {
+    if (this.disconnectDebounceTimer) return;
+    
+    this.logStateTransition('DISCONNECTED_PENDING', 'Websocket closed, debouncing disconnect transition');
+    
+    this.disconnectDebounceTimer = setTimeout(() => {
+      this.disconnectDebounceTimer = null;
+      if (!qz.websocket.isActive()) {
+        this.isWsConnected = false;
+        this.logStateTransition('DISCONNECTED', evt?.reason || 'Connection lost');
+      } else {
+        this.logStateTransition('DISCONNECTED_ABORTED', 'Websocket recovered before debounce expired');
+      }
+    }, 2000);
+  }
+
+  public logStateTransition(event: string, details?: string) {
+    const entry = {
+      event,
+      timestamp: new Date().toISOString(),
+      sessionId: this.activeSessionId || 'N/A',
+      details
+    };
+    this.stateTransitions.push(entry);
+    console.log(`[QzManager] [STATE TRANSITION] ${event} (Session: ${this.activeSessionId}):`, details || '');
+    if (this.stateTransitionCallback) {
+      this.stateTransitionCallback(entry);
+    }
+  }
+
+  public onStateTransition(cb: (entry: any) => void) {
+    this.stateTransitionCallback = cb;
+  }
+
+  public getStateTransitions() {
+    return this.stateTransitions;
   }
 
   public setUnsignedMode(active: boolean) {
@@ -78,7 +142,9 @@ class QzManager {
       isSignaturePromiseRegistered: this.signaturePromiseRegistered,
       lastForensicTestPayloadHash: this.lastForensicTestPayloadHash,
       lastActualPrintPayloadHash: this.lastActualPrintPayloadHash,
-      lastBackendSigningPayloadHash: this.lastBackendSigningPayloadHash
+      lastBackendSigningPayloadHash: this.lastBackendSigningPayloadHash,
+      stateTransitions: this.stateTransitions,
+      isWsConnected: this.isWsConnected || (typeof window !== 'undefined' && qz.websocket.isActive())
     };
   }
 
@@ -88,8 +154,10 @@ class QzManager {
 
   public async hardReconnect(): Promise<boolean> {
     if (typeof window === 'undefined') return false;
+    this.isTransitioningConnection = true;
     try {
       console.log('[QzManager] [QZ RECONNECT PIPELINE] --- STARTING HARD RECONNECT ---');
+      this.logStateTransition('RECONNECTING', 'Starting hard reconnect');
       if (qz.websocket.isActive()) {
         console.log('[QzManager] [QZ RECONNECT PIPELINE] Disconnecting active stale WebSocket session...');
         await qz.websocket.disconnect();
@@ -110,11 +178,21 @@ class QzManager {
       console.log('[QzManager] [QZ RECONNECT PIPELINE] Reconnecting to QZ Tray WebSocket...');
       await qz.websocket.connect();
       
+      this.isWsConnected = true;
+      if (this.disconnectDebounceTimer) {
+        clearTimeout(this.disconnectDebounceTimer);
+        this.disconnectDebounceTimer = null;
+      }
+      this.logStateTransition('CONNECT_SUCCESS', 'Reconnected via hard reconnect');
+      this.logStateTransition('TRUSTED_READY');
       console.log('[QzManager] [QZ RECONNECT PIPELINE] --- HARD RECONNECT SUCCESSFUL ---');
       return true;
-    } catch (err) {
+    } catch (err: any) {
       console.error('[QzManager] [QZ RECONNECT PIPELINE] Hard reconnect sequence failed:', err);
+      this.logStateTransition('CONNECT_FAILED', `Hard reconnect failed: ${err.message || err}`);
       return false;
+    } finally {
+      this.isTransitioningConnection = false;
     }
   }
 
@@ -304,6 +382,7 @@ class QzManager {
     await this.loadPrinter(forceRefresh);
 
     if (qz.websocket.isActive()) {
+      this.isWsConnected = true;
       return true;
     }
 
@@ -311,13 +390,22 @@ class QzManager {
       return this.connectingPromise;
     }
 
+    this.logStateTransition(this.reconnectCount > 0 ? 'RECONNECTING' : 'CONNECT_START');
+
     this.connectingPromise = (async () => {
       try {
         await qz.websocket.connect();
-        console.log('[QzManager] Connected to QZ Tray WebSocket');
+        this.isWsConnected = true;
+        if (this.disconnectDebounceTimer) {
+          clearTimeout(this.disconnectDebounceTimer);
+          this.disconnectDebounceTimer = null;
+        }
+        this.logStateTransition('CONNECT_SUCCESS');
+        this.logStateTransition('TRUSTED_READY');
         return true;
-      } catch (err) {
+      } catch (err: any) {
         console.error('[QzManager] Failed to connect to QZ Tray WebSocket:', err);
+        this.logStateTransition('CONNECT_FAILED', err.message || String(err));
         return false;
       } finally {
         this.connectingPromise = null;
@@ -340,12 +428,8 @@ class QzManager {
    * Send raw printer data (Uint8Array or string[]) to configured Ethernet printer
    */
   async printRaw(data: Uint8Array | string[]): Promise<void> {
-    // SMOKING GUN #6: Establish hard reconnect lifecycle before print to clear stale websocket sessions
-    console.log('[QzManager] [QZ RECONNECT PIPELINE] Initiating hard reconnect before print to ensure fresh session...');
-    const reconnectOk = await this.hardReconnect();
-    if (!reconnectOk) {
-      throw new Error('[QZ TRUST ERROR] Reconnect failed. QZ Tray desktop app is not responding.');
-    }
+    // Ensure WebSocket session is active and connected
+    await this.connect();
 
     // SMOKING GUN #3: Block printing until trusted session ready
     const isTrusted = this.unsignedMode || (this.isConfigured && this.certificatePromiseRegistered && this.signaturePromiseRegistered);

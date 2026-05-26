@@ -23,6 +23,8 @@ export interface CustomerEnrichment {
   // Display helpers
   displayName: string;
   companyName: string;
+  // Operational markers
+  tallyReady: boolean;
 }
 
 const API_BASE = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
@@ -75,6 +77,18 @@ function resolveBillingAddress(contact: any): {
     billingZip:     (ba.zip || ba.zip_code || ba.postal_code || '').trim(),
     billingCountry: (ba.country || ba.country_code || '').trim(),
   };
+}
+
+/**
+ * Check for cf_tally_ready in direct attributes or custom_fields array.
+ */
+function resolveTallyReady(contact: any): boolean {
+  if (contact.cf_tally_ready === true || contact.cf_tally_ready === 'true') return true;
+  if (Array.isArray(contact.custom_fields)) {
+    const field = contact.custom_fields.find((f: any) => f.api_name === 'cf_tally_ready' || f.api_name === 'tally_ready' || f.placeholder === 'cf_tally_ready');
+    if (field && (field.value === true || field.value === 'true')) return true;
+  }
+  return false;
 }
 
 /**
@@ -194,6 +208,7 @@ export async function POST(request: Request) {
           billingCountry: 'India',
           displayName:    '',
           companyName:    '',
+          tallyReady:     seed % 3 === 0, // Mock some as tally ready
         };
       }
     } else {
@@ -218,6 +233,7 @@ export async function POST(request: Request) {
                   gstNumber:      resolveGstFromContact(contact),
                   displayName:    contact.display_name || contact.contact_name || '',
                   companyName:    contact.company_name || '',
+                  tallyReady:     resolveTallyReady(contact),
                   ...addr,
                 };
               } else {
@@ -277,5 +293,6 @@ function emptyEnrichment(): CustomerEnrichment {
     billingCountry: '',
     displayName: '',
     companyName: '',
+    tallyReady: false,
   };
 }

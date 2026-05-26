@@ -60,6 +60,7 @@ interface CustomerEnrichment {
   billingCountry: string;
   displayName: string;
   companyName: string;
+  tallyReady: boolean;
 }
 
 interface SummaryMeta {
@@ -309,9 +310,11 @@ function TopOpenExposure({ openRows }: { openRows: ExtendedRow[] }) {
 function CustomerCell({
   row,
   enrichment,
+  statusFilter,
 }: {
   row: ExtendedRow;
   enrichment: CustomerEnrichment | undefined;
+  statusFilter: string;
 }) {
   const [show, setShow] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -348,7 +351,7 @@ function CustomerCell({
             href={customerUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="group min-w-0"
+            className="group min-w-0 flex items-center gap-1.5"
             onClick={(e) => e.stopPropagation()}
           >
             <span
@@ -357,6 +360,11 @@ function CustomerCell({
             >
               {row.customerName}
             </span>
+            {statusFilter === 'open' && enrichment?.tallyReady && (
+              <span title="Tally Ready" className="flex shrink-0">
+                <Check size={11} color="#059669" />
+              </span>
+            )}
           </a>
         )}
       </div>
@@ -1838,7 +1846,7 @@ export default function AccountsSummaryView() {
 
                         {/* Customer — with hover card */}
                         <td className="py-3 px-4" style={{ maxWidth: '220px' }}>
-                          <CustomerCell row={row} enrichment={enrichment} />
+                          <CustomerCell row={row} enrichment={enrichment} statusFilter={statusFilter} />
                         </td>
 
                         {/* Value */}
@@ -2009,7 +2017,14 @@ export default function AccountsSummaryView() {
                             {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                           </button>
                           <div>
-                            <p className="text-[13px] font-bold" style={{ color: '#0F172A' }}>{group.customerName}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-[13px] font-bold" style={{ color: '#0F172A' }}>{group.customerName}</p>
+                              {statusFilter === 'open' && enrichMap[group.customerId]?.tallyReady && (
+                                <span title="Tally Ready" className="flex shrink-0">
+                                  <Check size={11} color="#059669" />
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[10px] font-mono mt-0.5" style={{ color: '#94A3B8' }}>
                               {(() => {
                                 const city = enrichMap[group.customerId]?.billingCity;

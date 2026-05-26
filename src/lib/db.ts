@@ -32,6 +32,25 @@ export async function initializeDatabase() {
   try {
     const { ensureInitialUsers } = await import('./initial-data');
     await ensureInitialUsers();
+
+    // Startup Diagnostics Logs
+    const userCount = await prisma.user.count();
+    const skuCount = await prisma.sku.count();
+    const cartCount = await prisma.cart.count();
+    const dbUrl = getDatabaseUrl() || 'Unknown';
+    const dbName = dbUrl.split('/').pop()?.split('?')[0] || 'Unknown';
+    const orgId = process.env.ZOHO_ORGANIZATION_ID || 'Unknown';
+
+    console.log('\n==================================================');
+    console.log('       KAMNA TRADERS B2B STARTUP DIAGNOSTICS');
+    console.log('==================================================');
+    console.log(` Active DB URL:      ${dbUrl}`);
+    console.log(` Active DB Name:     ${dbName}`);
+    console.log(` Total Users in DB:  ${userCount}`);
+    console.log(` Total SKUs in DB:   ${skuCount}`);
+    console.log(` Total Carts in DB:  ${cartCount}`);
+    console.log(` Zoho Org ID:        ${orgId}`);
+    console.log('==================================================\n');
   } catch (err) {
     console.error('[DB] Initialization failed:', err);
     globalForInit.__db_initialized = false; 

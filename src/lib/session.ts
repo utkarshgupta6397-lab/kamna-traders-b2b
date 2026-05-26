@@ -107,6 +107,7 @@ export async function validateSession(sessionToken: string): Promise<{
           accountsAccess: true,
           accounts_customer_statement: true,
           accounts_transactions: true,
+          accounts_summary_view: true,
         }
       }
     }
@@ -122,6 +123,7 @@ export async function validateSession(sessionToken: string): Promise<{
     session.user.canDeleteTransfers = true;
     session.user.accounts_customer_statement = true;
     session.user.accounts_transactions = true;
+    session.user.accounts_summary_view = true;
   }
 
 

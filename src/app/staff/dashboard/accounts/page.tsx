@@ -1,10 +1,13 @@
 import { getSession } from '@/lib/auth';
 import AccountsTabs from './AccountsTabs';
+import CustomerStatementView from '@/components/zoho/CustomerStatementView';
+import LiveBankTransactionsView from '@/components/bank/LiveBankTransactionsView';
+import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AccountsPage() {
+export default async function AccountsPage(props: { searchParams: Promise<{ tab?: string }> }) {
   const session = await getSession();
 
   if (!session) {
@@ -14,15 +17,36 @@ export default async function AccountsPage() {
   const isAdmin = session.role === 'ADMIN';
   const canViewStatement = isAdmin || !!session.accounts_customer_statement;
   const canViewTransactions = isAdmin || !!session.accounts_transactions;
+  const canViewSummary = isAdmin || !!session.accounts_summary_view;
 
-  if (!canViewStatement && !canViewTransactions) {
+  if (!canViewStatement && !canViewTransactions && !canViewSummary) {
     redirect('/staff/dashboard?error=unauthorized_accounts');
+  }
+
+  const searchParams = await props.searchParams;
+  let activeTab: 'statement' | 'transactions' | 'summary' = 'statement';
+  
+  if (searchParams.tab === 'transactions' && canViewTransactions) {
+    activeTab = 'transactions';
+  } else if (!canViewStatement && canViewTransactions) {
+    activeTab = 'transactions';
   }
 
   return (
     <AccountsTabs 
       canViewStatement={canViewStatement} 
       canViewTransactions={canViewTransactions} 
-    />
+      canViewSummary={canViewSummary}
+      activeTab={activeTab}
+    >
+      {activeTab === 'statement' && canViewStatement && (
+        <Suspense fallback={<div className="p-12 text-center text-gray-500">Loading statement...</div>}>
+          <CustomerStatementView />
+        </Suspense>
+      )}
+      {activeTab === 'transactions' && canViewTransactions && (
+        <LiveBankTransactionsView />
+      )}
+    </AccountsTabs>
   );
 }

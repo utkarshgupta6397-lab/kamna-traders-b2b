@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import {
   Search, RefreshCw, ChevronDown, ChevronRight,
-  FileJson, Copy, AlertCircle, User, MapPin, Phone,
-  FileText, TrendingUp, Info, Activity, Lock, Printer, Check
+  FileJson, Copy, AlertCircle, User, Phone,
+  TrendingUp, Activity, Lock, Printer, Check, Download
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
@@ -75,7 +75,7 @@ type Statement = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Format as Indian rupee with comma grouping */
+/** Format as Indian rupee with comma grouping, always positive display */
 function fmt(n: number) {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
@@ -86,8 +86,8 @@ function fmt(n: number) {
 
 /**
  * Render a balance in accounting style:
- *   positive -> positive
- *   negative -> negative
+ *   positive -> positive (customer owes us)
+ *   negative -> negative (we owe customer / advance)
  */
 function fmtBalance(n: number) {
   if (n === 0) return '₹0.00';
@@ -100,6 +100,54 @@ function fmtBalance(n: number) {
   return n > 0 ? val : `-${val}`;
 }
 
+/**
+ * Render the opening balance in presentation-friendly form.
+ * If negative (advance/credit), returns an object with label + amount for special display.
+ * Internal calculations always use the raw number.
+ */
+function getOpeningBalancePresentation(n: number): { label: string; amount: string; isCredit: boolean } {
+  if (n < 0) {
+    return {
+      label: 'Advance Balance',
+      amount: fmt(n), // fmt uses Math.abs
+      isCredit: true,
+    };
+  }
+  return {
+    label: 'Opening Balance',
+    amount: fmtBalance(n),
+    isCredit: false,
+  };
+}
+
+/** Strip redundant prefixes from transaction description */
+function cleanDescription(desc: string, type: string): string {
+  if (!desc) return desc;
+  if (type === 'payment') {
+    // Remove "Payment - " or "Payment-" prefix (case-insensitive)
+    return desc.replace(/^payment\s*[-–]\s*/i, '').trim();
+  }
+  if (type === 'invoice' || type === 'bill') {
+    // Remove "Invoice " or "Bill " prefix (case-insensitive)
+    return desc.replace(/^(invoice|bill)\s+/i, '').trim();
+  }
+  return desc;
+}
+
+/** Humanize cached age in ms */
+function formatCachedAge(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMins = minutes % 60;
+  if (hours < 24) {
+    return remainingMins > 0 ? `${hours}h ${remainingMins}m ago` : `${hours}h ago`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
 /** Extract YYYY-MM-DD explicitly to avoid timezone shift */
 function parseRawDate(iso: string) {
@@ -146,6 +194,25 @@ function fmtDateTime(iso: string) {
   return `${datePart} ${timePart}`;
 }
 
+// PDF number formatters — use NotoSans font (embedded) which supports ₹ (U+20B9)
+/** Absolute value formatted as ₹X,XX,XXX.XX for PDF output */
+function pdfFmt(n: number): string {
+  return '\u20b9' + new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(n));
+}
+
+/** Signed balance formatted for PDF — negative = credit/advance */
+function pdfFmtBalance(n: number): string {
+  if (n === 0) return '\u20b90.00';
+  const val = '\u20b9' + new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(n));
+  return n > 0 ? val : `-${val}`;
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function CustomerStatementView() {
@@ -163,8 +230,16 @@ export default function CustomerStatementView() {
   } | null>(null);
   const [debugOpen, setDebugOpen] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [cachedAt, setCachedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
+
+  // Update "now" every 30s so cached age stays fresh without being noisy
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleThermalPrint = async () => {
     const s = statement?.data;
@@ -201,6 +276,226 @@ export default function CustomerStatementView() {
     }
   };
 
+  // ── PDF Download (visible statement only) ────────────────────────────────
+  const handleDownloadPDF = async () => {
+    const s = statement?.data;
+    if (!s) return;
+    setPdfGenerating(true);
+    try {
+      toast.loading('Generating PDF…', { id: 'pdf-stmt' });
+
+      const jsPDF = (await import('jspdf')).default;
+      const autoTable = (await import('jspdf-autotable')).default;
+
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageW = doc.internal.pageSize.getWidth();
+      const margin = 14;
+      const colW = pageW - margin * 2;
+
+      // ── Embed NotoSans for ₹ (U+20B9) support ──────────────────────────
+      // Built-in jsPDF fonts (Helvetica/Times) are WinAnsi and lack the Rupee
+      // glyph. NotoSans is fetched from /fonts/ (bundled in public/) and
+      // embedded so ₹ renders correctly without fallback box characters.
+      try {
+        const fontRes = await fetch('/fonts/NotoSans-Regular.ttf');
+        const fontBuf = await fontRes.arrayBuffer();
+        const fontB64 = btoa(
+          new Uint8Array(fontBuf).reduce((s, b) => s + String.fromCharCode(b), '')
+        );
+        doc.addFileToVFS('NotoSans-Regular.ttf', fontB64);
+        doc.addFont('NotoSans-Regular.ttf', 'NotoSans', 'normal');
+        doc.addFont('NotoSans-Regular.ttf', 'NotoSans', 'bold'); // use same file; bold via weight
+      } catch {
+        // Font load failed — fall back to helvetica (₹ may render as box)
+        console.warn('[PDF] NotoSans font load failed, falling back to helvetica');
+      }
+      const pdfFont = doc.getFontList()['NotoSans'] ? 'NotoSans' : 'helvetica';
+
+      // ── colour palette ──────────────────────────────────────────────────
+      const cNavy: [number, number, number]   = [26,  39, 102];  // #1A2766
+      const cSlate: [number, number, number]  = [100, 116, 139]; // slate-500
+      const cDark: [number, number, number]   = [15,  23,  42];  // slate-900
+      const cRed: [number, number, number]    = [220, 38,  38];  // red-600
+      const cGreen: [number, number, number]  = [5,  150, 105];  // emerald-600
+      const cBg: [number, number, number]     = [248, 250, 252]; // slate-50
+
+      // Visible transactions (respects isExpanded toggle)
+      const visibleTxs = isExpanded ? s.transactions : s.transactions.slice(-12);
+      const openingBal = visibleTxs.length > 0
+        ? visibleTxs[0].balanceAfter - visibleTxs[0].netEffect
+        : s.closingBalance;
+      const openingPres = getOpeningBalancePresentation(openingBal);
+      // PDF-safe amount strings (Rs. prefix, no ₹ glyph)
+      const pdfOpeningAmt  = pdfFmt(openingBal);
+      const totalInvoiced  = visibleTxs.filter(t => t.type === 'invoice').reduce((a, t) => a + Math.abs(t.netEffect), 0);
+      const totalPaid      = visibleTxs.filter(t => t.type === 'payment').reduce((a, t) => a + Math.abs(t.netEffect), 0);
+
+      // ── Header bar ──────────────────────────────────────────────────────
+      doc.setFillColor(...cNavy);
+      doc.rect(0, 0, pageW, 26, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont(pdfFont, 'bold');
+      doc.setFontSize(14);
+      doc.text('Customer Statement', margin, 11);
+
+      doc.setFont(pdfFont, 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(190, 205, 225);
+      doc.text('Kamna Traders · Receivables Ledger', margin, 18);
+
+      // Customer name + GST right-aligned
+      doc.setFont(pdfFont, 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(255, 255, 255);
+      doc.text(s.customer.contactName, pageW - margin, 10, { align: 'right' });
+      if (s.customer.gstNo) {
+        doc.setFont(pdfFont, 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(190, 205, 225);
+        doc.text(`GST: ${s.customer.gstNo}`, pageW - margin, 16, { align: 'right' });
+      }
+      if (s.customer.mobile) {
+        doc.setFontSize(7.5);
+        doc.text(s.customer.mobile, pageW - margin, 21, { align: 'right' });
+      }
+
+      let curY = 32;
+
+      // ── KPI strip ───────────────────────────────────────────────────────
+      const kpis = [
+        { label: openingPres.isCredit ? 'Advance / Credit' : 'Opening Balance', val: pdfOpeningAmt,              color: openingPres.isCredit ? cGreen : cDark },
+        { label: 'Total Invoiced',  val: pdfFmt(totalInvoiced),                  color: cDark  },
+        { label: 'Total Paid',      val: pdfFmt(totalPaid),                      color: cGreen },
+        { label: 'Closing Balance', val: pdfFmtBalance(s.closingBalance),
+          color: s.closingBalance > 0 ? cRed : s.closingBalance < 0 ? cGreen : cDark },
+      ];
+      const kpiW = colW / kpis.length;
+      kpis.forEach((k, i) => {
+        const x = margin + i * kpiW;
+        doc.setFillColor(...cBg);
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(x, curY, kpiW - 2, 16, 'FD');
+
+        doc.setFont(pdfFont, 'bold');
+        doc.setFontSize(6);
+        doc.setTextColor(...cSlate);
+        doc.text(k.label.toUpperCase(), x + 3, curY + 5.5);
+
+        doc.setFont(pdfFont, 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(...k.color);
+        doc.text(k.val, x + 3, curY + 12.5);
+      });
+      curY += 22;
+
+      // ── Ledger table ────────────────────────────────────────────────────
+      const tableHead = [['Date', 'Type', 'Details', 'Invoice Amt', 'Payment Amt', 'Balance']];
+
+      // Opening row (PDF-safe amounts)
+      const openRow = [
+        '—', '—',
+        `Opening Balance${openingPres.isCredit ? ' (Advance/Credit)' : ''}`,
+        '—', '—', pdfOpeningAmt
+      ];
+
+      const txRows = visibleTxs.map(tx => [
+        fmtDate(tx.date),
+        tx.type === 'invoice' ? 'Invoice' : tx.type === 'payment' ? 'Payment' : 'Bill',
+        cleanDescription(tx.description, tx.type),
+        tx.netEffect > 0  ? pdfFmt(tx.amount) : '—',
+        tx.netEffect <= 0 ? pdfFmt(tx.amount) : '—',
+        pdfFmtBalance(tx.balanceAfter),
+      ]);
+
+      const totalsRow = [
+        '', '', 'TOTALS',
+        pdfFmt(totalInvoiced),
+        pdfFmt(totalPaid),
+        pdfFmtBalance(s.closingBalance),
+      ];
+
+      autoTable(doc, {
+        startY: curY,
+        head: tableHead,
+        body: [openRow, ...txRows, totalsRow],
+        theme: 'striped',
+        headStyles: { fillColor: cNavy, textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold', font: pdfFont },
+        bodyStyles: { fontSize: 7, textColor: [51, 65, 85], font: pdfFont },
+        columnStyles: {
+          0: { cellWidth: 20 },
+          1: { cellWidth: 16 },
+          2: { cellWidth: 'auto' },
+          3: { halign: 'right', cellWidth: 34 },
+          4: { halign: 'right', cellWidth: 34, textColor: [5, 150, 105] },
+          5: { halign: 'right', cellWidth: 34, fontStyle: 'bold' },
+        },
+        styles: { cellPadding: 2, font: pdfFont, overflow: 'ellipsize' },
+        didParseCell: (data) => {
+          if (data.section === 'body') {
+            // Opening balance row — tint blue
+            if (data.row.index === 0) {
+              data.cell.styles.fillColor = [239, 246, 255];
+              if (data.column.index === 5) {
+                data.cell.styles.textColor = openingPres.isCredit ? [5, 150, 105] : [15, 23, 42];
+                data.cell.styles.fontStyle = 'bold';
+              }
+            }
+            // Totals row — dark bg
+            const isLast = data.row.index === txRows.length + 1;
+            if (isLast) {
+              data.cell.styles.fillColor = [241, 245, 249];
+              data.cell.styles.fontStyle = 'bold';
+              if (data.column.index === 3) data.cell.styles.textColor = [15, 23, 42];
+              if (data.column.index === 4) data.cell.styles.textColor = [5, 150, 105];
+              if (data.column.index === 5) {
+                data.cell.styles.textColor = s.closingBalance > 0 ? [220, 38, 38]
+                  : s.closingBalance < 0 ? [5, 150, 105] : [15, 23, 42];
+                data.cell.styles.fontSize = 8;
+              }
+            }
+            // Balance column coloring for normal rows
+            if (data.column.index === 5 && data.row.index > 0 && !isLast) {
+              const txIdx = data.row.index - 1;
+              if (txIdx >= 0 && txIdx < visibleTxs.length) {
+                const b = visibleTxs[txIdx].balanceAfter;
+                data.cell.styles.textColor = b > 0 ? [220, 38, 38] : b < 0 ? [5, 150, 105] : [15, 23, 42];
+              }
+            }
+          }
+        },
+        margin: { left: margin, right: margin },
+      });
+
+      // ── Footer ──────────────────────────────────────────────────────────
+      const finalY = (doc as any).lastAutoTable?.finalY ?? (curY + 40);
+      const footerY = Math.min(finalY + 8, doc.internal.pageSize.getHeight() - 10);
+      doc.setDrawColor(...cSlate);
+      doc.setLineWidth(0.3);
+      doc.line(margin, footerY, pageW - margin, footerY);
+
+      const generatedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+      doc.setFont(pdfFont, 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(...cSlate);
+      doc.text('Generated By: Admin', margin, footerY + 5);
+      doc.text(`Generated At: ${generatedAt}`, margin, footerY + 9);
+      doc.text('Kamna Traders B2B — Confidential', pageW - margin, footerY + 7, { align: 'right' });
+
+      // ── Save ────────────────────────────────────────────────────────────
+      const safeName = (s.customer.contactName || 'CUSTOMER')
+        .toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      doc.save(`${safeName}_STATEMENT_${dateStr}.pdf`);
+      toast.success('Statement PDF downloaded!', { id: 'pdf-stmt' });
+    } catch (err) {
+      console.error('[PDF Export Error]', err);
+      toast.error('Failed to generate PDF.', { id: 'pdf-stmt' });
+    } finally {
+      setPdfGenerating(false);
+    }
+  };
+
   // ── Fetch ──────────────────────────────────────────────────────────────────
   const handleFetch = async (overrideId?: string, force = false) => {
     const idToFetch = (overrideId || customerId).trim();
@@ -218,7 +513,6 @@ export default function CustomerStatementView() {
           const parsed = JSON.parse(cached);
           setStatement({ success: true, data: parsed.data });
           setCachedAt(parsed.cachedAt);
-          // Optional: toast.success('Loaded from cache');
           return;
         } catch (e) {
           console.error('Failed to parse cache', e);
@@ -236,9 +530,10 @@ export default function CustomerStatementView() {
       const data = await res.json();
       setStatement(data);
       if (data.success && data.data) {
-        const now = Date.now();
-        setCachedAt(now);
-        sessionStorage.setItem(cacheKey, JSON.stringify({ data: data.data, cachedAt: now }));
+        const nowTs = Date.now();
+        setCachedAt(nowTs);
+        setNow(nowTs);
+        sessionStorage.setItem(cacheKey, JSON.stringify({ data: data.data, cachedAt: nowTs }));
         toast.success(force ? 'Statement refreshed.' : 'Statement loaded.');
       } else {
         toast.error(data.error || 'Failed to load statement.');
@@ -266,7 +561,6 @@ export default function CustomerStatementView() {
         await navigator.clipboard.writeText(textToCopy);
         toast.success('Raw JSON copied!');
       } else {
-        // Fallback for environments where clipboard API is unavailable
         const textArea = document.createElement('textarea');
         textArea.value = textToCopy;
         textArea.style.position = 'fixed';
@@ -283,7 +577,6 @@ export default function CustomerStatementView() {
           toast.success('Raw JSON copied!');
         } else {
           toast.error('Failed to copy to clipboard.');
-          console.error('Fallback clipboard copy failed.');
         }
       }
     } catch (err) {
@@ -308,7 +601,7 @@ export default function CustomerStatementView() {
       <div>
         <h1 className="text-2xl font-bold">Customer Statement Preview</h1>
         <p className="text-xs text-gray-400 mt-0.5">
-          Prototype · Reverse-calculated opening balance · Latest 10 invoices · Payments excluded
+          Finance-grade customer ledger · Reverse-calculated opening balance
         </p>
       </div>
 
@@ -338,13 +631,16 @@ export default function CustomerStatementView() {
               }`}
             />
           </div>
-          {cachedAt && (
-            <div className="absolute -bottom-5 left-0 flex items-center gap-1.5 text-[10px] text-gray-500 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-              Cached {Math.floor((Date.now() - cachedAt) / 60000) === 0 ? 'just now' : `${Math.floor((Date.now() - cachedAt) / 60000)}m ago`}
-            </div>
-          )}
         </div>
+
+        {/* Cached label — stable position, right-aligned */}
+        {cachedAt && (
+          <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-gray-400 font-medium self-end pb-2 shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+            Cached {formatCachedAge(now - cachedAt)}
+          </div>
+        )}
+
         <button
           id="fetch-statement-btn"
           onClick={() => handleFetch(undefined, true)}
@@ -354,16 +650,34 @@ export default function CustomerStatementView() {
           {loading ? <RefreshCw size={15} className="animate-spin" /> : 'Load Statement'}
         </button>
         {s && (
-          <button
-            onClick={handleThermalPrint}
-            disabled={printing}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-black transition-colors disabled:opacity-50 h-[38px] print:hidden"
-          >
-            {printing ? <RefreshCw size={15} className="animate-spin" /> : <Printer size={15} />}
-            {printing ? 'Printing...' : 'Print Statement'}
-          </button>
+          <>
+            <button
+              onClick={handleThermalPrint}
+              disabled={printing}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-black transition-colors disabled:opacity-50 h-[38px] print:hidden"
+            >
+              {printing ? <RefreshCw size={15} className="animate-spin" /> : <Printer size={15} />}
+              {printing ? 'Printing…' : 'Print'}
+            </button>
+            <button
+              onClick={handleDownloadPDF}
+              disabled={pdfGenerating}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-emerald-700 text-white rounded-lg text-sm font-bold hover:bg-emerald-800 transition-colors disabled:opacity-50 h-[38px] print:hidden"
+            >
+              {pdfGenerating ? <RefreshCw size={15} className="animate-spin" /> : <Download size={15} />}
+              {pdfGenerating ? 'Generating PDF…' : 'Download Statement PDF'}
+            </button>
+          </>
         )}
       </div>
+
+      {/* Mobile cached label */}
+      {cachedAt && (
+        <div className="sm:hidden flex items-center gap-1.5 text-[10px] text-gray-400 font-medium px-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+          Cached {formatCachedAge(now - cachedAt)}
+        </div>
+      )}
 
       {/* ── Error state ────────────────────────────────────────────────── */}
       {statement && !statement.success && (
@@ -375,17 +689,28 @@ export default function CustomerStatementView() {
 
       {s && (() => {
         const visibleTransactions = isExpanded ? s.transactions : s.transactions.slice(-12);
-        const dynamicOpeningBalance = visibleTransactions.length > 0 ? (visibleTransactions[0].balanceAfter + visibleTransactions[0].netEffect) : s.closingBalance;
-        const totalInvoiceAmount = visibleTransactions.filter(t => t.type === 'invoice').reduce((sum, t) => sum + Math.abs(t.netEffect), 0);
-        const totalPaymentAmount = visibleTransactions.filter(t => t.type === 'payment').reduce((sum, t) => sum + Math.abs(t.netEffect), 0);
-        
-        // Payment breakdown
-        const payments = visibleTransactions.filter(t => t.type === 'payment');
-        const paymentBreakdown = payments.reduce((acc: any, p: any) => {
-          const mode = p.description.includes('-') ? p.description.split('-')[1].trim() : 'Other/Unknown';
-          acc[mode] = (acc[mode] || 0) + Math.abs(p.netEffect);
-          return acc;
-        }, {});
+        const dynamicOpeningBalance = visibleTransactions.length > 0
+          ? (visibleTransactions[0].balanceAfter - visibleTransactions[0].netEffect)
+          : s.closingBalance;
+        const openingPresentation = getOpeningBalancePresentation(dynamicOpeningBalance);
+
+        // Totals for visible period
+        const totalInvoiceAmount = visibleTransactions
+          .filter(t => t.type === 'invoice')
+          .reduce((sum, t) => sum + Math.abs(t.netEffect), 0);
+        const totalPaymentAmount = visibleTransactions
+          .filter(t => t.type === 'payment')
+          .reduce((sum, t) => sum + Math.abs(t.netEffect), 0);
+
+        // Payment breakdown (clean mode labels)
+        const paymentBreakdown = visibleTransactions
+          .filter(t => t.type === 'payment')
+          .reduce((acc: Record<string, number>, p) => {
+            const cleaned = cleanDescription(p.description, 'payment');
+            const mode = cleaned || 'Other';
+            acc[mode] = (acc[mode] || 0) + Math.abs(p.netEffect);
+            return acc;
+          }, {});
 
         return (
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
@@ -409,13 +734,9 @@ export default function CustomerStatementView() {
                     >
                       {s.customer.contactName} ↗
                     </a>
-                    {s.customer.companyName && (
-                      <div className="text-[11px] font-medium text-gray-500 leading-tight mt-0.5">{s.customer.companyName}</div>
+                    {s.customer.gstNo && (
+                      <div className="text-[11px] font-mono text-gray-400 leading-tight mt-0.5 tracking-wide">{s.customer.gstNo}</div>
                     )}
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase text-gray-500 font-bold mb-0.5">GST No</div>
-                    <div className="font-mono text-[13px] font-semibold text-gray-800">{s.customer.gstNo || '—'}</div>
                   </div>
                   <div>
                     <div className="text-[10px] uppercase text-gray-500 font-bold mb-0.5">Mobile</div>
@@ -424,15 +745,6 @@ export default function CustomerStatementView() {
                       {s.customer.mobile || '—'}
                     </div>
                   </div>
-                  {s.customer.billingAddress && (
-                    <div className="col-span-2 sm:col-span-3">
-                      <div className="text-[10px] uppercase text-gray-500 font-bold mb-0.5">Billing Address</div>
-                      <div className="flex items-start gap-1.5 text-xs text-gray-600 leading-tight font-medium">
-                        <MapPin size={12} className="text-gray-400 mt-0.5 shrink-0" />
-                        {s.customer.billingAddress}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -474,7 +786,7 @@ export default function CustomerStatementView() {
                   <div className="flex items-center gap-2">
                     <TrendingUp size={14} className="text-[#1A2766]" />
                     <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
-                      Statement Preview
+                      Statement Ledger
                     </span>
                     <span className="text-[10px] text-gray-400 font-medium">
                       ({s.transactionCount} transaction{s.transactionCount !== 1 ? 's' : ''})
@@ -483,14 +795,14 @@ export default function CustomerStatementView() {
                 </div>
 
                 <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-                  <table className="w-full text-sm relative">
+                  <table className="w-full text-sm relative" style={{ fontVariantNumeric: 'tabular-nums' }}>
                     <thead className="sticky top-0 bg-gray-50 text-[10px] uppercase text-gray-500 font-bold border-b border-gray-200 z-10 shadow-sm">
                       <tr>
                         <th className="px-3 py-2 text-left w-24">Date</th>
-                        <th className="px-3 py-2 text-left min-w-[140px] whitespace-nowrap">Transaction Type</th>
-                        <th className="px-3 py-2 text-left">Transaction Details</th>
-                        <th className="px-3 py-2 text-right whitespace-nowrap">Invoice Amount</th>
-                        <th className="px-3 py-2 text-right whitespace-nowrap">Payment Amount</th>
+                        <th className="px-3 py-2 text-left min-w-[120px] whitespace-nowrap">Type</th>
+                        <th className="px-3 py-2 text-left">Details</th>
+                        <th className="px-3 py-2 text-right whitespace-nowrap">Invoice Amt</th>
+                        <th className="px-3 py-2 text-right whitespace-nowrap">Payment Amt</th>
                         <th className="px-3 py-2 text-right">Balance</th>
                       </tr>
                     </thead>
@@ -499,16 +811,34 @@ export default function CustomerStatementView() {
                       <tr className="bg-blue-50/20">
                         <td className="px-3 py-1.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
                         <td className="px-3 py-1.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
-                        <td className="px-3 py-1.5 font-bold text-gray-800 text-[11px]">Opening Balance {isExpanded ? '' : '(Visible Period)'}</td>
+                        <td className="px-3 py-1.5 text-[11px]">
+                          {openingPresentation.isCredit ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="font-bold text-gray-800">Opening Balance</span>
+                              <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full tracking-wide uppercase">
+                                Advance / Credit
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="font-bold text-gray-800">
+                              Opening Balance {isExpanded ? '' : '(Visible Period)'}
+                            </span>
+                          )}
+                        </td>
                         <td className="px-3 py-1.5 text-right text-[11px] text-gray-400">—</td>
                         <td className="px-3 py-1.5 text-right text-[11px] text-gray-400">—</td>
-                        <td className="px-3 py-1.5 text-right font-bold text-gray-900 text-xs tabular-nums">
-                          {fmtBalance(dynamicOpeningBalance)}
+                        <td className="px-3 py-1.5 text-right text-xs font-bold tabular-nums">
+                          {openingPresentation.isCredit ? (
+                            <span className="text-emerald-600">{openingPresentation.amount}</span>
+                          ) : (
+                            <span className="text-gray-900">{openingPresentation.amount}</span>
+                          )}
                         </td>
                       </tr>
 
                       {/* Transaction rows */}
                       {visibleTransactions.map((tx) => {
+                        const displayDesc = cleanDescription(tx.description, tx.type);
                         return (
                           <tr 
                             key={tx.id} 
@@ -519,11 +849,11 @@ export default function CustomerStatementView() {
                               {fmtDateTime(tx.datetime || tx.date)}
                             </td>
                             <td className="px-3 py-1.5 text-[10px] font-semibold text-gray-600 align-middle uppercase tracking-wider whitespace-nowrap">
-                              {tx.type === 'invoice' ? 'Invoice' : tx.type === 'payment' ? 'Payment Received' : 'Purchase Bill'}
+                              {tx.type === 'invoice' ? 'Invoice' : tx.type === 'payment' ? 'Payment' : 'Purchase Bill'}
                             </td>
                             <td className="px-3 py-1.5 text-[11px] font-medium text-blue-700 group-hover:text-blue-900 group-hover:underline underline-offset-2 align-middle">
                               <div className="flex items-center gap-1.5">
-                                <span>{tx.description}</span>
+                                <span>{displayDesc}</span>
                                 {tx.isVerified && (
                                   <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
                                     <Check size={9} strokeWidth={4} />
@@ -534,7 +864,7 @@ export default function CustomerStatementView() {
                             <td className="px-3 py-1.5 text-right text-[11px] font-semibold text-gray-700 whitespace-nowrap align-middle tabular-nums">
                               {tx.netEffect > 0 ? fmt(tx.amount) : '—'}
                             </td>
-                            <td className="px-3 py-1.5 text-right text-[11px] font-semibold text-gray-700 whitespace-nowrap align-middle tabular-nums">
+                            <td className="px-3 py-1.5 text-right text-[11px] font-semibold whitespace-nowrap align-middle tabular-nums" style={{ color: tx.netEffect <= 0 ? '#059669' : 'transparent' }}>
                               {tx.netEffect <= 0 ? fmt(tx.amount) : '—'}
                             </td>
                             <td className="px-3 py-1.5 text-right whitespace-nowrap align-middle">
@@ -545,11 +875,9 @@ export default function CustomerStatementView() {
                                 
                                 if (isZero) {
                                   return (
-                                    <div className="flex flex-col items-end justify-center">
-                                      <span className="text-[11px] font-extrabold text-emerald-600 tabular-nums">
-                                        {fmtBalance(b)}
-                                      </span>
-                                    </div>
+                                    <span className="text-[11px] font-extrabold text-emerald-600 tabular-nums">
+                                      {fmtBalance(b)}
+                                    </span>
                                   );
                                 }
                                 
@@ -565,14 +893,12 @@ export default function CustomerStatementView() {
                                 }
                                 
                                 return (
-                                  <div className="flex flex-col items-end justify-center">
-                                    <span className={`text-[11px] tabular-nums ${
-                                      b > 0 ? 'font-semibold text-rose-600' :
-                                      b < 0 ? 'font-semibold text-emerald-600' : 'font-medium text-gray-900'
-                                    }`}>
-                                      {fmtBalance(b)}
-                                    </span>
-                                  </div>
+                                  <span className={`text-[11px] tabular-nums font-semibold ${
+                                    b > 0 ? 'text-rose-600' :
+                                    b < 0 ? 'text-emerald-600' : 'text-gray-900'
+                                  }`}>
+                                    {fmtBalance(b)}
+                                  </span>
                                 );
                               })()}
                             </td>
@@ -588,20 +914,35 @@ export default function CustomerStatementView() {
                         </tr>
                       )}
 
-                      {/* Net Position / Closing row */}
-                      <tr className="border-t-2 border-gray-200 bg-gray-50/80">
-                        <td className="px-3 py-2.5 text-[11px] text-gray-400">—</td>
-                        <td className="px-3 py-2.5 text-[11px] text-gray-400">—</td>
+                      {/* ── TOTALS footer row ── */}
+                      <tr className="border-t-2 border-gray-300 bg-gray-50">
+                        <td className="px-3 py-2.5 text-[10px] text-gray-400 font-bold uppercase tracking-widest" colSpan={2}>Totals</td>
                         <td className="px-3 py-2.5">
-                          <div className="font-extrabold text-gray-900 text-xs uppercase tracking-wide">
-                            Closing Balance
+                          <span className="text-[11px] font-extrabold text-gray-700 uppercase tracking-wide">
+                            {isExpanded ? 'All Transactions' : 'Visible Period'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <div className="flex flex-col items-end">
+                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">Total Invoiced</span>
+                            <span className="text-[12px] font-extrabold text-gray-800 tabular-nums">{fmt(totalInvoiceAmount)}</span>
                           </div>
                         </td>
-                        <td className="px-3 py-2.5 text-right text-[11px] text-gray-400">—</td>
-                        <td className="px-3 py-2.5 text-right text-[11px] text-gray-400">—</td>
                         <td className="px-3 py-2.5 text-right">
-                          <div className={`font-extrabold text-sm tabular-nums ${s.closingBalance > 0 ? 'text-rose-600' : s.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
-                            {fmtBalance(s.closingBalance)}
+                          <div className="flex flex-col items-end">
+                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">Total Paid</span>
+                            <span className="text-[12px] font-extrabold text-emerald-700 tabular-nums">{fmt(totalPaymentAmount)}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <div className="flex flex-col items-end">
+                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">Closing Balance</span>
+                            <span className={`text-[13px] font-extrabold tabular-nums ${
+                              s.closingBalance > 0 ? 'text-rose-600' :
+                              s.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'
+                            }`}>
+                              {fmtBalance(s.closingBalance)}
+                            </span>
                           </div>
                         </td>
                       </tr>
@@ -630,25 +971,33 @@ export default function CustomerStatementView() {
                 <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
                   <Activity size={14} className="text-[#1A2766]" />
                   <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
-                    Period Summary {isExpanded ? '(Since Mar 26)' : '(Visible Period)'}
+                    Period Summary {isExpanded ? '(All)' : '(Visible)'}
                   </span>
                 </div>
                 <div className="p-5 space-y-4">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-500 font-medium">Opening Balance</span>
-                    <span className="font-semibold text-gray-900">{fmtBalance(dynamicOpeningBalance)}</span>
+                  {/* Opening Balance — with credit clarity */}
+                  <div className="flex justify-between items-start text-sm gap-2">
+                    <span className="text-gray-500 font-medium shrink-0">Opening Balance</span>
+                    {openingPresentation.isCredit ? (
+                      <div className="text-right">
+                        <div className="font-semibold text-emerald-600 tabular-nums">{openingPresentation.amount}</div>
+                        <div className="text-[9px] font-bold text-emerald-500 uppercase tracking-wide mt-0.5">Advance / Credit</div>
+                      </div>
+                    ) : (
+                      <span className="font-semibold text-gray-900 tabular-nums">{openingPresentation.amount}</span>
+                    )}
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-500 font-medium">Total Invoiced</span>
-                    <span className="font-semibold text-gray-900">{fmt(totalInvoiceAmount)}</span>
+                    <span className="font-semibold text-gray-900 tabular-nums">{fmt(totalInvoiceAmount)}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-500 font-medium">Total Paid</span>
-                    <span className="font-semibold text-emerald-600">− {fmt(totalPaymentAmount)}</span>
+                    <span className="font-semibold text-emerald-600 tabular-nums">− {fmt(totalPaymentAmount)}</span>
                   </div>
                   <div className="pt-3 border-t border-gray-100 flex justify-between items-center">
                     <span className="text-gray-900 font-bold uppercase text-xs tracking-wider">Closing Balance</span>
-                    <span className={`text-lg font-extrabold ${s.closingBalance > 0 ? 'text-rose-600' : s.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
+                    <span className={`text-lg font-extrabold tabular-nums ${s.closingBalance > 0 ? 'text-rose-600' : s.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
                       {fmtBalance(s.closingBalance)}
                     </span>
                   </div>
@@ -660,7 +1009,7 @@ export default function CustomerStatementView() {
                         {Object.entries(paymentBreakdown).map(([mode, amt]) => (
                           <div key={mode} className="flex justify-between items-center text-xs">
                             <span className="text-gray-500">{mode}</span>
-                            <span className="font-medium text-gray-700">{fmt(amt as number)}</span>
+                            <span className="font-medium text-gray-700 tabular-nums">{fmt(amt as number)}</span>
                           </div>
                         ))}
                       </div>
@@ -814,6 +1163,9 @@ export default function CustomerStatementView() {
           </div>
         );
       })()}
+
+      {/* PDF export is generated programmatically via jspdf — no hidden DOM required */}
     </div>
   );
 }
+

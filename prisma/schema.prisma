@@ -29,6 +29,7 @@ model User {
   accountsAccess          Boolean            @default(false) // Deprecated
   accounts_customer_statement Boolean        @default(false)
   accounts_transactions   Boolean            @default(false)
+  accounts_summary_view   Boolean            @default(false)
 
 
   sessions         ActiveSession[]
@@ -401,4 +402,15 @@ model QzCertificate {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model InvoiceSummaryCache {
+  id             String   @id @default("singleton")
+  generatedAt    DateTime
+  apiCallsUsed   Int
+  refreshedBy    String
+  invoiceCount   Int
+  summary        Json     // Stores all KPI metrics
+  distributions  Json     // Stores payment distributions
+  rows           Json     // Stores the invoice rows for the table
 }

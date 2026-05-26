@@ -26,6 +26,7 @@ export async function GET() {
         accountsAccess: true, // Keep for backward compatibility if needed, or UI might throw error
         accounts_customer_statement: true,
         accounts_transactions: true,
+        accounts_summary_view: true,
       },
       orderBy: { name: 'asc' },
     });

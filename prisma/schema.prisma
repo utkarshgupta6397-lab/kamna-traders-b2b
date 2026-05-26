@@ -9,61 +9,59 @@ datasource db {
 }
 
 model User {
-  id                      String             @id @default(cuid())
-  name                    String
-  mobile                  String             @unique
-  role                    String             @default("STAFF")
-  active                  Boolean            @default(true)
-  pin                     String?
-  createdAt               DateTime           @default(now())
-  updatedAt               DateTime           @updatedAt
-  
+  id        String   @id @default(cuid())
+  name      String
+  mobile    String   @unique
+  role      String   @default("STAFF")
+  active    Boolean  @default(true)
+  pin       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Permissions Matrix
-  canManageCarts          Boolean            @default(false)
-  canAdjustInventory      Boolean            @default(false)
-  canRunSkuSync           Boolean            @default(false)
-  canManageZoneMappings   Boolean            @default(false)
-  canManageUnlimitedSkus  Boolean            @default(false)
-  canManageTransfers      Boolean            @default(false)
-  canDeleteTransfers      Boolean            @default(false)
-  accountsAccess          Boolean            @default(false) // Deprecated
-  accounts_customer_statement Boolean        @default(false)
-  accounts_transactions   Boolean            @default(false)
-  accounts_summary_view   Boolean            @default(false)
+  canManageCarts              Boolean @default(false)
+  canAdjustInventory          Boolean @default(false)
+  canRunSkuSync               Boolean @default(false)
+  canManageZoneMappings       Boolean @default(false)
+  canManageUnlimitedSkus      Boolean @default(false)
+  canManageTransfers          Boolean @default(false)
+  canDeleteTransfers          Boolean @default(false)
+  accountsAccess              Boolean @default(false) // Deprecated
+  accounts_customer_statement Boolean @default(false)
+  accounts_transactions       Boolean @default(false)
+  accounts_summary_view       Boolean @default(false)
 
-
-  sessions         ActiveSession[]
-  carts            Cart[]
-  inventoryHistory InventoryHistory[]
+  sessions            ActiveSession[]
+  carts               Cart[]
+  inventoryHistory    InventoryHistory[]
   zoneMappingsUpdated WarehouseInventory[] @relation("ZoneMappingUpdatedBy")
-  updatedSkus      Sku[]              @relation("SkuUnlimitedUpdatedBy")
-  cartsHeld        Cart[]             @relation("CartHeldBy")
-  cartsResumed     Cart[]             @relation("CartResumedBy")
-  cartHistory      CartHistory[]      @relation("CartHistoryByUser")
-  transfersCreated    Transfer[]       @relation("TransferCreatedBy")
-  transfersDispatched Transfer[]       @relation("TransferDispatchedBy")
-  transfersReceived   Transfer[]       @relation("TransferReceivedBy")
+  updatedSkus         Sku[]                @relation("SkuUnlimitedUpdatedBy")
+  cartsHeld           Cart[]               @relation("CartHeldBy")
+  cartsResumed        Cart[]               @relation("CartResumedBy")
+  cartHistory         CartHistory[]        @relation("CartHistoryByUser")
+  transfersCreated    Transfer[]           @relation("TransferCreatedBy")
+  transfersDispatched Transfer[]           @relation("TransferDispatchedBy")
+  transfersReceived   Transfer[]           @relation("TransferReceivedBy")
 
-  printerId           String?
-  printer             Printer?           @relation(fields: [printerId], references: [id])
-  qzCertificate       QzCertificate?
+  printerId     String?
+  printer       Printer?       @relation(fields: [printerId], references: [id])
+  qzCertificate QzCertificate?
 }
 
-
 model Warehouse {
-  id               String               @id @default(cuid())
-  name             String
-  address          String?
-  active           Boolean              @default(true)
-  printZonalSlips  Boolean              @default(true) // Deprecated
-  isSystemWarehouse Boolean             @default(false)
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  carts            Cart[]
-  inventoryHistory InventoryHistory[]
-  inventory        WarehouseInventory[]
-  transfersSent     Transfer[]          @relation("SourceWarehouse")
-  transfersReceived Transfer[]          @relation("DestinationWarehouse")
+  id                String               @id @default(cuid())
+  name              String
+  address           String?
+  active            Boolean              @default(true)
+  printZonalSlips   Boolean              @default(true) // Deprecated
+  isSystemWarehouse Boolean              @default(false)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  carts             Cart[]
+  inventoryHistory  InventoryHistory[]
+  inventory         WarehouseInventory[]
+  transfersSent     Transfer[]           @relation("SourceWarehouse")
+  transfersReceived Transfer[]           @relation("DestinationWarehouse")
 }
 
 model Brand {
@@ -138,21 +136,20 @@ model WarehouseInventory {
   @@unique([warehouseId, skuId])
 }
 
-
 model Cart {
-  id                   String     @id
-  status               String     @default("COMPLETED")
+  id                   String        @id
+  status               String        @default("COMPLETED")
   warehouseId          String
   customerName         String
   notes                String?
   staffId              String
-  createdAt            DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
-  dispatchSlipNumber   String?    @unique
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  dispatchSlipNumber   String?       @unique
   zohoSalesorderId     String?
   zohoSalesorderNumber String?
-  zohoSyncStatus       String?    @default("PENDING")
-  zohoSyncStep         String?    @default("INITIATED")
+  zohoSyncStatus       String?       @default("PENDING")
+  zohoSyncStep         String?       @default("INITIATED")
   zohoSyncError        String?
   zohoLastSyncAt       DateTime?
   zohoResponseTimeMs   Int?
@@ -165,11 +162,11 @@ model Cart {
   resumedAt            DateTime?
   resumedById          String?
   holdReason           String?
-  staff                User       @relation(fields: [staffId], references: [id])
-  warehouse            Warehouse  @relation(fields: [warehouseId], references: [id])
+  staff                User          @relation(fields: [staffId], references: [id])
+  warehouse            Warehouse     @relation(fields: [warehouseId], references: [id])
   items                CartItem[]
-  heldBy               User?      @relation("CartHeldBy", fields: [heldById], references: [id])
-  resumedBy            User?      @relation("CartResumedBy", fields: [resumedById], references: [id])
+  heldBy               User?         @relation("CartHeldBy", fields: [heldById], references: [id])
+  resumedBy            User?         @relation("CartResumedBy", fields: [resumedById], references: [id])
   history              CartHistory[] @relation("CartHistoryByCart")
 }
 
@@ -207,40 +204,40 @@ model DispatchSequence {
 }
 
 model SyncLock {
-  id        String   @id @default("singleton")
-  name      String   @unique
-  isLocked  Boolean  @default(false)
+  id        String    @id @default(cuid())
+  name      String    @unique
+  isLocked  Boolean   @default(false)
   lockedAt  DateTime?
   lockedBy  String?
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime  @updatedAt
 }
 
 model SkuSyncLog {
-  id            String    @id @default(cuid())
-  startedAt     DateTime  @default(now())
-  completedAt   DateTime?
-  trigger       String    @default("CRON") // "CRON" | "USER"
-  syncLimit     Int?      @default(0)
-  totalReceived Int       @default(0)
-  processedCount Int      @default(0)
-  createdCount  Int       @default(0)
-  updatedCount  Int       @default(0)
-  skippedCount  Int       @default(0)
-  failedCount   Int       @default(0)
-  metadata      Json?     // Raw API request/response metadata
-  logs          Json?     // Backwards compatibility for errors
-  executionTrace Json?    // Detailed per-SKU logs
+  id             String    @id @default(cuid())
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+  trigger        String    @default("CRON") // "CRON" | "USER"
+  syncLimit      Int?      @default(0)
+  totalReceived  Int       @default(0)
+  processedCount Int       @default(0)
+  createdCount   Int       @default(0)
+  updatedCount   Int       @default(0)
+  skippedCount   Int       @default(0)
+  failedCount    Int       @default(0)
+  metadata       Json? // Raw API request/response metadata
+  logs           Json? // Backwards compatibility for errors
+  executionTrace Json? // Detailed per-SKU logs
 }
 
 model SkuIdentityRegistry {
-  id               String   @id @default(cuid())
-  skuId            String   @unique
-  zohoBookItemId   String   @unique
-  firstSeenAt      DateTime @default(now())
-  lastSeenAt       DateTime @updatedAt
-  isActive         Boolean  @default(true)
-  syncGeneration   Int      @default(1)
-  
+  id             String   @id @default(cuid())
+  skuId          String   @unique
+  zohoBookItemId String   @unique
+  firstSeenAt    DateTime @default(now())
+  lastSeenAt     DateTime @updatedAt
+  isActive       Boolean  @default(true)
+  syncGeneration Int      @default(1)
+
   @@index([zohoBookItemId])
   @@index([skuId])
 }
@@ -269,21 +266,20 @@ model CartHistory {
   id        String   @id @default(cuid())
   cartId    String
   userId    String
-  action    String   // "CREATED" | "COMPLETED" | "HOLD" | "RESUME" | "PRINTED" | "DELETED" | "EDITED"
+  action    String // "CREATED" | "COMPLETED" | "HOLD" | "RESUME" | "PRINTED" | "DELETED" | "EDITED"
   remarks   String?
-  metadata  Json?    // Structured change details for edits (added/removed/updated items)
+  metadata  Json? // Structured change details for edits (added/removed/updated items)
   createdAt DateTime @default(now())
-  
-  cart      Cart     @relation("CartHistoryByCart", fields: [cartId], references: [id], onDelete: Cascade)
-  user      User     @relation("CartHistoryByUser", fields: [userId], references: [id])
+
+  cart Cart @relation("CartHistoryByCart", fields: [cartId], references: [id], onDelete: Cascade)
+  user User @relation("CartHistoryByUser", fields: [userId], references: [id])
 
   @@index([cartId])
   @@index([createdAt])
 }
 
-
 model ZohoToken {
-  id           String   @id @default("singleton")
+  id           String   @id @default(cuid())
   accessToken  String
   refreshToken String
   expiresAt    DateTime
@@ -309,50 +305,50 @@ model ActiveSession {
 }
 
 model Transfer {
-  id                      String         @id @default(cuid())
-  transferNumber          String         @unique
-  sourceWarehouseId       String
-  destinationWarehouseId  String
-  status                  TransferStatus @default(INITIATED)
-  responsiblePerson       String
-  remarks                 String?
-  createdById             String
-  dispatchedById          String?
-  createdAt               DateTime       @default(now())
-  dispatchedAt            DateTime?
-  mergedIntoTransferId    String?
-  parentTransferId        String?
-  isAutoGenerated         Boolean        @default(false)
-  receivedById            String?
-  receivedAt              DateTime?
+  id                     String         @id @default(cuid())
+  transferNumber         String         @unique
+  sourceWarehouseId      String
+  destinationWarehouseId String
+  status                 TransferStatus @default(INITIATED)
+  responsiblePerson      String
+  remarks                String?
+  createdById            String
+  dispatchedById         String?
+  createdAt              DateTime       @default(now())
+  dispatchedAt           DateTime?
+  mergedIntoTransferId   String?
+  parentTransferId       String?
+  isAutoGenerated        Boolean        @default(false)
+  receivedById           String?
+  receivedAt             DateTime?
 
   // Relations
-  sourceWarehouse      Warehouse        @relation("SourceWarehouse", fields: [sourceWarehouseId], references: [id])
-  destinationWarehouse Warehouse        @relation("DestinationWarehouse", fields: [destinationWarehouseId], references: [id])
-  createdBy            User             @relation("TransferCreatedBy", fields: [createdById], references: [id])
-  dispatchedBy         User?            @relation("TransferDispatchedBy", fields: [dispatchedById], references: [id])
-  receivedBy           User?            @relation("TransferReceivedBy", fields: [receivedById], references: [id])
-  mergedIntoTransfer   Transfer?        @relation("TransferMergedInto", fields: [mergedIntoTransferId], references: [id])
-  mergedTransfers      Transfer[]       @relation("TransferMergedInto")
-  parentTransfer       Transfer?        @relation("TransferHierarchy", fields: [parentTransferId], references: [id])
-  childTransfers       Transfer[]       @relation("TransferHierarchy")
+  sourceWarehouse      Warehouse         @relation("SourceWarehouse", fields: [sourceWarehouseId], references: [id])
+  destinationWarehouse Warehouse         @relation("DestinationWarehouse", fields: [destinationWarehouseId], references: [id])
+  createdBy            User              @relation("TransferCreatedBy", fields: [createdById], references: [id])
+  dispatchedBy         User?             @relation("TransferDispatchedBy", fields: [dispatchedById], references: [id])
+  receivedBy           User?             @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+  mergedIntoTransfer   Transfer?         @relation("TransferMergedInto", fields: [mergedIntoTransferId], references: [id])
+  mergedTransfers      Transfer[]        @relation("TransferMergedInto")
+  parentTransfer       Transfer?         @relation("TransferHierarchy", fields: [parentTransferId], references: [id])
+  childTransfers       Transfer[]        @relation("TransferHierarchy")
   items                TransferItem[]
   history              TransferHistory[]
 }
 
 model TransferItem {
-  id           String   @id @default(cuid())
-  transferId   String
-  skuId        String
-  requestedQty Int
+  id            String @id @default(cuid())
+  transferId    String
+  skuId         String
+  requestedQty  Int
   dispatchedQty Int
-  balanceQty   Int
-  receivedQty  Int      @default(0)
-  shortQty     Int      @default(0)
+  balanceQty    Int
+  receivedQty   Int    @default(0)
+  shortQty      Int    @default(0)
 
   // Relations
-  transfer     Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
-  sku          Sku      @relation(fields: [skuId], references: [id])
+  transfer Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  sku      Sku      @relation(fields: [skuId], references: [id])
 }
 
 enum TransferStatus {
@@ -376,7 +372,7 @@ model TransferHistory {
   timestamp   DateTime @default(now())
 
   // Relations
-  transfer    Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  transfer Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
 }
 
 // ─── Printer Management ───────────────────────────────────────────────────────
@@ -405,12 +401,12 @@ model QzCertificate {
 }
 
 model InvoiceSummaryCache {
-  id             String   @id @default("singleton")
-  generatedAt    DateTime
-  apiCallsUsed   Int
-  refreshedBy    String
-  invoiceCount   Int
-  summary        Json     // Stores all KPI metrics
-  distributions  Json     // Stores payment distributions
-  rows           Json     // Stores the invoice rows for the table
+  id            String   @id @default("singleton")
+  generatedAt   DateTime
+  apiCallsUsed  Int
+  refreshedBy   String
+  invoiceCount  Int
+  summary       Json // Stores all KPI metrics
+  distributions Json // Stores payment distributions
+  rows          Json // Stores the invoice rows for the table
 }

@@ -19,6 +19,8 @@ import {
   FileText,
   MapPin,
   ChevronRight,
+  Filter,
+  Flag,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -61,6 +63,16 @@ interface CustomerEnrichment {
   displayName: string;
   companyName: string;
   tallyReady: boolean;
+  accountManager: string;
+}
+
+export interface CustomerStatementTask {
+  id: string;
+  customerId: string;
+  customerName: string;
+  status: 'OPEN' | 'RELEASED';
+  flaggedByName: string;
+  flaggedAt: string;
 }
 
 interface SummaryMeta {
@@ -311,10 +323,20 @@ function CustomerCell({
   row,
   enrichment,
   statusFilter,
+  task,
+  taskLoading,
+  onFlag,
+  onRelease,
+  historicalCount = 0,
 }: {
   row: ExtendedRow;
   enrichment: CustomerEnrichment | undefined;
   statusFilter: string;
+  task?: CustomerStatementTask;
+  taskLoading?: boolean;
+  onFlag?: (id: string, name: string) => void;
+  onRelease?: (taskId: string, custId: string) => void;
+  historicalCount?: number;
 }) {
   const [show, setShow] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -338,9 +360,12 @@ function CustomerCell({
     setShow(false);
   };
 
+  const isOpen = statusFilter === 'open';
+  const isFlagged = task && task.status === 'OPEN';
+
   return (
     <div ref={containerRef} className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
-      {/* Customer name */}
+      {/* Customer name and inline actions */}
       <div className="flex items-center gap-1.5 min-w-0">
         {isMock ? (
           <span className="text-[12px] font-semibold truncate" style={{ color: '#0F172A' }}>
@@ -351,7 +376,7 @@ function CustomerCell({
             href={customerUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="group min-w-0 flex items-center gap-1.5"
+            className="group min-w-0 flex items-center gap-1.5 shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
             <span
@@ -360,12 +385,61 @@ function CustomerCell({
             >
               {row.customerName}
             </span>
-            {statusFilter === 'open' && enrichment?.tallyReady && (
-              <span title="Tally Ready" className="flex shrink-0">
-                <Check size={11} color="#059669" />
-              </span>
+            {isOpen && (
+              <div className="flex shrink-0 items-center gap-1">
+                {enrichment?.tallyReady && (
+                  <span title="Tally Ready" className="flex shrink-0">
+                    <Check size={11} color="#059669" />
+                  </span>
+                )}
+                {isFlagged && (
+                  <span title={`FLAGGED • ${task.flaggedByName} • ${new Date(task.flaggedAt).toLocaleDateString()}`} className="flex shrink-0 items-center gap-0.5">
+                    <Flag size={10} color="#D97706" />
+                    <span className="text-[9px] font-medium" style={{ color: '#D97706' }}>Statement Pending</span>
+                  </span>
+                )}
+              </div>
             )}
           </a>
+        )}
+
+        {/* Inline Flag / Release chip — same line as customer name */}
+        {isOpen && (
+          <div className="flex shrink-0 items-center gap-1 ml-1">
+            {!isFlagged ? (
+              <button
+                disabled={taskLoading}
+                onClick={(e) => { e.stopPropagation(); onFlag?.(row.customerId, row.customerName); }}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors disabled:opacity-50"
+                style={{ border: '1px solid #E2E8F0', color: '#64748B', background: '#F8FAFC', cursor: 'pointer' }}
+              >
+                <Flag size={8} />
+                Flag
+              </button>
+            ) : (
+              <button
+                disabled={taskLoading}
+                onClick={(e) => { e.stopPropagation(); onRelease?.(task!.id, row.customerId); }}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors disabled:opacity-50"
+                style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#B45309', cursor: 'pointer' }}
+              >
+                <Check size={8} />
+                Release
+              </button>
+            )}
+
+            {/* Historical Counter */}
+            {historicalCount > 0 && (
+              <span 
+                title={`Flagged ${historicalCount} time${historicalCount > 1 ? 's' : ''} historically`}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold"
+                style={{ background: '#FEF3C7', border: '1px solid #FDE68A', color: '#D97706' }}
+              >
+                <Flag size={8} fill="#D97706" style={{ color: '#D97706' }} />
+                {historicalCount}
+              </span>
+            )}
+          </div>
         )}
       </div>
 
@@ -421,8 +495,15 @@ function CustomerCell({
                 </div>
               </div>
             )}
+            
+            {enrichment?.accountManager && (
+              <div className="flex items-start gap-1.5">
+                <span className="text-[9px] font-bold uppercase tracking-wider mt-[1px] shrink-0" style={{ color: '#94A3B8' }}>Manager</span>
+                <span className="text-[10px]" style={{ color: '#0F172A' }}>{enrichment.accountManager}</span>
+              </div>
+            )}
 
-            {!gst && !addr && !hasLocation && (
+            {!gst && !addr && !hasLocation && !enrichment?.accountManager && (
               <p className="text-[10px] italic" style={{ color: '#CBD5E1' }}>No address data available</p>
             )}
           </div>
@@ -462,6 +543,7 @@ function CustomerCell({
     </div>
   );
 }
+
 
 // ─── Status Pill ──────────────────────────────────────────────────────────────
 
@@ -667,6 +749,11 @@ export default function AccountsSummaryView() {
   const fetchedCustomerIds = useRef<Set<string>>(new Set());
   const redundantFetchesAvoided = useRef(0);
 
+  // Statement Follow-up Tasks
+  const [tasks, setTasks] = useState<CustomerStatementTask[]>([]);
+  const [historicalCounts, setHistoricalCounts] = useState<Record<string, number>>({});
+  const [taskLoadingId, setTaskLoadingId] = useState<string | null>(null);
+
   // New Operational States & Ticking Clock
   const [nowTick, setNowTick] = useState(Date.now());
   const [refreshingInvoiceId, setRefreshingInvoiceId] = useState<string | null>(null);
@@ -715,6 +802,68 @@ export default function AccountsSummaryView() {
     const diff = nowTick - new Date(lastCustRefresh).getTime();
     return Math.max(0, Math.ceil((60000 - diff) / 1000));
   }, [data, nowTick]);
+
+  // ─── Tasks API ─────────────────────────────────────────────────────────────
+  const fetchTasks = useCallback(async () => {
+    try {
+      const res = await fetch('/api/accounts/summary/followup');
+      const json = await res.json();
+      if (json.success) {
+        setTasks(json.data);
+        setHistoricalCounts(json.historicalCounts || {});
+      }
+    } catch {
+      // Non-fatal
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  const handleFlagStatement = async (customerId: string, customerName: string) => {
+    setTaskLoadingId(customerId);
+    try {
+      const res = await fetch('/api/accounts/summary/followup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId, customerName }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(`Flagged ${customerName} for follow-up`);
+        fetchTasks();
+      } else {
+        toast.error(json.error || 'Failed to flag customer');
+      }
+    } catch {
+      toast.error('Network error. Please retry.');
+    } finally {
+      setTaskLoadingId(null);
+    }
+  };
+
+  const handleReleaseStatement = async (taskId: string, customerId: string) => {
+    setTaskLoadingId(customerId);
+    try {
+      const res = await fetch('/api/accounts/summary/followup', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: taskId }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(`Released follow-up`);
+        fetchTasks();
+      } else {
+        toast.error(json.error || 'Failed to release task');
+      }
+    } catch {
+      toast.error('Network error. Please retry.');
+    } finally {
+      setTaskLoadingId(null);
+    }
+  };
 
   // ─── Smart cache check ──────────────────────────────────────────────────────
   const cacheCovers = useCallback(
@@ -790,6 +939,12 @@ export default function AccountsSummaryView() {
         setData(result.data as SnapshotData);
         const invNum = result.data.rows.find((r: any) => r.invoiceId === invoiceId)?.invoiceNumber || '';
         toast.success(`Invoice ${invNum} refreshed!`);
+        
+        // Dual refresh: also force-refresh customer enrichment data
+        if (row.customerId) {
+          fetchedCustomerIds.current.delete(row.customerId); // clear cache so re-fetch happens
+          enrichCustomers([row.customerId]);
+        }
       } else {
         toast.error(result.error || 'Refresh failed.');
       }
@@ -1242,6 +1397,7 @@ export default function AccountsSummaryView() {
     (async () => {
       setLoading(true);
       try {
+        await fetchTasks();
         const cached = await loadCache();
         if (cached) setData(cached);
         else await fetchForRange('today', true);
@@ -1846,7 +2002,16 @@ export default function AccountsSummaryView() {
 
                         {/* Customer — with hover card */}
                         <td className="py-3 px-4" style={{ maxWidth: '220px' }}>
-                          <CustomerCell row={row} enrichment={enrichment} statusFilter={statusFilter} />
+                          <CustomerCell
+                            row={row}
+                            enrichment={enrichment}
+                            statusFilter={statusFilter}
+                            task={tasks.find(t => t.customerId === row.customerId && t.status === 'OPEN')}
+                            taskLoading={taskLoadingId === row.customerId}
+                            onFlag={handleFlagStatement}
+                            onRelease={handleReleaseStatement}
+                            historicalCount={historicalCounts[row.customerId] || 0}
+                          />
                         </td>
 
                         {/* Value */}
@@ -2019,11 +2184,71 @@ export default function AccountsSummaryView() {
                           <div>
                             <div className="flex items-center gap-1.5">
                               <p className="text-[13px] font-bold" style={{ color: '#0F172A' }}>{group.customerName}</p>
-                              {statusFilter === 'open' && enrichMap[group.customerId]?.tallyReady && (
-                                <span title="Tally Ready" className="flex shrink-0">
-                                  <Check size={11} color="#059669" />
-                                </span>
+                              {statusFilter === 'open' && (
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {enrichMap[group.customerId]?.tallyReady && (
+                                    <span title="Tally Ready" className="flex shrink-0">
+                                      <Check size={11} color="#059669" />
+                                    </span>
+                                  )}
+                                  {(() => {
+                                    const task = tasks.find(t => t.customerId === group.customerId && t.status === 'OPEN');
+                                    if (task) {
+                                      return (
+                                        <span title={`FLAGGED • ${task.flaggedByName} • ${new Date(task.flaggedAt).toLocaleDateString()}`} className="flex shrink-0 items-center gap-0.5">
+                                          <Flag size={10} color="#D97706" />
+                                          <span className="text-[9px] font-medium" style={{ color: '#D97706' }}>Statement Pending</span>
+                                        </span>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
                               )}
+
+                              {/* Inline Flag / Release button on the same line */}
+                              {statusFilter === 'open' && (() => {
+                                const task = tasks.find(t => t.customerId === group.customerId && t.status === 'OPEN');
+                                const loading = taskLoadingId === group.customerId;
+                                const historicalCount = historicalCounts[group.customerId] || 0;
+                                return (
+                                  <div className="flex items-center gap-1">
+                                    {!task ? (
+                                      <button
+                                        disabled={loading}
+                                        onClick={(e) => { e.stopPropagation(); handleFlagStatement(group.customerId, group.customerName); }}
+                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors disabled:opacity-50 ml-1"
+                                        style={{ border: '1px solid #E2E8F0', color: '#64748B', background: '#F8FAFC', cursor: 'pointer' }}
+                                      >
+                                        <Flag size={8} />
+                                        Flag
+                                      </button>
+                                    ) : (
+                                      <button
+                                        disabled={loading}
+                                        onClick={(e) => { e.stopPropagation(); handleReleaseStatement(task.id, group.customerId); }}
+                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors disabled:opacity-50 ml-1"
+                                        style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#B45309', cursor: 'pointer' }}
+                                      >
+                                        <Check size={8} />
+                                        Release
+                                      </button>
+                                    )}
+
+                                    {/* Historical Counter */}
+                                    {historicalCount > 0 && (
+                                      <span 
+                                        title={`Flagged ${historicalCount} time${historicalCount > 1 ? 's' : ''} historically`}
+                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold"
+                                        style={{ background: '#FEF3C7', border: '1px solid #FDE68A', color: '#D97706' }}
+                                      >
+                                        <Flag size={8} fill="#D97706" style={{ color: '#D97706' }} />
+                                        {historicalCount}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                             <p className="text-[10px] font-mono mt-0.5" style={{ color: '#94A3B8' }}>
                               {(() => {

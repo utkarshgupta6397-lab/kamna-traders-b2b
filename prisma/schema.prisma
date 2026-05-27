@@ -410,3 +410,24 @@ model InvoiceSummaryCache {
   distributions Json // Stores payment distributions
   rows          Json // Stores the invoice rows for the table
 }
+
+model CustomerStatementTask {
+  id           String @id @default(cuid())
+  customerId   String
+  customerName String
+
+  status String // OPEN | RELEASED
+
+  flaggedByUserId String
+  flaggedByName   String
+  flaggedAt       DateTime @default(now())
+
+  releasedByUserId String?
+  releasedByName   String?
+  releasedAt       DateTime?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

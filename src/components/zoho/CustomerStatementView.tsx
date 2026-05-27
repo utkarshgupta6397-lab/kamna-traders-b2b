@@ -289,27 +289,84 @@ export default function CustomerStatementView() {
 
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
       const margin = 14;
       const colW = pageW - margin * 2;
 
+      // Helper to convert Response blob to clean Base64 string
+      const toBase64 = async (res: Response): Promise<string> => {
+        const blob = await res.blob();
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64data = reader.result as string;
+            const commaIndex = base64data.indexOf(',');
+            resolve(commaIndex > -1 ? base64data.slice(commaIndex + 1) : base64data);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      };
+
       // ── Embed NotoSans for ₹ (U+20B9) support ──────────────────────────
-      // Built-in jsPDF fonts (Helvetica/Times) are WinAnsi and lack the Rupee
-      // glyph. NotoSans is fetched from /fonts/ (bundled in public/) and
-      // embedded so ₹ renders correctly without fallback box characters.
       try {
-        const fontRes = await fetch('/fonts/NotoSans-Regular.ttf');
-        const fontBuf = await fontRes.arrayBuffer();
-        const fontB64 = btoa(
-          new Uint8Array(fontBuf).reduce((s, b) => s + String.fromCharCode(b), '')
-        );
+        const fontRes = await fetch('/fonts/NotoSans-Regular.ttf?v=3');
+        if (!fontRes.ok) throw new Error(`Status ${fontRes.status}`);
+        const fontB64 = await toBase64(fontRes);
+        if (fontB64.startsWith('PCFvY') || fontB64.startsWith('PCFET') || fontB64.includes('<!DOCTYPE')) {
+          throw new Error('Fetched HTML page instead of font file');
+        }
         doc.addFileToVFS('NotoSans-Regular.ttf', fontB64);
         doc.addFont('NotoSans-Regular.ttf', 'NotoSans', 'normal');
-        doc.addFont('NotoSans-Regular.ttf', 'NotoSans', 'bold'); // use same file; bold via weight
-      } catch {
-        // Font load failed — fall back to helvetica (₹ may render as box)
-        console.warn('[PDF] NotoSans font load failed, falling back to helvetica');
+      } catch (err) {
+        console.warn('[PDF] NotoSans Regular font load failed', err);
       }
+
+      try {
+        const fontRes = await fetch('/fonts/NotoSans-Bold.ttf?v=3');
+        if (!fontRes.ok) throw new Error(`Status ${fontRes.status}`);
+        const fontB64 = await toBase64(fontRes);
+        if (fontB64.startsWith('PCFvY') || fontB64.startsWith('PCFET') || fontB64.includes('<!DOCTYPE')) {
+          throw new Error('Fetched HTML page instead of font file');
+        }
+        doc.addFileToVFS('NotoSans-Bold.ttf', fontB64);
+        doc.addFont('NotoSans-Bold.ttf', 'NotoSans', 'bold');
+      } catch (err) {
+        console.warn('[PDF] NotoSans Bold font load failed', err);
+      }
+
       const pdfFont = doc.getFontList()['NotoSans'] ? 'NotoSans' : 'helvetica';
+
+      // ── Fetch logo as raster image for PDF embedding ────────────────────
+      // SVG is converted to PNG via a canvas element so jsPDF can embed it.
+      let logoDataUrl: string | null = null;
+      try {
+        const svgRes = await fetch('/logo.svg');
+        const svgText = await svgRes.text();
+        // Convert dark-fill SVG to white by replacing known brand colours
+        const whiteSvg = svgText
+          .replace(/#1A2766/gi, '#FFFFFF')
+          .replace(/#003347/gi, '#FFFFFF')
+          .replace(/#AE1B1E/gi, '#FFFFFF');
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 387; // aspect ratio ~599:579
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          const img = new Image();
+          const blob = new Blob([whiteSvg], { type: 'image/svg+xml' });
+          const url = URL.createObjectURL(blob);
+          await new Promise<void>((resolve) => {
+            img.onload = () => { ctx.drawImage(img, 0, 0, 400, 387); resolve(); };
+            img.onerror = () => resolve();
+            img.src = url;
+          });
+          URL.revokeObjectURL(url);
+          logoDataUrl = canvas.toDataURL('image/png');
+        }
+      } catch {
+        console.warn('[PDF] Logo load failed — header will be text only');
+      }
 
       // ── colour palette ──────────────────────────────────────────────────
       const cNavy: [number, number, number]   = [26,  39, 102];  // #1A2766
@@ -319,80 +376,90 @@ export default function CustomerStatementView() {
       const cGreen: [number, number, number]  = [5,  150, 105];  // emerald-600
       const cBg: [number, number, number]     = [248, 250, 252]; // slate-50
 
-      // Visible transactions (respects isExpanded toggle)
+      // ── Visible transactions ────────────────────────────────────────────
       const visibleTxs = isExpanded ? s.transactions : s.transactions.slice(-12);
       const openingBal = visibleTxs.length > 0
         ? visibleTxs[0].balanceAfter - visibleTxs[0].netEffect
         : s.closingBalance;
       const openingPres = getOpeningBalancePresentation(openingBal);
-      // PDF-safe amount strings (Rs. prefix, no ₹ glyph)
       const pdfOpeningAmt  = pdfFmt(openingBal);
       const totalInvoiced  = visibleTxs.filter(t => t.type === 'invoice').reduce((a, t) => a + Math.abs(t.netEffect), 0);
       const totalPaid      = visibleTxs.filter(t => t.type === 'payment').reduce((a, t) => a + Math.abs(t.netEffect), 0);
 
       // ── Header bar ──────────────────────────────────────────────────────
+      const headerH = 30;
       doc.setFillColor(...cNavy);
-      doc.rect(0, 0, pageW, 26, 'F');
+      doc.rect(0, 0, pageW, headerH, 'F');
 
+      // Logo (white version) at top-left — 18mm tall
+      const logoH = 18;
+      const logoW = logoH * (599 / 579); // maintain SVG aspect ratio
+      if (logoDataUrl) {
+        doc.addImage(logoDataUrl, 'PNG', margin, (headerH - logoH) / 2, logoW, logoH);
+      }
+
+      // Title block — starts after logo
+      const titleX = logoDataUrl ? margin + logoW + 4 : margin;
       doc.setTextColor(255, 255, 255);
       doc.setFont(pdfFont, 'bold');
-      doc.setFontSize(14);
-      doc.text('Customer Statement', margin, 11);
+      doc.setFontSize(13);
+      doc.text('Customer Statement', titleX, 12);
 
       doc.setFont(pdfFont, 'normal');
-      doc.setFontSize(7.5);
+      doc.setFontSize(7);
       doc.setTextColor(190, 205, 225);
-      doc.text('Kamna Traders · Receivables Ledger', margin, 18);
+      doc.text('Kamna Traders · Receivables Ledger', titleX, 20);
 
-      // Customer name + GST right-aligned
+      // Customer name + GST + phone — right-aligned
       doc.setFont(pdfFont, 'bold');
       doc.setFontSize(10);
       doc.setTextColor(255, 255, 255);
-      doc.text(s.customer.contactName, pageW - margin, 10, { align: 'right' });
+      doc.text(s.customer.contactName, pageW - margin, 11, { align: 'right' });
       if (s.customer.gstNo) {
         doc.setFont(pdfFont, 'normal');
-        doc.setFontSize(7.5);
+        doc.setFontSize(7);
         doc.setTextColor(190, 205, 225);
-        doc.text(`GST: ${s.customer.gstNo}`, pageW - margin, 16, { align: 'right' });
+        doc.text(`GST: ${s.customer.gstNo}`, pageW - margin, 18, { align: 'right' });
       }
       if (s.customer.mobile) {
-        doc.setFontSize(7.5);
-        doc.text(s.customer.mobile, pageW - margin, 21, { align: 'right' });
+        doc.setFontSize(7);
+        doc.text(s.customer.mobile, pageW - margin, 24, { align: 'right' });
       }
 
-      let curY = 32;
+      let curY = headerH + 6;
 
-      // ── KPI strip ───────────────────────────────────────────────────────
+      // ── KPI strip (finance-grade bold typography) ────────────────────────
       const kpis = [
-        { label: openingPres.isCredit ? 'Advance / Credit' : 'Opening Balance', val: pdfOpeningAmt,              color: openingPres.isCredit ? cGreen : cDark },
-        { label: 'Total Invoiced',  val: pdfFmt(totalInvoiced),                  color: cDark  },
-        { label: 'Total Paid',      val: pdfFmt(totalPaid),                      color: cGreen },
+        { label: openingPres.isCredit ? 'Advance / Credit' : 'Opening Balance', val: pdfOpeningAmt, color: openingPres.isCredit ? cGreen : cDark },
+        { label: 'Total Invoiced',  val: pdfFmt(totalInvoiced), color: cDark  },
+        { label: 'Total Paid',      val: pdfFmt(totalPaid),     color: cGreen },
         { label: 'Closing Balance', val: pdfFmtBalance(s.closingBalance),
           color: s.closingBalance > 0 ? cRed : s.closingBalance < 0 ? cGreen : cDark },
       ];
+      const kpiCardH = 18;
       const kpiW = colW / kpis.length;
       kpis.forEach((k, i) => {
         const x = margin + i * kpiW;
         doc.setFillColor(...cBg);
         doc.setDrawColor(226, 232, 240);
-        doc.rect(x, curY, kpiW - 2, 16, 'FD');
+        doc.rect(x, curY, kpiW - 2, kpiCardH, 'FD');
 
         doc.setFont(pdfFont, 'bold');
-        doc.setFontSize(6);
+        doc.setFontSize(5.5);
         doc.setTextColor(...cSlate);
-        doc.text(k.label.toUpperCase(), x + 3, curY + 5.5);
+        doc.text(k.label.toUpperCase(), x + 3, curY + 6);
 
+        // Bold, larger numeric value for finance-grade readability
         doc.setFont(pdfFont, 'bold');
-        doc.setFontSize(9);
+        doc.setFontSize(11);
         doc.setTextColor(...k.color);
-        doc.text(k.val, x + 3, curY + 12.5);
+        doc.text(k.val, x + 3, curY + 14);
       });
-      curY += 22;
+      curY += kpiCardH + 4;
 
       // ── Ledger table ────────────────────────────────────────────────────
       const tableHead = [['Date', 'Type', 'Details', 'Invoice Amt', 'Payment Amt', 'Balance']];
 
-      // Opening row (PDF-safe amounts)
       const openRow = [
         '—', '—',
         `Opening Balance${openingPres.isCredit ? ' (Advance/Credit)' : ''}`,
@@ -421,19 +488,23 @@ export default function CustomerStatementView() {
         body: [openRow, ...txRows, totalsRow],
         theme: 'striped',
         headStyles: { fillColor: cNavy, textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold', font: pdfFont },
-        bodyStyles: { fontSize: 7, textColor: [51, 65, 85], font: pdfFont },
+        bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85], font: pdfFont },
         columnStyles: {
-          0: { cellWidth: 20 },
-          1: { cellWidth: 16 },
-          2: { cellWidth: 'auto' },
-          3: { halign: 'right', cellWidth: 34 },
-          4: { halign: 'right', cellWidth: 34, textColor: [5, 150, 105] },
-          5: { halign: 'right', cellWidth: 34, fontStyle: 'bold' },
+          0: { cellWidth: 22, overflow: 'visible' },
+          1: { cellWidth: 16, overflow: 'visible' },
+          2: { cellWidth: 58, overflow: 'linebreak' },
+          // Invoice Amt — bold, dark
+          3: { halign: 'right', cellWidth: 28, fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
+          // Payment Amt — bold, green
+          4: { halign: 'right', cellWidth: 28, textColor: [5, 150, 105], fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
+          // Balance — bold, coloured by sign
+          5: { halign: 'right', cellWidth: 30, fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
         },
-        styles: { cellPadding: 2, font: pdfFont, overflow: 'ellipsize' },
+        styles: { cellPadding: { top: 2.2, bottom: 2.2, left: 1.5, right: 1.5 }, font: pdfFont },
+        tableWidth: 182,
         didParseCell: (data) => {
           if (data.section === 'body') {
-            // Opening balance row — tint blue
+            // Opening balance row — light blue tint
             if (data.row.index === 0) {
               data.cell.styles.fillColor = [239, 246, 255];
               if (data.column.index === 5) {
@@ -441,20 +512,21 @@ export default function CustomerStatementView() {
                 data.cell.styles.fontStyle = 'bold';
               }
             }
-            // Totals row — dark bg
+            // Totals row — slate bg, all bold, larger balance
             const isLast = data.row.index === txRows.length + 1;
             if (isLast) {
               data.cell.styles.fillColor = [241, 245, 249];
               data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.fontSize = 8.5;
               if (data.column.index === 3) data.cell.styles.textColor = [15, 23, 42];
               if (data.column.index === 4) data.cell.styles.textColor = [5, 150, 105];
               if (data.column.index === 5) {
                 data.cell.styles.textColor = s.closingBalance > 0 ? [220, 38, 38]
                   : s.closingBalance < 0 ? [5, 150, 105] : [15, 23, 42];
-                data.cell.styles.fontSize = 8;
+                data.cell.styles.fontSize = 9;
               }
             }
-            // Balance column coloring for normal rows
+            // Balance column colouring for normal rows (red = owes us, green = credit)
             if (data.column.index === 5 && data.row.index > 0 && !isLast) {
               const txIdx = data.row.index - 1;
               if (txIdx >= 0 && txIdx < visibleTxs.length) {
@@ -464,23 +536,109 @@ export default function CustomerStatementView() {
             }
           }
         },
-        margin: { left: margin, right: margin },
+        margin: { left: margin, right: margin, bottom: 65 },
       });
 
-      // ── Footer ──────────────────────────────────────────────────────────
-      const finalY = (doc as any).lastAutoTable?.finalY ?? (curY + 40);
-      const footerY = Math.min(finalY + 8, doc.internal.pageSize.getHeight() - 10);
+      // ── Footer / Payment Section (Fixed at bottom of page) ───────────────
+      const closingBal = s.closingBalance;
+      const finalTableY = (doc as any).lastAutoTable?.finalY ?? (curY + 40);
+
+      // Determine height of the footer
+      const footerHeight = 56;
+      const spaceRequired = footerHeight + 10; // 66mm total space needed at bottom
+      
+      // If table ended too low on the current page, add a new page
+      if (finalTableY + spaceRequired > pageH) {
+        doc.addPage();
+      }
+
+      const footerY = pageH - margin - footerHeight;
+
+      // Draw horizontal divider line
       doc.setDrawColor(...cSlate);
       doc.setLineWidth(0.3);
       doc.line(margin, footerY, pageW - margin, footerY);
 
+      // LEFT: Generated Info
       const generatedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
       doc.setFont(pdfFont, 'normal');
-      doc.setFontSize(6.5);
+      doc.setFontSize(7.5);
       doc.setTextColor(...cSlate);
-      doc.text('Generated By: Admin', margin, footerY + 5);
-      doc.text(`Generated At: ${generatedAt}`, margin, footerY + 9);
-      doc.text('Kamna Traders B2B — Confidential', pageW - margin, footerY + 7, { align: 'right' });
+      doc.text('Generated By: Admin', margin, footerY + 8);
+      doc.text(`Generated At: ${generatedAt}`, margin, footerY + 13);
+
+      // RIGHT: QR Payment Box
+      const UPI_ID = 'ibkPOS.EP208232@icici';
+      if (closingBal > 0) {
+        const customerForRemarks = s.customer.contactName || s.customer.companyName || 'Customer';
+        const remarks = `${customerForRemarks} Balance`;
+        // Only pre-fill amount when balance is below ₹1,00,000
+        const amountParam = closingBal < 100000
+          ? `&am=${closingBal.toFixed(2)}`
+          : '';
+        const upiUrl = `upi://pay?pa=${UPI_ID}&pn=Kamna+Traders&tn=${encodeURIComponent(remarks)}${amountParam}&cu=INR`;
+
+        let qrDataUrl: string | null = null;
+        try {
+          const QRCode = (await import('qrcode')).default;
+          qrDataUrl = await QRCode.toDataURL(upiUrl, {
+            margin: 1,
+            width: 250,
+            errorCorrectionLevel: 'M'
+          });
+        } catch (err) {
+          console.warn('[PDF] QR generation failed via client-side QRCode library', err);
+        }
+
+        const qrSize = 32; // mm
+        const qrX = pageW - margin - qrSize - 4; // Right-aligned with padding
+        const qrBoxY = footerY + 4;
+
+        // Draw background box for QR code
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(qrX - 4, qrBoxY - 2, qrSize + 8, qrSize + 22, 'FD');
+
+        if (qrDataUrl) {
+          doc.addImage(qrDataUrl, 'PNG', qrX, qrBoxY, qrSize, qrSize);
+        } else {
+          // Fallback text if QR couldn't be generated
+          doc.setFont(pdfFont, 'normal');
+          doc.setFontSize(6);
+          doc.setTextColor(...cSlate);
+          doc.text('[QR unavailable — pay via UPI ID]', qrX, qrBoxY + 15, { align: 'left', maxWidth: qrSize });
+        }
+
+        const qrLabelX = qrX + qrSize / 2;
+        doc.setFont(pdfFont, 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...cDark);
+        doc.text('Scan to Pay', qrLabelX, qrBoxY + qrSize + 4, { align: 'center' });
+
+        doc.setFont(pdfFont, 'normal');
+        doc.setFontSize(6);
+        doc.setTextColor(...cSlate);
+        doc.text(UPI_ID, qrLabelX, qrBoxY + qrSize + 8, { align: 'center' });
+
+        // Outstanding amount label
+        doc.setFont(pdfFont, 'bold');
+        doc.setFontSize(7);
+        doc.setTextColor(...cRed);
+        doc.text(`Outstanding: ${pdfFmtBalance(closingBal)}`, qrLabelX, qrBoxY + qrSize + 13, { align: 'center' });
+
+        if (closingBal >= 100000) {
+          // Note about manual amount entry
+          doc.setFont(pdfFont, 'normal');
+          doc.setFontSize(5.5);
+          doc.setTextColor(...cSlate);
+          doc.text('Enter amount manually when scanning', qrLabelX, qrBoxY + qrSize + 17, { align: 'center' });
+        }
+      } else {
+        doc.setFont(pdfFont, 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...cSlate);
+        doc.text('Kamna Traders B2B — Confidential', pageW - margin, footerY + 8, { align: 'right' });
+      }
 
       // ── Save ────────────────────────────────────────────────────────────
       const safeName = (s.customer.contactName || 'CUSTOMER')

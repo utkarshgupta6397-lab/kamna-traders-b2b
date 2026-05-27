@@ -25,6 +25,7 @@ export interface CustomerEnrichment {
   companyName: string;
   // Operational markers
   tallyReady: boolean;
+  accountManager: string;
 }
 
 const API_BASE = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
@@ -89,6 +90,18 @@ function resolveTallyReady(contact: any): boolean {
     if (field && (field.value === true || field.value === 'true')) return true;
   }
   return false;
+}
+
+/**
+ * Resolve account manager from custom fields.
+ */
+function resolveAccountManager(contact: any): string {
+  if (typeof contact.cf_account_manager === 'string') return contact.cf_account_manager;
+  if (Array.isArray(contact.custom_fields)) {
+    const field = contact.custom_fields.find((f: any) => f.api_name === 'cf_account_manager' || f.placeholder === 'cf_account_manager');
+    if (field && typeof field.value === 'string') return field.value;
+  }
+  return '';
 }
 
 /**
@@ -209,6 +222,7 @@ export async function POST(request: Request) {
           displayName:    '',
           companyName:    '',
           tallyReady:     seed % 3 === 0, // Mock some as tally ready
+          accountManager: seed % 2 === 0 ? 'Rahul Sharma' : 'Neha Gupta',
         };
       }
     } else {
@@ -234,6 +248,7 @@ export async function POST(request: Request) {
                   displayName:    contact.display_name || contact.contact_name || '',
                   companyName:    contact.company_name || '',
                   tallyReady:     resolveTallyReady(contact),
+                  accountManager: resolveAccountManager(contact),
                   ...addr,
                 };
               } else {
@@ -294,5 +309,6 @@ function emptyEnrichment(): CustomerEnrichment {
     displayName: '',
     companyName: '',
     tallyReady: false,
+    accountManager: '',
   };
 }

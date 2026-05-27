@@ -21,8 +21,16 @@ import {
   ChevronRight,
   Filter,
   Flag,
+  X,
+  Clock3,
+  Receipt,
+  UserRound,
+  Loader2,
+  MessageSquare,
+  CheckCheck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useRouter } from 'next/navigation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,6 +81,38 @@ export interface CustomerStatementTask {
   status: 'OPEN' | 'RELEASED';
   flaggedByName: string;
   flaggedAt: string;
+}
+
+export interface RecoveryInvoiceTask {
+  id: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerName: string;
+  status: 'ACTIVE' | 'RELEASED' | 'RESOLVED';
+  requiresReminder: boolean;
+  reminderSent: boolean;
+  reminderCount: number;
+  reminderSentAt: string | null;
+  reminderSentById: string | null;
+  reminderSentByName: string | null;
+  flagCount: number;
+  flaggedByUserId: string;
+  flaggedByName: string;
+  flaggedAt: string;
+  releasedByUserId: string | null;
+  releasedByName: string | null;
+  releasedAt: string | null;
+  resolvedByUserId: string | null;
+  resolvedByName: string | null;
+  resolvedAt: string | null;
+  resolvedReason: string | null;
+  lastKnownPendingAmount: number | null;
+  lastKnownInvoiceStatus: string | null;
+  lastSyncedAt: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface SummaryMeta {
@@ -326,16 +366,14 @@ function CustomerCell({
   task,
   taskLoading,
   onFlag,
-  onRelease,
   historicalCount = 0,
 }: {
   row: ExtendedRow;
   enrichment: CustomerEnrichment | undefined;
   statusFilter: string;
-  task?: CustomerStatementTask;
+  task?: RecoveryInvoiceTask;
   taskLoading?: boolean;
-  onFlag?: (id: string, name: string) => void;
-  onRelease?: (taskId: string, custId: string) => void;
+  onFlag?: (row: ExtendedRow) => void;
   historicalCount?: number;
 }) {
   const [show, setShow] = useState(false);
@@ -361,7 +399,7 @@ function CustomerCell({
   };
 
   const isOpen = statusFilter === 'open';
-  const isFlagged = task && task.status === 'OPEN';
+  const isFlagged = task && task.status === 'ACTIVE';
 
   return (
     <div ref={containerRef} className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
@@ -385,49 +423,29 @@ function CustomerCell({
             >
               {row.customerName}
             </span>
-            {isOpen && (
-              <div className="flex shrink-0 items-center gap-1">
-                {enrichment?.tallyReady && (
-                  <span title="Tally Ready" className="flex shrink-0">
-                    <Check size={11} color="#059669" />
-                  </span>
-                )}
-                {isFlagged && (
-                  <span title={`FLAGGED • ${task.flaggedByName} • ${new Date(task.flaggedAt).toLocaleDateString()}`} className="flex shrink-0 items-center gap-0.5">
-                    <Flag size={10} color="#D97706" />
-                    <span className="text-[9px] font-medium" style={{ color: '#D97706' }}>Statement Pending</span>
-                  </span>
-                )}
-              </div>
+            {isOpen && enrichment?.tallyReady && (
+              <span title="Tally Ready" className="flex shrink-0">
+                <Check size={11} color="#059669" />
+              </span>
             )}
           </a>
         )}
-
-        {/* Inline Flag / Release chip — same line as customer name */}
+ 
+        {/* Inline Flag chip — same line as customer name */}
         {isOpen && (
           <div className="flex shrink-0 items-center gap-1 ml-1">
             {!isFlagged ? (
               <button
                 disabled={taskLoading}
-                onClick={(e) => { e.stopPropagation(); onFlag?.(row.customerId, row.customerName); }}
+                onClick={(e) => { e.stopPropagation(); onFlag?.(row); }}
                 className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors disabled:opacity-50"
                 style={{ border: '1px solid #E2E8F0', color: '#64748B', background: '#F8FAFC', cursor: 'pointer' }}
               >
                 <Flag size={8} />
                 Flag
               </button>
-            ) : (
-              <button
-                disabled={taskLoading}
-                onClick={(e) => { e.stopPropagation(); onRelease?.(task!.id, row.customerId); }}
-                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors disabled:opacity-50"
-                style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#B45309', cursor: 'pointer' }}
-              >
-                <Check size={8} />
-                Release
-              </button>
-            )}
-
+            ) : null}
+ 
             {/* Historical Counter */}
             {historicalCount > 0 && (
               <span 
@@ -442,13 +460,24 @@ function CustomerCell({
           </div>
         )}
       </div>
-
-      {/* GST sub-line */}
-      {gst ? (
-        <p className="text-[10px] font-mono mt-0.5 truncate" style={{ color: '#94A3B8' }}>{gst}</p>
-      ) : (
-        <p className="text-[10px] italic mt-0.5" style={{ color: '#CBD5E1' }}>GST missing</p>
-      )}
+ 
+      {/* GST & Status sub-line */}
+      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+        {gst ? (
+          <span className="text-[10px] font-mono text-slate-400 truncate block">{gst}</span>
+        ) : (
+          <span className="text-[10px] italic text-slate-350 block">GST missing</span>
+        )}
+        {isOpen && isFlagged && (
+          <span 
+            title={`FLAGGED • ${task.flaggedByName} • ${new Date(task.flaggedAt).toLocaleDateString()}`}
+            className="inline-flex items-center gap-0.5 px-1 py-0.2 bg-amber-50 text-amber-700 text-[8.5px] font-extrabold uppercase rounded border border-amber-200 shrink-0"
+          >
+            <Flag size={7} className="fill-amber-600 text-amber-600" />
+            <span>Pending Release</span>
+          </span>
+        )}
+      </div>
 
       {/* Hover card */}
       {show && hasEnrichment && (
@@ -749,10 +778,16 @@ export default function AccountsSummaryView() {
   const fetchedCustomerIds = useRef<Set<string>>(new Set());
   const redundantFetchesAvoided = useRef(0);
 
-  // Statement Follow-up Tasks
-  const [tasks, setTasks] = useState<CustomerStatementTask[]>([]);
+  // Statement Follow-up Tasks (RecoveryInvoiceTasks)
+  const [tasks, setTasks] = useState<RecoveryInvoiceTask[]>([]);
   const [historicalCounts, setHistoricalCounts] = useState<Record<string, number>>({});
+  const [historicalCustomerCounts, setHistoricalCustomerCounts] = useState<Record<string, number>>({});
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [filterNeedsReminder, setFilterNeedsReminder] = useState(false);
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [taskLoadingId, setTaskLoadingId] = useState<string | null>(null);
+  const [releaseAllowed, setReleaseAllowed] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<number>(0);
 
   // New Operational States & Ticking Clock
   const [nowTick, setNowTick] = useState(Date.now());
@@ -762,6 +797,78 @@ export default function AccountsSummaryView() {
   const downloadRef = useRef<HTMLDivElement>(null);
 
   // Ticks the clock every second to drive cooldown countdowns reactively
+  const router = useRouter();
+  const [flaggedDrawerOpen, setFlaggedDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setFlaggedDrawerOpen(false);
+      }
+    };
+    if (flaggedDrawerOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [flaggedDrawerOpen]);
+
+  const activeTasksList = useMemo(() => {
+    return tasks.filter(t => t.status === 'ACTIVE');
+  }, [tasks]);
+
+  const getTaskOverdue = useCallback((task: RecoveryInvoiceTask) => {
+    const inv = data?.rows?.find(r => r.invoiceId === task.invoiceId);
+    if (inv) {
+      return !!(inv as any).isOverdue;
+    }
+    const ageDays = (Date.now() - new Date(task.flaggedAt).getTime()) / (24 * 60 * 60 * 1000);
+    return ageDays > 7;
+  }, [data]);
+
+  const filteredTasks = useMemo(() => {
+    let filtered = tasks.filter(t => t.status === 'ACTIVE');
+    if (filterNeedsReminder) {
+      filtered = filtered.filter(t => t.requiresReminder);
+    }
+    return filtered;
+  }, [tasks, filterNeedsReminder]);
+
+  const oldestAge = useMemo(() => {
+    const active = tasks.filter(t => t.status === 'ACTIVE');
+    if (active.length === 0) return 'N/A';
+    const dates = active.map(t => new Date(t.flaggedAt).getTime());
+    const oldestTime = Math.min(...dates);
+    return timeAgo(new Date(oldestTime).toISOString());
+  }, [tasks]);
+
+  const getWhatsAppUrl = useCallback((task: RecoveryInvoiceTask, amountPending: number) => {
+    const statementLink = `${window.location.origin}/staff/dashboard/accounts?tab=statement&customerId=${encodeURIComponent(task.customerId)}`;
+    const msg = `Dear ${task.customerName},\n\nThis is a gentle reminder regarding your outstanding invoice.\n\nInvoice: ${task.invoiceNumber}\nPending Amount: ₹${amountPending.toLocaleString('en-IN')}\n\nYou can view your complete account statement here:\n${statementLink}\n\nPlease contact us at your earliest convenience to arrange payment.\n\nThank you,\nKamna Traders`;
+    return `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  }, []);
+
+  const locateInvoice = useCallback((customerId: string, invoiceId: string | null) => {
+    if (viewMode === 'customer') {
+      setExpandedCustomers(prev => {
+        const next = new Set(prev);
+        next.add(customerId);
+        return next;
+      });
+    }
+    setTimeout(() => {
+      const targetId = viewMode === 'invoice' && invoiceId ? `invoice-${invoiceId}` : `customer-${customerId}`;
+      const el = document.getElementById(targetId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('bg-amber-100/60');
+        setTimeout(() => {
+          el.classList.remove('bg-amber-100/60');
+        }, 2000);
+      } else {
+        toast.error('Row not found on current page');
+      }
+    }, 100);
+  }, [viewMode]);
   useEffect(() => {
     const interval = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(interval);
@@ -803,14 +910,19 @@ export default function AccountsSummaryView() {
     return Math.max(0, Math.ceil((60000 - diff) / 1000));
   }, [data, nowTick]);
 
-  // ─── Tasks API ─────────────────────────────────────────────────────────────
+  // ─── Recovery Tasks API ───────────────────────────────────────────────────
+  const [refreshingInvoices, setRefreshingInvoices] = useState(false);
+
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch('/api/accounts/summary/followup');
+      const res = await fetch('/api/accounts/recovery');
       const json = await res.json();
       if (json.success) {
         setTasks(json.data);
         setHistoricalCounts(json.historicalCounts || {});
+        setHistoricalCustomerCounts(json.historicalCustomerCounts || {});
+        setCurrentUserId(json.currentUserId || null);
+        setReleaseAllowed(!!json.releaseAllowed);
       }
     } catch {
       // Non-fatal
@@ -821,20 +933,27 @@ export default function AccountsSummaryView() {
     fetchTasks();
   }, [fetchTasks]);
 
-  const handleFlagStatement = async (customerId: string, customerName: string) => {
-    setTaskLoadingId(customerId);
+  const handleFlagStatement = async (row: InvoiceRow | ExtendedRow) => {
+    setTaskLoadingId(row.invoiceId);
     try {
-      const res = await fetch('/api/accounts/summary/followup', {
+      const res = await fetch('/api/accounts/recovery', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId, customerName }),
+        body: JSON.stringify({
+          invoiceId: row.invoiceId,
+          invoiceNumber: row.invoiceNumber,
+          customerId: row.customerId,
+          customerName: row.customerName,
+          lastKnownPendingAmount: row.amountPending,
+          lastKnownInvoiceStatus: row.paymentStatus
+        }),
       });
       const json = await res.json();
       if (json.success) {
-        toast.success(`Flagged ${customerName} for follow-up`);
+        toast.success(`Flagged invoice ${row.invoiceNumber} for recovery`);
         fetchTasks();
       } else {
-        toast.error(json.error || 'Failed to flag customer');
+        toast.error(json.error || 'Failed to flag invoice');
       }
     } catch {
       toast.error('Network error. Please retry.');
@@ -843,17 +962,17 @@ export default function AccountsSummaryView() {
     }
   };
 
-  const handleReleaseStatement = async (taskId: string, customerId: string) => {
-    setTaskLoadingId(customerId);
+  const handleReleaseStatement = async (taskId: string, invoiceId: string) => {
+    setTaskLoadingId(invoiceId);
     try {
-      const res = await fetch('/api/accounts/summary/followup', {
+      const res = await fetch('/api/accounts/recovery', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: taskId }),
+        body: JSON.stringify({ id: taskId, action: 'release' }),
       });
       const json = await res.json();
       if (json.success) {
-        toast.success(`Released follow-up`);
+        toast.success(`Released invoice recovery task`);
         fetchTasks();
       } else {
         toast.error(json.error || 'Failed to release task');
@@ -862,6 +981,73 @@ export default function AccountsSummaryView() {
       toast.error('Network error. Please retry.');
     } finally {
       setTaskLoadingId(null);
+    }
+  };
+
+  const handleToggleReminder = async (taskId: string, invoiceId: string, current: boolean) => {
+    setTaskLoadingId(invoiceId);
+    try {
+      const res = await fetch('/api/accounts/recovery', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: taskId, action: 'remind', requiresReminder: !current }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(json.data.requiresReminder ? 'Marked as needing reminder' : 'Unmarked reminder requirement');
+        fetchTasks();
+      } else {
+        toast.error(json.error || 'Failed to update reminder status');
+      }
+    } catch {
+      toast.error('Network error. Please retry.');
+    } finally {
+      setTaskLoadingId(null);
+    }
+  };
+
+  const handleMarkReminderSent = async (taskId: string, invoiceId: string) => {
+    setTaskLoadingId(invoiceId);
+    try {
+      const res = await fetch('/api/accounts/recovery', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: taskId, action: 'reminder_sent' }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success('Marked reminder as sent');
+        fetchTasks();
+      } else {
+        toast.error(json.error || 'Failed to record reminder');
+      }
+    } catch {
+      toast.error('Network error. Please retry.');
+    } finally {
+      setTaskLoadingId(null);
+    }
+  };
+
+  const handleRefreshInvoices = async (invoiceIds: string[]) => {
+    if (invoiceIds.length === 0) return;
+    setRefreshingInvoices(true);
+    try {
+      const res = await fetch('/api/accounts/recovery/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoiceIds }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(`Refreshed ${invoiceIds.length} flagged invoices`);
+        setTasks(json.data);
+      } else {
+        toast.error(json.error || 'Failed to refresh invoices');
+      }
+    } catch {
+      toast.error('Network error. Please retry.');
+    } finally {
+      setRefreshingInvoices(false);
     }
   };
 
@@ -1967,6 +2153,7 @@ export default function AccountsSummaryView() {
 
                     return (
                       <tr key={row.invoiceId}
+                        id={`invoice-${row.invoiceId}`}
                         onMouseEnter={() => setHoveredRow(row.invoiceId)}
                         onMouseLeave={() => setHoveredRow(null)}
                         style={{
@@ -2006,11 +2193,10 @@ export default function AccountsSummaryView() {
                             row={row}
                             enrichment={enrichment}
                             statusFilter={statusFilter}
-                            task={tasks.find(t => t.customerId === row.customerId && t.status === 'OPEN')}
-                            taskLoading={taskLoadingId === row.customerId}
+                            task={tasks.find(t => t.invoiceId === row.invoiceId && t.status === 'ACTIVE')}
+                            taskLoading={taskLoadingId === row.invoiceId}
                             onFlag={handleFlagStatement}
-                            onRelease={handleReleaseStatement}
-                            historicalCount={historicalCounts[row.customerId] || 0}
+                            historicalCount={historicalCounts[row.invoiceId] || 0}
                           />
                         </td>
 
@@ -2169,7 +2355,7 @@ export default function AccountsSummaryView() {
                   const statementUrl = buildStatementUrl(group.customerId);
 
                   return (
-                    <div key={group.customerId} className="group transition-colors border-b last:border-0"
+                    <div key={group.customerId} id={`customer-${group.customerId}`} className="group transition-colors border-b last:border-0"
                       style={{ borderColor: '#F1F5F9', background: idx % 2 === 1 ? '#FAFBFC' : '#fff' }}>
                       
                       {/* Customer Parent Row */}
@@ -2192,10 +2378,12 @@ export default function AccountsSummaryView() {
                                     </span>
                                   )}
                                   {(() => {
-                                    const task = tasks.find(t => t.customerId === group.customerId && t.status === 'OPEN');
-                                    if (task) {
+                                    const activeTasks = tasks.filter(t => t.customerId === group.customerId && t.status === 'ACTIVE');
+                                    const isFlagged = activeTasks.length > 0;
+                                    const oldestTask = activeTasks.sort((a,b) => new Date(a.flaggedAt).getTime() - new Date(b.flaggedAt).getTime())[0];
+                                    if (isFlagged && oldestTask) {
                                       return (
-                                        <span title={`FLAGGED • ${task.flaggedByName} • ${new Date(task.flaggedAt).toLocaleDateString()}`} className="flex shrink-0 items-center gap-0.5">
+                                        <span title={`FLAGGED • ${oldestTask.flaggedByName} • ${new Date(oldestTask.flaggedAt).toLocaleDateString()}`} className="flex shrink-0 items-center gap-0.5">
                                           <Flag size={10} color="#D97706" />
                                           <span className="text-[9px] font-medium" style={{ color: '#D97706' }}>Statement Pending</span>
                                         </span>
@@ -2208,32 +2396,25 @@ export default function AccountsSummaryView() {
 
                               {/* Inline Flag / Release button on the same line */}
                               {statusFilter === 'open' && (() => {
-                                const task = tasks.find(t => t.customerId === group.customerId && t.status === 'OPEN');
-                                const loading = taskLoadingId === group.customerId;
-                                const historicalCount = historicalCounts[group.customerId] || 0;
+                                const openInvoices = group.invoices.filter(isOperationallyOpen);
+                                const oldestOpenInvoice = openInvoices.sort((a,b) => a.invoiceDate.localeCompare(b.invoiceDate))[0];
+                                const activeTasks = tasks.filter(t => t.customerId === group.customerId && t.status === 'ACTIVE');
+                                const isFlagged = activeTasks.length > 0;
+                                const loading = taskLoadingId ? group.invoices.some(inv => inv.invoiceId === taskLoadingId) : false;
+                                const historicalCount = historicalCustomerCounts[group.customerId] || 0;
                                 return (
                                   <div className="flex items-center gap-1">
-                                    {!task ? (
+                                    {!isFlagged && oldestOpenInvoice ? (
                                       <button
                                         disabled={loading}
-                                        onClick={(e) => { e.stopPropagation(); handleFlagStatement(group.customerId, group.customerName); }}
+                                        onClick={(e) => { e.stopPropagation(); handleFlagStatement(oldestOpenInvoice); }}
                                         className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors disabled:opacity-50 ml-1"
                                         style={{ border: '1px solid #E2E8F0', color: '#64748B', background: '#F8FAFC', cursor: 'pointer' }}
                                       >
                                         <Flag size={8} />
                                         Flag
                                       </button>
-                                    ) : (
-                                      <button
-                                        disabled={loading}
-                                        onClick={(e) => { e.stopPropagation(); handleReleaseStatement(task.id, group.customerId); }}
-                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors disabled:opacity-50 ml-1"
-                                        style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#B45309', cursor: 'pointer' }}
-                                      >
-                                        <Check size={8} />
-                                        Release
-                                      </button>
-                                    )}
+                                    ) : null}
 
                                     {/* Historical Counter */}
                                     {historicalCount > 0 && (
@@ -2512,6 +2693,356 @@ export default function AccountsSummaryView() {
           </div>
         )}
       </div>
+
+      {/* Floating Trigger Button */}
+      <div className="fixed right-0 top-1/2 -translate-y-1/2 z-40">
+        <button
+          onClick={() => setFlaggedDrawerOpen(true)}
+          className="w-8 flex flex-col items-center justify-center py-4 bg-[#1A2766] hover:bg-[#AE1B1E] text-white rounded-l-md shadow-lg transition-all active:scale-95 group relative border-l border-y border-white/10"
+        >
+          <div className="relative mb-2">
+            <Flag size={12} className="text-white group-hover:rotate-12 transition-transform" />
+            {activeTasksList.length > 0 && (
+              <span className="absolute -top-2.5 -right-2 bg-[#AE1B1E] text-white text-[7.5px] font-bold px-0.5 rounded-full border border-white flex items-center justify-center min-w-[12px] h-[12px] leading-none">
+                {activeTasksList.length}
+              </span>
+            )}
+          </div>
+          <span className="text-[8.5px] font-extrabold tracking-widest uppercase [writing-mode:vertical-lr] rotate-180">
+            Recovery Queue
+          </span>
+        </button>
+      </div>
+
+      {/* Sliding Drawer Panel */}
+      {flaggedDrawerOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div 
+            className="absolute inset-0 bg-slate-900/35 backdrop-blur-sm transition-opacity duration-300"
+            onClick={() => setFlaggedDrawerOpen(false)}
+          />
+          <div className="relative w-full max-w-[380px] h-full bg-slate-50 shadow-2xl flex flex-col z-10 border-l border-slate-200 animate-in slide-in-from-right duration-200">
+            {/* Header */}
+            <div className="p-3 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
+              <div>
+                <h3 className="text-xs font-bold flex items-center gap-1.5" style={{ color: '#1A2766' }}>
+                  <Flag size={12} className="text-amber-500 fill-amber-500" />
+                  Recovery Queue
+                </h3>
+                <p className="text-[9px] font-medium text-slate-400 mt-0.5">Pending statement follow-ups</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const elapsed = nowTick - lastSyncTime;
+                  const cooldownSec = Math.max(0, Math.ceil((60000 - elapsed) / 1000));
+                  const isSyncDisabled = refreshingInvoices || activeTasksList.length === 0 || cooldownSec > 0;
+
+                  return (
+                    <button
+                      onClick={() => {
+                        handleRefreshInvoices(activeTasksList.map(t => t.invoiceId));
+                        setLastSyncTime(Date.now());
+                      }}
+                      disabled={isSyncDisabled}
+                      className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50 flex items-center gap-1 text-[9px] font-bold"
+                      title={cooldownSec > 0 ? `Next sync available in ${cooldownSec}s` : "Sync status of active recovery invoices from Zoho"}
+                    >
+                      <RefreshCw size={10} className={refreshingInvoices ? 'animate-spin' : ''} />
+                      {cooldownSec > 0 ? `Sync (${cooldownSec}s)` : 'Sync Zoho'}
+                    </button>
+                  );
+                })()}
+                <button 
+                  onClick={() => setFlaggedDrawerOpen(false)}
+                  className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+
+            {/* Needs Rem KPI Filter Toggler */}
+            <div className="p-2 border-b border-slate-200 shrink-0">
+              <button 
+                onClick={() => setFilterNeedsReminder(!filterNeedsReminder)}
+                className={`w-full p-2 rounded-lg border text-center transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm ${
+                  filterNeedsReminder 
+                    ? 'border-rose-400 bg-rose-50 text-rose-800 ring-2 ring-rose-500/10' 
+                    : activeTasksList.filter(t => t.requiresReminder).length > 0 
+                      ? 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-medium' 
+                      : 'border-slate-100 bg-slate-50/50 text-slate-400 opacity-60'
+                }`}
+                title="Click to toggle follow-up required filter"
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                  <span>🔔</span> Needs Follow-up
+                </span>
+                <span className="text-xs font-black">
+                  {activeTasksList.filter(t => t.requiresReminder).length}
+                </span>
+              </button>
+            </div>
+
+            {/* Content List */}
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {filteredTasks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center gap-1.5">
+                  <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-350">
+                    <Check size={14} className="stroke-[3]" />
+                  </div>
+                  <div>
+                    <p className="text-slate-800 font-bold text-[10px]">No invoices in this queue</p>
+                    <p className="text-[9px] text-slate-400 mt-0.5">Adjust filter or flag invoices to get started</p>
+                  </div>
+                </div>
+              ) : (
+                filteredTasks.map(item => {
+                  const inv = data?.rows?.find(r => r.invoiceId === item.invoiceId);
+                  
+                  const pendingAmount = inv ? inv.amountPending : (item.lastKnownPendingAmount || 0);
+                  const totalAmount = inv ? inv.invoiceValue : (item.lastKnownPendingAmount || 0);
+                  const pendingPercent = totalAmount > 0 ? Math.round((pendingAmount / totalAmount) * 100) : 0;
+                  const displayInvoiceDate = inv ? formatDateDisplay(inv.invoiceDate, inv.createdTime || null).date : 'N/A';
+                  const isOverdue = getTaskOverdue(item);
+                  const dueDateVal = inv?.dueDate ? new Date(inv.dueDate) : null;
+                  const overdueDays = dueDateVal 
+                    ? Math.max(0, Math.ceil((Date.now() - dueDateVal.getTime()) / (1000 * 60 * 60 * 24)))
+                    : Math.max(0, Math.ceil((Date.now() - new Date(item.flaggedAt).getTime()) / (1000 * 60 * 60 * 24)));
+                  const unusedCredits = enrichMap[item.customerId]?.unusedCredits || 0;
+                  const loading = taskLoadingId === item.invoiceId;
+                  const isExpanded = expandedCardId === item.id;
+
+                  return (
+                    <div 
+                      key={item.id} 
+                      className={`bg-white border rounded-md p-2 shadow-sm transition-all flex flex-col gap-1 border-slate-200 hover:border-slate-300 ${
+                        isExpanded ? 'ring-1 ring-[#1A2766]/5 border-slate-300 bg-white shadow-md' : ''
+                      }`}
+                    >
+                      {/* COLLAPSED HEADER */}
+                      <div 
+                        onClick={() => setExpandedCardId(isExpanded ? null : item.id)}
+                        className="cursor-pointer select-none"
+                      >
+                        {/* ROW 1: Customer & Pending Amount */}
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="flex items-center gap-1 min-w-0">
+                            {isExpanded ? <ChevronDown size={10} className="text-slate-400 shrink-0" /> : <ChevronRight size={10} className="text-slate-400 shrink-0" />}
+                            <span className="text-[10px] font-bold text-slate-800 truncate uppercase" title={item.customerName}>
+                              {item.customerName}
+                            </span>
+                          </div>
+                          <span className="text-[10.5px] font-extrabold text-slate-900 shrink-0">
+                            {formatINR(pendingAmount)}
+                          </span>
+                        </div>
+
+                        {/* ROW 2: Invoice Number */}
+                        <div className="pl-3.5 text-[8.5px] font-mono text-slate-400 leading-none mt-0.5">
+                          {item.invoiceNumber}
+                        </div>
+
+                        {/* ROW 3: Days Overdue, Follow-up indicator, Reminder Count */}
+                        <div className="pl-3.5 flex justify-between items-center mt-1 text-[8.5px] text-slate-500 font-medium">
+                          <div className="flex items-center gap-2">
+                            <span>{overdueDays}d overdue</span>
+                            {item.requiresReminder ? (
+                              <span className="flex items-center gap-0.5 text-rose-600 font-semibold">
+                                <span>🔔</span> Needs Follow-up
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-0.5 text-slate-400">
+                                <span>🔔</span> No Follow-up
+                              </span>
+                            )}
+                          </div>
+                          {item.reminderCount > 0 && (
+                            <span className="flex items-center gap-0.5 text-emerald-600 font-bold shrink-0">
+                              <span>📲</span> x{item.reminderCount}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* EXPANDED CONTENT */}
+                      {isExpanded && (
+                        <div className="border-t border-slate-100 pt-1.5 mt-1 space-y-2 text-[9.5px] animate-in fade-in duration-100">
+                          {/* KPI grid */}
+                          <div className="grid grid-cols-4 gap-1 bg-slate-50 p-1 rounded border border-slate-150 text-center">
+                            <div className="flex flex-col">
+                              <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide">Invoice</span>
+                              <span className="text-[9px] font-black text-slate-800">{formatINR(totalAmount)}</span>
+                            </div>
+                            <div className="flex flex-col border-x border-slate-200">
+                              <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide">Pending</span>
+                              <span className="text-[9px] font-black text-amber-700">{formatINR(pendingAmount)}</span>
+                            </div>
+                            <div className="flex flex-col border-r border-slate-200">
+                              <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide">Overdue</span>
+                              <span className="text-[9px] font-black text-slate-800">{overdueDays}d</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide">Credits</span>
+                              <span className={`text-[9px] font-black ${unusedCredits > 0 ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
+                                {unusedCredits > 0 ? formatINR(unusedCredits) : '₹0'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Extra info / dates */}
+                          <div className="flex justify-between items-center text-[8.5px] text-slate-400 font-medium px-0.5">
+                            <span>Invoice Date: {displayInvoiceDate}</span>
+                            <span>FlagsRaised: {historicalCounts[item.invoiceId] || 0}x</span>
+                          </div>
+
+                          {/* Last Reminder */}
+                          {item.reminderSent && (
+                            <div className="bg-emerald-50/50 text-emerald-800 p-1 rounded border border-emerald-100/50 text-[8px] font-medium">
+                              Last Reminder: {item.reminderSentAt ? timeAgo(item.reminderSentAt) : 'N/A'} ({item.reminderCount}x)
+                            </div>
+                          )}
+
+                          {/* Notes */}
+                          <div className="flex flex-col gap-1">
+                            {item.notes ? (
+                              <p className="text-[8.5px] text-slate-500 italic bg-slate-50 p-1.5 rounded border border-dashed border-slate-200">
+                                <strong>Notes:</strong> {item.notes}
+                              </p>
+                            ) : null}
+                            <input
+                              type="text"
+                              placeholder="Add operational notes... (Press Enter)"
+                              defaultValue={item.notes || ''}
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter') {
+                                  const val = e.currentTarget.value.trim();
+                                  setTaskLoadingId(item.invoiceId);
+                                  try {
+                                    const res = await fetch('/api/accounts/recovery', {
+                                      method: 'PUT',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ id: item.id, action: 'update_notes', notes: val }),
+                                    });
+                                    const json = await res.json();
+                                    if (json.success) {
+                                      toast.success('Notes updated');
+                                      fetchTasks();
+                                    } else {
+                                      toast.error(json.error || 'Failed to update notes');
+                                    }
+                                  } catch {
+                                    toast.error('Network error');
+                                  } finally {
+                                    setTaskLoadingId(null);
+                                  }
+                                }
+                              }}
+                              className="w-full text-[8.5px] px-2 py-1 bg-white border border-slate-200 rounded focus:outline-none focus:border-slate-400 placeholder-slate-450"
+                            />
+                          </div>
+
+                          {/* Zoho Links */}
+                          <div className="flex items-center gap-1.5 text-[8.5px] font-bold text-blue-600">
+                            <a 
+                              href={`https://books.zoho.in/app#/contacts/${item.customerId}`} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="hover:underline flex items-center gap-0.5"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Customer Link <ExternalLink size={8} />
+                            </a>
+                            <span className="text-slate-350 font-normal">|</span>
+                            <a 
+                              href={`https://books.zoho.in/app#/invoices/${item.invoiceId}`} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="hover:underline flex items-center gap-0.5"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Invoice Link <ExternalLink size={8} />
+                            </a>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="flex gap-1 items-center border-t border-slate-100 pt-1.5">
+                            <button
+                              onClick={() => {
+                                window.open(buildStatementUrl(item.customerId), '_blank');
+                              }}
+                              className="flex-1 py-1 px-1 border border-slate-205 rounded hover:bg-slate-50 text-[8.5px] font-bold text-slate-600 flex items-center justify-center gap-0.5 transition-colors bg-white"
+                              title="Open Statement in new tab"
+                            >
+                              <FileText size={9} />
+                              Statement
+                            </button>
+                            <button
+                              onClick={() => {
+                                locateInvoice(item.customerId, item.invoiceId);
+                              }}
+                              className="flex-1 py-1 px-1 border border-slate-205 rounded hover:bg-slate-50 text-[8.5px] font-bold text-slate-600 flex items-center justify-center gap-0.5 transition-colors bg-white"
+                              title="Scroll main dashboard table to this row"
+                            >
+                              <MapPin size={9} />
+                              Locate
+                            </button>
+                            
+                            <button
+                              disabled={loading}
+                              onClick={() => {
+                                window.open(getWhatsAppUrl(item, pendingAmount), '_blank');
+                                handleMarkReminderSent(item.id, item.invoiceId);
+                              }}
+                              className="py-1 px-1.5 border border-[#25D366]/20 bg-[#25D366]/5 hover:bg-[#25D366]/10 text-[#128C7E] rounded text-[8.5px] font-bold flex items-center justify-center gap-0.5 transition-colors disabled:opacity-50"
+                              title="Send reminder via WhatsApp"
+                            >
+                              <MessageSquare size={9} />
+                              WhatsApp
+                            </button>
+
+                            <button
+                              disabled={loading}
+                              onClick={() => {
+                                handleToggleReminder(item.id, item.invoiceId, item.requiresReminder);
+                              }}
+                              className={`py-1 px-1.5 border rounded text-[8.5px] font-bold flex items-center justify-center transition-colors disabled:opacity-50 ${
+                                item.requiresReminder
+                                  ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
+                                  : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                              }`}
+                              title="Toggle Recovery/Follow-up flag status"
+                            >
+                              Follow-up
+                            </button>
+
+                            {releaseAllowed && (
+                              <button
+                                disabled={loading}
+                                onClick={() => {
+                                  handleReleaseStatement(item.id, item.invoiceId);
+                                }}
+                                className="py-1 px-1.5 border border-emerald-250 rounded hover:bg-emerald-50 text-[8.5px] font-bold text-emerald-700 flex items-center justify-center gap-0.5 transition-colors bg-emerald-50/20 disabled:opacity-50"
+                                title="Release invoice task from recovery list"
+                              >
+                                {loading ? (
+                                  <Loader2 size={9} className="animate-spin" />
+                                ) : (
+                                  <CheckCheck size={9} />
+                                )}
+                                Release
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

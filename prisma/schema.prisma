@@ -31,6 +31,8 @@ model User {
   accounts_transactions       Boolean @default(false)
   accounts_summary_view       Boolean @default(false)
   stock_alerts_manage         Boolean @default(false)
+  accounts_recovery_manage    Boolean @default(false)
+  release_statement_queue     Boolean @default(false)
 
   sessions            ActiveSession[]
   carts               Cart[]
@@ -451,3 +453,47 @@ model StockAlertThreshold {
 
   @@unique([warehouseId, skuId])
 }
+
+model RecoveryInvoiceTask {
+  id              String   @id @default(cuid())
+  invoiceId       String   // Zoho invoice ID
+  invoiceNumber   String
+  customerId      String   // Zoho customer ID  
+  customerName    String
+
+  status          String   // ACTIVE | RELEASED | RESOLVED
+
+  requiresReminder Boolean @default(false)
+  reminderSent     Boolean @default(false)
+  reminderCount    Int     @default(0)
+  reminderSentAt   DateTime?
+  reminderSentById String?
+  reminderSentByName String?
+
+  flagCount        Int     @default(1)
+  flaggedByUserId  String
+  flaggedByName    String
+  flaggedAt        DateTime @default(now())
+
+  releasedByUserId  String?
+  releasedByName    String?
+  releasedAt        DateTime?
+
+  resolvedByUserId  String?
+  resolvedByName    String?
+  resolvedAt        DateTime?
+  resolvedReason    String?  // "AUTO_RESOLVED" | "MANUAL"
+
+  lastKnownPendingAmount   Float?
+  lastKnownInvoiceStatus   String?
+  lastSyncedAt             DateTime?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceId])
+  @@index([customerId])
+  @@index([status])
+}
+

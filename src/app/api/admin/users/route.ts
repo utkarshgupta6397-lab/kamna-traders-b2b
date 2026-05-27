@@ -28,6 +28,8 @@ export async function GET() {
         accounts_transactions: true,
         accounts_summary_view: true,
         stock_alerts_manage: true,
+        accounts_recovery_manage: true,
+        release_statement_queue: true,
       },
       orderBy: { name: 'asc' },
     });

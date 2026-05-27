@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -66,6 +66,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'stock_alerts_manage',
     label: 'Stock Alerts',
     description: 'Ability to configure and manage minimum stock thresholds'
+  },
+  {
+    key: 'accounts_recovery_manage',
+    label: 'Accounts Recovery',
+    description: 'Ability to release invoices and manage reminder queues in accounts recovery'
+  },
+  {
+    key: 'release_statement_queue',
+    label: 'Release Statement Queue',
+    description: 'Ability to release statements and invoices from recovery queue'
   }
 ];
 
@@ -80,5 +90,7 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'accounts_customer_statement',
   'accounts_transactions',
   'accounts_summary_view',
-  'stock_alerts_manage'
+  'stock_alerts_manage',
+  'accounts_recovery_manage',
+  'release_statement_queue'
 ];

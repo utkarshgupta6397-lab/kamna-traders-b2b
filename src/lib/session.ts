@@ -108,6 +108,7 @@ export async function validateSession(sessionToken: string): Promise<{
           accounts_customer_statement: true,
           accounts_transactions: true,
           accounts_summary_view: true,
+          stock_alerts_manage: true,
         }
       }
     }
@@ -124,6 +125,7 @@ export async function validateSession(sessionToken: string): Promise<{
     session.user.accounts_customer_statement = true;
     session.user.accounts_transactions = true;
     session.user.accounts_summary_view = true;
+    session.user.stock_alerts_manage = true;
   }
 
 

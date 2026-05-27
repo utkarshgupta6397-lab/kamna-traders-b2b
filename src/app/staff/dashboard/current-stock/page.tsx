@@ -24,7 +24,7 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   sevenDaysAgo.setHours(0, 0, 0, 0);
 
-  const [warehouses, categories, brands, skus, inventory, recentSales] = await Promise.all([
+  const [warehouses, categories, brands, skus, inventory, recentSales, thresholds] = await Promise.all([
     prisma.warehouse.findMany({ 
       where: { active: true }, 
       select: { id: true, name: true, isSystemWarehouse: true },
@@ -62,6 +62,10 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
         qty: true,
         cart: { select: { warehouseId: true, createdAt: true } }
       }
+    }),
+    prisma.stockAlertThreshold.findMany({
+      where: { isEnabled: true },
+      select: { warehouseId: true, skuId: true, minimumQty: true }
     })
   ]);
 
@@ -163,6 +167,12 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
     inventory: inventoryLookup[sku.id] || {}
   }));
 
+  // Transform thresholds into a lookup map
+  const thresholdMap: Record<string, number> = {};
+  for (const t of thresholds) {
+    thresholdMap[`${t.warehouseId}_${t.skuId}`] = t.minimumQty;
+  }
+
   return (
     <CurrentStockClient 
       warehouses={warehouses} 
@@ -171,6 +181,7 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
       items={items}
       consumptionData={consumptionData}
       canSync={!!session.canRunSkuSync}
+      thresholdMap={thresholdMap}
     />
   );
 }

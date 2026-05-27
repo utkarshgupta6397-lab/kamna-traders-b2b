@@ -27,6 +27,7 @@ export async function GET() {
         accounts_customer_statement: true,
         accounts_transactions: true,
         accounts_summary_view: true,
+        stock_alerts_manage: true,
       },
       orderBy: { name: 'asc' },
     });

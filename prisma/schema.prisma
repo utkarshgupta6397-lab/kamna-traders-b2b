@@ -30,6 +30,7 @@ model User {
   accounts_customer_statement Boolean @default(false)
   accounts_transactions       Boolean @default(false)
   accounts_summary_view       Boolean @default(false)
+  stock_alerts_manage         Boolean @default(false)
 
   sessions            ActiveSession[]
   carts               Cart[]
@@ -62,6 +63,7 @@ model Warehouse {
   inventory         WarehouseInventory[]
   transfersSent     Transfer[]           @relation("SourceWarehouse")
   transfersReceived Transfer[]           @relation("DestinationWarehouse")
+  stockAlerts       StockAlertThreshold[]
 }
 
 model Brand {
@@ -112,6 +114,7 @@ model Sku {
   updatedBy      User?                @relation("SkuUnlimitedUpdatedBy", fields: [updatedById], references: [id])
   inventory      WarehouseInventory[]
   transferItems  TransferItem[]
+  stockAlerts    StockAlertThreshold[]
 
   @@index([categoryId])
   @@index([brandId])
@@ -430,4 +433,21 @@ model CustomerStatementTask {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model StockAlertThreshold {
+  id           String   @id @default(cuid())
+  warehouseId  String
+  skuId        String
+  minimumQty   Int
+  isEnabled    Boolean  @default(true)
+  createdById  String?
+  updatedById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  warehouse    Warehouse @relation(fields: [warehouseId], references: [id])
+  sku          Sku       @relation(fields: [skuId], references: [id])
+
+  @@unique([warehouseId, skuId])
 }

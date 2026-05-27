@@ -11,6 +11,7 @@ export default async function SettingsPage() {
   const permissions = {
     canManageZoneMappings: !!session.canManageZoneMappings || session.role === 'ADMIN',
     canManageUnlimitedSkus: !!session.canManageUnlimitedSkus || session.role === 'ADMIN',
+    stock_alerts_manage: !!session.stock_alerts_manage || session.role === 'ADMIN',
   };
 
   return <SettingsPageClient permissions={permissions} />;

@@ -52,6 +52,7 @@ interface Props {
   items: (SkuItem & { brandId?: string | null; caseSize: number })[];
   consumptionData: Record<string, any>;
   canSync?: boolean;
+  thresholdMap?: Record<string, number>;
 }
 
 interface SyncResult {
@@ -64,7 +65,7 @@ interface SyncResult {
   duration?: number;
 }
 
-export default function CurrentStockClient({ warehouses, categories, brands, items, consumptionData, canSync = false }: Props) {
+export default function CurrentStockClient({ warehouses, categories, brands, items, consumptionData, canSync = false, thresholdMap = {} }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -761,13 +762,18 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                               const qty = item.inventory[wh.id]?.qty || 0;
                               const isNegative = qty < 0;
                               const isInfinite = qty >= 999999999;
+                              const threshold = thresholdMap[`${wh.id}_${item.id}`];
+                              const isLow = !isInfinite && !isNegative && threshold !== undefined && qty < threshold;
                               return (
-                                <td key={wh.id} className={`px-4 py-1.5 text-center border-r border-gray-100 font-mono ${isNegative ? 'text-red-600 bg-red-50/20' : qty > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                                <td key={wh.id} className={`px-4 py-1.5 text-center border-r border-gray-100 font-mono ${isNegative ? 'text-red-600 bg-red-50/20' : isLow ? 'bg-amber-50 text-amber-700' : qty > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
                                   <div className="flex items-baseline justify-center gap-1">
                                     {isNegative && <AlertTriangle size={10} className="text-red-600 mb-0.5" />}
+                                    {isLow && (
+                                      <span className="text-amber-600 font-bold mr-0.5 cursor-help" title={`Below minimum threshold (Min: ${threshold})`}>⚠</span>
+                                    )}
                                     <span className="font-bold">{isInfinite ? '∞' : qty.toLocaleString()}</span>
                                     {!isInfinite && qty !== 0 && item.unit && (
-                                      <span className={`text-[10px] font-medium opacity-70 lowercase ${isNegative ? 'text-red-400' : 'text-gray-400'}`}>{item.unit}</span>
+                                      <span className={`text-[10px] font-medium opacity-70 lowercase ${isNegative ? 'text-red-400' : isLow ? 'text-amber-500' : 'text-gray-400'}`}>{item.unit}</span>
                                     )}
                                   </div>
                                 </td>

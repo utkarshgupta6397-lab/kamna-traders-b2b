@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions' | 'accounts_summary_view';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -61,6 +61,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'accounts_summary_view',
     label: 'Accounts Summary View',
     description: 'Ability to view operational invoice summaries and billing dashboard'
+  },
+  {
+    key: 'stock_alerts_manage',
+    label: 'Stock Alerts',
+    description: 'Ability to configure and manage minimum stock thresholds'
   }
 ];
 
@@ -74,5 +79,6 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'canDeleteTransfers',
   'accounts_customer_statement',
   'accounts_transactions',
-  'accounts_summary_view'
+  'accounts_summary_view',
+  'stock_alerts_manage'
 ];

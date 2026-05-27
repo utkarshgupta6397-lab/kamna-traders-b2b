@@ -169,7 +169,7 @@ export default function UserPermissionsPage() {
           <table className="w-full border-collapse relative">
             <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
               <tr>
-                <th className="py-2 px-2.5 text-left border-b border-gray-200 min-w-[180px] bg-gray-50/95 backdrop-blur-sm">
+                <th className="py-2 px-2.5 text-left border-b border-gray-200 min-w-[180px] bg-gray-50/95 backdrop-blur-sm sticky left-0 z-20 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                   <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">User Details</span>
                 </th>
                 {PERMISSIONS.map(p => (
@@ -192,7 +192,7 @@ export default function UserPermissionsPage() {
                 
                 return (
                   <tr key={user.id} className="hover:bg-blue-50/20 transition-colors group">
-                    <td className="py-1.5 px-2.5 border-b border-gray-100">
+                    <td className="py-1.5 px-2.5 border-b border-gray-100 sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                       <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-full bg-[#1A2766] text-white flex items-center justify-center font-bold text-[10px] shadow-sm flex-shrink-0">
                           {user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}

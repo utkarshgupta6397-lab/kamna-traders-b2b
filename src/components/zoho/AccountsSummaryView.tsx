@@ -788,6 +788,9 @@ export default function AccountsSummaryView() {
   const [taskLoadingId, setTaskLoadingId] = useState<string | null>(null);
   const [releaseAllowed, setReleaseAllowed] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
+  const [recoverySort, setRecoverySort] = useState<'overdue' | 'value'>('overdue');
+  const [syncingInvoiceIds, setSyncingInvoiceIds] = useState<Set<string>>(new Set());
+  const [successSyncedIds, setSuccessSyncedIds] = useState<Set<string>>(new Set());
 
   // New Operational States & Ticking Clock
   const [nowTick, setNowTick] = useState(Date.now());
@@ -830,8 +833,35 @@ export default function AccountsSummaryView() {
     if (filterNeedsReminder) {
       filtered = filtered.filter(t => t.requiresReminder);
     }
-    return filtered;
-  }, [tasks, filterNeedsReminder]);
+    
+    // Sort tasks in memory without additional API fetches
+    return [...filtered].sort((a, b) => {
+      const invA = data?.rows?.find(r => r.invoiceId === a.invoiceId);
+      const invB = data?.rows?.find(r => r.invoiceId === b.invoiceId);
+      const pendingA = invA ? invA.amountPending : (a.lastKnownPendingAmount || 0);
+      const pendingB = invB ? invB.amountPending : (b.lastKnownPendingAmount || 0);
+
+      const dueDateA = invA?.dueDate ? new Date(invA.dueDate) : null;
+      const overdueDaysA = dueDateA 
+        ? Math.max(0, Math.ceil((Date.now() - dueDateA.getTime()) / (1000 * 60 * 60 * 24)))
+        : Math.max(0, Math.ceil((Date.now() - new Date(a.flaggedAt).getTime()) / (1000 * 60 * 60 * 24)));
+
+      const dueDateB = invB?.dueDate ? new Date(invB.dueDate) : null;
+      const overdueDaysB = dueDateB 
+        ? Math.max(0, Math.ceil((Date.now() - dueDateB.getTime()) / (1000 * 60 * 60 * 24)))
+        : Math.max(0, Math.ceil((Date.now() - new Date(b.flaggedAt).getTime()) / (1000 * 60 * 60 * 24)));
+
+      if (recoverySort === 'value') {
+        return pendingB - pendingA;
+      } else {
+        // Overdue sort: highest overdue days first. If same, secondary sort by pending amount descending.
+        if (overdueDaysB !== overdueDaysA) {
+          return overdueDaysB - overdueDaysA;
+        }
+        return pendingB - pendingA;
+      }
+    });
+  }, [tasks, filterNeedsReminder, recoverySort, data]);
 
   const oldestAge = useMemo(() => {
     const active = tasks.filter(t => t.status === 'ACTIVE');
@@ -1030,22 +1060,66 @@ export default function AccountsSummaryView() {
 
   const handleRefreshInvoices = async (invoiceIds: string[]) => {
     if (invoiceIds.length === 0) return;
+    
+    // Slice to maximum 50 invoices for this operation
+    const targetIds = invoiceIds.slice(0, 50);
     setRefreshingInvoices(true);
+
+    // Chunk size of 10 for safe concurrent batching
+    const chunkSize = 10;
+    const chunks: string[][] = [];
+    for (let i = 0; i < targetIds.length; i += chunkSize) {
+      chunks.push(targetIds.slice(i, i + chunkSize));
+    }
+
     try {
-      const res = await fetch('/api/accounts/recovery/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoiceIds }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        toast.success(`Refreshed ${invoiceIds.length} flagged invoices`);
-        setTasks(json.data);
-      } else {
-        toast.error(json.error || 'Failed to refresh invoices');
-      }
+      // Process batches concurrently while keeping UI responsive and showing card loaders
+      await Promise.all(chunks.map(async (chunk) => {
+        setSyncingInvoiceIds(prev => {
+          const next = new Set(prev);
+          chunk.forEach(id => next.add(id));
+          return next;
+        });
+
+        try {
+          const res = await fetch('/api/accounts/recovery/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ invoiceIds: chunk }),
+          });
+          const json = await res.json();
+          if (json.success) {
+            // Set latest list of active tasks (automatically excludes auto-resolved items)
+            setTasks(json.data);
+
+            // Mark successful card refreshes for checkmark flash
+            setSuccessSyncedIds(prev => {
+              const next = new Set(prev);
+              chunk.forEach(id => next.add(id));
+              return next;
+            });
+            setTimeout(() => {
+              setSuccessSyncedIds(prev => {
+                const next = new Set(prev);
+                chunk.forEach(id => next.delete(id));
+                return next;
+              });
+            }, 1000);
+          }
+        } catch (err) {
+          console.error("Chunk refresh error:", err);
+        } finally {
+          setSyncingInvoiceIds(prev => {
+            const next = new Set(prev);
+            chunk.forEach(id => next.delete(id));
+            return next;
+          });
+        }
+      }));
+
+      toast.success(`Refreshed ${targetIds.length} flagged invoices`);
     } catch {
-      toast.error('Network error. Please retry.');
+      toast.error('Sync failed. Please retry.');
     } finally {
       setRefreshingInvoices(false);
     }
@@ -2731,25 +2805,46 @@ export default function AccountsSummaryView() {
                 </h3>
                 <p className="text-[9px] font-medium text-slate-400 mt-0.5">Pending statement follow-ups</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
+                {/* Custom Sort Dropdown */}
+                <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-[8.5px] font-bold text-slate-600 hover:bg-slate-100 transition-colors select-none">
+                  <span>{recoverySort === 'overdue' ? '🕒' : '₹'}</span>
+                  <select
+                    value={recoverySort}
+                    onChange={(e) => setRecoverySort(e.target.value as 'overdue' | 'value')}
+                    className="bg-transparent focus:outline-none cursor-pointer text-[8.5px] text-slate-700 border-none font-bold py-0"
+                  >
+                    <option value="overdue">Sort: Overdue</option>
+                    <option value="value">Sort: Value</option>
+                  </select>
+                </div>
+
                 {(() => {
                   const elapsed = nowTick - lastSyncTime;
                   const cooldownSec = Math.max(0, Math.ceil((60000 - elapsed) / 1000));
-                  const isSyncDisabled = refreshingInvoices || activeTasksList.length === 0 || cooldownSec > 0;
+                  const isSyncDisabled = refreshingInvoices || filteredTasks.length === 0 || cooldownSec > 0;
 
                   return (
-                    <button
-                      onClick={() => {
-                        handleRefreshInvoices(activeTasksList.map(t => t.invoiceId));
-                        setLastSyncTime(Date.now());
-                      }}
-                      disabled={isSyncDisabled}
-                      className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50 flex items-center gap-1 text-[9px] font-bold"
-                      title={cooldownSec > 0 ? `Next sync available in ${cooldownSec}s` : "Sync status of active recovery invoices from Zoho"}
-                    >
-                      <RefreshCw size={10} className={refreshingInvoices ? 'animate-spin' : ''} />
-                      {cooldownSec > 0 ? `Sync (${cooldownSec}s)` : 'Sync Zoho'}
-                    </button>
+                    <div className="flex flex-col items-end gap-0.5">
+                      <button
+                        onClick={() => {
+                          const invoicesToSync = filteredTasks.slice(0, 50).map(t => t.invoiceId);
+                          handleRefreshInvoices(invoicesToSync);
+                          setLastSyncTime(Date.now());
+                        }}
+                        disabled={isSyncDisabled}
+                        className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50 flex items-center gap-1 text-[9px] font-bold leading-none"
+                        title={cooldownSec > 0 ? `Next sync available in ${cooldownSec}s` : "Sync status of active recovery invoices from Zoho"}
+                      >
+                        <RefreshCw size={10} className={refreshingInvoices ? 'animate-spin' : ''} />
+                        {cooldownSec > 0 ? `Sync (${cooldownSec}s)` : 'Sync Zoho'}
+                      </button>
+                      {filteredTasks.length > 50 && (
+                        <span className="text-[7.5px] text-slate-400 font-bold leading-none select-none">
+                          Syncing 50 of {filteredTasks.length}
+                        </span>
+                      )}
+                    </div>
                   );
                 })()}
                 <button 
@@ -2796,7 +2891,7 @@ export default function AccountsSummaryView() {
                   </div>
                 </div>
               ) : (
-                filteredTasks.map(item => {
+                filteredTasks.map((item, taskIndex) => {
                   const inv = data?.rows?.find(r => r.invoiceId === item.invoiceId);
                   
                   const pendingAmount = inv ? inv.amountPending : (item.lastKnownPendingAmount || 0);
@@ -2812,12 +2907,16 @@ export default function AccountsSummaryView() {
                   const loading = taskLoadingId === item.invoiceId;
                   const isExpanded = expandedCardId === item.id;
 
+                  const isSyncing = syncingInvoiceIds.has(item.invoiceId);
+                  const isSyncSuccess = successSyncedIds.has(item.invoiceId);
+                  const isQueued = filteredTasks.length > 50 && taskIndex >= 50;
+
                   return (
                     <div 
                       key={item.id} 
                       className={`bg-white border rounded-md p-2 shadow-sm transition-all flex flex-col gap-1 border-slate-200 hover:border-slate-300 ${
                         isExpanded ? 'ring-1 ring-[#1A2766]/5 border-slate-300 bg-white shadow-md' : ''
-                      }`}
+                      } ${isSyncing ? 'opacity-60 animate-pulse bg-slate-50' : ''} ${isSyncSuccess ? 'bg-emerald-50/20 border-emerald-300 animate-none' : ''}`}
                     >
                       {/* COLLAPSED HEADER */}
                       <div 
@@ -2832,9 +2931,21 @@ export default function AccountsSummaryView() {
                               {item.customerName}
                             </span>
                           </div>
-                          <span className="text-[10.5px] font-extrabold text-slate-900 shrink-0">
-                            {formatINR(pendingAmount)}
-                          </span>
+                          <div className="flex items-center gap-1 shrink-0 select-none">
+                            {isSyncing && (
+                              <span className="text-[8px] font-semibold text-blue-600 flex items-center gap-0.5 animate-spin">
+                                <RefreshCw size={8} />
+                              </span>
+                            )}
+                            {isSyncSuccess && (
+                              <span className="text-[8px] font-bold text-emerald-600 flex items-center gap-0.5 animate-bounce">
+                                <Check size={8} className="stroke-[3]" />
+                              </span>
+                            )}
+                            <span className="text-[10.5px] font-extrabold text-slate-900">
+                              {formatINR(pendingAmount)}
+                            </span>
+                          </div>
                         </div>
 
                         {/* ROW 2: Invoice Number */}
@@ -2853,6 +2964,11 @@ export default function AccountsSummaryView() {
                             ) : (
                               <span className="flex items-center gap-0.5 text-slate-400">
                                 <span>🔔</span> No Follow-up
+                              </span>
+                            )}
+                            {isQueued && (
+                              <span className="text-[7px] text-slate-400 bg-slate-100 px-1 rounded border border-slate-200 select-none" title="This invoice is queued for the next sync batch">
+                                Queued
                               </span>
                             )}
                           </div>

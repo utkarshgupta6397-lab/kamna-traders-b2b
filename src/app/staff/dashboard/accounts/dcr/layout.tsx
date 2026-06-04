@@ -8,7 +8,7 @@ export default function DcrLayout({ children }: { children: React.ReactNode }) {
 
   const sidebarNav = [
     { id: 'process', label: 'Process Invoices', path: '/staff/dashboard/accounts/dcr', exact: true, phase2: false },
-    { id: 'pending', label: 'Pending Serials', path: '#', exact: false, phase2: true },
+    { id: 'pending', label: 'Pending Serials', path: '/staff/dashboard/accounts/dcr/pending-serials', exact: false, phase2: false },
     { id: 'vendor', label: 'Vendor DCR', path: '#', exact: false, phase2: true },
     { id: 'hold', label: 'Hold Queue', path: '#', exact: false, phase2: true },
     { id: 'ready', label: 'Ready To Issue', path: '#', exact: false, phase2: true },

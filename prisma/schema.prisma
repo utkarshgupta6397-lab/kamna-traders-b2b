@@ -518,7 +518,8 @@ model DcrInvoice {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   
-  items           DcrInvoiceItem[]
+  items             DcrInvoiceItem[]
+  serialAllocations DcrSerialAllocation[]
 
   @@index([dcrStatus])
   @@index([zohoInvoiceId])
@@ -537,7 +538,8 @@ model DcrInvoiceItem {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   
-  invoice         DcrInvoice @relation(fields: [dcrInvoiceId], references: [id], onDelete: Cascade)
+  invoice           DcrInvoice @relation(fields: [dcrInvoiceId], references: [id], onDelete: Cascade)
+  serialAllocations DcrSerialAllocation[]
 }
 
 model DcrAuditLog {
@@ -558,4 +560,58 @@ model ZohoApiLog {
   timestamp     DateTime @default(now())
 }
 
+model DcrSerialAllocation {
+  id           String         @id @default(cuid())
+  invoiceId    String
+  skuId        String         // References DcrInvoiceItem.id
+  serialNumber String         @unique
+  allocatedAt  DateTime       @default(now())
+  allocatedBy  String
 
+  invoice      DcrInvoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceItem  DcrInvoiceItem @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  serial       DcrSerial?     @relation(fields: [serialNumber], references: [serialNumber], onDelete: Restrict)
+
+  @@index([invoiceId])
+  @@index([skuId])
+  @@index([serialNumber])
+}
+
+enum SerialStatus {
+  AVAILABLE
+  ALLOCATED
+  PARTIALLY_ALLOCATED
+  HOLD
+  READY_TO_ISSUE
+  ISSUED
+  RETURNED
+}
+
+model DcrSerial {
+  id           String                 @id @default(cuid())
+  serialNumber String                 @unique
+  skuId        String?
+  source       String                 @default("MANUAL_DISCOVERY")
+  status       SerialStatus           @default(AVAILABLE)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  history      DcrSerialHistory[]
+  allocations  DcrSerialAllocation[]
+
+  @@index([skuId])
+}
+
+model DcrSerialHistory {
+  id               String      @id @default(cuid())
+  serialId         String
+  eventType        String
+  eventDescription String
+  createdAt        DateTime    @default(now())
+  userId           String
+
+  serial           DcrSerial   @relation(fields: [serialId], references: [id], onDelete: Cascade)
+
+  @@index([serialId])
+}

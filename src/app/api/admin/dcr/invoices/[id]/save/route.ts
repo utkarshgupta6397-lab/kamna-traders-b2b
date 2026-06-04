@@ -68,7 +68,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             data: {
               dcrInvoiceId: id,
               itemName: mItem.itemName,
-              sku: mItem.sku || null,
+              sku: mItem.sku || mItem.itemId || null,
+              itemId: mItem.itemId || null,
               quantity: mItem.quantity,
               remarks: mItem.remarks,
               source: 'MANUAL',

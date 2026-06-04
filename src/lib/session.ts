@@ -111,6 +111,7 @@ export async function validateSession(sessionToken: string): Promise<{
           stock_alerts_manage: true,
           accounts_recovery_manage: true,
           release_statement_queue: true,
+          dcr_management: true,
         }
       }
     }
@@ -130,8 +131,8 @@ export async function validateSession(sessionToken: string): Promise<{
     session.user.stock_alerts_manage = true;
     session.user.accounts_recovery_manage = true;
     session.user.release_statement_queue = true;
+    session.user.dcr_management = true;
   }
-
 
   const result = session 
     ? { 

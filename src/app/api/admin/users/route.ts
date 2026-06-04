@@ -30,6 +30,7 @@ export async function GET() {
         stock_alerts_manage: true,
         accounts_recovery_manage: true,
         release_statement_queue: true,
+        dcr_management: true,
       },
       orderBy: { name: 'asc' },
     });

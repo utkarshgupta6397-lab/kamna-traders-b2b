@@ -18,8 +18,9 @@ export default async function AccountsPage(props: { searchParams: Promise<{ tab?
   const canViewStatement = isAdmin || !!session.accounts_customer_statement;
   const canViewTransactions = isAdmin || !!session.accounts_transactions;
   const canViewSummary = isAdmin || !!session.accounts_summary_view;
+  const canManageDcr = isAdmin || !!session.dcr_management;
 
-  if (!canViewStatement && !canViewTransactions && !canViewSummary) {
+  if (!canViewStatement && !canViewTransactions && !canViewSummary && !canManageDcr) {
     redirect('/staff/dashboard?error=unauthorized_accounts');
   }
 
@@ -37,6 +38,7 @@ export default async function AccountsPage(props: { searchParams: Promise<{ tab?
       canViewStatement={canViewStatement} 
       canViewTransactions={canViewTransactions} 
       canViewSummary={canViewSummary}
+      canManageDcr={canManageDcr}
       activeTab={activeTab}
     >
       {activeTab === 'statement' && canViewStatement && (

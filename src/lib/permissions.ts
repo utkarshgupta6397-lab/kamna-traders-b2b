@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -76,6 +76,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'release_statement_queue',
     label: 'Release Statement Queue',
     description: 'Ability to release statements and invoices from recovery queue'
+  },
+  {
+    key: 'dcr_management',
+    label: 'DCR Management',
+    description: 'Ability to manage DCR invoice processing workflow'
   }
 ];
 
@@ -92,5 +97,6 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'accounts_summary_view',
   'stock_alerts_manage',
   'accounts_recovery_manage',
-  'release_statement_queue'
+  'release_statement_queue',
+  'dcr_management'
 ];

@@ -87,8 +87,8 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.stock_alerts_manage = true;
       merged.accounts_recovery_manage = true;
       merged.release_statement_queue = true;
+      merged.dcr_management = true;
     }
-
 
     console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);
     return merged;

@@ -6,7 +6,8 @@ interface AccountsTabsProps {
   canViewStatement: boolean;
   canViewTransactions: boolean;
   canViewSummary: boolean;
-  activeTab: 'statement' | 'transactions' | 'summary';
+  canManageDcr?: boolean;
+  activeTab: 'statement' | 'transactions' | 'summary' | 'dcr';
   children: React.ReactNode;
 }
 
@@ -14,6 +15,7 @@ export default function AccountsTabs({
   canViewStatement,
   canViewTransactions,
   canViewSummary,
+  canManageDcr,
   activeTab,
   children,
 }: AccountsTabsProps) {
@@ -54,6 +56,18 @@ export default function AccountsTabs({
             }`}
           >
             Summary
+          </Link>
+        )}
+        {canManageDcr && (
+          <Link
+            href="/staff/dashboard/accounts/dcr"
+            className={`pb-3 text-sm font-semibold transition-colors border-b-2 ${
+              activeTab === 'dcr'
+                ? 'border-[#1A2766] text-[#1A2766]'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Manage DCR
           </Link>
         )}
       </div>

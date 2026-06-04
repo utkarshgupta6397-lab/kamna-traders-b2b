@@ -33,6 +33,7 @@ model User {
   stock_alerts_manage         Boolean @default(false)
   accounts_recovery_manage    Boolean @default(false)
   release_statement_queue     Boolean @default(false)
+  dcr_management              Boolean @default(false)
 
   sessions            ActiveSession[]
   carts               Cart[]
@@ -496,4 +497,65 @@ model RecoveryInvoiceTask {
   @@index([customerId])
   @@index([status])
 }
+
+// ─── DCR Module Phase 1 ───────────────────────────────────────────────────────
+
+model DcrInvoice {
+  id              String   @id @default(cuid())
+  zohoInvoiceId   String   @unique
+  invoiceNumber   String
+  customerId      String
+  customerName    String
+  invoiceDate     DateTime
+  invoiceStatus   String
+  invoiceTotal    Float
+  dcrStatus       String   @default("NEW") // NEW, UNDER_REVIEW, DCR_IDENTIFIED, PENDING_SERIALS
+  syncedAt          DateTime @default(now())
+  reviewedAt        DateTime?
+  archived          Boolean   @default(false)
+  processedAt       DateTime?
+  processingReason  String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  items           DcrInvoiceItem[]
+
+  @@index([dcrStatus])
+  @@index([zohoInvoiceId])
+}
+
+model DcrInvoiceItem {
+  id              String   @id @default(cuid())
+  dcrInvoiceId    String
+  itemId          String?
+  itemName        String
+  sku             String?
+  quantity        Int
+  source          String   @default("ZOHO") // ZOHO or MANUAL
+  selectedForDCR  Boolean  @default(false)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  invoice         DcrInvoice @relation(fields: [dcrInvoiceId], references: [id], onDelete: Cascade)
+}
+
+model DcrAuditLog {
+  id            String   @id @default(cuid())
+  entityType    String   // e.g. "INVOICE", "ITEM"
+  entityId      String
+  action        String
+  userId        String
+  metadata      Json?
+  createdAt     DateTime @default(now())
+}
+
+model ZohoApiLog {
+  id            String   @id @default(cuid())
+  endpoint      String
+  module        String   // e.g. "DCR", "SYNC"
+  userId        String?
+  timestamp     DateTime @default(now())
+}
+
 

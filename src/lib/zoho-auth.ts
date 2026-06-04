@@ -94,7 +94,7 @@ export async function getZohoTokens(): Promise<string | null> {
 
     const data = await response.json();
 
-    if (!response.ok) {
+    if (!response.ok || data.error || !data.access_token) {
       console.error('[ZohoAuth] Refresh failed:', data);
       return null;
     }
@@ -131,6 +131,28 @@ export async function exchangeAuthCode(code: string): Promise<{ success: boolean
       grant_type: 'authorization_code'
     });
 
+    const secretStr = CLIENT_SECRET || '';
+    const maskedSecret = secretStr.length > 6 
+      ? `${secretStr.substring(0, 3)}***${secretStr.substring(secretStr.length - 3)}`
+      : '***';
+
+    console.log('[RUNTIME DIAGNOSTIC]', {
+      cwd: process.cwd(),
+      nodeEnv: process.env.NODE_ENV,
+      clientId: process.env.ZOHO_CLIENT_ID,
+      secretLength: process.env.ZOHO_CLIENT_SECRET?.length,
+      redirectUri: process.env.ZOHO_REDIRECT_URI,
+      accountsUrl: ACCOUNTS_URL,
+      isReplaceMe: process.env.ZOHO_CLIENT_SECRET === 'REPLACE_ME',
+      maskedPayload: {
+        code,
+        client_id: CLIENT_ID,
+        client_secret: maskedSecret,
+        redirect_uri: process.env.ZOHO_REDIRECT_URI,
+        grant_type: 'authorization_code'
+      }
+    });
+
     const response = await fetch(`${ACCOUNTS_URL}/oauth/v2/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -141,7 +163,7 @@ export async function exchangeAuthCode(code: string): Promise<{ success: boolean
     console.log(`[ZohoAuth] Response Status: ${response.status}`);
     console.log('[ZohoAuth] Response Body:', JSON.stringify(data, null, 2));
 
-    if (!response.ok) {
+    if (!response.ok || data.error || !data.access_token) {
       console.error('[ZohoAuth] Token exchange failed:', data);
       return { success: false, error: data.error || 'Token exchange failed' };
     }

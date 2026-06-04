@@ -30,6 +30,7 @@ export async function GET(request: Request) {
         isUnlimited: true,
         zohoBooksId2: true,
         brand: { select: { name: true } },
+        category: { select: { name: true } },
         inventory: {
           where: warehouseId ? { warehouseId } : undefined,
           select: { qty: true, isOos: true }
@@ -65,6 +66,7 @@ export async function GET(request: Request) {
         price: sku.price,
         caseSize: sku.caseSize,
         categoryId: sku.categoryId,
+        categoryName: sku.category?.name ?? null,
         inventoryQty,
         isOos,
         isUnlimited: sku.isUnlimited,
@@ -102,7 +104,19 @@ export async function GET(request: Request) {
         .slice(0, 5);
     });
 
+    // Debug telemetry
+    const totalCount = await prisma.sku.count();
+    const activeCount = await prisma.sku.count({ where: { isActive: true } });
+    const eligibleCount = products.filter(p => p.caseSize > 1 && p.isActive).length;
+
+    console.log(`[SKU Debug API] Total: ${totalCount}, Active: ${activeCount}, Eligible: ${eligibleCount}, Returned: ${products.length}`);
+
     return NextResponse.json({
+      debug: {
+        total: totalCount,
+        active: activeCount,
+        eligible: eligibleCount
+      },
       skus: products,
       topBrandsByCategory,
       topBrandsFullCatalog,

@@ -1,15 +1,15 @@
 import { getSession } from '@/lib/auth';
-import AccountsTabs from '../AccountsTabs';
-import AccountsSummaryView from '@/components/zoho/AccountsSummaryView';
 import { redirect } from 'next/navigation';
+import DcrClient from './DcrClient';
+import AccountsTabs from '../AccountsTabs';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AccountsSummaryPage() {
+export default async function AccountsDcrPage() {
   const session = await getSession();
 
-  if (!session) {
-    redirect('/staff?callbackUrl=%2Fstaff%2Fdashboard%2Faccounts%2Fsummary');
+  if (!session || (!session.dcr_management && session.role !== 'ADMIN')) {
+    redirect('/staff/dashboard/accounts?error=unauthorized_dcr');
   }
 
   const isAdmin = session.role === 'ADMIN';
@@ -18,19 +18,15 @@ export default async function AccountsSummaryPage() {
   const canViewSummary = isAdmin || !!session.accounts_summary_view;
   const canManageDcr = isAdmin || !!session.dcr_management;
 
-  if (!canViewSummary) {
-    redirect('/staff/dashboard?error=unauthorized_accounts');
-  }
-
   return (
     <AccountsTabs 
       canViewStatement={canViewStatement} 
       canViewTransactions={canViewTransactions} 
       canViewSummary={canViewSummary}
       canManageDcr={canManageDcr}
-      activeTab="summary"
+      activeTab="dcr"
     >
-      <AccountsSummaryView />
+      <DcrClient />
     </AccountsTabs>
   );
 }

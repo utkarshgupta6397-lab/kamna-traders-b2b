@@ -5,13 +5,16 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Trash2, HelpCircle, Save, Layers, ListFilter, AlertCircle, CheckCircle, FileText } from 'lucide-react';
 import SerialHistoryModal from '@/components/dcr/SerialHistoryModal';
+import { useDcrStats } from '../../layout';
 
 export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string }) {
   const router = useRouter();
+  const { refreshStats } = useDcrStats();
   
   const [invoice, setInvoice] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const [saveStep, setSaveStep] = useState<'validating' | 'saving' | null>(null);
   
   // Selected item for allocation
   const [selectedItemId, setSelectedItemId] = useState<string>('');
@@ -49,6 +52,7 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
         // Set first item as default selected
         setSelectedItemId(data.invoice.items[0].id);
       }
+      refreshStats();
     } catch (err: any) {
       toast.error(err.message || 'Failed to fetch invoice details');
     } finally {
@@ -65,50 +69,54 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
     const item = invoice.items.find((i: any) => i.id === selectedItemId);
     if (!item) return;
 
-    let serials: string[] = [];
-
-    if (entryMethod === 'import') {
-      // Regex parsing for Import from DCR Certificate
-      // Strip out `(xxx Wp)` and line numbers like `1. `
-      let cleaned = serialInput
-        .replace(/\(\d+\s*Wp\)/gi, '')
-        .replace(/\d+\.\s+/g, '');
-      
-      serials = cleaned
-        .split(/[\s,]+/)
-        .map(s => s.trim().toUpperCase())
-        .filter(s => s.length > 0);
-    } else {
-      const splitRegex = entryMethod === 'newline' ? /\r?\n/ : /,/;
-      serials = serialInput.split(splitRegex)
-        .map(s => s.trim().toUpperCase())
-        .filter(s => s.length > 0);
-    }
-
-    if (serials.length === 0) {
-      toast.error('Please enter at least one valid serial number.');
-      return;
-    }
-
-    // Validation 1: No duplicates in the batch
-    const uniqueBatch = new Set(serials);
-    if (uniqueBatch.size !== serials.length) {
-      toast.error('Duplicate serial numbers found in your input list.');
-      return;
-    }
-
-    // Validation 2: Cannot allocate more than required quantity
-    const requiredQty = item.quantity;
-    const currentlyAllocated = item.serialAllocations.length;
-    const remainingQty = requiredQty - currentlyAllocated;
-
-    if (serials.length > remainingQty) {
-      toast.error(`Cannot allocate ${serials.length} serials. Only ${remainingQty} remaining slots for this item.`);
-      return;
-    }
-
     try {
       setSaving(prev => ({ ...prev, [selectedItemId]: true }));
+      setSaveStep('validating');
+
+      let serials: string[] = [];
+
+      if (entryMethod === 'import') {
+        // Regex parsing for Import from DCR Certificate
+        // Strip out `(xxx Wp)` and line numbers like `1. `
+        let cleaned = serialInput
+          .replace(/\(\d+\s*Wp\)/gi, '')
+          .replace(/\d+\.\s+/g, '');
+        
+        serials = cleaned
+          .split(/[\s,]+/)
+          .map(s => s.trim().toUpperCase())
+          .filter(s => s.length > 0);
+      } else {
+        const splitRegex = entryMethod === 'newline' ? /\r?\n/ : /,/;
+        serials = serialInput.split(splitRegex)
+          .map(s => s.trim().toUpperCase())
+          .filter(s => s.length > 0);
+      }
+
+      if (serials.length === 0) {
+        toast.error('Please enter at least one valid serial number.');
+        return;
+      }
+
+      // Validation 1: No duplicates in the batch
+      const uniqueBatch = new Set(serials);
+      if (uniqueBatch.size !== serials.length) {
+        toast.error('Duplicate serial numbers found in your input list.');
+        return;
+      }
+
+      // Validation 2: Cannot allocate more than required quantity
+      const requiredQty = item.quantity;
+      const currentlyAllocated = item.serialAllocations.length;
+      const remainingQty = requiredQty - currentlyAllocated;
+
+      if (serials.length > remainingQty) {
+        toast.error(`Cannot allocate ${serials.length} serials. Only ${remainingQty} remaining slots for this item.`);
+        return;
+      }
+
+      setSaveStep('saving');
+
       const res = await fetch(`/api/admin/dcr/pending-serials/${invoiceId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -136,6 +144,7 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
       toast.error(err.message || 'Failed to allocate serial numbers');
     } finally {
       setSaving(prev => ({ ...prev, [selectedItemId]: false }));
+      setSaveStep(null);
     }
   };
 
@@ -143,6 +152,7 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
     if (!pendingConfirmation) return;
     try {
       setSaving(prev => ({ ...prev, [pendingConfirmation.itemId]: true }));
+      setSaveStep('saving');
       const res = await fetch(`/api/admin/dcr/pending-serials/${invoiceId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -162,6 +172,7 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
       toast.error(err.message || 'Failed to allocate serial numbers');
     } finally {
       if (pendingConfirmation) setSaving(prev => ({ ...prev, [pendingConfirmation.itemId]: false }));
+      setSaveStep(null);
     }
   };
 
@@ -227,6 +238,7 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
     totalAllocated += item.serialAllocations.length;
   });
   const totalBalance = Math.max(0, totalRequired - totalAllocated);
+  const isSavingAny = Object.values(saving).some(Boolean) || saveStep !== null;
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-24 animate-in fade-in duration-300">
@@ -236,7 +248,8 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
         <div className="flex items-center gap-3">
           <button 
             onClick={() => router.push('/staff/dashboard/accounts/dcr/pending-serials')}
-            className="p-1.5 hover:bg-gray-200 rounded-full transition-colors text-gray-600"
+            disabled={isSavingAny}
+            className="p-1.5 hover:bg-gray-200 rounded-full transition-colors text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <ArrowLeft size={18} />
           </button>
@@ -300,8 +313,12 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
                 return (
                   <div 
                     key={item.id} 
-                    onClick={() => setSelectedItemId(item.id)}
-                    className={`p-5 transition-all cursor-pointer flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-gray-50/50 ${
+                    onClick={() => !isSavingAny && setSelectedItemId(item.id)}
+                    className={`p-5 transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-gray-50/50 ${
+                      isSavingAny 
+                        ? 'opacity-60 cursor-not-allowed' 
+                        : 'cursor-pointer'
+                    } ${
                       isSelected ? 'bg-blue-50/40 border-l-4 border-l-[#1A2766]' : 'border-l-4 border-l-transparent'
                     }`}
                   >
@@ -354,24 +371,27 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
                 </div>
                 <div className="flex bg-gray-200/80 p-0.5 rounded-lg border border-gray-300">
                   <button
-                    onClick={() => setEntryMethod('newline')}
-                    className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all ${
+                    onClick={() => !isSavingAny && setEntryMethod('newline')}
+                    disabled={isSavingAny}
+                    className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                       entryMethod === 'newline' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
                     Paste (Lines)
                   </button>
                   <button
-                    onClick={() => setEntryMethod('comma')}
-                    className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all ${
+                    onClick={() => !isSavingAny && setEntryMethod('comma')}
+                    disabled={isSavingAny}
+                    className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                       entryMethod === 'comma' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
                     Comma Separated
                   </button>
                   <button
-                    onClick={() => setEntryMethod('import')}
-                    className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all flex items-center gap-1 ${
+                    onClick={() => !isSavingAny && setEntryMethod('import')}
+                    disabled={isSavingAny}
+                    className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed ${
                       entryMethod === 'import' ? 'bg-white text-[#1A2766] shadow-sm' : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
@@ -398,7 +418,7 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
                          'Paste DCR Certificate Text'}
                       </label>
                       <textarea
-                        className="w-full border border-gray-300 rounded-lg p-3 text-sm font-mono focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
+                        className="w-full border border-gray-300 rounded-lg p-3 text-sm font-mono focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] disabled:opacity-50 disabled:cursor-not-allowed"
                         rows={6}
                         placeholder={
                           entryMethod === 'newline' ? 'ABC123\nABC124\nABC125' : 
@@ -407,6 +427,7 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
                         }
                         value={serialInput}
                         onChange={e => setSerialInput(e.target.value)}
+                        disabled={isSavingAny}
                       />
                       <p className="text-[11px] text-gray-400">
                         {entryMethod === 'import' ? 
@@ -418,11 +439,13 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
                     <div className="flex justify-end pt-1">
                       <button
                         onClick={handleSaveSerials}
-                        disabled={saving[selectedItemId] || !serialInput.trim()}
+                        disabled={isSavingAny || !serialInput.trim()}
                         className="bg-[#1A2766] hover:bg-[#1A2766]/90 text-white font-bold py-2.5 px-6 rounded-lg shadow-sm text-xs flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                       >
                         <Save size={14} />
-                        {saving[selectedItemId] ? 'Saving...' : 'Save Serials'}
+                        {saveStep === 'validating' ? 'Validating Serials...' : 
+                         saveStep === 'saving' ? 'Saving Allocation...' : 
+                         'Save Serials'}
                       </button>
                     </div>
                   </>
@@ -470,8 +493,9 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
                               {alloc.serialNumber}
                             </button>
                             <button
-                              onClick={() => handleDeleteSerial(alloc.id)}
-                              className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded-md hover:bg-red-50"
+                              onClick={() => !isSavingAny && handleDeleteSerial(alloc.id)}
+                              disabled={isSavingAny}
+                              className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded-md hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
                               title="Delete Allocation"
                             >
                               <Trash2 size={13} />

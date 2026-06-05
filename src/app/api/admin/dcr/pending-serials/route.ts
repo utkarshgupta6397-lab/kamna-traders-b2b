@@ -14,6 +14,7 @@ export async function GET(req: Request) {
     const search = searchParams.get('search') || '';
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '25');
+    const sort = searchParams.get('sort') || 'newest'; // 'newest' | 'oldest'
     const skip = (page - 1) * limit;
 
     const whereClause: any = {};
@@ -32,13 +33,18 @@ export async function GET(req: Request) {
       ];
     }
 
+    const orderBy: any = {};
+    if (sort === 'oldest') {
+      orderBy.invoiceDate = 'asc';
+    } else {
+      orderBy.invoiceDate = 'desc';
+    }
+
     // Fetch invoices
     const [invoices, totalCount] = await Promise.all([
       prisma.dcrInvoice.findMany({
         where: whereClause,
-        orderBy: {
-          updatedAt: 'desc',
-        },
+        orderBy,
         skip,
         take: limit,
         include: {

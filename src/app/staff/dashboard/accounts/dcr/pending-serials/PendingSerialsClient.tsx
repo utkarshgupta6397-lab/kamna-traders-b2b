@@ -22,6 +22,12 @@ export default function PendingSerialsClient() {
 
   // Modal State
   const [viewItemsModal, setViewItemsModal] = useState<any | null>(null);
+  const [loadingInvoiceId, setLoadingInvoiceId] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+
+  useEffect(() => {
+    setLoadingInvoiceId(null);
+  }, []);
 
   // KPIs
   const [kpis, setKpis] = useState({
@@ -33,13 +39,13 @@ export default function PendingSerialsClient() {
 
   useEffect(() => {
     fetchPendingInvoices();
-  }, [viewState, page, limit, searchQuery]);
+  }, [viewState, page, limit, searchQuery, sortOrder]);
 
   const fetchPendingInvoices = async () => {
     try {
       setLoading(true);
       const res = await fetch(
-        `/api/admin/dcr/pending-serials?view=${viewState}&page=${page}&limit=${limit}&search=${encodeURIComponent(searchQuery)}`
+        `/api/admin/dcr/pending-serials?view=${viewState}&page=${page}&limit=${limit}&search=${encodeURIComponent(searchQuery)}&sort=${sortOrder}`
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -100,16 +106,32 @@ export default function PendingSerialsClient() {
           </button>
         </div>
 
-        {/* Global Search */}
-        <div className="relative w-full xl:w-72">
-          <Search className="absolute left-3 top-2.5 text-gray-400" size={14} />
-          <input 
-            type="text" 
-            placeholder="Search invoice or customer..."
-            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-xs focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]"
-            value={searchQuery}
-            onChange={e => { setSearchQuery(e.target.value); setPage(1); }}
-          />
+        {/* Search & Sort Controls */}
+        <div className="flex items-center gap-3 w-full xl:w-auto">
+          {/* Global Search */}
+          <div className="relative w-full xl:w-72">
+            <Search className="absolute left-3 top-2.5 text-gray-400" size={14} />
+            <input 
+              type="text" 
+              placeholder="Search invoice or customer..."
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-xs focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]"
+              value={searchQuery}
+              onChange={e => { setSearchQuery(e.target.value); setPage(1); }}
+            />
+          </div>
+
+          {/* Sort Dropdown */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-xs text-gray-500 font-medium">Sort By:</span>
+            <select
+              value={sortOrder}
+              onChange={e => setSortOrder(e.target.value as 'newest' | 'oldest')}
+              className="border border-gray-300 rounded-md px-2.5 py-2 text-xs font-semibold focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766] bg-white text-gray-700 cursor-pointer shadow-sm"
+            >
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -117,11 +139,11 @@ export default function PendingSerialsClient() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
         <div className="bg-white py-5 px-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
           <div className="flex flex-col">
-            <span className="text-gray-500 text-[10px] font-bold uppercase tracking-wider">Invoices Waiting</span>
-            <span className="text-2xl font-bold text-purple-600 mt-1">{kpis.invoicesWaiting}</span>
+            <span className="text-gray-500 text-[10px] font-bold uppercase tracking-wider">Total Serials Pending</span>
+            <span className="text-2xl font-bold text-red-500 mt-1">{kpis.totalSerialsPending}</span>
           </div>
-          <div className="p-3 bg-purple-50 text-purple-600 rounded-lg">
-            <Inbox size={20} />
+          <div className="p-3 bg-red-50 text-red-500 rounded-lg">
+            <AlertCircle size={20} />
           </div>
         </div>
 
@@ -137,11 +159,11 @@ export default function PendingSerialsClient() {
 
         <div className="bg-white py-5 px-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
           <div className="flex flex-col">
-            <span className="text-gray-500 text-[10px] font-bold uppercase tracking-wider">Total Serials Pending</span>
-            <span className="text-2xl font-bold text-red-500 mt-1">{kpis.totalSerialsPending}</span>
+            <span className="text-gray-500 text-[10px] font-bold uppercase tracking-wider">Invoices Waiting</span>
+            <span className="text-2xl font-bold text-purple-600 mt-1">{kpis.invoicesWaiting}</span>
           </div>
-          <div className="p-3 bg-red-50 text-red-500 rounded-lg">
-            <AlertCircle size={20} />
+          <div className="p-3 bg-purple-50 text-purple-600 rounded-lg">
+            <Inbox size={20} />
           </div>
         </div>
 
@@ -250,17 +272,39 @@ export default function PendingSerialsClient() {
                       <td className="px-4 py-3 text-center align-middle whitespace-nowrap">
                         {inv.dcrStatus === 'PENDING_SERIALS' || inv.dcrStatus === 'PARTIALLY_ALLOCATED' ? (
                           <button
-                            onClick={() => router.push(`/staff/dashboard/accounts/dcr/pending-serials/${inv.id}`)}
-                            className="bg-[#1A2766] text-white hover:bg-[#1A2766]/90 px-3 py-1.5 rounded text-xs font-semibold shadow-sm transition-colors w-full"
+                            onClick={() => {
+                              if (loadingInvoiceId) return;
+                              setLoadingInvoiceId(inv.id);
+                              router.push(`/staff/dashboard/accounts/dcr/pending-serials/${inv.id}`);
+                            }}
+                            disabled={loadingInvoiceId !== null}
+                            className="bg-[#1A2766] text-white hover:bg-[#1A2766]/90 px-3 py-1.5 rounded text-xs font-semibold shadow-sm transition-colors w-full flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            Allocate Serials
+                            {loadingInvoiceId === inv.id ? (
+                              <>
+                                ⏳ Opening Allocation...
+                              </>
+                            ) : (
+                              'Allocate Serials'
+                            )}
                           </button>
                         ) : (
                           <button
-                            onClick={() => router.push(`/staff/dashboard/accounts/dcr/pending-serials/${inv.id}`)}
-                            className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded text-xs font-semibold shadow-sm transition-colors w-full"
+                            onClick={() => {
+                              if (loadingInvoiceId) return;
+                              setLoadingInvoiceId(inv.id);
+                              router.push(`/staff/dashboard/accounts/dcr/pending-serials/${inv.id}`);
+                            }}
+                            disabled={loadingInvoiceId !== null}
+                            className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded text-xs font-semibold shadow-sm transition-colors w-full flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            View Allocations
+                            {loadingInvoiceId === inv.id ? (
+                              <>
+                                ⏳ Loading...
+                              </>
+                            ) : (
+                              'View Allocations'
+                            )}
                           </button>
                         )}
                       </td>

@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Plus, Trash2, Search, AlertCircle } from 'lucide-react';
 import { isRecommendedForDcr } from '@/lib/dcr-config';
+import { useDcrStats } from '../../layout';
 
 export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
   const router = useRouter();
+  const { refreshStats } = useDcrStats();
   const [invoice, setInvoice] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -102,14 +104,15 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
     try {
       setSaving(true);
       const res = await fetch(`/api/admin/dcr/invoices/${invoiceId}/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ selections, manualItems }),
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ selections, manualItems }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       
       toast.success('DCR allocation saved!');
+      refreshStats();
       router.push('/staff/dashboard/accounts/dcr');
     } catch (err: any) {
       toast.error(err.message || 'Failed to save');
@@ -131,6 +134,7 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
       if (!res.ok) throw new Error(data.error);
       
       toast.success('Invoice marked as No DCR Required.');
+      refreshStats();
       router.push('/staff/dashboard/accounts/dcr');
     } catch (err: any) {
       toast.error(err.message || 'Failed to skip DCR');

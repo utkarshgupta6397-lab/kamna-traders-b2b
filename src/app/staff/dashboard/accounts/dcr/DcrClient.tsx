@@ -4,11 +4,13 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { ExternalLink, Calendar, Search, ChevronLeft, ChevronRight, Activity, X } from 'lucide-react';
+import { useDcrStats } from './layout';
 
 const ZOHO_ORG_ID = process.env.NEXT_PUBLIC_ZOHO_ORG_ID || '';
 
 export default function DcrClient() {
   const router = useRouter();
+  const { refreshStats } = useDcrStats();
   
   const [invoices, setInvoices] = useState<any[]>([]);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
@@ -30,6 +32,29 @@ export default function DcrClient() {
   const [searchQuery, setSearchQuery] = useState('');
   
   const [viewState, setViewState] = useState<'active' | 'archived'>('active');
+  const [selectedQuickSync, setSelectedQuickSync] = useState<'today' | 'yesterday' | '3days' | '7days' | '15days' | 'custom' | null>('today');
+  const [lastUpdatedText, setLastUpdatedText] = useState<string>('');
+
+  const nextRefreshTimeRef = useRef<number>(Date.now() + 60 * 60 * 1000);
+
+  const formatLastUpdated = (date: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const d = pad(date.getDate());
+    const m = months[date.getMonth()];
+    const y = date.getFullYear();
+    let hours = date.getHours();
+    const minutes = pad(date.getMinutes());
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const h = pad(hours);
+    return `${d} ${m} ${y}, ${h}:${minutes} ${ampm}`;
+  };
+
+  useEffect(() => {
+    setLastUpdatedText(formatLastUpdated(new Date()));
+  }, []);
   
   // Pagination State
   const [page, setPage] = useState(1);
@@ -56,6 +81,34 @@ export default function DcrClient() {
       if (cooldownRef.current) clearTimeout(cooldownRef.current);
     };
   }, [cooldown]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (selectedQuickSync !== 'today') return;
+      if (viewState !== 'active') return;
+      if (typeof window !== 'undefined' && window.location.pathname !== '/staff/dashboard/accounts/dcr') return;
+
+      const now = new Date();
+      const hours = now.getHours();
+      const minutes = now.getMinutes();
+      const isWithinWindow = hours >= 9 && (hours < 20 || (hours === 20 && minutes === 0));
+      if (!isWithinWindow) return;
+
+      if (document.hidden) return;
+
+      if (Date.now() >= nextRefreshTimeRef.current) {
+        const activeEl = document.activeElement;
+        const isUserTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+        if (isUserTyping) {
+          nextRefreshTimeRef.current = Date.now() + 5 * 60 * 1000;
+        } else {
+          fetchInvoices();
+        }
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [selectedQuickSync, viewState]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -90,6 +143,9 @@ export default function DcrClient() {
       setLastSyncTime(data.lastSyncTime || null);
       if (data.kpis) setKpis(data.kpis);
       if (data.apiUsage) setApiUsage(data.apiUsage);
+      setLastUpdatedText(formatLastUpdated(new Date()));
+      nextRefreshTimeRef.current = Date.now() + 60 * 60 * 1000;
+      refreshStats();
     } catch (err: any) {
       toast.error(err.message || 'Failed to fetch invoices');
     } finally {
@@ -103,6 +159,12 @@ export default function DcrClient() {
 
   const handleQuickSync = async (days: number) => {
     if (cooldown > 0) return;
+    if (days === 0) setSelectedQuickSync('today');
+    else if (days === 1) setSelectedQuickSync('yesterday');
+    else if (days === 3) setSelectedQuickSync('3days');
+    else if (days === 7) setSelectedQuickSync('7days');
+    else if (days === 15) setSelectedQuickSync('15days');
+
     const end = new Date();
     const start = new Date();
     start.setDate(end.getDate() - days);
@@ -122,6 +184,7 @@ export default function DcrClient() {
     }
     
     setShowCustomModal(false);
+    setSelectedQuickSync('custom');
     await executeSync(customDate, customDate);
   };
 
@@ -137,6 +200,8 @@ export default function DcrClient() {
       if (!res.ok) throw new Error(data.error);
       toast.success(`Synced! Created: ${data.created}, Updated: ${data.updated}`);
       startCooldown();
+      setLastUpdatedText(formatLastUpdated(new Date()));
+      nextRefreshTimeRef.current = Date.now() + 60 * 60 * 1000;
       // Reset page to 1 on sync
       if (page !== 1) setPage(1);
       else fetchInvoices();
@@ -205,13 +270,18 @@ export default function DcrClient() {
             <Activity size={13} className="text-gray-500" />
             <span>{getHealthIndicator(apiUsage.rateLimit?.health || 'Healthy')} API Usage</span>
           </button>
+          {lastUpdatedText && (
+            <span className="text-[11px] text-gray-500 mr-2 font-medium">
+              Last Updated: {lastUpdatedText}
+            </span>
+          )}
           <span className="text-sm font-semibold text-gray-700 mr-1 ml-2">Quick Sync:</span>
-          <button onClick={() => handleQuickSync(0)} disabled={isSyncDisabled} className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md font-medium transition-colors disabled:opacity-50">Today</button>
-          <button onClick={() => handleQuickSync(1)} disabled={isSyncDisabled} className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md font-medium transition-colors disabled:opacity-50">Yesterday</button>
-          <button onClick={() => handleQuickSync(3)} disabled={isSyncDisabled} className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md font-medium transition-colors disabled:opacity-50">Last 3 Days</button>
-          <button onClick={() => handleQuickSync(7)} disabled={isSyncDisabled} className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md font-medium transition-colors disabled:opacity-50">Last 7 Days</button>
-          <button onClick={() => handleQuickSync(15)} disabled={isSyncDisabled} className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md font-medium transition-colors disabled:opacity-50">Last 15 Days</button>
-          <button onClick={() => setShowCustomModal(true)} disabled={isSyncDisabled} className="px-3 py-1.5 text-xs bg-[#1A2766]/10 hover:bg-[#1A2766]/20 text-[#1A2766] rounded-md font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50 ml-1">
+          <button onClick={() => handleQuickSync(0)} disabled={isSyncDisabled} className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50 ${selectedQuickSync === 'today' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Today</button>
+          <button onClick={() => handleQuickSync(1)} disabled={isSyncDisabled} className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50 ${selectedQuickSync === 'yesterday' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Yesterday</button>
+          <button onClick={() => handleQuickSync(3)} disabled={isSyncDisabled} className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50 ${selectedQuickSync === '3days' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Last 3 Days</button>
+          <button onClick={() => handleQuickSync(7)} disabled={isSyncDisabled} className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50 ${selectedQuickSync === '7days' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Last 7 Days</button>
+          <button onClick={() => handleQuickSync(15)} disabled={isSyncDisabled} className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50 ${selectedQuickSync === '15days' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Last 15 Days</button>
+          <button onClick={() => setShowCustomModal(true)} disabled={isSyncDisabled} className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50 ml-1 ${selectedQuickSync === 'custom' ? 'bg-[#1A2766] text-white font-semibold' : 'bg-[#1A2766]/10 hover:bg-[#1A2766]/20 text-[#1A2766]'}`}>
             <Calendar size={13} /> Custom
           </button>
           {syncing && <span className="ml-2 text-xs text-blue-600 animate-pulse font-medium">Syncing...</span>}

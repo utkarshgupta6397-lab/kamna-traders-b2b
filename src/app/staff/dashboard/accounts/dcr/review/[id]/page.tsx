@@ -26,7 +26,6 @@ export default async function AccountsDcrReviewPage({ params }: { params: Promis
       canViewTransactions={canViewTransactions} 
       canViewSummary={canViewSummary}
       canManageDcr={canManageDcr}
-      activeTab="dcr"
     >
       <ReviewClient invoiceId={id} />
     </AccountsTabs>

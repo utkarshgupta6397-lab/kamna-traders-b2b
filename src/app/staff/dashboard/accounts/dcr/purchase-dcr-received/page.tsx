@@ -3,8 +3,10 @@
 import { useState, useEffect } from 'react';
 import { FileText, CheckCircle, AlertTriangle, Zap, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useDcrStats } from '../layout';
 
 export default function PurchaseDcrReceivedPage() {
+  const { refreshStats } = useDcrStats();
   const [mode, setMode] = useState<'normal' | 'quick'>('normal');
   const [skuId, setSkuId] = useState('');
   const [skuSearch, setSkuSearch] = useState('');
@@ -49,6 +51,7 @@ export default function PurchaseDcrReceivedPage() {
       }
       setRawText('');
       if (mode === 'quick') { setSkuId(''); setSkuSearch(''); }
+      refreshStats();
     } catch (err: any) {
       toast.error(err.message);
     } finally {

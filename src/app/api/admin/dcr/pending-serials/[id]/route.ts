@@ -46,7 +46,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     const { id: invoiceId } = await params;
-    const { itemId, serials: rawSerials } = await req.json();
+    const { itemId, serials: rawSerials, forceCreate = false } = await req.json();
 
     if (!itemId || !Array.isArray(rawSerials)) {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
@@ -114,6 +114,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }, { status: 400 });
     }
 
+    const skuMismatchSerials = existingSerials.filter(s => s.skuLocked && s.skuId && s.skuId !== itemId);
+    if (skuMismatchSerials.length > 0) {
+      const mismatchList = skuMismatchSerials.map(s => s.serialNumber).join(', ');
+      return NextResponse.json({
+        error: `SKU mismatch for serials: ${mismatchList}. Serial number already belongs to another SKU. SKU reassignment is not permitted.`
+      }, { status: 400 });
+    }
+
+    // 4. Check for unknown serials — require explicit confirmation before auto-creating
+    const unknownSerials = serials.filter(s => !existingSerials.find(e => e.serialNumber === s));
+    if (unknownSerials.length > 0 && !forceCreate) {
+      return NextResponse.json({
+        requiresConfirmation: true,
+        unknownSerials,
+        message: `${unknownSerials.length} serial(s) not found in the system. Confirm to auto-create them with Purchase Source = SALES_AUTO_CREATED.`
+      }, { status: 200 });
+    }
+
     // Perform database transaction
     await prisma.$transaction(async (tx) => {
       // Process DcrSerial and History
@@ -126,8 +144,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             data: {
               serialNumber: serial,
               skuId: itemId,
-              source: 'MANUAL_DISCOVERY',
+              serialSource: 'SALES_AUTO_CREATED',
               status: 'ALLOCATED',
+              purchaseReceived: true,
+              vendorName: 'NA',
+              vendorDcrStatus: 'NOT_RECEIVED',
+              skuLocked: true,
             }
           });
           dcrSerialId = newSerial.id;
@@ -135,8 +157,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           await tx.dcrSerialHistory.create({
             data: {
               serialId: dcrSerialId,
-              eventType: 'INVENTORY_ADD',
-              eventDescription: 'Added to inventory via Manual Discovery during DCR Allocation',
+              eventType: 'AUTO_CREATED',
+              eventDescription: 'Auto-created during sales allocation. Purchase receipt was not recorded.',
               userId: session.userId,
             }
           });
@@ -191,9 +213,31 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         });
 
         // Determine next status
-        const nextStatus = totalAllocated === totalRequired 
-          ? 'READY_FOR_DCR' 
-          : (totalAllocated > 0 ? 'PARTIALLY_ALLOCATED' : 'PENDING_SERIALS');
+        let nextStatus = updatedInvoice.dcrStatus;
+        if (totalAllocated === 0) {
+          nextStatus = 'PENDING_SERIALS';
+        } else if (totalAllocated < totalRequired) {
+          nextStatus = 'PARTIALLY_ALLOCATED';
+        } else {
+          // Check Vendor DCR Status for all allocated serials
+          const invSerialNumbers = updatedInvoice.items.flatMap(item => item.serialAllocations.map(a => a.serialNumber));
+          const invSerials = await tx.dcrSerial.findMany({
+            where: { serialNumber: { in: invSerialNumbers } }
+          });
+          
+          let anyVendorDcrPending = false;
+          invSerials.forEach(s => {
+            if (s.vendorDcrStatus === 'NOT_RECEIVED') {
+              anyVendorDcrPending = true;
+            }
+          });
+          
+          if (anyVendorDcrPending) {
+            nextStatus = 'VENDOR_DCR_PENDING';
+          } else {
+            nextStatus = 'READY_TO_ISSUE';
+          }
+        }
 
         await tx.dcrInvoice.update({
           where: { id: invoiceId },
@@ -308,9 +352,31 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
         });
 
         // Determine next status
-        const nextStatus = totalAllocated === totalRequired 
-          ? 'READY_FOR_DCR' 
-          : (totalAllocated > 0 ? 'PARTIALLY_ALLOCATED' : 'PENDING_SERIALS');
+        let nextStatus = updatedInvoice.dcrStatus;
+        if (totalAllocated === 0) {
+          nextStatus = 'PENDING_SERIALS';
+        } else if (totalAllocated < totalRequired) {
+          nextStatus = 'PARTIALLY_ALLOCATED';
+        } else {
+          // Check Vendor DCR Status for all allocated serials
+          const invSerialNumbers = updatedInvoice.items.flatMap(item => item.serialAllocations.map(a => a.serialNumber));
+          const invSerials = await tx.dcrSerial.findMany({
+            where: { serialNumber: { in: invSerialNumbers } }
+          });
+          
+          let anyVendorDcrPending = false;
+          invSerials.forEach(s => {
+            if (s.vendorDcrStatus === 'NOT_RECEIVED') {
+              anyVendorDcrPending = true;
+            }
+          });
+          
+          if (anyVendorDcrPending) {
+            nextStatus = 'VENDOR_DCR_PENDING';
+          } else {
+            nextStatus = 'READY_TO_ISSUE';
+          }
+        }
 
         await tx.dcrInvoice.update({
           where: { id: invoiceId },

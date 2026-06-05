@@ -7,13 +7,16 @@ export default function DcrLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   const sidebarNav = [
-    { id: 'process', label: 'Process Invoices', path: '/staff/dashboard/accounts/dcr', exact: true, phase2: false },
-    { id: 'pending', label: 'Pending Serials', path: '/staff/dashboard/accounts/dcr/pending-serials', exact: false, phase2: false },
-    { id: 'vendor', label: 'Vendor DCR', path: '#', exact: false, phase2: true },
-    { id: 'hold', label: 'Hold Queue', path: '#', exact: false, phase2: true },
-    { id: 'ready', label: 'Ready To Issue', path: '#', exact: false, phase2: true },
-    { id: 'issued', label: 'Issued', path: '#', exact: false, phase2: true },
-    { id: 'reports', label: 'Reports', path: '#', exact: false, phase2: true },
+    { id: 'process',          label: 'Process Invoices',      path: '/staff/dashboard/accounts/dcr',                                   exact: true,  placeholder: false },
+    { id: 'pending',          label: 'Pending Serials',        path: '/staff/dashboard/accounts/dcr/pending-serials',                   exact: false, placeholder: false },
+    { id: 'purchase_receive', label: 'Purchase Receive',       path: '/staff/dashboard/accounts/dcr/purchase-receive',                  exact: false, placeholder: false },
+    { id: 'purchase_dcr',     label: 'Purchase DCR Received',  path: '/staff/dashboard/accounts/dcr/purchase-dcr-received',             exact: false, placeholder: false },
+    { id: 'serial_search',    label: 'Serial Search',          path: '/staff/dashboard/accounts/dcr/serial-search',                    exact: false, placeholder: false },
+    { id: 'serial_correct',   label: 'Serial Corrections',     path: '/staff/dashboard/accounts/dcr/serial-corrections',               exact: false, placeholder: false },
+    { id: 'hold',             label: 'Hold Queue',             path: '#',                                                               exact: false, placeholder: true  },
+    { id: 'ready',            label: 'Ready To Issue',         path: '#',                                                               exact: false, placeholder: true  },
+    { id: 'issued',           label: 'Issued',                 path: '#',                                                               exact: false, placeholder: true  },
+    { id: 'reports',          label: 'Reports',                path: '#',                                                               exact: false, placeholder: true  },
   ];
 
   const isActive = (navPath: string, exact: boolean) => {
@@ -40,17 +43,17 @@ export default function DcrLayout({ children }: { children: React.ReactNode }) {
               return (
                 <Link
                   key={item.id}
-                  href={item.phase2 ? '#' : item.path}
+                  href={item.placeholder ? '#' : item.path}
                   className={`flex items-center justify-between px-3 py-2.5 text-sm font-medium rounded-lg transition-colors ${
                     trulyActive 
-                      ? 'bg-[#1A2766]/5 text-[#1A2766]' 
-                      : item.phase2 
+                      ? 'bg-[#1A2766]/5 text-[#1A2766] border border-[#1A2766]/10' 
+                      : item.placeholder 
                         ? 'text-gray-400 hover:bg-gray-50 cursor-not-allowed'
-                        : 'text-gray-600 hover:bg-gray-50'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
                   <span>{item.label}</span>
-                  {item.phase2 && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded uppercase tracking-wider border border-gray-200">Phase 2</span>}
+                  {item.placeholder && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded uppercase tracking-wider border border-gray-200">Soon</span>}
                 </Link>
               );
             })}

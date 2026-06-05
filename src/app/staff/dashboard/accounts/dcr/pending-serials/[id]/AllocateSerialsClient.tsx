@@ -25,6 +25,14 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
   // Serial History Modal
   const [historyModalSerial, setHistoryModalSerial] = useState<string | null>(null);
 
+  // Auto-creation confirmation state
+  const [pendingConfirmation, setPendingConfirmation] = useState<{
+    unknownSerials: string[];
+    message: string;
+    pendingSerials: string[];
+    itemId: string;
+  } | null>(null);
+
   useEffect(() => {
     fetchInvoiceDetails();
   }, [invoiceId]);
@@ -104,11 +112,22 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
       const res = await fetch(`/api/admin/dcr/pending-serials/${invoiceId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemId: selectedItemId, serials })
+        body: JSON.stringify({ itemId: selectedItemId, serials, forceCreate: false })
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+
+      // Handle confirmation gate for unknown serials
+      if (data.requiresConfirmation) {
+        setPendingConfirmation({
+          unknownSerials: data.unknownSerials,
+          message: data.message,
+          pendingSerials: serials,
+          itemId: selectedItemId,
+        });
+        return;
+      }
 
       toast.success(`Successfully allocated ${serials.length} serials!`);
       setSerialInput('');
@@ -117,6 +136,32 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
       toast.error(err.message || 'Failed to allocate serial numbers');
     } finally {
       setSaving(prev => ({ ...prev, [selectedItemId]: false }));
+    }
+  };
+
+  const handleConfirmAutoCreate = async () => {
+    if (!pendingConfirmation) return;
+    try {
+      setSaving(prev => ({ ...prev, [pendingConfirmation.itemId]: true }));
+      const res = await fetch(`/api/admin/dcr/pending-serials/${invoiceId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId: pendingConfirmation.itemId,
+          serials: pendingConfirmation.pendingSerials,
+          forceCreate: true
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(`Allocated ${pendingConfirmation.pendingSerials.length} serials. ${pendingConfirmation.unknownSerials.length} were auto-created.`);
+      setSerialInput('');
+      setPendingConfirmation(null);
+      fetchInvoiceDetails();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to allocate serial numbers');
+    } finally {
+      if (pendingConfirmation) setSaving(prev => ({ ...prev, [pendingConfirmation.itemId]: false }));
     }
   };
 
@@ -442,6 +487,62 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
           </div>
         </div>
       </div>
+
+      {/* Auto-creation Confirmation Panel */}
+      {pendingConfirmation && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden">
+            <div className="px-6 py-4 bg-amber-50 border-b border-amber-200 flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+                <AlertCircle size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-amber-900">Unknown Serial Numbers Detected</h3>
+                <p className="text-xs text-amber-700">These serials are not in the system. Purchase receipt was not recorded.</p>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-4">
+                <p className="text-xs font-bold text-amber-800 uppercase tracking-wider mb-2">
+                  {pendingConfirmation.unknownSerials.length} Unknown Serial{pendingConfirmation.unknownSerials.length > 1 ? 's' : ''}
+                </p>
+                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                  {pendingConfirmation.unknownSerials.map(s => (
+                    <span key={s} className="px-2 py-1 bg-amber-100 text-amber-800 rounded font-mono text-xs border border-amber-200">{s}</span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
+                <p className="font-semibold mb-1">What will happen if you confirm:</p>
+                <ul className="list-disc list-inside space-y-1 text-blue-700 text-xs">
+                  <li>All unknown serials will be auto-created with <strong>Source = SALES_AUTO_CREATED</strong></li>
+                  <li>Vendor Name will be set to <strong>&ldquo;NA&rdquo;</strong></li>
+                  <li>Vendor DCR Status will be <strong>NOT_RECEIVED</strong></li>
+                  <li>Invoice status will transition to <strong>VENDOR_DCR_PENDING</strong></li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-t flex justify-end gap-3">
+              <button
+                onClick={() => setPendingConfirmation(null)}
+                className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmAutoCreate}
+                className="px-5 py-2.5 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 flex items-center gap-2"
+              >
+                <CheckCircle size={15} />
+                Confirm & Create Serials
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <SerialHistoryModal 
         serialNumber={historyModalSerial || ''} 

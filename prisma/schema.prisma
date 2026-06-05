@@ -34,6 +34,12 @@ model User {
   accounts_recovery_manage    Boolean @default(false)
   release_statement_queue     Boolean @default(false)
   dcr_management              Boolean @default(false)
+  dcr_purchase_receive        Boolean @default(false)
+  dcr_purchase_dcr_receive    Boolean @default(false)
+  dcr_serial_search           Boolean @default(false)
+  dcr_serial_mapping_override Boolean @default(false)
+  dcr_hold_release            Boolean @default(false)
+  dcr_issue_customer_dcr      Boolean @default(false)
 
   sessions            ActiveSession[]
   carts               Cart[]
@@ -589,13 +595,20 @@ enum SerialStatus {
 }
 
 model DcrSerial {
-  id           String                 @id @default(cuid())
-  serialNumber String                 @unique
-  skuId        String?
-  source       String                 @default("MANUAL_DISCOVERY")
-  status       SerialStatus           @default(AVAILABLE)
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
+  id                  String                 @id @default(cuid())
+  serialNumber        String                 @unique
+  skuId               String?
+  serialSource        String                 @default("MANUAL_ENTRY")
+  status              SerialStatus           @default(AVAILABLE)
+  purchaseReceived    Boolean                @default(false)
+  vendorName          String?
+  billNumber          String?
+  vendorDcrStatus     String                 @default("NOT_RECEIVED")
+  vendorDcrReceivedAt DateTime?
+  vendorDcrReceivedBy String?
+  skuLocked           Boolean                @default(true)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
 
   history      DcrSerialHistory[]
   allocations  DcrSerialAllocation[]

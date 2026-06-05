@@ -1,13 +1,13 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname, useSearchParams } from 'next/navigation';
 
 interface AccountsTabsProps {
   canViewStatement: boolean;
   canViewTransactions: boolean;
   canViewSummary: boolean;
   canManageDcr?: boolean;
-  activeTab: 'statement' | 'transactions' | 'summary' | 'dcr';
   children: React.ReactNode;
 }
 
@@ -16,9 +16,22 @@ export default function AccountsTabs({
   canViewTransactions,
   canViewSummary,
   canManageDcr,
-  activeTab,
   children,
 }: AccountsTabsProps) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  let activeTab = 'statement';
+  if (pathname.includes('/accounts/dcr')) {
+    activeTab = 'dcr';
+  } else if (pathname.includes('/accounts/summary')) {
+    activeTab = 'summary';
+  } else if (searchParams.get('tab') === 'transactions') {
+    activeTab = 'transactions';
+  } else if (!canViewStatement && canViewTransactions) {
+    activeTab = 'transactions';
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-6 border-b border-gray-200">

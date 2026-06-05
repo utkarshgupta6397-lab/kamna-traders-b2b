@@ -1,5 +1,4 @@
 import { getSession } from '@/lib/auth';
-import AccountsTabs from './AccountsTabs';
 import CustomerStatementView from '@/components/zoho/CustomerStatementView';
 import LiveBankTransactionsView from '@/components/bank/LiveBankTransactionsView';
 import { Suspense } from 'react';
@@ -34,13 +33,7 @@ export default async function AccountsPage(props: { searchParams: Promise<{ tab?
   }
 
   return (
-    <AccountsTabs 
-      canViewStatement={canViewStatement} 
-      canViewTransactions={canViewTransactions} 
-      canViewSummary={canViewSummary}
-      canManageDcr={canManageDcr}
-      activeTab={activeTab}
-    >
+    <>
       {activeTab === 'statement' && canViewStatement && (
         <Suspense fallback={<div className="p-12 text-center text-gray-500">Loading statement...</div>}>
           <CustomerStatementView />
@@ -49,6 +42,6 @@ export default async function AccountsPage(props: { searchParams: Promise<{ tab?
       {activeTab === 'transactions' && canViewTransactions && (
         <LiveBankTransactionsView />
       )}
-    </AccountsTabs>
+    </>
   );
 }

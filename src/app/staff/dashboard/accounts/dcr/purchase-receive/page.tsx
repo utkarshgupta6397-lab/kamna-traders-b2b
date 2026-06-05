@@ -15,7 +15,7 @@ export default function PurchaseReceivePage() {
   const [vendorName, setVendorName] = useState('');
   const [dateReceived, setDateReceived] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [billNumber, setBillNumber] = useState('');
-  const [lines, setLines] = useState<LineItem[]>([{ id: crypto.randomUUID(), skuId: '', rawText: '' }]);
+  const [lines, setLines] = useState<LineItem[]>([{ id: Date.now().toString(36) + Math.random().toString(36).substring(2), skuId: '', rawText: '' }]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [skus, setSkus] = useState<any[]>([]);
   const [skuSearch, setSkuSearch] = useState<Record<string, string>>({});
@@ -32,7 +32,7 @@ export default function PurchaseReceivePage() {
   }, []);
 
   const addLine = () => {
-    setLines(prev => [...prev, { id: crypto.randomUUID(), skuId: '', rawText: '' }]);
+    setLines(prev => [...prev, { id: Date.now().toString(36) + Math.random().toString(36).substring(2), skuId: '', rawText: '' }]);
   };
 
   const removeLine = (id: string) => {
@@ -86,7 +86,7 @@ export default function PurchaseReceivePage() {
         toast.success(`Successfully recorded receipt of ${data.totalSerials} panels.`);
       }
 
-      setLines([{ id: crypto.randomUUID(), skuId: '', rawText: '' }]);
+      setLines([{ id: Date.now().toString(36) + Math.random().toString(36).substring(2), skuId: '', rawText: '' }]);
       setBillNumber('');
     } catch (err: any) {
       toast.error(err.message);

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { fetchInvoicesByRange, fetchInvoiceById } from '@/lib/zoho/invoices';
+import { ensureCustomerExists } from '@/lib/dcr-customer-sync';
 
 export async function POST(req: Request) {
   try {
@@ -13,6 +14,15 @@ export async function POST(req: Request) {
     const { date_start, date_end } = await req.json();
     if (!date_start || !date_end) {
       return NextResponse.json({ error: 'Missing date range' }, { status: 400 });
+    }
+
+    // Startup Safety Check
+    const customerCount = await prisma.customer.count();
+    if (customerCount === 0) {
+      console.warn('[DCR Sync] Customer table is empty. Triggering background backfill...');
+      // Fire and forget backfill
+      const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      fetch(`${origin}/api/admin/dcr/backfill-customers`, { method: 'POST' }).catch(e => console.error('Backfill trigger failed:', e.message));
     }
 
     const { invoices, apiCallsUsed: syncCalls } = await fetchInvoicesByRange(date_start, date_end);
@@ -45,6 +55,12 @@ export async function POST(req: Request) {
 
       const existing = await prisma.dcrInvoice.findUnique({
         where: { zohoInvoiceId: fullInvoice.invoice_id },
+      });
+
+      // Ensure customer exists before ANY invoice insert/update
+      await ensureCustomerExists({
+        customerId: fullInvoice.customer_id,
+        customerName: fullInvoice.customer_name,
       });
 
       if (existing) {

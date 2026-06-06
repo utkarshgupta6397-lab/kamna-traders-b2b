@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
 import { trackZohoApiCall } from '@/lib/zoho-api-meter';
+import { ensureCustomerExists } from '@/lib/dcr-customer-sync';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
@@ -21,19 +22,13 @@ async function searchZohoCustomer(query: string) {
     const data = await res.json();
     if (data.contacts && data.contacts.length > 0) {
       const c = data.contacts[0]; // Take top match
-      // Persist locally
-      const localCustomer = await prisma.customer.upsert({
-        where: { id: c.contact_id },
-        update: {
-          name: c.contact_name,
-        },
-        create: {
-          id: c.contact_id,
-          name: c.contact_name,
-          gstNumber: 'NOT_AVAILABLE'
-        }
+      // Persist locally using unified helper
+      await ensureCustomerExists({
+        customerId: c.contact_id,
+        customerName: c.contact_name,
+        gstNumber: 'NOT_AVAILABLE'
       });
-      return localCustomer;
+      return await prisma.customer.findUnique({ where: { id: c.contact_id } });
     }
   } catch (e) {
     console.error('Zoho search fallback error:', e);

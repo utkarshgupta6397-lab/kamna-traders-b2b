@@ -1,0 +1,499 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  mobile    String   @unique
+  role      String   @default("STAFF")
+  active    Boolean  @default(true)
+  pin       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Permissions Matrix
+  canManageCarts              Boolean @default(false)
+  canAdjustInventory          Boolean @default(false)
+  canRunSkuSync               Boolean @default(false)
+  canManageZoneMappings       Boolean @default(false)
+  canManageUnlimitedSkus      Boolean @default(false)
+  canManageTransfers          Boolean @default(false)
+  canDeleteTransfers          Boolean @default(false)
+  accountsAccess              Boolean @default(false) // Deprecated
+  accounts_customer_statement Boolean @default(false)
+  accounts_transactions       Boolean @default(false)
+  accounts_summary_view       Boolean @default(false)
+  stock_alerts_manage         Boolean @default(false)
+  accounts_recovery_manage    Boolean @default(false)
+  release_statement_queue     Boolean @default(false)
+
+  sessions            ActiveSession[]
+  carts               Cart[]
+  inventoryHistory    InventoryHistory[]
+  zoneMappingsUpdated WarehouseInventory[] @relation("ZoneMappingUpdatedBy")
+  updatedSkus         Sku[]                @relation("SkuUnlimitedUpdatedBy")
+  cartsHeld           Cart[]               @relation("CartHeldBy")
+  cartsResumed        Cart[]               @relation("CartResumedBy")
+  cartHistory         CartHistory[]        @relation("CartHistoryByUser")
+  transfersCreated    Transfer[]           @relation("TransferCreatedBy")
+  transfersDispatched Transfer[]           @relation("TransferDispatchedBy")
+  transfersReceived   Transfer[]           @relation("TransferReceivedBy")
+
+  printerId     String?
+  printer       Printer?       @relation(fields: [printerId], references: [id])
+  qzCertificate QzCertificate?
+}
+
+model Warehouse {
+  id                String               @id @default(cuid())
+  name              String
+  address           String?
+  active            Boolean              @default(true)
+  printZonalSlips   Boolean              @default(true) // Deprecated
+  isSystemWarehouse Boolean              @default(false)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  carts             Cart[]
+  inventoryHistory  InventoryHistory[]
+  inventory         WarehouseInventory[]
+  transfersSent     Transfer[]           @relation("SourceWarehouse")
+  transfersReceived Transfer[]           @relation("DestinationWarehouse")
+  stockAlerts       StockAlertThreshold[]
+}
+
+model Brand {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  skus      Sku[]
+}
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  active    Boolean    @default(true)
+  parentId  String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  parent    Category?  @relation("SubCategories", fields: [parentId], references: [id])
+  children  Category[] @relation("SubCategories")
+  skus      Sku[]
+}
+
+model Sku {
+  id             String               @id
+  name           String
+  brandId        String?
+  unit           String?
+  moq            Int                  @default(1)
+  stepQty        Int                  @default(1)
+  price          Float                @default(0.0)
+  gstPercent     Float                @default(0.0)
+  hsnCode        String?
+  description    String?
+  caseSize       Int                  @default(1)
+  lastSyncedAt   DateTime?
+  zohoBookItemId String?              @unique // String to prevent JS precision corruption
+  zohoBooksId2   String?
+  categoryId     String?
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  isUnlimited    Boolean              @default(false)
+  updatedById    String?
+  cartItems      CartItem[]
+  brand          Brand?               @relation(fields: [brandId], references: [id])
+  category       Category?            @relation(fields: [categoryId], references: [id])
+  updatedBy      User?                @relation("SkuUnlimitedUpdatedBy", fields: [updatedById], references: [id])
+  inventory      WarehouseInventory[]
+  transferItems  TransferItem[]
+  stockAlerts    StockAlertThreshold[]
+
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([createdAt])
+  @@index([zohoBookItemId])
+  @@index([zohoBooksId2])
+}
+
+model WarehouseInventory {
+  id          String    @id @default(cuid())
+  warehouseId String
+  skuId       String
+  qty         Int       @default(0)
+  isOos       Boolean   @default(false)
+  zone        String?
+  updatedAt   DateTime  @updatedAt
+  updatedById String?
+  sku         Sku       @relation(fields: [skuId], references: [id])
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  updatedBy   User?     @relation("ZoneMappingUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([warehouseId, skuId])
+}
+
+model Cart {
+  id                   String        @id
+  status               String        @default("COMPLETED")
+  warehouseId          String
+  customerName         String
+  notes                String?
+  staffId              String
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  dispatchSlipNumber   String?       @unique
+  zohoSalesorderId     String?
+  zohoSalesorderNumber String?
+  zohoSyncStatus       String?       @default("PENDING")
+  zohoSyncStep         String?       @default("INITIATED")
+  zohoSyncError        String?
+  zohoLastSyncAt       DateTime?
+  zohoResponseTimeMs   Int?
+  zohoPayload          Json?
+  zohoResponse         Json?
+  zohoExecutionTrace   Json?
+  deletedAt            DateTime?
+  heldAt               DateTime?
+  heldById             String?
+  resumedAt            DateTime?
+  resumedById          String?
+  holdReason           String?
+  staff                User          @relation(fields: [staffId], references: [id])
+  warehouse            Warehouse     @relation(fields: [warehouseId], references: [id])
+  items                CartItem[]
+  heldBy               User?         @relation("CartHeldBy", fields: [heldById], references: [id])
+  resumedBy            User?         @relation("CartResumedBy", fields: [resumedById], references: [id])
+  history              CartHistory[] @relation("CartHistoryByCart")
+}
+
+model CartItem {
+  id          String @id @default(cuid())
+  cartId      String
+  skuId       String
+  qty         Int
+  originalQty Int?
+  cart        Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  sku         Sku    @relation(fields: [skuId], references: [id])
+}
+
+model CustomerLead {
+  id            String   @id @default(cuid())
+  cartId        String?
+  items         String
+  sessionId     String?
+  deviceMeta    String?
+  sourceChannel String   @default("whatsapp")
+  createdAt     DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+}
+
+model DispatchSequence {
+  date     String @id
+  sequence Int    @default(0)
+}
+
+model SyncLock {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  isLocked  Boolean   @default(false)
+  lockedAt  DateTime?
+  lockedBy  String?
+  updatedAt DateTime  @updatedAt
+}
+
+model SkuSyncLog {
+  id             String    @id @default(cuid())
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+  trigger        String    @default("CRON") // "CRON" | "USER"
+  syncLimit      Int?      @default(0)
+  totalReceived  Int       @default(0)
+  processedCount Int       @default(0)
+  createdCount   Int       @default(0)
+  updatedCount   Int       @default(0)
+  skippedCount   Int       @default(0)
+  failedCount    Int       @default(0)
+  metadata       Json? // Raw API request/response metadata
+  logs           Json? // Backwards compatibility for errors
+  executionTrace Json? // Detailed per-SKU logs
+}
+
+model SkuIdentityRegistry {
+  id             String   @id @default(cuid())
+  skuId          String   @unique
+  zohoBookItemId String   @unique
+  firstSeenAt    DateTime @default(now())
+  lastSeenAt     DateTime @updatedAt
+  isActive       Boolean  @default(true)
+  syncGeneration Int      @default(1)
+
+  @@index([zohoBookItemId])
+  @@index([skuId])
+}
+
+model InventoryHistory {
+  id            String    @id @default(cuid())
+  warehouseId   String
+  skuId         String
+  productName   String
+  beforeQty     Int
+  afterQty      Int
+  qtyChange     Int
+  remarks       String
+  createdBy     String
+  referenceType String?
+  referenceId   String?
+  createdAt     DateTime  @default(now())
+  user          User      @relation(fields: [createdBy], references: [id])
+  warehouse     Warehouse @relation(fields: [warehouseId], references: [id])
+
+  @@index([warehouseId])
+  @@index([skuId])
+}
+
+model CartHistory {
+  id        String   @id @default(cuid())
+  cartId    String
+  userId    String
+  action    String // "CREATED" | "COMPLETED" | "HOLD" | "RESUME" | "PRINTED" | "DELETED" | "EDITED"
+  remarks   String?
+  metadata  Json? // Structured change details for edits (added/removed/updated items)
+  createdAt DateTime @default(now())
+
+  cart Cart @relation("CartHistoryByCart", fields: [cartId], references: [id], onDelete: Cascade)
+  user User @relation("CartHistoryByUser", fields: [userId], references: [id])
+
+  @@index([cartId])
+  @@index([createdAt])
+}
+
+model ZohoToken {
+  id           String   @id @default(cuid())
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  updatedAt    DateTime @updatedAt
+}
+
+model ActiveSession {
+  id           String   @id @default(cuid())
+  userId       String
+  sessionToken String   @unique
+  deviceType   String
+  deviceName   String?
+  userAgent    String?
+  ipAddress    String?
+  lastSeenAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionToken])
+  @@index([lastSeenAt])
+  @@index([userId, deviceType])
+}
+
+model Transfer {
+  id                     String         @id @default(cuid())
+  transferNumber         String         @unique
+  sourceWarehouseId      String
+  destinationWarehouseId String
+  status                 TransferStatus @default(INITIATED)
+  responsiblePerson      String
+  remarks                String?
+  createdById            String
+  dispatchedById         String?
+  createdAt              DateTime       @default(now())
+  dispatchedAt           DateTime?
+  mergedIntoTransferId   String?
+  parentTransferId       String?
+  isAutoGenerated        Boolean        @default(false)
+  receivedById           String?
+  receivedAt             DateTime?
+
+  // Relations
+  sourceWarehouse      Warehouse         @relation("SourceWarehouse", fields: [sourceWarehouseId], references: [id])
+  destinationWarehouse Warehouse         @relation("DestinationWarehouse", fields: [destinationWarehouseId], references: [id])
+  createdBy            User              @relation("TransferCreatedBy", fields: [createdById], references: [id])
+  dispatchedBy         User?             @relation("TransferDispatchedBy", fields: [dispatchedById], references: [id])
+  receivedBy           User?             @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+  mergedIntoTransfer   Transfer?         @relation("TransferMergedInto", fields: [mergedIntoTransferId], references: [id])
+  mergedTransfers      Transfer[]        @relation("TransferMergedInto")
+  parentTransfer       Transfer?         @relation("TransferHierarchy", fields: [parentTransferId], references: [id])
+  childTransfers       Transfer[]        @relation("TransferHierarchy")
+  items                TransferItem[]
+  history              TransferHistory[]
+}
+
+model TransferItem {
+  id            String @id @default(cuid())
+  transferId    String
+  skuId         String
+  requestedQty  Int
+  dispatchedQty Int
+  balanceQty    Int
+  receivedQty   Int    @default(0)
+  shortQty      Int    @default(0)
+
+  // Relations
+  transfer Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  sku      Sku      @relation(fields: [skuId], references: [id])
+}
+
+enum TransferStatus {
+  INITIATED
+  PARTIALLY_DISPATCHED
+  IN_TRANSIT
+  PARTIALLY_RECEIVED
+  COMPLETED
+  CANCELLED
+  MERGED
+  DISPATCHED_PARTIAL_CLOSED
+  SHORT_CLOSED
+}
+
+model TransferHistory {
+  id          String   @id @default(cuid())
+  transferId  String
+  action      String
+  metadata    String?
+  performedBy String
+  timestamp   DateTime @default(now())
+
+  // Relations
+  transfer Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+}
+
+// ─── Printer Management ───────────────────────────────────────────────────────
+// Phase 1: Centralized printer registry. No warehouse mapping yet.
+// Phase 2: Add warehouseId FK, printerType, agentUrl fields.
+model Printer {
+  id          String   @id @default(cuid())
+  name        String
+  ipAddress   String
+  port        Int      @default(9100)
+  printerType String   @default("ESC_POS")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       User[]
+}
+
+model QzCertificate {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  publicCert String
+  privateKey String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model InvoiceSummaryCache {
+  id            String   @id @default("singleton")
+  generatedAt   DateTime
+  apiCallsUsed  Int
+  refreshedBy   String
+  invoiceCount  Int
+  summary       Json // Stores all KPI metrics
+  distributions Json // Stores payment distributions
+  rows          Json // Stores the invoice rows for the table
+}
+
+model CustomerStatementTask {
+  id           String @id @default(cuid())
+  customerId   String
+  customerName String
+
+  status String // OPEN | RELEASED
+
+  flaggedByUserId String
+  flaggedByName   String
+  flaggedAt       DateTime @default(now())
+
+  releasedByUserId String?
+  releasedByName   String?
+  releasedAt       DateTime?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model StockAlertThreshold {
+  id           String   @id @default(cuid())
+  warehouseId  String
+  skuId        String
+  minimumQty   Int
+  isEnabled    Boolean  @default(true)
+  createdById  String?
+  updatedById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  warehouse    Warehouse @relation(fields: [warehouseId], references: [id])
+  sku          Sku       @relation(fields: [skuId], references: [id])
+
+  @@unique([warehouseId, skuId])
+}
+
+model RecoveryInvoiceTask {
+  id              String   @id @default(cuid())
+  invoiceId       String   // Zoho invoice ID
+  invoiceNumber   String
+  customerId      String   // Zoho customer ID  
+  customerName    String
+
+  status          String   // ACTIVE | RELEASED | RESOLVED
+
+  requiresReminder Boolean @default(false)
+  reminderSent     Boolean @default(false)
+  reminderCount    Int     @default(0)
+  reminderSentAt   DateTime?
+  reminderSentById String?
+  reminderSentByName String?
+
+  flagCount        Int     @default(1)
+  flaggedByUserId  String
+  flaggedByName    String
+  flaggedAt        DateTime @default(now())
+
+  releasedByUserId  String?
+  releasedByName    String?
+  releasedAt        DateTime?
+
+  resolvedByUserId  String?
+  resolvedByName    String?
+  resolvedAt        DateTime?
+  resolvedReason    String?  // "AUTO_RESOLVED" | "MANUAL"
+
+  lastKnownPendingAmount   Float?
+  lastKnownInvoiceStatus   String?
+  lastSyncedAt             DateTime?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceId])
+  @@index([customerId])
+  @@index([status])
+}
+

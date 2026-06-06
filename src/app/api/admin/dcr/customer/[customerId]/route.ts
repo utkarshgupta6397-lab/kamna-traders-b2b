@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { getCache, setCache } from '@/lib/cache';
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
+import { isVoidInvoice } from '@/lib/dcr-utils';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
@@ -32,7 +33,7 @@ async function fetchZohoInvoicesLast60Days(customerId: string): Promise<any[]> {
     const items = data.invoices || [];
     
     // Filter void invoices immediately
-    const validItems = items.filter((inv: any) => inv.status !== 'void');
+    const validItems = items.filter((inv: any) => !isVoidInvoice(inv));
     allInvoices = [...allInvoices, ...validItems];
 
     if (data.page_context && data.page_context.has_more_page) {
@@ -92,7 +93,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
 
     // 3. Fetch Prisma DCR Invoices for this customer
     const dcrInvoices = await prisma.dcrInvoice.findMany({
-      where: { customerId },
+      where: { 
+        customerId,
+        invoiceStatus: { not: 'void' }
+      },
       include: {
         items: {
           include: {

@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     const sort = searchParams.get('sort') || 'newest'; // 'newest' | 'oldest'
     const skip = (page - 1) * limit;
 
-    const whereClause: any = {};
+    const whereClause: any = { invoiceStatus: { not: 'void' } };
 
     if (view === 'active') {
       whereClause.dcrStatus = { in: ['PENDING_SERIALS', 'PARTIALLY_ALLOCATED'] };
@@ -84,6 +84,8 @@ export async function GET(req: Request) {
 
       return {
         id: inv.id,
+        zohoInvoiceId: inv.zohoInvoiceId,
+        customerId: inv.customerId,
         invoiceNumber: inv.invoiceNumber,
         customerName: inv.customerName,
         invoiceDate: inv.invoiceDate,
@@ -98,12 +100,12 @@ export async function GET(req: Request) {
     // --- Calculate KPIs ---
     // 1. Invoices Waiting: invoices currently in PENDING_SERIALS or PARTIALLY_ALLOCATED status
     const invoicesWaiting = await prisma.dcrInvoice.count({
-      where: { dcrStatus: { in: ['PENDING_SERIALS', 'PARTIALLY_ALLOCATED'] } }
+      where: { dcrStatus: { in: ['PENDING_SERIALS', 'PARTIALLY_ALLOCATED'] }, invoiceStatus: { not: 'void' } }
     });
 
     // 2. Total Serials Pending: sum of remaining quantities for all active invoices
     const pendingInvoicesWithItems = await prisma.dcrInvoice.findMany({
-      where: { dcrStatus: { in: ['PENDING_SERIALS', 'PARTIALLY_ALLOCATED'] } },
+      where: { dcrStatus: { in: ['PENDING_SERIALS', 'PARTIALLY_ALLOCATED'] }, invoiceStatus: { not: 'void' } },
       include: {
         items: {
           where: { selectedForDCR: true },
@@ -125,7 +127,7 @@ export async function GET(req: Request) {
 
     // 3. Partially Allocated: Count of invoices in PARTIALLY_ALLOCATED status
     const partiallyAllocated = await prisma.dcrInvoice.count({
-      where: { dcrStatus: 'PARTIALLY_ALLOCATED' }
+      where: { dcrStatus: 'PARTIALLY_ALLOCATED', invoiceStatus: { not: 'void' } }
     });
 
     // 4. Completed Today: Count of invoices that transitioned to READY_FOR_DCR today
@@ -135,6 +137,7 @@ export async function GET(req: Request) {
     const completedToday = await prisma.dcrInvoice.count({
       where: {
         dcrStatus: { in: ['READY_FOR_DCR', 'READY_TO_ISSUE', 'ISSUED'] },
+        invoiceStatus: { not: 'void' },
         updatedAt: { gte: startOfToday }
       }
     });

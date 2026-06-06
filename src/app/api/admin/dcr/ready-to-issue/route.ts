@@ -16,6 +16,7 @@ export async function GET(req: Request) {
     const skip = (page - 1) * limit;
 
     const whereClause: any = {
+      invoiceStatus: { not: 'void' },
       serialAllocations: {
         some: {
           serial: {

@@ -12,11 +12,11 @@ export async function GET(req: Request) {
     const [reviewPending, pendingInvoicesWithItems, vendorDcrPending, holdQueue, readyToIssue] = await Promise.all([
       // reviewPending: archived = false, status is NEW or UNDER_REVIEW
       prisma.dcrInvoice.count({
-        where: { archived: false, dcrStatus: { in: ['NEW', 'UNDER_REVIEW'] } }
+        where: { archived: false, dcrStatus: { in: ['NEW', 'UNDER_REVIEW'] }, invoiceStatus: { not: 'void' } }
       }),
       // pendingInvoicesWithItems: status is PENDING_SERIALS or PARTIALLY_ALLOCATED
       prisma.dcrInvoice.findMany({
-        where: { dcrStatus: { in: ['PENDING_SERIALS', 'PARTIALLY_ALLOCATED'] } },
+        where: { dcrStatus: { in: ['PENDING_SERIALS', 'PARTIALLY_ALLOCATED'] }, invoiceStatus: { not: 'void' } },
         include: {
           items: {
             where: { selectedForDCR: true },
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
         where: {
           vendorDcrStatus: 'RECEIVED',
           status: { notIn: ['READY_TO_ISSUE', 'ISSUED'] },
-          allocations: { some: {} }
+          allocations: { some: { invoiceItem: { invoice: { invoiceStatus: { not: 'void' } } } } }
         }
       }),
       // readyToIssue: count of serials approved by management, awaiting physical issuance

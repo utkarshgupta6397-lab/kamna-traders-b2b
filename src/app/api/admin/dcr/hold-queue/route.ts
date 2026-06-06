@@ -34,6 +34,7 @@ export async function GET(req: Request) {
 
     // --- Build where clause ---
     const whereClause: any = {
+      invoiceStatus: { not: 'void' },
       serialAllocations: {
         some: {
           serial: {
@@ -147,6 +148,7 @@ export async function GET(req: Request) {
 
     // --- KPIs ---
     const kpiWhereClause: any = {
+      invoiceStatus: { not: 'void' },
       serialAllocations: {
         some: {
           serial: {
@@ -159,7 +161,7 @@ export async function GET(req: Request) {
 
     const [invoicesOnHold, readyToIssueCount, holdSerialData] = await Promise.all([
       prisma.dcrInvoice.count({ where: kpiWhereClause }),
-      prisma.dcrInvoice.count({ where: { dcrStatus: 'READY_TO_ISSUE' } }),
+      prisma.dcrInvoice.count({ where: { dcrStatus: 'READY_TO_ISSUE', invoiceStatus: { not: 'void' } } }),
       prisma.dcrSerialAllocation.findMany({
         where: {
           serial: {

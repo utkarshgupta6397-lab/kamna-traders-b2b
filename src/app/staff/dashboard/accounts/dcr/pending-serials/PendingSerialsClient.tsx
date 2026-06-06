@@ -81,6 +81,26 @@ export default function PendingSerialsClient() {
   const startRow = (page - 1) * limit + 1;
   const endRow = Math.min(page * limit, totalInvoices);
 
+  const openZohoInvoice = (e: React.MouseEvent, inv: any) => {
+    e.preventDefault();
+    if (!inv.zohoInvoiceId) {
+      toast.error('Zoho Invoice ID unavailable');
+      return;
+    }
+    console.log({ invoiceId: inv.zohoInvoiceId, invoiceNumber: inv.invoiceNumber });
+    window.open(`https://books.zoho.in/app${ZOHO_ORG_ID ? '/' + ZOHO_ORG_ID : ''}#/invoices/${inv.zohoInvoiceId}`, '_blank');
+  };
+
+  const openZohoCustomer = (e: React.MouseEvent, inv: any) => {
+    e.preventDefault();
+    if (!inv.customerId) {
+      toast.error('Customer ID unavailable');
+      return;
+    }
+    console.log({ customerId: inv.customerId, customerName: inv.customerName });
+    window.open(`https://books.zoho.in/app${ZOHO_ORG_ID ? '/' + ZOHO_ORG_ID : ''}#/contacts/${inv.customerId}`, '_blank');
+  };
+
   return (
     <div className="flex flex-col gap-6 animate-in fade-in duration-300">
       
@@ -226,17 +246,17 @@ export default function PendingSerialsClient() {
                     <tr key={inv.id} className="hover:bg-blue-50/40 transition-colors group">
                       <td className="px-4 py-3 text-center text-gray-400 text-xs font-medium align-middle">{startRow + idx}</td>
                       <td className="px-4 py-3 font-medium text-xs align-middle">
-                        <a 
-                          href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${inv.customerId}&invoiceId=${inv.id}`} 
-                          className="text-[#1A2766] hover:underline inline-flex items-center gap-1"
+                        <button 
+                          onClick={(e) => openZohoInvoice(e, inv)}
+                          className="text-[#1A2766] hover:underline inline-flex items-center gap-1 focus:outline-none text-left"
                         >
                           {inv.invoiceNumber} <ExternalLink size={10} className="opacity-0 group-hover:opacity-50 transition-opacity" />
-                        </a>
+                        </button>
                       </td>
                       <td className="px-4 py-3 text-gray-800 text-xs align-middle leading-snug whitespace-normal break-words">
-                        <a href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${inv.customerId}`} className="hover:underline hover:text-[#1A2766]">
+                        <button onClick={(e) => openZohoCustomer(e, inv)} className="hover:underline hover:text-[#1A2766] focus:outline-none text-left">
                           {inv.customerName}
-                        </a>
+                        </button>
                       </td>
                       <td className="px-4 py-3 text-gray-600 text-xs align-middle">
                         {new Date(inv.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -276,6 +296,10 @@ export default function PendingSerialsClient() {
                           <button
                             onClick={() => {
                               if (loadingInvoiceId) return;
+                              if (!inv.id) {
+                                toast.error('Local Invoice ID unavailable');
+                                return;
+                              }
                               setLoadingInvoiceId(inv.id);
                               router.push(`/staff/dashboard/accounts/dcr/pending-serials/${inv.id}`);
                             }}
@@ -294,6 +318,10 @@ export default function PendingSerialsClient() {
                           <button
                             onClick={() => {
                               if (loadingInvoiceId) return;
+                              if (!inv.id) {
+                                toast.error('Local Invoice ID unavailable');
+                                return;
+                              }
                               setLoadingInvoiceId(inv.id);
                               router.push(`/staff/dashboard/accounts/dcr/pending-serials/${inv.id}`);
                             }}

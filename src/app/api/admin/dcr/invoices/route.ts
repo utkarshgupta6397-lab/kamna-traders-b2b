@@ -15,7 +15,7 @@ export async function GET(req: Request) {
     const limit = parseInt(searchParams.get('limit') || '25');
     const skip = (page - 1) * limit;
     
-    const whereClause: any = {};
+    const whereClause: any = { invoiceStatus: { not: 'void' } };
     if (view === 'active') {
       whereClause.archived = false;
       whereClause.dcrStatus = { in: ['NEW', 'UNDER_REVIEW'] };
@@ -58,12 +58,14 @@ export async function GET(req: Request) {
 
     // Global KPIs
     const [totalImported, newCount, underReviewCount] = await Promise.all([
-      prisma.dcrInvoice.count(),
       prisma.dcrInvoice.count({
-        where: { archived: false, dcrStatus: 'NEW' }
+        where: { invoiceStatus: { not: 'void' } }
       }),
       prisma.dcrInvoice.count({
-        where: { archived: false, dcrStatus: 'UNDER_REVIEW' }
+        where: { archived: false, dcrStatus: 'NEW', invoiceStatus: { not: 'void' } }
+      }),
+      prisma.dcrInvoice.count({
+        where: { archived: false, dcrStatus: 'UNDER_REVIEW', invoiceStatus: { not: 'void' } }
       })
     ]);
 

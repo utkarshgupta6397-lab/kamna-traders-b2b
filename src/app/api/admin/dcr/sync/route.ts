@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { fetchInvoicesByRange, fetchInvoiceById } from '@/lib/zoho/invoices';
 import { ensureCustomerExists } from '@/lib/dcr-customer-sync';
+import { isVoidInvoice } from '@/lib/dcr-utils';
 
 export async function POST(req: Request) {
   try {
@@ -51,6 +52,10 @@ export async function POST(req: Request) {
             userId: session.userId,
           }
         });
+      }
+
+      if (fullInvoice.status === 'void' || isVoidInvoice(fullInvoice)) {
+        continue;
       }
 
       const existing = await prisma.dcrInvoice.findUnique({

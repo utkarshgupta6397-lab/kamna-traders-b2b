@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { FileText, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
+import { FileText, Loader2, ExternalLink, AlertCircle, Check } from 'lucide-react';
 
 interface MiniCustomerStatementProps {
   customerId: string;
@@ -66,14 +66,25 @@ function parseRawDate(iso: string) {
   return null;
 }
 
-function fmtDate(iso: string) {
+function fmtDateTime(iso: string) {
   if (!iso) return '—';
+  
+  let datePart = '';
   const raw = parseRawDate(iso);
-  if (raw) return `${raw.d} ${raw.m} ${raw.y}`;
+  if (raw) {
+    datePart = `${raw.d} ${raw.m} ${raw.y}`;
+  } else {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    datePart = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  if (iso.length === 10 || (!iso.includes('T') && !iso.includes(':'))) return datePart;
   
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const timePart = d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: 'numeric', hour12: true });
+  return `${datePart} ${timePart}`;
 }
 
 export default function MiniCustomerStatement({ customerId, statementData, statementLoading }: MiniCustomerStatementProps) {
@@ -81,19 +92,19 @@ export default function MiniCustomerStatement({ customerId, statementData, state
     <div className="flex flex-col bg-gray-50 h-full">
       <div className="p-5 border-b border-gray-200 bg-white flex justify-between items-center flex-shrink-0">
         <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-          <FileText className="text-gray-400" size={20} />
+          <FileText className="text-[#1A2766]" size={20} />
           Customer Statement Snapshot
         </h3>
-        <a href={`/staff/dashboard/accounts?customerId=${customerId}`} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#1A2766] flex items-center gap-1 hover:underline">
+        <a href={`/staff/dashboard/accounts?customerId=${customerId}`} target="_blank" rel="noreferrer" className="text-xs font-semibold bg-gray-100 px-3 py-1.5 rounded text-gray-700 flex items-center gap-1.5 hover:bg-gray-200 transition-colors">
           Full Statement <ExternalLink size={12} />
         </a>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto bg-white">
         {statementLoading ? (
-          <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4">
+          <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4 py-12">
             <Loader2 className="w-8 h-8 animate-spin text-[#1A2766]" />
-            <p className="text-sm font-medium">Fetching live statement from Zoho...</p>
+            <p className="text-sm font-medium">Fetching live ledger from Zoho...</p>
           </div>
         ) : statementData ? (() => {
           const visibleTxs = statementData.transactions.slice(-10);
@@ -101,96 +112,145 @@ export default function MiniCustomerStatement({ customerId, statementData, state
             ? visibleTxs[0].balanceAfter - visibleTxs[0].netEffect
             : statementData.closingBalance;
           const openingPres = getOpeningBalancePresentation(openingBal);
-          const totalInvoiced = visibleTxs.filter((t: any) => t.type === 'invoice').reduce((a: number, t: any) => a + Math.abs(t.netEffect), 0);
-          const totalPaid = visibleTxs.filter((t: any) => t.type === 'payment').reduce((a: number, t: any) => a + Math.abs(t.netEffect), 0);
+          const closingPres = getOpeningBalancePresentation(statementData.closingBalance);
           
           return (
-            <div className="space-y-6">
-              {/* Snapshot KPIs */}
-              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1">Current Outstanding</p>
-                  <p className={`text-2xl font-black ${statementData.closingBalance > 0 ? 'text-red-600' : statementData.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
-                    {fmtBalance(statementData.closingBalance)}
-                  </p>
-                  {statementData.closingBalance > 0 && statementData.unpaidInvoices?.length > 0 && (
-                    <p className="text-xs text-red-500 font-medium mt-1">Across {statementData.unpaidInvoices.length} unpaid invoices</p>
-                  )}
-                </div>
-                <div className="flex flex-col justify-between">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-gray-500 font-medium">Recent Invoiced:</span>
-                    <span className="font-bold text-gray-900">{fmt(totalInvoiced)}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-gray-500 font-medium">Recent Paid:</span>
-                    <span className="font-bold text-emerald-600">{fmt(totalPaid)}</span>
-                  </div>
-                </div>
+            <div className="flex flex-col h-full">
+              {/* Ledger Table */}
+              <div className="flex-1 overflow-x-auto">
+                <table className="w-full text-sm relative" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <thead className="sticky top-0 bg-gray-50 text-[10px] uppercase text-gray-500 font-bold border-b border-gray-200 z-10 shadow-sm">
+                    <tr>
+                      <th className="px-3 py-2 text-left w-24">Date</th>
+                      <th className="px-3 py-2 text-left min-w-[120px] whitespace-nowrap">Type</th>
+                      <th className="px-3 py-2 text-left">Details</th>
+                      <th className="px-3 py-2 text-right whitespace-nowrap">Invoice Amt</th>
+                      <th className="px-3 py-2 text-right whitespace-nowrap">Payment Amt</th>
+                      <th className="px-3 py-2 text-right">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {/* Opening balance row */}
+                    <tr className="bg-blue-50/20">
+                      <td className="px-3 py-1.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
+                      <td className="px-3 py-1.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
+                      <td className="px-3 py-1.5 text-[11px]">
+                        {openingPres.isCredit ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="font-bold text-gray-800">Opening Balance</span>
+                            <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full tracking-wide uppercase">
+                              Advance / Credit
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="font-bold text-gray-800">Opening Balance</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-[11px] text-gray-400">—</td>
+                      <td className="px-3 py-1.5 text-right text-[11px] text-gray-400">—</td>
+                      <td className="px-3 py-1.5 text-right text-xs font-bold tabular-nums">
+                        {openingPres.isCredit ? (
+                          <span className="text-emerald-600">{openingPres.amount}</span>
+                        ) : (
+                          <span className="text-gray-900">{openingPres.amount}</span>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Transaction rows */}
+                    {visibleTxs.map((tx: any) => {
+                      const displayDesc = cleanDescription(tx.description, tx.type);
+                      return (
+                        <tr 
+                          key={tx.id} 
+                          onClick={() => tx.zohoUrl && window.open(tx.zohoUrl, '_blank')}
+                          className={`group even:bg-gray-50/40 hover:bg-blue-50/80 transition-all ${tx.zohoUrl ? 'cursor-pointer' : ''}`}
+                        >
+                          <td className="px-3 py-1.5 text-[11px] text-gray-500 whitespace-nowrap align-middle">
+                            {fmtDateTime(tx.datetime || tx.date)}
+                          </td>
+                          <td className="px-3 py-1.5 text-[10px] font-semibold text-gray-600 align-middle uppercase tracking-wider whitespace-nowrap">
+                            {tx.type === 'invoice' ? 'Invoice' : tx.type === 'payment' ? 'Payment' : 'Purchase Bill'}
+                          </td>
+                          <td className="px-3 py-1.5 text-[11px] font-medium text-blue-700 group-hover:text-blue-900 group-hover:underline underline-offset-2 align-middle">
+                            <div className="flex items-center gap-1.5">
+                              <span>{displayDesc}</span>
+                              {tx.isVerified && (
+                                <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
+                                  <Check size={9} strokeWidth={4} />
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-1.5 text-right text-[11px] font-semibold text-gray-700 whitespace-nowrap align-middle tabular-nums">
+                            {tx.netEffect > 0 ? fmt(tx.amount) : '—'}
+                          </td>
+                          <td className="px-3 py-1.5 text-right text-[11px] font-semibold whitespace-nowrap align-middle tabular-nums" style={{ color: tx.netEffect <= 0 ? '#059669' : 'transparent' }}>
+                            {tx.netEffect <= 0 ? fmt(tx.amount) : '—'}
+                          </td>
+                          <td className="px-3 py-1.5 text-right whitespace-nowrap align-middle">
+                            {(() => {
+                              const b = tx.balanceAfter;
+                              const isZero = b === 0;
+                              const isNearSettled = !isZero && Math.abs(b) <= 100;
+                              
+                              if (isZero) {
+                                return (
+                                  <span className="text-[11px] font-extrabold text-emerald-600 tabular-nums">
+                                    {fmtBalance(b)}
+                                  </span>
+                                );
+                              }
+                              
+                              if (isNearSettled) {
+                                return (
+                                  <div className="flex flex-col items-end justify-center bg-emerald-50/50 -my-1 -mx-2 px-2 py-1 rounded border border-emerald-100/60">
+                                    <span className="text-[11px] tabular-nums font-extrabold text-emerald-700">
+                                      {fmtBalance(b)}
+                                    </span>
+                                    <span className="text-[8px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5">
+                                      Near Settled
+                                    </span>
+                                  </div>
+                                );
+                              }
+                              
+                              return (
+                                <span className={`text-[11px] font-bold tabular-nums ${b > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                  {fmtBalance(b)}
+                                </span>
+                              );
+                            })()}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
-              {/* Transactions List */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="px-4 py-3 bg-gray-50/80 border-b border-gray-100 flex justify-between items-center">
-                  <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider">Last 10 Transactions</h4>
-                  <span className="text-[10px] text-gray-400 font-medium">Zoho Books Live Data</span>
-                </div>
-                <div className="divide-y divide-gray-100">
-                  <div className="px-4 py-3 flex items-center justify-between bg-blue-50/30">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 text-blue-600 font-bold text-xs">OB</div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">{openingPres.label}</p>
-                        <p className="text-xs text-gray-500">Before last 10 transactions</p>
-                      </div>
-                    </div>
+              {/* Footer Summary */}
+              <div className="bg-gray-50 border-t border-gray-200 p-4 shrink-0 mt-auto">
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 max-w-lg ml-auto">
+                  <div className="text-right">
+                    <p className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Opening Balance</p>
                     <p className={`text-sm font-bold ${openingPres.isCredit ? 'text-emerald-600' : 'text-gray-900'}`}>
                       {openingPres.amount}
                     </p>
                   </div>
-                  
-                  {visibleTxs.map((tx: any) => (
-                    <div key={tx.id} className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                      <div className="flex items-start gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-[10px] ${
-                          tx.type === 'invoice' ? 'bg-orange-50 text-orange-600 border border-orange-100' : 
-                          tx.type === 'payment' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
-                          'bg-gray-100 text-gray-600'
-                        }`}>
-                          {tx.type === 'invoice' ? 'INV' : tx.type === 'payment' ? 'PAY' : 'TXN'}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            {tx.zohoUrl ? (
-                              <a href={tx.zohoUrl} target="_blank" rel="noreferrer" className="text-sm font-semibold text-[#1A2766] hover:underline flex items-center gap-1">
-                                {cleanDescription(tx.description, tx.type)}
-                              </a>
-                            ) : (
-                              <p className="text-sm font-semibold text-gray-900">{cleanDescription(tx.description, tx.type)}</p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <p className="text-xs text-gray-500 font-medium">{fmtDate(tx.date)}</p>
-                            <span className="text-gray-300">•</span>
-                            <p className={`text-xs font-bold ${tx.balanceAfter > 0 ? 'text-red-500' : tx.balanceAfter < 0 ? 'text-emerald-500' : 'text-gray-400'}`}>
-                              Bal: {fmtBalance(tx.balanceAfter)}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className={`text-sm font-bold ${tx.netEffect > 0 ? 'text-gray-900' : 'text-emerald-600'}`}>
-                          {tx.netEffect > 0 ? '+' : ''}{fmt(tx.amount)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                  <div className="hidden sm:block w-px h-8 bg-gray-300"></div>
+                  <div className="text-right">
+                    <p className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Closing Balance</p>
+                    <p className={`text-xl font-black ${closingPres.isCredit ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {closingPres.amount}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
           );
         })() : (
-          <div className="h-full flex flex-col items-center justify-center text-gray-400">
+          <div className="h-full flex flex-col items-center justify-center text-gray-400 py-12">
             <AlertCircle size={32} className="mb-2 opacity-50" />
             <p className="text-sm font-medium">No statement data available</p>
           </div>

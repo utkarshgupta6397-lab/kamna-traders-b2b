@@ -65,6 +65,13 @@ export async function GET(req: Request) {
       prisma.dcrSerial.count({ where: { status: 'READY_TO_ISSUE' } })
     ]);
 
+    // Load local customer records corresponding to the returned invoices' customerId
+    const customerIds = Array.from(new Set(invoices.map(inv => inv.customerId)));
+    const localCustomers = await prisma.customer.findMany({
+      where: { id: { in: customerIds } }
+    });
+    const customerGstMap = new Map(localCustomers.map(c => [c.id, c.gstNumber]));
+
     const formattedInvoices = invoices.map(inv => {
       const skuGroups = inv.items.map(item => {
         const eligibleSerials = item.serialAllocations.filter(alloc => alloc.serial?.status === 'READY_TO_ISSUE');
@@ -86,7 +93,10 @@ export async function GET(req: Request) {
       return {
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,
+        zohoInvoiceId: inv.zohoInvoiceId,
+        customerId: inv.customerId,
         customerName: inv.customerName,
+        customer_gst_no: customerGstMap.get(inv.customerId) || null,
         invoiceDate: inv.invoiceDate,
         invoiceTotal: inv.invoiceTotal,
         dcrStatus: inv.dcrStatus,

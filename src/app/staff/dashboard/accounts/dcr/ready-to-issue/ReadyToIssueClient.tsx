@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Search, ChevronDown, ChevronUp, CheckCircle, Loader2, Package, Copy } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, ChevronDown, ChevronUp, CheckCircle, Loader2, Package, Copy, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import { useDcrStats } from '../layout';
 
 interface SerialEntry {
   allocationId: string;
@@ -22,7 +23,10 @@ interface SkuGroup {
 interface ReadyInvoice {
   id: string;
   invoiceNumber: string;
+  zohoInvoiceId?: string;
+  customerId: string;
   customerName: string;
+  customer_gst_no?: string;
   invoiceDate: string;
   invoiceTotal: number;
   dcrStatus: string;
@@ -30,7 +34,10 @@ interface ReadyInvoice {
   skuGroups: SkuGroup[];
 }
 
+const ZOHO_ORG_ID = process.env.NEXT_PUBLIC_ZOHO_ORG_ID;
+
 export default function ReadyToIssueClient() {
+  const { refreshStats } = useDcrStats();
   const [invoices, setInvoices] = useState<ReadyInvoice[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -40,11 +47,42 @@ export default function ReadyToIssueClient() {
   const [kpis, setKpis] = useState({ invoicesReady: 0, serialsReady: 0 });
   const [selectedSerials, setSelectedSerials] = useState<Set<string>>(new Set());
   const [isIssuing, setIsIssuing] = useState(false);
+  const [customerGsts, setCustomerGsts] = useState<Record<string, { gst: string; loading: boolean; error: boolean }>>({});
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(t);
   }, [search]);
+
+  const handleFetchGst = async (customerId: string) => {
+    if (customerGsts[customerId]?.loading) return;
+
+    setCustomerGsts(prev => ({
+      ...prev,
+      [customerId]: { gst: '', loading: true, error: false }
+    }));
+
+    try {
+      const res = await fetch(`/api/admin/customer-statement/customer?customerId=${customerId}`);
+      const result = await res.json();
+      if (res.ok && result.success && result.data) {
+        setCustomerGsts(prev => ({
+          ...prev,
+          [customerId]: { gst: result.data.gstNo || '—', loading: false, error: false }
+        }));
+      } else {
+        setCustomerGsts(prev => ({
+          ...prev,
+          [customerId]: { gst: '', loading: false, error: true }
+        }));
+      }
+    } catch (err) {
+      setCustomerGsts(prev => ({
+        ...prev,
+        [customerId]: { gst: '', loading: false, error: true }
+      }));
+    }
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -91,6 +129,7 @@ export default function ReadyToIssueClient() {
       toast.success(`Successfully issued ${data.issued} serial(s)`);
       setSelectedSerials(new Set()); // clear selection
       fetchData(); // reload
+      refreshStats(); // update sidebar badges
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -204,119 +243,176 @@ export default function ReadyToIssueClient() {
             <p className="text-sm text-gray-400 mt-1">Invoices released from Hold Queue will appear here.</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {invoices.map(invoice => {
-              const isExpanded = expandedInvoices.has(invoice.id);
-              const selectedForInvoice = invoice.skuGroups.flatMap(g => g.serials.map(s => s.serialNumber)).filter(sn => selectedSerials.has(sn));
-              
-              return (
-                <div key={invoice.id} className="bg-white rounded-xl border border-emerald-100 shadow-sm overflow-hidden">
-                  <div className="p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                          <span className="font-bold text-[#1A2766] text-sm">{invoice.invoiceNumber}</span>
-                          <span className="text-gray-400 text-xs">·</span>
-                          <span className="text-gray-500 text-xs">{format(new Date(invoice.invoiceDate), 'dd MMM yyyy')}</span>
-                          <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
-                            ✓ Ready To Issue
-                          </span>
-                        </div>
-                        <p className="text-sm font-semibold text-gray-800 truncate">{invoice.customerName}</p>
-                        <div className="flex items-center gap-4 mt-1.5 text-xs text-gray-500">
-                          <span>Invoice Value: <span className="font-semibold text-gray-700">{formatCurrency(invoice.invoiceTotal)}</span></span>
-                          <span>Serials: <span className="font-semibold text-emerald-700">{invoice.totalSerials}</span></span>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        {selectedForInvoice.length > 0 && (
-                          <button
-                            onClick={() => handleIssue(invoice.id, selectedForInvoice)}
-                            disabled={isIssuing}
-                            className="flex items-center gap-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold px-3 py-2 rounded-lg transition-all border border-emerald-300 disabled:opacity-50"
-                          >
-                            Issue Selected ({selectedForInvoice.length})
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleIssue(invoice.id, undefined, true)}
-                          disabled={isIssuing}
-                          className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition-all shadow-sm disabled:opacity-50"
-                        >
-                          Issue All
-                        </button>
-                        <button
-                          onClick={() => toggleExpand(invoice.id)}
-                          className="flex items-center gap-1 text-gray-500 hover:text-gray-700 text-xs font-medium px-2.5 py-2 rounded-lg border border-gray-200 hover:border-gray-300 transition-all"
-                        >
-                          {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                          {isExpanded ? 'Collapse' : 'View Serials'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm whitespace-nowrap">
+                <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 font-semibold text-xs uppercase tracking-wider">
+                  <tr>
+                    <th className="px-5 py-4 w-12 text-center bg-gray-50 sticky left-0 z-20">#</th>
+                    <th className="px-5 py-4 bg-gray-50 sticky left-[48px] z-20">Invoice Number</th>
+                    <th className="px-5 py-4 bg-gray-50">Customer Name</th>
+                    <th className="px-5 py-4 bg-gray-50">GST Number</th>
+                    <th className="px-5 py-4 bg-gray-50">Invoice Date</th>
+                    <th className="px-5 py-4 text-right bg-gray-50">Invoice Value</th>
+                    <th className="px-5 py-4 text-center bg-gray-50">Serials Ready</th>
+                    <th className="px-5 py-4 text-center bg-gray-50">Status</th>
+                    <th className="px-5 py-4 text-right sticky right-0 bg-gray-50 z-20 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {invoices.map((invoice, index) => {
+                    const isExpanded = expandedInvoices.has(invoice.id);
+                    const selectedForInvoice = invoice.skuGroups.flatMap(g => g.serials.map(s => s.serialNumber)).filter(sn => selectedSerials.has(sn));
 
-                  {isExpanded && (
-                    <div className="border-t border-gray-100">
-                      {invoice.skuGroups.map(group => (
-                        <div key={group.itemId} className="border-b border-gray-50 last:border-0">
-                          <div className="px-4 py-2.5 bg-gray-50/50 flex items-center gap-2">
-                            <button
-                              onClick={() => handleCopySerials(group.serials)}
-                              className="text-gray-400 hover:text-emerald-600 transition-colors"
-                              title="Copy all serial numbers"
-                            >
-                              <Copy size={14} />
-                            </button>
-                            <span className="text-xs font-bold text-gray-700">{group.itemName}</span>
-                            {group.sku && (
-                              <span className="font-mono text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{group.sku}</span>
-                            )}
-                            <span className="ml-auto text-[10px] text-gray-400">{group.serials.length} serial{group.serials.length !== 1 ? 's' : ''}</span>
-                          </div>
-                          <div className="px-4 py-3 flex flex-wrap gap-2">
-                            {group.serials.map(serial => (
-                              <div
-                                key={serial.allocationId}
-                                className={`flex items-center gap-2 font-mono text-xs border px-2 py-1.5 rounded-md transition-colors ${
-                                  selectedSerials.has(serial.serialNumber) ? 'bg-emerald-100 border-emerald-300 text-emerald-900' : 'bg-gray-50 border-gray-200 text-gray-700'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="rounded text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
-                                  checked={selectedSerials.has(serial.serialNumber)}
-                                  onChange={(e) => {
-                                    const next = new Set(selectedSerials);
-                                    if (e.target.checked) next.add(serial.serialNumber);
-                                    else next.delete(serial.serialNumber);
-                                    setSelectedSerials(next);
-                                  }}
-                                  disabled={isIssuing}
-                                />
-                                <span className="cursor-pointer" onClick={() => {
-                                    const next = new Set(selectedSerials);
-                                    if (next.has(serial.serialNumber)) next.delete(serial.serialNumber);
-                                    else next.add(serial.serialNumber);
-                                    setSelectedSerials(next);
-                                }}>{serial.serialNumber}</span>
+                    return (
+                      <React.Fragment key={invoice.id}>
+                        <tr className="hover:bg-emerald-50/20 transition-colors group">
+                          <td className="px-5 py-3 text-center text-gray-500 font-medium sticky left-0 bg-white group-hover:bg-[#f3faf7] z-10">{index + 1}</td>
+                          <td className="px-5 py-3 font-semibold text-[#1A2766] sticky left-[48px] bg-white group-hover:bg-[#f3faf7] z-10">
+                            <a href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${invoice.customerId}&invoiceId=${invoice.id}`} className="hover:underline flex items-center gap-1 w-fit">
+                              {invoice.invoiceNumber} <ExternalLink size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </a>
+                          </td>
+                          <td className="px-5 py-3 font-medium text-gray-800 truncate max-w-xs">
+                            <a href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${invoice.customerId}`} className="hover:underline hover:text-[#1A2766]">
+                              {invoice.customerName}
+                            </a>
+                          </td>
+                          <td className="px-5 py-3 text-gray-600 font-mono text-xs">
+                            {(() => {
+                              const gstInfo = customerGsts[invoice.customerId];
+                              if (gstInfo) {
+                                if (gstInfo.loading) {
+                                  return <span className="text-gray-400 italic">Fetching...</span>;
+                                }
+                                if (gstInfo.error) {
+                                  return <span className="text-red-500 font-medium">GST Not Available</span>;
+                                }
+                                if (gstInfo.gst === 'NOT_AVAILABLE' || gstInfo.gst === '—') {
+                                  return <span className="text-red-500 font-medium">GST Not Available</span>;
+                                }
+                                return <span>{gstInfo.gst}</span>;
+                              }
+                              if (invoice.customer_gst_no) {
+                                if (invoice.customer_gst_no === 'NOT_AVAILABLE' || invoice.customer_gst_no === '—') {
+                                  return <span className="text-red-500 font-medium">GST Not Available</span>;
+                                }
+                                return <span>{invoice.customer_gst_no}</span>;
+                              }
+                              return (
                                 <button
-                                  onClick={() => handleIssue(invoice.id, [serial.serialNumber])}
-                                  disabled={isIssuing}
-                                  className="ml-1 text-[10px] bg-white border border-gray-300 rounded px-1.5 py-0.5 text-gray-600 hover:text-emerald-700 hover:border-emerald-400 disabled:opacity-50"
+                                  onClick={() => handleFetchGst(invoice.customerId)}
+                                  className="text-xs text-[#1A2766] hover:underline font-semibold"
                                 >
-                                  Issue
+                                  Fetch GST
                                 </button>
+                              );
+                            })()}
+                          </td>
+                          <td className="px-5 py-3 text-gray-600">{format(new Date(invoice.invoiceDate), 'dd MMM yyyy')}</td>
+                          <td className="px-5 py-3 text-right font-medium text-gray-700">{formatCurrency(invoice.invoiceTotal)}</td>
+                          <td className="px-5 py-3 text-center font-bold text-emerald-700">{invoice.totalSerials}</td>
+                          <td className="px-5 py-3 text-center">
+                            <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                              ✓ Ready To Issue
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 text-right sticky right-0 bg-white group-hover:bg-[#f3faf7] transition-colors z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
+                            <div className="flex justify-end gap-2">
+                              {selectedForInvoice.length > 0 && (
+                                <button
+                                  onClick={() => handleIssue(invoice.id, selectedForInvoice)}
+                                  disabled={isIssuing}
+                                  className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold px-3 py-1.5 rounded-lg border border-emerald-300 transition-all disabled:opacity-50"
+                                >
+                                  Issue Selected ({selectedForInvoice.length})
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleIssue(invoice.id, undefined, true)}
+                                disabled={isIssuing}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all shadow-sm disabled:opacity-50"
+                              >
+                                Issue All
+                              </button>
+                              <button
+                                onClick={() => toggleExpand(invoice.id)}
+                                className="text-gray-500 hover:text-gray-700 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-all flex items-center gap-1"
+                              >
+                                {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                {isExpanded ? 'Collapse' : 'View Serials'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={9} className="px-6 py-4 bg-gray-50/50 border-t border-b border-gray-100">
+                              <div className="space-y-3">
+                                {invoice.skuGroups.map(group => (
+                                  <div key={group.itemId} className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                                    <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                                      <button
+                                        onClick={() => handleCopySerials(group.serials)}
+                                        className="text-gray-400 hover:text-emerald-600 transition-colors"
+                                        title="Copy all serial numbers"
+                                      >
+                                        <Copy size={14} />
+                                      </button>
+                                      <span className="text-xs font-bold text-gray-700">{group.itemName}</span>
+                                      {group.sku && (
+                                        <span className="font-mono text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{group.sku}</span>
+                                      )}
+                                      <span className="ml-auto text-[10px] text-gray-400">{group.serials.length} serial{group.serials.length !== 1 ? 's' : ''}</span>
+                                    </div>
+                                    <div className="p-3 flex flex-wrap gap-2">
+                                      {group.serials.map(serial => (
+                                        <div
+                                          key={serial.allocationId}
+                                          className={`flex items-center gap-2 font-mono text-xs border px-2.5 py-1.5 rounded-md transition-colors ${
+                                            selectedSerials.has(serial.serialNumber) ? 'bg-emerald-100 border-emerald-300 text-emerald-900' : 'bg-gray-50 border-gray-200 text-gray-700'
+                                          }`}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            className="rounded text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
+                                            checked={selectedSerials.has(serial.serialNumber)}
+                                            onChange={(e) => {
+                                              const next = new Set(selectedSerials);
+                                              if (e.target.checked) next.add(serial.serialNumber);
+                                              else next.delete(serial.serialNumber);
+                                              setSelectedSerials(next);
+                                            }}
+                                            disabled={isIssuing}
+                                          />
+                                          <span className="cursor-pointer" onClick={() => {
+                                              const next = new Set(selectedSerials);
+                                              if (next.has(serial.serialNumber)) next.delete(serial.serialNumber);
+                                              else next.add(serial.serialNumber);
+                                              setSelectedSerials(next);
+                                          }}>{serial.serialNumber}</span>
+                                          <button
+                                            onClick={() => handleIssue(invoice.id, [serial.serialNumber])}
+                                            disabled={isIssuing}
+                                            className="ml-1 text-[10px] bg-white border border-gray-300 rounded px-1.5 py-0.5 text-gray-600 hover:text-emerald-700 hover:border-emerald-400 disabled:opacity-50"
+                                          >
+                                            Issue
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

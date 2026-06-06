@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { PackageOpen, Plus, Trash2, CheckCircle, AlertTriangle, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { PackageOpen, Plus, Trash2, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, ExternalLink, X, FileCheck, Package, Clock, Activity, Loader2, Edit2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import Link from 'next/link';
 
 interface LineItem {
   id: string;
@@ -11,7 +12,21 @@ interface LineItem {
   rawText: string;
 }
 
-export default function PurchaseReceivePage() {
+export default function PurchaseReceiveDashboard() {
+  const [data, setData] = useState<{ kpis: any, rows: any[], total: number }>({ kpis: {}, rows: [], total: 0 });
+  const [loading, setLoading] = useState(true);
+  
+  // Modal states
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [editingRow, setEditingRow] = useState<any>(null);
+
+  // Edit states
+  const [editVendor, setEditVendor] = useState('');
+  const [editBill, setEditBill] = useState('');
+  const [editDate, setEditDate] = useState('');
+
+  // Form states
   const [vendorName, setVendorName] = useState('');
   const [dateReceived, setDateReceived] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [billNumber, setBillNumber] = useState('');
@@ -21,49 +36,51 @@ export default function PurchaseReceivePage() {
   const [skuSearch, setSkuSearch] = useState<Record<string, string>>({});
   const [skuDropdownOpen, setSkuDropdownOpen] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch('/api/staff/skus')
-      .then(r => r.json())
-      .then(data => {
-        const filtered = (data.skus || data || []).filter((s: any) => s.caseSize > 1 && s.isActive !== false);
-        setSkus(filtered);
-      })
-      .catch(() => setSkus([]));
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/admin/dcr/purchase-receive');
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Failed to fetch data');
+      setData(d);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const addLine = () => {
-    setLines(prev => [...prev, { id: Date.now().toString(36) + Math.random().toString(36).substring(2), skuId: '', rawText: '' }]);
+  useEffect(() => {
+    fetchData();
+    fetch('/api/staff/skus')
+      .then(r => r.json())
+      .then(d => setSkus((d.skus || d || []).filter((s: any) => s.caseSize > 1 && s.isActive !== false)))
+      .catch(() => setSkus([]));
+  }, [fetchData]);
+
+  const toggleExpand = (id: string) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   };
 
-  const removeLine = (id: string) => {
-    if (lines.length === 1) return;
-    setLines(prev => prev.filter(l => l.id !== id));
-  };
-
-  const updateLine = (id: string, field: keyof LineItem, value: string) => {
-    setLines(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l));
-  };
-
-  const getSerialCount = (rawText: string) => {
-    return rawText.split(/[\s,\n]+/).filter(s => s.trim().length > 0).length;
-  };
+  const addLine = () => setLines(prev => [...prev, { id: Date.now().toString(36) + Math.random().toString(36).substring(2), skuId: '', rawText: '' }]);
+  const removeLine = (id: string) => lines.length > 1 && setLines(prev => prev.filter(l => l.id !== id));
+  const updateLine = (id: string, field: keyof LineItem, value: string) => setLines(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l));
+  const filteredSkus = (lineId: string) => skus.filter(s => s.name.toLowerCase().includes((skuSearch[lineId] || '').toLowerCase())).slice(0, 20);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!vendorName.trim() || !dateReceived) {
-      toast.error('Vendor name and date are required');
-      return;
-    }
-
+    if (!vendorName.trim() || !dateReceived) return toast.error('Vendor name and date are required');
     for (const line of lines) {
-      if (!line.skuId) { toast.error('Please select a SKU for each row'); return; }
-      if (!line.rawText.trim()) { toast.error('Please enter serials for each row'); return; }
+      if (!line.skuId) return toast.error('Please select a SKU for each row');
+      if (!line.rawText.trim()) return toast.error('Please enter serials for each row');
     }
 
     const payload = {
-      vendorName,
-      dateReceived,
-      billNumber,
+      vendorName, dateReceived, billNumber,
       lines: lines.map(l => ({
         skuId: l.skuId,
         serials: l.rawText.split(/[\s,\n]+/).filter(s => s.trim().length > 0)
@@ -77,17 +94,15 @@ export default function PurchaseReceivePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || (data.details?.join(', ')) || 'Failed');
-
-      if (data.warnings?.length) {
-        toast.success(`Saved ${data.totalSerials} serials with ${data.warnings.length} warnings.`);
-      } else {
-        toast.success(`Successfully recorded receipt of ${data.totalSerials} panels.`);
-      }
-
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || resData.details?.join(', ') || 'Failed');
+      
+      toast.success(resData.warnings?.length ? `Saved ${resData.totalSerials} serials with warnings.` : `Successfully recorded receipt of ${resData.totalSerials} panels.`);
+      
       setLines([{ id: Date.now().toString(36) + Math.random().toString(36).substring(2), skuId: '', rawText: '' }]);
       setBillNumber('');
+      setIsFormOpen(false);
+      fetchData();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -95,173 +110,361 @@ export default function PurchaseReceivePage() {
     }
   };
 
-  const filteredSkus = (lineId: string) => {
-    const term = (skuSearch[lineId] || '').toLowerCase();
-    return skus.filter(s => s.name.toLowerCase().includes(term)).slice(0, 20);
+  const openEdit = (row: any) => {
+    setEditingRow(row);
+    setEditVendor(row.vendorName === 'Unknown Vendor' ? '' : row.vendorName);
+    setEditBill(row.billNumber === 'No Bill' ? '' : row.billNumber);
+    setEditDate(row.date);
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRow) return;
+    
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        vendorName: editVendor,
+        billNumber: editBill,
+        dateReceived: editDate,
+        serialNumbers: editingRow.serials.map((s: any) => s.serialNumber)
+      };
+
+      const res = await fetch('/api/admin/dcr/purchase-receive', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update records');
+      
+      toast.success(`Successfully updated ${data.updated} records`);
+      setEditingRow(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <div className="flex-1 overflow-auto bg-gray-50/30 p-6">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="flex-1 overflow-auto bg-gray-50/30 p-6 relative">
+      <div className="max-w-7xl mx-auto space-y-6">
 
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Purchase Receive</h1>
-          <p className="text-sm text-gray-500 mt-1">Record physical panel receipt from a vendor. Supports multiple SKUs per entry.</p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Purchase Receive Dashboard</h1>
+            <p className="text-sm text-gray-500 mt-1">Track purchase receipts and DCR certificate completion for purchased panels.</p>
+          </div>
+          <button
+            onClick={() => setIsFormOpen(true)}
+            className="flex items-center gap-2 bg-[#1A2766] hover:bg-[#1A2766]/90 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors"
+          >
+            <Plus size={16} /> New Purchase Receive
+          </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-5">
-
-          {/* Vendor header */}
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="px-5 py-3 bg-gray-50/80 border-b border-gray-100">
-              <h2 className="font-semibold text-gray-800 text-sm">Purchase Details</h2>
+        {/* KPIs */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-500">Total Purchased</p>
+              <Package className="w-4 h-4 text-gray-400" />
             </div>
-            <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-5">
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-gray-700">Vendor Name <span className="text-red-500">*</span></label>
-                <input
-                  type="text"
-                  value={vendorName}
-                  onChange={e => setVendorName(e.target.value)}
-                  placeholder="e.g. Adani Solar Ltd"
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1A2766] focus:border-[#1A2766] text-sm transition-colors"
-                  required
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-gray-700">Date Received <span className="text-red-500">*</span></label>
-                <input
-                  type="date"
-                  value={dateReceived}
-                  max={format(new Date(), 'yyyy-MM-dd')}
-                  onChange={e => setDateReceived(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1A2766] focus:border-[#1A2766] text-sm transition-colors"
-                  required
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-gray-700">Bill / Invoice No.</label>
-                <input
-                  type="text"
-                  value={billNumber}
-                  onChange={e => setBillNumber(e.target.value)}
-                  placeholder="Optional"
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1A2766] focus:border-[#1A2766] text-sm transition-colors"
-                />
-              </div>
-            </div>
+            <h3 className="text-2xl font-bold text-gray-900 mt-2">{data.kpis.totalPurchased || 0}</h3>
           </div>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-500">DCR Received</p>
+              <FileCheck className="w-4 h-4 text-emerald-500" />
+            </div>
+            <h3 className="text-2xl font-bold text-emerald-600 mt-2">{data.kpis.dcrReceived || 0}</h3>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-500">DCR Pending</p>
+              <Clock className="w-4 h-4 text-orange-400" />
+            </div>
+            <h3 className="text-2xl font-bold text-orange-600 mt-2">{data.kpis.dcrPending || 0}</h3>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-500">Completion %</p>
+              <Activity className="w-4 h-4 text-blue-400" />
+            </div>
+            <h3 className="text-2xl font-bold text-blue-600 mt-2">{data.kpis.completionPercent || 0}%</h3>
+          </div>
+        </div>
 
-          {/* Line Items */}
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="px-5 py-3 bg-gray-50/80 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="font-semibold text-gray-800 text-sm">Serial Number Lines</h2>
-              <button
-                type="button"
-                onClick={addLine}
-                className="flex items-center gap-1.5 text-sm font-medium text-[#1A2766] hover:bg-[#1A2766]/5 px-3 py-1.5 rounded-lg transition-colors"
-              >
-                <Plus className="w-4 h-4" /> Add SKU Row
+        {/* Table */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          {loading ? (
+             <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-[#1A2766]" /></div>
+          ) : data.rows.length === 0 ? (
+            <div className="py-16 text-center text-gray-500">No purchase records found.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50/80 border-b border-gray-200 text-gray-500 font-medium">
+                  <tr>
+                    <th className="px-5 py-3">Date</th>
+                    <th className="px-5 py-3">Vendor</th>
+                    <th className="px-5 py-3">Bill Number</th>
+                    <th className="px-5 py-3">SKU</th>
+                    <th className="px-5 py-3 text-center">Purchased</th>
+                    <th className="px-5 py-3 text-center">DCR Rcvd</th>
+                    <th className="px-5 py-3 text-center">DCR Pndg</th>
+                    <th className="px-5 py-3 text-center">Completion</th>
+                    <th className="px-5 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {data.rows.map((row) => (
+                    <React.Fragment key={row.id}>
+                      <tr className="hover:bg-gray-50/50 transition-colors">
+                        <td className="px-5 py-3 font-medium text-gray-900">{format(new Date(row.date), 'dd MMM yyyy')}</td>
+                        <td className="px-5 py-3">{row.vendorName}</td>
+                        <td className="px-5 py-3 font-mono text-xs">{row.billNumber}</td>
+                        <td className="px-5 py-3">
+                          <p className="font-semibold text-gray-800 line-clamp-1" title={row.skuName}>{row.skuName}</p>
+                        </td>
+                        <td className="px-5 py-3 text-center font-bold text-gray-700">{row.purchasedQty}</td>
+                        <td className="px-5 py-3 text-center text-emerald-600 font-semibold">{row.dcrReceived}</td>
+                        <td className="px-5 py-3 text-center text-orange-600 font-semibold">{row.dcrPending}</td>
+                        <td className="px-5 py-3 text-center">
+                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${row.completion === 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
+                            {row.completion}%
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 text-right flex justify-end gap-2">
+                          <button
+                            onClick={() => openEdit(row)}
+                            className="p-1.5 text-gray-400 hover:text-[#1A2766] transition-colors rounded-lg hover:bg-gray-100"
+                            title="Edit Record"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <Link 
+                            href={`/staff/dashboard/accounts/dcr/purchase-dcr-received?receiptId=${encodeURIComponent(row.id)}`}
+                            className="p-1.5 text-gray-400 hover:text-[#1A2766] transition-colors rounded-lg hover:bg-gray-100"
+                            title="Open Purchase DCR Received"
+                          >
+                            <ExternalLink size={16} />
+                          </Link>
+                          <button
+                            onClick={() => toggleExpand(row.id)}
+                            className="p-1.5 text-gray-400 hover:text-[#1A2766] transition-colors rounded-lg hover:bg-gray-100 flex items-center gap-1 text-xs"
+                          >
+                            {expandedRows.has(row.id) ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                          </button>
+                        </td>
+                      </tr>
+                      {expandedRows.has(row.id) && (
+                        <tr>
+                          <td colSpan={9} className="px-5 py-4 bg-gray-50 border-b border-gray-100">
+                            <div className="flex flex-wrap gap-2">
+                              {row.serials.map((s: any) => (
+                                <span 
+                                  key={s.serialNumber} 
+                                  className={`font-mono text-xs px-2 py-1 rounded border ${
+                                    s.vendorDcrStatus === 'RECEIVED' 
+                                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+                                      : 'bg-white border-gray-300 text-gray-500'
+                                  }`}
+                                  title={`Status: ${s.vendorDcrStatus}`}
+                                >
+                                  {s.serialNumber}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Form Modal */}
+      {isFormOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50">
+              <h2 className="text-lg font-bold text-gray-900">New Purchase Receive</h2>
+              <button onClick={() => setIsFormOpen(false)} className="text-gray-400 hover:text-red-500 transition-colors">
+                <X size={20} />
               </button>
             </div>
-
-            <div className="divide-y divide-gray-100">
-              {lines.map((line, idx) => (
-                <div key={line.id} className="p-5 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Row {idx + 1}</span>
-                    {lines.length > 1 && (
-                      <button type="button" onClick={() => removeLine(line.id)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
+            <div className="p-6 overflow-y-auto">
+              <form id="purchase-form" onSubmit={handleSubmit} className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-gray-700">Vendor Name <span className="text-red-500">*</span></label>
+                    <input type="text" value={vendorName} onChange={e => setVendorName(e.target.value)} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#1A2766]" />
                   </div>
-
-                  {/* SKU selector */}
-                  <div className="relative">
-                    <label className="text-sm font-medium text-gray-700 block mb-1.5">Item (SKU) <span className="text-red-500">*</span></label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={skuSearch[line.id] !== undefined ? skuSearch[line.id] : (skus.find(s => s.id === line.skuId)?.name || '')}
-                        onFocus={() => { setSkuDropdownOpen(line.id); setSkuSearch(p => ({ ...p, [line.id]: '' })); }}
-                        onChange={e => setSkuSearch(p => ({ ...p, [line.id]: e.target.value }))}
-                        placeholder="Search and select SKU..."
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1A2766] focus:border-[#1A2766] text-sm pr-8 transition-colors"
-                      />
-                      <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
-
-                    {skuDropdownOpen === line.id && (
-                      <div className="absolute top-full left-0 right-0 z-20 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-52 overflow-y-auto">
-                        {filteredSkus(line.id).length === 0 ? (
-                          <div className="px-4 py-3 text-sm text-gray-500">No items found</div>
-                        ) : filteredSkus(line.id).map(sku => (
-                          <button
-                            key={sku.id}
-                            type="button"
-                            onClick={() => {
-                              updateLine(line.id, 'skuId', sku.id);
-                              setSkuSearch(p => ({ ...p, [line.id]: sku.name }));
-                              setSkuDropdownOpen(null);
-                            }}
-                            className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0"
-                          >
-                            <span className="font-medium text-gray-900">{sku.name}</span>
-                            <span className="ml-2 text-xs text-gray-400">Case: {sku.caseSize}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-gray-700">Date Received <span className="text-red-500">*</span></label>
+                    <input type="date" value={dateReceived} max={format(new Date(), 'yyyy-MM-dd')} onChange={e => setDateReceived(e.target.value)} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#1A2766]" />
                   </div>
-
-                  {/* Serials textarea */}
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-1.5 flex justify-between">
-                      <span>Serial Numbers <span className="text-red-500">*</span></span>
-                      {line.rawText && (
-                        <span className="font-normal text-[#1A2766] text-xs">
-                          {getSerialCount(line.rawText)} detected
-                        </span>
-                      )}
-                    </label>
-                    <textarea
-                      value={line.rawText}
-                      onChange={e => updateLine(line.id, 'rawText', e.target.value)}
-                      placeholder="Paste serial numbers here (one per line or comma-separated)..."
-                      rows={5}
-                      className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#1A2766] focus:border-[#1A2766] bg-gray-50/50 font-mono text-sm resize-none transition-colors"
-                    />
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-gray-700">Bill / Invoice No.</label>
+                    <input type="text" value={billNumber} onChange={e => setBillNumber(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#1A2766]" />
                   </div>
                 </div>
-              ))}
-            </div>
 
-            <div className="px-5 py-4 bg-amber-50/60 border-t border-amber-100 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
-              <p className="text-xs text-amber-700 font-medium">Serial numbers will be permanently locked to their selected SKU upon saving.</p>
+                <div className="space-y-4 pt-2">
+                  <h3 className="text-sm font-semibold text-gray-800">Serial Numbers</h3>
+                  {lines.map((line, index) => (
+                    <div key={line.id} className="p-4 border border-gray-200 rounded-xl bg-gray-50/50 space-y-4">
+                      <div className="flex gap-4">
+                        <div className="flex-1 relative">
+                          <label className="text-xs font-semibold text-gray-600 uppercase mb-1 block">Product SKU <span className="text-red-500">*</span></label>
+                          <div
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white cursor-pointer flex justify-between items-center"
+                            onClick={() => setSkuDropdownOpen(skuDropdownOpen === line.id ? null : line.id)}
+                          >
+                            <span className="text-sm truncate">
+                              {skus.find(s => s.id === line.skuId)?.name || <span className="text-gray-400">Select a product...</span>}
+                            </span>
+                            <ChevronDown size={14} className="text-gray-400" />
+                          </div>
+                          {skuDropdownOpen === line.id && (
+                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 shadow-lg rounded-lg overflow-hidden">
+                              <div className="p-2 border-b border-gray-100">
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  placeholder="Search products..."
+                                  value={skuSearch[line.id] || ''}
+                                  onChange={e => setSkuSearch({ ...skuSearch, [line.id]: e.target.value })}
+                                  className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[#1A2766]"
+                                />
+                              </div>
+                              <div className="max-h-48 overflow-y-auto">
+                                {filteredSkus(line.id).map(s => (
+                                  <div
+                                    key={s.id}
+                                    className="px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm flex flex-col"
+                                    onClick={() => {
+                                      updateLine(line.id, 'skuId', s.id);
+                                      setSkuDropdownOpen(null);
+                                    }}
+                                  >
+                                    <span className="font-medium text-gray-900">{s.name}</span>
+                                    {s.sku && <span className="text-xs text-gray-500 font-mono">{s.sku}</span>}
+                                  </div>
+                                ))}
+                                {filteredSkus(line.id).length === 0 && (
+                                  <div className="p-3 text-center text-sm text-gray-500">No products found</div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {lines.length > 1 && (
+                          <button type="button" onClick={() => removeLine(line.id)} className="mt-6 text-gray-400 hover:text-red-500 p-2">
+                            <Trash2 size={18} />
+                          </button>
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 uppercase mb-1 flex justify-between">
+                          <span>Serial Numbers <span className="text-red-500">*</span></span>
+                          <span className="text-emerald-600 font-medium">Count: {line.rawText.split(/[\s,\n]+/).filter(s => s.trim().length > 0).length}</span>
+                        </label>
+                        <textarea
+                          value={line.rawText}
+                          onChange={e => updateLine(line.id, 'rawText', e.target.value)}
+                          rows={4}
+                          placeholder="Paste serial numbers here (separated by spaces, commas, or new lines)..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-[#1A2766]"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  <button type="button" onClick={addLine} className="flex items-center gap-1.5 text-sm font-medium text-[#1A2766] hover:text-[#1A2766]/80 px-2 py-1">
+                    <Plus size={16} /> Add Another SKU
+                  </button>
+                </div>
+              </form>
+            </div>
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+              <button type="button" onClick={() => setIsFormOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="purchase-form"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-6 py-2 bg-[#1A2766] hover:bg-[#1A2766]/90 text-white text-sm font-semibold rounded-lg shadow-sm disabled:opacity-50 transition-colors"
+              >
+                {isSubmitting ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <><CheckCircle size={16} /> Save Receipt</>}
+              </button>
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Submit */}
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex items-center gap-2 bg-[#1A2766] hover:bg-[#1A2766]/90 text-white px-7 py-2.5 rounded-xl font-medium transition-all shadow-sm shadow-[#1A2766]/20 disabled:opacity-50 text-sm"
-            >
-              {isSubmitting ? (
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <PackageOpen className="w-4 h-4" />
-              )}
-              Save Receipt
-            </button>
+      {/* Edit Modal */}
+      {editingRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50">
+              <h2 className="text-lg font-bold text-gray-900">Edit Purchase Record</h2>
+              <button onClick={() => setEditingRow(null)} className="text-gray-400 hover:text-red-500 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="mb-5 p-3 bg-blue-50/50 border border-blue-100 rounded-lg">
+                <p className="text-xs text-blue-800 font-medium leading-relaxed">
+                  Editing details for <span className="font-bold">{editingRow.purchasedQty} serial numbers</span>. 
+                  SKU and serial numbers cannot be modified after receipt.
+                </p>
+              </div>
+              <form id="edit-form" onSubmit={handleEditSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-gray-700">Vendor Name <span className="text-red-500">*</span></label>
+                  <input type="text" value={editVendor} onChange={e => setEditVendor(e.target.value)} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#1A2766]" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-gray-700">Date Received <span className="text-red-500">*</span></label>
+                  <input type="date" value={editDate} max={format(new Date(), 'yyyy-MM-dd')} onChange={e => setEditDate(e.target.value)} required className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#1A2766]" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-gray-700">Bill / Invoice No.</label>
+                  <input type="text" value={editBill} onChange={e => setEditBill(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#1A2766]" />
+                </div>
+                <div className="space-y-1.5 pt-2">
+                  <label className="text-sm font-medium text-gray-500">Locked Fields</label>
+                  <div className="px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-500 font-medium">
+                    SKU: {editingRow.skuName}
+                  </div>
+                </div>
+              </form>
+            </div>
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+              <button type="button" onClick={() => setEditingRow(null)} className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="edit-form"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-6 py-2 bg-[#1A2766] hover:bg-[#1A2766]/90 text-white text-sm font-semibold rounded-lg shadow-sm disabled:opacity-50 transition-colors"
+              >
+                {isSubmitting ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : 'Save Changes'}
+              </button>
+            </div>
           </div>
-        </form>
-      </div>
+        </div>
+      )}
 
       {/* Click-outside to close dropdown */}
       {skuDropdownOpen && (

@@ -506,6 +506,16 @@ model RecoveryInvoiceTask {
 
 // ─── DCR Module Phase 1 ───────────────────────────────────────────────────────
 
+model Customer {
+  id        String   @id // Zoho contact/customer ID
+  name      String
+  gstNumber String?  // Stores fetched GST number or 'NOT_AVAILABLE' if not found
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  dcrInvoices DcrInvoice[]
+}
+
 model DcrInvoice {
   id              String   @id @default(cuid())
   zohoInvoiceId   String   @unique
@@ -526,6 +536,7 @@ model DcrInvoice {
   
   items             DcrInvoiceItem[]
   serialAllocations DcrSerialAllocation[]
+  customer          Customer? @relation(fields: [customerId], references: [id])
 
   @@index([dcrStatus])
   @@index([zohoInvoiceId])

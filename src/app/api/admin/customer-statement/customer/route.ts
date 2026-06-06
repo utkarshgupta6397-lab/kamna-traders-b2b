@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { getCustomerById } from '@/lib/zoho/customer-statement';
+import { prisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session || session.role !== 'ADMIN') {
+  if (!session || (!session.accounts_customer_statement && !session.dcr_management && session.role !== 'ADMIN')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
@@ -17,10 +18,40 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Invalid or missing customerId. Expected 19 digits.' }, { status: 400 });
   }
 
-  const result = await getCustomerById(customerId.trim());
+  const cleanId = customerId.trim();
+
+  // 1. Read from local DB first
+  const localCustomer = await prisma.customer.findUnique({
+    where: { id: cleanId }
+  });
+
+  if (localCustomer && localCustomer.gstNumber) {
+    return NextResponse.json({
+      success: true,
+      data: {
+        contactId: cleanId,
+        contactName: localCustomer.name,
+        gstNo: localCustomer.gstNumber === 'NOT_AVAILABLE' ? '' : localCustomer.gstNumber
+      }
+    });
+  }
+
+  // 2. Fetch from Zoho if cache miss
+  const result = await getCustomerById(cleanId);
   if (!result.success) {
      return NextResponse.json({ error: result.error, raw: result.raw }, { status: 400 });
   }
+
+  // 3. Save to local DB
+  const gstNo = result.data?.gstNo || '';
+  const gstToStore = gstNo.trim() === '' ? 'NOT_AVAILABLE' : gstNo;
+  const name = result.data?.contactName || 'Unknown Customer';
+
+  await prisma.customer.upsert({
+    where: { id: cleanId },
+    update: { gstNumber: gstToStore, name },
+    create: { id: cleanId, name, gstNumber: gstToStore }
+  });
 
   return NextResponse.json(result);
 }

@@ -68,7 +68,6 @@ export async function GET(req: Request) {
         take: limit,
         include: {
           items: {
-            where: { selectedForDCR: true },
             include: {
               serialAllocations: {
                 include: {
@@ -84,6 +83,13 @@ export async function GET(req: Request) {
       }),
       prisma.dcrInvoice.count({ where: whereClause })
     ]);
+
+    // Load local customer records corresponding to the returned invoices' customerId
+    const customerIds = Array.from(new Set(invoices.map(inv => inv.customerId)));
+    const localCustomers = await prisma.customer.findMany({
+      where: { id: { in: customerIds } }
+    });
+    const customerGstMap = new Map(localCustomers.map(c => [c.id, c.gstNumber]));
 
     // --- Format invoices ---
     const formattedInvoices = invoices.map(inv => {
@@ -106,6 +112,7 @@ export async function GET(req: Request) {
           itemName: item.itemName,
           sku: item.sku,
           quantity: item.quantity,
+          selectedForDCR: item.selectedForDCR,
           totalSerials: serials.length,
           eligibleSerials: eligibleSerials.length,
           releasedSerials: releasedSerials.length,
@@ -122,8 +129,10 @@ export async function GET(req: Request) {
       return {
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,
+        zohoInvoiceId: inv.zohoInvoiceId,
         customerName: inv.customerName,
         customerId: inv.customerId,
+        customer_gst_no: customerGstMap.get(inv.customerId) || null,
         invoiceDate: inv.invoiceDate,
         invoiceTotal: inv.invoiceTotal,
         dcrStatus: inv.dcrStatus,
@@ -137,7 +146,7 @@ export async function GET(req: Request) {
     });
 
     // --- KPIs ---
-    const kpiWhereClause = {
+    const kpiWhereClause: any = {
       serialAllocations: {
         some: {
           serial: {
@@ -163,7 +172,14 @@ export async function GET(req: Request) {
     ]);
 
     const serialsOnHold = holdSerialData.length;
-    const outstandingValueOnHold = formattedInvoices.reduce((s, inv) => s + inv.outstandingBalance, 0);
+
+    // To get total outstanding value, we need all unique customer IDs in the hold queue, not just the paginated ones.
+    const allHoldInvoices = await prisma.dcrInvoice.findMany({
+      where: kpiWhereClause,
+      select: { customerId: true }
+    });
+    const uniqueCustomerIds = Array.from(new Set(allHoldInvoices.map(i => i.customerId)));
+    const outstandingValueOnHold = uniqueCustomerIds.reduce((sum, cid) => sum + (outstandingByCustomer[cid] || 0), 0);
 
     return NextResponse.json({
       invoices: formattedInvoices,

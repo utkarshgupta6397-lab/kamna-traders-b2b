@@ -26,17 +26,21 @@ export async function GET(req: Request) {
           }
         }
       }),
-      // vendorDcrPending: status is VENDOR_DCR_PENDING
-      prisma.dcrInvoice.count({
-        where: { dcrStatus: 'VENDOR_DCR_PENDING' }
+      // vendorDcrPending: count of purchased serials awaiting vendor DCR
+      prisma.dcrSerial.count({
+        where: { purchaseReceived: true, vendorDcrStatus: 'NOT_RECEIVED' }
       }),
-      // holdQueue: invoices awaiting management approval
-      prisma.dcrInvoice.count({
-        where: { dcrStatus: 'HOLD' }
+      // holdQueue: count of serials awaiting management approval
+      prisma.dcrSerial.count({
+        where: {
+          vendorDcrStatus: 'RECEIVED',
+          status: { notIn: ['READY_TO_ISSUE', 'ISSUED'] },
+          allocations: { some: {} }
+        }
       }),
-      // readyToIssue: approved by management, awaiting physical issuance
-      prisma.dcrInvoice.count({
-        where: { dcrStatus: 'READY_TO_ISSUE' }
+      // readyToIssue: count of serials approved by management, awaiting physical issuance
+      prisma.dcrSerial.count({
+        where: { status: 'READY_TO_ISSUE' }
       })
     ]);
 

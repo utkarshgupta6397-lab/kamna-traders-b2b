@@ -1,4 +1,5 @@
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
+import { trackZohoApiCall } from '@/lib/zoho-api-meter';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
@@ -102,7 +103,7 @@ export async function getCustomerInvoices(contactId: string): Promise<{
     // Fetch invoices — no custom sort/status params (Zoho rejects unsupported enums)
     // We filter void and sort locally after receiving the response
     // Fetch 15 as buffer — void invoices are filtered in-app
-    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=30&sort_column=date&sort_order=D`;
+    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=100&sort_column=date&sort_order=D`;
     const response = await fetch(url, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
@@ -296,6 +297,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
   raw?: any;
   error?: string;
 }> {
+  trackZohoApiCall('Customer Statement');
   // 1. Parallelize base API calls
   console.time('customer');
   const customerPromise = getCustomerById(contactId).finally(() => console.timeEnd('customer'));

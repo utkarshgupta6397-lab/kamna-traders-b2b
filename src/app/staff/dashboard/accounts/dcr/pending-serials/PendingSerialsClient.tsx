@@ -227,15 +227,17 @@ export default function PendingSerialsClient() {
                       <td className="px-4 py-3 text-center text-gray-400 text-xs font-medium align-middle">{startRow + idx}</td>
                       <td className="px-4 py-3 font-medium text-xs align-middle">
                         <a 
-                          href={`https://books.zoho.in/app${ZOHO_ORG_ID ? '/' + ZOHO_ORG_ID : ''}#/invoices/${inv.zohoInvoiceId}`} 
-                          target="_blank"
-                          rel="noreferrer"
+                          href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${inv.customerId}&invoiceId=${inv.id}`} 
                           className="text-[#1A2766] hover:underline inline-flex items-center gap-1"
                         >
                           {inv.invoiceNumber} <ExternalLink size={10} className="opacity-0 group-hover:opacity-50 transition-opacity" />
                         </a>
                       </td>
-                      <td className="px-4 py-3 text-gray-800 text-xs align-middle leading-snug whitespace-normal break-words">{inv.customerName}</td>
+                      <td className="px-4 py-3 text-gray-800 text-xs align-middle leading-snug whitespace-normal break-words">
+                        <a href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${inv.customerId}`} className="hover:underline hover:text-[#1A2766]">
+                          {inv.customerName}
+                        </a>
+                      </td>
                       <td className="px-4 py-3 text-gray-600 text-xs align-middle">
                         {new Date(inv.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </td>

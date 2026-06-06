@@ -2,6 +2,113 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 
+export async function GET(req: Request) {
+  try {
+    const session = await getSession();
+    if (!session || (!session.dcr_management && !session.dcr_purchase_receive && session.role !== 'ADMIN')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
+    const limit = Math.min(100, parseInt(searchParams.get('limit') || '50'));
+    const skip = (page - 1) * limit;
+
+    const allPurchased = await prisma.dcrSerial.findMany({
+      where: { purchaseReceived: true },
+      select: {
+        id: true,
+        serialNumber: true,
+        vendorName: true,
+        billNumber: true,
+        skuId: true,
+        vendorDcrStatus: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const skus = await prisma.sku.findMany({
+      select: { id: true, name: true }
+    });
+    const skuMap = new Map(skus.map(s => [s.id, s.name]));
+
+    // Compute KPIs
+    const totalPurchased = allPurchased.length;
+    const dcrReceived = allPurchased.filter(s => s.vendorDcrStatus === 'RECEIVED').length;
+    const dcrPending = totalPurchased - dcrReceived;
+    const completionPercent = totalPurchased > 0 ? Math.round((dcrReceived / totalPurchased) * 100) : 0;
+
+    // Grouping
+    const groups = new Map<string, any>();
+
+    for (const serial of allPurchased) {
+      const dateStr = serial.createdAt.toISOString().split('T')[0];
+      const vendorStr = serial.vendorName || 'Unknown Vendor';
+      const billStr = serial.billNumber || 'No Bill';
+      const skuId = serial.skuId || 'UNKNOWN';
+
+      const key = `${dateStr}_${vendorStr}_${billStr}_${skuId}`;
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          id: key,
+          date: dateStr,
+          vendorName: vendorStr,
+          billNumber: billStr,
+          skuId,
+          skuName: skuMap.get(skuId) || 'Unknown SKU',
+          purchasedQty: 0,
+          dcrReceived: 0,
+          dcrPending: 0,
+          serials: []
+        });
+      }
+
+      const g = groups.get(key);
+      g.purchasedQty += 1;
+      if (serial.vendorDcrStatus === 'RECEIVED') {
+        g.dcrReceived += 1;
+      } else {
+        g.dcrPending += 1;
+      }
+      
+      g.serials.push({
+        serialNumber: serial.serialNumber,
+        vendorDcrStatus: serial.vendorDcrStatus
+      });
+    }
+
+    let rows = Array.from(groups.values());
+    
+    // Calculate completion % per row
+    rows = rows.map(r => ({
+      ...r,
+      completion: r.purchasedQty > 0 ? Math.round((r.dcrReceived / r.purchasedQty) * 100) : 0
+    }));
+
+    // Pagination
+    const totalRows = rows.length;
+    const paginatedRows = rows.slice(skip, skip + limit);
+
+    return NextResponse.json({
+      kpis: {
+        totalPurchased,
+        dcrReceived,
+        dcrPending,
+        completionPercent
+      },
+      rows: paginatedRows,
+      total: totalRows,
+      page,
+      limit
+    });
+  } catch (error: any) {
+    console.error('[Purchase Receive GET] Error:', error);
+    return NextResponse.json({ error: 'Failed to fetch dashboard data' }, { status: 500 });
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const session = await getSession();
@@ -131,5 +238,66 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error('[Purchase Receive POST] Error:', error);
     return NextResponse.json({ error: 'Failed to process purchase receipt' }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const session = await getSession();
+    if (!session || (!session.dcr_management && !session.dcr_purchase_receive && session.role !== 'ADMIN')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { serialNumbers, vendorName, billNumber, dateReceived } = await req.json();
+
+    if (!serialNumbers || !Array.isArray(serialNumbers) || serialNumbers.length === 0) {
+      return NextResponse.json({ error: 'Serial numbers are required' }, { status: 400 });
+    }
+
+    if (!vendorName || !dateReceived) {
+      return NextResponse.json({ error: 'Vendor name and date received are required' }, { status: 400 });
+    }
+
+    const newDate = new Date(dateReceived);
+    if (isNaN(newDate.getTime())) {
+      return NextResponse.json({ error: 'Invalid date format' }, { status: 400 });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const serials = await tx.dcrSerial.findMany({
+        where: { serialNumber: { in: serialNumbers } }
+      });
+
+      if (serials.length === 0) throw new Error('No valid serials found');
+
+      for (const serial of serials) {
+        // Keep the same time of day if possible, or default to noon UTC
+        const d = new Date(dateReceived);
+        d.setUTCHours(serial.createdAt.getUTCHours(), serial.createdAt.getUTCMinutes(), 0, 0);
+
+        await tx.dcrSerial.update({
+          where: { id: serial.id },
+          data: {
+            vendorName,
+            billNumber: billNumber || null,
+            createdAt: d
+          }
+        });
+
+        await tx.dcrSerialHistory.create({
+          data: {
+            serialId: serial.id,
+            eventType: 'PURCHASE_RECEIVE_EDITED',
+            eventDescription: `Purchase details updated: Vendor: ${vendorName}, Bill: ${billNumber || 'N/A'}, Date: ${dateReceived}`,
+            userId: session.userId,
+          }
+        });
+      }
+    });
+
+    return NextResponse.json({ success: true, updated: serialNumbers.length });
+  } catch (error: any) {
+    console.error('[Purchase Receive PATCH] Error:', error);
+    return NextResponse.json({ error: error.message || 'Failed to update records' }, { status: 500 });
   }
 }

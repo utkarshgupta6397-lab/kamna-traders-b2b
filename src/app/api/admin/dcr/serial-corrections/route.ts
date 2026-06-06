@@ -33,14 +33,21 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Serial not found' }, { status: 404 });
     }
 
-    // Fetch sku name
-    let skuName = serial.skuId;
+    // Fetch sku details
+    let skuName = 'Unknown Product';
+    let skuDetails = null;
     if (serial.skuId) {
-      const sku = await prisma.sku.findUnique({ where: { id: serial.skuId }, select: { name: true } });
-      skuName = sku?.name || serial.skuId;
+      const sku = await prisma.sku.findUnique({ 
+        where: { id: serial.skuId }, 
+        select: { id: true, name: true, zohoBooksId2: true } 
+      });
+      if (sku) {
+        skuName = sku.name;
+        skuDetails = sku;
+      }
     }
 
-    return NextResponse.json({ serial, skuName });
+    return NextResponse.json({ serial, skuName, skuDetails });
   } catch (error: any) {
     console.error('[Serial Corrections GET] Error:', error);
     return NextResponse.json({ error: 'Failed to fetch serial' }, { status: 500 });

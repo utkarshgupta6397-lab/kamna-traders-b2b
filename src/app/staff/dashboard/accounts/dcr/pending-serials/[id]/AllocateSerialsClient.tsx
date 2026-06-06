@@ -28,6 +28,15 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
   // Serial History Modal
   const [historyModalSerial, setHistoryModalSerial] = useState<string | null>(null);
 
+  // Validation Errors Modal
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  
+  // Bulk Delete
+  const [selectedSerialsToDelete, setSelectedSerialsToDelete] = useState<Set<string>>(new Set());
+  
+  // Pagination
+  const [visibleCount, setVisibleCount] = useState<number>(100);
+
   // Auto-creation confirmation state
   const [pendingConfirmation, setPendingConfirmation] = useState<{
     unknownSerials: string[];
@@ -124,7 +133,13 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) {
+        if (data.errors) {
+          setValidationErrors(data.errors);
+          return;
+        }
+        throw new Error(data.error);
+      }
 
       // Handle confirmation gate for unknown serials
       if (data.requiresConfirmation) {
@@ -137,7 +152,7 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
         return;
       }
 
-      toast.success(`Successfully allocated ${serials.length} serials!`);
+      toast.success(`Successfully allocated ${serials.length} serials for Invoice ${invoice.invoiceNumber}. Remaining: ${remainingQty - serials.length}`);
       setSerialInput('');
       fetchInvoiceDetails();
     } catch (err: any) {
@@ -195,6 +210,33 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
       fetchInvoiceDetails();
     } catch (err: any) {
       toast.error(err.message || 'Failed to delete serial number');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedSerialsToDelete.size === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedSerialsToDelete.size} serial number allocations?`)) {
+      return;
+    }
+
+    try {
+      setSaveStep('saving');
+      const res = await fetch(`/api/admin/dcr/pending-serials/${invoiceId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serialIds: Array.from(selectedSerialsToDelete) })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      toast.success(`${selectedSerialsToDelete.size} allocations removed.`);
+      setSelectedSerialsToDelete(new Set());
+      fetchInvoiceDetails();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete serial numbers');
+    } finally {
+      setSaveStep(null);
     }
   };
 
@@ -257,35 +299,35 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
         </div>
       </div>
 
-      {/* Top Invoice Summary Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="bg-gray-50 px-5 py-3.5 border-b border-gray-200 flex justify-between items-center">
-          <h3 className="font-semibold text-gray-800 text-sm">Invoice Details</h3>
-          <div className="flex gap-2">
-            <span className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded border ${getStatusColor(invoice.dcrStatus)}`}>
-              {invoice.dcrStatus.replace(/_/g, ' ')}
-            </span>
-          </div>
-        </div>
-        <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-6">
+      {/* Compact Invoice Header */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-5 py-3 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-6">
           <div>
-            <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Invoice Number</span>
-            <span className="text-sm font-semibold text-gray-900">{invoice.invoiceNumber}</span>
+            <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Invoice Number</span>
+            <span className="text-sm font-bold text-gray-900">{invoice.invoiceNumber}</span>
           </div>
+          <div className="w-px bg-gray-200 h-6"></div>
           <div>
-            <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Customer Name</span>
+            <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Customer Name</span>
             <span className="text-sm font-medium text-gray-900">{invoice.customerName}</span>
           </div>
+          <div className="w-px bg-gray-200 h-6"></div>
           <div>
-            <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Invoice Date</span>
+            <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Invoice Date</span>
             <span className="text-sm font-medium text-gray-900">
               {new Date(invoice.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
             </span>
           </div>
+          <div className="w-px bg-gray-200 h-6"></div>
           <div>
-            <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Invoice Total</span>
+            <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Invoice Total</span>
             <span className="text-sm font-bold text-[#1A2766]">₹{invoice.invoiceTotal.toLocaleString('en-IN')}</span>
           </div>
+        </div>
+        <div className="flex items-center">
+          <span className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded border ${getStatusColor(invoice.dcrStatus)}`}>
+            {invoice.dcrStatus.replace(/_/g, ' ')}
+          </span>
         </div>
       </div>
 
@@ -314,7 +356,7 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
                   <div 
                     key={item.id} 
                     onClick={() => !isSavingAny && setSelectedItemId(item.id)}
-                    className={`p-5 transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-gray-50/50 ${
+                    className={`px-5 py-3 transition-all flex items-center justify-between gap-4 hover:bg-gray-50/50 ${
                       isSavingAny 
                         ? 'opacity-60 cursor-not-allowed' 
                         : 'cursor-pointer'
@@ -322,33 +364,37 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
                       isSelected ? 'bg-blue-50/40 border-l-4 border-l-[#1A2766]' : 'border-l-4 border-l-transparent'
                     }`}
                   >
-                    <div className="space-y-1">
-                      <div className="font-bold text-sm text-gray-900 flex items-center gap-2">
-                        {item.itemName}
-                        {isCompleted && (
-                          <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-[9px] font-bold border border-teal-200 uppercase">
-                            Fully Allocated
-                          </span>
-                        )}
+                    <div className="flex-grow min-w-0 flex items-center gap-4">
+                      <div className="space-y-0.5 truncate">
+                        <div className="font-bold text-sm text-gray-900 flex items-center gap-2 truncate">
+                          <span className="truncate">{item.itemName}</span>
+                          {isCompleted && (
+                            <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-[9px] font-bold border border-teal-200 uppercase shrink-0">
+                              Completed
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          {item.sku && <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px] text-gray-600">SKU: {item.sku}</span>}
+                          {item.remarks && <span className="italic truncate" title={item.remarks}>Note: {item.remarks}</span>}
+                        </div>
                       </div>
-                      {item.sku && <div className="text-xs font-mono text-gray-400">SKU: {item.sku}</div>}
-                      {item.remarks && <div className="text-xs text-gray-500 italic mt-1">Note: {item.remarks}</div>}
                     </div>
 
-                    <div className="flex gap-6 shrink-0 bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
-                      <div className="text-center">
-                        <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Required</span>
-                        <span className="text-sm font-semibold text-gray-700">{required}</span>
+                    <div className="flex gap-4 shrink-0 bg-white px-3 py-1.5 rounded-lg border border-gray-100 shadow-sm items-center text-xs">
+                      <div className="flex flex-col items-center min-w-[36px]">
+                        <span className="text-[9px] font-bold text-gray-400 uppercase">Req</span>
+                        <span className="font-semibold text-gray-700">{required}</span>
                       </div>
-                      <div className="w-px bg-gray-200 h-8 self-center"></div>
-                      <div className="text-center">
-                        <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Allocated</span>
-                        <span className="text-sm font-semibold text-teal-600">{allocated}</span>
+                      <div className="w-px bg-gray-200 h-6"></div>
+                      <div className="flex flex-col items-center min-w-[36px]">
+                        <span className="text-[9px] font-bold text-gray-400 uppercase">Alloc</span>
+                        <span className="font-semibold text-teal-600">{allocated}</span>
                       </div>
-                      <div className="w-px bg-gray-200 h-8 self-center"></div>
-                      <div className="text-center">
-                        <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Remaining</span>
-                        <span className={`text-sm font-bold ${remaining > 0 ? 'text-orange-500' : 'text-gray-400'}`}>
+                      <div className="w-px bg-gray-200 h-6"></div>
+                      <div className="flex flex-col items-center min-w-[36px]">
+                        <span className="text-[9px] font-bold text-gray-400 uppercase">Rem</span>
+                        <span className={`font-bold ${remaining > 0 ? 'text-orange-500' : 'text-gray-400'}`}>
                           {remaining}
                         </span>
                       </div>
@@ -457,51 +503,131 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
 
         {/* Right Column: Allocated Serials List */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[650px]">
-          <div className="px-5 py-4 border-b border-gray-200 bg-gray-50 flex items-center gap-2 shrink-0">
-            <Layers className="text-[#1A2766]" size={16} />
-            <h3 className="font-bold text-gray-800 text-sm">Allocated Serials</h3>
+          <div className="px-5 py-3 border-b border-gray-200 bg-gray-50 flex flex-col gap-2 shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Layers className="text-[#1A2766]" size={16} />
+                <h3 className="font-bold text-gray-800 text-sm">Allocated Serials</h3>
+              </div>
+              <div className="text-[10px] font-bold bg-[#1A2766]/10 text-[#1A2766] px-2 py-1 rounded border border-[#1A2766]/20 flex gap-2">
+                <span>Req: {totalRequired}</span>
+                <span className="text-teal-700 border-l border-[#1A2766]/20 pl-2">Alloc: {totalAllocated}</span>
+                <span className="text-orange-600 border-l border-[#1A2766]/20 pl-2">Rem: {totalBalance}</span>
+              </div>
+            </div>
+            {selectedSerialsToDelete.size > 0 && invoice.dcrStatus !== 'ISSUED' && (
+              <div className="flex justify-between items-center bg-red-50 px-3 py-1.5 rounded border border-red-200 animate-in fade-in zoom-in duration-200">
+                <span className="text-xs font-bold text-red-800">{selectedSerialsToDelete.size} selected</span>
+                <button 
+                  onClick={handleBulkDelete}
+                  disabled={isSavingAny}
+                  className="bg-red-600 hover:bg-red-700 text-white text-[10px] px-3 py-1 rounded font-bold shadow-sm flex items-center gap-1 disabled:opacity-50"
+                >
+                  <Trash2 size={12} />
+                  Bulk Delete
+                </button>
+              </div>
+            )}
           </div>
           
-          <div className="flex-grow overflow-y-auto p-5">
+          <div className="flex-grow overflow-y-auto p-5 pb-10">
             {invoice.items.every((i: any) => i.serialAllocations.length === 0) ? (
               <div className="h-full flex flex-col items-center justify-center text-center text-gray-400 p-6">
                 <AlertCircle size={24} className="mb-2 text-gray-300" />
                 <span className="text-xs font-semibold">No serial numbers allocated yet.</span>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 {invoice.items.map((item: any) => {
                   if (item.serialAllocations.length === 0) return null;
                   return (
                     <div key={item.id} className="space-y-2">
                       <div className="flex justify-between items-center border-b border-gray-100 pb-1 shrink-0">
                         <span className="text-xs font-bold text-gray-800 truncate max-w-[70%]">{item.itemName}</span>
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 border rounded text-gray-600">
-                          {item.serialAllocations.length} items
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
-                        {item.serialAllocations.map((alloc: any) => (
-                          <div 
-                            key={alloc.id} 
-                            className="flex justify-between items-center bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg text-xs hover:bg-gray-100 group transition-all"
-                          >
+                        <div className="flex gap-2 items-center">
+                          {invoice.dcrStatus !== 'ISSUED' && (
                             <button 
-                              onClick={() => setHistoryModalSerial(alloc.serialNumber)}
-                              className="font-mono font-bold text-[#1A2766] hover:underline"
+                              onClick={() => {
+                                const allItemSerialIds = item.serialAllocations.map((a:any)=>a.id);
+                                const allSelected = allItemSerialIds.every((id:string) => selectedSerialsToDelete.has(id));
+                                setSelectedSerialsToDelete(prev => {
+                                  const next = new Set(prev);
+                                  if (allSelected) {
+                                    allItemSerialIds.forEach((id:string) => next.delete(id));
+                                  } else {
+                                    allItemSerialIds.forEach((id:string) => next.add(id));
+                                  }
+                                  return next;
+                                });
+                              }}
+                              className="text-[10px] font-semibold text-gray-500 hover:text-gray-800 px-1 py-0.5 rounded bg-gray-100"
                             >
-                              {alloc.serialNumber}
+                              Select All
                             </button>
-                            <button
-                              onClick={() => !isSavingAny && handleDeleteSerial(alloc.id)}
-                              disabled={isSavingAny}
-                              className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded-md hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                              title="Delete Allocation"
+                          )}
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 border rounded text-gray-600">
+                            {item.serialAllocations.length} items
+                          </span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 gap-1.5 pr-1">
+                        {item.serialAllocations.slice(0, visibleCount).map((alloc: any, idx: number) => {
+                          const isChecked = selectedSerialsToDelete.has(alloc.id);
+                          return (
+                            <div 
+                              key={alloc.id} 
+                              className={`flex justify-between items-center border px-3 py-1.5 rounded-lg text-xs hover:bg-gray-100 group transition-all ${
+                                isChecked ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'
+                              }`}
                             >
-                              <Trash2 size={13} />
+                              <div className="flex items-center gap-3">
+                                {invoice.dcrStatus !== 'ISSUED' && (
+                                  <input 
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      setSelectedSerialsToDelete(prev => {
+                                        const next = new Set(prev);
+                                        if (e.target.checked) next.add(alloc.id);
+                                        else next.delete(alloc.id);
+                                        return next;
+                                      });
+                                    }}
+                                    disabled={isSavingAny}
+                                    className="rounded border-gray-300 text-[#1A2766] focus:ring-[#1A2766]"
+                                  />
+                                )}
+                                <span className="text-[10px] text-gray-400 font-bold w-5 shrink-0">#{idx + 1}</span>
+                                <button 
+                                  onClick={() => setHistoryModalSerial(alloc.serialNumber)}
+                                  className="font-mono font-bold text-[#1A2766] hover:underline"
+                                >
+                                  {alloc.serialNumber}
+                                </button>
+                              </div>
+                              {invoice.dcrStatus !== 'ISSUED' && (
+                                <button
+                                  onClick={() => !isSavingAny && handleDeleteSerial(alloc.id)}
+                                  disabled={isSavingAny}
+                                  className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded-md hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed opacity-0 group-hover:opacity-100"
+                                  title="Delete Allocation"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {item.serialAllocations.length > visibleCount && (
+                          <div className="text-center py-2">
+                            <button 
+                              onClick={() => setVisibleCount(prev => prev + 100)}
+                              className="text-xs font-semibold text-[#1A2766] hover:underline"
+                            >
+                              Load More ({item.serialAllocations.length - visibleCount} remaining)
                             </button>
                           </div>
-                        ))}
+                        )}
                       </div>
                     </div>
                   );
@@ -562,6 +688,39 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
               >
                 <CheckCircle size={15} />
                 Confirm & Create Serials
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Validation Errors Modal */}
+      {validationErrors.length > 0 && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-xl shadow-xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 bg-red-50 border-b border-red-200 flex items-center gap-3 shrink-0">
+              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+                <AlertCircle size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-red-900">Validation Errors Detected</h3>
+                <p className="text-xs text-red-700">Please correct the following issues before saving.</p>
+              </div>
+            </div>
+            <div className="p-6 overflow-y-auto bg-gray-50 space-y-2">
+              {validationErrors.map((err, i) => (
+                <div key={i} className="bg-white border border-red-200 rounded-lg p-3 text-sm text-red-800 shadow-sm flex items-start gap-2">
+                  <span className="text-red-400 mt-0.5 font-bold">•</span>
+                  <span>{err}</span>
+                </div>
+              ))}
+            </div>
+            <div className="px-6 py-4 bg-white border-t flex justify-end gap-3 shrink-0">
+              <button
+                onClick={() => setValidationErrors([])}
+                className="px-5 py-2.5 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Close & Review
               </button>
             </div>
           </div>

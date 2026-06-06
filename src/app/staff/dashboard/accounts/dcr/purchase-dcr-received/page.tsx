@@ -42,10 +42,28 @@ export default function PurchaseDcrReceivedPage() {
         body: JSON.stringify({ serials, skuId: mode === 'quick' ? skuId : undefined })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || (data.details?.join(', ')) || 'Failed');
+      if (!res.ok) {
+        if (res.status === 409) {
+          // Single serial or all serials already received
+          toast((t) => (
+            <div className="flex flex-col gap-1">
+              <span className="font-bold text-red-800">DCR Already Received</span>
+              <span className="text-sm text-red-700">Vendor DCR has already been received for this serial number. Duplicate receipt is not allowed.</span>
+            </div>
+          ), { duration: 6000, style: { background: '#FEF2F2', border: '1px solid #FCA5A5' } });
+        } else {
+          throw new Error(data.error || (data.details?.join(', ')) || 'Failed');
+        }
+        return;
+      }
 
       if (data.warnings?.length) {
-        toast.success(`Processed with ${data.warnings.length} warnings.`);
+        toast((t) => (
+          <div className="flex flex-col gap-1">
+            <span className="font-bold text-amber-800">Some Serials Already Processed</span>
+            <span className="text-sm text-amber-700">{data.warnings.length} serial(s) were skipped because Vendor DCR has already been marked as received.</span>
+          </div>
+        ), { duration: 6000, style: { background: '#FEF3C7', border: '1px solid #FCD34D' } });
       } else {
         toast.success('Vendor DCR certificates imported successfully.');
       }

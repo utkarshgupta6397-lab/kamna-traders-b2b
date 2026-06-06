@@ -42,7 +42,30 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
       const res = await fetch(`/api/admin/dcr/invoices/${invoiceId}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setInvoice(data.invoice);
+      const inv = data.invoice;
+      setInvoice(inv);
+      
+      if (inv && inv.items) {
+        const initialSelections: Record<string, boolean> = {};
+        const initialManualItems: any[] = [];
+        inv.items.forEach((item: any) => {
+          if (item.source === 'ZOHO') {
+            initialSelections[item.id] = item.selectedForDCR;
+          } else if (item.source === 'MANUAL') {
+            initialManualItems.push({
+              id: item.id,
+              itemId: item.itemId,
+              itemName: item.itemName,
+              quantity: item.quantity,
+              remarks: item.remarks,
+              source: 'MANUAL',
+              selectedForDCR: true,
+            });
+          }
+        });
+        setSelections(initialSelections);
+        setManualItems(initialManualItems);
+      }
     } catch (err: any) {
       toast.error(err.message || 'Failed to fetch invoice details');
     } finally {
@@ -62,7 +85,17 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
     }
   };
 
+  const isItemAllocated = (itemId: string) => {
+    if (!invoice || !invoice.serialAllocations) return false;
+    return invoice.serialAllocations.some((alloc: any) => alloc.skuId === itemId);
+  };
+
   const handleToggleSelection = (itemId: string) => {
+    const isCurrentlySelected = !!selections[itemId];
+    if (isCurrentlySelected && isItemAllocated(itemId)) {
+      toast.error("This invoice already has allocated serial numbers. Remove or unallocate all serials before marking the invoice as 'No DCR Required' or modifying serial-managed items.");
+      return;
+    }
     setSelections(prev => ({ ...prev, [itemId]: !prev[itemId] }));
   };
 
@@ -97,11 +130,34 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
   };
 
   const handleRemoveManualItem = (id: string) => {
+    if (isItemAllocated(id)) {
+      toast.error("This invoice already has allocated serial numbers. Remove or unallocate all serials before marking the invoice as 'No DCR Required' or modifying serial-managed items.");
+      return;
+    }
     setManualItems(prev => prev.filter(i => i.id !== id));
   };
 
   const handleSave = async () => {
     try {
+      // Validate deselections and removals against allocated serials
+      if (invoice && invoice.items) {
+        for (const item of invoice.items) {
+          if (item.source === 'ZOHO' && item.selectedForDCR && !selections[item.id]) {
+            if (isItemAllocated(item.id)) {
+              toast.error("This invoice already has allocated serial numbers. Remove or unallocate all serials before marking the invoice as 'No DCR Required' or modifying serial-managed items.");
+              return;
+            }
+          }
+          if (item.source === 'MANUAL') {
+            const isKept = manualItems.some(m => m.id === item.id);
+            if (!isKept && isItemAllocated(item.id)) {
+              toast.error("This invoice already has allocated serial numbers. Remove or unallocate all serials before marking the invoice as 'No DCR Required' or modifying serial-managed items.");
+              return;
+            }
+          }
+        }
+      }
+
       setSaving(true);
       const res = await fetch(`/api/admin/dcr/invoices/${invoiceId}/save`, {
          method: 'POST',
@@ -123,6 +179,12 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
 
   const executeSkipDcr = async () => {
     try {
+      const hasAllocatedSerials = invoice && invoice.serialAllocations && invoice.serialAllocations.length > 0;
+      if (hasAllocatedSerials) {
+        toast.error("This invoice already has allocated serial numbers. Remove or unallocate all serials before marking the invoice as 'No DCR Required' or modifying serial-managed items.");
+        return;
+      }
+
       setSaving(true);
       setShowSkipModal(false);
       const res = await fetch(`/api/admin/dcr/invoices/${invoiceId}/save`, {
@@ -442,7 +504,14 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
           
           <div className="flex items-center gap-4">
             <button
-              onClick={() => setShowSkipModal(true)}
+              onClick={() => {
+                const hasAllocatedSerials = invoice && invoice.serialAllocations && invoice.serialAllocations.length > 0;
+                if (hasAllocatedSerials) {
+                  toast.error("This invoice already has allocated serial numbers. Remove or unallocate all serials before marking the invoice as 'No DCR Required' or modifying serial-managed items.");
+                  return;
+                }
+                setShowSkipModal(true);
+              }}
               disabled={saving || !canSkip}
               className="bg-white border-2 border-red-500 text-red-600 px-6 py-3 rounded-lg font-bold shadow-sm hover:bg-red-50 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm flex items-center gap-2"
             >

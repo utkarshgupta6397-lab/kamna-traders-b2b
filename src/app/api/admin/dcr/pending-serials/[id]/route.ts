@@ -61,10 +61,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: 'No valid serial numbers provided' }, { status: 400 });
     }
 
+    let validationErrors: string[] = [];
+
     // 1. Validation: No duplicates in current batch
-    const uniqueBatch = new Set(serials);
-    if (uniqueBatch.size !== serials.length) {
-      return NextResponse.json({ error: 'Duplicate serial numbers found in the current batch' }, { status: 400 });
+    const seen = new Set<string>();
+    const duplicates = new Set<string>();
+    serials.forEach((s: string) => {
+      if (seen.has(s)) duplicates.add(s);
+      seen.add(s);
+    });
+    if (duplicates.size > 0) {
+      validationErrors.push(`Duplicate serial numbers found in your input: ${Array.from(duplicates).join(', ')}`);
     }
 
     // Load invoice and items to validate quantities and states
@@ -94,9 +101,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     // 2. Validation: Cannot allocate more than required quantity
     if (serials.length > remainingQty) {
-      return NextResponse.json({
-        error: `Cannot allocate ${serials.length} serials. Only ${remainingQty} remaining for this item.`
-      }, { status: 400 });
+      validationErrors.push(`Cannot allocate ${serials.length} serials. Only ${remainingQty} remaining slots for this item.`);
     }
 
     // 3. Validation: No unavailable serials in database
@@ -108,18 +113,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const unavailableSerials = existingSerials.filter(s => s.status !== 'AVAILABLE');
     if (unavailableSerials.length > 0) {
-      const dupList = unavailableSerials.map(s => s.serialNumber).join(', ');
-      return NextResponse.json({
-        error: `The following serial numbers are not available for allocation: ${dupList}`
-      }, { status: 400 });
+      unavailableSerials.forEach(s => {
+        validationErrors.push(`Serial ${s.serialNumber} already exists and is not available (Status: ${s.status}).`);
+      });
     }
 
     const skuMismatchSerials = existingSerials.filter(s => s.skuLocked && s.skuId && s.skuId !== itemId);
     if (skuMismatchSerials.length > 0) {
-      const mismatchList = skuMismatchSerials.map(s => s.serialNumber).join(', ');
-      return NextResponse.json({
-        error: `SKU mismatch for serials: ${mismatchList}. Serial number already belongs to another SKU. SKU reassignment is not permitted.`
-      }, { status: 400 });
+      const mismatchItemIds = Array.from(new Set(skuMismatchSerials.map(s => s.skuId).filter(Boolean))) as string[];
+      const mismatchItems = await prisma.dcrInvoiceItem.findMany({
+        where: { id: { in: mismatchItemIds } }
+      });
+      
+      skuMismatchSerials.forEach(s => {
+        const originalItem = mismatchItems.find(i => i.id === s.skuId);
+        const originalName = originalItem ? originalItem.itemName : 'another item';
+        validationErrors.push(`SKU mismatch for serial: ${s.serialNumber}. It is locked to ${originalName}.`);
+      });
+    }
+
+    if (validationErrors.length > 0) {
+      return NextResponse.json({ errors: validationErrors }, { status: 400 });
     }
 
     // 4. Check for unknown serials — require explicit confirmation before auto-creating
@@ -235,7 +249,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           if (anyVendorDcrPending) {
             nextStatus = 'VENDOR_DCR_PENDING';
           } else {
-            nextStatus = 'READY_TO_ISSUE';
+            // All serials allocated + all vendor DCRs received → Hold Queue for management approval
+            nextStatus = 'HOLD';
           }
         }
 
@@ -279,15 +294,28 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     }
 
     const { id: invoiceId } = await params;
-    const { serialId } = await req.json();
+    const { serialId, serialIds } = await req.json();
 
-    if (!serialId) {
-      return NextResponse.json({ error: 'Missing serialId' }, { status: 400 });
+    const idsToDelete = serialIds || (serialId ? [serialId] : []);
+    if (idsToDelete.length === 0) {
+      return NextResponse.json({ error: 'Missing serialId or serialIds' }, { status: 400 });
     }
 
-    const allocation = await prisma.dcrSerialAllocation.findFirst({
+    const invoice = await prisma.dcrInvoice.findUnique({
+      where: { id: invoiceId }
+    });
+
+    if (!invoice) {
+      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    }
+
+    if (invoice.dcrStatus === 'ISSUED') {
+      return NextResponse.json({ error: 'Cannot delete allocations from an ISSUED invoice' }, { status: 400 });
+    }
+
+    const allocations = await prisma.dcrSerialAllocation.findMany({
       where: {
-        id: serialId,
+        id: { in: idsToDelete },
         invoiceId
       },
       include: {
@@ -295,39 +323,54 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       }
     });
 
-    if (!allocation) {
-      return NextResponse.json({ error: 'Allocation not found for this invoice' }, { status: 404 });
+    if (allocations.length === 0) {
+      return NextResponse.json({ error: 'Allocations not found for this invoice' }, { status: 404 });
     }
 
     await prisma.$transaction(async (tx) => {
-      // Release the DcrSerial
-      const dcrSerial = await tx.dcrSerial.findUnique({
-        where: { serialNumber: allocation.serialNumber }
-      });
-
-      if (dcrSerial) {
-        await tx.dcrSerial.update({
-          where: { id: dcrSerial.id },
-          data: { status: 'AVAILABLE' }
+      for (const allocation of allocations) {
+        // Release the DcrSerial
+        const dcrSerial = await tx.dcrSerial.findUnique({
+          where: { serialNumber: allocation.serialNumber }
         });
 
-        // Get invoice to record the number in history
-        const inv = await tx.dcrInvoice.findUnique({ where: { id: invoiceId }});
+        if (dcrSerial) {
+          await tx.dcrSerial.update({
+            where: { id: dcrSerial.id },
+            data: { status: 'AVAILABLE' }
+          });
 
-        await tx.dcrSerialHistory.create({
+          await tx.dcrSerialHistory.create({
+            data: {
+              serialId: dcrSerial.id,
+              eventType: 'DEALLOCATED',
+              eventDescription: `De-allocated from Invoice ${invoice.invoiceNumber || invoiceId}`,
+              userId: session.userId,
+            }
+          });
+        }
+
+        // Delete the allocation
+        await tx.dcrSerialAllocation.delete({
+          where: { id: allocation.id }
+        });
+
+        // Log audit
+        await tx.dcrAuditLog.create({
           data: {
-            serialId: dcrSerial.id,
-            eventType: 'DEALLOCATED',
-            eventDescription: `De-allocated from Invoice ${inv?.invoiceNumber || invoiceId}`,
+            entityType: 'INVOICE',
+            entityId: invoiceId,
+            action: 'DCR_SERIAL_DELETED',
             userId: session.userId,
+            metadata: {
+              serialId: allocation.id,
+              serialNumber: allocation.serialNumber,
+              itemName: allocation.invoiceItem.itemName,
+              sku: allocation.invoiceItem.sku
+            }
           }
         });
       }
-
-      // Delete the allocation
-      await tx.dcrSerialAllocation.delete({
-        where: { id: serialId }
-      });
 
       // Recalculate status
       const updatedInvoice = await tx.dcrInvoice.findUnique({
@@ -374,7 +417,8 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
           if (anyVendorDcrPending) {
             nextStatus = 'VENDOR_DCR_PENDING';
           } else {
-            nextStatus = 'READY_TO_ISSUE';
+            // All serials allocated + all vendor DCRs received → Hold Queue for management approval
+            nextStatus = 'HOLD';
           }
         }
 
@@ -383,22 +427,6 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
           data: { dcrStatus: nextStatus }
         });
       }
-
-      // Log audit
-      await tx.dcrAuditLog.create({
-        data: {
-          entityType: 'INVOICE',
-          entityId: invoiceId,
-          action: 'DCR_SERIAL_DELETED',
-          userId: session.userId,
-          metadata: {
-            serialId,
-            serialNumber: allocation.serialNumber,
-            itemName: allocation.invoiceItem.itemName,
-            sku: allocation.invoiceItem.sku
-          }
-        }
-      });
     });
 
     return NextResponse.json({ success: true });

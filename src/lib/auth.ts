@@ -88,6 +88,8 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.accounts_recovery_manage = true;
       merged.release_statement_queue = true;
       merged.dcr_management = true;
+      merged.dcr_serial_mapping_override = true;
+      merged.dcr_hold_release = true;
     }
 
     console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);

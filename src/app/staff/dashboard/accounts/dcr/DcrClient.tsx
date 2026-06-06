@@ -239,13 +239,13 @@ export default function DcrClient() {
     <div className="flex flex-col gap-6">
       
       {/* Top Controls Row */}
-      <div className="flex flex-col xl:flex-row gap-4 items-start xl:items-center justify-between shrink-0">
+      <div className="flex flex-col min-[1200px]:flex-row gap-6 items-stretch min-[1200px]:items-center justify-between shrink-0">
         
         {/* View Toggles */}
-        <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200 shrink-0">
+        <div className="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200 shrink-0 h-9 items-center">
           <button
             onClick={() => { setViewState('active'); setPage(1); }}
-            className={`px-6 py-2 text-sm font-semibold rounded-md transition-all ${
+            className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-all ${
               viewState === 'active' ? 'bg-white text-[#1A2766] shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -253,7 +253,7 @@ export default function DcrClient() {
           </button>
           <button
             onClick={() => { setViewState('archived'); setPage(1); }}
-            className={`px-6 py-2 text-sm font-semibold rounded-md transition-all ${
+            className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-all ${
               viewState === 'archived' ? 'bg-white text-[#1A2766] shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -261,31 +261,55 @@ export default function DcrClient() {
           </button>
         </div>
 
-        {/* Sync Controls */}
-        <div className="bg-white p-2 rounded-xl shadow-sm border border-gray-200 flex flex-wrap items-center gap-2">
-          <button 
-            onClick={() => setShowDrawer(true)}
-            className="px-3 py-1.5 text-xs bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-md font-medium border border-gray-200 transition-colors flex items-center gap-1.5 mr-2 shadow-sm"
-          >
-            <Activity size={13} className="text-gray-500" />
-            <span>{getHealthIndicator(apiUsage.rateLimit?.health || 'Healthy')} API Usage</span>
-          </button>
-          {lastUpdatedText && (
-            <span className="text-[11px] text-gray-500 mr-2 font-medium">
-              Last Updated: {lastUpdatedText}
-            </span>
-          )}
-          <span className="text-sm font-semibold text-gray-700 mr-1 ml-2">Quick Sync:</span>
-          <button onClick={() => handleQuickSync(0)} disabled={isSyncDisabled} className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50 ${selectedQuickSync === 'today' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Today</button>
-          <button onClick={() => handleQuickSync(1)} disabled={isSyncDisabled} className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50 ${selectedQuickSync === 'yesterday' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Yesterday</button>
-          <button onClick={() => handleQuickSync(3)} disabled={isSyncDisabled} className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50 ${selectedQuickSync === '3days' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Last 3 Days</button>
-          <button onClick={() => handleQuickSync(7)} disabled={isSyncDisabled} className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50 ${selectedQuickSync === '7days' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Last 7 Days</button>
-          <button onClick={() => handleQuickSync(15)} disabled={isSyncDisabled} className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50 ${selectedQuickSync === '15days' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Last 15 Days</button>
-          <button onClick={() => setShowCustomModal(true)} disabled={isSyncDisabled} className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50 ml-1 ${selectedQuickSync === 'custom' ? 'bg-[#1A2766] text-white font-semibold' : 'bg-[#1A2766]/10 hover:bg-[#1A2766]/20 text-[#1A2766]'}`}>
-            <Calendar size={13} /> Custom
-          </button>
-          {syncing && <span className="ml-2 text-xs text-blue-600 animate-pulse font-medium">Syncing...</span>}
-          {cooldown > 0 && !syncing && <span className="ml-2 text-xs text-orange-500 font-medium">Cooldown: {cooldown}s</span>}
+        {/* Sync Controls Toolbar */}
+        <div className="bg-white px-[20px] py-[16px] rounded-xl shadow-sm border border-gray-200 flex flex-wrap min-[1200px]:flex-nowrap items-center gap-4 text-xs">
+          {/* API Status Section */}
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setShowDrawer(true)}
+              className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold border transition-all whitespace-nowrap ${
+                apiUsage.rateLimit?.health === 'Healthy' 
+                  ? 'bg-[#E8F8EE] text-[#16A34A] border-[#E8F8EE] hover:bg-[#D1F2DD]'
+                  : apiUsage.rateLimit?.health === 'Warning'
+                    ? 'bg-[#FEF9C3] text-[#CA8A04] border-[#FEF9C3] hover:bg-[#FEF08A]'
+                    : 'bg-[#FEE2E2] text-[#DC2626] border-[#FEE2E2] hover:bg-[#FCA5A5]'
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+              <span>API: {apiUsage.rateLimit?.health || 'Healthy'}</span>
+            </button>
+            
+            {lastSyncTime && (
+              <span className="text-[13px] text-[#6B7280] font-medium whitespace-nowrap">
+                Last Sync: {new Date(lastSyncTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+              </span>
+            )}
+
+            {cooldown > 0 && !syncing && (
+              <>
+                <span className="text-gray-300">|</span>
+                <span className="text-[13px] text-[#F97316] font-semibold whitespace-nowrap">
+                  Cooldown: {cooldown}s
+                </span>
+              </>
+            )}
+          </div>
+
+          <div className="hidden min-[1200px]:block w-px h-6 bg-gray-200"></div>
+
+          {/* Quick Sync Group */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs font-bold text-[#6B7280] mr-1">Quick Sync:</span>
+            <button onClick={() => handleQuickSync(0)} disabled={isSyncDisabled} className={`px-2.5 py-1 text-xs rounded-md font-semibold transition-colors disabled:opacity-50 ${selectedQuickSync === 'today' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Today</button>
+            <button onClick={() => handleQuickSync(1)} disabled={isSyncDisabled} className={`px-2.5 py-1 text-xs rounded-md font-semibold transition-colors disabled:opacity-50 ${selectedQuickSync === 'yesterday' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Yesterday</button>
+            <button onClick={() => handleQuickSync(3)} disabled={isSyncDisabled} className={`px-2.5 py-1 text-xs rounded-md font-semibold transition-colors disabled:opacity-50 ${selectedQuickSync === '3days' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Last 3 Days</button>
+            <button onClick={() => handleQuickSync(7)} disabled={isSyncDisabled} className={`px-2.5 py-1 text-xs rounded-md font-semibold transition-colors disabled:opacity-50 ${selectedQuickSync === '7days' ? 'bg-[#1A2766] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>Last 7 Days</button>
+            
+            <button onClick={() => setShowCustomModal(true)} disabled={isSyncDisabled} className={`px-2.5 py-1 text-xs rounded-md font-semibold transition-colors flex items-center gap-1 disabled:opacity-50 ${selectedQuickSync === 'custom' ? 'bg-[#1A2766] text-white' : 'bg-[#1A2766]/10 hover:bg-[#1A2766]/20 text-[#1A2766]'}`}>
+              <Calendar size={12} /> Custom
+            </button>
+            {syncing && <span className="ml-2 text-xs text-blue-600 animate-pulse font-medium">Syncing...</span>}
+          </div>
         </div>
       </div>
 

@@ -9,7 +9,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const [reviewPending, pendingInvoicesWithItems, vendorDcrPending] = await Promise.all([
+    const [reviewPending, pendingInvoicesWithItems, vendorDcrPending, holdQueue, readyToIssue] = await Promise.all([
       // reviewPending: archived = false, status is NEW or UNDER_REVIEW
       prisma.dcrInvoice.count({
         where: { archived: false, dcrStatus: { in: ['NEW', 'UNDER_REVIEW'] } }
@@ -29,6 +29,14 @@ export async function GET(req: Request) {
       // vendorDcrPending: status is VENDOR_DCR_PENDING
       prisma.dcrInvoice.count({
         where: { dcrStatus: 'VENDOR_DCR_PENDING' }
+      }),
+      // holdQueue: invoices awaiting management approval
+      prisma.dcrInvoice.count({
+        where: { dcrStatus: 'HOLD' }
+      }),
+      // readyToIssue: approved by management, awaiting physical issuance
+      prisma.dcrInvoice.count({
+        where: { dcrStatus: 'READY_TO_ISSUE' }
       })
     ]);
 
@@ -44,10 +52,13 @@ export async function GET(req: Request) {
     return NextResponse.json({
       reviewPending,
       pendingSerials,
-      vendorDcrPending
+      vendorDcrPending,
+      holdQueue,
+      readyToIssue,
     });
   } catch (error: any) {
     console.error('[DCR Stats GET] Error:', error);
     return NextResponse.json({ error: 'Failed to fetch DCR statistics' }, { status: 500 });
   }
 }
+

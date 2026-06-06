@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -81,6 +81,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'dcr_management',
     label: 'DCR Management',
     description: 'Ability to manage DCR invoice processing workflow'
+  },
+  {
+    key: 'dcr_serial_mapping_override',
+    label: 'Serial Corrections',
+    description: 'Ability to correct SKUs, DCR statuses, and purchase records'
+  },
+  {
+    key: 'dcr_hold_release',
+    label: 'Hold Queue',
+    description: 'Ability to manage hold queue and release DCRs to the operations team'
   }
 ];
 
@@ -98,5 +108,7 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'stock_alerts_manage',
   'accounts_recovery_manage',
   'release_statement_queue',
-  'dcr_management'
+  'dcr_management',
+  'dcr_serial_mapping_override',
+  'dcr_hold_release'
 ];

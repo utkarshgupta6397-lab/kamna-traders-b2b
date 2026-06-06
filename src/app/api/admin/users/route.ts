@@ -31,6 +31,8 @@ export async function GET() {
         accounts_recovery_manage: true,
         release_statement_queue: true,
         dcr_management: true,
+        dcr_serial_mapping_override: true,
+        dcr_hold_release: true,
       },
       orderBy: { name: 'asc' },
     });

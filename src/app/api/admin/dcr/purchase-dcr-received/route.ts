@@ -11,8 +11,8 @@ export async function POST(req: Request) {
 
     const { serials: rawSerials, skuId } = await req.json();
 
-    if (!skuId || !Array.isArray(rawSerials)) {
-      return NextResponse.json({ error: 'Invalid payload: skuId and serials array are required' }, { status: 400 });
+    if (!Array.isArray(rawSerials)) {
+      return NextResponse.json({ error: 'Invalid payload: serials array is required' }, { status: 400 });
     }
 
     // Process serials: trim, filter empty, uppercase, drop wattage patterns like (620 Wp)
@@ -44,20 +44,33 @@ export async function POST(req: Request) {
     const errors: string[] = [];
 
     // SKU Integrity Validation
+    let skippedCount = 0;
     for (const serial of serials) {
       const existing = existingSerials.find(s => s.serialNumber === serial);
       if (existing) {
         if (existing.vendorDcrStatus === 'RECEIVED') {
-          warnings.push(`Serial ${serial} already has Vendor DCR marked as RECEIVED. It will be skipped.`);
+          warnings.push(serial); // Just store the serial number for the UI to use
+          skippedCount++;
         }
-        if (existing.skuLocked && existing.skuId !== skuId) {
+        if (skuId && existing.skuLocked && existing.skuId !== skuId) {
           errors.push(`Serial number ${serial} already belongs to another SKU. SKU reassignment is not permitted.`);
+        }
+      } else {
+        if (!skuId) {
+          errors.push(`Serial ${serial} not found in the system. A SKU must be selected (Quick Mode) to create new serial records.`);
         }
       }
     }
 
     if (errors.length > 0) {
       return NextResponse.json({ error: 'Validation failed', details: errors }, { status: 400 });
+    }
+
+    if (skippedCount > 0 && skippedCount === serials.length) {
+      // If single serial, or ALL serials in bulk are already received
+      return NextResponse.json({
+        error: 'Vendor DCR has already been received for this serial number. Duplicate receipt is not allowed.'
+      }, { status: 409 });
     }
 
     // Perform DB Transaction
@@ -97,15 +110,19 @@ export async function POST(req: Request) {
         } else {
           // Update existing
           dcrSerialId = existing.id;
+          const updateData: any = {
+            vendorDcrStatus: 'RECEIVED',
+            vendorDcrReceivedAt: new Date(),
+            vendorDcrReceivedBy: session.name || session.userId,
+          };
+          if (skuId) {
+            updateData.skuId = skuId;
+            updateData.skuLocked = true;
+          }
+
           await tx.dcrSerial.update({
             where: { id: dcrSerialId },
-            data: {
-              vendorDcrStatus: 'RECEIVED',
-              vendorDcrReceivedAt: new Date(),
-              vendorDcrReceivedBy: session.name || session.userId,
-              skuId: skuId,
-              skuLocked: true
-            }
+            data: updateData
           });
 
           await tx.dcrSerialHistory.create({
@@ -174,8 +191,8 @@ export async function POST(req: Request) {
             if (anyVendorDcrPending) {
               nextStatus = 'VENDOR_DCR_PENDING';
             } else {
-              // Transition to HOLD or READY_TO_ISSUE based on payment status. 
-              nextStatus = 'READY_TO_ISSUE';
+              // All serials allocated + all vendor DCRs received → Hold Queue for management approval
+              nextStatus = 'HOLD';
             }
           }
 

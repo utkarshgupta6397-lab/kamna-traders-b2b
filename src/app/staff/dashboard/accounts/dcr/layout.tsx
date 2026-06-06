@@ -8,13 +8,15 @@ interface DcrStats {
   reviewPending: number;
   pendingSerials: number;
   vendorDcrPending: number;
+  holdQueue: number;
+  readyToIssue: number;
 }
 
 const DcrStatsContext = createContext<{
   stats: DcrStats;
   refreshStats: () => Promise<void>;
 }>({
-  stats: { reviewPending: 0, pendingSerials: 0, vendorDcrPending: 0 },
+  stats: { reviewPending: 0, pendingSerials: 0, vendorDcrPending: 0, holdQueue: 0, readyToIssue: 0 },
   refreshStats: async () => {},
 });
 
@@ -22,7 +24,8 @@ export const useDcrStats = () => useContext(DcrStatsContext);
 
 export default function DcrLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [stats, setStats] = useState<DcrStats>({ reviewPending: 0, pendingSerials: 0, vendorDcrPending: 0 });
+  const [stats, setStats] = useState<DcrStats>({ reviewPending: 0, pendingSerials: 0, vendorDcrPending: 0, holdQueue: 0, readyToIssue: 0 });
+  const [permissions, setPermissions] = useState<any>(null);
 
   const refreshStats = useCallback(async () => {
     try {
@@ -33,6 +36,8 @@ export default function DcrLayout({ children }: { children: React.ReactNode }) {
           reviewPending: data.reviewPending || 0,
           pendingSerials: data.pendingSerials || 0,
           vendorDcrPending: data.vendorDcrPending || 0,
+          holdQueue: data.holdQueue || 0,
+          readyToIssue: data.readyToIssue || 0,
         });
       }
     } catch (err) {
@@ -44,6 +49,20 @@ export default function DcrLayout({ children }: { children: React.ReactNode }) {
     refreshStats();
   }, [refreshStats, pathname]);
 
+  useEffect(() => {
+    fetch('/api/auth/session')
+      .then(res => {
+        if (res.ok) return res.json();
+        throw new Error('Unauthorized');
+      })
+      .then(data => {
+        if (data.session) {
+          setPermissions(data.session);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const sidebarNav = [
     { id: 'process',          label: 'Process Invoices',      path: '/staff/dashboard/accounts/dcr',                                   exact: true,  placeholder: false },
     { id: 'pending',          label: 'Pending Serials',        path: '/staff/dashboard/accounts/dcr/pending-serials',                   exact: false, placeholder: false },
@@ -51,11 +70,21 @@ export default function DcrLayout({ children }: { children: React.ReactNode }) {
     { id: 'purchase_dcr',     label: 'Purchase DCR Received',  path: '/staff/dashboard/accounts/dcr/purchase-dcr-received',             exact: false, placeholder: false },
     { id: 'serial_search',    label: 'Serial Search',          path: '/staff/dashboard/accounts/dcr/serial-search',                    exact: false, placeholder: false },
     { id: 'serial_correct',   label: 'Serial Corrections',     path: '/staff/dashboard/accounts/dcr/serial-corrections',               exact: false, placeholder: false },
-    { id: 'hold',             label: 'Hold Queue',             path: '#',                                                               exact: false, placeholder: true  },
-    { id: 'ready',            label: 'Ready To Issue',         path: '#',                                                               exact: false, placeholder: true  },
+    { id: 'hold',             label: 'Hold Queue',             path: '/staff/dashboard/accounts/dcr/hold-queue',                       exact: false, placeholder: false },
+    { id: 'ready',            label: 'Ready To Issue',         path: '/staff/dashboard/accounts/dcr/ready-to-issue',                   exact: false, placeholder: false },
     { id: 'issued',           label: 'Issued',                 path: '#',                                                               exact: false, placeholder: true  },
     { id: 'reports',          label: 'Reports',                path: '#',                                                               exact: false, placeholder: true  },
   ];
+
+  const filteredSidebarNav = sidebarNav.filter(item => {
+    if (item.id === 'serial_correct') {
+      return permissions?.role === 'ADMIN' || !!permissions?.dcr_serial_mapping_override;
+    }
+    if (item.id === 'hold') {
+      return permissions?.role === 'ADMIN' || !!permissions?.dcr_hold_release;
+    }
+    return true;
+  });
 
   const isActive = (navPath: string, exact: boolean) => {
     if (navPath === '#') return false;
@@ -67,6 +96,8 @@ export default function DcrLayout({ children }: { children: React.ReactNode }) {
     if (id === 'process') return stats.reviewPending;
     if (id === 'pending') return stats.pendingSerials;
     if (id === 'purchase_dcr') return stats.vendorDcrPending;
+    if (id === 'hold') return stats.holdQueue;
+    if (id === 'ready') return stats.readyToIssue;
     return 0;
   };
 
@@ -80,7 +111,7 @@ export default function DcrLayout({ children }: { children: React.ReactNode }) {
               <h2 className="font-semibold text-gray-800 text-sm uppercase tracking-wider">DCR Workflows</h2>
             </div>
             <nav className="flex flex-col p-2 space-y-1">
-              {sidebarNav.map(item => {
+              {filteredSidebarNav.map(item => {
                 const active = isActive(item.path, item.exact);
                 const isReviewPath = pathname.includes('/review/');
                 // Exception: if we are on a review page, "Process Invoices" should stay highlighted since it's the parent.

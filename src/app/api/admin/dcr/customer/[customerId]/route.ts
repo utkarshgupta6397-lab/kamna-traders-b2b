@@ -2,7 +2,66 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { getCache, setCache } from '@/lib/cache';
-import { getCustomerInvoices } from '@/lib/zoho/customer-statement';
+import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
+
+const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
+
+// Helper to fetch all invoices within a specific date range from Zoho
+async function fetchZohoInvoicesLast60Days(customerId: string): Promise<any[]> {
+  const orgId = getZohoOrgId();
+  const accessToken = await getZohoTokens();
+  if (!orgId || !accessToken) throw new Error('Zoho auth failed');
+
+  const sixtyDaysAgo = new Date();
+  sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+  const dateStart = sixtyDaysAgo.toISOString().split('T')[0];
+
+  let allInvoices: any[] = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${customerId}&date_start=${dateStart}&page=${page}&per_page=200&sort_column=date&sort_order=D`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+    });
+    
+    if (!response.ok) break;
+    const data = await response.json();
+    const items = data.invoices || [];
+    
+    // Filter void invoices immediately
+    const validItems = items.filter((inv: any) => inv.status !== 'void');
+    allInvoices = [...allInvoices, ...validItems];
+
+    if (data.page_context && data.page_context.has_more_page) {
+      page++;
+    } else {
+      hasMore = false;
+    }
+
+    // Safety limit to prevent infinite loops (max 1000 invoices = 5 pages)
+    if (page > 5) break;
+  }
+
+  return allInvoices;
+}
+
+async function fetchZohoContactBalance(customerId: string): Promise<number> {
+  const orgId = getZohoOrgId();
+  const accessToken = await getZohoTokens();
+  if (!orgId || !accessToken) return 0;
+  try {
+    const url = `${API_BASE_URL}/books/v3/contacts/${customerId}?organization_id=${orgId}`;
+    const response = await fetch(url, { headers: { Authorization: `Zoho-oauthtoken ${accessToken}` } });
+    if (!response.ok) return 0;
+    const data = await response.json();
+    return Number(data.contact?.outstanding_receivable_amount || 0);
+  } catch (e) {
+    return 0;
+  }
+}
 
 export async function GET(req: Request, { params }: { params: Promise<{ customerId: string }> }) {
   try {
@@ -16,8 +75,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
       return NextResponse.json({ error: 'Customer ID is required' }, { status: 400 });
     }
 
-    // Check backend cache for summary
-    const cachedSummary = getCache('dcrSummaryCache', customerId);
+    // 1. Check Invoice Cache
+    const cachedSummary = getCache('customerLookupInvoiceCache', customerId);
     if (cachedSummary) {
       return NextResponse.json({
         success: true,
@@ -25,11 +84,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
       });
     }
 
-    // 1. Fetch Zoho Invoices (Last ~60 days, up to 100 via API)
-    const zohoRes = await getCustomerInvoices(customerId);
-    const zohoInvoices = zohoRes.success && zohoRes.data ? zohoRes.data : [];
+    // 2. Fetch Zoho Invoices (Last 60 days) and Contact Balance concurrently
+    const [zohoInvoices, closingBalance] = await Promise.all([
+      fetchZohoInvoicesLast60Days(customerId),
+      fetchZohoContactBalance(customerId)
+    ]);
 
-    // 2. Fetch Prisma DCR Invoices for this customer
+    // 3. Fetch Prisma DCR Invoices for this customer
     const dcrInvoices = await prisma.dcrInvoice.findMany({
       where: { customerId },
       include: {
@@ -50,7 +111,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
       }
     });
 
-    // Map Prisma DCR invoices by zohoInvoiceId for quick lookup
     const dcrMap = new Map(dcrInvoices.map(inv => [inv.zohoInvoiceId, inv]));
 
     let totalPanelsSold = 0;
@@ -61,13 +121,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
     let invoicesReviewed = 0;
     let invoicesPendingReview = 0;
 
-    const sixtyDaysAgo = new Date();
-    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-
     const mergedInvoices: any[] = [];
     const processedZohoIds = new Set<string>();
 
-    // Helper to process an invoice row
     const processRow = (
       id: string,
       zohoInvoiceId: string,
@@ -77,8 +133,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
       salespersonName: string,
       dcrInv: any | undefined
     ) => {
-      let processingStatus = 'NOT_REVIEWED';
-      let displayStatus = 'NOT_REVIEWED';
+      let processingStatus = 'UNPROCESSED';
+      let displayStatus = 'UNPROCESSED';
       let isUnprocessed = false;
 
       let dcrPanels = 0;
@@ -90,10 +146,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
       let readyToIssue = 0;
 
       if (!dcrInv) {
-        // Exists in Zoho, but no record in DCR module
-        // Usually means not reviewed
+        // No DCR record exists
+        isUnprocessed = true;
+        invoicesPendingReview++;
+        processingStatus = 'UNPROCESSED';
+        displayStatus = 'UNPROCESSED';
       } else {
-        // Exists in DCR
         isUnprocessed = dcrInv.dcrStatus === 'NEW' || dcrInv.dcrStatus === 'UNDER_REVIEW';
 
         if (isUnprocessed) {
@@ -136,30 +194,39 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
           });
         });
 
-        // Processing Status Engine logic
-        if (dcrInv.dcrStatus === 'NO_DCR_REQUIRED') {
-          processingStatus = 'NO_DCR_REQUIRED';
-          displayStatus = 'NO DCR REQUIRED';
-        } else if (serialEntryPending > 0 || vendorDcrPending > 0 || onHold > 0 || readyToIssue > 0) {
-          processingStatus = 'IN_PROGRESS';
-          if (serialEntryPending > 0) displayStatus = 'SERIAL ENTRY PENDING';
-          else if (vendorDcrPending > 0) displayStatus = 'VENDOR DCR PENDING';
-          else if (onHold > 0) displayStatus = 'HOLD QUEUE';
-          else if (readyToIssue > 0) displayStatus = 'READY TO ISSUE';
+        // Processing Status Engine logic (Requested Update)
+        const reviewRecordExists = !isUnprocessed;
+        
+        if (!reviewRecordExists) {
+          processingStatus = 'UNPROCESSED';
+        } else if (reviewRecordExists && dcrPanels === 0) {
+          processingStatus = 'PROCESSED_NO_DCR';
+        } else if (reviewRecordExists && dcrPanels > 0) {
+          processingStatus = 'PROCESSED_DCR';
+        }
+
+        // Display Status Mapping
+        if (dcrInv.dcrStatus === 'NO_DCR_REQUIRED' || processingStatus === 'PROCESSED_NO_DCR') {
+          displayStatus = 'PROCESSED - NO DCR REQUIRED';
+        } else if (serialEntryPending > 0) {
+          displayStatus = 'SERIAL ENTRY PENDING';
+        } else if (vendorDcrPending > 0) {
+          displayStatus = 'VENDOR DCR PENDING';
+        } else if (onHold > 0) {
+          displayStatus = 'HOLD QUEUE';
+        } else if (readyToIssue > 0) {
+          displayStatus = 'READY TO ISSUE';
         } else if (dcrPanels > 0 && issued === dcrPanels) {
-          processingStatus = 'COMPLETED';
           displayStatus = 'FULLY ISSUED';
         } else if (dcrPanels > 0) {
-          processingStatus = 'DCR_IDENTIFIED';
           displayStatus = 'DCR IDENTIFIED';
         } else if (isUnprocessed) {
-          processingStatus = 'NOT_REVIEWED'; // Still tracking it as not reviewed fully in the workflow
           displayStatus = 'UNPROCESSED';
         }
       }
 
       return {
-        id, // For routing, if we don't have DCR ID we can pass Zoho ID or a dummy, but we need Prisma ID to open the modal correctly. Wait, if it's not in Prisma, we'll use Zoho ID as a fallback.
+        id,
         zohoInvoiceId,
         invoiceNumber,
         invoiceDate,
@@ -178,23 +245,26 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
       };
     };
 
-    // 3. Process all Zoho invoices
+    // 4. Process all Zoho invoices (Last 60 Days)
     zohoInvoices.forEach((zInv: any) => {
-      processedZohoIds.add(zInv.invoiceId);
-      const dcrInv = dcrMap.get(zInv.invoiceId);
+      processedZohoIds.add(zInv.invoice_id);
+      const dcrInv = dcrMap.get(zInv.invoice_id);
+      
+      const invoiceDate = zInv.date || zInv.created_time || '';
+      
       const row = processRow(
-        dcrInv?.id || zInv.invoiceId, // Use Prisma ID if available, else Zoho ID
-        zInv.invoiceId,
-        zInv.invoiceNumber,
-        zInv.invoiceDate,
-        zInv.total,
-        zInv.salespersonName,
+        dcrInv?.id || zInv.invoice_id,
+        zInv.invoice_id,
+        zInv.invoice_number,
+        invoiceDate,
+        Number(zInv.total || 0),
+        zInv.salesperson_name,
         dcrInv
       );
       mergedInvoices.push(row);
     });
 
-    // 4. Process older DCR Invoices not in the recent Zoho fetch
+    // 5. Process older DCR Invoices (not in the recent Zoho fetch)
     dcrInvoices.forEach((dcrInv) => {
       if (!processedZohoIds.has(dcrInv.zohoInvoiceId)) {
         const row = processRow(
@@ -203,10 +273,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
           dcrInv.invoiceNumber,
           dcrInv.invoiceDate.toISOString(),
           dcrInv.invoiceTotal,
-          '--', // We don't have salesperson cached in DcrInvoice currently
+          '--', 
           dcrInv
         );
-        // Only include if there is pending work
+        // Only include older invoice if it has unfinished DCR activity
         const hasPendingWork = row.serialEntryPending > 0 || row.vendorDcrPending > 0 || row.onHold > 0 || row.readyToIssue > 0;
         if (hasPendingWork) {
           mergedInvoices.push(row);
@@ -227,11 +297,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
         invoicesReviewed,
         invoicesPendingReview,
         dcrPanels: totalPanelsSold,
+        closingBalance,
       },
       invoices: mergedInvoices
     };
 
-    setCache('dcrSummaryCache', customerId, summaryData, 15 * 60);
+    // Store in our new 15-min cache
+    setCache('customerLookupInvoiceCache', customerId, summaryData, 15 * 60 * 1000);
 
     return NextResponse.json({
       success: true,

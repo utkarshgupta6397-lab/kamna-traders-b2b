@@ -8,10 +8,11 @@ if (!globalAny.dcrSummaryCache) globalAny.dcrSummaryCache = new Map<string, { da
 if (!globalAny.dcrInvoiceCache) globalAny.dcrInvoiceCache = new Map<string, { data: any; expiry: number }>();
 if (!globalAny.customerBalanceCache) globalAny.customerBalanceCache = new Map<string, { data: any; expiry: number }>();
 if (!globalAny.customerStatementCache) globalAny.customerStatementCache = new Map<string, { data: any; expiry: number }>();
+if (!globalAny.customerLookupInvoiceCache) globalAny.customerLookupInvoiceCache = new Map<string, { data: any; expiry: number }>();
 
 const DEFAULT_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
-export const getCache = (cacheName: 'dcrSummaryCache' | 'dcrInvoiceCache' | 'customerBalanceCache' | 'customerStatementCache', key: string) => {
+export const getCache = (cacheName: 'dcrSummaryCache' | 'dcrInvoiceCache' | 'customerBalanceCache' | 'customerStatementCache' | 'customerLookupInvoiceCache', key: string) => {
   const cache: Map<string, { data: any; expiry: number }> = globalAny[cacheName];
   const item = cache.get(key);
   if (!item) return null;
@@ -22,12 +23,12 @@ export const getCache = (cacheName: 'dcrSummaryCache' | 'dcrInvoiceCache' | 'cus
   return item.data;
 };
 
-export const setCache = (cacheName: 'dcrSummaryCache' | 'dcrInvoiceCache' | 'customerBalanceCache' | 'customerStatementCache', key: string, data: any, ttlMs: number = DEFAULT_TTL_MS) => {
+export const setCache = (cacheName: 'dcrSummaryCache' | 'dcrInvoiceCache' | 'customerBalanceCache' | 'customerStatementCache' | 'customerLookupInvoiceCache', key: string, data: any, ttlMs: number = DEFAULT_TTL_MS) => {
   const cache: Map<string, { data: any; expiry: number }> = globalAny[cacheName];
   cache.set(key, { data, expiry: Date.now() + ttlMs });
 };
 
-export const clearCache = (cacheName: 'dcrSummaryCache' | 'dcrInvoiceCache' | 'customerBalanceCache' | 'customerStatementCache', key: string) => {
+export const clearCache = (cacheName: 'dcrSummaryCache' | 'dcrInvoiceCache' | 'customerBalanceCache' | 'customerStatementCache' | 'customerLookupInvoiceCache', key: string) => {
   const cache: Map<string, { data: any; expiry: number }> = globalAny[cacheName];
   cache.delete(key);
 };

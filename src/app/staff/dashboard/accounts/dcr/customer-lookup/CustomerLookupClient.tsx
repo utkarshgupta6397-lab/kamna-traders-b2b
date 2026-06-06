@@ -21,7 +21,7 @@ export default function CustomerLookupClient() {
   
   // Loaders
   const [isFetchingSummary, setIsFetchingSummary] = useState(false);
-  const [isFetchingBalance, setIsFetchingBalance] = useState(false);
+
   
   // Statement
   const [showStatement, setShowStatement] = useState(false);
@@ -38,8 +38,9 @@ export default function CustomerLookupClient() {
   // Zoho API Meter
   const [zohoMeter, setZohoMeter] = useState<{ today: number, page: number }>({ today: 0, page: 0 });
 
-  // Pagination
+  // Pagination and Filters
   const [page, setPage] = useState(1);
+  const [filterMode, setFilterMode] = useState<'ALL' | 'PENDING'>('ALL');
   const limit = 25;
 
   const getSessionCache = (key: string) => {
@@ -70,23 +71,7 @@ export default function CustomerLookupClient() {
     } catch (e) {}
   };
 
-  const fetchBalance = async (customerId: string) => {
-    setIsFetchingBalance(true);
-    try {
-      const res = await fetch(`/api/admin/customer-statement/quick?customerId=${customerId}`);
-      incrementPageApiMeter();
-      if (res.ok) {
-        const data = await res.json();
-        setBalance(data.data.closingBalance);
-        setSessionCache(`dcr_balance_${customerId}`, data.data.closingBalance);
-        fetchApiMeter();
-      }
-    } catch (err) {
-      console.error('Failed to fetch balance', err);
-    } finally {
-      setIsFetchingBalance(false);
-    }
-  };
+
 
   const fetchSummary = async (customerId: string) => {
     setIsFetchingSummary(true);
@@ -102,6 +87,10 @@ export default function CustomerLookupClient() {
       if (res.ok) {
         const data = await res.json();
         setSummary(data.data);
+        if (data.data.kpis?.closingBalance !== undefined) {
+          setBalance(data.data.kpis.closingBalance);
+          setSessionCache(`dcr_balance_${customerId}`, data.data.kpis.closingBalance);
+        }
         setSessionCache(`dcr_summary_${customerId}`, data.data);
       }
     } catch (err) {
@@ -121,6 +110,7 @@ export default function CustomerLookupClient() {
     setShowStatement(false);
     setStatementData(null);
     setPage(1);
+    setFilterMode('ALL');
 
     try {
       const res = await fetch(`/api/admin/dcr/customer-lookup/search?q=${encodeURIComponent(query)}`);
@@ -137,8 +127,6 @@ export default function CustomerLookupClient() {
       const cachedBal = getSessionCache(`dcr_balance_${data.customer.id}`);
       if (cachedBal !== null) {
         setBalance(cachedBal);
-      } else {
-        fetchBalance(data.customer.id);
       }
 
       fetchApiMeter();
@@ -160,7 +148,6 @@ export default function CustomerLookupClient() {
         fetchSummary(cid);
         const cachedBal = getSessionCache(`dcr_balance_${cid}`);
         if (cachedBal !== null) setBalance(cachedBal);
-        else fetchBalance(cid);
         fetchApiMeter();
       } else {
         handleSearch(cid);
@@ -226,6 +213,12 @@ export default function CustomerLookupClient() {
     const cached = getSessionCache(`dcr_invoice_${invoiceId}_v2`);
     if (cached) {
       setModalInvoiceDetails(cached);
+      const dcrItemIds = new Set<string>();
+      cached.forEach((item: any) => {
+        if (item.selectedForDCR) dcrItemIds.add(item.itemId);
+      });
+      setExpandedItems(dcrItemIds);
+      setShowNonDcrSection(true);
       setIsFetchingInvoiceDetails(false);
       return;
     }
@@ -236,6 +229,12 @@ export default function CustomerLookupClient() {
       if (!res.ok) throw new Error(data.error);
       
       setModalInvoiceDetails(data.data);
+      const dcrItemIds = new Set<string>();
+      data.data.forEach((item: any) => {
+        if (item.selectedForDCR) dcrItemIds.add(item.itemId);
+      });
+      setExpandedItems(dcrItemIds);
+      setShowNonDcrSection(true);
       setSessionCache(`dcr_invoice_${invoiceId}_v2`, data.data);
     } catch (err: any) {
       toast.error(err.message || 'Failed to fetch invoice details');
@@ -281,8 +280,10 @@ export default function CustomerLookupClient() {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val);
   };
 
-  const displayedInvoices = summary ? summary.invoices.slice(0, page * limit) : [];
-  const hasMore = summary ? displayedInvoices.length < summary.invoices.length : false;
+  const isPendingInvoice = (inv: any) => inv.processingStatus === 'UNPROCESSED' || inv.issued !== inv.dcrPanels;
+  const filteredInvoices = summary ? (filterMode === 'PENDING' ? summary.invoices.filter(isPendingInvoice) : summary.invoices) : [];
+  const displayedInvoices = filteredInvoices.slice(0, page * limit);
+  const hasMore = filteredInvoices.length > page * limit;
 
   const activeInvoice = summary?.invoices.find((i: any) => i.id === modalInvoiceId);
 
@@ -367,7 +368,7 @@ export default function CustomerLookupClient() {
                 <div className="text-right">
                   <div className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Outstanding</div>
                   <div className="text-xl font-bold text-red-600 leading-tight">
-                    {isFetchingBalance ? (
+                    {isFetchingSummary ? (
                       <span className="text-gray-300 text-sm animate-pulse">Loading...</span>
                     ) : balance !== null ? (
                       formatCurrency(balance)
@@ -481,6 +482,18 @@ export default function CustomerLookupClient() {
             )}
           </div>
 
+          {/* FILTER TOGGLE */}
+          <div className="flex items-center gap-4 py-1">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="radio" name="invoiceFilter" value="ALL" checked={filterMode === 'ALL'} onChange={() => { setFilterMode('ALL'); setPage(1); }} className="text-[#1A2766] focus:ring-[#1A2766]" />
+              <span className="font-medium text-gray-700">All Invoices</span>
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="radio" name="invoiceFilter" value="PENDING" checked={filterMode === 'PENDING'} onChange={() => { setFilterMode('PENDING'); setPage(1); }} className="text-[#1A2766] focus:ring-[#1A2766]" />
+              <span className="font-medium text-gray-700">Pending Only</span>
+            </label>
+          </div>
+
           {/* MAIN INVOICES TABLE */}
           <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
@@ -500,7 +513,7 @@ export default function CustomerLookupClient() {
                     <th className="px-3 py-2 font-semibold uppercase text-center">Ready To Issue</th>
                     <th className="px-3 py-2 font-semibold uppercase text-center">Issued</th>
                     <th className="px-3 py-2 font-semibold uppercase text-center">Status</th>
-                    <th className="px-3 py-2 font-semibold uppercase text-center w-16">Actions</th>
+                    <th className="px-3 py-2 font-semibold uppercase text-center w-16 sticky right-0 z-20 bg-gray-50 border-l border-gray-200 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.05)]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -532,7 +545,7 @@ export default function CustomerLookupClient() {
                           {inv.displayStatus}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-center align-middle">
+                      <td className="px-3 py-2 text-center align-middle sticky right-0 z-10 bg-white group-hover:bg-[#f0f4fa] transition-colors border-l border-gray-100 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.05)]">
                         <button onClick={() => openInvoiceModal(inv.id)} className="text-[#1A2766] bg-blue-50 px-2 py-1 rounded text-xs font-semibold hover:bg-blue-100 opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100">View</button>
                       </td>
                     </tr>

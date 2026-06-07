@@ -41,6 +41,50 @@ export async function POST(req: Request) {
       }
     });
 
+    // Collect all unique SKU/Item IDs to query brand/SKU mappings
+    const skuIds = new Set<string>();
+    if (skuId) skuIds.add(skuId);
+    existingSerials.forEach(s => {
+      if (s.skuId) skuIds.add(s.skuId);
+    });
+
+    const skuList = await prisma.sku.findMany({
+      where: { id: { in: Array.from(skuIds) } }
+    });
+    const invoiceItemList = await prisma.dcrInvoiceItem.findMany({
+      where: { id: { in: Array.from(skuIds) } }
+    });
+
+    const isCuidOrUuid = (val: string) => {
+      return /^[a-z0-9-]{24,36}$/i.test(val) && !/^[A-Z]{2,4}\d+$/i.test(val);
+    };
+
+    const resolveSku = async (id: string | null) => {
+      if (!id) return { name: 'N/A', code: 'N/A' };
+      const sku = skuList.find(s => s.id === id);
+      if (sku) return { name: sku.name, code: sku.id };
+
+      const invItem = invoiceItemList.find(i => i.id === id);
+      if (invItem) return { name: invItem.itemName, code: invItem.sku || 'N/A' };
+
+      // Fallback: query database directly if not pre-fetched
+      try {
+        const dbSku = await prisma.sku.findUnique({ where: { id } });
+        if (dbSku) return { name: dbSku.name, code: dbSku.id };
+      } catch {}
+
+      try {
+        const dbInvItem = await prisma.dcrInvoiceItem.findUnique({ where: { id } });
+        if (dbInvItem) return { name: dbInvItem.itemName, code: dbInvItem.sku || 'N/A' };
+      } catch {}
+
+      if (isCuidOrUuid(id)) {
+        return { name: 'Unknown Product', code: 'N/A' };
+      }
+
+      return { name: 'Unknown Product', code: id };
+    };
+
     for (let i = 0; i < rawSerials.length; i++) {
       const raw = rawSerials[i];
       const trimmed = raw.trim();
@@ -296,20 +340,37 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({
-      success: true,
-      imported: imported.map(i => {
+    const enrichedFailed = await Promise.all(
+      failed.map(async f => {
+        const resolved = await resolveSku(f.sku);
+        return {
+          ...f,
+          skuName: resolved.name,
+          skuCode: resolved.code
+        };
+      })
+    );
+
+    const enrichedImported = await Promise.all(
+      imported.map(async i => {
         let status = 'Vendor DCR Received';
         if (i.allocatedInvoiceNumber) {
           status = `Vendor DCR received. Allocated Invoice: ${i.allocatedInvoiceNumber}`;
         }
+        const resolved = await resolveSku(i.sku);
         return {
           serial: i.serial,
-          sku: i.sku,
+          skuName: resolved.name,
+          skuCode: resolved.code,
           status
         };
-      }),
-      failed
+      })
+    );
+
+    return NextResponse.json({
+      success: true,
+      imported: enrichedImported,
+      failed: enrichedFailed
     });
   } catch (error: any) {
     console.error('[Purchase DCR Receive POST] Error:', error);

@@ -6,11 +6,53 @@ import { FileText, CheckCircle, AlertTriangle, Zap, ChevronDown, Package } from 
 import toast from 'react-hot-toast';
 import { useDcrStats } from '../layout';
 
+// Robust client-side parser to extract serial numbers cleanly based on mode
+const parseSerials = (text: string, mode: 'line' | 'comma' | 'dcr_cert') => {
+  if (mode === 'line') {
+    return text.split('\n')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+  }
+  if (mode === 'comma') {
+    return text.split(',')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+  }
+  
+  // DCR Certificate Text Mode (Regex-based intelligent extraction)
+  const matches = text.match(/[A-Z0-9-]+/gi) || [];
+  const serials: string[] = [];
+  const excludeKeywords = new Set([
+    'SERIAL', 'PANEL', 'RATING', 'MODULE', 'WATTAGE', 'VENDOR', 'INVOICE', 'NUMBER', 'STATUS', 'DCR', 'RECEIVED',
+    'DETAILS', 'ELIGIBLE', 'PENDING', 'PROCESSED', 'PRODUCT', 'REPORT', 'ACTION', 'FAILURE', 'REASON'
+  ]);
+  
+  for (const m of matches) {
+    const cleaned = m.trim().toUpperCase();
+    if (cleaned.length < 6 || cleaned.length > 30) continue;
+    
+    // Ignore pure numbers (e.g. 620)
+    if (/^\d+$/.test(cleaned)) continue;
+    
+    // Ignore wattage/ratings like 620WP, 620W, 545W
+    if (/^\d+W[P]?$/i.test(cleaned)) continue;
+    
+    // Ignore common keywords
+    if (excludeKeywords.has(cleaned)) continue;
+    
+    serials.push(cleaned);
+  }
+  
+  return serials;
+};
+
+
 function PurchaseDcrReceivedContent() {
   const { refreshStats } = useDcrStats();
   const searchParams = useSearchParams();
   const receiptId = searchParams?.get('receiptId');
   const [mode, setMode] = useState<'normal' | 'quick' | 'prefilled'>('normal');
+  const [importMode, setImportMode] = useState<'line' | 'comma' | 'dcr_cert'>('dcr_cert');
   
   // Normal / Quick mode state
   const [skuId, setSkuId] = useState('');
@@ -83,17 +125,26 @@ function PurchaseDcrReceivedContent() {
 
   const filteredSkus = skus.filter(s => s.name.toLowerCase().includes(skuSearch.toLowerCase())).slice(0, 20);
 
+  // Compute preview serials dynamically
+  const getExtractedSerials = () => {
+    if (mode === 'prefilled') {
+      return prefilledLines.flatMap(l => parseSerials(l.rawText, importMode));
+    }
+    return parseSerials(rawText, importMode);
+  };
+  const extractedSerials = getExtractedSerials();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    let serials: string[] = [];
+    const serials = extractedSerials;
 
-    if (mode === 'prefilled') {
-      serials = prefilledLines.flatMap(l => l.rawText.split(/[\s,\n]+/).filter(Boolean));
-      if (serials.length === 0) { toast.error('Please enter serial numbers'); return; }
-    } else {
-      if (!rawText.trim()) { toast.error('Please enter serial numbers or certificate text'); return; }
-      if (mode === 'quick' && !skuId) { toast.error('Please select an item for Quick Entry mode'); return; }
-      serials = rawText.split(/[\s,\n]+/).filter(Boolean);
+    if (serials.length === 0) {
+      toast.error('No serial numbers detected for import.');
+      return;
+    }
+    if (mode !== 'prefilled' && mode === 'quick' && !skuId) {
+      toast.error('Please select an item for Quick Entry mode.');
+      return;
     }
 
     setIsSubmitting(true);
@@ -109,7 +160,6 @@ function PurchaseDcrReceivedContent() {
 
       const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-      // Simulate step-by-step progress metrics as requested
       for (let c = 0; c <= serials.length; c += Math.max(1, Math.ceil(serials.length / 5))) {
         setProgressCount(Math.min(c, serials.length));
         await wait(80);
@@ -149,7 +199,7 @@ function PurchaseDcrReceivedContent() {
         if (mode === 'prefilled') {
           const successSerials = new Set(data.imported.map((i: any) => i.serial));
           const updatedLines = prefilledLines.map(line => {
-            const lineSerials = line.rawText.split(/[\s,\n]+/).filter(Boolean);
+            const lineSerials = parseSerials(line.rawText, importMode);
             const remaining = lineSerials.filter(s => !successSerials.has(s.trim().toUpperCase()));
             return {
               ...line,
@@ -158,7 +208,7 @@ function PurchaseDcrReceivedContent() {
           });
           setPrefilledLines(updatedLines);
           
-          const totalRemaining = updatedLines.reduce((acc, l) => acc + l.rawText.split(/[\s,\n]+/).filter(Boolean).length, 0);
+          const totalRemaining = updatedLines.reduce((acc, l) => acc + parseSerials(l.rawText, importMode).length, 0);
           if (totalRemaining === 0) {
             setIsFullyProcessed(true);
           }
@@ -260,7 +310,7 @@ function PurchaseDcrReceivedContent() {
             <AlertTriangle className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
             <div className="text-sm text-blue-800">
               <p className="font-semibold mb-0.5">Smart Certificate Extraction</p>
-              <p className="text-blue-700/80">Paste raw PDF text directly. The system extracts valid serial numbers and strips wattage info like "(620 Wp)". No SKU selection needed — the SKU is looked up from the existing serial record.</p>
+              <p className="text-blue-700/80">Paste raw PDF text directly. The system extracts valid serial numbers, ignoring wattages, ratings, parenthesis, or PDF noise automatically.</p>
             </div>
           </div>
         ) : (
@@ -308,6 +358,40 @@ function PurchaseDcrReceivedContent() {
               </div>
             )}
 
+            {/* Parsing mode selector */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block">Parsing Mode</label>
+              <div className="flex bg-gray-100/60 p-0.5 rounded-lg border border-gray-200 max-w-md">
+                <button
+                  type="button"
+                  onClick={() => setImportMode('dcr_cert')}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                    importMode === 'dcr_cert' ? 'bg-white text-[#1A2766] shadow-sm border border-gray-200/40' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  DCR Certificate Text
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportMode('line')}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                    importMode === 'line' ? 'bg-white text-[#1A2766] shadow-sm border border-gray-200/40' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  One Per Line
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportMode('comma')}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                    importMode === 'comma' ? 'bg-white text-[#1A2766] shadow-sm border border-gray-200/40' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Comma Separated
+                </button>
+              </div>
+            </div>
+
             {mode === 'prefilled' ? (
               isFullyProcessed ? (
                 <div className="py-8 text-center bg-gray-50 rounded-xl border border-gray-200">
@@ -316,23 +400,41 @@ function PurchaseDcrReceivedContent() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {prefilledLines.map((line, index) => (
-                    <div key={line.skuId} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-gray-800">{line.skuName}</label>
-                        <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                          {line.rawText.split(/[\s,\n]+/).filter(Boolean).length} pending
-                        </span>
+                  {prefilledLines.map((line, index) => {
+                    const lineSerials = parseSerials(line.rawText, importMode);
+                    return (
+                      <div key={line.skuId} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-semibold text-gray-800">{line.skuName}</label>
+                          <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                            {lineSerials.length} pending
+                          </span>
+                        </div>
+                        <textarea
+                          value={line.rawText}
+                          onChange={e => updatePrefilledLine(index, e.target.value)}
+                          placeholder="Paste serial numbers here..."
+                          rows={6}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#1A2766] focus:border-[#1A2766] bg-gray-50/50 font-mono text-sm resize-y transition-colors"
+                        />
+                        {lineSerials.length > 0 && (
+                          <div className="bg-blue-50/30 border border-blue-100/50 rounded-xl p-2 text-[11px] space-y-1">
+                            <div className="text-blue-900 font-semibold flex justify-between">
+                              <span>Preview ({lineSerials.length} detected)</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {lineSerials.slice(0, 10).map((s, idx) => (
+                                <span key={idx} className="px-1.5 py-0.5 bg-white border border-blue-200 text-blue-800 rounded font-mono text-[9px] shadow-sm">
+                                  {s}
+                                </span>
+                              ))}
+                              {lineSerials.length > 10 && <span className="text-[9px] text-gray-400 self-center pl-1 font-medium">+{lineSerials.length - 10} more</span>}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <textarea
-                        value={line.rawText}
-                        onChange={e => updatePrefilledLine(index, e.target.value)}
-                        placeholder="Paste serial numbers here..."
-                        rows={6}
-                        className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#1A2766] focus:border-[#1A2766] bg-gray-50/50 font-mono text-sm resize-y transition-colors"
-                      />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )
             ) : (
@@ -375,19 +477,43 @@ function PurchaseDcrReceivedContent() {
                 {/* Serials textarea */}
                 <div>
                   <label className="text-sm font-medium text-gray-700 block mb-1.5">
-                    {mode === 'normal' ? 'Certificate Text / Serial Numbers' : 'Serial Numbers'}
+                    {importMode === 'dcr_cert' ? 'Certificate Text / Serial Numbers' : 
+                     importMode === 'comma' ? 'Comma-Separated Serials' : 'One Serial Per Line'}
                     <span className="text-red-500"> *</span>
                   </label>
                   <textarea
                     value={rawText}
                     onChange={e => setRawText(e.target.value)}
-                    placeholder={mode === 'normal'
+                    placeholder={importMode === 'dcr_cert'
                       ? 'Paste raw DCR certificate text here (e.g. AS260503093389 (620 Wp) AS260503093396 (620 Wp) ...'
-                      : 'Paste serial numbers here...'
+                      : importMode === 'comma' ? 'ABC1234, ABC5678, ...' : 'ABC1234\nABC5678\n...'
                     }
                     rows={10}
                     className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#1A2766] focus:border-[#1A2766] bg-gray-50/50 font-mono text-sm resize-none transition-colors"
                   />
+                  
+                  {/* Preview Section */}
+                  {extractedSerials.length > 0 ? (
+                    <div className="mt-3 bg-blue-50/50 border border-blue-100 rounded-xl p-3 text-xs space-y-2">
+                      <div className="font-semibold text-blue-900 flex justify-between items-center">
+                        <span>Detected {extractedSerials.length} serials</span>
+                        <span className="text-[10px] text-blue-500 font-normal">Showing first 10</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                        {extractedSerials.slice(0, 10).map((s, idx) => (
+                          <span key={idx} className="px-2 py-0.5 bg-white border border-blue-200 text-blue-800 rounded font-mono text-[10px] shadow-sm">
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    rawText.trim() && (
+                      <div className="mt-3 bg-red-50 border border-red-100 rounded-xl p-3 text-xs text-red-800 font-medium">
+                        Zero serials detected. Please check your text or switch parsing mode.
+                      </div>
+                    )
+                  )}
                 </div>
               </>
             )}
@@ -396,7 +522,7 @@ function PurchaseDcrReceivedContent() {
           <div className="px-5 py-4 bg-gray-50 border-t flex justify-end gap-3">
             <button
               type="submit"
-              disabled={isSubmitting || (mode === 'prefilled' && isFullyProcessed)}
+              disabled={isSubmitting || extractedSerials.length === 0 || (mode === 'prefilled' && isFullyProcessed)}
               className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all shadow-sm shadow-emerald-600/20 disabled:opacity-50 text-sm"
             >
               {isSubmitting ? (
@@ -430,7 +556,7 @@ function PurchaseDcrReceivedContent() {
                  'Saving Serials...'}
               </h3>
               <p className="text-xs text-gray-500 font-medium animate-pulse">
-                {progressCount} / {mode === 'prefilled' ? prefilledLines.flatMap(l => l.rawText.split(/[\s,\n]+/).filter(Boolean)).length : rawText.split(/[\s,\n]+/).filter(Boolean).length}
+                {progressCount} / {extractedSerials.length}
               </p>
             </div>
           </div>
@@ -509,7 +635,7 @@ function PurchaseDcrReceivedContent() {
                         <tr>
                           <th className="px-4 py-3 font-semibold w-[50px] text-center">#</th>
                           <th className="px-4 py-3 font-semibold w-[180px]">Serial Number</th>
-                          <th className="px-4 py-3 font-semibold w-[100px]">SKU</th>
+                          <th className="px-4 py-3 font-semibold w-[220px]">Product / SKU</th>
                           <th className="px-4 py-3 font-semibold w-[140px]">Failure Type</th>
                           <th className="px-4 py-3 font-semibold">Detailed Reason</th>
                           <th className="px-4 py-3 font-semibold w-[140px]">Suggested Action</th>
@@ -520,7 +646,10 @@ function PurchaseDcrReceivedContent() {
                           <tr key={idx} className="hover:bg-red-50/20 transition-colors">
                             <td className="px-4 py-2.5 text-center text-gray-400 font-mono font-medium">{f.index || idx + 1}</td>
                             <td className="px-4 py-2.5 font-mono font-bold text-red-700 break-all">{f.serial || '-'}</td>
-                            <td className="px-4 py-2.5 font-mono text-gray-600">{f.sku}</td>
+                            <td className="px-4 py-2.5 text-gray-950">
+                              <div className="font-medium leading-snug">{f.skuName}</div>
+                              <div className="font-mono text-[10px] text-gray-500 mt-0.5">{f.skuCode}</div>
+                            </td>
                             <td className="px-4 py-2.5">
                               <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 text-[10px] font-bold uppercase border border-red-200">
                                 {f.failureType}
@@ -544,7 +673,7 @@ function PurchaseDcrReceivedContent() {
                         <tr>
                           <th className="px-4 py-3 font-semibold w-[60px] text-center">#</th>
                           <th className="px-4 py-3 font-semibold w-[220px]">Serial</th>
-                          <th className="px-4 py-3 font-semibold w-[150px]">SKU</th>
+                          <th className="px-4 py-3 font-semibold w-[220px]">Product / SKU</th>
                           <th className="px-4 py-3 font-semibold">Status</th>
                         </tr>
                       </thead>
@@ -553,7 +682,10 @@ function PurchaseDcrReceivedContent() {
                           <tr key={idx} className="hover:bg-emerald-50/20 transition-colors">
                             <td className="px-4 py-2.5 text-center text-gray-400 font-mono">{idx + 1}</td>
                             <td className="px-4 py-2.5 font-mono font-bold text-emerald-700">{imp.serial}</td>
-                            <td className="px-4 py-2.5 font-mono text-gray-600">{imp.sku}</td>
+                            <td className="px-4 py-2.5 text-gray-950">
+                              <div className="font-medium leading-snug">{imp.skuName}</div>
+                              <div className="font-mono text-[10px] text-gray-500 mt-0.5">{imp.skuCode}</div>
+                            </td>
                             <td className="px-4 py-2.5">
                               <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase border border-emerald-200">
                                 {imp.status}

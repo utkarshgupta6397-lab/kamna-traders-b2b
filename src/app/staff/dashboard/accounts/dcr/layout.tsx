@@ -84,6 +84,7 @@ export default function DcrLayout({ children }: { children: React.ReactNode }) {
       heading: 'EXTRA',
       items: [
         { id: 'serial_correct',   label: 'Serial Corrections',     path: '/staff/dashboard/accounts/dcr/serial-corrections',               exact: false, placeholder: false },
+        { id: 'serial_registry',  label: 'Serial Registry',        path: '/staff/dashboard/accounts/dcr/serial-registry',                  exact: false, placeholder: false },
         { id: 'customer_lookup',  label: 'Customer DCR Lookup',    path: '/staff/dashboard/accounts/dcr/customer-lookup',                  exact: false, placeholder: false },
       ]
     }

@@ -32,24 +32,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
 
-    // Find next invoice ID based on current queue sorting before we update the current invoice
-    const activeInvoices = await prisma.dcrInvoice.findMany({
-      where: {
-        invoiceStatus: { not: 'void' },
-        archived: false,
-        dcrStatus: { in: ['NEW', 'UNDER_REVIEW'] }
-      },
-      orderBy: validSortBy === 'total'
-        ? { invoiceTotal: validSortOrder }
-        : { invoiceDate: validSortOrder },
-      select: { id: true }
-    });
-
-    const currentIndex = activeInvoices.findIndex(inv => inv.id === id);
-    const nextInvoiceId = currentIndex !== -1 && currentIndex < activeInvoices.length - 1
-      ? activeInvoices[currentIndex + 1].id
-      : null;
-
     // Begin a transaction
     await prisma.$transaction(async (tx) => {
       // Fetch count of existing serial allocations for this invoice
@@ -173,7 +155,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
     });
 
-    return NextResponse.json({ success: true, nextInvoiceId });
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('[DCR Invoice Save POST] Error:', error);
     if (error.message && error.message.includes('allocated serial numbers')) {

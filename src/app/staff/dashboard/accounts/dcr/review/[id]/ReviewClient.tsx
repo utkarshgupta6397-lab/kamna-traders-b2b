@@ -10,8 +10,7 @@ import { useDcrStats } from '../../layout';
 export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const sortBy = searchParams.get('sortBy') || '';
-  const sortOrder = searchParams.get('sortOrder') || '';
+  const currentParamsString = searchParams.toString();
   const { refreshStats } = useDcrStats();
   const [invoice, setInvoice] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -164,11 +163,8 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
 
       setSubmissionMode(andNext ? 'saveNext' : 'save');
       setSaving(true);
-      const params = new URLSearchParams();
-      if (sortBy) params.set('sortBy', sortBy);
-      if (sortOrder) params.set('sortOrder', sortOrder);
 
-      const res = await fetch(`/api/admin/dcr/invoices/${invoiceId}/save?${params.toString()}`, {
+      const res = await fetch(`/api/admin/dcr/invoices/${invoiceId}/save?${currentParamsString}`, {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({ selections, manualItems }),
@@ -180,23 +176,26 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
       refreshStats();
 
       if (andNext) {
-        if (data.nextInvoiceId) {
-          const nextParams = new URLSearchParams();
-          if (sortBy) nextParams.set('sortBy', sortBy);
-          if (sortOrder) nextParams.set('sortOrder', sortOrder);
-          router.replace(`/staff/dashboard/accounts/dcr/review/${data.nextInvoiceId}?${nextParams.toString()}`);
+        // Fetch current queue using preserved filters
+        const queueRes = await fetch(`/api/admin/dcr/invoices?${currentParamsString}`);
+        const queueData = await queueRes.json();
+        
+        let nextInvoiceId = null;
+        if (queueData.invoices && queueData.invoices.length > 0) {
+          const nextInvoice = queueData.invoices.find((inv: any) => inv.id !== invoiceId && ['NEW', 'UNDER_REVIEW'].includes(inv.dcrStatus));
+          if (nextInvoice) {
+            nextInvoiceId = nextInvoice.id;
+          }
+        }
+
+        if (nextInvoiceId) {
+          router.replace(`/staff/dashboard/accounts/dcr/review/${nextInvoiceId}?${currentParamsString}`);
         } else {
-          toast.success('All pending invoices have been reviewed');
-          const nextParams = new URLSearchParams();
-          if (sortBy) nextParams.set('sortBy', sortBy);
-          if (sortOrder) nextParams.set('sortOrder', sortOrder);
-          router.push(`/staff/dashboard/accounts/dcr?${nextParams.toString()}`);
+          toast.success('No more invoices pending review');
+          router.push(`/staff/dashboard/accounts/dcr?${currentParamsString}`);
         }
       } else {
-        const nextParams = new URLSearchParams();
-        if (sortBy) nextParams.set('sortBy', sortBy);
-        if (sortOrder) nextParams.set('sortOrder', sortOrder);
-        router.push(`/staff/dashboard/accounts/dcr?${nextParams.toString()}`);
+        router.push(`/staff/dashboard/accounts/dcr?${currentParamsString}`);
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to save');
@@ -217,11 +216,8 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
       setSubmissionMode('noDcr');
       setSaving(true);
       setShowSkipModal(false);
-      const params = new URLSearchParams();
-      if (sortBy) params.set('sortBy', sortBy);
-      if (sortOrder) params.set('sortOrder', sortOrder);
 
-      const res = await fetch(`/api/admin/dcr/invoices/${invoiceId}/save?${params.toString()}`, {
+      const res = await fetch(`/api/admin/dcr/invoices/${invoiceId}/save?${currentParamsString}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skipDcr: true }),
@@ -232,17 +228,23 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
       toast.success('Invoice marked as No DCR Required.');
       refreshStats();
       
-      if (data.nextInvoiceId) {
-        const nextParams = new URLSearchParams();
-        if (sortBy) nextParams.set('sortBy', sortBy);
-        if (sortOrder) nextParams.set('sortOrder', sortOrder);
-        router.replace(`/staff/dashboard/accounts/dcr/review/${data.nextInvoiceId}?${nextParams.toString()}`);
+      // Always automatically open next invoice if possible
+      const queueRes = await fetch(`/api/admin/dcr/invoices?${currentParamsString}`);
+      const queueData = await queueRes.json();
+      
+      let nextInvoiceId = null;
+      if (queueData.invoices && queueData.invoices.length > 0) {
+        const nextInvoice = queueData.invoices.find((inv: any) => inv.id !== invoiceId && ['NEW', 'UNDER_REVIEW'].includes(inv.dcrStatus));
+        if (nextInvoice) {
+          nextInvoiceId = nextInvoice.id;
+        }
+      }
+
+      if (nextInvoiceId) {
+        router.replace(`/staff/dashboard/accounts/dcr/review/${nextInvoiceId}?${currentParamsString}`);
       } else {
-        toast.success('All pending invoices have been reviewed');
-        const nextParams = new URLSearchParams();
-        if (sortBy) nextParams.set('sortBy', sortBy);
-        if (sortOrder) nextParams.set('sortOrder', sortOrder);
-        router.push(`/staff/dashboard/accounts/dcr?${nextParams.toString()}`);
+        toast.success('No more invoices pending review');
+        router.push(`/staff/dashboard/accounts/dcr?${currentParamsString}`);
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to skip DCR');
@@ -349,10 +351,7 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
       <div className="flex items-center gap-3">
         <button 
           onClick={() => {
-            const params = new URLSearchParams();
-            if (sortBy) params.set('sortBy', sortBy);
-            if (sortOrder) params.set('sortOrder', sortOrder);
-            router.push(`/staff/dashboard/accounts/dcr?${params.toString()}`);
+            router.push(`/staff/dashboard/accounts/dcr?${currentParamsString}`);
           }}
           className="p-1.5 hover:bg-gray-200 rounded-full transition-colors text-gray-600"
         >
@@ -436,9 +435,9 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
               <thead className="bg-gray-100 text-gray-600 sticky top-0 z-10 shadow-sm border-b border-gray-200">
                 <tr>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider w-[60px] text-center">Select</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider min-w-[400px]">Item</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider min-w-[300px]">Item</th>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-[80px]">Qty</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-[100px]">Unit Price</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-[120px]">Unit Price</th>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-[120px]">Line Value</th>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-center w-[120px]">Suggested</th>
                 </tr>
@@ -477,7 +476,7 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
                         </div>
                         {item.description && (
                           <div 
-                            className="text-[11px] text-gray-500 mt-1 break-normal break-words whitespace-normal font-normal line-clamp-3"
+                            className="text-[11px] text-gray-500 mt-1 break-normal break-words whitespace-normal font-normal line-clamp-2"
                             style={{ lineHeight: 1.3 }}
                           >
                             {item.description}

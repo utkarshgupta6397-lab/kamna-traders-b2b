@@ -34,8 +34,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
             zohoInvoice.line_items.map((zItem: any) => {
               const matchingDbItem = invoice.items.find(item => item.itemId === zItem.item_id && item.source === 'ZOHO');
               if (matchingDbItem) {
-                const rate = zItem.rate ?? zItem.bcy_rate ?? 0;
-                const amount = zItem.item_total ?? (rate * zItem.quantity);
+                let rate = zItem.rate ?? zItem.bcy_rate ?? null;
+                const amount = zItem.item_total ?? (rate ? rate * zItem.quantity : 0);
+                if (rate === null || rate === 0) {
+                  rate = (amount && zItem.quantity) ? amount / zItem.quantity : 0;
+                }
                 const description = zItem.description ?? zItem.item_description ?? zItem.sales_description ?? null;
                 return prisma.dcrInvoiceItem.update({
                   where: { id: matchingDbItem.id },

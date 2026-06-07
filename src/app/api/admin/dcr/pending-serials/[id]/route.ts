@@ -118,16 +118,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       });
     }
 
-    const skuMismatchSerials = existingSerials.filter(s => s.skuLocked && s.skuId && s.skuId !== itemId);
+    const skuMismatchSerials = existingSerials.filter(s => {
+      if (!s.skuLocked || !s.skuId) return false;
+      // Allow if it matches the SKU, or the legacy itemId
+      return s.skuId !== targetItem.sku && s.skuId !== itemId;
+    });
+
     if (skuMismatchSerials.length > 0) {
-      const mismatchItemIds = Array.from(new Set(skuMismatchSerials.map(s => s.skuId).filter(Boolean))) as string[];
-      const mismatchItems = await prisma.dcrInvoiceItem.findMany({
-        where: { id: { in: mismatchItemIds } }
-      });
+      const mismatchIds = Array.from(new Set(skuMismatchSerials.map(s => s.skuId).filter(Boolean))) as string[];
+      
+      const [mismatchSkus, mismatchInvoiceItems] = await Promise.all([
+        prisma.sku.findMany({ where: { id: { in: mismatchIds } } }),
+        prisma.dcrInvoiceItem.findMany({ where: { id: { in: mismatchIds } } })
+      ]);
       
       skuMismatchSerials.forEach(s => {
-        const originalItem = mismatchItems.find(i => i.id === s.skuId);
-        const originalName = originalItem ? originalItem.itemName : 'another item';
+        const skuRec = mismatchSkus.find(i => i.id === s.skuId);
+        const invItemRec = mismatchInvoiceItems.find(i => i.id === s.skuId);
+        const originalName = skuRec ? skuRec.name : (invItemRec ? invItemRec.itemName : s.skuId);
         validationErrors.push(`SKU mismatch for serial: ${s.serialNumber}. It is locked to ${originalName}.`);
       });
     }
@@ -157,7 +165,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           const newSerial = await tx.dcrSerial.create({
             data: {
               serialNumber: serial,
-              skuId: itemId,
+              skuId: targetItem.sku,
               serialSource: 'SALES_AUTO_CREATED',
               status: 'ALLOCATED',
               purchaseReceived: true,
@@ -180,7 +188,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           dcrSerialId = existing.id;
           await tx.dcrSerial.update({
             where: { id: dcrSerialId },
-            data: { status: 'ALLOCATED', skuId: itemId }
+            data: { status: 'ALLOCATED', skuId: targetItem.sku }
           });
         }
 

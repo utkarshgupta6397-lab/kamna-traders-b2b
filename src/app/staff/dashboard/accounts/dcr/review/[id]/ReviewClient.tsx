@@ -423,10 +423,10 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         
         {/* Zoho Items */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[500px]">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[650px] lg:col-span-3">
           <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 shrink-0">
             <h3 className="font-semibold text-gray-800 text-sm">Select Products Requiring DCR</h3>
             <p className="text-[11px] text-gray-500 mt-0.5">Check items from the Zoho invoice that need DCR tracking.</p>
@@ -436,20 +436,27 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
               <thead className="bg-gray-100 text-gray-600 sticky top-0 z-10 shadow-sm border-b border-gray-200">
                 <tr>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider w-[60px] text-center">Select</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider w-[40%]">Item</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-[10%]">Qty</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-[15%]">Unit Price</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-[15%]">Line Value</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-center w-[20%]">Suggested</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider min-w-[400px]">Item</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-[80px]">Qty</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-[100px]">Unit Price</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-[120px]">Line Value</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-center w-[120px]">Suggested</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {zohoItems.map((item: any) => {
                   const isSelected = !!selections[item.id];
+                  const isRecommended = isRecommendedForDcr(item.itemName);
                   return (
                     <tr 
                       key={item.id} 
-                      className={`transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/70 hover:bg-blue-100/70' : 'hover:bg-gray-50'}`} 
+                      className={`transition-colors cursor-pointer border-l-4 ${
+                        isRecommended 
+                          ? 'border-l-green-500 bg-green-50/20 hover:bg-green-100/20' 
+                          : isSelected 
+                            ? 'border-l-transparent bg-blue-50/70 hover:bg-blue-100/70' 
+                            : 'border-l-transparent hover:bg-gray-50'
+                      }`} 
                       onClick={() => handleToggleSelection(item.id)}
                     >
                       <td className="px-4 py-2.5 text-center">
@@ -463,14 +470,15 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
                       </td>
                       <td className="px-4 py-2.5 whitespace-normal break-normal break-words">
                         <div 
-                          className={`text-xs ${isSelected ? 'font-bold text-[#1A2766]' : 'font-medium text-gray-900'} whitespace-normal break-normal break-words line-clamp-2`}
+                          className={`text-xs ${isSelected ? 'font-bold text-[#1A2766]' : 'font-medium text-gray-900'} whitespace-normal break-normal break-words`}
                           style={{ lineHeight: 1.35 }}
                         >
                           {item.itemName}
                         </div>
                         {item.description && (
                           <div 
-                            className="text-[12px] text-[#6b7280] mt-[2px] leading-tight break-normal break-words whitespace-normal font-normal line-clamp-2"
+                            className="text-[11px] text-gray-500 mt-1 break-normal break-words whitespace-normal font-normal line-clamp-3"
+                            style={{ lineHeight: 1.3 }}
                           >
                             {item.description}
                           </div>
@@ -484,9 +492,9 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
                         ₹{(item.amount || 0).toLocaleString('en-IN')}
                       </td>
                       <td className="px-4 py-2.5 text-center">
-                        {isRecommendedForDcr(item.itemName) && (
-                          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-bold uppercase tracking-wider border border-amber-200 inline-block">
-                            Recommended
+                        {isRecommended && (
+                          <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded text-[11px] font-bold border border-green-200 inline-flex items-center gap-1 whitespace-nowrap">
+                            🟢 Recommended
                           </span>
                         )}
                       </td>
@@ -499,20 +507,20 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
         </div>
 
         {/* Manual Items */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[500px]">
-          <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 shrink-0">
-            <h3 className="font-semibold text-gray-800 text-sm">Additional DCR Items (Manual)</h3>
-            <p className="text-[11px] text-gray-500 mt-0.5">Search and add supplementary items from the SKU master.</p>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[650px] lg:col-span-1">
+          <div className="px-3 py-3 border-b border-gray-200 bg-gray-50 shrink-0">
+            <h3 className="font-semibold text-gray-800 text-sm">Additional DCR Items</h3>
+            <p className="text-[10px] text-gray-500 mt-0.5">Add supplementary items from SKU master.</p>
           </div>
           
-          <div className="p-4 bg-white border-b border-gray-200 flex flex-col gap-3 shrink-0">
+          <div className="p-3 bg-white border-b border-gray-200 flex flex-col gap-2 shrink-0">
             <div className="relative">
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1">Search SKU Master</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Search SKU</label>
               <div className="relative">
-                <Search size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
+                <Search size={12} className="absolute left-2 top-2.5 text-gray-400" />
                 <input 
                   type="text" 
-                  className="w-full border border-gray-300 rounded-md pl-8 pr-3 py-2 text-xs focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]"
+                  className="w-full border border-gray-300 rounded-md pl-7 pr-2 py-1.5 text-xs focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]"
                   value={selectedSku ? selectedSku.name : skuSearch}
                   onChange={e => {
                     setSkuSearch(e.target.value);
@@ -534,9 +542,9 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
                         setShowSkuDropdown(false);
                       }}
                     >
-                      <div className="font-semibold text-blue-900 font-mono">{sku.id}</div>
-                      <div className="font-medium text-gray-900">{sku.name}</div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">
+                      <div className="font-semibold text-blue-900 font-mono text-[10px]">{sku.id}</div>
+                      <div className="font-medium text-gray-900 text-[11px] leading-snug">{sku.name}</div>
+                      <div className="text-[9px] text-gray-500 mt-0.5">
                         Case Size: {sku.caseSize}
                       </div>
                     </div>
@@ -547,67 +555,62 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
               )}
             </div>
             
-            <div className="flex gap-3">
-              <div className="w-24 shrink-0">
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1">Qty</label>
+            <div className="flex gap-2">
+              <div className="w-16 shrink-0">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Qty</label>
                 <input 
                   type="number" 
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]"
+                  className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]"
                   value={manualQty}
                   onChange={e => setManualQty(e.target.value)}
                   placeholder="0"
                   min="1"
                 />
               </div>
-              <div className="flex-1">
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600 mb-1">Remarks</label>
+              <div className="flex-1 min-w-0">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Remarks</label>
                 <input 
                   type="text" 
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]"
+                  className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]"
                   value={manualRemarks}
                   onChange={e => setManualRemarks(e.target.value)}
-                  placeholder="Optional note"
+                  placeholder="Note"
                 />
               </div>
             </div>
             <button
               onClick={handleAddManualItem}
-              className="bg-[#1A2766]/10 text-[#1A2766] hover:bg-[#1A2766]/20 border border-[#1A2766]/20 px-3 py-2 rounded-md text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 w-full mt-1"
+              className="bg-[#1A2766]/10 text-[#1A2766] hover:bg-[#1A2766]/20 border border-[#1A2766]/20 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 w-full mt-1"
             >
-              <Plus size={14} /> Add Item to Queue
+              <Plus size={14} /> Add Item
             </button>
           </div>
 
           <div className="flex-1 overflow-auto bg-gray-50/30">
             {manualItems.length > 0 ? (
-              <table className="w-full text-left text-sm">
-                <thead className="bg-gray-100 text-gray-600 sticky top-0 z-10 shadow-sm border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">SKU</th>
-                    <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-16">Qty</th>
-                    <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Remarks</th>
-                    <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-center w-12">Remove</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {manualItems.map(item => (
-                    <tr key={item.id} className="hover:bg-red-50/30 transition-colors">
-                      <td className="px-4 py-3 font-medium text-[#1A2766] text-xs leading-snug">{item.itemName}</td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-900 text-xs">{item.quantity}</td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">{item.remarks || '-'}</td>
-                      <td className="px-4 py-3 text-center">
-                        <button onClick={() => handleRemoveManualItem(item.id)} className="text-red-400 hover:text-red-600 transition-colors p-1.5 rounded-md hover:bg-red-50">
-                          <Trash2 size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="divide-y divide-gray-100">
+                {manualItems.map(item => (
+                  <div key={item.id} className="p-3 hover:bg-red-50/30 transition-colors flex items-start justify-between gap-2 text-xs">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-blue-900 leading-snug break-words whitespace-normal">{item.itemName}</div>
+                      <div className="text-gray-500 text-[10px] mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
+                        <span>Qty: <strong>{item.quantity}</strong></span>
+                        {item.remarks && <span className="break-all">| Remarks: {item.remarks}</span>}
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => handleRemoveManualItem(item.id)} 
+                      className="text-red-400 hover:text-red-600 transition-colors p-1 rounded-md hover:bg-red-50 shrink-0"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             ) : (
-              <div className="flex flex-col items-center justify-center h-full text-gray-400 p-6 text-center">
-                <p className="text-sm">No manual items added.</p>
-                <p className="text-xs mt-1">Search the master list above to append items.</p>
+              <div className="flex flex-col items-center justify-center h-full text-gray-400 p-4 text-center">
+                <p className="text-sm font-medium text-gray-500">No additional DCR items added.</p>
+                <p className="text-xs text-gray-400 mt-1">Use search above to append items from SKU Master.</p>
               </div>
             )}
           </div>

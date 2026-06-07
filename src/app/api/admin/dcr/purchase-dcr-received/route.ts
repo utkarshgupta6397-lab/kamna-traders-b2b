@@ -116,30 +116,6 @@ export async function POST(req: Request) {
           continue;
         }
 
-        if (existing.status === 'ALLOCATED') {
-          failed.push({
-            index: i + 1,
-            serial: cleaned,
-            sku: existing.skuId || "N/A",
-            failureType: "Already Allocated",
-            reason: `Serial already allocated to Invoice ${allocation?.invoice?.invoiceNumber || 'N/A'} (Customer: ${allocation?.invoice?.customerName || 'N/A'}).`,
-            suggestedAction: "Review allocation"
-          });
-          continue;
-        }
-
-        if (existing.status === 'HOLD') {
-          failed.push({
-            index: i + 1,
-            serial: cleaned,
-            sku: existing.skuId || "N/A",
-            failureType: "Serial Locked",
-            reason: `Serial is locked under Hold/Review (Current workflow status: ${existing.status}).`,
-            suggestedAction: "Check workflow status"
-          });
-          continue;
-        }
-
         if (existing.vendorDcrStatus === 'RECEIVED') {
           failed.push({
             index: i + 1,
@@ -168,7 +144,8 @@ export async function POST(req: Request) {
           serial: cleaned,
           sku: existing.skuId || skuId || "N/A",
           action: "UPDATE",
-          existingId: existing.id
+          existingId: existing.id,
+          allocatedInvoiceNumber: allocation?.invoice?.invoiceNumber || null
         });
       } else {
         if (!skuId) {
@@ -321,7 +298,17 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      imported: imported.map(i => ({ serial: i.serial, sku: i.sku, status: 'Vendor DCR Received' })),
+      imported: imported.map(i => {
+        let status = 'Vendor DCR Received';
+        if (i.allocatedInvoiceNumber) {
+          status = `Vendor DCR received. Allocated Invoice: ${i.allocatedInvoiceNumber}`;
+        }
+        return {
+          serial: i.serial,
+          sku: i.sku,
+          status
+        };
+      }),
       failed
     });
   } catch (error: any) {

@@ -15,210 +15,317 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid payload: serials array is required' }, { status: 400 });
     }
 
-    // Process serials: trim, filter empty, uppercase, drop wattage patterns like (620 Wp)
+    const imported: any[] = [];
+    const failed: any[] = [];
+    const seen = new Set<string>();
+
+    // Cleaned serials list for database query
     const cleanedSerials = rawSerials
       .map((s: string) => s.replace(/\(\s*\d+\s*W[pP]?\s*\)/g, '').trim().toUpperCase())
       .map((s: string) => s.replace(/[^A-Z0-9-]/g, '').trim())
       .filter((s: string) => s.length > 0);
 
-    if (cleanedSerials.length === 0) {
-      return NextResponse.json({ error: 'No valid serial numbers provided after cleaning.' }, { status: 400 });
-    }
-
-    // 1. Duplicate in current upload
-    const uniqueBatch = new Set(cleanedSerials);
-    if (uniqueBatch.size !== cleanedSerials.length) {
-      return NextResponse.json({ error: 'Duplicate serial numbers found in the current batch.' }, { status: 400 });
-    }
-
-    const serials = Array.from(uniqueBatch);
-
-    // Fetch existing serials from DB
+    // Fetch existing records in bulk to avoid N+1 queries
     const existingSerials = await prisma.dcrSerial.findMany({
       where: {
-        serialNumber: { in: serials }
+        serialNumber: { in: cleanedSerials }
       }
     });
 
-    const warnings: string[] = [];
-    const errors: string[] = [];
+    const allocations = await prisma.dcrSerialAllocation.findMany({
+      where: {
+        serialNumber: { in: cleanedSerials }
+      },
+      include: {
+        invoice: true
+      }
+    });
 
-    // SKU Integrity Validation
-    let skippedCount = 0;
-    for (const serial of serials) {
-      const existing = existingSerials.find(s => s.serialNumber === serial);
+    for (let i = 0; i < rawSerials.length; i++) {
+      const raw = rawSerials[i];
+      const trimmed = raw.trim();
+
+      if (!trimmed) {
+        failed.push({
+          index: i + 1,
+          serial: "",
+          sku: skuId || "N/A",
+          failureType: "Empty Serial",
+          reason: "Empty row skipped.",
+          suggestedAction: "Discard empty line"
+        });
+        continue;
+      }
+
+      // Check format on the original input
+      if (trimmed.includes(' ') || !/^[A-Z0-9-]+$/.test(trimmed.toUpperCase())) {
+        failed.push({
+          index: i + 1,
+          serial: trimmed,
+          sku: skuId || "N/A",
+          failureType: "Invalid Format",
+          reason: "Serial contains spaces or invalid special characters (only uppercase alphanumeric and hyphens allowed).",
+          suggestedAction: "Remove spaces/special characters"
+        });
+        continue;
+      }
+
+      const cleaned = trimmed
+        .replace(/\(\s*\d+\s*W[pP]?\s*\)/g, '')
+        .replace(/[^A-Z0-9-]/g, '')
+        .toUpperCase();
+
+      if (cleaned.length < 6 || cleaned.length > 30) {
+        failed.push({
+          index: i + 1,
+          serial: cleaned,
+          sku: skuId || "N/A",
+          failureType: "Invalid Format",
+          reason: `Serial length is ${cleaned.length} (must be between 6 and 30 characters).`,
+          suggestedAction: "Check length"
+        });
+        continue;
+      }
+
+      if (seen.has(cleaned)) {
+        failed.push({
+          index: i + 1,
+          serial: cleaned,
+          sku: skuId || "N/A",
+          failureType: "Duplicate Upload",
+          reason: "Duplicate in uploaded list.",
+          suggestedAction: "Remove duplicate from list"
+        });
+        continue;
+      }
+      seen.add(cleaned);
+
+      const existing = existingSerials.find(s => s.serialNumber === cleaned);
+      const allocation = allocations.find(a => a.serialNumber === cleaned);
+
       if (existing) {
+        if (existing.status === 'ISSUED') {
+          failed.push({
+            index: i + 1,
+            serial: cleaned,
+            sku: existing.skuId || "N/A",
+            failureType: "Already Issued",
+            reason: `Serial already issued to Invoice ${allocation?.invoice?.invoiceNumber || 'N/A'} (Issue Date: ${existing.updatedAt.toLocaleDateString()}).`,
+            suggestedAction: "Review allocation"
+          });
+          continue;
+        }
+
+        if (existing.status === 'ALLOCATED') {
+          failed.push({
+            index: i + 1,
+            serial: cleaned,
+            sku: existing.skuId || "N/A",
+            failureType: "Already Allocated",
+            reason: `Serial already allocated to Invoice ${allocation?.invoice?.invoiceNumber || 'N/A'} (Customer: ${allocation?.invoice?.customerName || 'N/A'}).`,
+            suggestedAction: "Review allocation"
+          });
+          continue;
+        }
+
+        if (existing.status === 'HOLD') {
+          failed.push({
+            index: i + 1,
+            serial: cleaned,
+            sku: existing.skuId || "N/A",
+            failureType: "Serial Locked",
+            reason: `Serial is locked under Hold/Review (Current workflow status: ${existing.status}).`,
+            suggestedAction: "Check workflow status"
+          });
+          continue;
+        }
+
         if (existing.vendorDcrStatus === 'RECEIVED') {
-          warnings.push(serial); // Just store the serial number for the UI to use
-          skippedCount++;
+          failed.push({
+            index: i + 1,
+            serial: cleaned,
+            sku: existing.skuId || "N/A",
+            failureType: "Already Has Vendor DCR",
+            reason: `Vendor DCR already received (Imported on: ${existing.vendorDcrReceivedAt?.toLocaleDateString() || 'N/A'}).`,
+            suggestedAction: "No action required"
+          });
+          continue;
         }
+
         if (skuId && existing.skuLocked && existing.skuId !== skuId) {
-          errors.push(`Serial number ${serial} already belongs to another SKU. SKU reassignment is not permitted.`);
+          failed.push({
+            index: i + 1,
+            serial: cleaned,
+            sku: existing.skuId || "N/A",
+            failureType: "SKU Mismatch",
+            reason: `Serial belongs to SKU: ${existing.skuId}. Expected SKU: ${skuId}. SKU locked.`,
+            suggestedAction: "Select correct SKU"
+          });
+          continue;
         }
+
+        imported.push({
+          serial: cleaned,
+          sku: existing.skuId || skuId || "N/A",
+          action: "UPDATE",
+          existingId: existing.id
+        });
       } else {
         if (!skuId) {
-          errors.push(`Serial ${serial} not found in the system. A SKU must be selected (Quick Mode) to create new serial records.`);
+          failed.push({
+            index: i + 1,
+            serial: cleaned,
+            sku: "N/A",
+            failureType: "SKU Missing",
+            reason: "Serial not found in the system. A SKU must be selected (Quick Mode) to create new serial records.",
+            suggestedAction: "Use Quick Entry mode"
+          });
+          continue;
         }
+
+        imported.push({
+          serial: cleaned,
+          sku: skuId,
+          action: "CREATE"
+        });
       }
     }
 
-    if (errors.length > 0) {
-      return NextResponse.json({ error: 'Validation failed', details: errors }, { status: 400 });
-    }
-
-    if (skippedCount > 0 && skippedCount === serials.length) {
-      // If single serial, or ALL serials in bulk are already received
-      return NextResponse.json({
-        error: 'Vendor DCR has already been received for this serial number. Duplicate receipt is not allowed.'
-      }, { status: 409 });
-    }
-
-    // Perform DB Transaction
-    await prisma.$transaction(async (tx) => {
-      for (const serial of serials) {
-        const existing = existingSerials.find(s => s.serialNumber === serial);
-        if (existing && existing.vendorDcrStatus === 'RECEIVED') {
-          continue; // Skip already received
-        }
-
-        let dcrSerialId;
-
-        if (!existing) {
-          // Create new (certificate received before panels physically received, completely allowed)
-          const newSerial = await tx.dcrSerial.create({
-            data: {
-              serialNumber: serial,
-              skuId: skuId,
-              serialSource: 'VENDOR_DCR_IMPORT', // Note: could be PURCHASE_RECEIVE if that happened first, but since it doesn't exist, we use VENDOR_DCR_IMPORT
-              status: 'AVAILABLE',
+    if (imported.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        for (const item of imported) {
+          if (item.action === "CREATE") {
+            const newSerial = await tx.dcrSerial.create({
+              data: {
+                serialNumber: item.serial,
+                skuId: item.sku,
+                serialSource: 'VENDOR_DCR_IMPORT',
+                status: 'AVAILABLE',
+                vendorDcrStatus: 'RECEIVED',
+                vendorDcrReceivedAt: new Date(),
+                vendorDcrReceivedBy: session.name || session.userId,
+                skuLocked: true
+              }
+            });
+            await tx.dcrSerialHistory.create({
+              data: {
+                serialId: newSerial.id,
+                eventType: 'VENDOR_DCR_RECEIVED',
+                eventDescription: 'Vendor DCR received (Auto-created via Import)',
+                userId: session.userId,
+              }
+            });
+          } else {
+            const updateData: any = {
               vendorDcrStatus: 'RECEIVED',
               vendorDcrReceivedAt: new Date(),
               vendorDcrReceivedBy: session.name || session.userId,
-              skuLocked: true
+            };
+            if (skuId) {
+              updateData.skuId = skuId;
+              updateData.skuLocked = true;
             }
-          });
-          dcrSerialId = newSerial.id;
-
-          await tx.dcrSerialHistory.create({
-            data: {
-              serialId: dcrSerialId,
-              eventType: 'VENDOR_DCR_RECEIVED',
-              eventDescription: 'Vendor DCR received (Auto-created via Import)',
-              userId: session.userId,
-            }
-          });
-        } else {
-          // Update existing
-          dcrSerialId = existing.id;
-          const updateData: any = {
-            vendorDcrStatus: 'RECEIVED',
-            vendorDcrReceivedAt: new Date(),
-            vendorDcrReceivedBy: session.name || session.userId,
-          };
-          if (skuId) {
-            updateData.skuId = skuId;
-            updateData.skuLocked = true;
-          }
-
-          await tx.dcrSerial.update({
-            where: { id: dcrSerialId },
-            data: updateData
-          });
-
-          await tx.dcrSerialHistory.create({
-            data: {
-              serialId: dcrSerialId,
-              eventType: 'VENDOR_DCR_RECEIVED',
-              eventDescription: 'Vendor DCR Certificate Imported',
-              userId: session.userId,
-            }
-          });
-        }
-      }
-
-      // Check if we need to update parent invoice statuses (Customer DCR Status Engine)
-      const allocations = await tx.dcrSerialAllocation.findMany({
-        where: {
-          serialNumber: { in: serials }
-        }
-      });
-
-      const invoiceIds = Array.from(new Set(allocations.map(a => a.invoiceId)));
-      
-      for (const invId of invoiceIds) {
-        const inv = await tx.dcrInvoice.findUnique({
-          where: { id: invId },
-          include: {
-            items: {
-              where: { selectedForDCR: true },
-              include: { serialAllocations: true }
-            }
-          }
-        });
-
-        if (inv) {
-          let allSerialsAllocated = true;
-          let anyVendorDcrPending = false;
-          let totalRequired = 0;
-          let totalAllocated = 0;
-
-          const invSerialNumbers = inv.items.flatMap(item => item.serialAllocations.map(a => a.serialNumber));
-          const invSerials = await tx.dcrSerial.findMany({
-            where: { serialNumber: { in: invSerialNumbers } }
-          });
-
-          inv.items.forEach(item => {
-            totalRequired += item.quantity;
-            totalAllocated += item.serialAllocations.length;
-            if (item.serialAllocations.length < item.quantity) {
-              allSerialsAllocated = false;
-            }
-          });
-
-          invSerials.forEach(s => {
-            if (s.vendorDcrStatus === 'NOT_RECEIVED') {
-              anyVendorDcrPending = true;
-            }
-          });
-
-          let nextStatus = inv.dcrStatus;
-
-          if (totalAllocated === 0) {
-            nextStatus = 'PENDING_SERIALS';
-          } else if (totalAllocated < totalRequired) {
-            nextStatus = 'PARTIALLY_ALLOCATED';
-          } else if (allSerialsAllocated) {
-            if (anyVendorDcrPending) {
-              nextStatus = 'VENDOR_DCR_PENDING';
-            } else {
-              // All serials allocated + all vendor DCRs received → Hold Queue for management approval
-              nextStatus = 'HOLD';
-            }
-          }
-
-          if (nextStatus !== inv.dcrStatus) {
-            await tx.dcrInvoice.update({
-              where: { id: inv.id },
-              data: { dcrStatus: nextStatus }
+            await tx.dcrSerial.update({
+              where: { id: item.existingId },
+              data: updateData
             });
-
-            await tx.dcrAuditLog.create({
+            await tx.dcrSerialHistory.create({
               data: {
-                entityType: 'INVOICE',
-                entityId: inv.id,
-                action: 'DCR_STATUS_UPDATED',
+                serialId: item.existingId,
+                eventType: 'VENDOR_DCR_RECEIVED',
+                eventDescription: 'Vendor DCR Certificate Imported',
                 userId: session.userId,
-                metadata: { oldStatus: inv.dcrStatus, newStatus: nextStatus, reason: 'Vendor DCR Received' }
               }
             });
           }
         }
-      }
-    });
 
-    return NextResponse.json({ success: true, warnings });
+        const allocations = await tx.dcrSerialAllocation.findMany({
+          where: {
+            serialNumber: { in: imported.map(i => i.serial) }
+          }
+        });
+
+        const invoiceIds = Array.from(new Set(allocations.map(a => a.invoiceId)));
+
+        for (const invId of invoiceIds) {
+          const inv = await tx.dcrInvoice.findUnique({
+            where: { id: invId },
+            include: {
+              items: {
+                where: { selectedForDCR: true },
+                include: { serialAllocations: true }
+              }
+            }
+          });
+
+          if (inv) {
+            let allSerialsAllocated = true;
+            let anyVendorDcrPending = false;
+            let totalRequired = 0;
+            let totalAllocated = 0;
+
+            const invSerialNumbers = inv.items.flatMap(item => item.serialAllocations.map(a => a.serialNumber));
+            const invSerials = await tx.dcrSerial.findMany({
+              where: { serialNumber: { in: invSerialNumbers } }
+            });
+
+            inv.items.forEach(item => {
+              totalRequired += item.quantity;
+              totalAllocated += item.serialAllocations.length;
+              if (item.serialAllocations.length < item.quantity) {
+                allSerialsAllocated = false;
+              }
+            });
+
+            invSerials.forEach(s => {
+              if (s.vendorDcrStatus === 'NOT_RECEIVED') {
+                anyVendorDcrPending = true;
+              }
+            });
+
+            let nextStatus = inv.dcrStatus;
+
+            if (totalAllocated === 0) {
+              nextStatus = 'PENDING_SERIALS';
+            } else if (totalAllocated < totalRequired) {
+              nextStatus = 'PARTIALLY_ALLOCATED';
+            } else if (allSerialsAllocated) {
+              if (anyVendorDcrPending) {
+                nextStatus = 'VENDOR_DCR_PENDING';
+              } else {
+                nextStatus = 'HOLD';
+              }
+            }
+
+            if (nextStatus !== inv.dcrStatus) {
+              await tx.dcrInvoice.update({
+                where: { id: inv.id },
+                data: { dcrStatus: nextStatus }
+              });
+
+              await tx.dcrAuditLog.create({
+                data: {
+                  entityType: 'INVOICE',
+                  entityId: inv.id,
+                  action: 'DCR_STATUS_UPDATED',
+                  userId: session.userId,
+                  metadata: { oldStatus: inv.dcrStatus, newStatus: nextStatus, reason: 'Vendor DCR Received' }
+                }
+              });
+            }
+          }
+        }
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      imported: imported.map(i => ({ serial: i.serial, sku: i.sku, status: 'Vendor DCR Received' })),
+      failed
+    });
   } catch (error: any) {
     console.error('[Purchase DCR Receive POST] Error:', error);
-    return NextResponse.json({ error: 'Failed to process DCR certificates' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Failed to process DCR certificates' }, { status: 500 });
   }
 }

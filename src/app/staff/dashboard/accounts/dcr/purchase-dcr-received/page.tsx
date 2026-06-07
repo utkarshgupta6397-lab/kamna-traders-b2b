@@ -27,6 +27,15 @@ function PurchaseDcrReceivedContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [skus, setSkus] = useState<any[]>([]);
 
+  // Progress Modal state
+  const [progressStage, setProgressStage] = useState<'validating' | 'duplicates' | 'saving' | null>(null);
+  const [progressCount, setProgressCount] = useState(0);
+
+  // Validation Report Modal state
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportData, setReportData] = useState<{ total: number, imported: any[], failed: any[] } | null>(null);
+  const [reportTab, setReportTab] = useState<'failed' | 'success'>('failed');
+
   useEffect(() => {
     fetch('/api/staff/skus')
       .then(r => r.json())
@@ -88,50 +97,92 @@ function PurchaseDcrReceivedContent() {
     }
 
     setIsSubmitting(true);
+    setProgressStage('validating');
+    setProgressCount(0);
+
     try {
-      const res = await fetch('/api/admin/dcr/purchase-dcr-received', {
+      const apiPromise = fetch('/api/admin/dcr/purchase-dcr-received', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ serials, skuId: mode === 'quick' ? skuId : undefined })
       });
+
+      const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+      // Simulate step-by-step progress metrics as requested
+      for (let c = 0; c <= serials.length; c += Math.max(1, Math.ceil(serials.length / 5))) {
+        setProgressCount(Math.min(c, serials.length));
+        await wait(80);
+      }
+      setProgressCount(serials.length);
+      await wait(100);
+
+      setProgressStage('duplicates');
+      setProgressCount(0);
+      for (let c = 0; c <= serials.length; c += Math.max(1, Math.ceil(serials.length / 5))) {
+        setProgressCount(Math.min(c, serials.length));
+        await wait(80);
+      }
+      setProgressCount(serials.length);
+      await wait(100);
+
+      setProgressStage('saving');
+      setProgressCount(serials.length);
+
+      const res = await apiPromise;
       const data = await res.json();
       if (!res.ok) {
-        if (res.status === 409) {
-          toast((t) => (
-            <div className="flex flex-col gap-1">
-              <span className="font-bold text-red-800">DCR Already Received</span>
-              <span className="text-sm text-red-700">Vendor DCR has already been received for these serials. Duplicate receipt is not allowed.</span>
-            </div>
-          ), { duration: 6000, style: { background: '#FEF2F2', border: '1px solid #FCA5A5' } });
-        } else {
-          throw new Error(data.error || (data.details?.join(', ')) || 'Failed');
-        }
-        return;
+        throw new Error(data.error || 'Failed to process DCR certificates');
       }
 
-      if (data.warnings?.length) {
-        toast((t) => (
-          <div className="flex flex-col gap-1">
-            <span className="font-bold text-amber-800">Some Serials Already Processed</span>
-            <span className="text-sm text-amber-700">{data.warnings.length} serial(s) were skipped because Vendor DCR has already been marked as received.</span>
-          </div>
-        ), { duration: 6000, style: { background: '#FEF3C7', border: '1px solid #FCD34D' } });
-      } else {
-        toast.success('Vendor DCR certificates imported successfully.');
+      setReportData({
+        total: serials.length,
+        imported: data.imported || [],
+        failed: data.failed || []
+      });
+      setReportTab(data.failed?.length > 0 ? 'failed' : 'success');
+      setShowReportModal(true);
+
+      if (data.imported?.length > 0) {
+        toast.success(`Successfully processed ${data.imported.length} DCR certificates.`);
+        
+        if (mode === 'prefilled') {
+          const successSerials = new Set(data.imported.map((i: any) => i.serial));
+          const updatedLines = prefilledLines.map(line => {
+            const lineSerials = line.rawText.split(/[\s,\n]+/).filter(Boolean);
+            const remaining = lineSerials.filter(s => !successSerials.has(s.trim().toUpperCase()));
+            return {
+              ...line,
+              rawText: remaining.join('\n')
+            };
+          });
+          setPrefilledLines(updatedLines);
+          
+          const totalRemaining = updatedLines.reduce((acc, l) => acc + l.rawText.split(/[\s,\n]+/).filter(Boolean).length, 0);
+          if (totalRemaining === 0) {
+            setIsFullyProcessed(true);
+          }
+        } else {
+          if (data.failed?.length > 0) {
+            const failedSerials = data.failed.map((f: any) => f.serial || '').filter(Boolean);
+            setRawText(failedSerials.join('\n'));
+          } else {
+            setRawText('');
+            if (mode === 'quick') {
+              setSkuId('');
+              setSkuSearch('');
+            }
+          }
+        }
+        refreshStats();
+      } else if (data.failed?.length > 0) {
+        toast.error('All serial numbers failed validation checks.');
       }
-      
-      if (mode === 'prefilled') {
-        setIsFullyProcessed(true);
-        setPrefilledLines([]);
-      } else {
-        setRawText('');
-        if (mode === 'quick') { setSkuId(''); setSkuSearch(''); }
-      }
-      refreshStats();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || 'An unexpected failure occurred.');
     } finally {
       setIsSubmitting(false);
+      setProgressStage(null);
     }
   };
 
@@ -139,6 +190,24 @@ function PurchaseDcrReceivedContent() {
     const updated = [...prefilledLines];
     updated[index].rawText = newText;
     setPrefilledLines(updated);
+  };
+
+  const handleDownloadReport = () => {
+    if (!reportData) return;
+    const headers = ['Serial', 'Result', 'Reason'];
+    const rows = [
+      ...reportData.imported.map((i: any) => [i.serial, 'Success', i.status]),
+      ...reportData.failed.map((f: any) => [f.serial, 'Failed', f.reason])
+    ];
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + [headers.join(','), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `dcr_import_report_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -343,6 +412,174 @@ function PurchaseDcrReceivedContent() {
 
       {skuDropdownOpen && (
         <div className="fixed inset-0 z-10" onClick={() => setSkuDropdownOpen(false)} />
+      )}
+
+      {/* Progress Modal */}
+      {isSubmitting && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl p-6 text-center space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="relative w-16 h-16 mx-auto">
+              <div className="absolute inset-0 rounded-full border-4 border-gray-100"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-t-[#1A2766] animate-spin"></div>
+            </div>
+            
+            <div className="space-y-1">
+              <h3 className="font-bold text-gray-900 text-sm">
+                {progressStage === 'validating' ? 'Validating Certificates...' :
+                 progressStage === 'duplicates' ? 'Checking Duplicates...' :
+                 'Saving Serials...'}
+              </h3>
+              <p className="text-xs text-gray-500 font-medium animate-pulse">
+                {progressCount} / {mode === 'prefilled' ? prefilledLines.flatMap(l => l.rawText.split(/[\s,\n]+/).filter(Boolean)).length : rawText.split(/[\s,\n]+/).filter(Boolean).length}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Validation Report Modal */}
+      {showReportModal && reportData && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-4xl shadow-xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
+            
+            <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
+              <h3 className="font-bold text-gray-900 text-sm">Certificate Import Validation Report</h3>
+              <button 
+                onClick={() => setShowReportModal(false)}
+                className="text-gray-400 hover:text-gray-600 font-medium text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50/50 border-b border-gray-100 grid grid-cols-3 gap-4 text-center shrink-0">
+              <div className="p-3 bg-white border border-gray-200 rounded-xl shadow-sm">
+                <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Entered</span>
+                <span className="text-lg font-bold text-gray-900">{reportData.total}</span>
+              </div>
+              <div className="p-3 bg-white border border-emerald-200 rounded-xl shadow-sm">
+                <span className="block text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Successfully Imported</span>
+                <span className="text-lg font-bold text-emerald-600">{reportData.imported.length} Imported</span>
+              </div>
+              <div className="p-3 bg-white border border-red-200 rounded-xl shadow-sm">
+                <span className="block text-[10px] font-bold text-red-500 uppercase tracking-wider">Failed</span>
+                <span className="text-lg font-bold text-red-600">{reportData.failed.length} Failed</span>
+              </div>
+            </div>
+
+            <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between shrink-0 bg-white">
+              <div className="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setReportTab('failed')}
+                  className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                    reportTab === 'failed' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Validation Failures ({reportData.failed.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReportTab('success')}
+                  className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                    reportTab === 'success' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Imported Successfully ({reportData.imported.length})
+                </button>
+              </div>
+              
+              <button
+                type="button"
+                onClick={handleDownloadReport}
+                className="bg-[#1A2766]/10 text-[#1A2766] hover:bg-[#1A2766]/20 border border-[#1A2766]/20 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5"
+              >
+                Download Validation Report
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto bg-gray-50 p-6">
+              {reportTab === 'failed' ? (
+                reportData.failed.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500 text-sm font-medium">No validation failures.</div>
+                ) : (
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                    <table className="w-full text-left text-xs table-fixed">
+                      <thead className="bg-gray-100 text-gray-600 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 font-semibold w-[50px] text-center">#</th>
+                          <th className="px-4 py-3 font-semibold w-[180px]">Serial Number</th>
+                          <th className="px-4 py-3 font-semibold w-[100px]">SKU</th>
+                          <th className="px-4 py-3 font-semibold w-[140px]">Failure Type</th>
+                          <th className="px-4 py-3 font-semibold">Detailed Reason</th>
+                          <th className="px-4 py-3 font-semibold w-[140px]">Suggested Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {reportData.failed.map((f: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-red-50/20 transition-colors">
+                            <td className="px-4 py-2.5 text-center text-gray-400 font-mono font-medium">{f.index || idx + 1}</td>
+                            <td className="px-4 py-2.5 font-mono font-bold text-red-700 break-all">{f.serial || '-'}</td>
+                            <td className="px-4 py-2.5 font-mono text-gray-600">{f.sku}</td>
+                            <td className="px-4 py-2.5">
+                              <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 text-[10px] font-bold uppercase border border-red-200">
+                                {f.failureType}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-600 break-words">{f.reason}</td>
+                            <td className="px-4 py-2.5 font-medium text-blue-900">{f.suggestedAction}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              ) : (
+                reportData.imported.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500 text-sm font-medium">No serials successfully imported.</div>
+                ) : (
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                    <table className="w-full text-left text-xs table-fixed">
+                      <thead className="bg-gray-100 text-gray-600 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 font-semibold w-[60px] text-center">#</th>
+                          <th className="px-4 py-3 font-semibold w-[220px]">Serial</th>
+                          <th className="px-4 py-3 font-semibold w-[150px]">SKU</th>
+                          <th className="px-4 py-3 font-semibold">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {reportData.imported.map((imp: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-emerald-50/20 transition-colors">
+                            <td className="px-4 py-2.5 text-center text-gray-400 font-mono">{idx + 1}</td>
+                            <td className="px-4 py-2.5 font-mono font-bold text-emerald-700">{imp.serial}</td>
+                            <td className="px-4 py-2.5 font-mono text-gray-600">{imp.sku}</td>
+                            <td className="px-4 py-2.5">
+                              <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase border border-emerald-200">
+                                {imp.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              )}
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowReportModal(false)}
+                className="bg-gray-900 text-white font-bold py-2 px-6 rounded-xl text-xs hover:bg-gray-800 transition-colors"
+              >
+                Close Report
+              </button>
+            </div>
+            
+          </div>
+        </div>
       )}
     </div>
   );

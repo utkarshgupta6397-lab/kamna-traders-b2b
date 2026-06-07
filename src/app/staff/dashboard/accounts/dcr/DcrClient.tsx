@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { ExternalLink, Calendar, Search, ChevronLeft, ChevronRight, Activity, X } from 'lucide-react';
 import { useDcrStats } from './layout';
@@ -10,6 +10,9 @@ const ZOHO_ORG_ID = process.env.NEXT_PUBLIC_ZOHO_ORG_ID || '';
 
 export default function DcrClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sortBy = searchParams.get('sortBy') || '';
+  const sortOrder = searchParams.get('sortOrder') || '';
   const { refreshStats } = useDcrStats();
   
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -71,7 +74,7 @@ export default function DcrClient() {
 
   useEffect(() => {
     fetchInvoices();
-  }, [viewState, page, limit]);
+  }, [viewState, page, limit, sortBy, sortOrder]);
 
   useEffect(() => {
     if (cooldown > 0) {
@@ -134,7 +137,7 @@ export default function DcrClient() {
   const fetchInvoices = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/admin/dcr/invoices?view=${viewState}&page=${page}&limit=${limit}`);
+      const res = await fetch(`/api/admin/dcr/invoices?view=${viewState}&page=${page}&limit=${limit}&sortBy=${sortBy}&sortOrder=${sortOrder}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       
@@ -151,6 +154,40 @@ export default function DcrClient() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSort = (field: 'date' | 'total') => {
+    const params = new URLSearchParams(window.location.search);
+    const currentSortBy = params.get('sortBy');
+    const currentSortOrder = params.get('sortOrder');
+
+    setPage(1);
+
+    if (field === 'date') {
+      if (!currentSortBy || currentSortBy !== 'date') {
+        params.set('sortBy', 'date');
+        params.set('sortOrder', 'asc');
+      } else if (currentSortOrder === 'asc') {
+        params.set('sortBy', 'date');
+        params.set('sortOrder', 'desc');
+      } else {
+        params.delete('sortBy');
+        params.delete('sortOrder');
+      }
+    } else if (field === 'total') {
+      if (!currentSortBy || currentSortBy !== 'total') {
+        params.set('sortBy', 'total');
+        params.set('sortOrder', 'desc');
+      } else if (currentSortOrder === 'desc') {
+        params.set('sortBy', 'total');
+        params.set('sortOrder', 'asc');
+      } else {
+        params.delete('sortBy');
+        params.delete('sortOrder');
+      }
+    }
+
+    router.push(`${window.location.pathname}?${params.toString()}`);
   };
 
   const startCooldown = () => {
@@ -351,9 +388,27 @@ export default function DcrClient() {
                 <tr>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider w-12 text-center border-b border-gray-200">#</th>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider border-b border-gray-200 w-44">Invoice Number</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider border-b border-gray-200 w-32">Date</th>
-                    <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider border-b border-gray-200">Customer</th>
-                    <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right border-b border-gray-200 w-28">Total</th>
+                  <th 
+                    className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider border-b border-gray-200 w-32 cursor-pointer select-none hover:bg-gray-200/50 transition-colors"
+                    onClick={() => handleSort('date')}
+                  >
+                    <div className="flex items-center gap-1 justify-start">
+                      <span>Date</span>
+                      {sortBy === 'date' && sortOrder === 'desc' && <span className="text-[#1A2766] font-bold">↓</span>}
+                      {sortBy === 'date' && sortOrder === 'asc' && <span className="text-[#1A2766] font-bold">↑</span>}
+                    </div>
+                  </th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider border-b border-gray-200">Customer</th>
+                  <th 
+                    className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider border-b border-gray-200 w-28 cursor-pointer select-none hover:bg-gray-200/50 transition-colors text-right"
+                    onClick={() => handleSort('total')}
+                  >
+                    <div className="flex items-center gap-1 justify-end">
+                      <span>Total</span>
+                      {sortBy === 'total' && sortOrder === 'desc' && <span className="text-[#1A2766] font-bold">↓</span>}
+                      {sortBy === 'total' && sortOrder === 'asc' && <span className="text-[#1A2766] font-bold">↑</span>}
+                    </div>
+                  </th>
                     <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-center border-b border-gray-200 w-36">Status</th>
                     <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-center border-b border-gray-200 w-32">Action</th>
                   </tr>

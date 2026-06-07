@@ -113,13 +113,21 @@ export async function POST(req: Request) {
             processedAt: isLowValue ? new Date() : null,
             processingReason: isLowValue ? 'AUTO_LOW_VALUE' : null,
             items: {
-              create: fullInvoice.line_items.map((item: any) => ({
-                itemId: item.item_id,
-                itemName: item.name,
-                sku: item.sku || null,
-                quantity: item.quantity,
-                source: 'ZOHO',
-              })),
+              create: fullInvoice.line_items.map((item: any) => {
+                const rate = item.rate ?? item.bcy_rate ?? 0;
+                const amount = item.item_total ?? (rate * item.quantity);
+                const description = item.description ?? item.item_description ?? item.sales_description ?? null;
+                return {
+                  itemId: item.item_id,
+                  itemName: item.name,
+                  sku: item.sku || null,
+                  quantity: item.quantity,
+                  rate,
+                  amount,
+                  description,
+                  source: 'ZOHO',
+                };
+              }),
             },
           },
         });

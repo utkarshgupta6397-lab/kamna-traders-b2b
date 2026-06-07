@@ -10,6 +10,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     const { id } = await params;
+    const { searchParams } = new URL(req.url);
+    const sortBy = searchParams.get('sortBy') || 'date';
+    const sortOrder = searchParams.get('sortOrder') || 'desc';
+
+    const validSortBy = ['date', 'total'].includes(sortBy) ? sortBy : 'date';
+    const validSortOrder = (['asc', 'desc'].includes(sortOrder) ? sortOrder : 'desc') as 'asc' | 'desc';
+
     const { selections, manualItems, skipDcr } = await req.json();
 
     if (!skipDcr && (!selections || !Array.isArray(manualItems))) {
@@ -24,6 +31,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!invoice) {
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
+
+    // Find next invoice ID based on current queue sorting before we update the current invoice
+    const activeInvoices = await prisma.dcrInvoice.findMany({
+      where: {
+        invoiceStatus: { not: 'void' },
+        archived: false,
+        dcrStatus: { in: ['NEW', 'UNDER_REVIEW'] }
+      },
+      orderBy: validSortBy === 'total'
+        ? { invoiceTotal: validSortOrder }
+        : { invoiceDate: validSortOrder },
+      select: { id: true }
+    });
+
+    const currentIndex = activeInvoices.findIndex(inv => inv.id === id);
+    const nextInvoiceId = currentIndex !== -1 && currentIndex < activeInvoices.length - 1
+      ? activeInvoices[currentIndex + 1].id
+      : null;
 
     // Begin a transaction
     await prisma.$transaction(async (tx) => {
@@ -42,7 +67,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         await tx.dcrInvoice.update({
           where: { id },
           data: { 
-            dcrStatus: 'NO_DCR_REQUIRED',
+            dcrStatus: 'PROCESSED_NO_DCR',
             reviewedAt: new Date(),
             archived: true,
             processedAt: new Date(),
@@ -148,7 +173,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, nextInvoiceId });
   } catch (error: any) {
     console.error('[DCR Invoice Save POST] Error:', error);
     if (error.message && error.message.includes('allocated serial numbers')) {

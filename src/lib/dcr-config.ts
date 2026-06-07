@@ -16,7 +16,9 @@ export const DCR_RECOMMENDATION_KEYWORDS = [
   "N Type",
   "Panel",
   "Module",
-  "PV Module"
+  "PV Module",
+  "Solar Kit",
+  "Solar Kits"
 ];
 
 /**

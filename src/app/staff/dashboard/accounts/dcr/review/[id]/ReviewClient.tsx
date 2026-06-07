@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Plus, Trash2, Search, AlertCircle } from 'lucide-react';
 import { isRecommendedForDcr } from '@/lib/dcr-config';
@@ -9,10 +9,14 @@ import { useDcrStats } from '../../layout';
 
 export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sortBy = searchParams.get('sortBy') || '';
+  const sortOrder = searchParams.get('sortOrder') || '';
   const { refreshStats } = useDcrStats();
   const [invoice, setInvoice] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [submissionMode, setSubmissionMode] = useState<'save' | 'saveNext' | 'noDcr' | null>(null);
   
   // SKU Master for manual entry
   const [skuMaster, setSkuMaster] = useState<any[]>([]);
@@ -137,7 +141,7 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
     setManualItems(prev => prev.filter(i => i.id !== id));
   };
 
-  const handleSave = async () => {
+  const handleSave = async (andNext: boolean = false) => {
     try {
       // Validate deselections and removals against allocated serials
       if (invoice && invoice.items) {
@@ -158,8 +162,13 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
         }
       }
 
+      setSubmissionMode(andNext ? 'saveNext' : 'save');
       setSaving(true);
-      const res = await fetch(`/api/admin/dcr/invoices/${invoiceId}/save`, {
+      const params = new URLSearchParams();
+      if (sortBy) params.set('sortBy', sortBy);
+      if (sortOrder) params.set('sortOrder', sortOrder);
+
+      const res = await fetch(`/api/admin/dcr/invoices/${invoiceId}/save?${params.toString()}`, {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({ selections, manualItems }),
@@ -169,11 +178,31 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
       
       toast.success('DCR allocation saved!');
       refreshStats();
-      router.push('/staff/dashboard/accounts/dcr');
+
+      if (andNext) {
+        if (data.nextInvoiceId) {
+          const nextParams = new URLSearchParams();
+          if (sortBy) nextParams.set('sortBy', sortBy);
+          if (sortOrder) nextParams.set('sortOrder', sortOrder);
+          router.replace(`/staff/dashboard/accounts/dcr/review/${data.nextInvoiceId}?${nextParams.toString()}`);
+        } else {
+          toast.success('All pending invoices have been reviewed');
+          const nextParams = new URLSearchParams();
+          if (sortBy) nextParams.set('sortBy', sortBy);
+          if (sortOrder) nextParams.set('sortOrder', sortOrder);
+          router.push(`/staff/dashboard/accounts/dcr?${nextParams.toString()}`);
+        }
+      } else {
+        const nextParams = new URLSearchParams();
+        if (sortBy) nextParams.set('sortBy', sortBy);
+        if (sortOrder) nextParams.set('sortOrder', sortOrder);
+        router.push(`/staff/dashboard/accounts/dcr?${nextParams.toString()}`);
+      }
     } catch (err: any) {
       toast.error(err.message || 'Failed to save');
     } finally {
       setSaving(false);
+      setSubmissionMode(null);
     }
   };
 
@@ -185,9 +214,14 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
         return;
       }
 
+      setSubmissionMode('noDcr');
       setSaving(true);
       setShowSkipModal(false);
-      const res = await fetch(`/api/admin/dcr/invoices/${invoiceId}/save`, {
+      const params = new URLSearchParams();
+      if (sortBy) params.set('sortBy', sortBy);
+      if (sortOrder) params.set('sortOrder', sortOrder);
+
+      const res = await fetch(`/api/admin/dcr/invoices/${invoiceId}/save?${params.toString()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skipDcr: true }),
@@ -197,12 +231,64 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
       
       toast.success('Invoice marked as No DCR Required.');
       refreshStats();
-      router.push('/staff/dashboard/accounts/dcr');
+      
+      if (data.nextInvoiceId) {
+        const nextParams = new URLSearchParams();
+        if (sortBy) nextParams.set('sortBy', sortBy);
+        if (sortOrder) nextParams.set('sortOrder', sortOrder);
+        router.replace(`/staff/dashboard/accounts/dcr/review/${data.nextInvoiceId}?${nextParams.toString()}`);
+      } else {
+        toast.success('All pending invoices have been reviewed');
+        const nextParams = new URLSearchParams();
+        if (sortBy) nextParams.set('sortBy', sortBy);
+        if (sortOrder) nextParams.set('sortOrder', sortOrder);
+        router.push(`/staff/dashboard/accounts/dcr?${nextParams.toString()}`);
+      }
     } catch (err: any) {
       toast.error(err.message || 'Failed to skip DCR');
     } finally {
       setSaving(false);
+      setSubmissionMode(null);
       setSkipConfirmed(false);
+    }
+  };
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefreshFromZoho = async () => {
+    try {
+      setRefreshing(true);
+      const res = await fetch(`/api/admin/dcr/invoices/${invoiceId}/refresh`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      if (data.success) {
+        toast.success('Invoice refreshed from Zoho Books');
+        if (data.updatedCount > 0) {
+          toast.success(`Updated ${data.updatedCount} line items from Zoho`);
+        } else {
+          const stillMissing = data.invoice?.items?.some((item: any) => item.source === 'ZOHO' && (item.rate === 0 || item.rate === null));
+          if (stillMissing) {
+            toast.error('Zoho invoice returned no pricing data', { duration: 5000 });
+          }
+        }
+        setInvoice(data.invoice);
+        if (data.invoice && data.invoice.items) {
+          const newSelections: Record<string, boolean> = { ...selections };
+          data.invoice.items.forEach((item: any) => {
+            if (item.source === 'ZOHO') {
+              newSelections[item.id] = item.selectedForDCR;
+            }
+          });
+          setSelections(newSelections);
+        }
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to refresh invoice');
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -262,7 +348,12 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
       {/* Header Actions */}
       <div className="flex items-center gap-3">
         <button 
-          onClick={() => router.push('/staff/dashboard/accounts/dcr')}
+          onClick={() => {
+            const params = new URLSearchParams();
+            if (sortBy) params.set('sortBy', sortBy);
+            if (sortOrder) params.set('sortOrder', sortOrder);
+            router.push(`/staff/dashboard/accounts/dcr?${params.toString()}`);
+          }}
           className="p-1.5 hover:bg-gray-200 rounded-full transition-colors text-gray-600"
         >
           <ArrowLeft size={18} />
@@ -274,7 +365,24 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="bg-gray-50 px-5 py-3 border-b border-gray-200 flex justify-between items-center">
           <h3 className="font-semibold text-gray-800 text-sm">Invoice Summary</h3>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleRefreshFromZoho}
+              disabled={refreshing || submissionMode !== null}
+              className="bg-[#1A2766]/10 text-[#1A2766] hover:bg-[#1A2766]/20 border border-[#1A2766]/20 px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {refreshing ? (
+                <>
+                  <svg className="animate-spin h-3.5 w-3.5 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>Refreshing...</span>
+                </>
+              ) : (
+                'Fetch Latest Invoice Data'
+              )}
+            </button>
             <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded border ${getStatusColor(invoice.invoiceStatus)}`}>
               Invoice: {invoice.invoiceStatus}
             </span>
@@ -324,13 +432,15 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
             <p className="text-[11px] text-gray-500 mt-0.5">Check items from the Zoho invoice that need DCR tracking.</p>
           </div>
           <div className="flex-1 overflow-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-sm table-fixed">
               <thead className="bg-gray-100 text-gray-600 sticky top-0 z-10 shadow-sm border-b border-gray-200">
                 <tr>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider w-14 text-center">Select</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider">Item</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-16">Qty</th>
-                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-center w-24">Suggested</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider w-[60px] text-center">Select</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider w-[40%]">Item</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-[10%]">Qty</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-[15%]">Unit Price</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-right w-[15%]">Line Value</th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider text-center w-[20%]">Suggested</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -342,7 +452,7 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
                       className={`transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/70 hover:bg-blue-100/70' : 'hover:bg-gray-50'}`} 
                       onClick={() => handleToggleSelection(item.id)}
                     >
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-4 py-2.5 text-center">
                         <input 
                           type="checkbox" 
                           className="w-5 h-5 text-[#1A2766] rounded border-gray-300 focus:ring-[#1A2766] cursor-pointer"
@@ -351,11 +461,29 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
                           onClick={e => e.stopPropagation()}
                         />
                       </td>
-                      <td className="px-4 py-3">
-                        <div className={`text-xs leading-snug ${isSelected ? 'font-bold text-[#1A2766]' : 'font-medium text-gray-900'}`}>{item.itemName}</div>
+                      <td className="px-4 py-2.5 whitespace-normal break-normal break-words">
+                        <div 
+                          className={`text-xs ${isSelected ? 'font-bold text-[#1A2766]' : 'font-medium text-gray-900'} whitespace-normal break-normal break-words line-clamp-2`}
+                          style={{ lineHeight: 1.35 }}
+                        >
+                          {item.itemName}
+                        </div>
+                        {item.description && (
+                          <div 
+                            className="text-[12px] text-[#6b7280] mt-[2px] leading-tight break-normal break-words whitespace-normal font-normal line-clamp-2"
+                          >
+                            {item.description}
+                          </div>
+                        )}
                       </td>
-                      <td className={`px-4 py-3 text-right text-xs ${isSelected ? 'font-bold text-[#1A2766]' : 'font-medium text-gray-900'}`}>{item.quantity}</td>
-                      <td className="px-4 py-3 text-center">
+                      <td className={`px-4 py-2.5 text-right text-xs ${isSelected ? 'font-bold text-[#1A2766]' : 'font-medium text-gray-900'}`}>{item.quantity}</td>
+                      <td className={`px-4 py-2.5 text-right text-xs text-gray-600 ${isSelected ? 'font-bold' : ''}`}>
+                        ₹{(item.rate || 0).toLocaleString('en-IN')}
+                      </td>
+                      <td className={`px-4 py-2.5 text-right text-xs text-gray-900 ${isSelected ? 'font-bold text-[#1A2766]' : 'font-medium'}`}>
+                        ₹{(item.amount || 0).toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
                         {isRecommendedForDcr(item.itemName) && (
                           <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-bold uppercase tracking-wider border border-amber-200 inline-block">
                             Recommended
@@ -512,17 +640,54 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
                 }
                 setShowSkipModal(true);
               }}
-              disabled={saving || !canSkip}
+              disabled={submissionMode !== null || !canSkip}
               className="bg-white border-2 border-red-500 text-red-600 px-6 py-3 rounded-lg font-bold shadow-sm hover:bg-red-50 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm flex items-center gap-2"
             >
-              Mark No DCR Required
+              {submissionMode === 'noDcr' ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>Saving...</span>
+                </>
+              ) : (
+                'Mark No DCR Required'
+              )}
             </button>
             <button
-              onClick={handleSave}
-              disabled={saving || totalSelectedCount === 0}
+              onClick={() => handleSave(false)}
+              disabled={submissionMode !== null || totalSelectedCount === 0}
               className="bg-[#1A2766] text-white px-8 py-3 rounded-lg font-bold shadow-md hover:bg-[#1A2766]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm flex items-center gap-2"
             >
-              {saving ? 'Saving...' : 'Save & Continue'}
+              {submissionMode === 'save' ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>Saving...</span>
+                </>
+              ) : (
+                'Save & Continue'
+              )}
+            </button>
+            <button
+              onClick={() => handleSave(true)}
+              disabled={submissionMode !== null || totalSelectedCount === 0}
+              className="bg-[#1A2766] text-white px-8 py-3 rounded-lg font-bold shadow-md hover:bg-[#1A2766]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm flex items-center gap-2"
+            >
+              {submissionMode === 'saveNext' ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>Saving & Opening Next...</span>
+                </>
+              ) : (
+                'Save & Next Invoice'
+              )}
             </button>
           </div>
         </div>

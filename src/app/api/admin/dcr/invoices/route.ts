@@ -14,6 +14,16 @@ export async function GET(req: Request) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '25');
     const skip = (page - 1) * limit;
+
+    const sortBy = searchParams.get('sortBy') || 'date';
+    const sortOrder = searchParams.get('sortOrder') || 'desc';
+
+    const validSortBy = ['date', 'total'].includes(sortBy) ? sortBy : 'date';
+    const validSortOrder = (['asc', 'desc'].includes(sortOrder) ? sortOrder : 'desc') as 'asc' | 'desc';
+
+    const orderBy: any = validSortBy === 'total'
+      ? { invoiceTotal: validSortOrder }
+      : { invoiceDate: validSortOrder };
     
     const whereClause: any = { invoiceStatus: { not: 'void' } };
     if (view === 'active') {
@@ -30,9 +40,7 @@ export async function GET(req: Request) {
     const [invoices, totalInvoices] = await Promise.all([
       prisma.dcrInvoice.findMany({
         where: whereClause,
-        orderBy: {
-          createdAt: 'desc',
-        },
+        orderBy,
         skip,
         take: limit,
         include: {

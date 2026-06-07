@@ -549,6 +549,9 @@ model DcrInvoiceItem {
   itemName        String
   sku             String?
   quantity        Int
+  rate            Float?
+  amount          Float?
+  description     String?
   source          String   @default("ZOHO") // ZOHO or MANUAL
   selectedForDCR  Boolean  @default(false)
   remarks         String?

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Trash2, HelpCircle, Save, Layers, ListFilter, AlertCircle, CheckCircle, FileText } from 'lucide-react';
+import { ArrowLeft, Trash2, HelpCircle, Save, Layers, ListFilter, AlertCircle, CheckCircle, FileText, ExternalLink } from 'lucide-react';
 import SerialHistoryModal from '@/components/dcr/SerialHistoryModal';
 import { useDcrStats } from '../../layout';
 
@@ -282,6 +282,14 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
   const totalBalance = Math.max(0, totalRequired - totalAllocated);
   const isSavingAny = Object.values(saving).some(Boolean) || saveStep !== null;
 
+  const ZOHO_ORG_ID = process.env.NEXT_PUBLIC_ZOHO_ORG_ID || '';
+  const invoiceLink = invoice.zohoInvoiceId 
+    ? `https://books.zoho.in/app${ZOHO_ORG_ID ? '/' + ZOHO_ORG_ID : ''}#/invoices/${invoice.zohoInvoiceId}` 
+    : null;
+  const customerLink = invoice.customerId 
+    ? `https://books.zoho.in/app${ZOHO_ORG_ID ? '/' + ZOHO_ORG_ID : ''}#/contacts/${invoice.customerId}` 
+    : null;
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-24 animate-in fade-in duration-300">
       
@@ -304,12 +312,36 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
         <div className="flex items-center gap-6">
           <div>
             <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Invoice Number</span>
-            <span className="text-sm font-bold text-gray-900">{invoice.invoiceNumber}</span>
+            {invoiceLink ? (
+              <a 
+                href={invoiceLink} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-sm font-bold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 transition-colors"
+              >
+                {invoice.invoiceNumber}
+                <ExternalLink size={12} className="shrink-0" />
+              </a>
+            ) : (
+              <span className="text-sm font-bold text-gray-900">{invoice.invoiceNumber}</span>
+            )}
           </div>
           <div className="w-px bg-gray-200 h-6"></div>
           <div>
             <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Customer Name</span>
-            <span className="text-sm font-medium text-gray-900">{invoice.customerName}</span>
+            {customerLink ? (
+              <a 
+                href={customerLink} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 transition-colors"
+              >
+                {invoice.customerName}
+                <ExternalLink size={12} className="shrink-0" />
+              </a>
+            ) : (
+              <span className="text-sm font-medium text-gray-900">{invoice.customerName}</span>
+            )}
           </div>
           <div className="w-px bg-gray-200 h-6"></div>
           <div>
@@ -365,19 +397,27 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
                     }`}
                   >
                     <div className="flex-grow min-w-0 flex items-center gap-4">
-                      <div className="space-y-0.5 truncate">
-                        <div className="font-bold text-sm text-gray-900 flex items-center gap-2 truncate">
-                          <span className="truncate">{item.itemName}</span>
+                      <div className="space-y-1 w-full">
+                        <div className="font-bold text-sm text-gray-900 flex items-center gap-2 flex-wrap">
+                          <span>{item.itemName}</span>
                           {isCompleted && (
                             <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-[9px] font-bold border border-teal-200 uppercase shrink-0">
                               Completed
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
                           {item.sku && <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px] text-gray-600">SKU: {item.sku}</span>}
                           {item.remarks && <span className="italic truncate" title={item.remarks}>Note: {item.remarks}</span>}
                         </div>
+                        {item.description && (
+                          <div 
+                            className="mt-1.5 text-[11px] text-gray-500 whitespace-pre-wrap break-words leading-normal font-normal"
+                          >
+                            <span className="font-semibold text-[10px] uppercase tracking-wider block text-gray-400 mb-0.5">Description:</span>
+                            {item.description}
+                          </div>
+                        )}
                       </div>
                     </div>
 

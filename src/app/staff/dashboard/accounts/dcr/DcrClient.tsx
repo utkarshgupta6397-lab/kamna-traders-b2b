@@ -13,6 +13,7 @@ export default function DcrClient() {
   const searchParams = useSearchParams();
   const sortBy = searchParams.get('sortBy') || '';
   const sortOrder = searchParams.get('sortOrder') || '';
+  const searchParam = searchParams.get('search') || '';
   const { refreshStats } = useDcrStats();
   
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -32,7 +33,7 @@ export default function DcrClient() {
   const [showDrawer, setShowDrawer] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(searchParam);
   
   const [viewState, setViewState] = useState<'active' | 'archived'>('active');
   const [selectedQuickSync, setSelectedQuickSync] = useState<'today' | 'yesterday' | '3days' | '7days' | '15days' | 'custom' | null>('today');
@@ -74,7 +75,26 @@ export default function DcrClient() {
 
   useEffect(() => {
     fetchInvoices();
-  }, [viewState, page, limit, sortBy, sortOrder]);
+  }, [viewState, page, limit, sortBy, sortOrder, searchParam]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const currentSearch = params.get('search') || '';
+      
+      if (searchQuery.trim() !== currentSearch) {
+        if (searchQuery.trim()) {
+          params.set('search', searchQuery.trim());
+        } else {
+          params.delete('search');
+        }
+        params.set('page', '1');
+        router.push(`${window.location.pathname}?${params.toString()}`);
+      }
+    }, 300);
+
+    return () => clearTimeout(handler);
+  }, [searchQuery, router]);
 
   useEffect(() => {
     if (cooldown > 0) {
@@ -137,7 +157,7 @@ export default function DcrClient() {
   const fetchInvoices = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/admin/dcr/invoices?view=${viewState}&page=${page}&limit=${limit}&sortBy=${sortBy}&sortOrder=${sortOrder}`);
+      const res = await fetch(`/api/admin/dcr/invoices?view=${viewState}&page=${page}&limit=${limit}&sortBy=${sortBy}&sortOrder=${sortOrder}&search=${encodeURIComponent(searchParam)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       
@@ -262,11 +282,6 @@ export default function DcrClient() {
     }
   };
 
-  const filteredInvoices = invoices.filter(inv => {
-    const q = searchQuery.toLowerCase();
-    return inv.invoiceNumber.toLowerCase().includes(q) || inv.customerName.toLowerCase().includes(q);
-  });
-
   const totalPages = Math.ceil(totalInvoices / limit) || 1;
   const startRow = (page - 1) * limit + 1;
   const endRow = Math.min(page * limit, totalInvoices);
@@ -371,15 +386,22 @@ export default function DcrClient() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden min-h-[400px]">
           <div className="p-3 border-b border-gray-200 bg-gray-50 flex justify-between items-center shrink-0">
             <h3 className="font-semibold text-gray-800 text-sm">{viewState === 'active' ? 'Active Review Queue' : 'Archived Invoices'}</h3>
-            <div className="relative w-72">
-              <Search className="absolute left-3 top-2.5 text-gray-400" size={14} />
-              <input 
-                type="text" 
-                placeholder="Search invoice or customer..."
-                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-xs focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-              />
+            <div className="flex items-center gap-4">
+              {searchParam && (
+                <span className="text-xs font-semibold text-[#1A2766] bg-[#1A2766]/10 px-3 py-1.5 rounded-full">
+                  Found {totalInvoices} invoices
+                </span>
+              )}
+              <div className="relative w-72">
+                <Search className="absolute left-3 top-2.5 text-gray-400" size={14} />
+                <input 
+                  type="text" 
+                  placeholder="Search invoice or customer..."
+                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-xs focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                />
+              </div>
             </div>
           </div>
           <div className="flex-1 overflow-auto">
@@ -428,10 +450,26 @@ export default function DcrClient() {
                         <td className="px-4 py-4"><div className="h-8 bg-gray-200 rounded w-full"></div></td>
                       </tr>
                     ))
-                  ) : filteredInvoices.length === 0 ? (
-                    <tr><td colSpan={8} className="text-center py-12 text-gray-500 text-sm bg-gray-50/50">No invoices found in {viewState === 'active' ? 'Active Queue' : 'Archive'}.</td></tr>
+                  ) : invoices.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-12 text-gray-500 text-sm bg-gray-50/50">
+                        {searchParam ? (
+                          <div className="flex flex-col items-center gap-2">
+                            <span className="font-semibold text-gray-700">No invoices found.</span>
+                            <span>Try searching by:</span>
+                            <ul className="list-disc text-left mt-2">
+                              <li>Invoice Number</li>
+                              <li>Customer Name</li>
+                              <li>Location</li>
+                            </ul>
+                          </div>
+                        ) : (
+                          `No invoices found in ${viewState === 'active' ? 'Active Queue' : 'Archive'}.`
+                        )}
+                      </td>
+                    </tr>
                   ) : (
-                    filteredInvoices.map((inv, idx) => (
+                    invoices.map((inv, idx) => (
                       <tr key={inv.id} className="hover:bg-blue-50/40 transition-colors group">
                         <td className="px-4 py-3 text-center text-gray-400 text-xs font-medium align-middle">{startRow + idx}</td>
                         <td className="px-4 py-3 font-medium text-xs align-middle">

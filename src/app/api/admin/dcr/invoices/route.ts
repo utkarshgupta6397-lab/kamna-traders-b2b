@@ -37,6 +37,31 @@ export async function GET(req: Request) {
       ];
     }
 
+    const search = searchParams.get('search')?.trim();
+    if (search) {
+      const searchNumber = parseFloat(search);
+      const isNumber = !isNaN(searchNumber);
+      
+      const searchConditions: any[] = [
+        { invoiceNumber: { contains: search, mode: 'insensitive' } },
+        { customerName: { contains: search, mode: 'insensitive' } },
+        { locationName: { contains: search, mode: 'insensitive' } },
+        { dcrStatus: { contains: search.replace(/ /g, '_'), mode: 'insensitive' } }
+      ];
+
+      if (isNumber) {
+        searchConditions.push({ invoiceTotal: { equals: searchNumber } });
+      }
+
+      const existingWhere = { ...whereClause };
+      for (const key in whereClause) delete whereClause[key];
+      
+      whereClause.AND = [
+        existingWhere,
+        { OR: searchConditions }
+      ];
+    }
+
     const [invoices, totalInvoices] = await Promise.all([
       prisma.dcrInvoice.findMany({
         where: whereClause,

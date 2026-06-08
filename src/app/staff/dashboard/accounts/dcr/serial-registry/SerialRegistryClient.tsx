@@ -192,8 +192,8 @@ export default function SerialRegistryClient() {
           <div className="text-xl font-bold text-gray-900">{stats?.total || 0}</div>
         </div>
         <div 
-          onClick={() => { setVendorDcrFilter('PENDING'); setStatusFilter('ALL'); }}
-          className={`bg-white p-3 rounded-xl border ${vendorDcrFilter === 'PENDING' ? 'border-orange-500 ring-1 ring-orange-500' : 'border-gray-200'} cursor-pointer hover:border-orange-500/50 transition-all shadow-sm`}
+          onClick={() => { setVendorDcrFilter('NOT_RECEIVED'); setStatusFilter('ALL'); }}
+          className={`bg-white p-3 rounded-xl border ${vendorDcrFilter === 'NOT_RECEIVED' ? 'border-orange-500 ring-1 ring-orange-500' : 'border-gray-200'} cursor-pointer hover:border-orange-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Vendor DCR Pending</div>
           <div className="text-xl font-bold text-orange-600">{stats?.vendorDcrPending || 0}</div>
@@ -213,8 +213,8 @@ export default function SerialRegistryClient() {
           <div className="text-xl font-bold text-purple-600">{stats?.allocated || 0}</div>
         </div>
         <div 
-          onClick={() => { setStatusFilter('HOLD'); setVendorDcrFilter('ALL'); }}
-          className={`bg-white p-3 rounded-xl border ${statusFilter === 'HOLD' ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'} cursor-pointer hover:border-red-500/50 transition-all shadow-sm`}
+          onClick={() => { setStatusFilter('ALLOCATED'); setVendorDcrFilter('RECEIVED'); }}
+          className={`bg-white p-3 rounded-xl border ${statusFilter === 'ALLOCATED' && vendorDcrFilter === 'RECEIVED' ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'} cursor-pointer hover:border-red-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Hold</div>
           <div className="text-xl font-bold text-red-600">{stats?.hold || 0}</div>
@@ -267,8 +267,7 @@ export default function SerialRegistryClient() {
             className="bg-gray-50 border border-gray-200 text-gray-700 rounded-lg px-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] min-w-[160px]"
           >
             <option value="ALL">All Vendor DCR</option>
-            <option value="NOT_RECEIVED">Not Received</option>
-            <option value="PENDING">Pending</option>
+            <option value="NOT_RECEIVED">Not Received (Pending)</option>
             <option value="RECEIVED">Received</option>
             <option value="EXEMPT">Exempt</option>
           </select>

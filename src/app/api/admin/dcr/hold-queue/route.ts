@@ -14,23 +14,16 @@ export async function GET(req: Request) {
     const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
     const limit = Math.min(100, parseInt(searchParams.get('limit') || '25'));
     const skip = (page - 1) * limit;
+    
+    const sort = searchParams.get('sort') || 'outstanding_desc';
+    let orderBy: any;
+    if (sort === 'outstanding_desc') orderBy = [{ outstandingAmount: 'desc' }, { invoiceDate: 'desc' }];
+    else if (sort === 'outstanding_asc') orderBy = [{ outstandingAmount: 'asc' }, { invoiceDate: 'asc' }];
+    else if (sort === 'date_desc') orderBy = { invoiceDate: 'desc' };
+    else if (sort === 'date_asc') orderBy = { invoiceDate: 'asc' };
+    else orderBy = [{ outstandingAmount: 'desc' }, { invoiceDate: 'desc' }];
 
-    // --- Fetch outstanding balance cache (informational only) ---
-    let outstandingByCustomer: Record<string, number> = {};
-    try {
-      const cache = await prisma.invoiceSummaryCache.findUnique({ where: { id: 'singleton' } });
-      if (cache?.rows) {
-        const rows = cache.rows as any[];
-        rows.forEach((row: any) => {
-          if (row.customerId && row.amountPending != null) {
-            // Sum pending amounts per customerId in case of multiple rows
-            outstandingByCustomer[row.customerId] = (outstandingByCustomer[row.customerId] || 0) + (row.amountPending || 0);
-          }
-        });
-      }
-    } catch (_) {
-      // Cache unavailable — proceed without outstanding balance data
-    }
+    // Cache fetching has been removed in favor of direct DB outstandingAmount
 
     // --- Build where clause ---
     const whereClause: any = {
@@ -64,7 +57,7 @@ export async function GET(req: Request) {
     const [invoices, totalCount] = await Promise.all([
       prisma.dcrInvoice.findMany({
         where: whereClause,
-        orderBy: { updatedAt: 'desc' },
+        orderBy,
         skip,
         take: limit,
         include: {
@@ -125,7 +118,7 @@ export async function GET(req: Request) {
       const totalEligible = skuGroups.reduce((s, g) => s + g.eligibleSerials, 0);
       const totalReleased = skuGroups.reduce((s, g) => s + g.releasedSerials, 0);
       const releasePercentage = totalEligible > 0 ? Math.round((totalReleased / totalEligible) * 100) : 0;
-      const outstandingBalance = outstandingByCustomer[inv.customerId] || 0;
+      const outstandingBalance = inv.outstandingAmount || 0;
 
       return {
         id: inv.id,
@@ -138,6 +131,7 @@ export async function GET(req: Request) {
         invoiceTotal: inv.invoiceTotal,
         dcrStatus: inv.dcrStatus,
         outstandingBalance,
+        outstandingUpdatedAt: inv.outstandingUpdatedAt,
         totalSerials,
         totalEligible,
         totalReleased,
@@ -178,10 +172,28 @@ export async function GET(req: Request) {
     // To get total outstanding value, we need all unique customer IDs in the hold queue, not just the paginated ones.
     const allHoldInvoices = await prisma.dcrInvoice.findMany({
       where: kpiWhereClause,
-      select: { customerId: true }
+      select: { customerId: true, outstandingAmount: true }
     });
-    const uniqueCustomerIds = Array.from(new Set(allHoldInvoices.map(i => i.customerId)));
-    const outstandingValueOnHold = uniqueCustomerIds.reduce((sum, cid) => sum + (outstandingByCustomer[cid] || 0), 0);
+    
+    const customerBalances = new Map<string, number>();
+    for (const inv of allHoldInvoices) {
+      if (!customerBalances.has(inv.customerId)) {
+        customerBalances.set(inv.customerId, inv.outstandingAmount || 0);
+      }
+    }
+    
+    let outstandingValueOnHold = 0;
+    for (const amount of customerBalances.values()) {
+      outstandingValueOnHold += amount;
+    }
+    
+    let zohoApiCallsToday = 0;
+    try {
+      const { getZohoApiUsage } = await import('@/lib/zoho-api-meter');
+      zohoApiCallsToday = getZohoApiUsage().today;
+    } catch(e) {
+      console.error('Could not get Zoho API Usage:', e);
+    }
 
     return NextResponse.json({
       invoices: formattedInvoices,
@@ -193,6 +205,7 @@ export async function GET(req: Request) {
         serialsOnHold,
         readyToIssue: readyToIssueCount,
         outstandingValueOnHold,
+        zohoApiCallsToday,
       }
     });
   } catch (error: any) {

@@ -524,6 +524,16 @@ export async function getCustomerById(contactId: string): Promise<{ success: boo
        return { success: false, error: 'Customer data missing in Zoho response', raw: data };
     }
 
+    console.log('[GST Fetch Debug]', {
+      customerId: contactId,
+      zohoResponse: data,
+      gstNo: contact.gst_no,
+      gstin: contact.gstin,
+      gstNumber: contact.gst_number,
+      taxNumber: contact.tax_number,
+      taxId: contact.tax_id
+    });
+
     const billingAddr = contact.billing_address ? 
       [contact.billing_address.address, contact.billing_address.city, contact.billing_address.state, contact.billing_address.zip].filter(Boolean).join(', ') 
       : undefined;

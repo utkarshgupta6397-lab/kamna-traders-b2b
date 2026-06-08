@@ -164,6 +164,36 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
     }
   };
 
+  const handleSkipInvoice = async () => {
+    try {
+      setSaveStep('validating'); // reuse for UI blocking
+      
+      const params = new URLSearchParams(searchParams.toString());
+      if (!params.has('view')) params.set('view', 'active');
+      if (!params.has('limit')) params.set('limit', '25');
+      if (!params.has('page')) params.set('page', '1');
+      if (!params.has('sort')) params.set('sort', 'newest');
+      
+      const currentParamsString = params.toString();
+      const queueRes = await fetch(`/api/admin/dcr/pending-serials?${currentParamsString}`);
+      const queueData = await queueRes.json();
+      
+      const validInvoices = (queueData.invoices || []);
+      const currentIndex = validInvoices.findIndex((inv: any) => inv.id === invoiceId || inv.zohoInvoiceId === invoiceId);
+      
+      if (currentIndex !== -1 && currentIndex < validInvoices.length - 1) {
+        const nextInv = validInvoices[currentIndex + 1];
+        router.push(`/staff/dashboard/accounts/dcr/pending-serials/${nextInv.id}?${currentParamsString}`);
+      } else {
+        toast.success('No more invoices in queue. Returning to dashboard.');
+        router.push('/staff/dashboard/accounts/dcr/pending-serials');
+      }
+    } catch (err) {
+      toast.error('Failed to skip invoice');
+      setSaveStep(null);
+    }
+  };
+
   const handleConfirmAutoCreate = async () => {
     if (!pendingConfirmation) return;
     try {
@@ -346,6 +376,11 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
           </div>
           <div className="w-px bg-gray-200 h-6"></div>
           <div>
+            <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Location</span>
+            <span className="text-sm font-medium text-gray-900">{invoice.locationName || invoice.location || 'Location Not Available'}</span>
+          </div>
+          <div className="w-px bg-gray-200 h-6"></div>
+          <div>
             <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Invoice Date</span>
             <span className="text-sm font-medium text-gray-900">
               {new Date(invoice.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -411,14 +446,16 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
                           {item.sku && <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[10px] text-gray-600">SKU: {item.sku}</span>}
                           {item.remarks && <span className="italic truncate" title={item.remarks}>Note: {item.remarks}</span>}
                         </div>
-                        {item.description && (
-                          <div 
-                            className="mt-1.5 text-[11px] text-gray-500 whitespace-pre-wrap break-words leading-normal font-normal"
-                          >
-                            <span className="font-semibold text-[10px] uppercase tracking-wider block text-gray-400 mb-0.5">Description:</span>
-                            {item.description}
-                          </div>
-                        )}
+                        {(() => {
+                          const descText = (item.description || item.itemDescription || item.zohoLineItem?.description || '').trim();
+                          if (!descText) return null;
+                          return (
+                            <div className="mt-1.5 text-[11px] text-gray-500 whitespace-pre-wrap break-words leading-normal font-normal">
+                              <span className="font-semibold text-[10px] uppercase tracking-wider block text-gray-400 mb-0.5">Description:</span>
+                              {descText}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -523,7 +560,14 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
                       </p>
                     </div>
 
-                    <div className="flex justify-end pt-1">
+                    <div className="flex justify-end gap-3 pt-1">
+                      <button
+                        onClick={handleSkipInvoice}
+                        disabled={isSavingAny}
+                        className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 px-6 rounded-lg shadow-sm text-xs flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      >
+                        Skip Invoice
+                      </button>
                       <button
                         onClick={handleSaveSerials}
                         disabled={isSavingAny || !serialInput.trim()}

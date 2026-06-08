@@ -301,7 +301,14 @@ export default function PendingSerialsClient() {
                                 return;
                               }
                               setLoadingInvoiceId(inv.id);
-                              router.push(`/staff/dashboard/accounts/dcr/pending-serials/${inv.id}`);
+                              const currentParams = new URLSearchParams({
+                                view: viewState,
+                                page: page.toString(),
+                                limit: limit.toString(),
+                                search: searchQuery,
+                                sort: sortOrder
+                              }).toString();
+                              router.push(`/staff/dashboard/accounts/dcr/pending-serials/${inv.id}?${currentParams}`);
                             }}
                             disabled={loadingInvoiceId !== null}
                             className="bg-[#1A2766] text-white hover:bg-[#1A2766]/90 px-3 py-1.5 rounded text-xs font-semibold shadow-sm transition-colors w-full flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -323,7 +330,14 @@ export default function PendingSerialsClient() {
                                 return;
                               }
                               setLoadingInvoiceId(inv.id);
-                              router.push(`/staff/dashboard/accounts/dcr/pending-serials/${inv.id}`);
+                              const currentParams = new URLSearchParams({
+                                view: viewState,
+                                page: page.toString(),
+                                limit: limit.toString(),
+                                search: searchQuery,
+                                sort: sortOrder
+                              }).toString();
+                              router.push(`/staff/dashboard/accounts/dcr/pending-serials/${inv.id}?${currentParams}`);
                             }}
                             disabled={loadingInvoiceId !== null}
                             className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded text-xs font-semibold shadow-sm transition-colors w-full flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"

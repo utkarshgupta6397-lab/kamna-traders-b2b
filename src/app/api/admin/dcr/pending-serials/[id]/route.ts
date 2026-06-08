@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
 
 // GET: Fetch individual invoice detail with items and allocated serials
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -28,6 +29,29 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     if (!invoice) {
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    }
+
+    if (!invoice.locationName && invoice.zohoInvoiceId) {
+      try {
+        const orgId = getZohoOrgId();
+        const accessToken = await getZohoTokens();
+        if (orgId && accessToken) {
+          const zohoRes = await fetch(`${process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in'}/books/v3/invoices/${invoice.zohoInvoiceId}?organization_id=${orgId}`, {
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }
+          });
+          if (zohoRes.ok) {
+            const zohoData = await zohoRes.json();
+            const fetchedLoc = zohoData.invoice?.branch_name || zohoData.invoice?.location || 'Location Not Available';
+            await prisma.dcrInvoice.update({
+              where: { id: invoice.id },
+              data: { locationName: fetchedLoc }
+            });
+            invoice.locationName = fetchedLoc;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch Zoho invoice location', e);
+      }
     }
 
     return NextResponse.json({ invoice });

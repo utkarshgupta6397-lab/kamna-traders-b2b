@@ -193,15 +193,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
             if (s.vendorDcrStatus !== 'RECEIVED') {
               vendorDcrPending++;
               totalVendorDcrPending++;
-            }
-
-            if (s.status === 'ISSUED') {
+            } else if (s.status === 'ISSUED') {
               issued++;
               totalIssued++;
             } else if (s.status === 'READY_TO_ISSUE') {
               readyToIssue++;
               totalReadyToIssue++;
-            } else if (s.status === 'HOLD') {
+            } else {
+              // Any other status (HOLD, ALLOCATED, RETURNED) when vendor DCR is received is considered On Hold.
+              // This strictly maintains the invariant: DCR_PANELS = SERIAL_PENDING + VENDOR_DCR_PENDING + ON_HOLD + READY_TO_ISSUE + ISSUED
               onHold++;
               totalOnHold++;
             }

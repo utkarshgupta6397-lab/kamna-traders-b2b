@@ -91,10 +91,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
         const s = alloc.serial;
         if (!s) return null;
         
-        if (s.vendorDcrStatus !== 'RECEIVED') vendorDcrPending++;
-        if (s.status === 'ISSUED') issued++;
-        else if (s.status === 'READY_TO_ISSUE') readyToIssue++;
-        else if (s.status === 'HOLD') onHold++;
+        if (s.vendorDcrStatus !== 'RECEIVED') {
+          vendorDcrPending++;
+        } else if (s.status === 'ISSUED') {
+          issued++;
+        } else if (s.status === 'READY_TO_ISSUE') {
+          readyToIssue++;
+        } else {
+          onHold++;
+        }
 
         // Identify serial vendor
         let serialVendor = s.vendorName || itemVendor;

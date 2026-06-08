@@ -180,13 +180,24 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
         const queueRes = await fetch(`/api/admin/dcr/invoices?${currentParamsString}`);
         const queueData = await queueRes.json();
         
-        let nextInvoiceId = null;
-        if (queueData.invoices && queueData.invoices.length > 0) {
-          const nextInvoice = queueData.invoices.find((inv: any) => inv.id !== invoiceId && ['NEW', 'UNDER_REVIEW'].includes(inv.dcrStatus));
-          if (nextInvoice) {
-            nextInvoiceId = nextInvoice.id;
-          }
+        const validInvoices = (queueData.invoices || []).filter((inv: any) => ['NEW', 'UNDER_REVIEW'].includes(inv.dcrStatus));
+        const currentIndex = validInvoices.findIndex((inv: any) => inv.id === invoiceId);
+
+        let nextInvoice = null;
+        if (currentIndex !== -1 && currentIndex + 1 < validInvoices.length) {
+          nextInvoice = validInvoices[currentIndex + 1];
+        } else if (currentIndex === -1 && validInvoices.length > 0) {
+          nextInvoice = validInvoices[0];
         }
+
+        console.log('--- Navigation Debug ---');
+        console.log('Current Invoice:', invoiceId);
+        console.log('Next Invoice:', nextInvoice ? nextInvoice.id : 'None');
+        console.log('Queue Position:', currentIndex !== -1 ? currentIndex + 1 : 'Not in queue');
+        console.log('Remaining Queue Count:', validInvoices.length);
+        console.log('------------------------');
+
+        let nextInvoiceId = nextInvoice ? nextInvoice.id : null;
 
         if (nextInvoiceId) {
           router.replace(`/staff/dashboard/accounts/dcr/review/${nextInvoiceId}?${currentParamsString}`);
@@ -220,13 +231,24 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
       const queueRes = await fetch(`/api/admin/dcr/invoices?${currentParamsString}`);
       const queueData = await queueRes.json();
       
-      let nextInvoiceId = null;
-      if (queueData.invoices && queueData.invoices.length > 0) {
-        const nextInvoice = queueData.invoices.find((inv: any) => inv.id !== invoiceId && ['NEW', 'UNDER_REVIEW'].includes(inv.dcrStatus));
-        if (nextInvoice) {
-          nextInvoiceId = nextInvoice.id;
-        }
+      const validInvoices = (queueData.invoices || []).filter((inv: any) => ['NEW', 'UNDER_REVIEW'].includes(inv.dcrStatus));
+      const currentIndex = validInvoices.findIndex((inv: any) => inv.id === invoiceId);
+
+      let nextInvoice = null;
+      if (currentIndex !== -1 && currentIndex + 1 < validInvoices.length) {
+        nextInvoice = validInvoices[currentIndex + 1];
+      } else if (currentIndex === -1 && validInvoices.length > 0) {
+        nextInvoice = validInvoices[0];
       }
+
+      console.log('--- Navigation Debug ---');
+      console.log('Current Invoice:', invoiceId);
+      console.log('Next Invoice:', nextInvoice ? nextInvoice.id : 'None');
+      console.log('Queue Position:', currentIndex !== -1 ? currentIndex + 1 : 'Not in queue');
+      console.log('Remaining Queue Count:', validInvoices.length);
+      console.log('------------------------');
+
+      let nextInvoiceId = nextInvoice ? nextInvoice.id : null;
 
       if (nextInvoiceId) {
         router.replace(`/staff/dashboard/accounts/dcr/review/${nextInvoiceId}?${currentParamsString}`);
@@ -274,13 +296,24 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
       const queueRes = await fetch(`/api/admin/dcr/invoices?${currentParamsString}`);
       const queueData = await queueRes.json();
       
-      let nextInvoiceId = null;
-      if (queueData.invoices && queueData.invoices.length > 0) {
-        const nextInvoice = queueData.invoices.find((inv: any) => inv.id !== invoiceId && ['NEW', 'UNDER_REVIEW'].includes(inv.dcrStatus));
-        if (nextInvoice) {
-          nextInvoiceId = nextInvoice.id;
-        }
+      const validInvoices = (queueData.invoices || []).filter((inv: any) => ['NEW', 'UNDER_REVIEW'].includes(inv.dcrStatus));
+      const currentIndex = validInvoices.findIndex((inv: any) => inv.id === invoiceId);
+
+      let nextInvoice = null;
+      if (currentIndex !== -1 && currentIndex + 1 < validInvoices.length) {
+        nextInvoice = validInvoices[currentIndex + 1];
+      } else if (currentIndex === -1 && validInvoices.length > 0) {
+        nextInvoice = validInvoices[0];
       }
+
+      console.log('--- Navigation Debug ---');
+      console.log('Current Invoice:', invoiceId);
+      console.log('Next Invoice:', nextInvoice ? nextInvoice.id : 'None');
+      console.log('Queue Position:', currentIndex !== -1 ? currentIndex + 1 : 'Not in queue');
+      console.log('Remaining Queue Count:', validInvoices.length);
+      console.log('------------------------');
+
+      let nextInvoiceId = nextInvoice ? nextInvoice.id : null;
 
       if (nextInvoiceId) {
         router.replace(`/staff/dashboard/accounts/dcr/review/${nextInvoiceId}?${currentParamsString}`);

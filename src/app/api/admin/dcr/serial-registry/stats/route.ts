@@ -21,10 +21,10 @@ export async function GET(req: Request) {
       issued
     ] = await Promise.all([
       prisma.dcrSerial.count(),
-      prisma.dcrSerial.count({ where: { vendorDcrStatus: 'PENDING' } }),
+      prisma.dcrSerial.count({ where: { vendorDcrStatus: 'NOT_RECEIVED' } }),
       prisma.dcrSerial.count({ where: { status: 'AVAILABLE' } }),
       prisma.dcrSerial.count({ where: { status: 'ALLOCATED' } }),
-      prisma.dcrSerial.count({ where: { status: 'HOLD' } }),
+      prisma.dcrSerial.count({ where: { vendorDcrStatus: 'RECEIVED', status: 'ALLOCATED' } }),
       prisma.dcrSerial.count({ where: { status: 'READY_TO_ISSUE' } }),
       prisma.dcrSerial.count({ where: { status: 'ISSUED' } }),
     ]);

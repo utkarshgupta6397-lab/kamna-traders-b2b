@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Search, ChevronDown, ChevronUp, CheckCircle, Loader2, Package, Copy, ExternalLink, RefreshCcw } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, CheckCircle, Loader2, Package, Copy, ExternalLink, RefreshCcw, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { useDcrStats } from '../layout';
@@ -45,7 +45,8 @@ export default function ReadyToIssueClient() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [expandedInvoices, setExpandedInvoices] = useState<Set<string>>(new Set());
+  const [drawerInvoice, setDrawerInvoice] = useState<ReadyInvoice | null>(null);
+  const [serialSearch, setSerialSearch] = useState('');
   const [kpis, setKpis] = useState({ invoicesReady: 0, serialsReady: 0 });
   const [selectedSerials, setSelectedSerials] = useState<Set<string>>(new Set());
   const [isIssuing, setIsIssuing] = useState(false);
@@ -117,13 +118,7 @@ export default function ReadyToIssueClient() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const toggleExpand = (id: string) => {
-    setExpandedInvoices(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
+  // toggleExpand logic removed in favor of Drawer
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
@@ -154,8 +149,9 @@ export default function ReadyToIssueClient() {
     }
   };
 
-  const handleCopySerials = async (serials: SerialEntry[]) => {
-    const text = serials.map(s => s.serialNumber).join(',');
+  const handleCopySerials = async (serials: SerialEntry[], separator: 'newline' | 'comma' = 'newline', contextName?: string) => {
+    const text = serials.map(s => s.serialNumber).join(separator === 'comma' ? ',' : '\n');
+    const msg = contextName ? `Copied ${serials.length} serials from ${contextName}` : `Copied ${serials.length} serials`;
     console.log('Attempting to copy:', text);
     
     const fallbackCopy = (textToCopy: string) => {
@@ -172,7 +168,7 @@ export default function ReadyToIssueClient() {
         textArea.remove();
         
         if (successful) {
-          toast.success('Serial numbers copied to clipboard');
+          toast.success(msg);
         } else {
           toast.error('Unable to copy serial numbers');
         }
@@ -185,7 +181,7 @@ export default function ReadyToIssueClient() {
     if (navigator.clipboard && window.isSecureContext) {
       try {
         await navigator.clipboard.writeText(text);
-        toast.success('Serial numbers copied to clipboard');
+        toast.success(msg);
       } catch (err) {
         console.error('Clipboard API failed, using fallback', err);
         fallbackCopy(text);
@@ -278,7 +274,6 @@ export default function ReadyToIssueClient() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {invoices.map((invoice, index) => {
-                    const isExpanded = expandedInvoices.has(invoice.id);
                     const selectedForInvoice = invoice.skuGroups.flatMap(g => g.serials.map(s => s.serialNumber)).filter(sn => selectedSerials.has(sn));
 
                     return (
@@ -360,77 +355,17 @@ export default function ReadyToIssueClient() {
                                 Issue All
                               </button>
                               <button
-                                onClick={() => toggleExpand(invoice.id)}
-                                className="text-gray-500 hover:text-gray-700 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-all flex items-center gap-1"
+                                onClick={() => {
+                                  setDrawerInvoice(invoice);
+                                  setSerialSearch('');
+                                }}
+                                className="text-gray-500 hover:text-gray-700 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-all flex items-center gap-1 bg-white shadow-sm"
                               >
-                                {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                                {isExpanded ? 'Collapse' : 'View Serials'}
+                                View Serials ({invoice.totalSerials})
                               </button>
                             </div>
                           </td>
                         </tr>
-                        {isExpanded && (
-                          <tr>
-                            <td colSpan={9} className="px-6 py-4 bg-gray-50/50 border-t border-b border-gray-100">
-                              <div className="space-y-3">
-                                {invoice.skuGroups.map(group => (
-                                  <div key={group.itemId} className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
-                                    <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                                      <button
-                                        onClick={() => handleCopySerials(group.serials)}
-                                        className="text-gray-400 hover:text-emerald-600 transition-colors"
-                                        title="Copy all serial numbers"
-                                      >
-                                        <Copy size={14} />
-                                      </button>
-                                      <span className="text-xs font-bold text-gray-700">{group.itemName}</span>
-                                      {group.sku && (
-                                        <span className="font-mono text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{group.sku}</span>
-                                      )}
-                                      <span className="ml-auto text-[10px] text-gray-400">{group.serials.length} serial{group.serials.length !== 1 ? 's' : ''}</span>
-                                    </div>
-                                    <div className="p-3 flex flex-wrap gap-2">
-                                      {group.serials.map(serial => (
-                                        <div
-                                          key={serial.allocationId}
-                                          className={`flex items-center gap-2 font-mono text-xs border px-2.5 py-1.5 rounded-md transition-colors ${
-                                            selectedSerials.has(serial.serialNumber) ? 'bg-emerald-100 border-emerald-300 text-emerald-900' : 'bg-gray-50 border-gray-200 text-gray-700'
-                                          }`}
-                                        >
-                                          <input
-                                            type="checkbox"
-                                            className="rounded text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
-                                            checked={selectedSerials.has(serial.serialNumber)}
-                                            onChange={(e) => {
-                                              const next = new Set(selectedSerials);
-                                              if (e.target.checked) next.add(serial.serialNumber);
-                                              else next.delete(serial.serialNumber);
-                                              setSelectedSerials(next);
-                                            }}
-                                            disabled={isIssuing}
-                                          />
-                                          <span className="cursor-pointer" onClick={() => {
-                                              const next = new Set(selectedSerials);
-                                              if (next.has(serial.serialNumber)) next.delete(serial.serialNumber);
-                                              else next.add(serial.serialNumber);
-                                              setSelectedSerials(next);
-                                          }}>{serial.serialNumber}</span>
-                                          <button
-                                            onClick={() => handleIssue(invoice.id, [serial.serialNumber])}
-                                            disabled={isIssuing}
-                                            className="ml-1 text-[10px] bg-white border border-gray-300 rounded px-1.5 py-0.5 text-gray-600 hover:text-emerald-700 hover:border-emerald-400 disabled:opacity-50"
-                                          >
-                                            Issue
-                                          </button>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
                       </React.Fragment>
                     );
                   })}
@@ -440,6 +375,141 @@ export default function ReadyToIssueClient() {
           </div>
         )}
       </div>
+
+      {/* Side Drawer for Serial View */}
+      {drawerInvoice && (
+        <>
+          <div 
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" 
+            onClick={() => setDrawerInvoice(null)} 
+          />
+          <div className="fixed top-0 right-0 h-full w-full max-w-[700px] bg-gray-50 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
+            
+            {/* Header */}
+            <div className="bg-white px-6 py-4 border-b border-gray-200 flex-shrink-0 flex items-start justify-between">
+              <div className="space-y-3">
+                <h2 className="text-lg font-bold tracking-tight text-gray-900">Allocated Serials</h2>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] text-gray-600">
+                  <div><span className="text-gray-400">Invoice:</span> <span className="font-semibold text-[#1A2766]">{drawerInvoice.invoiceNumber}</span></div>
+                  <div><span className="text-gray-400">Date:</span> <span>{format(new Date(drawerInvoice.invoiceDate), 'dd MMM yyyy')}</span></div>
+                  <div><span className="text-gray-400">Customer:</span> <span>{drawerInvoice.customerName}</span></div>
+                  <div><span className="text-gray-400">Value:</span> <span className="font-semibold text-gray-900">{formatCurrency(drawerInvoice.invoiceTotal)}</span></div>
+                  <div className="col-span-2">
+                    <span className="text-gray-400">GST:</span> <span className="font-mono text-xs">{(() => {
+                      const gstInfo = customerGsts[drawerInvoice.customerId];
+                      const gstValue = gstInfo ? gstInfo.gst : drawerInvoice.customer_gst_no;
+                      const isMissing = !gstValue || gstValue.trim() === '' || gstValue === 'NOT_AVAILABLE' || gstValue === '—' || gstValue === 'GST_UNAVAILABLE';
+                      return isMissing ? 'N/A' : gstValue;
+                    })()}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs font-semibold border border-gray-200">Items: {drawerInvoice.skuGroups.length}</span>
+                  <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-xs font-semibold border border-emerald-200">Serials: {drawerInvoice.totalSerials}</span>
+                </div>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <button onClick={() => setDrawerInvoice(null)} className="p-1 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-800 transition-colors">
+                  <X size={18} />
+                </button>
+                <div className="flex flex-col gap-2 mt-2">
+                  <button 
+                    onClick={() => {
+                      const allSerials = drawerInvoice.skuGroups.flatMap(g => g.serials);
+                      handleCopySerials(allSerials, 'newline');
+                    }}
+                    className="w-full text-left flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded transition-colors"
+                  >
+                    <Copy size={12} /> Copy All Lines
+                  </button>
+                  <button 
+                    onClick={() => {
+                      const allSerials = drawerInvoice.skuGroups.flatMap(g => g.serials);
+                      handleCopySerials(allSerials, 'comma');
+                    }}
+                    className="w-full text-left flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded transition-colors"
+                  >
+                    <Copy size={12} /> Copy All CSV
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Search */}
+            <div className="bg-white px-6 py-3 border-b border-gray-200 flex-shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="Search serial..."
+                  value={serialSearch}
+                  onChange={(e) => setSerialSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {drawerInvoice.skuGroups.map(group => {
+                const searchLower = serialSearch.toLowerCase();
+                const filteredSerials = group.serials.filter(s => s.serialNumber.toLowerCase().includes(searchLower));
+
+                if (serialSearch && filteredSerials.length === 0) return null;
+
+                return (
+                  <div key={group.itemId} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="font-bold text-gray-900 text-sm leading-tight">{group.itemName}</h3>
+                          <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500">
+                            <span className="font-mono">SKU: {group.sku || 'N/A'}</span>
+                            <span className="font-semibold text-emerald-700">Allocated {group.serials.length}/{group.quantity}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => handleCopySerials(group.serials, 'newline', group.itemName)}
+                            className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-white hover:bg-gray-50 px-2 py-1 rounded border border-gray-300 transition-colors"
+                          >
+                            <Copy size={12} /> Copy Item Lines
+                          </button>
+                          <button 
+                            onClick={() => handleCopySerials(group.serials, 'comma', group.itemName)}
+                            className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-white hover:bg-gray-50 px-2 py-1 rounded border border-gray-300 transition-colors"
+                          >
+                            <Copy size={12} /> Copy Item CSV
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="p-3 bg-white">
+                      <div className="flex flex-wrap gap-1.5">
+                        {filteredSerials.map(serial => (
+                          <span key={serial.allocationId} className="font-mono text-[11px] font-medium text-gray-800 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
+                            {serial.serialNumber}
+                          </span>
+                        ))}
+                      </div>
+                      {filteredSerials.length === 0 && !serialSearch && (
+                        <p className="text-xs text-gray-400 italic">No serials allocated.</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {drawerInvoice.skuGroups.every(g => !g.serials.some(s => s.serialNumber.toLowerCase().includes(serialSearch.toLowerCase()))) && serialSearch && (
+                <div className="text-center py-12">
+                  <p className="text-gray-500 font-medium">No serials found matching &quot;{serialSearch}&quot;</p>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </>
+      )}
     </div>
   );
 }

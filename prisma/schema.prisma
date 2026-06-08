@@ -525,6 +525,8 @@ model DcrInvoice {
   invoiceDate     DateTime
   invoiceStatus   String
   invoiceTotal    Float
+  outstandingAmount Float?
+  outstandingUpdatedAt DateTime?
   locationId      String?
   locationName    String?
   dcrStatus       String   @default("NEW") // NEW, UNDER_REVIEW, DCR_IDENTIFIED, PENDING_SERIALS

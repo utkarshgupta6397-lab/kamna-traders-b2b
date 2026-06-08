@@ -146,28 +146,23 @@ interface Kpis {
   serialsOnHold: number;
   readyToIssue: number;
   outstandingValueOnHold: number;
+  zohoApiCallsToday: number;
 }
 
 const ZOHO_ORG_ID = process.env.NEXT_PUBLIC_ZOHO_ORG_ID;
 
-// Module-level in-memory cache for customer statements and outstanding balances
-const customerBalanceCache: Record<string, { statement: any; fetchedAt: number }> = {};
-const CACHE_TTL = 300000; // 5 minutes in milliseconds
+// Module-level cache removed as per requirements
 
 export default function HoldQueueClient() {
   const searchParams = useSearchParams();
   const { refreshStats } = useDcrStats();
   const [invoices, setInvoices] = useState<HoldInvoice[]>([]);
-  const [kpis, setKpis] = useState<Kpis>({ invoicesOnHold: 0, serialsOnHold: 0, readyToIssue: 0, outstandingValueOnHold: 0 });
+  const [kpis, setKpis] = useState<Kpis>({ invoicesOnHold: 0, serialsOnHold: 0, readyToIssue: 0, outstandingValueOnHold: 0, zohoApiCallsToday: 0 });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-
-  // Live outstanding balances state (indexed by customerId)
-  const [liveBalances, setLiveBalances] = useState<Record<string, { balance: number; loading: boolean; error: boolean }>>({});
-
-  // Track in-flight customer statement promises to deduplicate requests
-  const inFlightRequests = useRef<Record<string, Promise<any> | undefined>>({});
+  const [sort, setSort] = useState('outstanding_desc');
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Modal states
   const [reviewInvoice, setReviewInvoice] = useState<HoldInvoice | null>(null);
@@ -198,10 +193,10 @@ export default function HoldQueueClient() {
   }, []);
 
   const fetchData = useCallback(async () => {
-    console.log(`[HoldQueueClient] Fetching hold queue invoices... search: "${debouncedSearch}"`);
+    console.log(`[HoldQueueClient] Fetching hold queue invoices... search: "${debouncedSearch}", sort: "${sort}"`);
     setLoading(true);
     try {
-      const params = new URLSearchParams({ limit: '100' });
+      const params = new URLSearchParams({ limit: '100', sort });
       if (debouncedSearch) params.set('search', debouncedSearch);
       const res = await fetch(`/api/admin/dcr/hold-queue?${params}`);
       const data = await res.json();
@@ -220,159 +215,63 @@ export default function HoldQueueClient() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch]);
+  }, [debouncedSearch, sort]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const fetchLiveBalance = useCallback(async (customerId: string) => {
-    // Check cache first
-    const cached = customerBalanceCache[customerId];
-    const now = Date.now();
-    if (cached && (now - cached.fetchedAt < CACHE_TTL)) {
-      setLiveBalances(prev => ({
-        ...prev,
-        [customerId]: { balance: cached.statement.closingBalance, loading: false, error: false }
-      }));
-      return cached.statement;
-    }
-
-    // Check if there's already an in-flight request for this customerId
-    if (inFlightRequests.current[customerId]) {
-      try {
-        const statement = await inFlightRequests.current[customerId];
-        setLiveBalances(prev => ({
-          ...prev,
-          [customerId]: { balance: statement.closingBalance, loading: false, error: false }
-        }));
-        return statement;
-      } catch (err) {
-        setLiveBalances(prev => ({
-          ...prev,
-          [customerId]: { balance: 0, loading: false, error: true }
-        }));
-        return null;
-      }
-    }
-
-    // Start a new fetch
-    const fetchPromise = (async () => {
-      const res = await fetch(`/api/admin/customer-statement/statement?customerId=${customerId}`);
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to fetch statement');
-      }
-      return data.data; // contains closingBalance, transactions, etc.
-    })();
-
-    inFlightRequests.current[customerId] = fetchPromise;
-
+  const handleRefreshOutstanding = async () => {
+    setIsRefreshing(true);
+    const toastId = toast.loading('Fetching latest balances from Zoho...');
     try {
-      const statement = await fetchPromise;
-      customerBalanceCache[customerId] = {
-        statement,
-        fetchedAt: Date.now()
-      };
-      setLiveBalances(prev => ({
-        ...prev,
-        [customerId]: { balance: statement.closingBalance, loading: false, error: false }
-      }));
-      return statement;
-    } catch (err) {
-      console.error(`Error fetching balance for ${customerId}:`, err);
-      setLiveBalances(prev => ({
-        ...prev,
-        [customerId]: { balance: 0, loading: false, error: true }
-      }));
-      return null;
+      const res = await fetch('/api/admin/dcr/hold-queue/refresh', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message || 'Successfully updated outstanding balances.', { id: toastId });
+        await fetchData();
+      } else {
+        throw new Error(data.error || 'Failed to refresh');
+      }
+    } catch (err: any) {
+      toast.error(err.message, { id: toastId });
     } finally {
-      delete inFlightRequests.current[customerId];
+      setIsRefreshing(false);
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    if (invoices.length === 0) return;
-    const uniqueIds = Array.from(new Set(invoices.map(inv => inv.customerId)));
-    
-    // Initialize loading states for those not fresh in cache
-    setLiveBalances(prev => {
-      const next = { ...prev };
-      let updated = false;
-      const now = Date.now();
-      for (const id of uniqueIds) {
-        const cached = customerBalanceCache[id];
-        const isFresh = cached && (now - cached.fetchedAt < CACHE_TTL);
-        if (isFresh) {
-          if (!next[id] || next[id].balance !== cached.statement.closingBalance || next[id].loading) {
-            next[id] = { balance: cached.statement.closingBalance, loading: false, error: false };
-            updated = true;
-          }
-        } else {
-          if (!next[id] || !next[id].loading) {
-            next[id] = { balance: next[id]?.balance || 0, loading: true, error: false };
-            updated = true;
-          }
-        }
-      }
-      return updated ? next : prev;
-    });
-
-    // Trigger background fetches
-    uniqueIds.forEach(id => {
-      const cached = customerBalanceCache[id];
-      const isFresh = cached && (Date.now() - cached.fetchedAt < CACHE_TTL);
-      if (!isFresh) {
-        fetchLiveBalance(id);
-      }
-    });
-  }, [invoices, fetchLiveBalance]);
-
-  const visibleCustomerIds = useMemo(() => {
-    return Array.from(new Set(invoices.map(inv => inv.customerId)));
+  const latestUpdated = useMemo(() => {
+    if (invoices.length === 0) return null;
+    const validDates = invoices.map((i: any) => i.outstandingUpdatedAt).filter(Boolean).map(d => new Date(d as string).getTime());
+    if (validDates.length === 0) return null;
+    return new Date(Math.max(...validDates));
   }, [invoices]);
 
-  const kpiOutstandingValue = useMemo(() => {
-    if (invoices.length === 0) return 0;
-    
-    let total = 0;
-    let anyLoading = false;
-    for (const id of visibleCustomerIds) {
-      const state = liveBalances[id];
-      if (!state || state.loading) {
-        anyLoading = true;
-        break;
+  const toggleSort = (col: 'outstanding' | 'date') => {
+    setSort(prev => {
+      if (col === 'outstanding') {
+        if (prev === 'outstanding_desc') return 'outstanding_asc';
+        if (prev === 'outstanding_asc') return 'outstanding_desc';
+        return 'outstanding_desc';
       }
-      total += state.balance;
-    }
-    return anyLoading ? 'loading' : total;
-  }, [visibleCustomerIds, liveBalances]);
+      if (col === 'date') {
+        if (prev === 'date_desc') return 'date_asc';
+        if (prev === 'date_asc') return 'date_desc';
+        return 'date_desc';
+      }
+      return 'outstanding_desc';
+    });
+  };
 
   const openReview = async (invoice: HoldInvoice) => {
     setReviewInvoice(invoice);
     setSelectedSerials(new Set());
     setExpandedSkus(new Set(invoice.skuGroups.map(g => g.itemId)));
     
-    // Check if the statement is already loaded in the cache and is fresh (5 minutes)
-    const cached = customerBalanceCache[invoice.customerId];
-    const now = Date.now();
-    if (cached && (now - cached.fetchedAt < CACHE_TTL)) {
-      console.log(`[HoldQueueClient] 0 balance API calls: using cached statement for customer ${invoice.customerId}`);
-      setStatementData(cached.statement);
-      return;
-    }
-    
-    // Fetch live customer statement
-    console.log(`[HoldQueueClient] Fetching customer statement for customerId: ${invoice.customerId}`);
     setStatementLoading(true);
     try {
       const res = await fetch(`/api/admin/customer-statement/statement?customerId=${invoice.customerId}`);
       const data = await res.json();
       if (res.ok && data.success) {
         setStatementData(data.data);
-        // Also cache the result
-        customerBalanceCache[invoice.customerId] = {
-          statement: data.data,
-          fetchedAt: Date.now()
-        };
       } else {
         toast.error('Failed to load live statement');
       }
@@ -455,7 +354,7 @@ export default function HoldQueueClient() {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="bg-white rounded-xl border border-amber-200 shadow-sm p-4 flex items-center gap-4">
             <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center flex-shrink-0">
               <Clock className="text-amber-600" size={24} />
@@ -490,19 +389,29 @@ export default function HoldQueueClient() {
             <div>
               <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Outstanding Value</p>
               <p className="text-xl font-bold text-red-700 mt-1">
-                {kpiOutstandingValue === 'loading' ? (
-                  <span className="text-sm font-normal text-gray-400 italic">— Loading...</span>
-                ) : (
-                  formatCurrency(kpiOutstandingValue as number)
-                )}
+                {formatCurrency(kpis.outstandingValueOnHold || 0)}
               </p>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border border-blue-200 shadow-sm p-4 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+              <Activity className="text-blue-600" size={24} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider group relative cursor-help">
+                Zoho API Calls Today
+                <span className="absolute hidden group-hover:block bottom-full mb-2 left-0 w-48 p-2 bg-gray-900 text-white text-[10px] leading-tight rounded shadow-lg z-50">
+                  Zoho Books API requests performed today.
+                </span>
+              </p>
+              <p className="text-2xl font-black text-blue-700 mt-1">{kpis.zohoApiCallsToday || 0}</p>
             </div>
           </div>
         </div>
 
-        {/* Search */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
-          <div className="relative">
+        {/* Search & Refresh Actions */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex flex-col sm:flex-row gap-3 items-center justify-between">
+          <div className="relative flex-1 w-full max-w-lg">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
             <input
               type="text"
@@ -511,6 +420,22 @@ export default function HoldQueueClient() {
               placeholder="Search by invoice number, customer name, or serial number..."
               className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1A2766] outline-none"
             />
+          </div>
+          
+          <div className="flex items-center gap-4 w-full sm:w-auto">
+            {latestUpdated && (
+              <span className="text-xs text-gray-500 hidden sm:inline-block">
+                Last Updated: <span className="font-semibold">{format(latestUpdated, "dd MMM yyyy hh:mm a")}</span>
+              </span>
+            )}
+            <button
+              onClick={handleRefreshOutstanding}
+              disabled={isRefreshing}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg transition-colors border border-gray-200 disabled:opacity-50 flex-shrink-0"
+            >
+              {isRefreshing ? <Loader2 size={16} className="animate-spin" /> : <Activity size={16} />}
+              🔄 Refresh Outstanding
+            </button>
           </div>
         </div>
 
@@ -532,9 +457,23 @@ export default function HoldQueueClient() {
                     <th className="px-5 py-4 w-12 text-center bg-gray-50">#</th>
                     <th className="px-5 py-4 bg-gray-50">Invoice #</th>
                     <th className="px-5 py-4 bg-gray-50">Customer Name</th>
-                    <th className="px-5 py-4 bg-gray-50">Invoice Date</th>
+                    <th className="px-5 py-4 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => toggleSort('date')}>
+                      <div className="flex items-center gap-1">
+                        INVOICE DATE
+                        <span className={`text-[10px] ${sort.startsWith('date_') ? 'text-blue-600 font-bold' : 'text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity'}`}>
+                          {sort === 'date_desc' ? '▼' : sort === 'date_asc' ? '▲' : '↕'}
+                        </span>
+                      </div>
+                    </th>
                     <th className="px-5 py-4 text-right bg-gray-50">Invoice Value</th>
-                    <th className="px-5 py-4 text-right bg-gray-50">Outstanding</th>
+                    <th className="px-5 py-4 text-right bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => toggleSort('outstanding')}>
+                      <div className="flex items-center justify-end gap-1">
+                        OUTSTANDING
+                        <span className={`text-[10px] ${sort.startsWith('outstanding_') ? 'text-blue-600 font-bold' : 'text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity'}`}>
+                          {sort === 'outstanding_desc' ? '▼' : sort === 'outstanding_asc' ? '▲' : '↕'}
+                        </span>
+                      </div>
+                    </th>
                     <th className="px-5 py-4 text-center bg-gray-50">Eligible</th>
                     <th className="px-5 py-4 text-center bg-gray-50">Released</th>
                     <th className="px-5 py-4 text-center bg-gray-50">Pending</th>
@@ -552,32 +491,39 @@ export default function HoldQueueClient() {
                       <tr key={invoice.id} className="hover:bg-blue-50/30 transition-colors group">
                         <td className="px-5 py-3 text-center text-gray-500 font-medium">{index + 1}</td>
                         <td className="px-5 py-3 font-semibold text-[#1A2766]">
-                          <a href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${invoice.customerId}&invoiceId=${invoice.id}`} className="hover:underline flex items-center gap-1">
-                            {invoice.invoiceNumber} <ExternalLink size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </a>
+                          {invoice.zohoInvoiceId ? (
+                            <a 
+                              href={`https://books.zoho.in/app/${ZOHO_ORG_ID}#/invoices/${invoice.zohoInvoiceId}`} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="hover:underline flex items-center gap-1 text-[#1A2766] w-fit"
+                            >
+                              {invoice.invoiceNumber} <ExternalLink size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </a>
+                          ) : (
+                            <span>{invoice.invoiceNumber}</span>
+                          )}
                         </td>
                         <td className="px-5 py-3 font-medium text-gray-800 truncate max-w-xs">
-                          <a href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${invoice.customerId}`} className="hover:underline hover:text-[#1A2766]">
-                            {invoice.customerName}
-                          </a>
+                          {invoice.customerId ? (
+                            <a 
+                              href={`https://books.zoho.in/app/${ZOHO_ORG_ID}#/contacts/${invoice.customerId}`} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="hover:underline hover:text-[#1A2766] flex items-center gap-1 w-fit"
+                            >
+                              {invoice.customerName} <ExternalLink size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </a>
+                          ) : (
+                            <span>{invoice.customerName}</span>
+                          )}
                         </td>
                         <td className="px-5 py-3 text-gray-600">{format(new Date(invoice.invoiceDate), 'dd MMM yyyy')}</td>
                         <td className="px-5 py-3 text-right font-medium text-gray-700">{formatCurrency(invoice.invoiceTotal)}</td>
                         <td className="px-5 py-3 text-right">
-                          {(() => {
-                            const balState = liveBalances[invoice.customerId];
-                            if (!balState || balState.loading) {
-                              return <span className="text-gray-400 italic text-xs">Loading...</span>;
-                            }
-                            if (balState.error) {
-                              return <span className="text-red-500 font-medium text-xs">Error</span>;
-                            }
-                            return (
-                              <span className={`font-bold ${balState.balance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                                {formatCurrency(balState.balance)}
-                              </span>
-                            );
-                          })()}
+                          <span className={`font-bold ${invoice.outstandingBalance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {formatCurrency(invoice.outstandingBalance)}
+                          </span>
                         </td>
                         <td className="px-5 py-3 text-center font-bold text-gray-800">{invoice.totalEligible}</td>
                         <td className="px-5 py-3 text-center font-bold text-emerald-600">{invoice.totalReleased}</td>

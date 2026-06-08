@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Search, ChevronDown, ChevronUp, CheckCircle, Loader2, Package, Copy, ExternalLink } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, CheckCircle, Loader2, Package, Copy, ExternalLink, RefreshCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { useDcrStats } from '../layout';
@@ -68,21 +68,32 @@ export default function ReadyToIssueClient() {
       const res = await fetch(`/api/admin/customer-statement/customer?customerId=${customerId}`);
       const result = await res.json();
       if (res.ok && result.success && result.data) {
+        const fetchedGst = result.data.gstNo || '';
+        const isUnavailable = fetchedGst.trim() === '' || fetchedGst === 'NOT_AVAILABLE' || fetchedGst === 'GST_UNAVAILABLE';
+        
         setCustomerGsts(prev => ({
           ...prev,
-          [customerId]: { gst: result.data.gstNo || '—', loading: false, error: false }
+          [customerId]: { gst: isUnavailable ? 'GST_UNAVAILABLE' : fetchedGst, loading: false, error: false }
         }));
+        
+        if (!isUnavailable) {
+          toast.success('GST fetched and saved successfully');
+        } else {
+          toast.error('GST not available in Zoho');
+        }
       } else {
         setCustomerGsts(prev => ({
           ...prev,
           [customerId]: { gst: '', loading: false, error: true }
         }));
+        toast.error('Failed to fetch GST');
       }
     } catch (err) {
       setCustomerGsts(prev => ({
         ...prev,
         [customerId]: { gst: '', loading: false, error: true }
       }));
+      toast.error('Failed to fetch GST');
     }
   };
 
@@ -287,32 +298,39 @@ export default function ReadyToIssueClient() {
                           <td className="px-5 py-3 text-gray-600 font-mono text-xs">
                             {(() => {
                               const gstInfo = customerGsts[invoice.customerId];
-                              if (gstInfo) {
-                                if (gstInfo.loading) {
-                                  return <span className="text-gray-400 italic">Fetching...</span>;
-                                }
-                                if (gstInfo.error) {
-                                  return <span className="text-red-500 font-medium">GST Not Available</span>;
-                                }
-                                if (gstInfo.gst === 'NOT_AVAILABLE' || gstInfo.gst === '—') {
-                                  return <span className="text-red-500 font-medium">GST Not Available</span>;
-                                }
-                                return <span>{gstInfo.gst}</span>;
+                              const gstValue = gstInfo ? gstInfo.gst : invoice.customer_gst_no;
+                              
+                              const isMissing = !gstValue || gstValue.trim() === '' || gstValue === 'NOT_AVAILABLE' || gstValue === '—' || gstValue === 'GST_UNAVAILABLE';
+
+                              console.log('GST Render Debug:', {
+                                customerId: invoice.customerId,
+                                gstNumber: gstValue,
+                                needsGSTFetch: isMissing,
+                                buttonVisible: isMissing
+                              });
+
+                              if (gstInfo?.loading) {
+                                return <span className="text-gray-400 italic">Fetching...</span>;
                               }
-                              if (invoice.customer_gst_no) {
-                                if (invoice.customer_gst_no === 'NOT_AVAILABLE' || invoice.customer_gst_no === '—') {
-                                  return <span className="text-red-500 font-medium">GST Not Available</span>;
-                                }
-                                return <span>{invoice.customer_gst_no}</span>;
+
+                              if (isMissing) {
+                                return (
+                                  <div className="flex flex-col items-start gap-1.5">
+                                    <span className="text-red-500 font-medium text-[10px]">
+                                      {gstValue === 'NOT_AVAILABLE' || gstValue === 'GST_UNAVAILABLE' || gstValue === '—' ? 'GST Not Available' : 'Not Fetched'}
+                                    </span>
+                                    <button
+                                      onClick={() => handleFetchGst(invoice.customerId)}
+                                      className="bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 hover:text-blue-700 px-3 py-1.5 rounded-md text-[11px] font-bold transition-colors shadow-sm flex items-center gap-1.5"
+                                    >
+                                      <RefreshCcw size={12} />
+                                      {gstValue ? 'Retry GST' : 'Fetch GST'}
+                                    </button>
+                                  </div>
+                                );
                               }
-                              return (
-                                <button
-                                  onClick={() => handleFetchGst(invoice.customerId)}
-                                  className="text-xs text-[#1A2766] hover:underline font-semibold"
-                                >
-                                  Fetch GST
-                                </button>
-                              );
+
+                              return <span className="font-semibold text-gray-900">{gstValue}</span>;
                             })()}
                           </td>
                           <td className="px-5 py-3 text-gray-600">{format(new Date(invoice.invoiceDate), 'dd MMM yyyy')}</td>

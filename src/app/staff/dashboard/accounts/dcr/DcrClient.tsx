@@ -398,6 +398,7 @@ export default function DcrClient() {
                       {sortBy === 'date' && sortOrder === 'asc' && <span className="text-[#1A2766] font-bold">↑</span>}
                     </div>
                   </th>
+                  <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider border-b border-gray-200 w-28">Location</th>
                   <th className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider border-b border-gray-200">Customer</th>
                   <th 
                     className="px-4 py-3 font-semibold text-[11px] uppercase tracking-wider border-b border-gray-200 w-28 cursor-pointer select-none hover:bg-gray-200/50 transition-colors text-right"
@@ -420,6 +421,7 @@ export default function DcrClient() {
                         <td className="px-4 py-4"><div className="h-4 bg-gray-200 rounded mx-auto w-4"></div></td>
                         <td className="px-4 py-4"><div className="h-4 bg-gray-200 rounded w-20"></div></td>
                         <td className="px-4 py-4"><div className="h-4 bg-gray-200 rounded w-16"></div></td>
+                        <td className="px-4 py-4"><div className="h-4 bg-gray-200 rounded w-12 mx-auto"></div></td>
                         <td className="px-4 py-4"><div className="h-4 bg-gray-200 rounded w-3/4"></div></td>
                         <td className="px-4 py-4"><div className="h-4 bg-gray-200 rounded w-16 ml-auto"></div></td>
                         <td className="px-4 py-4"><div className="h-5 bg-gray-200 rounded w-20 mx-auto"></div></td>
@@ -427,7 +429,7 @@ export default function DcrClient() {
                       </tr>
                     ))
                   ) : filteredInvoices.length === 0 ? (
-                    <tr><td colSpan={7} className="text-center py-12 text-gray-500 text-sm bg-gray-50/50">No invoices found in {viewState === 'active' ? 'Active Queue' : 'Archive'}.</td></tr>
+                    <tr><td colSpan={8} className="text-center py-12 text-gray-500 text-sm bg-gray-50/50">No invoices found in {viewState === 'active' ? 'Active Queue' : 'Archive'}.</td></tr>
                   ) : (
                     filteredInvoices.map((inv, idx) => (
                       <tr key={inv.id} className="hover:bg-blue-50/40 transition-colors group">
@@ -443,6 +445,11 @@ export default function DcrClient() {
                           </a>
                         </td>
                         <td className="px-4 py-3 text-gray-600 text-xs align-middle">{new Date(inv.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                        <td className="px-4 py-3 text-center align-middle whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border bg-gray-50 text-gray-600 border-gray-200">
+                            {inv.locationName || 'N/A'}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 text-gray-800 text-xs align-middle leading-snug whitespace-normal break-words">{inv.customerName}</td>
                         <td className="px-4 py-3 text-gray-900 text-right font-medium text-xs align-middle whitespace-nowrap">₹{inv.invoiceTotal.toLocaleString('en-IN')}</td>
                         <td className="px-4 py-3 text-center align-middle whitespace-nowrap">

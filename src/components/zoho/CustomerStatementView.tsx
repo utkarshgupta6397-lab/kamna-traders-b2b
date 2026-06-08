@@ -826,7 +826,7 @@ export default function CustomerStatementView() {
               {pdfGenerating ? 'Generating PDF…' : 'Download Statement PDF'}
             </button>
             <a
-              href={`/staff/dashboard/accounts/dcr/customer/${customerId}`}
+              href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${customerId}&filterMode=ALL&statusFilter=ALL`}
               className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors h-[38px] print:hidden"
             >
               View DCR Summary

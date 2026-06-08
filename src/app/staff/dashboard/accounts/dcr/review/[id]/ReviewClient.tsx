@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Plus, Trash2, Search, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Search, AlertCircle, ChevronRight } from 'lucide-react';
 import { isRecommendedForDcr } from '@/lib/dcr-config';
 import { useDcrStats } from '../../layout';
 
@@ -15,7 +15,7 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
   const [invoice, setInvoice] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [submissionMode, setSubmissionMode] = useState<'save' | 'saveNext' | 'noDcr' | null>(null);
+  const [submissionMode, setSubmissionMode] = useState<'save' | 'saveNext' | 'noDcr' | 'skip' | null>(null);
   
   // SKU Master for manual entry
   const [skuMaster, setSkuMaster] = useState<any[]>([]);
@@ -192,16 +192,58 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
           router.replace(`/staff/dashboard/accounts/dcr/review/${nextInvoiceId}?${currentParamsString}`);
         } else {
           toast.success('No more invoices pending review');
-          router.push(`/staff/dashboard/accounts/dcr?${currentParamsString}`);
+          if (searchParams.get('source') === 'customer_lookup') {
+            window.close();
+          } else {
+            router.push(`/staff/dashboard/accounts/dcr?${currentParamsString}`);
+          }
         }
       } else {
-        router.push(`/staff/dashboard/accounts/dcr?${currentParamsString}`);
+        if (searchParams.get('source') === 'customer_lookup') {
+          window.close();
+        } else {
+          router.push(`/staff/dashboard/accounts/dcr?${currentParamsString}`);
+        }
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to save');
     } finally {
       setSaving(false);
       setSubmissionMode(null);
+    }
+  };
+
+  const executeSkipInvoice = async () => {
+    try {
+      setSubmissionMode('skip');
+      
+      const queueRes = await fetch(`/api/admin/dcr/invoices?${currentParamsString}`);
+      const queueData = await queueRes.json();
+      
+      let nextInvoiceId = null;
+      if (queueData.invoices && queueData.invoices.length > 0) {
+        const nextInvoice = queueData.invoices.find((inv: any) => inv.id !== invoiceId && ['NEW', 'UNDER_REVIEW'].includes(inv.dcrStatus));
+        if (nextInvoice) {
+          nextInvoiceId = nextInvoice.id;
+        }
+      }
+
+      if (nextInvoiceId) {
+        router.replace(`/staff/dashboard/accounts/dcr/review/${nextInvoiceId}?${currentParamsString}`);
+      } else {
+        toast.success('No more invoices in queue');
+        if (searchParams.get('source') === 'customer_lookup') {
+          window.close();
+        } else {
+          router.push(`/staff/dashboard/accounts/dcr?${currentParamsString}`);
+        }
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to skip invoice');
+    } finally {
+      if (submissionMode === 'skip') {
+        setSubmissionMode(null);
+      }
     }
   };
 
@@ -244,7 +286,11 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
         router.replace(`/staff/dashboard/accounts/dcr/review/${nextInvoiceId}?${currentParamsString}`);
       } else {
         toast.success('No more invoices pending review');
-        router.push(`/staff/dashboard/accounts/dcr?${currentParamsString}`);
+          if (searchParams.get('source') === 'customer_lookup') {
+            window.close();
+          } else {
+            router.push(`/staff/dashboard/accounts/dcr?${currentParamsString}`);
+          }
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to skip DCR');
@@ -390,7 +436,7 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
             </span>
           </div>
         </div>
-        <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-6">
+        <div className="p-5 grid grid-cols-2 md:grid-cols-5 gap-6">
           <div>
             <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Invoice Number</span>
             <span className="text-sm font-medium text-gray-900">{invoice.invoiceNumber}</span>
@@ -398,6 +444,10 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
           <div>
             <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Customer Name</span>
             <span className="text-sm font-medium text-gray-900">{invoice.customerName}</span>
+          </div>
+          <div>
+            <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Location</span>
+            <span className="text-sm font-medium text-gray-900">{invoice.locationName || 'N/A'}</span>
           </div>
           <div>
             <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Invoice Date</span>
@@ -633,6 +683,26 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
           </div>
           
           <div className="flex items-center gap-4">
+            <button
+              onClick={executeSkipInvoice}
+              disabled={submissionMode !== null}
+              className="bg-amber-500 text-white px-6 py-3 rounded-lg font-bold shadow-sm hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm flex items-center gap-2"
+            >
+              {submissionMode === 'skip' ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>Skipping...</span>
+                </>
+              ) : (
+                <>
+                  <span>Skip Invoice</span>
+                  <ChevronRight size={18} className="-mr-1" />
+                </>
+              )}
+            </button>
             <button
               onClick={() => {
                 const hasAllocatedSerials = invoice && invoice.serialAllocations && invoice.serialAllocations.length > 0;

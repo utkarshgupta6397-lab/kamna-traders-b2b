@@ -525,6 +525,8 @@ model DcrInvoice {
   invoiceDate     DateTime
   invoiceStatus   String
   invoiceTotal    Float
+  locationId      String?
+  locationName    String?
   dcrStatus       String   @default("NEW") // NEW, UNDER_REVIEW, DCR_IDENTIFIED, PENDING_SERIALS
   syncedAt          DateTime @default(now())
   reviewedAt        DateTime?

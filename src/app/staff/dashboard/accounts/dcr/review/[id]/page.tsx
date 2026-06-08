@@ -1,7 +1,6 @@
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import ReviewClient from './ReviewClient';
-import AccountsTabs from '../../../AccountsTabs';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,13 +20,6 @@ export default async function AccountsDcrReviewPage({ params }: { params: Promis
   const canManageDcr = isAdmin || !!session.dcr_management;
 
   return (
-    <AccountsTabs 
-      canViewStatement={canViewStatement} 
-      canViewTransactions={canViewTransactions} 
-      canViewSummary={canViewSummary}
-      canManageDcr={canManageDcr}
-    >
-      <ReviewClient invoiceId={id} />
-    </AccountsTabs>
+    <ReviewClient invoiceId={id} />
   );
 }

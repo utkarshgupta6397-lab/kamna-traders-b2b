@@ -15,7 +15,14 @@ async function fetchZohoInvoicesLast60Days(customerId: string): Promise<any[]> {
 
   const sixtyDaysAgo = new Date();
   sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-  const dateStart = sixtyDaysAgo.toISOString().split('T')[0];
+  
+  // Hard cutoff: 01-Jun-2026
+  const cutoffDate = new Date('2026-06-01T00:00:00.000Z');
+  let start = sixtyDaysAgo;
+  if (start < cutoffDate) {
+    start = cutoffDate;
+  }
+  const dateStart = start.toISOString().split('T')[0];
 
   let allInvoices: any[] = [];
   let page = 1;
@@ -91,11 +98,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
       fetchZohoContactBalance(customerId)
     ]);
 
+    const cutoffDate = new Date('2026-06-01T00:00:00.000Z');
+
     // 3. Fetch Prisma DCR Invoices for this customer
     const dcrInvoices = await prisma.dcrInvoice.findMany({
       where: { 
         customerId,
-        invoiceStatus: { not: 'void' }
+        invoiceStatus: { not: 'void' },
+        invoiceDate: { gte: cutoffDate }
       },
       include: {
         items: {
@@ -288,22 +298,67 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
       }
     });
 
-    // Sort mergedInvoices by date DESC
-    mergedInvoices.sort((a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime());
+    // Fetch customer object from local database
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId }
+    });
+
+    // Enforce the June 1st, 2026 cutoff strictly on all merged invoices
+    const cutoffDateTime = new Date('2026-06-01T00:00:00.000Z').getTime();
+    const finalInvoices = mergedInvoices.filter(inv => new Date(inv.invoiceDate).getTime() >= cutoffDateTime);
+
+    // Group into DCR Required and No DCR Required
+    const dcrRequiredInvoices = finalInvoices.filter(inv => inv.processingStatus !== 'PROCESSED_NO_DCR');
+    const noDcrInvoices = finalInvoices.filter(inv => inv.processingStatus === 'PROCESSED_NO_DCR');
+
+    // Priority score sorting for DCR Required invoices
+    function getPriorityScore(inv: any): number {
+      if (inv.readyToIssue > 0) return 1; // READY_TO_ISSUE
+      if (inv.onHold > 0) return 2; // HOLD
+      if (inv.serialEntryPending > 0 || inv.vendorDcrPending > 0) return 3; // PENDING_SERIALS
+      if (inv.processingStatus === 'UNPROCESSED') return 4; // UNPROCESSED
+      if (inv.dcrPanels > 0 && inv.issued === inv.dcrPanels) return 5; // ISSUED
+      return 6;
+    }
+
+    dcrRequiredInvoices.sort((a, b) => {
+      const scoreA = getPriorityScore(a);
+      const scoreB = getPriorityScore(b);
+      if (scoreA !== scoreB) return scoreA - scoreB;
+      return new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
+    });
+
+    // Sort No DCR invoices by date DESC
+    noDcrInvoices.sort((a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime());
+
+    // Calculate totals for Section A (DCR Required Invoices)
+    const totals = {
+      dcrPanels: dcrRequiredInvoices.reduce((sum, inv) => sum + inv.dcrPanels, 0),
+      serialEntryPending: dcrRequiredInvoices.reduce((sum, inv) => sum + inv.serialEntryPending, 0),
+      vendorDcrPending: dcrRequiredInvoices.reduce((sum, inv) => sum + inv.vendorDcrPending, 0),
+      onHold: dcrRequiredInvoices.reduce((sum, inv) => sum + inv.onHold, 0),
+      readyToIssue: dcrRequiredInvoices.reduce((sum, inv) => sum + inv.readyToIssue, 0),
+      issued: dcrRequiredInvoices.reduce((sum, inv) => sum + inv.issued, 0),
+    };
 
     const summaryData = {
-      kpis: {
-        totalPanelsSold,
-        vendorDcrPending: totalVendorDcrPending,
-        readyToIssue: totalReadyToIssue,
-        issued: totalIssued,
-        onHold: totalOnHold,
-        invoicesReviewed,
-        invoicesPendingReview,
-        dcrPanels: totalPanelsSold,
-        closingBalance,
+      customer,
+      summary: {
+        kpis: {
+          totalPanelsSold,
+          vendorDcrPending: totalVendorDcrPending,
+          readyToIssue: totalReadyToIssue,
+          issued: totalIssued,
+          onHold: totalOnHold,
+          invoicesReviewed,
+          invoicesPendingReview,
+          dcrPanels: totalPanelsSold,
+          closingBalance,
+        }
       },
-      invoices: mergedInvoices
+      dcrRequiredInvoices,
+      noDcrInvoices,
+      totals
     };
 
     // Store in our new 15-min cache

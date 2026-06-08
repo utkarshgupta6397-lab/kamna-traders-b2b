@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Search, ChevronDown, ChevronUp, Clock, AlertTriangle, CheckCircle, Loader2, Package, ArrowRightCircle, IndianRupee, FileText, X, ExternalLink, Activity } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -154,6 +155,7 @@ const customerBalanceCache: Record<string, { statement: any; fetchedAt: number }
 const CACHE_TTL = 300000; // 5 minutes in milliseconds
 
 export default function HoldQueueClient() {
+  const searchParams = useSearchParams();
   const { refreshStats } = useDcrStats();
   const [invoices, setInvoices] = useState<HoldInvoice[]>([]);
   const [kpis, setKpis] = useState<Kpis>({ invoicesOnHold: 0, serialsOnHold: 0, readyToIssue: 0, outstandingValueOnHold: 0 });
@@ -424,6 +426,10 @@ export default function HoldQueueClient() {
       // We don't close the modal, we just refresh the data so it updates live
       fetchData();
       refreshStats();
+
+      if (searchParams.get('source') === 'customer_lookup') {
+        setTimeout(() => window.close(), 1500);
+      }
     } catch (err: any) {
       toast.error(err.message);
     } finally {

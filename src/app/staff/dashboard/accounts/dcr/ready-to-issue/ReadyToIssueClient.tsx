@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Search, ChevronDown, ChevronUp, CheckCircle, Loader2, Package, Copy, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -37,6 +38,7 @@ interface ReadyInvoice {
 const ZOHO_ORG_ID = process.env.NEXT_PUBLIC_ZOHO_ORG_ID;
 
 export default function ReadyToIssueClient() {
+  const searchParams = useSearchParams();
   const { refreshStats } = useDcrStats();
   const [invoices, setInvoices] = useState<ReadyInvoice[]>([]);
   const [total, setTotal] = useState(0);
@@ -130,6 +132,10 @@ export default function ReadyToIssueClient() {
       setSelectedSerials(new Set()); // clear selection
       fetchData(); // reload
       refreshStats(); // update sidebar badges
+
+      if (searchParams.get('source') === 'customer_lookup') {
+        setTimeout(() => window.close(), 1500);
+      }
     } catch (err: any) {
       toast.error(err.message);
     } finally {

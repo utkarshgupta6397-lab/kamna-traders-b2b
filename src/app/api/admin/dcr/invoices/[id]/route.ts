@@ -11,13 +11,25 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     const { id } = await params;
 
-    const invoice = await prisma.dcrInvoice.findUnique({
-      where: { id },
-      include: {
-        items: true,
-        serialAllocations: true,
-      },
-    });
+    let invoice;
+
+    if (id.startsWith('cm')) {
+      invoice = await prisma.dcrInvoice.findUnique({
+        where: { id },
+        include: {
+          items: true,
+          serialAllocations: true,
+        },
+      });
+    } else {
+      invoice = await prisma.dcrInvoice.findUnique({
+        where: { zohoInvoiceId: id },
+        include: {
+          items: true,
+          serialAllocations: true,
+        },
+      });
+    }
 
     if (!invoice) {
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });

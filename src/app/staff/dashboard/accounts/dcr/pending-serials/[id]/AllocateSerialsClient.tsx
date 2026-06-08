@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import {  useRouter , useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Trash2, HelpCircle, Save, Layers, ListFilter, AlertCircle, CheckCircle, FileText, ExternalLink } from 'lucide-react';
 import SerialHistoryModal from '@/components/dcr/SerialHistoryModal';
 import { useDcrStats } from '../../layout';
 
 export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string }) {
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { refreshStats } = useDcrStats();
   

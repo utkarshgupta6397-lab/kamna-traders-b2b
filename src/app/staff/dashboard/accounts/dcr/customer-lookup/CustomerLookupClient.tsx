@@ -41,6 +41,9 @@ export default function CustomerLookupClient() {
   // Pagination and Filters
   const [page, setPage] = useState(1);
   const [filterMode, setFilterMode] = useState<'ALL' | 'PENDING'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [isSectionBExpanded, setIsSectionBExpanded] = useState(false);
+  const [isNavigatingStatement, setIsNavigatingStatement] = useState(false);
   const limit = 25;
 
   const getSessionCache = (key: string) => {
@@ -76,9 +79,12 @@ export default function CustomerLookupClient() {
   const fetchSummary = async (customerId: string) => {
     setIsFetchingSummary(true);
     try {
-      const cachedSummary = getSessionCache(`dcr_summary_${customerId}`);
+      const cachedSummary = getSessionCache(`dcr_summary_v4_${customerId}`);
       if (cachedSummary) {
         setSummary(cachedSummary);
+        if (cachedSummary.customer) {
+          setCustomer(cachedSummary.customer);
+        }
         setIsFetchingSummary(false);
         return;
       }
@@ -87,11 +93,14 @@ export default function CustomerLookupClient() {
       if (res.ok) {
         const data = await res.json();
         setSummary(data.data);
-        if (data.data.kpis?.closingBalance !== undefined) {
-          setBalance(data.data.kpis.closingBalance);
-          setSessionCache(`dcr_balance_${customerId}`, data.data.kpis.closingBalance);
+        if (data.data.customer) {
+          setCustomer(data.data.customer);
         }
-        setSessionCache(`dcr_summary_${customerId}`, data.data);
+        if (data.data.summary?.kpis?.closingBalance !== undefined) {
+          setBalance(data.data.summary.kpis.closingBalance);
+          setSessionCache(`dcr_balance_${customerId}`, data.data.summary.kpis.closingBalance);
+        }
+        setSessionCache(`dcr_summary_v3_${customerId}`, data.data);
       }
     } catch (err) {
       toast.error('Failed to fetch summary');
@@ -110,7 +119,6 @@ export default function CustomerLookupClient() {
     setShowStatement(false);
     setStatementData(null);
     setPage(1);
-    setFilterMode('ALL');
 
     try {
       const res = await fetch(`/api/admin/dcr/customer-lookup/search?q=${encodeURIComponent(query)}`);
@@ -140,6 +148,16 @@ export default function CustomerLookupClient() {
 
   useEffect(() => {
     const cid = searchParams.get('customerId');
+    const fm = searchParams.get('filterMode');
+    const sf = searchParams.get('statusFilter');
+
+    if (fm === 'ALL' || fm === 'PENDING') {
+      setFilterMode(fm);
+    }
+    if (sf) {
+      setStatusFilter(sf);
+    }
+
     if (cid) {
       setSearchQuery(cid);
       const cachedCustomer = getSessionCache(`dcr_customer_${cid}`);
@@ -156,6 +174,30 @@ export default function CustomerLookupClient() {
       fetchApiMeter();
     }
   }, [searchParams, handleSearch]);
+
+  // Synchronize state with URL search parameters
+  useEffect(() => {
+    if (!customer) return;
+    const params = new URLSearchParams(window.location.search);
+    let changed = false;
+
+    if (params.get('customerId') !== customer.id) {
+      params.set('customerId', customer.id);
+      changed = true;
+    }
+    if (params.get('filterMode') !== filterMode) {
+      params.set('filterMode', filterMode);
+      changed = true;
+    }
+    if (params.get('statusFilter') !== statusFilter) {
+      params.set('statusFilter', statusFilter);
+      changed = true;
+    }
+
+    if (changed) {
+      window.history.replaceState(null, '', `?${params.toString()}`);
+    }
+  }, [customer, filterMode, statusFilter]);
 
   const loadStatement = async () => {
     if (!customer) return;
@@ -257,14 +299,15 @@ export default function CustomerLookupClient() {
     if (!customer || !summary) return;
     let text = `${customer.name}\n\n`;
     text += `Outstanding:\n${balance !== null ? '₹' + balance.toLocaleString('en-IN') : 'Unknown'}\n\n`;
-    text += `Invoices Reviewed:\n${summary.kpis.invoicesReviewed}\n\n`;
-    text += `Invoices Pending Review:\n${summary.kpis.invoicesPendingReview}\n\n`;
-    text += `Vendor DCR Pending:\n${summary.kpis.vendorDcrPending}\n\n`;
-    text += `On Hold:\n${summary.kpis.onHold}\n\n`;
-    text += `Issued:\n${summary.kpis.issued}\n\n`;
+    text += `Invoices Reviewed:\n${summary.summary.kpis.invoicesReviewed}\n\n`;
+    text += `Invoices Pending Review:\n${summary.summary.kpis.invoicesPendingReview}\n\n`;
+    text += `Vendor DCR Pending:\n${summary.summary.kpis.vendorDcrPending}\n\n`;
+    text += `On Hold:\n${summary.summary.kpis.onHold}\n\n`;
+    text += `Issued:\n${summary.summary.kpis.issued}\n\n`;
     text += `Invoice Breakdown\n\n`;
-    summary.invoices.forEach((inv: any) => {
-      if (inv.dcrPanels > 0 || inv.processingStatus === 'NOT_REVIEWED') {
+    const allInvoices = [...(summary.dcrRequiredInvoices || []), ...(summary.noDcrInvoices || [])];
+    allInvoices.forEach((inv: any) => {
+      if (inv.dcrPanels > 0 || inv.processingStatus === 'UNPROCESSED') {
         text += `${inv.invoiceNumber}\n\n`;
         text += `Panels: ${inv.dcrPanels}\n`;
         text += `Vendor DCR Pending: ${inv.vendorDcrPending}\n`;
@@ -280,12 +323,53 @@ export default function CustomerLookupClient() {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val);
   };
 
-  const isPendingInvoice = (inv: any) => inv.processingStatus === 'UNPROCESSED' || inv.issued !== inv.dcrPanels;
-  const filteredInvoices = summary ? (filterMode === 'PENDING' ? summary.invoices.filter(isPendingInvoice) : summary.invoices) : [];
-  const displayedInvoices = filteredInvoices.slice(0, page * limit);
-  const hasMore = filteredInvoices.length > page * limit;
+  const isPendingInvoice = (inv: any) => {
+    if (filterMode === 'PENDING') {
+      return inv.processingStatus === 'UNPROCESSED' || inv.issued !== inv.dcrPanels;
+    }
+    return true;
+  };
 
-  const activeInvoice = summary?.invoices.find((i: any) => i.id === modalInvoiceId);
+  const matchesStatusFilter = (inv: any) => {
+    if (statusFilter === 'ALL') return true;
+    if (statusFilter === 'UNPROCESSED') return inv.processingStatus === 'UNPROCESSED';
+    if (statusFilter === 'PROCESSED_NO_DCR') return inv.processingStatus === 'PROCESSED_NO_DCR';
+    if (statusFilter === 'HOLD') return inv.onHold > 0;
+    if (statusFilter === 'READY_TO_ISSUE') return inv.readyToIssue > 0;
+    if (statusFilter === 'ISSUED') return inv.dcrPanels > 0 && inv.issued === inv.dcrPanels;
+    if (statusFilter === 'PENDING_SERIALS') return inv.serialEntryPending > 0 || inv.vendorDcrPending > 0;
+    return true;
+  };
+
+  // Section A (DCR Required Invoices)
+  const filteredDcrRequired = summary?.dcrRequiredInvoices
+    ? summary.dcrRequiredInvoices.filter(isPendingInvoice).filter(matchesStatusFilter)
+    : [];
+
+  const displayedDcrRequired = filteredDcrRequired.slice(0, page * limit);
+  const hasMoreDcrRequired = filteredDcrRequired.length > page * limit;
+
+  // Section B (No DCR Required Invoices)
+  const filteredNoDcr = summary?.noDcrInvoices
+    ? summary.noDcrInvoices.filter(isPendingInvoice).filter(matchesStatusFilter)
+    : [];
+
+  const displayedNoDcr = filteredNoDcr.slice(0, page * limit);
+  const hasMoreNoDcr = filteredNoDcr.length > page * limit;
+
+  // Calculate dynamic totals for visible filtered Section A
+  const dynamicTotals = {
+    dcrPanels: filteredDcrRequired.reduce((sum: number, inv: any) => sum + inv.dcrPanels, 0),
+    serialEntryPending: filteredDcrRequired.reduce((sum: number, inv: any) => sum + inv.serialEntryPending, 0),
+    vendorDcrPending: filteredDcrRequired.reduce((sum: number, inv: any) => sum + inv.vendorDcrPending, 0),
+    onHold: filteredDcrRequired.reduce((sum: number, inv: any) => sum + inv.onHold, 0),
+    readyToIssue: filteredDcrRequired.reduce((sum: number, inv: any) => sum + inv.readyToIssue, 0),
+    issued: filteredDcrRequired.reduce((sum: number, inv: any) => sum + inv.issued, 0),
+  };
+
+  const activeInvoice = summary
+    ? [...(summary.dcrRequiredInvoices || []), ...(summary.noDcrInvoices || [])].find((i: any) => i.id === modalInvoiceId)
+    : null;
 
   // Compute footer aggregations from actual item data in the modal
   let modalAggs = { panels: 0, entryPending: 0, vendorPending: 0, hold: 0, ready: 0, issued: 0 };
@@ -309,15 +393,48 @@ export default function CustomerLookupClient() {
     });
   }
 
-  const getProcessingStatusBadge = (status: string) => {
-    switch (status) {
-      case 'COMPLETED': return <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border bg-green-50 text-green-700 border-green-200">COMPLETED</span>;
-      case 'NO_DCR_REQUIRED': return <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border bg-gray-100 text-gray-600 border-gray-300">NO DCR REQUIRED</span>;
-      case 'DCR_IDENTIFIED': return <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border bg-blue-50 text-blue-700 border-blue-200">DCR IDENTIFIED</span>;
-      case 'IN_PROGRESS': return <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border bg-orange-50 text-orange-700 border-orange-200">IN PROGRESS</span>;
-      case 'NOT_REVIEWED': return <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border bg-red-50 text-red-700 border-red-200">NOT REVIEWED</span>;
-      default: return <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border bg-gray-50 text-gray-700 border-gray-200">{status}</span>;
-    }
+  const getWorkflowUrl = (inv: any) => {
+    if (inv.displayStatus === 'FULLY ISSUED') return `/staff/dashboard/accounts/dcr/serial-registry?source=customer_lookup`;
+    if (inv.displayStatus === 'READY TO ISSUE') return `/staff/dashboard/accounts/dcr/ready-to-issue?source=customer_lookup`;
+    if (inv.displayStatus === 'HOLD QUEUE') return `/staff/dashboard/accounts/dcr/hold-queue?source=customer_lookup`;
+    if (inv.displayStatus === 'SERIAL ENTRY PENDING' || inv.displayStatus === 'VENDOR DCR PENDING') return `/staff/dashboard/accounts/dcr/pending-serials/${inv.id}?source=customer_lookup`;
+    return `/staff/dashboard/accounts/dcr/review/${inv.id}?source=customer_lookup`;
+  };
+
+    const getActionLabel = (inv: any) => {
+    if (inv.displayStatus === 'UNPROCESSED') return 'Review Invoice';
+    if (inv.displayStatus === 'SERIAL ENTRY PENDING') return 'Enter Serials';
+    if (inv.displayStatus === 'VENDOR DCR PENDING') return 'Import DCR';
+    if (inv.displayStatus === 'HOLD QUEUE') return 'Review Hold';
+    if (inv.displayStatus === 'READY TO ISSUE') return 'Issue DCR';
+    if (inv.displayStatus === 'FULLY ISSUED') return 'View Issued';
+    if (inv.displayStatus === 'PROCESSED - NO DCR REQUIRED') return 'View Invoice';
+    if (inv.displayStatus === 'DCR IDENTIFIED') return 'Review Invoice';
+    return 'Open Workflow';
+  };
+
+  const getWorkflowBadge = (inv: any) => {
+    let colorClass = 'bg-gray-50 text-gray-700 border-gray-200';
+    if (inv.displayStatus === 'FULLY ISSUED') colorClass = 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100';
+    else if (inv.displayStatus === 'READY TO ISSUE') colorClass = 'bg-teal-50 text-teal-600 border-teal-200 hover:bg-teal-100';
+    else if (inv.displayStatus === 'HOLD QUEUE') colorClass = 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100';
+    else if (inv.displayStatus === 'SERIAL ENTRY PENDING' || inv.displayStatus === 'VENDOR DCR PENDING') colorClass = 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100';
+    else if (inv.displayStatus === 'UNPROCESSED') colorClass = 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100';
+    else if (inv.displayStatus === 'PROCESSED - NO DCR REQUIRED') colorClass = 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200';
+    else if (inv.displayStatus === 'DCR IDENTIFIED') colorClass = 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100';
+
+    return (
+      <a 
+        href={getWorkflowUrl(inv)}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Open workflow"
+        className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border cursor-pointer transition-colors inline-block text-center whitespace-nowrap ${colorClass}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {inv.displayStatus}
+      </a>
+    );
   };
 
   return (
@@ -379,9 +496,24 @@ export default function CustomerLookupClient() {
                   <button onClick={copyDcrSummary} className="flex items-center justify-center gap-1.5 px-3 py-1 bg-white border border-gray-300 rounded text-xs font-semibold text-gray-700 hover:bg-gray-50">
                     <Copy size={12} /> Copy Summary
                   </button>
-                  <a href={`/staff/dashboard/accounts?customerId=${customer.id}`} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-1.5 px-3 py-1 bg-white border border-gray-300 rounded text-xs font-semibold text-gray-700 hover:bg-gray-50">
-                    <ExternalLink size={12} /> Full Statement
-                  </a>
+                  <button
+                    onClick={async () => {
+                      if (isNavigatingStatement) return;
+                      setIsNavigatingStatement(true);
+                      await new Promise(resolve => setTimeout(resolve, 800));
+                      window.open(`/staff/dashboard/accounts?customerId=${customer.id}`, '_blank');
+                      setIsNavigatingStatement(false);
+                    }}
+                    disabled={isNavigatingStatement}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1 bg-white border border-gray-300 rounded text-xs font-semibold text-[#1A2766] hover:bg-blue-50/50 disabled:opacity-50 min-w-[110px]"
+                  >
+                    {isNavigatingStatement ? (
+                      <RefreshCw size={12} className="animate-spin text-gray-500" />
+                    ) : (
+                      <ExternalLink size={12} />
+                    )}
+                    Full Statement
+                  </button>
                 </div>
                 <div className="pl-4 border-l border-gray-100 flex flex-col items-end text-[10px]">
                   <div className="text-gray-400 font-bold uppercase flex items-center gap-1 mb-0.5"><Activity size={10} /> Zoho API</div>
@@ -399,31 +531,15 @@ export default function CustomerLookupClient() {
                 <>
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] uppercase font-bold text-gray-500">Reviewed:</span>
-                    <span className="font-bold text-gray-900">{summary.kpis.invoicesReviewed}</span>
+                    <span className="font-bold text-gray-900">{summary?.summary?.kpis?.invoicesReviewed || 0}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] uppercase font-bold text-gray-500">Pending Review:</span>
-                    <span className="font-bold text-gray-900">{summary.kpis.invoicesPendingReview}</span>
+                    <span className="font-bold text-gray-900">{summary?.summary?.kpis?.invoicesPendingReview || 0}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase font-bold text-gray-500">DCR Panels:</span>
-                    <span className="font-bold text-gray-900">{summary.kpis.dcrPanels}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase font-bold text-gray-500">Vendor Pending:</span>
-                    <span className="font-bold text-orange-600">{summary.kpis.vendorDcrPending}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase font-bold text-gray-500">On Hold:</span>
-                    <span className="font-bold text-red-600">{summary.kpis.onHold}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase font-bold text-gray-500">Ready:</span>
-                    <span className="font-bold text-teal-600">{summary.kpis.readyToIssue}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase font-bold text-gray-500">Issued:</span>
-                    <span className="font-bold text-green-600">{summary.kpis.issued}</span>
+                    <span className="text-[10px] uppercase font-bold text-gray-500">DCR Invoices:</span>
+                    <span className="font-bold text-[#1A2766]">{summary?.dcrRequiredInvoices?.length || 0}</span>
                   </div>
                 </>
               )}
@@ -482,52 +598,131 @@ export default function CustomerLookupClient() {
             )}
           </div>
 
-          {/* FILTER TOGGLE */}
-          <div className="flex items-center gap-4 py-1">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="radio" name="invoiceFilter" value="ALL" checked={filterMode === 'ALL'} onChange={() => { setFilterMode('ALL'); setPage(1); }} className="text-[#1A2766] focus:ring-[#1A2766]" />
-              <span className="font-medium text-gray-700">All Invoices</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="radio" name="invoiceFilter" value="PENDING" checked={filterMode === 'PENDING'} onChange={() => { setFilterMode('PENDING'); setPage(1); }} className="text-[#1A2766] focus:ring-[#1A2766]" />
-              <span className="font-medium text-gray-700">Pending Only</span>
-            </label>
+          {/* FILTERS SECTION */}
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between py-2 bg-white p-4 rounded border border-gray-200 shadow-sm">
+            {/* Segmented Control */}
+            <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200">
+              <button
+                onClick={() => { setFilterMode('ALL'); setPage(1); }}
+                className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  filterMode === 'ALL'
+                    ? 'bg-[#1A2766] text-white shadow'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                All Invoices
+              </button>
+              <button
+                onClick={() => { setFilterMode('PENDING'); setPage(1); }}
+                className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                  filterMode === 'PENDING'
+                    ? 'bg-[#1A2766] text-white shadow'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Pending DCR
+              </button>
+            </div>
+
+            {/* Status Filter Dropdown */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">Status Filter:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+                className="w-full sm:w-48 bg-gray-50 border border-gray-300 rounded px-2.5 py-1.5 text-xs font-medium focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="UNPROCESSED">UNPROCESSED</option>
+                <option value="PENDING_SERIALS">PENDING SERIALS</option>
+                <option value="HOLD">HOLD</option>
+                <option value="READY_TO_ISSUE">READY TO ISSUE</option>
+                <option value="ISSUED">ISSUED</option>
+                <option value="PROCESSED_NO_DCR">PROCESSED_NO_DCR</option>
+              </select>
+            </div>
           </div>
 
-          {/* MAIN INVOICES TABLE */}
+          {/* SECTION A KPI CARD TOTALS */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+            <h3 className="font-bold text-[#1A2766] text-sm mb-3 flex items-center gap-2">
+              DCR Required Summary (Filtered)
+            </h3>
+            {filteredDcrRequired.length === 0 ? (
+              <div className="py-6 text-center text-gray-500 italic bg-gray-50 rounded-lg border border-gray-100">
+                No DCR-required invoices found for current filters.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                <div className="bg-blue-50/50 border border-blue-100 p-3 rounded-lg shadow-sm">
+                  <div className="text-[10px] uppercase font-bold text-blue-700 tracking-wider">DCR Panels</div>
+                  <div className="text-lg font-extrabold text-blue-900 mt-1">{dynamicTotals.dcrPanels}</div>
+                </div>
+                <div className="bg-orange-50/50 border border-orange-100 p-3 rounded-lg shadow-sm">
+                  <div className="text-[10px] uppercase font-bold text-orange-700 tracking-wider">Serial Pending</div>
+                  <div className="text-lg font-extrabold text-orange-950 mt-1">{dynamicTotals.serialEntryPending}</div>
+                </div>
+                <div className="bg-yellow-50/50 border border-yellow-100 p-3 rounded-lg shadow-sm">
+                  <div className="text-[10px] uppercase font-bold text-yellow-700 tracking-wider">Vendor Pending</div>
+                  <div className="text-lg font-extrabold text-yellow-950 mt-1">{dynamicTotals.vendorDcrPending}</div>
+                </div>
+                <div className="bg-red-50/50 border border-red-100 p-3 rounded-lg shadow-sm">
+                  <div className="text-[10px] uppercase font-bold text-red-700 tracking-wider">On Hold</div>
+                  <div className="text-lg font-extrabold text-red-950 mt-1">{dynamicTotals.onHold}</div>
+                </div>
+                <div className="bg-teal-50/50 border border-teal-100 p-3 rounded-lg shadow-sm">
+                  <div className="text-[10px] uppercase font-bold text-teal-700 tracking-wider">Ready to Issue</div>
+                  <div className="text-lg font-extrabold text-teal-950 mt-1">{dynamicTotals.readyToIssue}</div>
+                </div>
+                <div className="bg-green-50/50 border border-green-100 p-3 rounded-lg shadow-sm">
+                  <div className="text-[10px] uppercase font-bold text-green-700 tracking-wider">Issued</div>
+                  <div className="text-lg font-extrabold text-green-950 mt-1">{dynamicTotals.issued}</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* SECTION A - DCR REQUIRED INVOICES */}
           <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <div className="px-4 py-3 bg-blue-50/30 border-b border-gray-200 flex items-center justify-between">
+              <h4 className="font-bold text-[#1A2766] text-sm uppercase tracking-wider">
+                DCR Required Invoices
+              </h4>
+              <span className="text-xs text-gray-500 font-semibold bg-white border border-gray-200 px-2 py-0.5 rounded-full shadow-sm">
+                Count: {filteredDcrRequired.length}
+              </span>
+            </div>
+            <div className="overflow-x-auto relative">
+              <table className="w-full text-left text-xs table-fixed min-w-[1200px]">
                 <thead className="bg-gray-50 text-gray-500 border-b border-gray-200">
                   <tr>
-                    <th className="px-3 py-2 font-semibold uppercase">#</th>
-                    <th className="px-3 py-2 font-semibold uppercase" style={{ width: '150px', minWidth: '150px' }}>Invoice Number</th>
-                    <th className="px-3 py-2 font-semibold uppercase">Invoice Date</th>
-                    <th className="px-3 py-2 font-semibold uppercase">Salesperson</th>
-                    <th className="px-3 py-2 font-semibold uppercase text-right">Invoice Value</th>
-                    <th className="px-3 py-2 font-semibold uppercase text-center">Processing Status</th>
-                    <th className="px-3 py-2 font-semibold uppercase text-center">DCR Panels</th>
-                    <th className="px-3 py-2 font-semibold uppercase text-center">Serial Entry Pending</th>
-                    <th className="px-3 py-2 font-semibold uppercase text-center">Vendor DCR Pending</th>
-                    <th className="px-3 py-2 font-semibold uppercase text-center">On Hold</th>
-                    <th className="px-3 py-2 font-semibold uppercase text-center">Ready To Issue</th>
-                    <th className="px-3 py-2 font-semibold uppercase text-center">Issued</th>
-                    <th className="px-3 py-2 font-semibold uppercase text-center">Status</th>
-                    <th className="px-3 py-2 font-semibold uppercase text-center w-16 sticky right-0 z-20 bg-gray-50 border-l border-gray-200 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.05)]">Actions</th>
+                    <th className="px-3 py-2 font-semibold uppercase w-12 text-center">#</th>
+                    <th className="px-3 py-2 font-semibold uppercase w-36 sticky left-0 bg-gray-50 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-gray-200">Invoice Number</th>
+                    <th className="px-3 py-2 font-semibold uppercase w-28">Invoice Date</th>
+                    <th className="px-3 py-2 font-semibold uppercase w-36">Salesperson</th>
+                    <th className="px-3 py-2 font-semibold uppercase text-right w-28">Invoice Value</th>
+                    <th className="px-3 py-2 font-semibold uppercase text-center w-36">Processing Status</th>
+                    <th className="px-3 py-2 font-semibold uppercase text-center w-24">DCR Panels</th>
+                    <th className="px-3 py-2 font-semibold uppercase text-center w-32">Serial Entry Pending</th>
+                    <th className="px-3 py-2 font-semibold uppercase text-center w-32">Vendor DCR Pending</th>
+                    <th className="px-3 py-2 font-semibold uppercase text-center w-20">On Hold</th>
+                    <th className="px-3 py-2 font-semibold uppercase text-center w-24">Ready To Issue</th>
+                    <th className="px-3 py-2 font-semibold uppercase text-center w-20">Issued</th>
+                    <th className="px-3 py-2 font-semibold uppercase text-center w-32">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {isFetchingSummary && !summary ? (
                     <tr><td colSpan={14} className="p-4 text-center text-gray-400">Loading invoices...</td></tr>
-                  ) : displayedInvoices.map((inv: any, index: number) => (
+                  ) : displayedDcrRequired.map((inv: any, index: number) => (
                     <tr key={inv.id} className="hover:bg-blue-50/30 transition-colors group">
-                      <td className="px-3 py-2 text-gray-500 align-middle">{index + 1}</td>
-                      <td className="px-3 py-2 font-bold text-[#1A2766] align-middle whitespace-nowrap">{inv.invoiceNumber}</td>
+                      <td className="px-3 py-2 text-gray-500 align-middle text-center">{index + 1}</td>
+                      <td className="px-3 py-2 font-bold text-[#1A2766] align-middle whitespace-nowrap sticky left-0 bg-white group-hover:bg-[#f0f4fa] transition-colors z-10 border-r border-gray-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)]"><a href={getWorkflowUrl(inv)} target="_blank" rel="noopener noreferrer" className="hover:underline" title="Open workflow" onClick={e => e.stopPropagation()}>{inv.invoiceNumber}</a></td>
                       <td className="px-3 py-2 text-gray-600 align-middle whitespace-nowrap">{new Date(inv.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</td>
-                      <td className="px-3 py-2 text-gray-600 align-middle whitespace-nowrap">{inv.salesperson}</td>
+                      <td className="px-3 py-2 text-gray-600 align-middle whitespace-nowrap truncate" title={inv.salesperson}>{inv.salesperson}</td>
                       <td className="px-3 py-2 text-right font-medium text-gray-800 align-middle">{formatCurrency(inv.invoiceTotal)}</td>
                       <td className="px-3 py-2 text-center align-middle whitespace-nowrap">
-                        {getProcessingStatusBadge(inv.processingStatus)}
+                        {getWorkflowBadge(inv)}
                       </td>
                       <td className="px-3 py-2 text-center font-bold align-middle">{inv.dcrPanels}</td>
                       <td className="px-3 py-2 text-center text-orange-600 font-bold align-middle">{inv.serialEntryPending}</td>
@@ -536,29 +731,99 @@ export default function CustomerLookupClient() {
                       <td className="px-3 py-2 text-center text-teal-600 font-bold align-middle">{inv.readyToIssue}</td>
                       <td className="px-3 py-2 text-center text-green-600 font-bold align-middle">{inv.issued}</td>
                       <td className="px-3 py-2 text-center align-middle whitespace-nowrap">
-                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
-                          inv.displayStatus === 'FULLY ISSUED' ? 'bg-green-50 text-green-600 border-green-200' :
-                          inv.displayStatus === 'PROCESSED - NO DCR REQUIRED' ? 'bg-gray-100 text-gray-600 border-gray-300' :
-                          inv.displayStatus === 'UNPROCESSED' ? 'bg-red-50 text-red-600 border-red-200' :
-                          'bg-orange-50 text-orange-600 border-orange-200'
-                        }`}>
-                          {inv.displayStatus}
-                        </span>
+                        <a 
+                          href={getWorkflowUrl(inv)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-block bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded text-[11px] font-semibold shadow-sm transition-colors w-full"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {getActionLabel(inv)}
+                        </a>
                       </td>
-                      <td className="px-3 py-2 text-center align-middle sticky right-0 z-10 bg-white group-hover:bg-[#f0f4fa] transition-colors border-l border-gray-100 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.05)]">
-                        <button onClick={() => openInvoiceModal(inv.id)} className="text-[#1A2766] bg-blue-50 px-2 py-1 rounded text-xs font-semibold hover:bg-blue-100 opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100">View</button>
-                      </td>
+                      
                     </tr>
                   ))}
-                  {!isFetchingSummary && summary && displayedInvoices.length === 0 && (
-                    <tr><td colSpan={14} className="text-center py-6 text-gray-500 italic bg-gray-50">No invoices found.</td></tr>
+                  {!isFetchingSummary && summary && displayedDcrRequired.length === 0 && (
+                    <tr><td colSpan={14} className="text-center py-6 text-gray-500 italic bg-gray-50">No DCR required invoices found.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
-            {hasMore && (
+            {hasMoreDcrRequired && (
               <div className="p-2 border-t border-gray-100 bg-gray-50 text-center">
                 <button onClick={() => setPage(p => p + 1)} className="text-xs font-semibold text-[#1A2766] hover:underline">Load More</button>
+              </div>
+            )}
+          </div>
+
+          {/* SECTION B - NO DCR REQUIRED INVOICES */}
+          <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+            <button
+              onClick={() => setIsSectionBExpanded(!isSectionBExpanded)}
+              className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors text-left border-b border-gray-200"
+            >
+              <span className="font-bold text-gray-800 text-sm flex items-center gap-2">
+                {isSectionBExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                No DCR Required Invoices ({filteredNoDcr.length})
+              </span>
+            </button>
+            {isSectionBExpanded && (
+              <div className="overflow-x-auto relative">
+                <table className="w-full text-left text-xs table-fixed min-w-[1200px]">
+                  <thead className="bg-gray-50 text-gray-500 border-b border-gray-200">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold uppercase w-12 text-center">#</th>
+                      <th className="px-3 py-2 font-semibold uppercase w-36 sticky left-0 bg-gray-50 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-gray-200">Invoice Number</th>
+                      <th className="px-3 py-2 font-semibold uppercase w-28">Invoice Date</th>
+                      <th className="px-3 py-2 font-semibold uppercase w-36">Salesperson</th>
+                      <th className="px-3 py-2 font-semibold uppercase text-right w-28">Invoice Value</th>
+                      <th className="px-3 py-2 font-semibold uppercase text-center w-36">Processing Status</th>
+                      <th className="px-3 py-2 font-semibold uppercase text-center w-24">DCR Panels</th>
+                      <th className="px-3 py-2 font-semibold uppercase text-center w-32">Serial Entry Pending</th>
+                      <th className="px-3 py-2 font-semibold uppercase text-center w-32">Vendor DCR Pending</th>
+                      <th className="px-3 py-2 font-semibold uppercase text-center w-20">On Hold</th>
+                      <th className="px-3 py-2 font-semibold uppercase text-center w-24">Ready To Issue</th>
+                      <th className="px-3 py-2 font-semibold uppercase text-center w-20">Issued</th>
+                      
+                      
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {displayedNoDcr.map((inv: any, index: number) => (
+                      <tr key={inv.id} className="hover:bg-blue-50/30 transition-colors group">
+                        <td className="px-3 py-2 text-gray-500 align-middle text-center">{index + 1}</td>
+                        <td className="px-3 py-2 font-bold text-[#1A2766] align-middle whitespace-nowrap sticky left-0 bg-white group-hover:bg-[#f0f4fa] transition-colors z-10 border-r border-gray-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)]"><a href={getWorkflowUrl(inv)} target="_blank" rel="noopener noreferrer" className="hover:underline" title="Open workflow" onClick={e => e.stopPropagation()}>{inv.invoiceNumber}</a></td>
+                        <td className="px-3 py-2 text-gray-600 align-middle whitespace-nowrap">{new Date(inv.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</td>
+                        <td className="px-3 py-2 text-gray-600 align-middle whitespace-nowrap truncate" title={inv.salesperson}>{inv.salesperson}</td>
+                        <td className="px-3 py-2 text-right font-medium text-gray-800 align-middle">{formatCurrency(inv.invoiceTotal)}</td>
+                        <td className="px-3 py-2 text-center align-middle whitespace-nowrap">
+                          {getWorkflowBadge(inv)}
+                        </td>
+                        <td className="px-3 py-2 text-center font-bold align-middle">{inv.dcrPanels}</td>
+                        <td className="px-3 py-2 text-center text-orange-600 font-bold align-middle">{inv.serialEntryPending}</td>
+                        <td className="px-3 py-2 text-center text-orange-600 font-bold align-middle">{inv.vendorDcrPending}</td>
+                        <td className="px-3 py-2 text-center text-red-600 font-bold align-middle">{inv.onHold}</td>
+                        <td className="px-3 py-2 text-center text-teal-600 font-bold align-middle">{inv.readyToIssue}</td>
+                        <td className="px-3 py-2 text-center text-green-600 font-bold align-middle">{inv.issued}</td>
+                        <td className="px-3 py-2 text-center align-middle whitespace-nowrap">
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
+                            inv.displayStatus === 'FULLY ISSUED' ? 'bg-green-50 text-green-600 border-green-200' :
+                            inv.displayStatus === 'PROCESSED - NO DCR REQUIRED' ? 'bg-gray-100 text-gray-600 border-gray-300' :
+                            inv.displayStatus === 'UNPROCESSED' ? 'bg-red-50 text-red-600 border-red-200' :
+                            'bg-orange-50 text-orange-600 border-orange-200'
+                          }`}>
+                            {inv.displayStatus}
+                          </span>
+                        </td>
+                        
+                      </tr>
+                    ))}
+                    {displayedNoDcr.length === 0 && (
+                      <tr><td colSpan={14} className="text-center py-6 text-gray-500 italic bg-gray-50">No invoices found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -587,7 +852,7 @@ export default function CustomerLookupClient() {
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-3 pr-10">
                   <h3 className="text-xl font-bold text-[#1A2766]">{activeInvoice.invoiceNumber}</h3>
-                  {getProcessingStatusBadge(activeInvoice.processingStatus)}
+                  {getWorkflowBadge(activeInvoice)}
                 </div>
                 <div className="flex items-center gap-4 text-xs text-gray-500 font-medium">
                   <span>Date: {new Date(activeInvoice.invoiceDate).toLocaleDateString()}</span>
@@ -630,7 +895,7 @@ export default function CustomerLookupClient() {
                               <th className="px-4 py-2 font-semibold text-center">On Hold</th>
                               <th className="px-4 py-2 font-semibold text-center">Ready</th>
                               <th className="px-4 py-2 font-semibold text-center">Issued</th>
-                              <th className="px-4 py-2 font-semibold">Status</th>
+                              
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200">
@@ -752,7 +1017,7 @@ export default function CustomerLookupClient() {
                                 <th className="px-4 py-2 font-semibold text-center text-gray-400">On Hold</th>
                                 <th className="px-4 py-2 font-semibold text-center text-gray-400">Ready</th>
                                 <th className="px-4 py-2 font-semibold text-center text-gray-400">Issued</th>
-                                <th className="px-4 py-2 font-semibold">Status</th>
+                                
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200">

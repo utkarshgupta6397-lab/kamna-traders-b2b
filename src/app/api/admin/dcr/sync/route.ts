@@ -76,6 +76,8 @@ export async function POST(req: Request) {
           data: {
             invoiceStatus: fullInvoice.status,
             invoiceTotal: fullInvoice.total,
+            locationId: fullInvoice.location_id || null,
+            locationName: fullInvoice.location_name || null,
             syncedAt: new Date(),
             ...(isLowValue ? {
               dcrStatus: 'NO_DCR_REQUIRED',
@@ -108,6 +110,8 @@ export async function POST(req: Request) {
             invoiceDate: new Date(fullInvoice.date),
             invoiceStatus: fullInvoice.status,
             invoiceTotal: fullInvoice.total,
+            locationId: fullInvoice.location_id || null,
+            locationName: fullInvoice.location_name || null,
             dcrStatus: isLowValue ? 'NO_DCR_REQUIRED' : 'NEW',
             archived: isLowValue,
             processedAt: isLowValue ? new Date() : null,

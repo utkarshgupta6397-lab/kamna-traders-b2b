@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {  useRouter , useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Trash2, HelpCircle, Save, Layers, ListFilter, AlertCircle, CheckCircle, FileText, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Trash2, HelpCircle, Save, Layers, ListFilter, AlertCircle, CheckCircle, FileText, ExternalLink, X } from 'lucide-react';
 import SerialHistoryModal from '@/components/dcr/SerialHistoryModal';
 import { useDcrStats } from '../../layout';
 
@@ -45,6 +45,14 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
     pendingSerials: string[];
     itemId: string;
   } | null>(null);
+
+  // Duplicate Checker State
+  const [duplicateCount, setDuplicateCount] = useState(0);
+  const [duplicateSerials, setDuplicateSerials] = useState<string[]>([]);
+  const [uniqueCount, setUniqueCount] = useState(0);
+  const [totalLines, setTotalLines] = useState(0);
+  const [showCleanupSuccess, setShowCleanupSuccess] = useState(false);
+  const [removedList, setRemovedList] = useState<string[]>([]);
 
   useEffect(() => {
     fetchInvoiceDetails();
@@ -162,6 +170,80 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
       setSaving(prev => ({ ...prev, [selectedItemId]: false }));
       setSaveStep(null);
     }
+  };
+
+  useEffect(() => {
+    if (!serialInput) {
+      setDuplicateCount(0);
+      setUniqueCount(0);
+      setTotalLines(0);
+      setDuplicateSerials([]);
+      return;
+    }
+
+    let items: string[] = [];
+    if (entryMethod === 'comma') {
+      items = serialInput.split(',');
+    } else {
+      items = serialInput.split('\n');
+    }
+
+    let validLinesCount = 0;
+    const seen = new Set<string>();
+    const dupes = new Set<string>();
+
+    items.forEach(item => {
+      const normalized = item.trim().toUpperCase();
+      if (normalized) {
+        validLinesCount++;
+        if (seen.has(normalized)) {
+          dupes.add(normalized);
+        } else {
+          seen.add(normalized);
+        }
+      }
+    });
+
+    setTotalLines(validLinesCount);
+    setUniqueCount(seen.size);
+    setDuplicateCount(dupes.size);
+    setDuplicateSerials(Array.from(dupes));
+
+  }, [serialInput, entryMethod]);
+
+  const handleRemoveDuplicates = () => {
+    if (!serialInput) return;
+    
+    let items: string[] = [];
+    let isComma = false;
+    if (entryMethod === 'comma') {
+      items = serialInput.split(',');
+      isComma = true;
+    } else {
+      items = serialInput.split('\n');
+    }
+
+    const seen = new Set<string>();
+    const newItems: string[] = [];
+    const removed: string[] = [];
+
+    items.forEach(item => {
+      const normalized = item.trim().toUpperCase();
+      if (!normalized) return; // ignore blank lines
+
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        newItems.push(normalized);
+      } else {
+        if (!removed.includes(normalized)) {
+          removed.push(normalized);
+        }
+      }
+    });
+
+    setSerialInput(newItems.join(isComma ? ', ' : '\n'));
+    setRemovedList(removed);
+    setShowCleanupSuccess(true);
   };
 
   const handleSkipInvoice = async () => {
@@ -559,6 +641,29 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
                           'System will automatically extract serial numbers and ignore text like "(620 Wp)" or line numbers.' :
                           'System will automatically convert serials to uppercase and trim spaces. Duplicate check is enforced.'}
                       </p>
+
+                      {/* Live Counters */}
+                      <div className="flex gap-4 text-[10px] text-gray-500 font-medium pt-1">
+                        <span>Lines Entered: {totalLines}</span>
+                        <span>Unique: {uniqueCount}</span>
+                        <span>Duplicates: {duplicateCount}</span>
+                      </div>
+
+                      {duplicateCount > 0 && (
+                        <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg p-3 mt-2">
+                          <div className="flex items-center gap-2 text-amber-700 font-medium text-xs">
+                            <AlertCircle size={14} />
+                            ⚠ {duplicateCount} duplicate serials detected
+                          </div>
+                          <button
+                            onClick={handleRemoveDuplicates}
+                            disabled={isSavingAny}
+                            className="bg-amber-100 hover:bg-amber-200 text-amber-800 px-3 py-1.5 rounded-md text-[11px] font-bold transition-colors disabled:opacity-50"
+                          >
+                            Remove Duplicates
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex justify-end gap-3 pt-1">
@@ -808,6 +913,49 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
               >
                 Close & Review
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Cleanup Success Modal */}
+      {showCleanupSuccess && (
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-green-50/50">
+              <h3 className="font-bold text-gray-900 text-lg">Duplicate Serials Removed</h3>
+              <button 
+                onClick={() => setShowCleanupSuccess(false)}
+                className="p-2 hover:bg-gray-200 rounded-full text-gray-500 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-gray-600 mb-3">The following duplicates were removed:</p>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 max-h-[40vh] overflow-y-auto font-mono text-xs text-gray-700 whitespace-pre-wrap">
+                {removedList.join('\n')}
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
+              <span className="text-sm font-semibold text-gray-600">Removed: {removedList.length} duplicate serials</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(removedList.join('\n'));
+                    toast.success('Copied to clipboard');
+                  }}
+                  className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-md text-sm font-semibold shadow-sm transition-colors"
+                >
+                  Copy Removed List
+                </button>
+                <button
+                  onClick={() => setShowCleanupSuccess(false)}
+                  className="bg-gray-800 text-white hover:bg-gray-700 px-5 py-2 rounded-md text-sm font-semibold shadow-sm transition-colors"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

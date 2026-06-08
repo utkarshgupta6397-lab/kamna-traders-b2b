@@ -23,7 +23,8 @@ export default function PendingSerialsClient() {
   // Modal State
   const [viewItemsModal, setViewItemsModal] = useState<any | null>(null);
   const [loadingInvoiceId, setLoadingInvoiceId] = useState<string | null>(null);
-  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [sortOrder, setSortOrder] = useState<string>('newest');
+  const [activeChip, setActiveChip] = useState<'all' | 'largest_pending' | 'partially_allocated' | 'unallocated' | 'nearly_complete'>('all');
 
   useEffect(() => {
     setLoadingInvoiceId(null);
@@ -39,13 +40,13 @@ export default function PendingSerialsClient() {
 
   useEffect(() => {
     fetchPendingInvoices();
-  }, [viewState, page, limit, searchQuery, sortOrder]);
+  }, [viewState, page, limit, searchQuery, sortOrder, activeChip]);
 
   const fetchPendingInvoices = async () => {
     try {
       setLoading(true);
       const res = await fetch(
-        `/api/admin/dcr/pending-serials?view=${viewState}&page=${page}&limit=${limit}&search=${encodeURIComponent(searchQuery)}&sort=${sortOrder}`
+        `/api/admin/dcr/pending-serials?view=${viewState}&page=${page}&limit=${limit}&search=${encodeURIComponent(searchQuery)}&sort=${sortOrder}&chip=${activeChip}`
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -145,11 +146,22 @@ export default function PendingSerialsClient() {
             <span className="text-xs text-gray-500 font-medium">Sort By:</span>
             <select
               value={sortOrder}
-              onChange={e => setSortOrder(e.target.value as 'newest' | 'oldest')}
-              className="border border-gray-300 rounded-md px-2.5 py-2 text-xs font-semibold focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766] bg-white text-gray-700 cursor-pointer shadow-sm"
+              onChange={e => { setSortOrder(e.target.value); setPage(1); }}
+              disabled={activeChip === 'largest_pending'}
+              className="border border-gray-300 rounded-md px-2.5 py-2 text-xs font-semibold focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766] bg-white text-gray-700 cursor-pointer shadow-sm disabled:opacity-50 disabled:bg-gray-50"
             >
               <option value="newest">Newest First</option>
               <option value="oldest">Oldest First</option>
+              <option value="pending_desc">Pending Serials ↓</option>
+              <option value="pending_asc">Pending Serials ↑</option>
+              <option value="value_desc">Invoice Value ↓</option>
+              <option value="value_asc">Invoice Value ↑</option>
+              <option value="progress_desc">Allocation Progress ↓</option>
+              <option value="progress_asc">Allocation Progress ↑</option>
+              <option value="dcr_items_desc">DCR Items ↓</option>
+              <option value="dcr_items_asc">DCR Items ↑</option>
+              <option value="customer_asc">Customer A-Z</option>
+              <option value="customer_desc">Customer Z-A</option>
             </select>
           </div>
         </div>
@@ -196,6 +208,29 @@ export default function PendingSerialsClient() {
             <CheckCircle2 size={20} />
           </div>
         </div>
+      </div>
+
+      {/* Quick Filter Chips */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-2 shrink-0 hide-scrollbar">
+        {[
+          { id: 'all', label: 'All' },
+          { id: 'largest_pending', label: 'Largest Pending' },
+          { id: 'partially_allocated', label: 'Partially Allocated' },
+          { id: 'unallocated', label: 'Unallocated' },
+          { id: 'nearly_complete', label: 'Nearly Complete' },
+        ].map(chip => (
+          <button
+            key={chip.id}
+            onClick={() => { setActiveChip(chip.id as any); setPage(1); }}
+            className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors border ${
+              activeChip === chip.id
+                ? 'bg-[#1A2766] text-white border-[#1A2766]'
+                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+            }`}
+          >
+            {chip.label}
+          </button>
+        ))}
       </div>
 
       {/* Invoice Table Grid */}
@@ -306,7 +341,8 @@ export default function PendingSerialsClient() {
                                 page: page.toString(),
                                 limit: limit.toString(),
                                 search: searchQuery,
-                                sort: sortOrder
+                                sort: sortOrder,
+                                chip: activeChip
                               }).toString();
                               router.push(`/staff/dashboard/accounts/dcr/pending-serials/${inv.id}?${currentParams}`);
                             }}
@@ -335,7 +371,8 @@ export default function PendingSerialsClient() {
                                 page: page.toString(),
                                 limit: limit.toString(),
                                 search: searchQuery,
-                                sort: sortOrder
+                                sort: sortOrder,
+                                chip: activeChip
                               }).toString();
                               router.push(`/staff/dashboard/accounts/dcr/pending-serials/${inv.id}?${currentParams}`);
                             }}

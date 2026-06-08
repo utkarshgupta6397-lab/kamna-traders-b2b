@@ -173,6 +173,7 @@ export default function AllocateSerialsClient({ invoiceId }: { invoiceId: string
       if (!params.has('limit')) params.set('limit', '25');
       if (!params.has('page')) params.set('page', '1');
       if (!params.has('sort')) params.set('sort', 'newest');
+      if (!params.has('chip')) params.set('chip', 'all');
       
       const currentParamsString = params.toString();
       const queueRes = await fetch(`/api/admin/dcr/pending-serials?${currentParamsString}`);

@@ -25,18 +25,18 @@ export async function GET(request: Request) {
     where: { id: cleanId }
   });
 
-  if (localCustomer && localCustomer.gstNumber) {
+  if (localCustomer && localCustomer.gstNumber && localCustomer.gstNumber !== 'NOT_AVAILABLE') {
     return NextResponse.json({
       success: true,
       data: {
         contactId: cleanId,
         contactName: localCustomer.name,
-        gstNo: localCustomer.gstNumber === 'NOT_AVAILABLE' ? '' : localCustomer.gstNumber
+        gstNo: localCustomer.gstNumber
       }
     });
   }
 
-  // 2. Fetch from Zoho if cache miss
+  // 2. Fetch from Zoho if cache miss or NOT_AVAILABLE
   const result = await getCustomerById(cleanId);
   if (!result.success) {
      return NextResponse.json({ error: result.error, raw: result.raw }, { status: 400 });
@@ -44,13 +44,24 @@ export async function GET(request: Request) {
 
   // 3. Save to local DB
   const gstNo = result.data?.gstNo || '';
-  const gstToStore = gstNo.trim() === '' ? 'NOT_AVAILABLE' : gstNo;
   const name = result.data?.contactName || 'Unknown Customer';
+
+  const updateData: any = { name };
+  if (gstNo.trim() !== '') {
+    updateData.gstNumber = gstNo.trim();
+  } else {
+    // If Zoho returns empty, we clear any 'NOT_AVAILABLE' lock
+    updateData.gstNumber = null;
+  }
 
   await prisma.customer.upsert({
     where: { id: cleanId },
-    update: { gstNumber: gstToStore, name },
-    create: { id: cleanId, name, gstNumber: gstToStore }
+    update: updateData,
+    create: { 
+      id: cleanId, 
+      name, 
+      gstNumber: gstNo.trim() !== '' ? gstNo.trim() : null 
+    }
   });
 
   return NextResponse.json(result);

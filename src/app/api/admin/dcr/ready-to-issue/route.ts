@@ -54,7 +54,7 @@ export async function GET(req: Request) {
             include: {
               serialAllocations: {
                 include: {
-                  serial: { select: { id: true, serialNumber: true, status: true } }
+                  serial: { select: { id: true, serialNumber: true, status: true, tag: true } }
                 },
                 orderBy: { allocatedAt: 'asc' }
               }
@@ -85,6 +85,7 @@ export async function GET(req: Request) {
             allocationId: alloc.id,
             serialNumber: alloc.serialNumber,
             status: alloc.serial?.status,
+            serialTag: alloc.serial?.tag,
           })),
           allocatedCount: item.serialAllocations.length,
           eligibleCount: eligibleSerials.length,
@@ -104,6 +105,7 @@ export async function GET(req: Request) {
         invoiceDate: inv.invoiceDate,
         invoiceTotal: inv.invoiceTotal,
         dcrStatus: inv.dcrStatus,
+        vendorDcrStatus: inv.vendorDcrStatus,
         totalSerials: totalEligible,
         totalAllocated,
         totalEligible,

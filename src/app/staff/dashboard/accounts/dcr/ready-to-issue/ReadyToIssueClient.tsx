@@ -56,6 +56,22 @@ export default function ReadyToIssueClient() {
   const [selectedSerials, setSelectedSerials] = useState<Set<string>>(new Set());
   const [isIssuing, setIsIssuing] = useState(false);
   const [customerGsts, setCustomerGsts] = useState<Record<string, { gst: string; loading: boolean; error: boolean }>>({});
+  const [drawerBalance, setDrawerBalance] = useState<number | null>(null);
+  const [loadingBalance, setLoadingBalance] = useState(false);
+
+  useEffect(() => {
+    if (drawerInvoice) {
+      setDrawerBalance(null);
+      setLoadingBalance(true);
+      fetch(`/api/admin/dcr/invoices/${drawerInvoice.id}/balance`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.balance !== undefined) setDrawerBalance(data.balance);
+        })
+        .catch(err => console.error('Failed to fetch balance', err))
+        .finally(() => setLoadingBalance(false));
+    }
+  }, [drawerInvoice?.id]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
@@ -133,6 +149,19 @@ export default function ReadyToIssueClient() {
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+
+  const getBlockReason = (serial: SerialEntry, invoice: ReadyInvoice) => {
+    if (serial.serialTag && serial.serialTag !== 'UNTAGGED') {
+      return serial.serialTag;
+    }
+    if (invoice.vendorDcrStatus === 'NOT_RECEIVED') {
+      return 'Vendor DCR Pending';
+    }
+    if (serial.status === 'HOLD') return 'Hold For Verification';
+    if (serial.status === 'AVAILABLE') return 'Serial Entry Pending';
+    if (serial.status === 'ALLOCATED') return 'Pending Processing';
+    return serial.status || 'Unknown Block';
+  };
 
   const handleIssue = async (invoiceId: string, serialNumbers?: string[], issueAll?: boolean) => {
     if (!window.confirm("Confirm that the physical DCR has been handed over to the customer.")) return;
@@ -466,7 +495,28 @@ export default function ReadyToIssueClient() {
                       <Copy size={12} />
                     </button>
                   </div>
-                  <div><span className="text-gray-400">Value:</span> <span className="font-semibold text-gray-900">{formatCurrency(drawerInvoice.invoiceTotal)}</span></div>
+                  <div className="flex flex-col gap-0.5">
+                    <div><span className="text-gray-400">Value:</span> <span className="font-semibold text-gray-900">{formatCurrency(drawerInvoice.invoiceTotal)}</span></div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-gray-400">Balance:</span> 
+                      {loadingBalance ? (
+                        <span className="text-gray-400 text-[11px] italic flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Fetching...</span>
+                      ) : drawerBalance !== null ? (
+                        <span className={`font-bold text-[11px] px-1.5 py-0.5 rounded ${
+                          drawerBalance === 0 ? 'bg-green-50 text-green-700' :
+                          drawerBalance === drawerInvoice.invoiceTotal ? 'bg-red-50 text-red-700' :
+                          'bg-amber-50 text-amber-700'
+                        }`}>
+                          {formatCurrency(drawerBalance)}
+                          {drawerBalance === 0 ? ' (FULLY PAID)' :
+                           drawerBalance === drawerInvoice.invoiceTotal ? ' (PAYMENT PENDING)' :
+                           ' (LOW BALANCE)'}
+                        </span>
+                      ) : (
+                        <span className="text-red-500 text-[11px]">Failed to load</span>
+                      )}
+                    </div>
+                  </div>
                   <div className="col-span-2 flex items-center gap-1.5">
                     <span className="text-gray-400">GST:</span> 
                     <span className="font-mono text-xs font-semibold">{(() => {
@@ -491,9 +541,9 @@ export default function ReadyToIssueClient() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 pt-1 flex-wrap">
-                  <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs font-semibold border border-gray-200">Items: {drawerInvoice.skuGroups.length}</span>
-                  <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs font-semibold border border-gray-200">Allocated Serials: {drawerInvoice.totalAllocated}</span>
-                  <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-xs font-semibold border border-emerald-200">Eligible To Issue: {drawerInvoice.totalEligible}</span>
+                  <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs font-semibold border border-gray-200">Allocated: {drawerInvoice.totalAllocated}</span>
+                  <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-xs font-semibold border border-emerald-200">Eligible: {drawerInvoice.totalEligible}</span>
+                  <span className="bg-red-50 text-red-700 px-2 py-0.5 rounded text-xs font-semibold border border-red-200">Blocked: {drawerInvoice.totalAllocated - drawerInvoice.totalEligible}</span>
                 </div>
               </div>
               <div className="flex flex-col items-end gap-2 w-36">
@@ -511,8 +561,8 @@ export default function ReadyToIssueClient() {
                   </button>
                   <button 
                     onClick={() => {
-                      const allSerials = drawerInvoice.skuGroups.flatMap(g => g.serials);
-                      handleCopySerials(allSerials, 'newline');
+                      const eligibleSerials = drawerInvoice.skuGroups.flatMap(g => g.serials.filter(s => s.status === 'READY_TO_ISSUE'));
+                      handleCopySerials(eligibleSerials, 'newline');
                     }}
                     className="w-full text-left flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded transition-colors"
                   >
@@ -520,8 +570,8 @@ export default function ReadyToIssueClient() {
                   </button>
                   <button 
                     onClick={() => {
-                      const allSerials = drawerInvoice.skuGroups.flatMap(g => g.serials);
-                      handleCopySerials(allSerials, 'comma');
+                      const eligibleSerials = drawerInvoice.skuGroups.flatMap(g => g.serials.filter(s => s.status === 'READY_TO_ISSUE'));
+                      handleCopySerials(eligibleSerials, 'comma');
                     }}
                     className="w-full text-left flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded transition-colors"
                   >
@@ -545,6 +595,34 @@ export default function ReadyToIssueClient() {
               </div>
             </div>
 
+            {/* Warning Banner */}
+            {(() => {
+              const allNonEligible = drawerInvoice.skuGroups.flatMap(g => g.serials.filter(s => s.status !== 'READY_TO_ISSUE'));
+              if (allNonEligible.length === 0) return null;
+              
+              const blockedCounts = allNonEligible.reduce((acc, serial) => {
+                const reason = getBlockReason(serial, drawerInvoice);
+                acc[reason] = (acc[reason] || 0) + 1;
+                return acc;
+              }, {} as Record<string, number>);
+
+              return (
+                <div className="mx-6 mt-4 p-4 rounded-lg border border-amber-200 bg-amber-50">
+                  <h4 className="font-bold text-amber-900 flex items-center gap-2 mb-2">
+                    <span className="text-amber-600">⚠</span> {allNonEligible.length} serials cannot currently be issued.
+                  </h4>
+                  <ul className="list-disc list-inside text-[13px] text-amber-800 space-y-1 mb-3 ml-1">
+                    {Object.entries(blockedCounts).map(([reason, count]) => (
+                      <li key={reason}><span className="font-semibold">{reason}:</span> {count}</li>
+                    ))}
+                  </ul>
+                  <p className="text-[13px] text-amber-900 font-semibold">
+                    Only {drawerInvoice.totalEligible} serial{drawerInvoice.totalEligible === 1 ? ' is' : 's are'} eligible.
+                  </p>
+                </div>
+              );
+            })()}
+
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {drawerInvoice.skuGroups.map(group => {
@@ -567,32 +645,43 @@ export default function ReadyToIssueClient() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap justify-end max-w-[200px]">
-                          {group.eligibleCount > 0 && (
-                            <button 
-                              onClick={() => {
-                                const eligibleForThisItem = group.serials.filter(s => s.status === 'READY_TO_ISSUE').map(s => s.serialNumber);
-                                handleIssue(drawerInvoice.id, eligibleForThisItem);
-                              }}
-                              disabled={isIssuing}
-                              className="w-full flex items-center justify-center gap-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2 py-1 rounded transition-colors disabled:opacity-50"
-                            >
-                              Issue Item ({group.eligibleCount})
-                            </button>
+                          {group.eligibleCount > 0 ? (
+                            <>
+                              <button 
+                                onClick={() => {
+                                  const eligibleForThisItem = group.serials.filter(s => s.status === 'READY_TO_ISSUE').map(s => s.serialNumber);
+                                  handleIssue(drawerInvoice.id, eligibleForThisItem);
+                                }}
+                                disabled={isIssuing}
+                                className="w-full flex items-center justify-center gap-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2 py-1 rounded transition-colors disabled:opacity-50"
+                              >
+                                Issue Item ({group.eligibleCount})
+                              </button>
+                              <div className="flex items-center gap-2 w-full justify-end">
+                                <button 
+                                  onClick={() => handleCopySerials(group.serials.filter(s => s.status === 'READY_TO_ISSUE'), 'newline', group.itemName)}
+                                  className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-white hover:bg-gray-50 px-2 py-1 rounded border border-gray-300 transition-colors"
+                                >
+                                  <Copy size={12} /> Lines
+                                </button>
+                                <button 
+                                  onClick={() => handleCopySerials(group.serials.filter(s => s.status === 'READY_TO_ISSUE'), 'comma', group.itemName)}
+                                  className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-white hover:bg-gray-50 px-2 py-1 rounded border border-gray-300 transition-colors"
+                                >
+                                  <Copy size={12} /> CSV
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="w-full flex flex-col items-end gap-1.5 mt-1">
+                              <span className="text-[11px] font-bold px-2 py-1 rounded bg-red-50 text-red-700 border border-red-200 flex items-center gap-1">
+                                🚫 Issue Blocked
+                              </span>
+                              <span className="text-[10px] text-red-500 font-semibold text-right leading-tight max-w-[150px]">
+                                Reason: {group.serials.length > 0 ? getBlockReason(group.serials[0], drawerInvoice) : 'Unknown'}
+                              </span>
+                            </div>
                           )}
-                          <div className="flex items-center gap-2 w-full justify-end">
-                            <button 
-                              onClick={() => handleCopySerials(group.serials, 'newline', group.itemName)}
-                              className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-white hover:bg-gray-50 px-2 py-1 rounded border border-gray-300 transition-colors"
-                            >
-                              <Copy size={12} /> Lines
-                            </button>
-                            <button 
-                              onClick={() => handleCopySerials(group.serials, 'comma', group.itemName)}
-                              className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-white hover:bg-gray-50 px-2 py-1 rounded border border-gray-300 transition-colors"
-                            >
-                              <Copy size={12} /> CSV
-                            </button>
-                          </div>
                         </div>
                       </div>
                     </div>
@@ -603,12 +692,17 @@ export default function ReadyToIssueClient() {
                         const eligibleSerials = filteredSerials.filter(s => s.status === 'READY_TO_ISSUE');
                         if (eligibleSerials.length === 0) return null;
                         return (
-                          <div className="flex flex-wrap gap-1.5">
-                            {eligibleSerials.map(serial => (
-                              <span key={serial.allocationId} className="font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-800 border-emerald-200 shadow-sm">
-                                {serial.serialNumber}
-                              </span>
-                            ))}
+                          <div className="p-3 rounded-lg bg-emerald-50/40 border border-emerald-100">
+                            <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                              <span className="text-emerald-600">✓</span> Eligible To Issue ({eligibleSerials.length})
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {eligibleSerials.map(serial => (
+                                <span key={serial.allocationId} className="font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-800 border-emerald-200 shadow-sm">
+                                  {serial.serialNumber}
+                                </span>
+                              ))}
+                            </div>
                           </div>
                         );
                       })()}
@@ -619,24 +713,22 @@ export default function ReadyToIssueClient() {
                         if (nonEligibleSerials.length === 0) return null;
 
                         const groups = nonEligibleSerials.reduce((acc, serial) => {
-                          const tag = serial.serialTag || 'UNTAGGED';
+                          const tag = getBlockReason(serial, drawerInvoice);
                           if (!acc[tag]) acc[tag] = [];
                           acc[tag].push(serial);
                           return acc;
                         }, {} as Record<string, typeof nonEligibleSerials>);
 
-                        const sortedTags = Object.keys(groups).sort((a, b) => {
-                          if (a === 'UNTAGGED') return 1;
-                          if (b === 'UNTAGGED') return -1;
-                          return a.localeCompare(b);
-                        });
+                        const sortedTags = Object.keys(groups).sort((a, b) => a.localeCompare(b));
 
                         return sortedTags.map(tag => (
-                          <div key={tag}>
-                            <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">{tag} ({groups[tag].length})</div>
+                          <div key={tag} className="p-3 rounded-lg bg-red-50 border border-red-100">
+                            <div className="text-[10px] font-bold text-red-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                              <span className="text-red-500">⚠</span> {tag} ({groups[tag].length})
+                            </div>
                             <div className="flex flex-wrap gap-1.5">
                               {groups[tag].map(serial => (
-                                <span key={serial.allocationId} className="font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border bg-gray-100 text-gray-600 border-gray-200">
+                                <span key={serial.allocationId} className="font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border bg-red-100 text-red-700 border-red-200 shadow-sm">
                                   {serial.serialNumber}
                                 </span>
                               ))}

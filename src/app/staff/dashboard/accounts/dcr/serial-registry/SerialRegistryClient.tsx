@@ -66,6 +66,13 @@ export default function SerialRegistryClient() {
   const [tagInput, setTagInput] = useState('');
   const [taggingLoading, setTaggingLoading] = useState(false);
 
+  // Vendor Report
+  const [vendorReportOpen, setVendorReportOpen] = useState(false);
+  const [vendorReportData, setVendorReportData] = useState<any[]>([]);
+  const [vendorReportLoading, setVendorReportLoading] = useState(false);
+  const [vendorSearch, setVendorSearch] = useState('');
+  const [minDaysFilter, setMinDaysFilter] = useState<number | ''>('');
+
   useEffect(() => {
     fetchStats();
   }, []);
@@ -241,6 +248,188 @@ export default function SerialRegistryClient() {
 
   const totalPages = Math.ceil(total / limit);
 
+  // Vendor Report Logic
+  const fetchVendorReport = async () => {
+    setVendorReportLoading(true);
+    try {
+      const res = await fetch('/api/admin/dcr/reports/vendor-pending');
+      const data = await res.json();
+      if (res.ok) setVendorReportData(data.data);
+      else toast.error('Failed to load vendor report');
+    } catch (err) {
+      toast.error('Failed to load vendor report');
+    } finally {
+      setVendorReportLoading(false);
+    }
+  };
+
+  const handleOpenVendorReport = () => {
+    setVendorReportOpen(true);
+    if (vendorReportData.length === 0) fetchVendorReport();
+  };
+
+  const filteredVendorReport = vendorReportData.filter(item => {
+    const searchLower = vendorSearch.toLowerCase();
+    const matchesSearch = !vendorSearch || 
+      item.vendorName.toLowerCase().includes(searchLower) || 
+      item.productName.toLowerCase().includes(searchLower) || 
+      item.skuCode.toLowerCase().includes(searchLower) ||
+      item.serialNumber.toLowerCase().includes(searchLower) ||
+      item.tag.toLowerCase().includes(searchLower);
+    const matchesDays = minDaysFilter === '' || item.daysPending >= Number(minDaysFilter);
+    return matchesSearch && matchesDays;
+  });
+
+  const vendorGrouped = filteredVendorReport.reduce((acc, item) => {
+    if (!acc[item.vendorName]) {
+      acc[item.vendorName] = { 
+        vendorName: item.vendorName, 
+        products: {},
+        billNumbers: new Set<string>()
+      };
+    }
+    if (item.billNumber && item.billNumber !== 'null' && item.billNumber.trim() !== '') {
+      acc[item.vendorName].billNumbers.add(item.billNumber.trim());
+    }
+
+    if (!acc[item.vendorName].products[item.productName]) {
+      acc[item.vendorName].products[item.productName] = {
+        productName: item.productName,
+        skuCode: item.skuCode,
+        tags: {},
+        billNumbers: new Set<string>()
+      };
+    }
+    const prod = acc[item.vendorName].products[item.productName];
+    if (item.billNumber && item.billNumber !== 'null' && item.billNumber.trim() !== '') {
+      prod.billNumbers.add(item.billNumber.trim());
+    }
+
+    if (!prod.tags[item.tag]) prod.tags[item.tag] = [];
+    prod.tags[item.tag].push(item);
+    return acc;
+  }, {} as Record<string, any>);
+
+  const vendorReportKpis = {
+    pendingVendors: Object.keys(vendorGrouped).length,
+    pendingProducts: new Set(filteredVendorReport.map(i => i.productName)).size,
+    pendingSerials: filteredVendorReport.length,
+    oldestPending: filteredVendorReport.length > 0 ? Math.max(...filteredVendorReport.map(i => i.daysPending)) : 0
+  };
+
+  const handleCopySerials = async (serialsToCopy: string[], separator: 'newline' | 'comma' = 'newline', contextMsg: string) => {
+    const text = serialsToCopy.join(separator === 'comma' ? ',' : '\n');
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        toast.success(contextMsg);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        textArea.remove();
+        toast.success(contextMsg);
+      }
+    } catch (err) {
+      toast.error('Failed to copy');
+    }
+  };
+
+  const handleCopyVendorSummary = async (vendorName: string, productsObj: any, billNumbersSet?: Set<string>) => {
+    const now = new Date();
+    // Use Intl to format like '09 Jun 2026 | 15:36'
+    const day = now.getDate().toString().padStart(2, '0');
+    const month = now.toLocaleString('en-GB', { month: 'short' });
+    const year = now.getFullYear();
+    const hours = now.getHours().toString().padStart(2, '0');
+    const mins = now.getMinutes().toString().padStart(2, '0');
+    const generatedStr = `${day} ${month} ${year} | ${hours}:${mins}`;
+
+    let summary = `📋 Vendor DCR Pending\n${generatedStr}\n\nVendor: ${vendorName}\n\n`;
+
+    if (billNumbersSet && billNumbersSet.size > 0) {
+      const sortedBills = Array.from(billNumbersSet).sort();
+      summary += `Bill(s): ${sortedBills.join(', ')}\n\n`;
+    }
+    
+    let totalProducts = 0;
+    let totalSerials = 0;
+
+    // Sort products by Pending Days DESC then Quantity DESC
+    const sortedProducts = Object.values(productsObj).sort((a: any, b: any) => {
+      const aSerials = Object.values(a.tags).flat() as any[];
+      const bSerials = Object.values(b.tags).flat() as any[];
+      const aMaxDays = Math.max(...aSerials.map(s => s.daysPending));
+      const bMaxDays = Math.max(...bSerials.map(s => s.daysPending));
+      
+      if (bMaxDays !== aMaxDays) return bMaxDays - aMaxDays;
+      return bSerials.length - aSerials.length;
+    });
+
+    sortedProducts.forEach((p: any) => {
+      totalProducts++;
+      const allSerials = Object.values(p.tags).flat() as any[];
+      totalSerials += allSerials.length;
+      
+      const oldestDays = Math.max(...allSerials.map((s: any) => s.daysPending));
+      
+      summary += `• ${p.productName}\n  Qty: ${allSerials.length}\n`;
+      
+      const tagEntries = Object.entries(p.tags).filter(([tag]) => tag.toLowerCase() !== 'untagged');
+      if (tagEntries.length > 0) {
+        const tagsStr = tagEntries.map(([tag, list]: [string, any]) => `${tag} (${list.length})`).join(', ');
+        summary += `  Tags: ${tagsStr}\n`;
+      }
+      
+      summary += `  Pending Since: ${oldestDays} Days\n\n`;
+    });
+
+    summary += `Products: ${totalProducts}\n`;
+    summary += `Pending Serials: ${totalSerials}`;
+
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(summary);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = summary;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        textArea.remove();
+      }
+      toast.success(`Copied summary for ${vendorName}`);
+    } catch (e) {
+      toast.error('Failed to copy');
+    }
+  };
+
+  const handleCopyProductCsv = async (productObj: any) => {
+    let csv = "Product Name,Serial Number,Tag,Pending Days\n";
+    Object.entries(productObj.tags).forEach(([tag, serialsList]: [string, any]) => {
+      serialsList.forEach((s: any) => {
+        csv += `"${productObj.productName}","${s.serialNumber}","${tag}",${s.daysPending}\n`;
+      });
+    });
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(csv);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = csv;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        textArea.remove();
+      }
+      toast.success(`Copied CSV for ${productObj.productName}`);
+    } catch (err) {
+      toast.error('Failed to copy');
+    }
+  };
+
   return (
     <div className="space-y-6 w-full min-w-0 pb-10">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -249,6 +438,13 @@ export default function SerialRegistryClient() {
           <p className="text-sm text-gray-500 mt-1">Search and track every serial number in the DCR ecosystem.</p>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={handleOpenVendorReport}
+            className="bg-orange-50 border border-orange-200 text-orange-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-orange-100 transition-colors shadow-sm flex items-center gap-2"
+          >
+            <Activity size={16} />
+            Vendor DCR Pending Report
+          </button>
           <button
             onClick={handleExport}
             disabled={exporting}
@@ -845,6 +1041,191 @@ export default function SerialRegistryClient() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Vendor DCR Pending Report Drawer */}
+      {vendorReportOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" onClick={() => setVendorReportOpen(false)} />
+          <div className="fixed top-0 right-0 h-full w-full max-w-[800px] bg-gray-50 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-300">
+            {/* Header */}
+            <div className="bg-white px-6 py-4 border-b border-gray-200 flex-shrink-0 flex items-start justify-between">
+              <div>
+                <h2 className="text-xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
+                  <Activity className="text-orange-600" size={20} /> Vendor DCR Pending Report
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">Serials awaiting DCR from vendors.</p>
+              </div>
+              <button onClick={() => setVendorReportOpen(false)} className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* KPIs */}
+            <div className="px-6 py-4 border-b border-gray-200 bg-white grid grid-cols-4 gap-4 flex-shrink-0">
+              <div className="bg-orange-50 border border-orange-100 p-3 rounded-xl text-center">
+                <div className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1">Vendors</div>
+                <div className="text-2xl font-bold text-orange-700">{vendorReportKpis.pendingVendors}</div>
+              </div>
+              <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl text-center">
+                <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-1">Products</div>
+                <div className="text-2xl font-bold text-blue-700">{vendorReportKpis.pendingProducts}</div>
+              </div>
+              <div className="bg-red-50 border border-red-100 p-3 rounded-xl text-center">
+                <div className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1">Serials</div>
+                <div className="text-2xl font-bold text-red-700">{vendorReportKpis.pendingSerials}</div>
+              </div>
+              <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl text-center">
+                <div className="text-[10px] font-bold text-gray-600 uppercase tracking-wider mb-1">Oldest Pending</div>
+                <div className="text-2xl font-bold text-gray-800">{vendorReportKpis.oldestPending}d</div>
+              </div>
+            </div>
+
+            {/* Filters */}
+            <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex gap-4 flex-shrink-0">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="Search vendor, product, SKU, serial..."
+                  value={vendorSearch}
+                  onChange={(e) => setVendorSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
+                />
+              </div>
+              <div className="w-48">
+                <input
+                  type="number"
+                  placeholder="Min Pending Days"
+                  value={minDaysFilter}
+                  onChange={(e) => setMinDaysFilter(e.target.value ? Number(e.target.value) : '')}
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {vendorReportLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600"></div>
+                </div>
+              ) : Object.keys(vendorGrouped).length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-gray-500 font-medium">No pending DCRs found matching criteria.</p>
+                </div>
+              ) : (
+                Object.values(vendorGrouped).map((vendor: any) => (
+                  <div key={vendor.vendorName} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="px-5 py-3 border-b border-gray-200 bg-gray-50/80 flex items-start justify-between">
+                      <div>
+                        <h3 className="font-bold text-gray-900">{vendor.vendorName}</h3>
+                        {vendor.billNumbers && vendor.billNumbers.size > 0 && (
+                          <div className="mt-1 text-xs text-gray-500">
+                            {vendor.billNumbers.size === 1 ? (
+                              <span>Bill: {Array.from(vendor.billNumbers)[0]}</span>
+                            ) : (
+                              <div className="flex flex-col gap-0.5 mt-0.5">
+                                <span className="font-semibold text-gray-600">Bills:</span>
+                                <ul className="list-disc pl-4 space-y-0.5">
+                                  {Array.from(vendor.billNumbers).sort().map((bill: any) => (
+                                    <li key={bill}>{bill}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleCopyVendorSummary(vendor.vendorName, vendor.products, vendor.billNumbers)}
+                        className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        <Copy size={14} /> Copy Summary
+                      </button>
+                    </div>
+                    <div className="p-4 space-y-4">
+                      {Object.values(vendor.products)
+                        .sort((a: any, b: any) => {
+                          const aSerials = Object.values(a.tags).flat() as any[];
+                          const bSerials = Object.values(b.tags).flat() as any[];
+                          const aMaxDays = Math.max(...aSerials.map(s => s.daysPending));
+                          const bMaxDays = Math.max(...bSerials.map(s => s.daysPending));
+                          if (bMaxDays !== aMaxDays) return bMaxDays - aMaxDays;
+                          return bSerials.length - aSerials.length;
+                        })
+                        .map((product: any) => {
+                        const allProdSerials = Object.values(product.tags).flat() as any[];
+                        const oldest = Math.max(...allProdSerials.map((s: any) => s.daysPending));
+                        const newest = Math.min(...allProdSerials.map((s: any) => s.daysPending));
+
+                        return (
+                          <div key={product.skuCode} className="border border-gray-100 rounded-lg overflow-hidden">
+                            <div className="px-4 py-3 bg-gray-50 flex items-start justify-between">
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-bold text-sm text-gray-800 break-words">{product.productName}</h4>
+                                <div className="flex flex-col gap-1 mt-1 text-xs text-gray-500">
+                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                                    <span className="font-mono">SKU: {product.skuCode}</span>
+                                    <span className="font-semibold text-orange-600">Pending: {allProdSerials.length}</span>
+                                    <span>
+                                      Pending Since: {oldest === newest ? `${oldest} Days` : `${oldest} Days (Newest: ${newest} Days)`}
+                                    </span>
+                                  </div>
+                                  {vendor.billNumbers.size > 1 && product.billNumbers && product.billNumbers.size > 0 && (
+                                    <div className="font-medium text-gray-700 mt-0.5">
+                                      Bills: {Array.from(product.billNumbers).sort().join(', ')}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                                <button
+                                  onClick={() => handleCopyProductCsv(product)}
+                                  className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-600 bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-50 transition-colors"
+                                >
+                                  <ExternalLink size={12} /> Copy CSV
+                                </button>
+                                <button
+                                  onClick={() => handleCopySerials(allProdSerials.map((s: any) => s.serialNumber), 'comma', `Copied ${allProdSerials.length} serials`)}
+                                  className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-600 bg-white border border-gray-300 px-2 py-1 rounded hover:bg-gray-50 transition-colors"
+                                >
+                                  <Copy size={12} /> Copy Serials
+                                </button>
+                              </div>
+                            </div>
+                            <div className="p-3 space-y-3">
+                              {Object.entries(product.tags).map(([tag, serialsList]: [string, any]) => (
+                                <div key={tag}>
+                                  <div className="flex items-center gap-2 mb-1.5">
+                                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{tag} ({serialsList.length})</div>
+                                    <button 
+                                      onClick={() => handleCopySerials(serialsList.map((s: any) => s.serialNumber), 'comma', `Copied ${serialsList.length} serials for ${tag}`)}
+                                      className="text-gray-400 hover:text-gray-700 transition-colors bg-gray-100 hover:bg-gray-200 px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1"
+                                    >
+                                      <Copy size={10} /> Copy Tag Serials
+                                    </button>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {serialsList.map((s: any) => (
+                                      <span key={s.serialNumber} className="font-mono text-[10px] font-medium px-1.5 py-0.5 rounded border bg-orange-50 text-orange-800 border-orange-200" title={`${s.daysPending} days pending`}>
+                                        {s.serialNumber}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </>
       )}
 
     </div>

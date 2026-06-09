@@ -75,8 +75,9 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: 'Serial not found' }, { status: 404 });
     }
 
-    const oldValues: Record<string, any> = {};
-    const updateData: Record<string, any> = {};
+    const oldValues: any = {};
+    const updateData: any = {};
+    let rollbackHistory: any = null;
 
     if (correctionType === 'CHANGE_SKU') {
       if (!newValues.skuId) return NextResponse.json({ error: 'newValues.skuId required' }, { status: 400 });
@@ -105,6 +106,17 @@ export async function PATCH(req: Request) {
       } else if (newValues.vendorDcrStatus === 'NOT_RECEIVED') {
         updateData.vendorDcrReceivedAt = null;
         updateData.vendorDcrReceivedBy = null;
+        
+        if (serial.vendorDcrStatus === 'RECEIVED' && serial.status !== 'ISSUED') {
+          if (serial.status === 'HOLD' || serial.status === 'READY_TO_ISSUE') {
+            oldValues.status = serial.status;
+            updateData.status = 'ALLOCATED';
+            rollbackHistory = {
+              oldStatus: serial.status,
+              newStatus: 'ALLOCATED'
+            };
+          }
+        }
       }
     } else if (correctionType === 'CHANGE_SERIAL') {
       if (!newValues.serialNumber) return NextResponse.json({ error: 'newValues.serialNumber required' }, { status: 400 });
@@ -203,13 +215,24 @@ export async function PATCH(req: Request) {
         }
       });
 
+      if (rollbackHistory) {
+        await tx.dcrSerialHistory.create({
+          data: {
+            serialId: serial.id,
+            eventType: 'STATUS_ROLLBACK',
+            eventDescription: `DCR correction rollback: ${rollbackHistory.oldStatus} → ${rollbackHistory.newStatus}`,
+            userId: session.userId,
+          }
+        });
+      }
+
       await tx.dcrAuditLog.create({
         data: {
           entityType: 'SERIAL',
           entityId: serial.id,
           action: `SERIAL_CORRECTION_${correctionType}`,
           userId: session.userId,
-          metadata: { serialNumber, oldValues, newValues: updateData, reason }
+          metadata: { serialNumber, oldValues, newValues: updateData, reason, rollbackHistory }
         }
       });
     });

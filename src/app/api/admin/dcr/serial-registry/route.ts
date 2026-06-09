@@ -19,7 +19,7 @@ export async function GET(req: Request) {
     const limit = parseInt(searchParams.get('limit') || '50');
     const isExport = searchParams.get('export') === 'true';
     
-    const whereClause: any = {};
+    const whereClause: any = { isDeleted: false };
     
     if (status && status !== 'ALL') {
       whereClause.status = status;
@@ -29,7 +29,7 @@ export async function GET(req: Request) {
       whereClause.vendorDcrStatus = vendorDcrStatus;
     }
 
-    if (q.length >= 3) {
+    if (q.trim().length >= 3) {
       whereClause.OR = [
         { serialNumber: { contains: q, mode: 'insensitive' } },
         { vendorName: { contains: q, mode: 'insensitive' } },
@@ -55,6 +55,11 @@ export async function GET(req: Request) {
                 ]
               }
             }
+          }
+        },
+        {
+          tag: {
+            tag: { contains: q, mode: 'insensitive' }
           }
         }
       ];
@@ -83,7 +88,8 @@ export async function GET(req: Request) {
           },
           orderBy: { allocatedAt: 'desc' },
           take: 1
-        }
+        },
+        tag: true
       }
     };
 
@@ -136,7 +142,7 @@ export async function GET(req: Request) {
     if (isExport) {
       // Build CSV
       const rows = [];
-      rows.push(['Serial Number', 'Product Name', 'SKU', 'Vendor', 'Vendor DCR', 'Status', 'Invoice Number', 'Customer', 'Allocated Date', 'Issued Date', 'Age (Days)'].join(','));
+      rows.push(['Serial Number', 'Product Name', 'SKU', 'Vendor', 'Vendor DCR', 'Status', 'Serial Tag', 'Invoice Number', 'Customer', 'Allocated Date', 'Issued Date', 'Age (Days)'].join(','));
       
       const now = new Date().getTime();
       enrichedSerials.forEach((s: any) => {
@@ -149,6 +155,7 @@ export async function GET(req: Request) {
           s.vendorName ? `"${s.vendorName.replace(/"/g, '""')}"` : '',
           s.vendorDcrStatus,
           s.status,
+          s.tag?.tag ? `"${s.tag.tag.replace(/"/g, '""')}"` : '',
           alloc?.invoice?.invoiceNumber || '',
           alloc?.invoice?.customerName ? `"${alloc.invoice.customerName.replace(/"/g, '""')}"` : '',
           alloc?.allocatedAt ? new Date(alloc.allocatedAt).toLocaleDateString('en-IN') : '',

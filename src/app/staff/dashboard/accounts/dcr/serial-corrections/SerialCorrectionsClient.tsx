@@ -5,7 +5,7 @@ import { Search, AlertTriangle, CheckCircle, Shield, Clock, ChevronDown } from '
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
-type CorrectionType = 'CHANGE_SKU' | 'FIX_PURCHASE' | 'FIX_DCR';
+type CorrectionType = 'CHANGE_SKU' | 'FIX_PURCHASE' | 'FIX_DCR' | 'CHANGE_SERIAL' | 'DELETE_SERIAL';
 
 export default function SerialCorrectionsClient() {
   const [searchSerial, setSearchSerial] = useState('');
@@ -33,6 +33,9 @@ export default function SerialCorrectionsClient() {
 
   // DCR fix values
   const [newVendorDcrStatus, setNewVendorDcrStatus] = useState<'RECEIVED' | 'NOT_RECEIVED'>('RECEIVED');
+
+  // Change Serial values
+  const [newSerialNumber, setNewSerialNumber] = useState('');
 
   useEffect(() => {
     fetch('/api/staff/skus')
@@ -75,6 +78,41 @@ export default function SerialCorrectionsClient() {
       newValues = { purchaseReceived: newPurchaseReceived, vendorName: newVendorName, billNumber: newBillNumber };
     } else if (correctionType === 'FIX_DCR') {
       newValues = { vendorDcrStatus: newVendorDcrStatus };
+    } else if (correctionType === 'CHANGE_SERIAL') {
+      const trimmedNewSerial = newSerialNumber.trim().toUpperCase();
+      if (!trimmedNewSerial) { toast.error('New serial cannot be empty'); return; }
+      if (trimmedNewSerial === serial.serialNumber) { toast.error('New serial cannot equal current serial'); return; }
+
+      // Check global uniqueness
+      setIsSubmitting(true);
+      try {
+        const checkRes = await fetch(`/api/admin/dcr/serial-corrections?serial=${encodeURIComponent(trimmedNewSerial)}`);
+        if (checkRes.ok) {
+          setIsSubmitting(false);
+          toast.error('Serial number already exists. Choose a different serial.');
+          return;
+        }
+      } catch (err) {
+        // If it throws an error other than 404, we can't be sure, but 404 means it's unique
+      }
+      setIsSubmitting(false);
+
+      newValues = { serialNumber: trimmedNewSerial };
+    } else if (correctionType === 'DELETE_SERIAL') {
+      if (reason.trim().length < 5) {
+        toast.error('Reason must be at least 5 characters');
+        return;
+      }
+      if (['ISSUED', 'READY_TO_ISSUE'].includes(serial.status)) {
+        toast.error('Cannot delete serial: Status is ' + serial.status);
+        return;
+      }
+      const hasIssueHistory = serial.history?.some((h: any) => h.eventType.includes('ISSUE'));
+      if (hasIssueHistory) {
+        toast.error('Cannot delete serial: Serial has been issued previously');
+        return;
+      }
+      newValues = {};
     }
 
     setIsSubmitting(true);
@@ -88,10 +126,11 @@ export default function SerialCorrectionsClient() {
       if (!res.ok) throw new Error(data.error);
       toast.success('Correction applied successfully. Audit trail recorded.');
       setReason('');
+      setNewSerialNumber('');
       // Refresh serial data
       handleSearch();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || 'Failed to apply correction');
     } finally {
       setIsSubmitting(false);
     }
@@ -240,8 +279,10 @@ export default function SerialCorrectionsClient() {
                 {/* Correction type */}
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-gray-700">Correction Type</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['CHANGE_SKU', 'FIX_PURCHASE', 'FIX_DCR'] as CorrectionType[]).map(t => (
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                    {([
+                      'CHANGE_SKU', 'FIX_PURCHASE', 'FIX_DCR', 'CHANGE_SERIAL', 'DELETE_SERIAL'
+                    ] as CorrectionType[]).map(t => (
                       <button
                         key={t}
                         type="button"
@@ -252,7 +293,7 @@ export default function SerialCorrectionsClient() {
                             : 'text-gray-600 border-gray-300 hover:border-[#1A2766]/40'
                         }`}
                       >
-                        {t === 'CHANGE_SKU' ? 'Change SKU' : t === 'FIX_PURCHASE' ? 'Fix Purchase' : 'Fix DCR'}
+                        {t === 'CHANGE_SKU' ? 'Change SKU' : t === 'FIX_PURCHASE' ? 'Fix Purchase' : t === 'FIX_DCR' ? 'Fix DCR' : t === 'CHANGE_SERIAL' ? 'Change Serial' : 'Delete Serial'}
                       </button>
                     ))}
                   </div>
@@ -323,6 +364,43 @@ export default function SerialCorrectionsClient() {
                         {status === 'RECEIVED' ? '✓ Received' : '✗ Not Received'}
                       </button>
                     ))}
+                  </div>
+                )}
+
+                {correctionType === 'CHANGE_SERIAL' && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 block mb-1">Current Serial</label>
+                      <input type="text" value={serial.serialNumber} disabled className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-500 cursor-not-allowed font-mono" />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 block mb-1">New Serial Number</label>
+                      <input 
+                        type="text" 
+                        value={newSerialNumber} 
+                        onChange={e => setNewSerialNumber(e.target.value.toUpperCase().replace(/\s/g, ''))} 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#1A2766] font-mono" 
+                        placeholder="Enter new serial number..."
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {correctionType === 'DELETE_SERIAL' && (
+                  <div className="space-y-4">
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-800">
+                      <p className="font-bold mb-2">Impact Analysis: Will Update</p>
+                      <ul className="space-y-1 ml-1">
+                        <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> Allocation Records: <strong>{serial.allocations?.length || 0}</strong></li>
+                        <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> Pending Serial Queue: <strong>{serial.allocations?.length > 0 ? 'Yes' : 'No'}</strong></li>
+                        <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> Ready To Issue Queue: <strong>No</strong></li>
+                        <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> Hold Queue: <strong>{serial.vendorDcrStatus === 'RECEIVED' && serial.status === 'ALLOCATED' ? 'Yes' : 'No'}</strong></li>
+                        <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> Invoice Allocation Status: <strong>{serial.allocations?.length > 0 ? 'Yes' : 'No'}</strong></li>
+                      </ul>
+                      <p className="mt-3 text-red-700/80 italic text-xs">
+                        This serial will be removed from active DCR processing. Allocation references will be updated automatically. Audit history will be preserved.
+                      </p>
+                    </div>
                   </div>
                 )}
 

@@ -59,36 +59,29 @@ export default function SerialRegistryClient() {
   const [serialDetail, setSerialDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
+  // Tags & Selection
+  const [selectedSerials, setSelectedSerials] = useState<Set<string>>(new Set());
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+  const [tagModalOpen, setTagModalOpen] = useState(false);
+  const [tagInput, setTagInput] = useState('');
+  const [taggingLoading, setTaggingLoading] = useState(false);
+
   useEffect(() => {
-    // We no longer need fetchStats globally since we compute them dynamically
-    // but we can leave it if needed elsewhere, though the prompt says "Do NOT issue extra API calls."
-    // We'll compute them purely from local memory.
+    fetchStats();
   }, []);
 
-  const computedStats = useCallback(() => {
-    return {
-      total: serials.length,
-      vendorDcrPending: serials.filter(s => s.vendorDcrStatus === 'NOT_RECEIVED' || s.vendorDcrStatus === 'PENDING').length,
-      available: serials.filter(s => s.status === 'AVAILABLE').length,
-      allocated: serials.filter(s => s.status === 'ALLOCATED').length,
-      hold: serials.filter(s => s.status === 'HOLD').length,
-      readyToIssue: serials.filter(s => s.status === 'READY_TO_ISSUE').length,
-      issued: serials.filter(s => s.status === 'ISSUED').length,
-    };
-  }, [serials]);
 
-  const currentStats = computedStats();
 
   useEffect(() => {
     // Only search if length >= 3 or empty
-    if (debouncedSearch.length === 0 || debouncedSearch.length >= 3) {
+    if (debouncedSearch.trim().length === 0 || debouncedSearch.trim().length >= 3) {
       setPage(1);
       fetchSerials();
     }
   }, [debouncedSearch, statusFilter, vendorDcrFilter]);
 
   useEffect(() => {
-    if (page > 1 || (debouncedSearch.length === 0 || debouncedSearch.length >= 3)) {
+    if (page > 1 || (debouncedSearch.trim().length === 0 || debouncedSearch.trim().length >= 3)) {
        fetchSerials();
     }
   }, [page]);
@@ -177,6 +170,75 @@ export default function SerialRegistryClient() {
     setSerialDetail(null);
   };
 
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      const newSet = new Set(selectedSerials);
+      serials.forEach(s => newSet.add(s.serialNumber));
+      setSelectedSerials(newSet);
+    } else {
+      const newSet = new Set(selectedSerials);
+      serials.forEach(s => newSet.delete(s.serialNumber));
+      setSelectedSerials(newSet);
+    }
+    setLastSelectedIndex(null);
+  };
+
+  const handleSelectRow = (serialNumber: string, index: number, e: React.MouseEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    const newSet = new Set(selectedSerials);
+    
+    if (e.shiftKey && lastSelectedIndex !== null) {
+      const start = Math.min(lastSelectedIndex, index);
+      const end = Math.max(lastSelectedIndex, index);
+      
+      const isSelected = newSet.has(serialNumber);
+      
+      for (let i = start; i <= end; i++) {
+        if (!isSelected) {
+          newSet.add(serials[i].serialNumber);
+        } else {
+          newSet.delete(serials[i].serialNumber);
+        }
+      }
+    } else {
+      if (newSet.has(serialNumber)) {
+        newSet.delete(serialNumber);
+      } else {
+        newSet.add(serialNumber);
+      }
+    }
+    
+    setSelectedSerials(newSet);
+    setLastSelectedIndex(index);
+  };
+
+  const submitTags = async () => {
+    if (selectedSerials.size === 0) return;
+    setTaggingLoading(true);
+    try {
+      const res = await fetch('/api/admin/dcr/serial-registry/tags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serialNumbers: Array.from(selectedSerials),
+          tag: tagInput
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update tags');
+      toast.success('Tags updated successfully');
+      setTagModalOpen(false);
+      setTagInput('');
+      setSelectedSerials(new Set());
+      setLastSelectedIndex(null);
+      fetchSerials();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update tags');
+    } finally {
+      setTaggingLoading(false);
+    }
+  };
+
   const totalPages = Math.ceil(total / limit);
 
   return (
@@ -205,49 +267,49 @@ export default function SerialRegistryClient() {
           className={`bg-white p-3 rounded-xl border ${statusFilter === 'ALL' && vendorDcrFilter === 'ALL' ? 'border-[#1A2766] ring-1 ring-[#1A2766]' : 'border-gray-200'} cursor-pointer hover:border-[#1A2766]/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Serials</div>
-          <div className="text-xl font-bold text-gray-900">{currentStats.total}</div>
+          <div className="text-xl font-bold text-gray-900">{stats?.total || 0}</div>
         </div>
         <div 
           onClick={() => { setVendorDcrFilter('NOT_RECEIVED'); setStatusFilter('ALL'); }}
           className={`bg-white p-3 rounded-xl border ${vendorDcrFilter === 'NOT_RECEIVED' ? 'border-orange-500 ring-1 ring-orange-500' : 'border-gray-200'} cursor-pointer hover:border-orange-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Vendor DCR Pending</div>
-          <div className="text-xl font-bold text-orange-600">{currentStats.vendorDcrPending}</div>
+          <div className="text-xl font-bold text-orange-600">{stats?.vendorDcrPending || 0}</div>
         </div>
         <div 
           onClick={() => { setStatusFilter('AVAILABLE'); setVendorDcrFilter('ALL'); }}
           className={`bg-white p-3 rounded-xl border ${statusFilter === 'AVAILABLE' ? 'border-blue-500 ring-1 ring-blue-500' : 'border-gray-200'} cursor-pointer hover:border-blue-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Available</div>
-          <div className="text-xl font-bold text-blue-600">{currentStats.available}</div>
+          <div className="text-xl font-bold text-blue-600">{stats?.available || 0}</div>
         </div>
         <div 
           onClick={() => { setStatusFilter('ALLOCATED'); setVendorDcrFilter('ALL'); }}
           className={`bg-white p-3 rounded-xl border ${statusFilter === 'ALLOCATED' ? 'border-purple-500 ring-1 ring-purple-500' : 'border-gray-200'} cursor-pointer hover:border-purple-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Allocated</div>
-          <div className="text-xl font-bold text-purple-600">{currentStats.allocated}</div>
+          <div className="text-xl font-bold text-purple-600">{stats?.allocated || 0}</div>
         </div>
         <div 
           onClick={() => { setStatusFilter('ALLOCATED'); setVendorDcrFilter('RECEIVED'); }}
           className={`bg-white p-3 rounded-xl border ${statusFilter === 'ALLOCATED' && vendorDcrFilter === 'RECEIVED' ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'} cursor-pointer hover:border-red-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Hold</div>
-          <div className="text-xl font-bold text-red-600">{currentStats.hold}</div>
+          <div className="text-xl font-bold text-red-600">{stats?.hold || 0}</div>
         </div>
         <div 
           onClick={() => { setStatusFilter('READY_TO_ISSUE'); setVendorDcrFilter('ALL'); }}
           className={`bg-white p-3 rounded-xl border ${statusFilter === 'READY_TO_ISSUE' ? 'border-teal-500 ring-1 ring-teal-500' : 'border-gray-200'} cursor-pointer hover:border-teal-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Ready To Issue</div>
-          <div className="text-xl font-bold text-teal-600">{currentStats.readyToIssue}</div>
+          <div className="text-xl font-bold text-teal-600">{stats?.readyToIssue || 0}</div>
         </div>
         <div 
           onClick={() => { setStatusFilter('ISSUED'); setVendorDcrFilter('ALL'); }}
           className={`bg-white p-3 rounded-xl border ${statusFilter === 'ISSUED' ? 'border-green-500 ring-1 ring-green-500' : 'border-gray-200'} cursor-pointer hover:border-green-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Issued</div>
-          <div className="text-xl font-bold text-green-600">{currentStats.issued}</div>
+          <div className="text-xl font-bold text-green-600">{stats?.issued || 0}</div>
         </div>
       </div>
 
@@ -293,15 +355,24 @@ export default function SerialRegistryClient() {
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[600px] w-full min-w-0">
         <div className="flex-1 overflow-auto w-full">
-          <table className="w-full text-left text-xs whitespace-nowrap table-fixed min-w-[1360px]">
+          <table className="w-full text-left text-xs whitespace-nowrap table-fixed min-w-[1560px]">
             <thead className="bg-gray-100 text-gray-700 sticky top-0 z-20 shadow-sm border-b border-gray-200">
               <tr>
-                <th className="px-3 py-2 font-bold uppercase tracking-wider w-[50px] sticky left-0 z-30 bg-gray-100 border-r border-gray-200 text-center">#</th>
-                <th className="px-3 py-2 font-bold uppercase tracking-wider w-[220px] sticky left-[50px] z-30 bg-gray-100 border-r border-gray-200">Serial Number</th>
+                <th className="px-3 py-2 w-[40px] sticky left-0 z-30 bg-gray-100 border-r border-gray-200 text-center">
+                  <input 
+                    type="checkbox" 
+                    className="rounded border-gray-300 text-[#1A2766] focus:ring-[#1A2766]"
+                    checked={serials.length > 0 && serials.every(s => selectedSerials.has(s.serialNumber))}
+                    onChange={handleSelectAll}
+                  />
+                </th>
+                <th className="px-3 py-2 font-bold uppercase tracking-wider w-[50px] sticky left-[40px] z-30 bg-gray-100 border-r border-gray-200 text-center">#</th>
+                <th className="px-3 py-2 font-bold uppercase tracking-wider w-[220px] sticky left-[90px] z-30 bg-gray-100 border-r border-gray-200">Serial Number</th>
                 <th className="px-3 py-2 font-bold uppercase tracking-wider w-[320px]">Product / SKU</th>
                 <th className="px-3 py-2 font-bold uppercase tracking-wider w-[180px]">Vendor</th>
                 <th className="px-3 py-2 font-bold uppercase tracking-wider w-[140px]">Status</th>
                 <th className="px-3 py-2 font-bold uppercase tracking-wider w-[140px]">Vendor DCR</th>
+                <th className="px-3 py-2 font-bold uppercase tracking-wider w-[200px]">Serial Tag</th>
                 <th className="px-3 py-2 font-bold uppercase tracking-wider w-[220px]">Allocation</th>
                 <th className="px-3 py-2 font-bold uppercase tracking-wider w-[100px] text-center">Age</th>
               </tr>
@@ -338,10 +409,19 @@ export default function SerialRegistryClient() {
                       className="hover:bg-blue-50/70 transition-colors cursor-pointer group"
                       onClick={() => openSerialDetail(serial.serialNumber)}
                     >
-                      <td className="px-3 py-1.5 text-center text-gray-500 font-medium sticky left-0 z-10 bg-white group-hover:bg-blue-50/70 border-r border-gray-100">
+                      <td className="px-3 py-1.5 text-center sticky left-0 z-10 bg-white group-hover:bg-blue-50/70 border-r border-gray-100">
+                        <input 
+                          type="checkbox" 
+                          className="rounded border-gray-300 text-[#1A2766] focus:ring-[#1A2766]"
+                          checked={selectedSerials.has(serial.serialNumber)}
+                          onClick={(e) => handleSelectRow(serial.serialNumber, index, e)}
+                          onChange={() => {}}
+                        />
+                      </td>
+                      <td className="px-3 py-1.5 text-center text-gray-500 font-medium sticky left-[40px] z-10 bg-white group-hover:bg-blue-50/70 border-r border-gray-100">
                         {rowIndex}
                       </td>
-                      <td className="px-3 py-1.5 font-bold text-[#1A2766] sticky left-[50px] z-10 bg-white group-hover:bg-blue-50/70 border-r border-gray-100">
+                      <td className="px-3 py-1.5 font-bold text-[#1A2766] sticky left-[90px] z-10 bg-white group-hover:bg-blue-50/70 border-r border-gray-100">
                         <div className="flex items-center gap-2">
                           <span>{serial.serialNumber}</span>
                           <button 
@@ -377,6 +457,15 @@ export default function SerialRegistryClient() {
                         <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded border ${getVendorDcrColor(serial.vendorDcrStatus)}`}>
                           {serial.vendorDcrStatus.replace(/_/g, ' ')}
                         </span>
+                      </td>
+                      <td className="px-3 py-1.5 truncate text-gray-900 font-medium" title={serial.tag?.tag}>
+                        {serial.tag?.tag ? (
+                          <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded border border-gray-200 font-medium text-[10px] uppercase tracking-wide">
+                            {serial.tag.tag}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 italic font-normal">-</span>
+                        )}
                       </td>
                       <td className="px-3 py-1.5 truncate" title={alloc ? `${alloc.invoice.invoiceNumber} (${alloc.invoice.customerName})` : 'Not Allocated'}>
                         {alloc ? (
@@ -683,6 +772,77 @@ export default function SerialRegistryClient() {
 
               </div>
             ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* Sticky Action Bar */}
+      {selectedSerials.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-6 z-50 animate-in slide-in-from-bottom-5 duration-200">
+          <div className="flex items-center gap-2 font-semibold">
+            <CheckCircle size={18} className="text-emerald-400" />
+            <span>{selectedSerials.size} Serials Selected</span>
+          </div>
+          <div className="w-px h-5 bg-gray-700"></div>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => { setTagInput(''); setTagModalOpen(true); }}
+              className="bg-[#1A2766] hover:bg-[#283885] px-4 py-1.5 rounded-full text-sm font-bold transition-colors shadow-sm"
+            >
+              Add Tag
+            </button>
+            <button 
+              onClick={() => { setSelectedSerials(new Set()); setLastSelectedIndex(null); }}
+              className="text-gray-300 hover:text-white px-3 py-1.5 text-sm font-semibold transition-colors"
+            >
+              Clear Selection
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tag Modal */}
+      {tagModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h2 className="text-lg font-bold text-gray-900">Tag Selected Serials</h2>
+              <button onClick={() => setTagModalOpen(false)} className="text-gray-400 hover:text-gray-700 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Serial Tag
+              </label>
+              <input 
+                type="text" 
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                maxLength={256}
+                placeholder="e.g. VIP Installation, Customer Demo Unit"
+                className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] transition-all"
+                autoFocus
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                Leave empty to clear existing tags from the selected serials. Max 256 characters.
+              </p>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
+              <button 
+                onClick={() => setTagModalOpen(false)}
+                className="px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={submitTags}
+                disabled={taggingLoading}
+                className="px-4 py-2 text-sm font-bold bg-[#1A2766] text-white hover:bg-[#283885] rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {taggingLoading ? 'Saving...' : 'Save Tag'}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -20,13 +20,13 @@ export async function GET(req: Request) {
       readyToIssue,
       issued
     ] = await Promise.all([
-      prisma.dcrSerial.count(),
-      prisma.dcrSerial.count({ where: { vendorDcrStatus: 'NOT_RECEIVED' } }),
-      prisma.dcrSerial.count({ where: { status: 'AVAILABLE' } }),
-      prisma.dcrSerial.count({ where: { status: 'ALLOCATED' } }),
-      prisma.dcrSerial.count({ where: { vendorDcrStatus: 'RECEIVED', status: 'ALLOCATED' } }),
-      prisma.dcrSerial.count({ where: { status: 'READY_TO_ISSUE' } }),
-      prisma.dcrSerial.count({ where: { status: 'ISSUED' } }),
+      prisma.dcrSerial.count({ where: { isDeleted: false } }),
+      prisma.dcrSerial.count({ where: { vendorDcrStatus: 'NOT_RECEIVED', isDeleted: false } }),
+      prisma.dcrSerial.count({ where: { status: 'AVAILABLE', isDeleted: false } }),
+      prisma.dcrSerial.count({ where: { status: 'ALLOCATED', isDeleted: false } }),
+      prisma.dcrSerial.count({ where: { vendorDcrStatus: 'RECEIVED', status: 'ALLOCATED', isDeleted: false } }),
+      prisma.dcrSerial.count({ where: { status: 'READY_TO_ISSUE', isDeleted: false } }),
+      prisma.dcrSerial.count({ where: { status: 'ISSUED', isDeleted: false } }),
     ]);
 
     return NextResponse.json({

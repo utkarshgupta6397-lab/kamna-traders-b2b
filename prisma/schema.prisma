@@ -625,13 +625,31 @@ model DcrSerial {
   vendorDcrReceivedAt DateTime?
   vendorDcrReceivedBy String?
   skuLocked           Boolean                @default(true)
+  isDeleted           Boolean                @default(false)
+  deletedAt           DateTime?
+  deletedBy           String?
+  deleteReason        String?
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
 
   history      DcrSerialHistory[]
   allocations  DcrSerialAllocation[]
+  tag          SerialTag?
 
   @@index([skuId])
+}
+
+model SerialTag {
+  id        String   @id @default(cuid())
+  serialId  String   @unique
+  tag       String   @db.VarChar(256)
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  serial    DcrSerial @relation(fields: [serialId], references: [id], onDelete: Cascade)
+
+  @@index([serialId])
 }
 
 model DcrSerialHistory {

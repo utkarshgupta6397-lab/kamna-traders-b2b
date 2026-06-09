@@ -103,22 +103,73 @@ export default function SerialRegistryClient() {
     }
   };
 
+  const [missingSerials, setMissingSerials] = useState<string[]>([]);
+  const [isMultiSearch, setIsMultiSearch] = useState(false);
+  const [multiSerialsCount, setMultiSerialsCount] = useState(0);
+
   const fetchSerials = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-        q: debouncedSearch,
-        status: statusFilter,
-        vendorDcrStatus: vendorDcrFilter,
-      });
+      // Detect Multi Search Mode
+      const isMulti = debouncedSearch.includes(',') || debouncedSearch.includes('\n') || debouncedSearch.includes(';');
+      
+      if (isMulti) {
+        setIsMultiSearch(true);
+        const parsedSerials = Array.from(new Set(
+          debouncedSearch.split(/[\n,;]+/)
+            .map(s => s.trim())
+            .filter(s => s.length > 0)
+        ));
+        setMultiSerialsCount(parsedSerials.length);
 
-      const res = await fetch(`/api/admin/dcr/serial-registry?${params.toString()}`);
-      const data = await res.json();
-      if (res.ok) {
-        setSerials(data.serials);
-        setTotal(data.total);
+        if (parsedSerials.length === 0) {
+          setSerials([]);
+          setTotal(0);
+          setMissingSerials([]);
+          setLoading(false);
+          return;
+        }
+
+        const res = await fetch('/api/admin/dcr/serial-registry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            serials: parsedSerials,
+            page,
+            limit,
+            status: statusFilter,
+            vendorDcrStatus: vendorDcrFilter
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setSerials(data.serials);
+          setTotal(data.total);
+          setMissingSerials(data.missingSerials || []);
+        } else {
+          toast.error(data.error || 'Failed to fetch serials');
+        }
+      } else {
+        setIsMultiSearch(false);
+        setMissingSerials([]);
+        setMultiSerialsCount(0);
+        
+        const params = new URLSearchParams({
+          page: page.toString(),
+          limit: limit.toString(),
+          q: debouncedSearch,
+          status: statusFilter,
+          vendorDcrStatus: vendorDcrFilter,
+        });
+
+        const res = await fetch(`/api/admin/dcr/serial-registry?${params.toString()}`);
+        const data = await res.json();
+        if (res.ok) {
+          setSerials(data.serials);
+          setTotal(data.total);
+        } else {
+          toast.error(data.error || 'Failed to fetch serials');
+        }
       }
     } catch (err) {
       toast.error('Failed to fetch serials');
@@ -513,13 +564,18 @@ export default function SerialRegistryClient() {
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row gap-4">
         <div className="flex-1 relative">
           <Search size={18} className="absolute left-3 top-3 text-gray-400" />
-          <input 
-            type="text" 
-            placeholder="Search by Serial Number, SKU, Product, Invoice, Customer, Vendor... (min 3 chars)"
+          <textarea 
+            placeholder="Search by Serial Number, SKU, Product, Invoice, Customer, Vendor... (min 3 chars). Use commas, newlines, or semicolons for Multi-Search Mode."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] transition-all"
+            rows={1}
+            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] transition-all resize-y min-h-[42px]"
           />
+          {isMultiSearch && (
+            <div className="absolute right-3 top-3 bg-[#1A2766] text-white text-[10px] font-bold px-2 py-0.5 rounded-md uppercase shadow-sm">
+              Multi Search Mode
+            </div>
+          )}
         </div>
         <div className="flex gap-4">
           <select
@@ -547,6 +603,35 @@ export default function SerialRegistryClient() {
           </select>
         </div>
       </div>
+
+      {/* Multi Search Summary */}
+      {isMultiSearch && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 shadow-sm flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-5 h-5 text-blue-600" />
+            <h3 className="font-bold text-blue-900">Found: {total} / {multiSerialsCount}</h3>
+          </div>
+          
+          {missingSerials.length > 0 && (
+            <details className="group">
+              <summary className="cursor-pointer text-sm font-medium text-blue-800 flex items-center outline-none">
+                <span className="bg-white border border-blue-200 px-3 py-1.5 rounded-lg shadow-sm hover:bg-blue-100 transition-colors">
+                  Show Missing Serials ({missingSerials.length})
+                </span>
+              </summary>
+              <div className="mt-3 bg-white border border-blue-100 rounded-lg p-3 max-h-48 overflow-y-auto">
+                <div className="flex flex-wrap gap-2">
+                  {missingSerials.map(s => (
+                    <span key={s} className="bg-red-50 text-red-700 border border-red-200 px-2 py-1 rounded-md text-xs font-mono">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </details>
+          )}
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[600px] w-full min-w-0">

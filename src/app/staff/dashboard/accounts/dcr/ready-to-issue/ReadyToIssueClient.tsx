@@ -614,8 +614,8 @@ export default function ReadyToIssueClient() {
                     <span className="text-amber-600">⚠</span> {allNonEligible.length} serials cannot currently be issued.
                   </h4>
                   <ul className="list-disc list-inside text-[13px] text-amber-800 space-y-1 mb-3 ml-1">
-                    {Object.entries(blockedCounts).map(([reason, count]) => (
-                      <li key={reason}><span className="font-semibold">{reason}:</span> {count}</li>
+                    {Object.entries(blockedCounts || {}).map(([reason, count]) => (
+                      <li key={reason || Math.random()}><span className="font-semibold">{reason || 'Unknown'}:</span> {count as number}</li>
                     ))}
                   </ul>
                   <p className="text-[13px] text-amber-900 font-semibold">
@@ -700,9 +700,9 @@ export default function ReadyToIssueClient() {
                               <span className="text-emerald-600">✓</span> Eligible To Issue ({eligibleSerials.length})
                             </div>
                             <div className="flex flex-wrap gap-1.5">
-                              {eligibleSerials.map(serial => (
-                                <span key={serial.allocationId} className="font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-800 border-emerald-200 shadow-sm">
-                                  {serial.serialNumber}
+                              {(eligibleSerials || []).map(serial => (
+                                <span key={serial?.allocationId || Math.random()} className="font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-800 border-emerald-200 shadow-sm">
+                                  {serial?.serialNumber || 'UNKNOWN'}
                                 </span>
                               ))}
                             </div>
@@ -722,17 +722,17 @@ export default function ReadyToIssueClient() {
                           return acc;
                         }, {} as Record<string, typeof nonEligibleSerials>);
 
-                        const sortedTags = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+                        const sortedTags = Object.keys(groups || {}).sort((a, b) => a.localeCompare(b));
 
                         return sortedTags.map(tag => (
-                          <div key={tag} className="p-3 rounded-lg bg-red-50 border border-red-100">
+                          <div key={tag || Math.random()} className="p-3 rounded-lg bg-red-50 border border-red-100">
                             <div className="text-[10px] font-bold text-red-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                              <span className="text-red-500">⚠</span> {tag} ({groups[tag].length})
+                              <span className="text-red-500">⚠</span> {tag || 'UNKNOWN'} ({(groups[tag] || []).length})
                             </div>
                             <div className="flex flex-wrap gap-1.5">
-                              {groups[tag].map(serial => (
-                                <span key={serial.allocationId} className="font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border bg-red-100 text-red-700 border-red-200 shadow-sm">
-                                  {serial.serialNumber}
+                              {(groups[tag] || []).map(serial => (
+                                <span key={serial?.allocationId || Math.random()} className="font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border bg-red-100 text-red-700 border-red-200 shadow-sm">
+                                  {serial?.serialNumber || 'UNKNOWN'}
                                 </span>
                               ))}
                             </div>

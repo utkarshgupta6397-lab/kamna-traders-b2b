@@ -16,8 +16,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ serialNu
     // Decode if needed (in case it's URL encoded)
     const decodedSerialNumber = decodeURIComponent(serialNumber);
 
-    const serial = await prisma.dcrSerial.findUnique({
-      where: { serialNumber: decodedSerialNumber },
+    const serial = await prisma.dcrSerial.findFirst({
+      where: { serialNumber: decodedSerialNumber, isDeleted: false },
       include: {
         allocations: {
           include: {

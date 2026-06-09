@@ -156,7 +156,7 @@ export async function POST(req: Request) {
       }
 
       const existingSerials = await prisma.dcrSerial.findMany({
-        where: { serialNumber: { in: cleanedSerials } }
+        where: { serialNumber: { in: cleanedSerials }, isDeleted: false }
       });
 
       for (const serial of cleanedSerials) {
@@ -183,7 +183,7 @@ export async function POST(req: Request) {
           .filter((s: string) => s.length > 0);
 
         const existingSerials = await tx.dcrSerial.findMany({
-          where: { serialNumber: { in: cleanedSerials } }
+        where: { serialNumber: { in: cleanedSerials }, isDeleted: false }
         });
 
         for (const serial of cleanedSerials) {

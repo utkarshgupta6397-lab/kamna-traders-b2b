@@ -11,8 +11,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ serialNu
 
     const { serialNumber } = await params;
 
-    const serial = await prisma.dcrSerial.findUnique({
-      where: { serialNumber },
+    const serial = await prisma.dcrSerial.findFirst({
+      where: { serialNumber, isDeleted: false },
       include: {
         history: {
           orderBy: { createdAt: 'desc' }

@@ -84,7 +84,7 @@ export async function PATCH(req: Request) {
     await prisma.$transaction(async (tx) => {
       // Update each DcrSerial status to ISSUED and write history
       for (const sn of targetSerialNumbers) {
-        const dcrSerial = await tx.dcrSerial.findUnique({ where: { serialNumber: sn } });
+        const dcrSerial = await tx.dcrSerial.findFirst({ where: { serialNumber: sn, isDeleted: false } });
         if (!dcrSerial) continue;
 
         await tx.dcrSerial.update({

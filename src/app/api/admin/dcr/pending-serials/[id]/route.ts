@@ -362,8 +362,8 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     await prisma.$transaction(async (tx) => {
       for (const allocation of allocations) {
         // Release the DcrSerial
-        const dcrSerial = await tx.dcrSerial.findUnique({
-          where: { serialNumber: allocation.serialNumber }
+        const dcrSerial = await tx.dcrSerial.findFirst({
+          where: { serialNumber: allocation.serialNumber, isDeleted: false }
         });
 
         if (dcrSerial) {

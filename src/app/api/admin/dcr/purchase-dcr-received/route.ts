@@ -28,7 +28,8 @@ export async function POST(req: Request) {
     // Fetch existing records in bulk to avoid N+1 queries
     const existingSerials = await prisma.dcrSerial.findMany({
       where: {
-        serialNumber: { in: cleanedSerials }
+        serialNumber: { in: cleanedSerials },
+        isDeleted: false
       }
     });
 

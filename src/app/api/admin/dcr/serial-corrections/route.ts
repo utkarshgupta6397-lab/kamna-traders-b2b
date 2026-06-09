@@ -16,8 +16,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Serial number required' }, { status: 400 });
     }
 
-    const serial = await prisma.dcrSerial.findUnique({
-      where: { serialNumber },
+    const serial = await prisma.dcrSerial.findFirst({
+      where: { serialNumber, isDeleted: false },
       include: {
         allocations: {
           include: {
@@ -67,8 +67,8 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: 'serialNumber, correctionType, and reason are required' }, { status: 400 });
     }
 
-    const serial = await prisma.dcrSerial.findUnique({ 
-      where: { serialNumber: serialNumber.toUpperCase() },
+    const serial = await prisma.dcrSerial.findFirst({ 
+      where: { serialNumber: serialNumber.toUpperCase(), isDeleted: false },
       include: { allocations: true, history: true }
     });
     if (!serial) {
@@ -110,7 +110,7 @@ export async function PATCH(req: Request) {
       if (!newValues.serialNumber) return NextResponse.json({ error: 'newValues.serialNumber required' }, { status: 400 });
       const newSerialTrimmed = newValues.serialNumber.trim().toUpperCase();
       
-      const existing = await prisma.dcrSerial.findUnique({ where: { serialNumber: newSerialTrimmed } });
+      const existing = await prisma.dcrSerial.findFirst({ where: { serialNumber: newSerialTrimmed, isDeleted: false } });
       if (existing) {
         return NextResponse.json({ error: 'Serial number already exists' }, { status: 400 });
       }
@@ -127,6 +127,7 @@ export async function PATCH(req: Request) {
       }
       
       updateData.isDeleted = true;
+      updateData.serialNumber = `${serial.serialNumber}_DEL_${Date.now()}`;
       updateData.deletedAt = new Date();
       updateData.deletedBy = session.userId;
       updateData.deleteReason = reason;
@@ -136,6 +137,18 @@ export async function PATCH(req: Request) {
     }
 
     await prisma.$transaction(async (tx) => {
+
+      // Clear the way for the new serial number if a deleted serial is squatting on it
+      if (correctionType === 'CHANGE_SERIAL' && newValues.serialNumber) {
+        const newSerialTrimmed = newValues.serialNumber.trim().toUpperCase();
+        const deletedSquatter = await tx.dcrSerial.findUnique({ where: { serialNumber: newSerialTrimmed } });
+        if (deletedSquatter && deletedSquatter.isDeleted) {
+          await tx.dcrSerial.update({
+            where: { id: deletedSquatter.id },
+            data: { serialNumber: `${deletedSquatter.serialNumber}_DEL_${Date.now()}` }
+          });
+        }
+      }
 
       if (correctionType === 'DELETE_SERIAL' && serial.allocations && serial.allocations.length > 0) {
         await tx.dcrSerialAllocation.deleteMany({

@@ -11,6 +11,7 @@ interface SerialEntry {
   allocationId: string;
   serialNumber: string;
   status: string;
+  serialTag?: string | null;
 }
 
 interface SkuGroup {
@@ -560,7 +561,9 @@ export default function ReadyToIssueClient() {
                           <h3 className="font-bold text-gray-900 text-sm leading-tight">{group.itemName}</h3>
                           <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500">
                             <span className="font-mono">SKU: {group.sku || 'N/A'}</span>
-                            <span className="font-semibold text-emerald-700">Allocated {group.allocatedCount} / {group.quantity}</span>
+                            <span className="font-semibold text-emerald-700">
+                              Allocated {group.allocatedCount}/{group.quantity} | Tags: {new Set(group.serials.filter(s => s.status !== 'READY_TO_ISSUE').map(s => s.serialTag || 'UNTAGGED')).size} | Eligible: {group.eligibleCount}
+                            </span>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap justify-end max-w-[200px]">
@@ -594,21 +597,54 @@ export default function ReadyToIssueClient() {
                       </div>
                     </div>
                     
-                    <div className="p-3 bg-white">
-                      <div className="flex flex-wrap gap-1.5">
-                        {filteredSerials.map(serial => {
-                          const isEligible = serial.status === 'READY_TO_ISSUE';
-                          return (
-                            <span key={serial.allocationId} className={`font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border ${
-                              isEligible 
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 shadow-sm' 
-                                : 'bg-gray-100 text-gray-600 border-gray-200'
-                            }`}>
-                              {serial.serialNumber}
-                            </span>
-                          );
-                        })}
-                      </div>
+                    <div className="p-3 bg-white space-y-4">
+                      {/* Eligible Serials */}
+                      {(() => {
+                        const eligibleSerials = filteredSerials.filter(s => s.status === 'READY_TO_ISSUE');
+                        if (eligibleSerials.length === 0) return null;
+                        return (
+                          <div className="flex flex-wrap gap-1.5">
+                            {eligibleSerials.map(serial => (
+                              <span key={serial.allocationId} className="font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-800 border-emerald-200 shadow-sm">
+                                {serial.serialNumber}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Non-Eligible Serials */}
+                      {(() => {
+                        const nonEligibleSerials = filteredSerials.filter(s => s.status !== 'READY_TO_ISSUE');
+                        if (nonEligibleSerials.length === 0) return null;
+
+                        const groups = nonEligibleSerials.reduce((acc, serial) => {
+                          const tag = serial.serialTag || 'UNTAGGED';
+                          if (!acc[tag]) acc[tag] = [];
+                          acc[tag].push(serial);
+                          return acc;
+                        }, {} as Record<string, typeof nonEligibleSerials>);
+
+                        const sortedTags = Object.keys(groups).sort((a, b) => {
+                          if (a === 'UNTAGGED') return 1;
+                          if (b === 'UNTAGGED') return -1;
+                          return a.localeCompare(b);
+                        });
+
+                        return sortedTags.map(tag => (
+                          <div key={tag}>
+                            <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">{tag} ({groups[tag].length})</div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {groups[tag].map(serial => (
+                                <span key={serial.allocationId} className="font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border bg-gray-100 text-gray-600 border-gray-200">
+                                  {serial.serialNumber}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ));
+                      })()}
+
                       {filteredSerials.length === 0 && !serialSearch && (
                         <p className="text-xs text-gray-400 italic">No serials allocated.</p>
                       )}

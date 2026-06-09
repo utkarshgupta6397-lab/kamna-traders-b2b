@@ -152,7 +152,9 @@ export default function ReadyToIssueClient() {
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
 
   const getBlockReason = (serial: SerialEntry, invoice: ReadyInvoice) => {
-    if (serial.serialTag && serial.serialTag !== 'UNTAGGED') {
+  const getBlockReason = (serial: SerialEntry, invoice: ReadyInvoice) => {
+    if (!serial) return 'Unknown Block';
+    if (serial.serialTag && serial.serialTag.trim() !== '' && serial.serialTag !== 'UNTAGGED') {
       return serial.serialTag;
     }
     if (serial.vendorDcrStatus === 'NOT_RECEIVED') {
@@ -562,7 +564,7 @@ export default function ReadyToIssueClient() {
                   </button>
                   <button 
                     onClick={() => {
-                      const eligibleSerials = drawerInvoice.skuGroups.flatMap(g => g.serials.filter(s => s.status === 'READY_TO_ISSUE'));
+                      const eligibleSerials = (drawerInvoice?.skuGroups || []).flatMap(g => (g.serials || []).filter(s => s && s.status === 'READY_TO_ISSUE'));
                       handleCopySerials(eligibleSerials, 'newline');
                     }}
                     className="w-full text-left flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded transition-colors"
@@ -571,7 +573,7 @@ export default function ReadyToIssueClient() {
                   </button>
                   <button 
                     onClick={() => {
-                      const eligibleSerials = drawerInvoice.skuGroups.flatMap(g => g.serials.filter(s => s.status === 'READY_TO_ISSUE'));
+                      const eligibleSerials = (drawerInvoice?.skuGroups || []).flatMap(g => (g.serials || []).filter(s => s && s.status === 'READY_TO_ISSUE'));
                       handleCopySerials(eligibleSerials, 'comma');
                     }}
                     className="w-full text-left flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded transition-colors"
@@ -598,11 +600,11 @@ export default function ReadyToIssueClient() {
 
             {/* Warning Banner */}
             {(() => {
-              const allNonEligible = drawerInvoice.skuGroups.flatMap(g => g.serials.filter(s => s.status !== 'READY_TO_ISSUE'));
+              const allNonEligible = (drawerInvoice?.skuGroups || []).flatMap(g => (g.serials || []).filter(s => s && s.status !== 'READY_TO_ISSUE'));
               if (allNonEligible.length === 0) return null;
               
               const blockedCounts = allNonEligible.reduce((acc, serial) => {
-                const reason = getBlockReason(serial, drawerInvoice);
+                const reason = getBlockReason(serial, drawerInvoice) || 'Unknown Block';
                 acc[reason] = (acc[reason] || 0) + 1;
                 return acc;
               }, {} as Record<string, number>);
@@ -618,7 +620,7 @@ export default function ReadyToIssueClient() {
                     ))}
                   </ul>
                   <p className="text-[13px] text-amber-900 font-semibold">
-                    Only {drawerInvoice.totalEligible} serial{drawerInvoice.totalEligible === 1 ? ' is' : 's are'} eligible.
+                    Only {drawerInvoice?.totalEligible || 0} serial{(drawerInvoice?.totalEligible || 0) === 1 ? ' is' : 's are'} eligible.
                   </p>
                 </div>
               );
@@ -626,9 +628,10 @@ export default function ReadyToIssueClient() {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {drawerInvoice.skuGroups.map(group => {
-                const searchLower = serialSearch.toLowerCase();
-                const filteredSerials = group.serials.filter(s => s.serialNumber.toLowerCase().includes(searchLower));
+              {(drawerInvoice?.skuGroups || []).map(group => {
+                const searchLower = (serialSearch || '').toLowerCase();
+                const groupSerials = group.serials || [];
+                const filteredSerials = groupSerials.filter(s => s && s.serialNumber && s.serialNumber.toLowerCase().includes(searchLower));
 
                 if (serialSearch && filteredSerials.length === 0) return null;
 
@@ -641,16 +644,16 @@ export default function ReadyToIssueClient() {
                           <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500">
                             <span className="font-mono">SKU: {group.sku || 'N/A'}</span>
                             <span className="font-semibold text-emerald-700">
-                              Allocated {group.allocatedCount}/{group.quantity} | Tags: {new Set(group.serials.filter(s => s.status !== 'READY_TO_ISSUE').map(s => s.serialTag || 'UNTAGGED')).size} | Eligible: {group.eligibleCount}
+                              Allocated {group.allocatedCount || 0}/{group.quantity || 0} | Tags: {new Set((group.serials || []).filter(s => s && s.status !== 'READY_TO_ISSUE').map(s => (s && s.serialTag) || 'UNTAGGED')).size} | Eligible: {group.eligibleCount || 0}
                             </span>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap justify-end max-w-[200px]">
-                          {group.eligibleCount > 0 ? (
+                          {(group.eligibleCount || 0) > 0 ? (
                             <>
                               <button 
                                 onClick={() => {
-                                  const eligibleForThisItem = group.serials.filter(s => s.status === 'READY_TO_ISSUE').map(s => s.serialNumber);
+                                  const eligibleForThisItem = (group.serials || []).filter(s => s && s.status === 'READY_TO_ISSUE').map(s => s.serialNumber);
                                   handleIssue(drawerInvoice.id, eligibleForThisItem);
                                 }}
                                 disabled={isIssuing}
@@ -660,13 +663,13 @@ export default function ReadyToIssueClient() {
                               </button>
                               <div className="flex items-center gap-2 w-full justify-end">
                                 <button 
-                                  onClick={() => handleCopySerials(group.serials.filter(s => s.status === 'READY_TO_ISSUE'), 'newline', group.itemName)}
+                                  onClick={() => handleCopySerials((group.serials || []).filter(s => s && s.status === 'READY_TO_ISSUE'), 'newline', group.itemName)}
                                   className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-white hover:bg-gray-50 px-2 py-1 rounded border border-gray-300 transition-colors"
                                 >
                                   <Copy size={12} /> Lines
                                 </button>
                                 <button 
-                                  onClick={() => handleCopySerials(group.serials.filter(s => s.status === 'READY_TO_ISSUE'), 'comma', group.itemName)}
+                                  onClick={() => handleCopySerials((group.serials || []).filter(s => s && s.status === 'READY_TO_ISSUE'), 'comma', group.itemName)}
                                   className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-white hover:bg-gray-50 px-2 py-1 rounded border border-gray-300 transition-colors"
                                 >
                                   <Copy size={12} /> CSV
@@ -679,7 +682,7 @@ export default function ReadyToIssueClient() {
                                 🚫 Issue Blocked
                               </span>
                               <span className="text-[10px] text-red-500 font-semibold text-right leading-tight max-w-[150px]">
-                                Reason: {group.serials.length > 0 ? getBlockReason(group.serials[0], drawerInvoice) : 'Unknown'}
+                                Reason: {(group.serials || []).length > 0 ? getBlockReason(group.serials[0], drawerInvoice) : 'Unknown'}
                               </span>
                             </div>
                           )}
@@ -710,11 +713,11 @@ export default function ReadyToIssueClient() {
 
                       {/* Non-Eligible Serials */}
                       {(() => {
-                        const nonEligibleSerials = filteredSerials.filter(s => s.status !== 'READY_TO_ISSUE');
+                        const nonEligibleSerials = filteredSerials.filter(s => s && s.status !== 'READY_TO_ISSUE');
                         if (nonEligibleSerials.length === 0) return null;
 
                         const groups = nonEligibleSerials.reduce((acc, serial) => {
-                          const tag = getBlockReason(serial, drawerInvoice);
+                          const tag = getBlockReason(serial, drawerInvoice) || 'Unknown Block';
                           if (!acc[tag]) acc[tag] = [];
                           acc[tag].push(serial);
                           return acc;
@@ -745,7 +748,7 @@ export default function ReadyToIssueClient() {
                   </div>
                 );
               })}
-              {drawerInvoice.skuGroups.every(g => !g.serials.some(s => s.serialNumber.toLowerCase().includes(serialSearch.toLowerCase()))) && serialSearch && (
+              {(drawerInvoice?.skuGroups || []).every(g => !(g.serials || []).some(s => s && s.serialNumber && s.serialNumber.toLowerCase().includes((serialSearch || '').toLowerCase()))) && serialSearch && (
                 <div className="text-center py-12">
                   <p className="text-gray-500 font-medium">No serials found matching &quot;{serialSearch}&quot;</p>
                 </div>

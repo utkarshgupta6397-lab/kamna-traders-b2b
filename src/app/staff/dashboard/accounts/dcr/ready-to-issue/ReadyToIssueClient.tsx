@@ -18,6 +18,8 @@ interface SkuGroup {
   itemName: string;
   sku: string | null;
   quantity: number;
+  allocatedCount: number;
+  eligibleCount: number;
   serials: SerialEntry[];
 }
 
@@ -32,6 +34,8 @@ interface ReadyInvoice {
   invoiceTotal: number;
   dcrStatus: string;
   totalSerials: number;
+  totalAllocated: number;
+  totalEligible: number;
   skuGroups: SkuGroup[];
 }
 
@@ -109,6 +113,12 @@ export default function ReadyToIssueClient() {
       setInvoices(data.invoices || []);
       setTotal(data.total || 0);
       setKpis(data.kpis || { invoicesReady: 0, serialsReady: 0 });
+
+      setDrawerInvoice(prev => {
+        if (!prev) return null;
+        const updated = data.invoices?.find((i: ReadyInvoice) => i.id === prev.id);
+        return updated || null;
+      });
     } catch (err: any) {
       toast.error(err.message || 'Failed to load ready-to-issue queue');
     } finally {
@@ -189,6 +199,56 @@ export default function ReadyToIssueClient() {
     } else {
       fallbackCopy(text);
     }
+  };
+
+  const handleCopyText = async (text: string, label: string) => {
+    if (!text || text.trim() === '' || text === 'N/A' || text === 'GST_UNAVAILABLE') {
+      toast.error(`No ${label} available to copy`);
+      return;
+    }
+    const fallbackCopy = (textToCopy: string) => {
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = textToCopy;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        textArea.remove();
+        if (successful) {
+          toast.success(`${label} copied`);
+        } else {
+          toast.error(`Unable to copy ${label}`);
+        }
+      } catch (err) {
+        toast.error(`Unable to copy ${label}`);
+      }
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast.success(`${label} copied`);
+      } catch (err) {
+        fallbackCopy(text);
+      }
+    } else {
+      fallbackCopy(text);
+    }
+  };
+
+  const handleDrawerIssueEligible = () => {
+    if (!drawerInvoice) return;
+    const eligibleSerials = drawerInvoice.skuGroups.flatMap(g => 
+      g.serials.filter(s => s.status === 'READY_TO_ISSUE').map(s => s.serialNumber)
+    );
+    if (eligibleSerials.length === 0) return;
+    
+    // Pass 'true' for issueAll because we want to issue all eligible, which does the same on the backend.
+    handleIssue(drawerInvoice.id, undefined, true);
   };
 
   return (
@@ -387,32 +447,67 @@ export default function ReadyToIssueClient() {
             
             {/* Header */}
             <div className="bg-white px-6 py-4 border-b border-gray-200 flex-shrink-0 flex items-start justify-between">
-              <div className="space-y-3">
+              <div className="space-y-3 flex-1 pr-4">
                 <h2 className="text-lg font-bold tracking-tight text-gray-900">Allocated Serials</h2>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] text-gray-600">
-                  <div><span className="text-gray-400">Invoice:</span> <span className="font-semibold text-[#1A2766]">{drawerInvoice.invoiceNumber}</span></div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-gray-400">Invoice:</span> 
+                    <span className="font-semibold text-[#1A2766]">{drawerInvoice.invoiceNumber}</span>
+                    <button onClick={() => handleCopyText(drawerInvoice.invoiceNumber, 'Invoice')} className="text-gray-400 hover:text-gray-700 transition-colors">
+                      <Copy size={12} />
+                    </button>
+                  </div>
                   <div><span className="text-gray-400">Date:</span> <span>{format(new Date(drawerInvoice.invoiceDate), 'dd MMM yyyy')}</span></div>
-                  <div><span className="text-gray-400">Customer:</span> <span>{drawerInvoice.customerName}</span></div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-gray-400">Customer:</span> 
+                    <span className="truncate max-w-[200px]" title={drawerInvoice.customerName}>{drawerInvoice.customerName}</span>
+                    <button onClick={() => handleCopyText(drawerInvoice.customerName, 'Customer')} className="text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0">
+                      <Copy size={12} />
+                    </button>
+                  </div>
                   <div><span className="text-gray-400">Value:</span> <span className="font-semibold text-gray-900">{formatCurrency(drawerInvoice.invoiceTotal)}</span></div>
-                  <div className="col-span-2">
-                    <span className="text-gray-400">GST:</span> <span className="font-mono text-xs">{(() => {
+                  <div className="col-span-2 flex items-center gap-1.5">
+                    <span className="text-gray-400">GST:</span> 
+                    <span className="font-mono text-xs font-semibold">{(() => {
                       const gstInfo = customerGsts[drawerInvoice.customerId];
                       const gstValue = gstInfo ? gstInfo.gst : drawerInvoice.customer_gst_no;
                       const isMissing = !gstValue || gstValue.trim() === '' || gstValue === 'NOT_AVAILABLE' || gstValue === '—' || gstValue === 'GST_UNAVAILABLE';
                       return isMissing ? 'N/A' : gstValue;
                     })()}</span>
+                    {(() => {
+                      const gstInfo = customerGsts[drawerInvoice.customerId];
+                      const gstValue = gstInfo ? gstInfo.gst : drawerInvoice.customer_gst_no;
+                      const isMissing = !gstValue || gstValue.trim() === '' || gstValue === 'NOT_AVAILABLE' || gstValue === '—' || gstValue === 'GST_UNAVAILABLE';
+                      if (!isMissing) {
+                         return (
+                           <button onClick={() => handleCopyText(gstValue, 'GST')} className="text-gray-400 hover:text-gray-700 transition-colors">
+                             <Copy size={12} />
+                           </button>
+                         );
+                      }
+                      return null;
+                    })()}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex items-center gap-2 pt-1 flex-wrap">
                   <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs font-semibold border border-gray-200">Items: {drawerInvoice.skuGroups.length}</span>
-                  <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-xs font-semibold border border-emerald-200">Serials: {drawerInvoice.totalSerials}</span>
+                  <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs font-semibold border border-gray-200">Allocated Serials: {drawerInvoice.totalAllocated}</span>
+                  <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-xs font-semibold border border-emerald-200">Eligible To Issue: {drawerInvoice.totalEligible}</span>
                 </div>
               </div>
-              <div className="flex flex-col items-end gap-2">
+              <div className="flex flex-col items-end gap-2 w-36">
                 <button onClick={() => setDrawerInvoice(null)} className="p-1 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-800 transition-colors">
                   <X size={18} />
                 </button>
-                <div className="flex flex-col gap-2 mt-2">
+                <div className="flex flex-col gap-2 mt-2 w-full">
+                  <button 
+                    onClick={handleDrawerIssueEligible}
+                    disabled={isIssuing || drawerInvoice.totalEligible === 0}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-bold bg-emerald-600 text-white hover:bg-emerald-700 rounded transition-colors disabled:opacity-50"
+                  >
+                    {isIssuing ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                    Issue Eligible ({drawerInvoice.totalEligible})
+                  </button>
                   <button 
                     onClick={() => {
                       const allSerials = drawerInvoice.skuGroups.flatMap(g => g.serials);
@@ -465,33 +560,54 @@ export default function ReadyToIssueClient() {
                           <h3 className="font-bold text-gray-900 text-sm leading-tight">{group.itemName}</h3>
                           <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500">
                             <span className="font-mono">SKU: {group.sku || 'N/A'}</span>
-                            <span className="font-semibold text-emerald-700">Allocated {group.serials.length}/{group.quantity}</span>
+                            <span className="font-semibold text-emerald-700">Allocated {group.allocatedCount} / {group.quantity}</span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button 
-                            onClick={() => handleCopySerials(group.serials, 'newline', group.itemName)}
-                            className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-white hover:bg-gray-50 px-2 py-1 rounded border border-gray-300 transition-colors"
-                          >
-                            <Copy size={12} /> Copy Item Lines
-                          </button>
-                          <button 
-                            onClick={() => handleCopySerials(group.serials, 'comma', group.itemName)}
-                            className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-white hover:bg-gray-50 px-2 py-1 rounded border border-gray-300 transition-colors"
-                          >
-                            <Copy size={12} /> Copy Item CSV
-                          </button>
+                        <div className="flex items-center gap-2 flex-wrap justify-end max-w-[200px]">
+                          {group.eligibleCount > 0 && (
+                            <button 
+                              onClick={() => {
+                                const eligibleForThisItem = group.serials.filter(s => s.status === 'READY_TO_ISSUE').map(s => s.serialNumber);
+                                handleIssue(drawerInvoice.id, eligibleForThisItem);
+                              }}
+                              disabled={isIssuing}
+                              className="w-full flex items-center justify-center gap-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2 py-1 rounded transition-colors disabled:opacity-50"
+                            >
+                              Issue Item ({group.eligibleCount})
+                            </button>
+                          )}
+                          <div className="flex items-center gap-2 w-full justify-end">
+                            <button 
+                              onClick={() => handleCopySerials(group.serials, 'newline', group.itemName)}
+                              className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-white hover:bg-gray-50 px-2 py-1 rounded border border-gray-300 transition-colors"
+                            >
+                              <Copy size={12} /> Lines
+                            </button>
+                            <button 
+                              onClick={() => handleCopySerials(group.serials, 'comma', group.itemName)}
+                              className="flex items-center gap-1 text-[11px] font-semibold text-gray-700 bg-white hover:bg-gray-50 px-2 py-1 rounded border border-gray-300 transition-colors"
+                            >
+                              <Copy size={12} /> CSV
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
                     
                     <div className="p-3 bg-white">
                       <div className="flex flex-wrap gap-1.5">
-                        {filteredSerials.map(serial => (
-                          <span key={serial.allocationId} className="font-mono text-[11px] font-medium text-gray-800 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
-                            {serial.serialNumber}
-                          </span>
-                        ))}
+                        {filteredSerials.map(serial => {
+                          const isEligible = serial.status === 'READY_TO_ISSUE';
+                          return (
+                            <span key={serial.allocationId} className={`font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border ${
+                              isEligible 
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 shadow-sm' 
+                                : 'bg-gray-100 text-gray-600 border-gray-200'
+                            }`}>
+                              {serial.serialNumber}
+                            </span>
+                          );
+                        })}
                       </div>
                       {filteredSerials.length === 0 && !serialSearch && (
                         <p className="text-xs text-gray-400 italic">No serials allocated.</p>

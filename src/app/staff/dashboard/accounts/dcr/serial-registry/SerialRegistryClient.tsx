@@ -60,8 +60,24 @@ export default function SerialRegistryClient() {
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   useEffect(() => {
-    fetchStats();
+    // We no longer need fetchStats globally since we compute them dynamically
+    // but we can leave it if needed elsewhere, though the prompt says "Do NOT issue extra API calls."
+    // We'll compute them purely from local memory.
   }, []);
+
+  const computedStats = useCallback(() => {
+    return {
+      total: serials.length,
+      vendorDcrPending: serials.filter(s => s.vendorDcrStatus === 'NOT_RECEIVED' || s.vendorDcrStatus === 'PENDING').length,
+      available: serials.filter(s => s.status === 'AVAILABLE').length,
+      allocated: serials.filter(s => s.status === 'ALLOCATED').length,
+      hold: serials.filter(s => s.status === 'HOLD').length,
+      readyToIssue: serials.filter(s => s.status === 'READY_TO_ISSUE').length,
+      issued: serials.filter(s => s.status === 'ISSUED').length,
+    };
+  }, [serials]);
+
+  const currentStats = computedStats();
 
   useEffect(() => {
     // Only search if length >= 3 or empty
@@ -150,10 +166,10 @@ export default function SerialRegistryClient() {
     }
   };
 
-  const handleCopy = (text: string, e?: React.MouseEvent) => {
+  const handleCopy = (text: string, e?: React.MouseEvent, toastMsg: string = 'Serial copied') => {
     if (e) e.stopPropagation();
     navigator.clipboard.writeText(text);
-    toast.success('Serial copied', { style: { fontSize: '12px' } });
+    toast.success(toastMsg, { style: { fontSize: '12px' } });
   };
 
   const closeDetail = () => {
@@ -189,49 +205,49 @@ export default function SerialRegistryClient() {
           className={`bg-white p-3 rounded-xl border ${statusFilter === 'ALL' && vendorDcrFilter === 'ALL' ? 'border-[#1A2766] ring-1 ring-[#1A2766]' : 'border-gray-200'} cursor-pointer hover:border-[#1A2766]/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Serials</div>
-          <div className="text-xl font-bold text-gray-900">{stats?.total || 0}</div>
+          <div className="text-xl font-bold text-gray-900">{currentStats.total}</div>
         </div>
         <div 
           onClick={() => { setVendorDcrFilter('NOT_RECEIVED'); setStatusFilter('ALL'); }}
           className={`bg-white p-3 rounded-xl border ${vendorDcrFilter === 'NOT_RECEIVED' ? 'border-orange-500 ring-1 ring-orange-500' : 'border-gray-200'} cursor-pointer hover:border-orange-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Vendor DCR Pending</div>
-          <div className="text-xl font-bold text-orange-600">{stats?.vendorDcrPending || 0}</div>
+          <div className="text-xl font-bold text-orange-600">{currentStats.vendorDcrPending}</div>
         </div>
         <div 
           onClick={() => { setStatusFilter('AVAILABLE'); setVendorDcrFilter('ALL'); }}
           className={`bg-white p-3 rounded-xl border ${statusFilter === 'AVAILABLE' ? 'border-blue-500 ring-1 ring-blue-500' : 'border-gray-200'} cursor-pointer hover:border-blue-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Available</div>
-          <div className="text-xl font-bold text-blue-600">{stats?.available || 0}</div>
+          <div className="text-xl font-bold text-blue-600">{currentStats.available}</div>
         </div>
         <div 
           onClick={() => { setStatusFilter('ALLOCATED'); setVendorDcrFilter('ALL'); }}
           className={`bg-white p-3 rounded-xl border ${statusFilter === 'ALLOCATED' ? 'border-purple-500 ring-1 ring-purple-500' : 'border-gray-200'} cursor-pointer hover:border-purple-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Allocated</div>
-          <div className="text-xl font-bold text-purple-600">{stats?.allocated || 0}</div>
+          <div className="text-xl font-bold text-purple-600">{currentStats.allocated}</div>
         </div>
         <div 
           onClick={() => { setStatusFilter('ALLOCATED'); setVendorDcrFilter('RECEIVED'); }}
           className={`bg-white p-3 rounded-xl border ${statusFilter === 'ALLOCATED' && vendorDcrFilter === 'RECEIVED' ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'} cursor-pointer hover:border-red-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Hold</div>
-          <div className="text-xl font-bold text-red-600">{stats?.hold || 0}</div>
+          <div className="text-xl font-bold text-red-600">{currentStats.hold}</div>
         </div>
         <div 
           onClick={() => { setStatusFilter('READY_TO_ISSUE'); setVendorDcrFilter('ALL'); }}
           className={`bg-white p-3 rounded-xl border ${statusFilter === 'READY_TO_ISSUE' ? 'border-teal-500 ring-1 ring-teal-500' : 'border-gray-200'} cursor-pointer hover:border-teal-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Ready To Issue</div>
-          <div className="text-xl font-bold text-teal-600">{stats?.readyToIssue || 0}</div>
+          <div className="text-xl font-bold text-teal-600">{currentStats.readyToIssue}</div>
         </div>
         <div 
           onClick={() => { setStatusFilter('ISSUED'); setVendorDcrFilter('ALL'); }}
           className={`bg-white p-3 rounded-xl border ${statusFilter === 'ISSUED' ? 'border-green-500 ring-1 ring-green-500' : 'border-gray-200'} cursor-pointer hover:border-green-500/50 transition-all shadow-sm`}
         >
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Issued</div>
-          <div className="text-xl font-bold text-green-600">{stats?.issued || 0}</div>
+          <div className="text-xl font-bold text-green-600">{currentStats.issued}</div>
         </div>
       </div>
 
@@ -338,7 +354,16 @@ export default function SerialRegistryClient() {
                         </div>
                       </td>
                       <td className="px-3 py-1.5 truncate text-gray-900 font-medium" title={`${serial.computedProduct} (${serial.computedSku})`}>
-                        {serial.computedProduct} <span className="text-gray-500">({serial.computedSku})</span>
+                        <div className="flex items-center gap-2">
+                          <span>{serial.computedProduct} <span className="text-gray-500">({serial.computedSku})</span></span>
+                          <button 
+                            onClick={(e) => handleCopy(serial.computedProduct, e, 'Product copied')}
+                            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors opacity-0 group-hover:opacity-100"
+                            title="Copy Product Name"
+                          >
+                            <Copy size={12} />
+                          </button>
+                        </div>
                       </td>
                       <td className="px-3 py-1.5 truncate text-gray-900 font-medium" title={serial.vendorName || '-'}>
                         {serial.vendorName || '-'}
@@ -355,9 +380,18 @@ export default function SerialRegistryClient() {
                       </td>
                       <td className="px-3 py-1.5 truncate" title={alloc ? `${alloc.invoice.invoiceNumber} (${alloc.invoice.customerName})` : 'Not Allocated'}>
                         {alloc ? (
-                          <span className="text-gray-900 font-medium">
-                            {alloc.invoice.invoiceNumber} <span className="text-gray-500">({alloc.invoice.customerName})</span>
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-900 font-medium">
+                              {alloc.invoice.invoiceNumber} <span className="text-gray-500">({alloc.invoice.customerName})</span>
+                            </span>
+                            <button 
+                              onClick={(e) => handleCopy(`${alloc.invoice.invoiceNumber} (${alloc.invoice.customerName})`, e, 'Allocation copied')}
+                              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors opacity-0 group-hover:opacity-100"
+                              title="Copy Allocation"
+                            >
+                              <Copy size={12} />
+                            </button>
+                          </div>
                         ) : (
                           <span className="text-gray-400 italic">Not Allocated</span>
                         )}

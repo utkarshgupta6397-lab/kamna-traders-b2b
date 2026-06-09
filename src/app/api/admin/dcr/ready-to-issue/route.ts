@@ -81,15 +81,18 @@ export async function GET(req: Request) {
           itemName: item.itemName,
           sku: item.sku,
           quantity: item.quantity,
-          serials: eligibleSerials.map(alloc => ({
+          serials: item.serialAllocations.map(alloc => ({
             allocationId: alloc.id,
             serialNumber: alloc.serialNumber,
             status: alloc.serial?.status,
           })),
+          allocatedCount: item.serialAllocations.length,
+          eligibleCount: eligibleSerials.length,
         };
-      }).filter(g => g.serials.length > 0);
+      });
 
-      const totalSerials = skuGroups.reduce((s, g) => s + g.serials.length, 0);
+      const totalAllocated = skuGroups.reduce((s, g) => s + g.allocatedCount, 0);
+      const totalEligible = skuGroups.reduce((s, g) => s + g.eligibleCount, 0);
 
       return {
         id: inv.id,
@@ -101,10 +104,12 @@ export async function GET(req: Request) {
         invoiceDate: inv.invoiceDate,
         invoiceTotal: inv.invoiceTotal,
         dcrStatus: inv.dcrStatus,
-        totalSerials,
+        totalSerials: totalEligible,
+        totalAllocated,
+        totalEligible,
         skuGroups,
       };
-    }).filter(inv => inv.totalSerials > 0);
+    }).filter(inv => inv.totalEligible > 0);
 
     return NextResponse.json({ 
       invoices: formattedInvoices, 

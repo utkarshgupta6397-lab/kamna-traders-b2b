@@ -152,7 +152,6 @@ export default function ReadyToIssueClient() {
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
 
   const getBlockReason = (serial: SerialEntry, invoice: ReadyInvoice) => {
-  const getBlockReason = (serial: SerialEntry, invoice: ReadyInvoice) => {
     if (!serial) return 'Unknown Block';
     if (serial.serialTag && serial.serialTag.trim() !== '' && serial.serialTag !== 'UNTAGGED') {
       return serial.serialTag;

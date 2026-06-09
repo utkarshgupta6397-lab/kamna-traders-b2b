@@ -22,11 +22,21 @@ export async function GET(req: Request) {
     const whereClause: any = { isDeleted: false };
     
     if (status && status !== 'ALL') {
+      if (status === 'PENDING') {
+        return NextResponse.json({ serials: [], total: 0, missingSerials: [] });
+      }
       whereClause.status = status;
     }
     
     if (vendorDcrStatus && vendorDcrStatus !== 'ALL') {
       whereClause.vendorDcrStatus = vendorDcrStatus;
+    }
+
+    const invoiceId = searchParams.get('invoiceId') || '';
+    if (invoiceId) {
+      whereClause.allocations = {
+        some: { invoiceId }
+      };
     }
 
     if (q.trim().length >= 3) {
@@ -70,6 +80,7 @@ export async function GET(req: Request) {
       orderBy: { createdAt: 'desc' },
       include: {
         allocations: {
+          where: invoiceId ? { invoiceId } : undefined,
           include: {
             invoice: {
               select: {
@@ -195,7 +206,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { serials: requestedSerials = [], page = 1, limit = 50, status = '', vendorDcrStatus = '' } = body;
+    const { serials: requestedSerials = [], page = 1, limit = 50, status = '', vendorDcrStatus = '', invoiceId = '' } = body;
 
     if (!Array.isArray(requestedSerials) || requestedSerials.length === 0) {
       return NextResponse.json({ error: 'Invalid or empty serials array' }, { status: 400 });
@@ -207,11 +218,20 @@ export async function POST(req: Request) {
     };
     
     if (status && status !== 'ALL') {
+      if (status === 'PENDING') {
+        return NextResponse.json({ serials: [], total: 0, missingSerials: requestedSerials });
+      }
       whereClause.status = status;
     }
     
     if (vendorDcrStatus && vendorDcrStatus !== 'ALL') {
       whereClause.vendorDcrStatus = vendorDcrStatus;
+    }
+
+    if (invoiceId) {
+      whereClause.allocations = {
+        some: { invoiceId }
+      };
     }
 
     const queryArgs: any = {
@@ -221,6 +241,7 @@ export async function POST(req: Request) {
       take: limit,
       include: {
         allocations: {
+          where: invoiceId ? { invoiceId } : undefined,
           include: {
             invoice: {
               select: {

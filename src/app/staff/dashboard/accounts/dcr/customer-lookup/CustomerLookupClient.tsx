@@ -393,6 +393,14 @@ export default function CustomerLookupClient() {
     });
   }
 
+  const openSerialRegistry = (e: React.MouseEvent, invoiceId: string, invoiceNumber: string, filterType: 'PENDING' | 'NOT_RECEIVED' | 'HOLD' | 'READY_TO_ISSUE' | 'ISSUED') => {
+    e.stopPropagation();
+    let url = `/staff/dashboard/accounts/dcr/serial-registry?invoiceId=${encodeURIComponent(invoiceId)}&invoiceNumber=${encodeURIComponent(invoiceNumber)}`;
+    if (filterType === 'NOT_RECEIVED') url += '&vendorDcr=NOT_RECEIVED';
+    else url += `&status=${filterType}`;
+    window.open(url, '_blank');
+  };
+
   const getWorkflowUrl = (inv: any) => {
     if (inv.displayStatus === 'FULLY ISSUED') return `/staff/dashboard/accounts/dcr/serial-registry?source=customer_lookup`;
     if (inv.displayStatus === 'READY TO ISSUE') return `/staff/dashboard/accounts/dcr/ready-to-issue?source=customer_lookup`;
@@ -415,25 +423,33 @@ export default function CustomerLookupClient() {
 
   const getWorkflowBadge = (inv: any) => {
     let colorClass = 'bg-gray-50 text-gray-700 border-gray-200';
-    if (inv.displayStatus === 'FULLY ISSUED') colorClass = 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100';
-    else if (inv.displayStatus === 'READY TO ISSUE') colorClass = 'bg-teal-50 text-teal-600 border-teal-200 hover:bg-teal-100';
-    else if (inv.displayStatus === 'HOLD QUEUE') colorClass = 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100';
-    else if (inv.displayStatus === 'SERIAL ENTRY PENDING' || inv.displayStatus === 'VENDOR DCR PENDING') colorClass = 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100';
-    else if (inv.displayStatus === 'UNPROCESSED') colorClass = 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100';
-    else if (inv.displayStatus === 'PROCESSED - NO DCR REQUIRED') colorClass = 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200';
-    else if (inv.displayStatus === 'DCR IDENTIFIED') colorClass = 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100';
+    let filterType: 'PENDING' | 'NOT_RECEIVED' | 'HOLD' | 'READY_TO_ISSUE' | 'ISSUED' | '' = '';
+    
+    if (inv.displayStatus === 'FULLY ISSUED') { colorClass = 'bg-green-50 text-green-600 border-green-200 hover:bg-green-100'; filterType = 'ISSUED'; }
+    else if (inv.displayStatus === 'READY TO ISSUE') { colorClass = 'bg-teal-50 text-teal-600 border-teal-200 hover:bg-teal-100'; filterType = 'READY_TO_ISSUE'; }
+    else if (inv.displayStatus === 'HOLD QUEUE') { colorClass = 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'; filterType = 'HOLD'; }
+    else if (inv.displayStatus === 'VENDOR DCR PENDING') { colorClass = 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100'; filterType = 'NOT_RECEIVED'; }
+    else if (inv.displayStatus === 'SERIAL ENTRY PENDING') { colorClass = 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100'; filterType = 'PENDING'; }
+    else if (inv.displayStatus === 'UNPROCESSED') { colorClass = 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'; }
+    else if (inv.displayStatus === 'PROCESSED - NO DCR REQUIRED') { colorClass = 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'; }
+    else if (inv.displayStatus === 'DCR IDENTIFIED') { colorClass = 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100'; }
 
     return (
-      <a 
-        href={getWorkflowUrl(inv)}
-        target="_blank"
-        rel="noopener noreferrer"
-        title="Open workflow"
+      <button 
+        onClick={(e) => {
+          if (filterType) {
+            openSerialRegistry(e, inv.id, inv.invoiceNumber, filterType as any);
+          } else {
+            e.stopPropagation();
+            const url = `/staff/dashboard/accounts/dcr/serial-registry?invoiceId=${encodeURIComponent(inv.id)}&invoiceNumber=${encodeURIComponent(inv.invoiceNumber)}`;
+            window.open(url, '_blank');
+          }
+        }}
+        title="View in Serial Registry"
         className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border cursor-pointer transition-colors inline-block text-center whitespace-nowrap ${colorClass}`}
-        onClick={(e) => e.stopPropagation()}
       >
         {inv.displayStatus}
-      </a>
+      </button>
     );
   };
 
@@ -725,11 +741,31 @@ export default function CustomerLookupClient() {
                         {getWorkflowBadge(inv)}
                       </td>
                       <td className="px-3 py-2 text-center font-bold align-middle">{inv.dcrPanels}</td>
-                      <td className="px-3 py-2 text-center text-orange-600 font-bold align-middle">{inv.serialEntryPending}</td>
-                      <td className="px-3 py-2 text-center text-orange-600 font-bold align-middle">{inv.vendorDcrPending}</td>
-                      <td className="px-3 py-2 text-center text-red-600 font-bold align-middle">{inv.onHold}</td>
-                      <td className="px-3 py-2 text-center text-teal-600 font-bold align-middle">{inv.readyToIssue}</td>
-                      <td className="px-3 py-2 text-center text-green-600 font-bold align-middle">{inv.issued}</td>
+                      <td className="px-3 py-2 text-center align-middle">
+                        {inv.serialEntryPending > 0 ? (
+                          <button onClick={(e) => openSerialRegistry(e, inv.id, inv.invoiceNumber, 'PENDING')} className="text-orange-600 font-bold hover:underline cursor-pointer">{inv.serialEntryPending}</button>
+                        ) : <span className="text-orange-600 font-bold">{inv.serialEntryPending}</span>}
+                      </td>
+                      <td className="px-3 py-2 text-center align-middle">
+                        {inv.vendorDcrPending > 0 ? (
+                          <button onClick={(e) => openSerialRegistry(e, inv.id, inv.invoiceNumber, 'NOT_RECEIVED')} className="text-orange-600 font-bold hover:underline cursor-pointer">{inv.vendorDcrPending}</button>
+                        ) : <span className="text-orange-600 font-bold">{inv.vendorDcrPending}</span>}
+                      </td>
+                      <td className="px-3 py-2 text-center align-middle">
+                        {inv.onHold > 0 ? (
+                          <button onClick={(e) => openSerialRegistry(e, inv.id, inv.invoiceNumber, 'HOLD')} className="text-red-600 font-bold hover:underline cursor-pointer">{inv.onHold}</button>
+                        ) : <span className="text-red-600 font-bold">{inv.onHold}</span>}
+                      </td>
+                      <td className="px-3 py-2 text-center align-middle">
+                        {inv.readyToIssue > 0 ? (
+                          <button onClick={(e) => openSerialRegistry(e, inv.id, inv.invoiceNumber, 'READY_TO_ISSUE')} className="text-teal-600 font-bold hover:underline cursor-pointer">{inv.readyToIssue}</button>
+                        ) : <span className="text-teal-600 font-bold">{inv.readyToIssue}</span>}
+                      </td>
+                      <td className="px-3 py-2 text-center align-middle">
+                        {inv.issued > 0 ? (
+                          <button onClick={(e) => openSerialRegistry(e, inv.id, inv.invoiceNumber, 'ISSUED')} className="text-green-600 font-bold hover:underline cursor-pointer">{inv.issued}</button>
+                        ) : <span className="text-green-600 font-bold">{inv.issued}</span>}
+                      </td>
                       <td className="px-3 py-2 text-center align-middle whitespace-nowrap">
                         <a 
                           href={getWorkflowUrl(inv)}
@@ -801,11 +837,31 @@ export default function CustomerLookupClient() {
                           {getWorkflowBadge(inv)}
                         </td>
                         <td className="px-3 py-2 text-center font-bold align-middle">{inv.dcrPanels}</td>
-                        <td className="px-3 py-2 text-center text-orange-600 font-bold align-middle">{inv.serialEntryPending}</td>
-                        <td className="px-3 py-2 text-center text-orange-600 font-bold align-middle">{inv.vendorDcrPending}</td>
-                        <td className="px-3 py-2 text-center text-red-600 font-bold align-middle">{inv.onHold}</td>
-                        <td className="px-3 py-2 text-center text-teal-600 font-bold align-middle">{inv.readyToIssue}</td>
-                        <td className="px-3 py-2 text-center text-green-600 font-bold align-middle">{inv.issued}</td>
+                        <td className="px-3 py-2 text-center align-middle">
+                          {inv.serialEntryPending > 0 ? (
+                            <button onClick={(e) => openSerialRegistry(e, inv.id, inv.invoiceNumber, 'PENDING')} className="text-orange-600 font-bold hover:underline cursor-pointer">{inv.serialEntryPending}</button>
+                          ) : <span className="text-orange-600 font-bold">{inv.serialEntryPending}</span>}
+                        </td>
+                        <td className="px-3 py-2 text-center align-middle">
+                          {inv.vendorDcrPending > 0 ? (
+                            <button onClick={(e) => openSerialRegistry(e, inv.id, inv.invoiceNumber, 'NOT_RECEIVED')} className="text-orange-600 font-bold hover:underline cursor-pointer">{inv.vendorDcrPending}</button>
+                          ) : <span className="text-orange-600 font-bold">{inv.vendorDcrPending}</span>}
+                        </td>
+                        <td className="px-3 py-2 text-center align-middle">
+                          {inv.onHold > 0 ? (
+                            <button onClick={(e) => openSerialRegistry(e, inv.id, inv.invoiceNumber, 'HOLD')} className="text-red-600 font-bold hover:underline cursor-pointer">{inv.onHold}</button>
+                          ) : <span className="text-red-600 font-bold">{inv.onHold}</span>}
+                        </td>
+                        <td className="px-3 py-2 text-center align-middle">
+                          {inv.readyToIssue > 0 ? (
+                            <button onClick={(e) => openSerialRegistry(e, inv.id, inv.invoiceNumber, 'READY_TO_ISSUE')} className="text-teal-600 font-bold hover:underline cursor-pointer">{inv.readyToIssue}</button>
+                          ) : <span className="text-teal-600 font-bold">{inv.readyToIssue}</span>}
+                        </td>
+                        <td className="px-3 py-2 text-center align-middle">
+                          {inv.issued > 0 ? (
+                            <button onClick={(e) => openSerialRegistry(e, inv.id, inv.invoiceNumber, 'ISSUED')} className="text-green-600 font-bold hover:underline cursor-pointer">{inv.issued}</button>
+                          ) : <span className="text-green-600 font-bold">{inv.issued}</span>}
+                        </td>
                         <td className="px-3 py-2 text-center align-middle whitespace-nowrap">
                           <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
                             inv.displayStatus === 'FULLY ISSUED' ? 'bg-green-50 text-green-600 border-green-200' :
@@ -925,11 +981,31 @@ export default function CustomerLookupClient() {
                                       <span className="text-green-600 font-bold">Yes</span>
                                     </td>
                                     <td className="px-4 py-2 text-center font-bold text-gray-800">{item.metrics.panels}</td>
-                                    <td className="px-4 py-2 text-center font-bold text-orange-600">{item.metrics.serialEntryPending}</td>
-                                    <td className="px-4 py-2 text-center font-bold text-orange-600">{item.metrics.vendorDcrPending}</td>
-                                    <td className="px-4 py-2 text-center font-bold text-red-600">{item.metrics.onHold}</td>
-                                    <td className="px-4 py-2 text-center font-bold text-teal-600">{item.metrics.readyToIssue}</td>
-                                    <td className="px-4 py-2 text-center font-bold text-green-600">{item.metrics.issued}</td>
+                                    <td className="px-4 py-2 text-center">
+                                      {item.metrics.serialEntryPending > 0 ? (
+                                        <button onClick={(e) => openSerialRegistry(e, activeInvoice.id, activeInvoice.invoiceNumber, 'PENDING')} className="text-orange-600 font-bold hover:underline cursor-pointer">{item.metrics.serialEntryPending}</button>
+                                      ) : <span className="text-orange-600 font-bold">{item.metrics.serialEntryPending}</span>}
+                                    </td>
+                                    <td className="px-4 py-2 text-center">
+                                      {item.metrics.vendorDcrPending > 0 ? (
+                                        <button onClick={(e) => openSerialRegistry(e, activeInvoice.id, activeInvoice.invoiceNumber, 'NOT_RECEIVED')} className="text-orange-600 font-bold hover:underline cursor-pointer">{item.metrics.vendorDcrPending}</button>
+                                      ) : <span className="text-orange-600 font-bold">{item.metrics.vendorDcrPending}</span>}
+                                    </td>
+                                    <td className="px-4 py-2 text-center">
+                                      {item.metrics.onHold > 0 ? (
+                                        <button onClick={(e) => openSerialRegistry(e, activeInvoice.id, activeInvoice.invoiceNumber, 'HOLD')} className="text-red-600 font-bold hover:underline cursor-pointer">{item.metrics.onHold}</button>
+                                      ) : <span className="text-red-600 font-bold">{item.metrics.onHold}</span>}
+                                    </td>
+                                    <td className="px-4 py-2 text-center">
+                                      {item.metrics.readyToIssue > 0 ? (
+                                        <button onClick={(e) => openSerialRegistry(e, activeInvoice.id, activeInvoice.invoiceNumber, 'READY_TO_ISSUE')} className="text-teal-600 font-bold hover:underline cursor-pointer">{item.metrics.readyToIssue}</button>
+                                      ) : <span className="text-teal-600 font-bold">{item.metrics.readyToIssue}</span>}
+                                    </td>
+                                    <td className="px-4 py-2 text-center">
+                                      {item.metrics.issued > 0 ? (
+                                        <button onClick={(e) => openSerialRegistry(e, activeInvoice.id, activeInvoice.invoiceNumber, 'ISSUED')} className="text-green-600 font-bold hover:underline cursor-pointer">{item.metrics.issued}</button>
+                                      ) : <span className="text-green-600 font-bold">{item.metrics.issued}</span>}
+                                    </td>
                                     <td className="px-4 py-2">
                                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
                                         item.metrics.serialEntryPending > 0 ? 'bg-orange-50 text-orange-600 border-orange-200' :

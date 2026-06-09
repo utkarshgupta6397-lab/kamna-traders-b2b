@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Search, Download, ExternalLink, Activity, Filter, Box, CheckCircle, Clock, AlertTriangle, ChevronLeft, ChevronRight, X, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -47,10 +48,11 @@ export default function SerialRegistryClient() {
   const [exporting, setExporting] = useState(false);
 
   // Filters
+  const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 500);
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [vendorDcrFilter, setVendorDcrFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'ALL');
+  const [vendorDcrFilter, setVendorDcrFilter] = useState(searchParams.get('vendorDcr') || 'ALL');
   const [page, setPage] = useState(1);
   const limit = 50;
 
@@ -63,7 +65,7 @@ export default function SerialRegistryClient() {
   const [selectedSerials, setSelectedSerials] = useState<Set<string>>(new Set());
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   const [tagModalOpen, setTagModalOpen] = useState(false);
-  const [tagInput, setTagInput] = useState('');
+  const [tagInput, setTagInput] = useState(searchParams.get('serialTag') || '');
   const [taggingLoading, setTaggingLoading] = useState(false);
 
   // Vendor Report
@@ -73,19 +75,20 @@ export default function SerialRegistryClient() {
   const [vendorSearch, setVendorSearch] = useState('');
   const [minDaysFilter, setMinDaysFilter] = useState<number | ''>('');
 
+  const [invoiceIdFilter, setInvoiceIdFilter] = useState(searchParams.get('invoiceId') || '');
+  const [invoiceNumberFilter, setInvoiceNumberFilter] = useState(searchParams.get('invoiceNumber') || '');
+
   useEffect(() => {
     fetchStats();
   }, []);
 
-
-
   useEffect(() => {
-    // Only search if length >= 3 or empty
-    if (debouncedSearch.trim().length === 0 || debouncedSearch.trim().length >= 3) {
+    // Only search if length >= 3 or empty or if filtering by invoice
+    if (debouncedSearch.trim().length === 0 || debouncedSearch.trim().length >= 3 || invoiceIdFilter) {
       setPage(1);
       fetchSerials();
     }
-  }, [debouncedSearch, statusFilter, vendorDcrFilter]);
+  }, [debouncedSearch, statusFilter, vendorDcrFilter, invoiceIdFilter]);
 
   useEffect(() => {
     if (page > 1 || (debouncedSearch.trim().length === 0 || debouncedSearch.trim().length >= 3)) {
@@ -138,7 +141,8 @@ export default function SerialRegistryClient() {
             page,
             limit,
             status: statusFilter,
-            vendorDcrStatus: vendorDcrFilter
+            vendorDcrStatus: vendorDcrFilter,
+            invoiceId: invoiceIdFilter
           })
         });
         const data = await res.json();
@@ -161,6 +165,9 @@ export default function SerialRegistryClient() {
           status: statusFilter,
           vendorDcrStatus: vendorDcrFilter,
         });
+        if (invoiceIdFilter) {
+          params.append('invoiceId', invoiceIdFilter);
+        }
 
         const res = await fetch(`/api/admin/dcr/serial-registry?${params.toString()}`);
         const data = await res.json();
@@ -508,14 +515,15 @@ export default function SerialRegistryClient() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        <div 
-          onClick={() => { setStatusFilter('ALL'); setVendorDcrFilter('ALL'); }}
-          className={`bg-white p-3 rounded-xl border ${statusFilter === 'ALL' && vendorDcrFilter === 'ALL' ? 'border-[#1A2766] ring-1 ring-[#1A2766]' : 'border-gray-200'} cursor-pointer hover:border-[#1A2766]/50 transition-all shadow-sm`}
-        >
-          <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Serials</div>
-          <div className="text-xl font-bold text-gray-900">{stats?.total || 0}</div>
-        </div>
+      {!invoiceIdFilter && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          <div 
+            onClick={() => { setStatusFilter('ALL'); setVendorDcrFilter('ALL'); }}
+            className={`bg-white p-3 rounded-xl border ${statusFilter === 'ALL' && vendorDcrFilter === 'ALL' ? 'border-[#1A2766] ring-1 ring-[#1A2766]' : 'border-gray-200'} cursor-pointer hover:border-[#1A2766]/50 transition-all shadow-sm`}
+          >
+            <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Serials</div>
+            <div className="text-xl font-bold text-gray-900">{stats?.total || 0}</div>
+          </div>
         <div 
           onClick={() => { setVendorDcrFilter('NOT_RECEIVED'); setStatusFilter('ALL'); }}
           className={`bg-white p-3 rounded-xl border ${vendorDcrFilter === 'NOT_RECEIVED' ? 'border-orange-500 ring-1 ring-orange-500' : 'border-gray-200'} cursor-pointer hover:border-orange-500/50 transition-all shadow-sm`}
@@ -558,9 +566,31 @@ export default function SerialRegistryClient() {
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Issued</div>
           <div className="text-xl font-bold text-green-600">{stats?.issued || 0}</div>
         </div>
-      </div>
+        </div>
+      )}
 
       {/* Filters and Search */}
+      {invoiceIdFilter && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-2 rounded-lg flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Filter size={16} />
+            Filtered by Invoice: {invoiceNumberFilter || invoiceIdFilter}
+          </div>
+          <button 
+            onClick={() => {
+              setInvoiceIdFilter('');
+              setInvoiceNumberFilter('');
+              if (!searchTerm.trim()) {
+                fetchSerials();
+              }
+            }}
+            className="text-blue-600 hover:text-blue-900 bg-white border border-blue-200 hover:bg-blue-100 px-2 py-1 rounded text-xs font-bold transition-colors"
+          >
+            Clear Filter
+          </button>
+        </div>
+      )}
+
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row gap-4">
         <div className="flex-1 relative">
           <Search size={18} className="absolute left-3 top-3 text-gray-400" />

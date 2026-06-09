@@ -81,13 +81,17 @@ export async function GET(req: Request) {
           itemName: item.itemName,
           sku: item.sku,
           quantity: item.quantity,
-          serials: item.serialAllocations.map(alloc => ({
-            allocationId: alloc.id,
-            serialNumber: alloc.serialNumber,
-            status: alloc.serial?.status,
-            serialTag: alloc.serial?.tag,
-            vendorDcrStatus: alloc.serial?.vendorDcrStatus,
-          })),
+          serials: item.serialAllocations.map(alloc => {
+            const rawTag: any = alloc.serial?.tag;
+            const tagString = rawTag ? (typeof rawTag === 'string' ? rawTag : rawTag.tag) : null;
+            return {
+              allocationId: alloc.id,
+              serialNumber: alloc.serialNumber,
+              status: alloc.serial?.status,
+              serialTag: tagString,
+              vendorDcrStatus: alloc.serial?.vendorDcrStatus,
+            };
+          }),
           allocatedCount: item.serialAllocations.length,
           eligibleCount: eligibleSerials.length,
         };

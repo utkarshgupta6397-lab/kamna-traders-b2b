@@ -153,8 +153,14 @@ export default function ReadyToIssueClient() {
 
   const getBlockReason = (serial: SerialEntry, invoice: ReadyInvoice) => {
     if (!serial) return 'Unknown Block';
-    if (serial.serialTag && serial.serialTag.trim() !== '' && serial.serialTag !== 'UNTAGGED') {
-      return serial.serialTag;
+    
+    let tagValue = serial.serialTag;
+    if (tagValue && typeof tagValue === 'object') {
+      tagValue = (tagValue as any).tag || (tagValue as any).name || 'Unknown Tag';
+    }
+
+    if (typeof tagValue === 'string' && tagValue.trim() !== '' && tagValue !== 'UNTAGGED') {
+      return tagValue;
     }
     if (serial.vendorDcrStatus === 'NOT_RECEIVED') {
       return 'Vendor DCR Pending';
@@ -599,38 +605,30 @@ export default function ReadyToIssueClient() {
 
             {/* Warning Banner */}
             {(() => {
-              try {
-                const allNonEligible = (drawerInvoice?.skuGroups || []).flatMap(g => (g.serials || []).filter(s => s && s.status !== 'READY_TO_ISSUE'));
-                if (allNonEligible.length === 0) return null;
-                
-                console.log('--- DEBUG RENDER: WARNING BANNER ---');
-                console.log('allNonEligible:', allNonEligible);
+              const allNonEligible = (drawerInvoice?.skuGroups || []).flatMap(g => (g.serials || []).filter(s => s && s.status !== 'READY_TO_ISSUE'));
+              if (allNonEligible.length === 0) return null;
+              
+              const blockedCounts = allNonEligible.reduce((acc, serial) => {
+                const reason = getBlockReason(serial, drawerInvoice) || 'Unknown Block';
+                acc[reason] = (acc[reason] || 0) + 1;
+                return acc;
+              }, {} as Record<string, number>);
 
-                const blockedCounts = allNonEligible.reduce((acc, serial) => {
-                  const reason = getBlockReason(serial, drawerInvoice) || 'Unknown Block';
-                  acc[reason] = (acc[reason] || 0) + 1;
-                  return acc;
-                }, {} as Record<string, number>);
-
-                console.log('blockedCounts:', blockedCounts);
-
-                return (
-                  <div className="mx-6 mt-4 p-4 rounded-lg border border-amber-200 bg-amber-50">
-                    <h4 className="text-red-400 font-bold mb-2">DEBUG: Warning Banner Override</h4>
-                    <pre className="text-xs text-amber-900 font-mono">
-                      {JSON.stringify({ blockedCounts, allNonEligible }, null, 2)}
-                    </pre>
-                  </div>
-                );
-              } catch (err: any) {
-                console.error('RUNTIME ERROR IN WARNING BANNER:', err);
-                return (
-                  <div className="mx-6 mt-4 p-4 bg-red-900 rounded-lg text-white">
-                    <h4 className="font-bold mb-2">RUNTIME EXCEPTION IN WARNING BANNER</h4>
-                    <pre className="text-xs font-mono">{err.stack || err.message || String(err)}</pre>
-                  </div>
-                );
-              }
+              return (
+                <div className="mx-6 mt-4 p-4 rounded-lg border border-amber-200 bg-amber-50">
+                  <h4 className="font-bold text-amber-900 flex items-center gap-2 mb-2">
+                    <span className="text-amber-600">⚠</span> {allNonEligible.length} serials cannot currently be issued.
+                  </h4>
+                  <ul className="list-disc list-inside text-[13px] text-amber-800 space-y-1 mb-3 ml-1">
+                    {Object.entries(blockedCounts || {}).map(([reason, count]) => (
+                      <li key={reason || Math.random()}><span className="font-semibold">{reason || 'Unknown'}:</span> {count as number}</li>
+                    ))}
+                  </ul>
+                  <p className="text-[13px] text-amber-900 font-semibold">
+                    Only {drawerInvoice?.totalEligible || 0} serial{(drawerInvoice?.totalEligible || 0) === 1 ? ' is' : 's are'} eligible.
+                  </p>
+                </div>
+              );
             })()}
 
             {/* Content */}
@@ -720,41 +718,32 @@ export default function ReadyToIssueClient() {
 
                       {/* Non-Eligible Serials */}
                       {(() => {
-                        try {
-                          const nonEligibleSerials = filteredSerials.filter(s => s && s.status !== 'READY_TO_ISSUE');
-                          if (nonEligibleSerials.length === 0) return null;
+                        const nonEligibleSerials = filteredSerials.filter(s => s && s.status !== 'READY_TO_ISSUE');
+                        if (nonEligibleSerials.length === 0) return null;
 
-                          console.log('--- DEBUG RENDER: BLOCKED SERIALS ---');
-                          console.log('drawerInvoice:', drawerInvoice);
-                          console.log('current skuGroup:', group);
-                          console.log('blockedSerials:', nonEligibleSerials);
+                        const groups = nonEligibleSerials.reduce((acc, serial) => {
+                          const tag = getBlockReason(serial, drawerInvoice) || 'Unknown Block';
+                          if (!acc[tag]) acc[tag] = [];
+                          acc[tag].push(serial);
+                          return acc;
+                        }, {} as Record<string, typeof nonEligibleSerials>);
 
-                          const groups = nonEligibleSerials.reduce((acc, serial) => {
-                            const tag = getBlockReason(serial, drawerInvoice) || 'Unknown Block';
-                            if (!acc[tag]) acc[tag] = [];
-                            acc[tag].push(serial);
-                            return acc;
-                          }, {} as Record<string, typeof nonEligibleSerials>);
+                        const sortedTags = Object.keys(groups || {}).sort((a, b) => a.localeCompare(b));
 
-                          console.log('blockedGroups:', groups);
-
-                          return (
-                            <div className="p-4 bg-gray-900 rounded-lg overflow-auto mt-4">
-                              <h4 className="text-red-400 font-bold mb-2">DEBUG: Blocked Serials Rendering Override</h4>
-                              <pre className="text-xs text-green-400 font-mono">
-                                {JSON.stringify(groups, null, 2)}
-                              </pre>
+                        return sortedTags.map(tag => (
+                          <div key={tag || Math.random()} className="p-3 rounded-lg bg-red-50 border border-red-100">
+                            <div className="text-[10px] font-bold text-red-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                              <span className="text-red-500">⚠</span> {tag || 'UNKNOWN'} ({(groups[tag] || []).length})
                             </div>
-                          );
-                        } catch (err: any) {
-                          console.error('RUNTIME ERROR IN BLOCKED SERIALS RENDER:', err);
-                          return (
-                            <div className="p-4 bg-red-900 rounded-lg overflow-auto mt-4 text-white">
-                              <h4 className="font-bold mb-2">RUNTIME EXCEPTION</h4>
-                              <pre className="text-xs font-mono">{err.stack || err.message || String(err)}</pre>
+                            <div className="flex flex-wrap gap-1.5">
+                              {(groups[tag] || []).map(serial => (
+                                <span key={serial?.allocationId || Math.random()} className="font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border bg-red-100 text-red-700 border-red-200 shadow-sm">
+                                  {serial?.serialNumber || 'UNKNOWN'}
+                                </span>
+                              ))}
                             </div>
-                          );
-                        }
+                          </div>
+                        ));
                       })()}
 
                       {filteredSerials.length === 0 && !serialSearch && (

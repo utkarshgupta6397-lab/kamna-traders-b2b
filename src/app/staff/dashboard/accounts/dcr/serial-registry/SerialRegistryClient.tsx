@@ -1122,8 +1122,8 @@ export default function SerialRegistryClient() {
                         <h3 className="font-bold text-gray-900">{vendor.vendorName}</h3>
                         {vendor.billNumbers && vendor.billNumbers.size > 0 && (
                           <div className="mt-1 text-xs text-gray-500">
-                            {vendor.billNumbers.size === 1 ? (
-                              <span>Bill: {Array.from(vendor.billNumbers)[0]}</span>
+                             {vendor.billNumbers.size === 1 ? (
+                              <span>Bill: {String(Array.from(vendor.billNumbers)[0])}</span>
                             ) : (
                               <div className="flex flex-col gap-0.5 mt-0.5">
                                 <span className="font-semibold text-gray-600">Bills:</span>

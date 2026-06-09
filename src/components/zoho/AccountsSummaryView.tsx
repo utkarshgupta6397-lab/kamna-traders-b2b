@@ -791,6 +791,16 @@ export default function AccountsSummaryView() {
   const [recoverySort, setRecoverySort] = useState<'overdue' | 'value'>('overdue');
   const [syncingInvoiceIds, setSyncingInvoiceIds] = useState<Set<string>>(new Set());
   const [successSyncedIds, setSuccessSyncedIds] = useState<Set<string>>(new Set());
+  const [syncPreviewOpen, setSyncPreviewOpen] = useState(false);
+  const [proposedRemovals, setProposedRemovals] = useState<any[]>([]);
+  const [customerCredits, setCustomerCredits] = useState<any[]>([]);
+  const [syncStats, setSyncStats] = useState<any>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncingInvoices, setSyncingInvoices] = useState<string[]>([]);
+
+  const totalCreditsValue = useMemo(() => {
+    return customerCredits.reduce((sum, c) => sum + c.availableCredit, 0);
+  }, [customerCredits]);
 
   // New Operational States & Ticking Clock
   const [nowTick, setNowTick] = useState(Date.now());
@@ -1058,72 +1068,112 @@ export default function AccountsSummaryView() {
     }
   };
 
-  const handleRefreshInvoices = async (invoiceIds: string[]) => {
+  const startSyncPrecheck = async (invoiceIds: string[]) => {
     if (invoiceIds.length === 0) return;
-    
-    // Slice to maximum 50 invoices for this operation
-    const targetIds = invoiceIds.slice(0, 50);
+    setSyncingInvoices(invoiceIds);
     setRefreshingInvoices(true);
-
-    // Chunk size of 10 for safe concurrent batching
-    const chunkSize = 10;
-    const chunks: string[][] = [];
-    for (let i = 0; i < targetIds.length; i += chunkSize) {
-      chunks.push(targetIds.slice(i, i + chunkSize));
-    }
+    setSyncLoading(true);
 
     try {
-      // Process batches concurrently while keeping UI responsive and showing card loaders
-      await Promise.all(chunks.map(async (chunk) => {
-        setSyncingInvoiceIds(prev => {
-          const next = new Set(prev);
-          chunk.forEach(id => next.add(id));
-          return next;
-        });
-
-        try {
-          const res = await fetch('/api/accounts/recovery/refresh', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ invoiceIds: chunk }),
-          });
-          const json = await res.json();
-          if (json.success) {
-            // Set latest list of active tasks (automatically excludes auto-resolved items)
-            setTasks(json.data);
-
-            // Mark successful card refreshes for checkmark flash
-            setSuccessSyncedIds(prev => {
-              const next = new Set(prev);
-              chunk.forEach(id => next.add(id));
-              return next;
-            });
-            setTimeout(() => {
-              setSuccessSyncedIds(prev => {
-                const next = new Set(prev);
-                chunk.forEach(id => next.delete(id));
-                return next;
-              });
-            }, 1000);
-          }
-        } catch (err) {
-          console.error("Chunk refresh error:", err);
-        } finally {
-          setSyncingInvoiceIds(prev => {
-            const next = new Set(prev);
-            chunk.forEach(id => next.delete(id));
-            return next;
-          });
-        }
-      }));
-
-      toast.success(`Refreshed ${targetIds.length} flagged invoices`);
+      const res = await fetch('/api/accounts/recovery/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoiceIds, dryRun: true }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setProposedRemovals(json.proposedRemovals || []);
+        setCustomerCredits(json.customerCredits || []);
+        setSyncStats(json.stats || null);
+        setSyncPreviewOpen(true);
+      } else {
+        toast.error(json.error || 'Precheck failed');
+      }
     } catch {
-      toast.error('Sync failed. Please retry.');
+      toast.error('Network error. Please retry.');
     } finally {
       setRefreshingInvoices(false);
+      setSyncLoading(false);
     }
   };
+
+  const applySyncChanges = async () => {
+    if (syncingInvoices.length === 0) return;
+    setSyncLoading(true);
+    setRefreshingInvoices(true);
+
+    try {
+      setSyncingInvoiceIds(prev => {
+        const next = new Set(prev);
+        syncingInvoices.forEach(id => next.add(id));
+        return next;
+      });
+
+      const res = await fetch('/api/accounts/recovery/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoiceIds: syncingInvoices, dryRun: false }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setTasks(json.data);
+        const stats = json.stats;
+        toast.success(
+          `Sync Summary:\nProcessed: ${stats.processed}\nRemoved: ${stats.removed}\nReleased: ${stats.released}\nRemaining: ${stats.remaining}`,
+          { duration: 6000 }
+        );
+        setSyncPreviewOpen(false);
+        setLastSyncTime(Date.now());
+        fetchTasks();
+
+        setSuccessSyncedIds(prev => {
+          const next = new Set(prev);
+          syncingInvoices.forEach(id => next.add(id));
+          return next;
+        });
+        setTimeout(() => {
+          setSuccessSyncedIds(prev => {
+            const next = new Set(prev);
+            syncingInvoices.forEach(id => next.delete(id));
+            return next;
+          });
+        }, 1000);
+      } else {
+        toast.error(json.error || 'Failed to apply changes');
+      }
+    } catch {
+      toast.error('Network error. Please retry.');
+    } finally {
+      setSyncLoading(false);
+      setRefreshingInvoices(false);
+      setSyncingInvoiceIds(new Set());
+    }
+  };
+
+  const sidebarKPIs = useMemo(() => {
+    const active = tasks.filter(t => t.status === 'ACTIVE');
+    const totalPendingAmount = active.reduce((sum, t) => {
+      const inv = data?.rows?.find(r => r.invoiceId === t.invoiceId);
+      return sum + (inv ? inv.amountPending : (t.lastKnownPendingAmount || 0));
+    }, 0);
+    const pendingInvoicesCount = active.length;
+    const needsFollowUpCount = active.filter(t => t.requiresReminder).length;
+    
+    let avgAgeDays = 0;
+    if (active.length > 0) {
+      const totalAgeMs = active.reduce((sum, t) => {
+        return sum + (Date.now() - new Date(t.flaggedAt).getTime());
+      }, 0);
+      avgAgeDays = Math.round(totalAgeMs / active.length / (1000 * 60 * 60 * 24));
+    }
+
+    return {
+      totalPendingAmount,
+      pendingInvoicesCount,
+      needsFollowUpCount,
+      avgAgeDays
+    };
+  }, [tasks, data]);
 
   // ─── Smart cache check ──────────────────────────────────────────────────────
   const cacheCovers = useCallback(
@@ -2828,9 +2878,8 @@ export default function AccountsSummaryView() {
                     <div className="flex flex-col items-end gap-0.5">
                       <button
                         onClick={() => {
-                          const invoicesToSync = filteredTasks.slice(0, 50).map(t => t.invoiceId);
-                          handleRefreshInvoices(invoicesToSync);
-                          setLastSyncTime(Date.now());
+                          const invoicesToSync = filteredTasks.slice(0, 100).map(t => t.invoiceId);
+                          startSyncPrecheck(invoicesToSync);
                         }}
                         disabled={isSyncDisabled}
                         className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50 flex items-center gap-1 text-[9px] font-bold leading-none"
@@ -2839,9 +2888,9 @@ export default function AccountsSummaryView() {
                         <RefreshCw size={10} className={refreshingInvoices ? 'animate-spin' : ''} />
                         {cooldownSec > 0 ? `Sync (${cooldownSec}s)` : 'Sync Zoho'}
                       </button>
-                      {filteredTasks.length > 50 && (
+                      {filteredTasks.length > 100 && (
                         <span className="text-[7.5px] text-slate-400 font-bold leading-none select-none">
-                          Syncing 50 of {filteredTasks.length}
+                          Syncing 100 of {filteredTasks.length}
                         </span>
                       )}
                     </div>
@@ -2878,6 +2927,26 @@ export default function AccountsSummaryView() {
               </button>
             </div>
 
+            {/* Sidebar KPIs */}
+            <div className="p-2 bg-slate-100/60 border-b border-slate-200 grid grid-cols-2 gap-1.5 shrink-0">
+              <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm text-center">
+                <span className="text-[7.5px] font-bold text-slate-400 uppercase tracking-wide block leading-none mb-1">Total Pending Amount</span>
+                <span className="text-xs font-black text-rose-700 leading-none">{formatINR(sidebarKPIs.totalPendingAmount)}</span>
+              </div>
+              <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm text-center">
+                <span className="text-[7.5px] font-bold text-slate-400 uppercase tracking-wide block leading-none mb-1">Pending Invoices</span>
+                <span className="text-xs font-black text-slate-800 leading-none">{sidebarKPIs.pendingInvoicesCount}</span>
+              </div>
+              <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-center">
+                <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide block leading-none mb-0.5">Average Age</span>
+                <span className="text-[10px] font-black text-slate-800 leading-none">{sidebarKPIs.avgAgeDays} days</span>
+              </div>
+              <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-center">
+                <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide block leading-none mb-0.5">Needs Follow-Up</span>
+                <span className="text-[10px] font-black text-amber-700 leading-none">{sidebarKPIs.needsFollowUpCount}</span>
+              </div>
+            </div>
+
             {/* Content List */}
             <div className="flex-1 overflow-y-auto p-2 space-y-1">
               {filteredTasks.length === 0 ? (
@@ -2909,7 +2978,7 @@ export default function AccountsSummaryView() {
 
                   const isSyncing = syncingInvoiceIds.has(item.invoiceId);
                   const isSyncSuccess = successSyncedIds.has(item.invoiceId);
-                  const isQueued = filteredTasks.length > 50 && taskIndex >= 50;
+                  const isQueued = filteredTasks.length > 100 && taskIndex >= 100;
 
                   return (
                     <div 
@@ -2984,16 +3053,12 @@ export default function AccountsSummaryView() {
                       {isExpanded && (
                         <div className="border-t border-slate-100 pt-1.5 mt-1 space-y-2 text-[9.5px] animate-in fade-in duration-100">
                           {/* KPI grid */}
-                          <div className="grid grid-cols-4 gap-1 bg-slate-50 p-1 rounded border border-slate-150 text-center">
+                          <div className="grid grid-cols-3 gap-1 bg-slate-50 p-1 rounded border border-slate-150 text-center">
                             <div className="flex flex-col">
-                              <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide">Invoice</span>
-                              <span className="text-[9px] font-black text-slate-800">{formatINR(totalAmount)}</span>
-                            </div>
-                            <div className="flex flex-col border-x border-slate-200">
                               <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide">Pending</span>
                               <span className="text-[9px] font-black text-amber-700">{formatINR(pendingAmount)}</span>
                             </div>
-                            <div className="flex flex-col border-r border-slate-200">
+                            <div className="flex flex-col border-x border-slate-200">
                               <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide">Overdue</span>
                               <span className="text-[9px] font-black text-slate-800">{overdueDays}d</span>
                             </div>
@@ -3155,6 +3220,157 @@ export default function AccountsSummaryView() {
                   );
                 })
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sync Preview Modal */}
+      {syncPreviewOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col border border-slate-200 animate-in zoom-in-95 duration-200">
+            <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800">Recovery Queue Update</h3>
+              <button 
+                onClick={() => setSyncPreviewOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            
+            <div className="p-4 flex-1 overflow-y-auto max-h-[60vh] space-y-3">
+              <p className="text-xs text-slate-500 font-medium">
+                The sync has completed checking outstanding balances. The following active invoices will be removed or released from the queue:
+              </p>
+
+              {proposedRemovals.length === 0 ? (
+                <div className="text-center py-6 border border-dashed border-slate-200 rounded-lg bg-slate-50">
+                  <p className="text-xs text-slate-600 font-bold">No active removals or releases proposed</p>
+                  <p className="text-[10px] text-slate-400 mt-1">All processed invoices will remain active in the queue.</p>
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-left text-[10px] border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
+                        <th className="p-2">Invoice</th>
+                        <th className="p-2">Customer</th>
+                        <th className="p-2 text-right">Prev</th>
+                        <th className="p-2 text-right">New</th>
+                        <th className="p-2 text-center">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {proposedRemovals.map((r, i) => (
+                        <tr key={i} className="hover:bg-slate-50/50">
+                          <td className="p-2 font-mono font-medium text-slate-700">{r.invoiceNumber}</td>
+                          <td className="p-2 text-slate-600 truncate max-w-[100px]">{r.customerName}</td>
+                          <td className="p-2 text-right text-slate-500">{formatINR(r.previousBalance)}</td>
+                          <td className="p-2 text-right text-slate-700 font-medium">{formatINR(r.newBalance)}</td>
+                          <td className="p-2 text-center">
+                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
+                              r.removalReason === 'FULLY_PAID' 
+                                ? 'bg-emerald-50 text-emerald-700' 
+                                : r.removalReason === 'AUTO_RELEASED'
+                                  ? 'bg-blue-50 text-blue-700'
+                                  : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {r.reasonLabel}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Customers With Available Credits Section */}
+              <div className="pt-2 border-t border-slate-105">
+                <div className="flex justify-between items-center mb-1.5">
+                  <h4 className="text-[11px] font-bold text-slate-800 uppercase tracking-wider">
+                    Customers With Available Credits ({customerCredits.length})
+                  </h4>
+                  <span className="text-[10px] font-extrabold text-emerald-700">
+                    Total: {formatINR(totalCreditsValue)}
+                  </span>
+                </div>
+
+                {customerCredits.length === 0 ? (
+                  <p className="text-[9.5px] italic text-slate-400">No customers with available credits (≥ ₹200) found in Zoho for this sync.</p>
+                ) : (
+                  <div className="border border-slate-200 rounded-lg overflow-hidden max-h-[160px] overflow-y-auto">
+                    <table className="w-full text-left text-[10px] border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold sticky top-0">
+                          <th className="p-2">Customer Name</th>
+                          <th className="p-2 text-right">Available Credit</th>
+                          <th className="p-2 text-center">Last Activity Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {customerCredits.map((c, i) => (
+                          <tr key={i} className="hover:bg-slate-50/50">
+                            <td className="p-2 font-medium text-slate-700">{c.customerName}</td>
+                            <td className="p-2 text-right text-emerald-600 font-extrabold">{formatINR(c.availableCredit)}</td>
+                            <td className="p-2 text-center text-slate-500 font-mono">{c.lastActivityDate}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <p className="text-[8.5px] text-slate-400 mt-1 italic leading-none">
+                  * Note: Credits are informational only and will not auto-adjust invoices.
+                </p>
+              </div>
+
+              {syncStats && (
+                <div className="grid grid-cols-4 gap-2 text-center bg-slate-50 p-2 rounded-lg border border-slate-200">
+                  <div>
+                    <span className="text-[7.5px] font-bold text-slate-400 uppercase block">Processed</span>
+                    <span className="text-xs font-black text-slate-800">{syncStats.processed}</span>
+                  </div>
+                  <div>
+                    <span className="text-[7.5px] font-bold text-slate-400 uppercase block">Removed</span>
+                    <span className="text-xs font-black text-rose-700">{syncStats.removed}</span>
+                  </div>
+                  <div>
+                    <span className="text-[7.5px] font-bold text-slate-400 uppercase block">Released</span>
+                    <span className="text-xs font-black text-blue-700">{syncStats.released}</span>
+                  </div>
+                  <div>
+                    <span className="text-[7.5px] font-bold text-slate-400 uppercase block">Remaining</span>
+                    <span className="text-xs font-black text-slate-800">{syncStats.remaining}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
+              <button 
+                type="button" 
+                onClick={() => setSyncPreviewOpen(false)}
+                className="px-3 py-1.5 border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                onClick={applySyncChanges}
+                disabled={syncLoading}
+                className="px-3 py-1.5 bg-[#1A2766] hover:bg-[#1A2766]/90 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {syncLoading ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" />
+                    Applying...
+                  </>
+                ) : (
+                  'Apply Changes'
+                )}
+              </button>
             </div>
           </div>
         </div>

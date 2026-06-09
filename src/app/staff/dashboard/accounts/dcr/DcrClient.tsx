@@ -73,6 +73,14 @@ export default function DcrClient() {
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [customDate, setCustomDate] = useState('');
 
+  // Manual Import Modal
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importInput, setImportInput] = useState('');
+  const [isPrechecking, setIsPrechecking] = useState(false);
+  const [importResults, setImportResults] = useState<any[]>([]);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importSummary, setImportSummary] = useState<any>(null);
+
   useEffect(() => {
     fetchInvoices();
   }, [viewState, page, limit, sortBy, sortOrder, searchParam]);
@@ -269,6 +277,75 @@ export default function DcrClient() {
     }
   };
 
+  const handlePrecheck = async () => {
+    if (!importInput.trim()) return;
+    const numbers = importInput.split('\n').map(n => n.trim()).filter(Boolean);
+    if (numbers.length === 0) return;
+
+    try {
+      setIsPrechecking(true);
+      const res = await fetch('/api/admin/dcr/manual-import/precheck', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoiceNumbers: numbers })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setImportResults(data.results);
+      setImportSummary(null);
+    } catch (err: any) {
+      toast.error(err.message || 'Precheck failed');
+    } finally {
+      setIsPrechecking(false);
+    }
+  };
+
+  const handleManualImport = async () => {
+    const toImport = importResults.filter(r => r.status === 'FOUND_IN_ZOHO').map(r => r.invoiceId);
+    if (toImport.length === 0) return;
+
+    try {
+      setIsImporting(true);
+      const res = await fetch('/api/admin/dcr/manual-import/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoiceIds: toImport })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      const summary = {
+        imported: data.imported,
+        alreadyImported: importResults.filter(r => r.status === 'ALREADY_IMPORTED').length,
+        notFound: importResults.filter(r => r.status === 'NOT_FOUND').length,
+        failed: data.failed
+      };
+      
+      setImportSummary(summary);
+      toast.success(`Imported ${data.imported} invoices`);
+      
+      setLastUpdatedText(formatLastUpdated(new Date()));
+      nextRefreshTimeRef.current = Date.now() + 60 * 60 * 1000;
+      if (page !== 1) setPage(1);
+      else fetchInvoices();
+      
+    } catch (err: any) {
+      toast.error(err.message || 'Import failed');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleCopySummary = () => {
+    if (!importSummary) return;
+    let text = `Imported: ${importSummary.imported}\nAlready Imported: ${importSummary.alreadyImported}\nNot Found: ${importSummary.notFound}\nFailed: ${importSummary.failed}`;
+    if (importSummary.results && importSummary.results.length > 0) {
+      text += '\n\nDetails:\n' + importSummary.results.map((r: any) => `${r.invoiceNumber || r.invoiceId} | ${r.status} | ${r.reason}`).join('\n');
+    }
+    navigator.clipboard.writeText(text);
+    toast.success('Summary copied to clipboard');
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'NEW': return 'bg-blue-50 text-blue-600 border-blue-200';
@@ -359,6 +436,14 @@ export default function DcrClient() {
             
             <button onClick={() => setShowCustomModal(true)} disabled={isSyncDisabled} className={`px-2.5 py-1 text-xs rounded-md font-semibold transition-colors flex items-center gap-1 disabled:opacity-50 ${selectedQuickSync === 'custom' ? 'bg-[#1A2766] text-white' : 'bg-[#1A2766]/10 hover:bg-[#1A2766]/20 text-[#1A2766]'}`}>
               <Calendar size={12} /> Custom
+            </button>
+            <div className="w-px h-4 bg-gray-300 mx-1"></div>
+            <button 
+              onClick={() => { setShowImportModal(true); setImportResults([]); setImportSummary(null); setImportInput(''); }} 
+              disabled={isSyncDisabled} 
+              className="px-2.5 py-1 text-xs rounded-md font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors disabled:opacity-50"
+            >
+              Import Invoice
             </button>
             {syncing && <span className="ml-2 text-xs text-blue-600 animate-pulse font-medium">Syncing...</span>}
           </div>
@@ -698,6 +783,158 @@ export default function DcrClient() {
             {/* Footer */}
             <div className="p-4 border-t border-gray-100 bg-gray-50/55 text-[10px] text-gray-400 text-center uppercase tracking-wider">
               Last Updated: {apiUsage.lastUpdated ? new Date(apiUsage.lastUpdated).toLocaleTimeString('en-IN', { timeStyle: 'short' }) : 'Never'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="font-semibold text-gray-900">Manual Invoice Import</h3>
+              <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-5 flex-1 overflow-y-auto flex flex-col gap-5">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">Enter Invoice Numbers or Zoho IDs</label>
+                <textarea 
+                  className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] min-h-[100px] resize-y"
+                  placeholder="KT/26-27/1001&#10;KT/26-27/1002&#10;982347000000123456"
+                  value={importInput}
+                  onChange={e => setImportInput(e.target.value)}
+                  disabled={isPrechecking || isImporting || !!importSummary}
+                />
+                <p className="text-xs text-gray-500">One per line. Bypasses date sync restrictions.</p>
+              </div>
+
+              {!importSummary && importResults.length === 0 && (
+                <div>
+                  <button 
+                    onClick={handlePrecheck}
+                    disabled={!importInput.trim() || isPrechecking}
+                    className="px-4 py-2 text-sm font-medium bg-[#1A2766] text-white rounded-lg hover:bg-[#1A2766]/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {isPrechecking ? 'Checking...' : 'Preview Import'}
+                  </button>
+                </div>
+              )}
+
+              {importResults.length > 0 && !importSummary && (
+                <div className="flex flex-col gap-3">
+                  <h4 className="font-semibold text-sm text-gray-800 border-b pb-2">Preview Results</h4>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden max-h-[300px] overflow-y-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-gray-50 text-gray-600 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">Input</th>
+                          <th className="px-3 py-2 font-semibold">Customer</th>
+                          <th className="px-3 py-2 font-semibold">Date</th>
+                          <th className="px-3 py-2 font-semibold">Total</th>
+                          <th className="px-3 py-2 font-semibold">Status</th>
+                          <th className="px-3 py-2 font-semibold">DCR Status</th>
+                          <th className="px-3 py-2 font-semibold text-center">Zoho</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {importResults.map((r, i) => (
+                          <tr key={i} className="hover:bg-gray-50/50">
+                            <td className="px-3 py-2 font-medium">{r.invoiceNumber || r.input}</td>
+                            <td className="px-3 py-2 text-gray-600">{r.customer || '-'}</td>
+                            <td className="px-3 py-2 text-gray-600">{r.date ? new Date(r.date).toLocaleDateString('en-IN') : '-'}</td>
+                            <td className="px-3 py-2 font-medium">{r.total ? `₹${r.total.toLocaleString('en-IN')}` : '-'}</td>
+                            <td className="px-3 py-2">
+                              {r.status === 'FOUND_IN_ZOHO' && <span className="text-green-600 font-bold">FOUND IN ZOHO</span>}
+                              {r.status === 'ALREADY_IMPORTED' && <span className="text-orange-600 font-bold">ALREADY IMPORTED</span>}
+                              {r.status === 'NOT_FOUND' && <span className="text-red-600 font-bold">NOT FOUND</span>}
+                            </td>
+                            <td className="px-3 py-2 text-gray-500 font-medium">{r.currentDcrStatus || '-'}</td>
+                            <td className="px-3 py-2 text-center">
+                              {r.invoiceId ? (
+                                <a 
+                                  href={`https://books.zoho.in/app${ZOHO_ORG_ID ? '/' + ZOHO_ORG_ID : ''}#/invoices/${r.invoiceId}`} 
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-[#1A2766] hover:underline inline-flex"
+                                >
+                                  <ExternalLink size={12} />
+                                </a>
+                              ) : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  <div className="flex justify-end gap-3 mt-2">
+                    <button 
+                      onClick={() => setImportResults([])}
+                      disabled={isImporting}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    >
+                      Clear & Edit
+                    </button>
+                    <button 
+                      onClick={handleManualImport}
+                      disabled={isImporting || importResults.filter(r => r.status === 'FOUND_IN_ZOHO').length === 0}
+                      className="px-4 py-2 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                    >
+                      {isImporting ? 'Importing...' : `Import Valid Invoices (${importResults.filter(r => r.status === 'FOUND_IN_ZOHO').length})`}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {importSummary && (
+                <div className="flex flex-col items-center justify-center py-6 gap-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h4 className="text-lg font-bold text-gray-800 border-b pb-2 w-full text-center">Import Complete</h4>
+                  <div className="grid grid-cols-4 gap-4 w-full px-6 text-sm">
+                    <div className="bg-white p-3 rounded shadow-sm border border-gray-100 flex flex-col items-center"><span className="text-gray-500 text-xs uppercase">Imported</span><span className="font-bold text-xl text-green-600">{importSummary.imported}</span></div>
+                    <div className="bg-white p-3 rounded shadow-sm border border-gray-100 flex flex-col items-center"><span className="text-gray-500 text-xs uppercase">Already Imported</span><span className="font-bold text-xl text-orange-500">{importSummary.alreadyImported}</span></div>
+                    <div className="bg-white p-3 rounded shadow-sm border border-gray-100 flex flex-col items-center"><span className="text-gray-500 text-xs uppercase">Not Found</span><span className="font-bold text-xl text-gray-700">{importSummary.notFound}</span></div>
+                    <div className="bg-white p-3 rounded shadow-sm border border-gray-100 flex flex-col items-center"><span className="text-gray-500 text-xs uppercase">Failed</span><span className="font-bold text-xl text-red-600">{importSummary.failed}</span></div>
+                  </div>
+                  
+                  {importSummary.results && importSummary.results.length > 0 && (
+                    <div className="w-full px-6 mt-2 max-h-[250px] overflow-y-auto">
+                      <table className="w-full text-left text-xs bg-white border border-gray-200 rounded-lg">
+                        <thead className="bg-gray-100 sticky top-0">
+                          <tr>
+                            <th className="px-3 py-2 border-b">Invoice</th>
+                            <th className="px-3 py-2 border-b">Status</th>
+                            <th className="px-3 py-2 border-b">Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {importSummary.results.map((res: any, idx: number) => (
+                            <tr key={idx} className={res.status === 'FAILED' ? 'bg-red-50' : 'bg-green-50'}>
+                              <td className="px-3 py-2 font-medium">{res.invoiceNumber || res.invoiceId}</td>
+                              <td className="px-3 py-2 font-bold text-[10px] uppercase">
+                                <span className={res.status === 'FAILED' ? 'text-red-600' : 'text-green-600'}>{res.status}</span>
+                              </td>
+                              <td className="px-3 py-2 text-gray-700">{res.reason}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 mt-4">
+                    <button onClick={handleCopySummary} className="px-4 py-2 text-sm font-semibold bg-white border border-gray-300 text-gray-700 rounded-lg shadow-sm hover:bg-gray-50 transition-colors">
+                      Copy Results
+                    </button>
+                    <button onClick={() => setShowImportModal(false)} className="px-4 py-2 text-sm font-semibold bg-[#1A2766] text-white rounded-lg shadow-sm hover:bg-[#1A2766]/90 transition-colors">
+                      Close
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

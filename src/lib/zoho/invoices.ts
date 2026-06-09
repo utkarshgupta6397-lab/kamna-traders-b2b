@@ -107,3 +107,26 @@ export async function fetchInvoicesByCustomerId(customerId: string, startDate: s
   };
 }
 
+export async function searchInvoiceByNumber(invoiceNumber: string) {
+  const orgId = getZohoOrgId();
+  if (!orgId) throw new Error('Missing ZOHO_BOOKS_ORG_ID or ZOHO_ORGANIZATION_ID in environment variables');
+  const accessToken = await getZohoTokens();
+  if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
+
+  const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&invoice_number=${encodeURIComponent(invoiceNumber)}`;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to search invoice');
+  }
+
+  return {
+    invoices: data.invoices || [],
+    apiCallsUsed: 1,
+  };
+}
+

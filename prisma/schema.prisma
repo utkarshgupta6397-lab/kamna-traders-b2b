@@ -503,6 +503,10 @@ model RecoveryInvoiceTask {
   @@index([customerId])
   @@index([status])
 }
+enum DcrImportSource {
+  ZOHO_SYNC
+  MANUAL
+}
 
 // ─── DCR Module Phase 1 ───────────────────────────────────────────────────────
 
@@ -537,6 +541,9 @@ model DcrInvoice {
   processingReason  String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  importSource      DcrImportSource @default(ZOHO_SYNC)
+  importedBy        String?
+  importedAt        DateTime?
   
   items             DcrInvoiceItem[]
   serialAllocations DcrSerialAllocation[]

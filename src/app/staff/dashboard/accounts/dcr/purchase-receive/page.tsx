@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { PackageOpen, Plus, Trash2, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, ExternalLink, X, FileCheck, Package, Clock, Activity, Loader2, Edit2 } from 'lucide-react';
+import { PackageOpen, Plus, Trash2, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, ExternalLink, X, FileCheck, Package, Clock, Activity, Loader2, Edit2, MoreVertical } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import Link from 'next/link';
@@ -20,6 +20,16 @@ export default function PurchaseReceiveDashboard() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [editingRow, setEditingRow] = useState<any>(null);
+  const [actionMenuOpen, setActionMenuOpen] = useState<string | null>(null);
+
+  // Click-outside to close dropdowns
+  useEffect(() => {
+    const handleGlobalClick = () => setActionMenuOpen(null);
+    if (actionMenuOpen) {
+       document.addEventListener('click', handleGlobalClick);
+    }
+    return () => document.removeEventListener('click', handleGlobalClick);
+  }, [actionMenuOpen]);
 
   // Edit states
   const [editVendor, setEditVendor] = useState('');
@@ -168,33 +178,33 @@ export default function PurchaseReceiveDashboard() {
 
         {/* KPIs */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 py-2.5">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-gray-500">Total Purchased</p>
-              <Package className="w-4 h-4 text-gray-400" />
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Purchased</p>
+              <Package className="w-3.5 h-3.5 text-gray-400" />
             </div>
-            <h3 className="text-2xl font-bold text-gray-900 mt-2">{data.kpis.totalPurchased || 0}</h3>
+            <h3 className="text-xl font-bold text-gray-900 mt-1">{data.kpis.totalPurchased || 0}</h3>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 py-2.5">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-gray-500">DCR Received</p>
-              <FileCheck className="w-4 h-4 text-emerald-500" />
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">DCR Received</p>
+              <FileCheck className="w-3.5 h-3.5 text-emerald-500" />
             </div>
-            <h3 className="text-2xl font-bold text-emerald-600 mt-2">{data.kpis.dcrReceived || 0}</h3>
+            <h3 className="text-xl font-bold text-emerald-600 mt-1">{data.kpis.dcrReceived || 0}</h3>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 py-2.5">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-gray-500">Receipts Pending Vendor DCR</p>
-              <Clock className="w-4 h-4 text-orange-400" />
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Receipts Pending DCR</p>
+              <Clock className="w-3.5 h-3.5 text-orange-400" />
             </div>
-            <h3 className="text-2xl font-bold text-orange-600 mt-2">{data.kpis.dcrPending || 0}</h3>
+            <h3 className="text-xl font-bold text-orange-600 mt-1">{data.kpis.dcrPending || 0}</h3>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 py-2.5">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-gray-500">Completion %</p>
-              <Activity className="w-4 h-4 text-blue-400" />
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Completion %</p>
+              <Activity className="w-3.5 h-3.5 text-blue-400" />
             </div>
-            <h3 className="text-2xl font-bold text-blue-600 mt-2">{data.kpis.completionPercent || 0}%</h3>
+            <h3 className="text-xl font-bold text-blue-600 mt-1">{data.kpis.completionPercent || 0}%</h3>
           </div>
         </div>
 
@@ -207,68 +217,66 @@ export default function PurchaseReceiveDashboard() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50/80 border-b border-gray-200 text-gray-500 font-medium">
+                <thead className="bg-gray-50/80 border-b border-gray-200 text-gray-500 font-medium text-xs">
                   <tr>
-                    <th className="px-5 py-3">Date</th>
-                    <th className="px-5 py-3">Vendor</th>
-                    <th className="px-5 py-3">Bill Number</th>
-                    <th className="px-5 py-3">SKU</th>
-                    <th className="px-5 py-3 text-center">Purchased</th>
-                    <th className="px-5 py-3 text-center">DCR Rcvd</th>
-                    <th className="px-5 py-3 text-center">DCR Pndg</th>
-                    <th className="px-5 py-3 text-center">Completion</th>
-                    <th className="px-5 py-3 text-right">Actions</th>
+                    <th className="px-4 py-2 w-12 text-center">#</th>
+                    <th className="px-4 py-2">Date</th>
+                    <th className="px-4 py-2">Product</th>
+                    <th className="px-4 py-2 text-center">Received / Purchased</th>
+                    <th className="px-4 py-2 text-center">DCR Pndg</th>
+                    <th className="px-4 py-2 text-center">Completion</th>
+                    <th className="px-4 py-2 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {data.rows.map((row) => (
+                  {data.rows.map((row, index) => (
                     <React.Fragment key={row.id}>
                       <tr className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-5 py-3 font-medium text-gray-900">{format(new Date(row.date), 'dd MMM yyyy')}</td>
-                        <td className="px-5 py-3">{row.vendorName}</td>
-                        <td className="px-5 py-3 font-mono text-xs">{row.billNumber}</td>
-                        <td className="px-5 py-3">
+                        <td className="px-4 py-2 text-center text-gray-400 text-xs">{index + 1}</td>
+                        <td className="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">{format(new Date(row.date), 'dd MMM yyyy')}</td>
+                        <td className="px-4 py-2">
                           <p className="font-semibold text-gray-800 line-clamp-1" title={row.skuName}>{row.skuName}</p>
                         </td>
-                        <td className="px-5 py-3 text-center font-bold text-gray-700">{row.purchasedQty}</td>
-                        <td className="px-5 py-3 text-center text-emerald-600 font-semibold">{row.dcrReceived}</td>
-                        <td className="px-5 py-3 text-center text-orange-600 font-semibold">{row.dcrPending}</td>
-                        <td className="px-5 py-3 text-center">
-                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${row.completion === 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
+                        <td className="px-4 py-2 text-center font-bold text-gray-700">
+                           <span className="text-emerald-600">{row.dcrReceived}</span> <span className="text-gray-400 font-normal">/</span> {row.purchasedQty}
+                        </td>
+                        <td className="px-4 py-2 text-center text-orange-600 font-semibold">{row.dcrPending}</td>
+                        <td className="px-4 py-2 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${row.completion === 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
                             {row.completion}%
                           </span>
                         </td>
-                        <td className="px-5 py-3 text-right flex justify-end gap-2">
-                          <button
-                            onClick={() => openEdit(row)}
-                            className="p-1.5 text-gray-400 hover:text-[#1A2766] transition-colors rounded-lg hover:bg-gray-100"
-                            title="Edit Record"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <Link 
-                            href={`/staff/dashboard/accounts/dcr/purchase-dcr-received?receiptId=${encodeURIComponent(row.id)}`}
-                            className="p-1.5 text-gray-400 hover:text-[#1A2766] transition-colors rounded-lg hover:bg-gray-100"
-                            title="Open Purchase DCR Received"
-                          >
-                            <ExternalLink size={16} />
-                          </Link>
-                          <button
-                            onClick={() => toggleExpand(row.id)}
-                            className="p-1.5 text-gray-400 hover:text-[#1A2766] transition-colors rounded-lg hover:bg-gray-100 flex items-center gap-1 text-xs"
-                          >
-                            {expandedRows.has(row.id) ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                          </button>
+                        <td className="px-4 py-2 text-right relative">
+                           <button
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               setActionMenuOpen(actionMenuOpen === row.id ? null : row.id);
+                             }}
+                             className="p-1 text-gray-400 hover:text-[#1A2766] transition-colors rounded hover:bg-gray-100 inline-flex items-center justify-center"
+                           >
+                             <MoreVertical size={16} />
+                           </button>
+                           {actionMenuOpen === row.id && (
+                             <div className="absolute right-0 top-8 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-10 py-1 text-left">
+                               <button onClick={(e) => { e.stopPropagation(); openEdit(row); setActionMenuOpen(null); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700"><Edit2 size={14} /> Edit Record</button>
+                               <Link href={`/staff/dashboard/accounts/dcr/purchase-dcr-received?receiptId=${encodeURIComponent(row.id)}`} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700"><ExternalLink size={14} /> Open DCR Received</Link>
+                               <button onClick={(e) => { e.stopPropagation(); toggleExpand(row.id); setActionMenuOpen(null); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700">{expandedRows.has(row.id) ? <><ChevronUp size={14} /> Hide Details</> : <><ChevronDown size={14} /> View Details</>}</button>
+                             </div>
+                           )}
                         </td>
                       </tr>
                       {expandedRows.has(row.id) && (
                         <tr>
-                          <td colSpan={9} className="px-5 py-4 bg-gray-50 border-b border-gray-100">
-                            <div className="flex flex-wrap gap-2">
+                          <td colSpan={7} className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                            <div className="mb-3 flex gap-6 text-sm">
+                               <div><span className="text-gray-500 text-[10px] uppercase tracking-wider font-semibold block mb-0.5">Vendor</span><span className="font-medium text-gray-900">{row.vendorName}</span></div>
+                               <div><span className="text-gray-500 text-[10px] uppercase tracking-wider font-semibold block mb-0.5">Bill Number</span><span className="font-mono text-gray-900 bg-white px-1.5 py-0.5 rounded border border-gray-200">{row.billNumber}</span></div>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
                               {row.serials.map((s: any) => (
                                 <span 
                                   key={s.serialNumber} 
-                                  className={`font-mono text-xs px-2 py-1 rounded border ${
+                                  className={`font-mono text-[10px] px-1.5 py-0.5 rounded border ${
                                     s.vendorDcrStatus === 'RECEIVED' 
                                       ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
                                       : 'bg-white border-gray-300 text-gray-500'

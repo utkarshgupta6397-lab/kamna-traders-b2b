@@ -31,9 +31,6 @@ const parseSerials = (text: string, mode: 'line' | 'comma' | 'dcr_cert') => {
     const cleaned = m.trim().toUpperCase();
     if (cleaned.length < 6 || cleaned.length > 30) continue;
     
-    // Ignore pure numbers (e.g. 620)
-    if (/^\d+$/.test(cleaned)) continue;
-    
     // Ignore wattage/ratings like 620WP, 620W, 545W
     if (/^\d+W[P]?$/i.test(cleaned)) continue;
     

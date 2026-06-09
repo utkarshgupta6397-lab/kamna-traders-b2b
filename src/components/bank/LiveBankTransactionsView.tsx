@@ -73,10 +73,7 @@ function formatINR(amount: number): string {
 
 function parsePaymentMethod(description: string): string {
   const desc = (description || '').toUpperCase();
-  if (desc.includes('RTGS')) return 'RTGS';
-  if (desc.includes('NEFT')) return 'NEFT';
-  if (desc.includes('IMPS')) return 'IMPS';
-  if (desc.includes('UPI')) return 'UPI';
+  if (desc.includes('RTGS') || desc.includes('NEFT') || desc.includes('IMPS') || desc.includes('UPI')) return 'BANK TRANSFER';
   if (desc.includes('CASH') || desc.includes('CSH')) return 'CASH';
   return 'OTHER';
 }
@@ -226,6 +223,11 @@ export default function LiveBankTransactionsView() {
   
   const [sortOption, setSortOption] = useState<SortOption>('Latest First');
 
+  // Interactive Client-Side Filters
+  const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
+  const [selectedParty, setSelectedParty] = useState<string | null>(null);
+  const [uncategorizedOnly, setUncategorizedOnly] = useState<boolean>(false);
+
   const fetchTriggered = useRef(false);
 
   // Load from cache on mount
@@ -372,6 +374,35 @@ export default function LiveBankTransactionsView() {
     });
   }, [mergedTransactions, sortOption]);
 
+  // Client-side Filter Application
+  const filteredTransactions = useMemo(() => {
+    return sortedTransactions.filter(txn => {
+      // 1. Payment Method Filter
+      if (selectedMethod) {
+        const method = parsePaymentMethod(txn.description);
+        if (method !== selectedMethod) return false;
+      }
+      // 2. Party Filter
+      if (selectedParty) {
+        const isUncategorized = txn.status !== 'categorized';
+        let companyName = null;
+        if (!isUncategorized) {
+          companyName = txn.party_name || txn.contact_name || txn.payee || txn.rule_name || parseCompanyName(txn.description);
+        } else {
+          companyName = parseCompanyName(txn.description);
+        }
+        const partyKey = companyName || 'UNKNOWN PARTY';
+        if (partyKey !== selectedParty) return false;
+      }
+      // 3. Uncategorized Only Filter
+      if (uncategorizedOnly) {
+        const isUncat = txn.status?.toLowerCase() !== 'categorized';
+        if (!isUncat) return false;
+      }
+      return true;
+    });
+  }, [sortedTransactions, selectedMethod, selectedParty, uncategorizedOnly]);
+
   const handleFetch = async () => {
     setLoading(true);
     setError(null);
@@ -410,16 +441,16 @@ export default function LiveBankTransactionsView() {
   };
 
   // Summary Calcs
-  const totalCredits = useMemo(() => sortedTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0), [sortedTransactions]);
-  const categorizedCount = useMemo(() => sortedTransactions.filter(t => t.status === 'categorized').length, [sortedTransactions]);
-  const uncategorizedCount = sortedTransactions.length - categorizedCount;
-  const avgTransaction = sortedTransactions.length > 0 ? totalCredits / sortedTransactions.length : 0;
-  const largestTransaction = sortedTransactions.length > 0 ? Math.max(...sortedTransactions.map(t => Math.abs(t.amount))) : 0;
+  const totalCredits = useMemo(() => filteredTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0), [filteredTransactions]);
+  const categorizedCount = useMemo(() => filteredTransactions.filter(t => t.status === 'categorized').length, [filteredTransactions]);
+  const uncategorizedCount = filteredTransactions.length - categorizedCount;
+  const avgTransaction = filteredTransactions.length > 0 ? totalCredits / filteredTransactions.length : 0;
+  const largestTransaction = filteredTransactions.length > 0 ? Math.max(...filteredTransactions.map(t => Math.abs(t.amount))) : 0;
 
   // Party Calcs
   const topParties = useMemo(() => {
     const parties: Record<string, { count: number, total: number }> = {};
-    sortedTransactions.forEach(t => {
+    filteredTransactions.forEach(t => {
       const isUncategorized = t.status !== 'categorized';
       let companyName = null;
       
@@ -438,18 +469,25 @@ export default function LiveBankTransactionsView() {
     
     return Object.entries(parties)
       .map(([name, stats]) => ({ name, ...stats }))
+      .filter(p => p.total > 0)
       .sort((a, b) => b.total - a.total); // Show ALL parties without truncation
-  }, [sortedTransactions]);
+  }, [filteredTransactions]);
 
   const paymentMethods = useMemo(() => {
-    const methods = { RTGS: { count: 0, total: 0 }, NEFT: { count: 0, total: 0 }, IMPS: { count: 0, total: 0 }, UPI: { count: 0, total: 0 }, CASH: { count: 0, total: 0 }, OTHER: { count: 0, total: 0 } };
+    const methods = { 
+      'BANK TRANSFER': { count: 0, total: 0 }, 
+      CASH: { count: 0, total: 0 }, 
+      OTHER: { count: 0, total: 0 } 
+    };
     let totalAmount = 0;
     
-    sortedTransactions.forEach(t => {
+    filteredTransactions.forEach(t => {
       const method = parsePaymentMethod(t.description);
-      methods[method as keyof typeof methods].count += 1;
-      methods[method as keyof typeof methods].total += Math.abs(t.amount);
-      totalAmount += Math.abs(t.amount);
+      if (methods[method as keyof typeof methods]) {
+        methods[method as keyof typeof methods].count += 1;
+        methods[method as keyof typeof methods].total += Math.abs(t.amount);
+        totalAmount += Math.abs(t.amount);
+      }
     });
     
     return Object.entries(methods).map(([name, stats]) => ({
@@ -457,8 +495,8 @@ export default function LiveBankTransactionsView() {
       count: stats.count,
       total: stats.total,
       percentage: totalAmount > 0 ? (stats.total / totalAmount) * 100 : 0
-    })).filter(m => m.count > 0).sort((a, b) => b.total - a.total);
-  }, [sortedTransactions]);
+    })).sort((a, b) => b.total - a.total);
+  }, [filteredTransactions]);
 
   const methodColors = ['#059669', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b'];
 
@@ -513,10 +551,96 @@ export default function LiveBankTransactionsView() {
         {/* Left: Table (70%) */}
         <div className="w-full lg:w-[70%] bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col h-[calc(100vh-220px)] min-h-[600px]">
           
+          {/* Quick Filter Status Toggler */}
+          <div className="bg-gray-50/50 p-3 border-b border-gray-200 flex flex-col gap-2 select-none shrink-0">
+            <div className="flex items-center gap-6 text-xs font-semibold text-gray-700">
+              <span className="font-extrabold text-gray-400 uppercase tracking-wider text-[10px] bg-gray-200/60 px-1.5 py-0.5 rounded">
+                Show
+              </span>
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input
+                  type="radio"
+                  name="statusFilter"
+                  checked={!uncategorizedOnly}
+                  onChange={() => setUncategorizedOnly(false)}
+                  className="w-4 h-4 text-[#1A2766] border-gray-300 focus:ring-[#1A2766] cursor-pointer transition-all accent-[#1A2766]"
+                />
+                <span className="group-hover:text-gray-900 transition-colors">All Transactions</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input
+                  type="radio"
+                  name="statusFilter"
+                  checked={uncategorizedOnly}
+                  onChange={() => setUncategorizedOnly(true)}
+                  className="w-4 h-4 text-[#1A2766] border-gray-300 focus:ring-[#1A2766] cursor-pointer transition-all accent-[#1A2766]"
+                />
+                <span className="group-hover:text-gray-900 transition-colors flex items-center gap-1.5">
+                  Uncategorized Only
+                  {uncategorizedCount > 0 && (
+                    <span className="bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.2 rounded font-black tracking-wider animate-pulse">
+                      {uncategorizedCount}
+                    </span>
+                  )}
+                </span>
+              </label>
+            </div>
+
+            {/* Filter Chips Bar */}
+            {(selectedMethod || selectedParty || uncategorizedOnly) && (
+              <div className="flex flex-wrap items-center gap-2 pt-2.5 border-t border-gray-100 animate-in fade-in slide-in-from-top-1 duration-200">
+                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-1">Active Filters:</span>
+                {selectedMethod && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 border border-blue-200 text-blue-800 shadow-sm transition-all hover:bg-blue-100/70">
+                    Payment Method: {selectedMethod}
+                    <button 
+                      onClick={() => setSelectedMethod(null)} 
+                      className="hover:bg-blue-200/60 rounded-full w-4 h-4 inline-flex items-center justify-center font-bold ml-1 transition-colors focus:outline-none"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {selectedParty && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-purple-50 border border-purple-200 text-purple-800 shadow-sm transition-all hover:bg-purple-100/70">
+                    Party: {selectedParty}
+                    <button 
+                      onClick={() => setSelectedParty(null)} 
+                      className="hover:bg-purple-200/60 rounded-full w-4 h-4 inline-flex items-center justify-center font-bold ml-1 transition-colors focus:outline-none"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                {uncategorizedOnly && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 border border-amber-250 text-amber-800 shadow-sm transition-all hover:bg-amber-100/70">
+                    UNCATEGORIZED
+                    <button 
+                      onClick={() => setUncategorizedOnly(false)} 
+                      className="hover:bg-amber-200/60 rounded-full w-4 h-4 inline-flex items-center justify-center font-bold ml-1 transition-colors focus:outline-none"
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+                <button
+                  onClick={() => {
+                    setSelectedMethod(null);
+                    setSelectedParty(null);
+                    setUncategorizedOnly(false);
+                  }}
+                  className="text-[11px] font-black text-red-600 hover:text-red-750 ml-2 hover:underline focus:outline-none transition-colors"
+                >
+                  Clear All
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Table Toolbar */}
-          <div className="bg-gray-50 border-b border-gray-200 p-2 flex items-center justify-between">
+          <div className="bg-gray-50 border-b border-gray-200 p-2 flex items-center justify-between shrink-0">
             <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider ml-2">
-              {sortedTransactions.length} Transactions
+              {filteredTransactions.length} Transactions
             </span>
             <div className="flex items-center gap-2">
               <ArrowUpDown size={14} className="text-gray-400" />
@@ -537,29 +661,29 @@ export default function LiveBankTransactionsView() {
             <table className="w-full text-left border-collapse">
               <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm border-b border-gray-200">
                 <tr>
-                  <th className="px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Date & Time</th>
-                  <th className="px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Source</th>
-                  <th className="px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Party / Description</th>
-                  <th className="px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-3 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wider text-right">Amount</th>
+                  <th className="px-3 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Date & Time</th>
+                  <th className="px-3 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Source</th>
+                  <th className="px-3 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Party / Description</th>
+                  <th className="px-3 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-3 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-right">Amount</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {loading && sortedTransactions.length === 0 ? (
+                {loading && filteredTransactions.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-12 text-center text-gray-400">
                       <RefreshCw className="mx-auto animate-spin mb-2" size={24} />
                       Syncing live data...
                     </td>
                   </tr>
-                ) : sortedTransactions.length === 0 ? (
+                ) : filteredTransactions.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-12 text-center text-gray-400">
-                      No incoming credits found for today.
+                      No matching transactions found.
                     </td>
                   </tr>
                 ) : (
-                  sortedTransactions.map((txn) => {
+                  filteredTransactions.map((txn) => {
                     const isUncategorized = txn.status !== 'categorized';
                     
                     let companyName = null;
@@ -571,15 +695,15 @@ export default function LiveBankTransactionsView() {
 
                     return (
                       <tr key={txn.transaction_id || txn.statement_id || txn.payment_id} className="hover:bg-blue-50/30 transition-colors group">
-                        <td className="px-3 py-2 text-xs text-gray-600 font-medium whitespace-nowrap align-top">
+                        <td className="px-3 py-1.5 text-xs text-gray-600 font-medium whitespace-nowrap align-top">
                           {txn.displayDate}
                         </td>
-                        <td className="px-3 py-2 align-top whitespace-nowrap">
+                        <td className="px-3 py-1.5 align-top whitespace-nowrap">
                           {txn._source === 'BANK FEED' && <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest">Bank Feed</span>}
                           {txn._source === 'MANUAL PAYMENT' && <span className="bg-purple-100 text-purple-800 text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest">Manual</span>}
                           {txn._source === 'MERGED' && <span className="bg-indigo-100 text-indigo-800 text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest">Merged</span>}
                         </td>
-                        <td className="px-3 py-2 text-xs align-top">
+                        <td className="px-3 py-1.5 text-xs align-top">
                           {companyName ? (
                             <>
                               <div className="font-bold text-gray-900 leading-tight mb-0.5">
@@ -600,7 +724,7 @@ export default function LiveBankTransactionsView() {
                             </div>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-xs font-medium align-top">
+                        <td className="px-3 py-1.5 text-xs font-medium align-top">
                           {isUncategorized ? (
                             <span className="inline-block bg-amber-100 text-amber-800 text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-widest">
                               Uncategorized
@@ -611,7 +735,7 @@ export default function LiveBankTransactionsView() {
                             </span>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-sm text-right font-bold text-emerald-600 whitespace-nowrap align-top">
+                        <td className="px-3 py-1.5 text-sm text-right font-bold text-emerald-600 whitespace-nowrap align-top">
                           {formatINR(Math.abs(txn.amount))}
                         </td>
                       </tr>
@@ -637,7 +761,7 @@ export default function LiveBankTransactionsView() {
               </div>
               <div>
                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Total Txns</p>
-                <p className="text-lg font-black text-gray-800 leading-none mt-1">{sortedTransactions.length}</p>
+                <p className="text-lg font-black text-gray-800 leading-none mt-1">{filteredTransactions.length}</p>
               </div>
               <div>
                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Avg Txn</p>
@@ -651,21 +775,29 @@ export default function LiveBankTransactionsView() {
           </div>
 
           {/* Top Parties */}
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col max-h-[320px]">
-            <div className="p-4 border-b border-gray-100 bg-white z-10 sticky top-0">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col max-h-[320px] select-none">
+            <div className="p-3 border-b border-gray-100 bg-white z-10 sticky top-0">
               <h3 className="text-xs font-bold text-gray-800 uppercase tracking-widest">
                 Top Parties
               </h3>
             </div>
-            <div className="p-4 overflow-y-auto space-y-3 flex-1 scroll-smooth">
+            <div className="p-3 overflow-y-auto space-y-2 flex-1 scroll-smooth">
               {topParties.length === 0 ? (
                 <p className="text-xs text-gray-400 text-center">No party data available.</p>
               ) : (
                 topParties.map(p => (
-                  <div key={p.name} className="flex justify-between items-start group">
+                  <div 
+                    key={p.name} 
+                    onClick={() => setSelectedParty(selectedParty === p.name ? null : p.name)}
+                    className={`flex justify-between items-start p-2 rounded-lg border cursor-pointer transition-all duration-150 pl-2.5 border-l-4 ${
+                      selectedParty === p.name 
+                        ? 'bg-purple-50 border-purple-200 border-l-purple-600 text-purple-900 font-bold shadow-sm ring-1 ring-purple-300/30' 
+                        : 'bg-white border-gray-100 hover:bg-slate-50 hover:border-gray-250 border-l-transparent'
+                    }`}
+                  >
                     <div className="flex-1 pr-2 overflow-hidden">
-                      <p className="text-xs font-bold text-gray-800 leading-tight truncate group-hover:text-[#1A2766] transition-colors" title={p.name}>{p.name}</p>
-                      <p className="text-[10px] text-gray-400 font-medium">{p.count} transaction{p.count > 1 ? 's' : ''}</p>
+                      <p className="text-xs font-bold text-gray-800 leading-tight truncate" title={p.name}>{p.name}</p>
+                      <p className="text-[10px] text-gray-405 font-medium">{p.count} transaction{p.count > 1 ? 's' : ''}</p>
                     </div>
                     <div className="text-xs font-bold text-emerald-600 whitespace-nowrap">
                       {formatINR(p.total)}
@@ -684,16 +816,22 @@ export default function LiveBankTransactionsView() {
             </h3>
             
             {paymentMethods.length > 0 ? (
-              <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center gap-3 mb-3 select-none">
                 <div className="scale-90 origin-left">
                   <DonutChart data={paymentMethods} />
                 </div>
                 <div className="flex-1 space-y-1.5">
                   {paymentMethods.slice(0, 3).map((m, i) => (
-                    <div key={m.name} className="flex items-center text-[11px]">
+                    <div 
+                      key={m.name} 
+                      onClick={() => setSelectedMethod(selectedMethod === m.name ? null : m.name)}
+                      className={`flex items-center text-[11px] cursor-pointer hover:underline ${
+                        selectedMethod === m.name ? 'text-[#1A2766] font-bold' : 'text-gray-700'
+                      }`}
+                    >
                       <span className="w-1.5 h-1.5 rounded-full mr-2" style={{ backgroundColor: methodColors[i % methodColors.length] }}></span>
-                      <span className="flex-1 font-bold text-gray-700">{m.name}</span>
-                      <span className="text-gray-500 font-medium">{m.percentage.toFixed(0)}%</span>
+                      <span className="flex-1 truncate">{m.name}</span>
+                      <span className="text-gray-500 font-medium ml-1">{m.percentage.toFixed(0)}%</span>
                     </div>
                   ))}
                 </div>
@@ -702,17 +840,25 @@ export default function LiveBankTransactionsView() {
               <p className="text-xs text-gray-400 mb-3 text-center">No payment methods found.</p>
             )}
 
-            <div className="space-y-1.5">
+             <div className="space-y-1.5 select-none">
               {paymentMethods.map((m, i) => (
-                <div key={m.name} className="flex justify-between items-center bg-gray-50 px-2 py-1 rounded border border-gray-100">
+                <div 
+                  key={m.name} 
+                  onClick={() => setSelectedMethod(selectedMethod === m.name ? null : m.name)}
+                  className={`flex justify-between items-center p-2 rounded-lg border cursor-pointer transition-all duration-150 pl-2.5 border-l-4 ${
+                    selectedMethod === m.name 
+                      ? 'bg-emerald-50 border-emerald-200 border-l-emerald-600 text-emerald-900 font-bold shadow-sm ring-1 ring-emerald-300/30' 
+                      : 'bg-white border-gray-100 hover:bg-slate-50 hover:border-gray-250 border-l-transparent'
+                  }`}
+                >
                   <div className="flex items-center gap-1.5">
-                    <span className="w-1 h-1 rounded-full" style={{ backgroundColor: methodColors[i % methodColors.length] }}></span>
-                    <span className="text-[11px] font-bold text-gray-800">{m.name}</span>
-                    <span className="text-[9px] text-gray-400 px-1 py-0.5 bg-white rounded border border-gray-200">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: methodColors[i % methodColors.length] }}></span>
+                    <span className="text-[11px] font-bold">{m.name}</span>
+                    <span className="text-[9px] text-gray-400 px-1 py-0.5 bg-white rounded border border-gray-205">
                       {m.count} txn{m.count > 1 ? 's' : ''}
                     </span>
                   </div>
-                  <span className="text-[11px] font-bold text-emerald-600">{formatINR(m.total)}</span>
+                  <span className="text-[11px] font-bold text-emerald-700">{formatINR(m.total)}</span>
                 </div>
               ))}
             </div>

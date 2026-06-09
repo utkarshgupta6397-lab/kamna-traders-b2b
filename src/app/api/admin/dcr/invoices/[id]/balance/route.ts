@@ -29,9 +29,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
 
-    const { invoice: zohoInvoice, error } = await fetchInvoiceById(invoice.zohoInvoiceId);
+    const { invoice: zohoInvoice } = await fetchInvoiceById(invoice.zohoInvoiceId);
 
-    if (error || !zohoInvoice) {
+    if (!zohoInvoice) {
       return NextResponse.json({ error: 'Failed to fetch invoice from Zoho' }, { status: 502 });
     }
 

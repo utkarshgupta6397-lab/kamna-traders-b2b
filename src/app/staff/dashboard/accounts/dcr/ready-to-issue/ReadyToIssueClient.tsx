@@ -12,6 +12,7 @@ interface SerialEntry {
   serialNumber: string;
   status: string;
   serialTag?: string | null;
+  vendorDcrStatus?: string | null;
 }
 
 interface SkuGroup {
@@ -154,7 +155,7 @@ export default function ReadyToIssueClient() {
     if (serial.serialTag && serial.serialTag !== 'UNTAGGED') {
       return serial.serialTag;
     }
-    if (invoice.vendorDcrStatus === 'NOT_RECEIVED') {
+    if (serial.vendorDcrStatus === 'NOT_RECEIVED') {
       return 'Vendor DCR Pending';
     }
     if (serial.status === 'HOLD') return 'Hold For Verification';

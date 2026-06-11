@@ -5,7 +5,7 @@ import { Search, AlertTriangle, CheckCircle, Shield, Clock, ChevronDown } from '
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
-type CorrectionType = 'CHANGE_SKU' | 'FIX_PURCHASE' | 'FIX_DCR' | 'CHANGE_SERIAL' | 'DELETE_SERIAL';
+type CorrectionType = 'CHANGE_SKU' | 'FIX_PURCHASE' | 'FIX_DCR' | 'CHANGE_SERIAL' | 'DELETE_SERIAL' | 'UNDO_ISSUE';
 
 export default function SerialCorrectionsClient() {
   const [searchSerial, setSearchSerial] = useState('');
@@ -98,6 +98,12 @@ export default function SerialCorrectionsClient() {
       setIsSubmitting(false);
 
       newValues = { serialNumber: trimmedNewSerial };
+    } else if (correctionType === 'UNDO_ISSUE') {
+      if (serial.status !== 'ISSUED') {
+        toast.error('Only ISSUED serials can be un-issued');
+        return;
+      }
+      newValues = {};
     } else if (correctionType === 'DELETE_SERIAL') {
       if (reason.trim().length < 5) {
         toast.error('Reason must be at least 5 characters');
@@ -280,9 +286,10 @@ export default function SerialCorrectionsClient() {
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-gray-700">Correction Type</label>
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                    {([
-                      'CHANGE_SKU', 'FIX_PURCHASE', 'FIX_DCR', 'CHANGE_SERIAL', 'DELETE_SERIAL'
-                    ] as CorrectionType[]).map(t => (
+                    {(([
+                      'CHANGE_SKU', 'FIX_PURCHASE', 'FIX_DCR', 'CHANGE_SERIAL', 'DELETE_SERIAL',
+                      ...(serial?.status === 'ISSUED' ? ['UNDO_ISSUE'] : [])
+                    ]) as CorrectionType[]).map(t => (
                       <button
                         key={t}
                         type="button"
@@ -293,7 +300,7 @@ export default function SerialCorrectionsClient() {
                             : 'text-gray-600 border-gray-300 hover:border-[#1A2766]/40'
                         }`}
                       >
-                        {t === 'CHANGE_SKU' ? 'Change SKU' : t === 'FIX_PURCHASE' ? 'Fix Purchase' : t === 'FIX_DCR' ? 'Fix DCR' : t === 'CHANGE_SERIAL' ? 'Change Serial' : 'Delete Serial'}
+                        {t === 'CHANGE_SKU' ? 'Change SKU' : t === 'FIX_PURCHASE' ? 'Fix Purchase' : t === 'FIX_DCR' ? 'Fix DCR' : t === 'CHANGE_SERIAL' ? 'Change Serial' : t === 'UNDO_ISSUE' ? 'Undo Issue' : 'Delete Serial'}
                       </button>
                     ))}
                   </div>
@@ -399,6 +406,23 @@ export default function SerialCorrectionsClient() {
                       </ul>
                       <p className="mt-3 text-red-700/80 italic text-xs">
                         This serial will be removed from active DCR processing. Allocation references will be updated automatically. Audit history will be preserved.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {correctionType === 'UNDO_ISSUE' && (
+                  <div className="space-y-4">
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+                      <p className="font-bold mb-2">Impact Analysis: Undo Issue</p>
+                      <ul className="space-y-1 ml-1">
+                        <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> Serial Status: <strong>ISSUED → READY_TO_ISSUE</strong></li>
+                        <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> Allocation: <strong>Unchanged</strong></li>
+                        <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> Vendor DCR Status: <strong>Unchanged</strong></li>
+                        <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4" /> Invoice Status: <strong>Will recalculate automatically</strong></li>
+                      </ul>
+                      <p className="mt-3 text-blue-700/80 italic text-xs">
+                        This will reverse the issue transaction. The serial will instantly reappear in the Ready To Issue queue.
                       </p>
                     </div>
                   </div>

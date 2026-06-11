@@ -144,6 +144,13 @@ export async function PATCH(req: Request) {
       updateData.deletedBy = session.userId;
       updateData.deleteReason = reason;
       oldValues.isDeleted = false;
+    } else if (correctionType === 'UNDO_ISSUE') {
+      if (serial.status !== 'ISSUED') {
+        return NextResponse.json({ error: `Cannot undo issue: Status is ${serial.status}` }, { status: 400 });
+      }
+      
+      oldValues.status = serial.status;
+      updateData.status = 'READY_TO_ISSUE';
     } else {
       return NextResponse.json({ error: `Unknown correctionType: ${correctionType}` }, { status: 400 });
     }
@@ -202,7 +209,7 @@ export async function PATCH(req: Request) {
       await tx.dcrSerialHistory.create({
         data: {
           serialId: serial.id,
-          eventType: `CORRECTION_${correctionType}`,
+          eventType: correctionType === 'UNDO_ISSUE' ? 'ISSUE_REVERSED' : `CORRECTION_${correctionType}`,
           eventDescription: JSON.stringify({
             correctionType,
             oldValues,
@@ -214,6 +221,35 @@ export async function PATCH(req: Request) {
           userId: session.userId,
         }
       });
+
+      if (correctionType === 'UNDO_ISSUE' && serial.allocations && serial.allocations.length > 0) {
+        const invoiceIds = Array.from(new Set(serial.allocations.map((a: any) => a.invoiceId)));
+        for (const invId of invoiceIds) {
+          const invoice = await tx.dcrInvoice.findUnique({
+            where: { id: invId as string },
+            include: { items: { include: { serialAllocations: { include: { serial: true } } } } }
+          });
+          if (!invoice) continue;
+          
+          const allSerialsInInv = invoice.items.flatMap((i: any) => i.serialAllocations.map((a: any) => a.serial));
+          const anyOnHold = allSerialsInInv.some((s: any) => s?.status === 'HOLD');
+          const anyPending = allSerialsInInv.some((s: any) => s?.status === 'ALLOCATED');
+          const anyReady = allSerialsInInv.some((s: any) => s?.status === 'READY_TO_ISSUE');
+          
+          let nextStatus = invoice.dcrStatus;
+          if (anyPending) nextStatus = 'PARTIALLY_ALLOCATED';
+          else if (anyOnHold) nextStatus = 'HOLD';
+          else if (anyReady) nextStatus = 'READY_TO_ISSUE';
+          else nextStatus = 'ISSUED';
+
+          if (nextStatus !== invoice.dcrStatus) {
+            await tx.dcrInvoice.update({
+              where: { id: invId as string },
+              data: { dcrStatus: nextStatus }
+            });
+          }
+        }
+      }
 
       if (rollbackHistory) {
         await tx.dcrSerialHistory.create({

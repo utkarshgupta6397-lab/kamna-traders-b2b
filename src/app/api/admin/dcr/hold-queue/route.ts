@@ -78,7 +78,7 @@ export async function GET(req: Request) {
           isReleased: alloc.serial?.status === 'READY_TO_ISSUE' || alloc.serial?.status === 'ISSUED',
         }));
 
-        const eligibleSerials = serials.filter(s => s.isEligible);
+        const eligibleSerials = serials.filter(s => s.isEligible && !s.isReleased);
         const releasedSerials = serials.filter(s => s.isReleased);
 
         return {

@@ -246,7 +246,7 @@ export default function HoldQueueClient() {
       if (releaseAll) {
         // Release all eligible across all invoices for this customer
         for (const inv of reviewCustomer.invoices) {
-          const eligibleInThisInv = inv.totalEligible - inv.totalReleased;
+          const eligibleInThisInv = inv.totalEligible;
           if (eligibleInThisInv > 0) {
             await fetch('/api/admin/dcr/hold-queue/release', {
               method: 'PATCH',
@@ -508,7 +508,7 @@ export default function HoldQueueClient() {
                         Release Selected ({selectedSerials.size})
                       </button>
                     )}
-                    {selectedSerials.size === 0 && reviewCustomer.invoices.some(inv => inv.totalEligible - inv.totalReleased > 0) && (
+                    {selectedSerials.size === 0 && reviewCustomer.invoices.some(inv => inv.totalEligible > 0) && (
                       <button
                         onClick={() => handleRelease(undefined, true)}
                         disabled={isReleasing}
@@ -524,8 +524,8 @@ export default function HoldQueueClient() {
                 <div className="flex-1 overflow-y-auto p-4 bg-gray-50 space-y-4">
                   {reviewCustomer.invoices.map(invoice => {
                     const invExpanded = expandedInvoices.has(invoice.id);
-                    const hasEligible = invoice.totalEligible - invoice.totalReleased > 0;
-                    const blocked = invoice.totalSerials - invoice.totalEligible - invoice.totalReleased;
+                    const hasEligible = invoice.totalEligible > 0;
+                    const dcrPending = invoice.totalSerials - invoice.totalEligible - invoice.totalReleased;
                     
                     return (
                       <div key={invoice.id} className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
@@ -538,8 +538,8 @@ export default function HoldQueueClient() {
                             <span className="font-bold text-gray-900 text-sm">{invoice.invoiceNumber}</span>
                             <span className="text-[11px] text-gray-500 font-medium">Outst: {fmtCurrency(invoice.outstandingBalance)}</span>
                             <span className="text-[11px] text-gray-500 font-medium px-2 border-l border-gray-300">Total: {invoice.totalSerials}</span>
-                            <span className="text-[11px] text-emerald-600 font-bold">Eligible: {invoice.totalEligible}</span>
-                            <span className="text-[11px] text-red-500 font-bold">Blocked: {blocked}</span>
+                            <span className="text-[11px] text-emerald-600 font-bold">Ready: {invoice.totalEligible}</span>
+                            <span className="text-[11px] text-orange-500 font-bold">Vendor DCR Pending: {dcrPending}</span>
                             <span className="text-[11px] text-blue-600 font-bold">Released: {invoice.totalReleased}</span>
                           </div>
                           <div className="flex items-center gap-4" onClick={e => e.stopPropagation()}>
@@ -568,8 +568,8 @@ export default function HoldQueueClient() {
                             {invoice.skuGroups.map(group => {
                               const itemKey = `${invoice.id}:${group.itemId}`;
                               const skuExpanded = expandedSkus.has(itemKey);
-                              const skuBlocked = group.totalSerials - group.eligibleSerials - group.releasedSerials;
-                              const skuHasEligible = group.eligibleSerials - group.releasedSerials > 0;
+                              const skuDcrPending = group.totalSerials - group.eligibleSerials - group.releasedSerials;
+                              const skuHasEligible = group.eligibleSerials > 0;
                               
                               return (
                                 <div key={group.itemId} className="border border-gray-200 rounded-md overflow-hidden shadow-sm">
@@ -580,9 +580,9 @@ export default function HoldQueueClient() {
                                     <div className="flex items-center gap-3">
                                       <span className="font-semibold text-gray-800 text-xs truncate max-w-[180px]">{group.itemName}</span>
                                       <span className="text-[10px] text-gray-500 font-mono border-l pl-2">{group.sku || 'No SKU'}</span>
-                                      <span className="text-[10px] text-gray-500 font-medium px-2 border-l border-gray-300">Alloc: {group.totalSerials}</span>
-                                      <span className="text-[10px] text-emerald-600 font-bold">Eligible: {group.eligibleSerials}</span>
-                                      <span className="text-[10px] text-red-500 font-bold">Blocked: {skuBlocked}</span>
+                                      <span className="text-[10px] text-gray-500 font-medium px-2 border-l border-gray-300">Total: {group.totalSerials}</span>
+                                      <span className="text-[10px] text-emerald-600 font-bold">Ready: {group.eligibleSerials}</span>
+                                      <span className="text-[10px] text-orange-500 font-bold">Vendor DCR Pending: {skuDcrPending}</span>
                                       <span className="text-[10px] text-blue-600 font-bold">Released: {group.releasedSerials}</span>
                                     </div>
                                     <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>

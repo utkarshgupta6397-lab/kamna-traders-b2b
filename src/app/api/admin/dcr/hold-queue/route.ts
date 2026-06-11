@@ -16,14 +16,6 @@ export async function GET(req: Request) {
     const skip = (page - 1) * limit;
     
     const sort = searchParams.get('sort') || 'outstanding_desc';
-    let orderBy: any;
-    if (sort === 'outstanding_desc') orderBy = [{ outstandingAmount: 'desc' }, { invoiceDate: 'desc' }];
-    else if (sort === 'outstanding_asc') orderBy = [{ outstandingAmount: 'asc' }, { invoiceDate: 'asc' }];
-    else if (sort === 'date_desc') orderBy = { invoiceDate: 'desc' };
-    else if (sort === 'date_asc') orderBy = { invoiceDate: 'asc' };
-    else orderBy = [{ outstandingAmount: 'desc' }, { invoiceDate: 'desc' }];
-
-    // Cache fetching has been removed in favor of direct DB outstandingAmount
 
     // --- Build where clause ---
     const whereClause: any = {
@@ -54,39 +46,27 @@ export async function GET(req: Request) {
       ];
     }
 
-    const [invoices, totalCount] = await Promise.all([
-      prisma.dcrInvoice.findMany({
-        where: whereClause,
-        orderBy,
-        skip,
-        take: limit,
-        include: {
-          items: {
-            include: {
-              serialAllocations: {
-                include: {
-                  serial: {
-                    select: { id: true, serialNumber: true, status: true, vendorDcrStatus: true, skuId: true }
-                  }
-                },
-                orderBy: { allocatedAt: 'asc' }
-              }
+    // Fetch ALL matching invoices without DB pagination
+    const allInvoices = await prisma.dcrInvoice.findMany({
+      where: whereClause,
+      include: {
+        items: {
+          include: {
+            serialAllocations: {
+              include: {
+                serial: {
+                  select: { id: true, serialNumber: true, status: true, vendorDcrStatus: true, skuId: true }
+                }
+              },
+              orderBy: { allocatedAt: 'asc' }
             }
           }
         }
-      }),
-      prisma.dcrInvoice.count({ where: whereClause })
-    ]);
-
-    // Load local customer records corresponding to the returned invoices' customerId
-    const customerIds = Array.from(new Set(invoices.map(inv => inv.customerId)));
-    const localCustomers = await prisma.customer.findMany({
-      where: { id: { in: customerIds } }
+      }
     });
-    const customerGstMap = new Map(localCustomers.map(c => [c.id, c.gstNumber]));
 
-    // --- Format invoices ---
-    const formattedInvoices = invoices.map(inv => {
+    // Format all invoices
+    const formattedInvoices = allInvoices.map(inv => {
       // Group allocations by SKU (DcrInvoiceItem)
       const skuGroups = inv.items.map(item => {
         const serials = item.serialAllocations.map(alloc => ({
@@ -126,7 +106,6 @@ export async function GET(req: Request) {
         zohoInvoiceId: inv.zohoInvoiceId,
         customerName: inv.customerName,
         customerId: inv.customerId,
-        customer_gst_no: customerGstMap.get(inv.customerId) || null,
         invoiceDate: inv.invoiceDate,
         invoiceTotal: inv.invoiceTotal,
         dcrStatus: inv.dcrStatus,
@@ -139,6 +118,81 @@ export async function GET(req: Request) {
         skuGroups,
       };
     });
+
+    // Group by customer
+    const customerMap = new Map<string, any>();
+    for (const inv of formattedInvoices) {
+      if (!customerMap.has(inv.customerId)) {
+        customerMap.set(inv.customerId, {
+          customerId: inv.customerId,
+          customerName: inv.customerName,
+          customerGstNo: null,
+          outstandingBalance: 0,
+          totalInvoices: 0,
+          totalSerials: 0,
+          serialsOnHold: 0,
+          serialsIssued: 0,
+          serialsDcrPending: 0,
+          invoices: []
+        });
+      }
+      
+      const cust = customerMap.get(inv.customerId);
+      cust.invoices.push(inv);
+      cust.totalInvoices += 1;
+      
+      // Calculate serial stats
+      for (const group of inv.skuGroups) {
+        cust.totalSerials += group.totalSerials;
+        for (const serial of group.serials) {
+          if (serial.status === 'ISSUED') {
+            cust.serialsIssued += 1;
+          } else if (serial.status === 'HOLD' || serial.status !== 'READY_TO_ISSUE') {
+            // Include ALLOCATED etc as "Hold" logically for this page
+            cust.serialsOnHold += 1;
+          }
+          if (serial.vendorDcrStatus !== 'RECEIVED') {
+            cust.serialsDcrPending += 1;
+          }
+        }
+      }
+    }
+
+    const customers = Array.from(customerMap.values());
+
+    // Load local customer records to get GST and accurately set customer-level outstanding balance if available
+    // But since the outstanding logic across held invoices wants a sum, we'll keep the sum of pending balances across held invoices.
+    // Wait, the user asked for: "Outstanding Balance: Sum of pending balances across all held invoices."
+    // So we just sum the outstandingBalance of the held invoices we just formatted.
+    
+    const localCustomers = await prisma.customer.findMany({
+      where: { id: { in: customers.map(c => c.customerId) } },
+      select: { id: true, gstNumber: true }
+    });
+    const customerDbMap = new Map(localCustomers.map(c => [c.id, c]));
+    
+    // We get the accurate customer-wide outstanding balance from the DB balance if preferred, 
+    // but the spec specifically says: "Outstanding Balance: Sum of pending balances across all held invoices."
+    for (const c of customers) {
+      c.customerGstNo = customerDbMap.get(c.customerId)?.gstNumber || null;
+      c.outstandingBalance = c.invoices.reduce((sum: number, inv: any) => sum + inv.outstandingBalance, 0);
+    }
+
+    // Sort customers
+    customers.sort((a, b) => {
+      if (sort === 'outstanding_desc') return b.outstandingBalance - a.outstandingBalance;
+      if (sort === 'outstanding_asc') return a.outstandingBalance - b.outstandingBalance;
+      
+      const aMaxDate = Math.max(...a.invoices.map((i: any) => new Date(i.invoiceDate).getTime()));
+      const bMaxDate = Math.max(...b.invoices.map((i: any) => new Date(i.invoiceDate).getTime()));
+      if (sort === 'date_desc') return bMaxDate - aMaxDate;
+      if (sort === 'date_asc') return aMaxDate - bMaxDate;
+
+      return b.outstandingBalance - a.outstandingBalance;
+    });
+
+    const totalCount = customers.length;
+    const paginatedCustomers = customers.slice(skip, skip + limit);
 
     // --- KPIs ---
     const kpiWhereClause: any = {
@@ -153,7 +207,7 @@ export async function GET(req: Request) {
       }
     };
 
-    const [invoicesOnHold, readyToIssueCount, holdSerialData] = await Promise.all([
+    const [invoicesOnHoldCount, readyToIssueCount, holdSerialData] = await Promise.all([
       prisma.dcrInvoice.count({ where: kpiWhereClause }),
       prisma.dcrInvoice.count({ where: { dcrStatus: 'READY_TO_ISSUE', invoiceStatus: { not: 'void' } } }),
       prisma.dcrSerialAllocation.findMany({
@@ -163,30 +217,13 @@ export async function GET(req: Request) {
             status: { notIn: ['READY_TO_ISSUE', 'ISSUED'] }
           }
         },
-        select: { id: true, serial: { select: { status: true } } }
+        select: { id: true }
       })
     ]);
 
-    const serialsOnHold = holdSerialData.length;
+    const serialsOnHoldCount = holdSerialData.length;
+    const outstandingValueOnHold = customers.reduce((sum, c) => sum + c.outstandingBalance, 0);
 
-    // To get total outstanding value, we need all unique customer IDs in the hold queue, not just the paginated ones.
-    const allHoldInvoices = await prisma.dcrInvoice.findMany({
-      where: kpiWhereClause,
-      select: { customerId: true, outstandingAmount: true }
-    });
-    
-    const customerBalances = new Map<string, number>();
-    for (const inv of allHoldInvoices) {
-      if (!customerBalances.has(inv.customerId)) {
-        customerBalances.set(inv.customerId, inv.outstandingAmount || 0);
-      }
-    }
-    
-    let outstandingValueOnHold = 0;
-    for (const amount of customerBalances.values()) {
-      outstandingValueOnHold += amount;
-    }
-    
     let zohoApiCallsToday = 0;
     try {
       const { getZohoApiUsage } = await import('@/lib/zoho-api-meter');
@@ -196,13 +233,14 @@ export async function GET(req: Request) {
     }
 
     return NextResponse.json({
-      invoices: formattedInvoices,
+      customers: paginatedCustomers,
       total: totalCount,
       page,
       limit,
       kpis: {
-        invoicesOnHold,
-        serialsOnHold,
+        customersOnHold: totalCount,
+        invoicesOnHold: invoicesOnHoldCount,
+        serialsOnHold: serialsOnHoldCount,
         readyToIssue: readyToIssueCount,
         outstandingValueOnHold,
         zohoApiCallsToday,

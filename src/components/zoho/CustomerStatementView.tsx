@@ -232,6 +232,7 @@ export default function CustomerStatementView() {
   const [debugOpen, setDebugOpen] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [cachedAt, setCachedAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -253,6 +254,12 @@ export default function CustomerStatementView() {
   const [manualAmount, setManualAmount] = useState('');
   const [manualDesc, setManualDesc] = useState('');
   const [isHydrated, setIsHydrated] = useState(false);
+
+  // Clipped Mode State
+  const [clipFromIndex, setClipFromIndex] = useState<number | null>(null);
+
+  // Draft Invoices State
+  const [draftStatuses, setDraftStatuses] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     try {
@@ -314,7 +321,7 @@ export default function CustomerStatementView() {
   };
 
   // ── PDF Download (visible statement only) ────────────────────────────────
-  const handleDownloadPDF = async () => {
+  const handleDownloadPDF = async (theme: 'color' | 'economy' = 'color') => {
     const s = statement?.data;
     if (!s) return;
     setPdfGenerating(true);
@@ -380,8 +387,8 @@ export default function CustomerStatementView() {
       try {
         const svgRes = await fetch('/logo.svg');
         const svgText = await svgRes.text();
-        // Convert dark-fill SVG to white by replacing known brand colours
-        const whiteSvg = svgText
+        // Convert dark-fill SVG to white for color theme, or keep original for economy theme
+        const whiteSvg = theme === 'economy' ? svgText : svgText
           .replace(/#1A2766/gi, '#FFFFFF')
           .replace(/#003347/gi, '#FFFFFF')
           .replace(/#AE1B1E/gi, '#FFFFFF');
@@ -414,7 +421,10 @@ export default function CustomerStatementView() {
       const cBg: [number, number, number]     = [248, 250, 252]; // slate-50
 
       // ── Visible transactions ────────────────────────────────────────────
-      const visibleTxs = isExpanded ? s.transactions : s.transactions.slice(-12);
+      const clipIdx = clipFromIndex !== null ? clipFromIndex : -1;
+      const activeTxs = clipIdx !== -1 ? s.transactions.slice(clipIdx) : s.transactions;
+      const visibleTxs = isExpanded ? activeTxs : activeTxs.slice(-12);
+
       const openingBal = visibleTxs.length > 0
         ? visibleTxs[0].balanceAfter - visibleTxs[0].netEffect
         : s.closingBalance;
@@ -424,12 +434,14 @@ export default function CustomerStatementView() {
       const totalPaid      = visibleTxs.filter(t => t.type === 'payment').reduce((a, t) => a + Math.abs(t.netEffect), 0);
 
       // ── Header bar ──────────────────────────────────────────────────────
-      const headerH = 30;
-      doc.setFillColor(...cNavy);
-      doc.rect(0, 0, pageW, headerH, 'F');
+      const headerH = theme === 'economy' ? 22 : 30;
+      if (theme === 'color') {
+        doc.setFillColor(...cNavy);
+        doc.rect(0, 0, pageW, headerH, 'F');
+      }
 
-      // Logo (white version) at top-left — 18mm tall
-      const logoH = 18;
+      // Logo (white version) at top-left
+      const logoH = theme === 'economy' ? 14 : 18;
       const logoW = logoH * (599 / 579); // maintain SVG aspect ratio
       if (logoDataUrl) {
         doc.addImage(logoDataUrl, 'PNG', margin, (headerH - logoH) / 2, logoW, logoH);
@@ -437,62 +449,80 @@ export default function CustomerStatementView() {
 
       // Title block — starts after logo
       const titleX = logoDataUrl ? margin + logoW + 4 : margin;
-      doc.setTextColor(255, 255, 255);
+      doc.setTextColor(...(theme === 'economy' ? cDark : [255, 255, 255] as [number, number, number]));
       doc.setFont(pdfFont, 'bold');
       doc.setFontSize(13);
-      doc.text('Customer Statement', titleX, 12);
+      doc.text('Customer Statement', titleX, theme === 'economy' ? 10 : 12);
 
       doc.setFont(pdfFont, 'normal');
       doc.setFontSize(7);
-      doc.setTextColor(190, 205, 225);
-      doc.text('Kamna Traders · Receivables Ledger', titleX, 20);
+      doc.setTextColor(...(theme === 'economy' ? cSlate : [190, 205, 225] as [number, number, number]));
+      doc.text('Kamna Traders · Receivables Ledger', titleX, theme === 'economy' ? 15 : 20);
 
       // Customer name + GST + phone — right-aligned
       doc.setFont(pdfFont, 'bold');
       doc.setFontSize(10);
-      doc.setTextColor(255, 255, 255);
-      doc.text(s.customer.contactName, pageW - margin, 11, { align: 'right' });
+      doc.setTextColor(...(theme === 'economy' ? cDark : [255, 255, 255] as [number, number, number]));
+      doc.text(s.customer.contactName, pageW - margin, theme === 'economy' ? 9 : 11, { align: 'right' });
       if (s.customer.gstNo) {
         doc.setFont(pdfFont, 'normal');
         doc.setFontSize(7);
-        doc.setTextColor(190, 205, 225);
-        doc.text(`GST: ${s.customer.gstNo}`, pageW - margin, 18, { align: 'right' });
+        doc.setTextColor(...(theme === 'economy' ? cSlate : [190, 205, 225] as [number, number, number]));
+        doc.text(`GST: ${s.customer.gstNo}`, pageW - margin, theme === 'economy' ? 14 : 18, { align: 'right' });
       }
       if (s.customer.mobile) {
         doc.setFontSize(7);
-        doc.text(s.customer.mobile, pageW - margin, 24, { align: 'right' });
+        doc.text(s.customer.mobile, pageW - margin, theme === 'economy' ? 19 : 24, { align: 'right' });
       }
 
-      let curY = headerH + 6;
+      if (theme === 'economy') {
+        doc.setDrawColor(...cNavy);
+        doc.setLineWidth(0.3);
+        doc.line(margin, headerH, pageW - margin, headerH);
+      }
 
-      // ── KPI strip (finance-grade bold typography) ────────────────────────
+      // ── KPI strip ──────────────────────────────────────────────────────
       const kpis = [
-        { label: openingPres.isCredit ? 'Advance / Credit' : 'Opening Balance', val: pdfOpeningAmt, color: openingPres.isCredit ? cGreen : cDark },
-        { label: 'Total Invoiced',  val: pdfFmt(totalInvoiced), color: cDark  },
-        { label: 'Total Paid',      val: pdfFmt(totalPaid),     color: cGreen },
+        { label: openingPres.isCredit ? 'Advance / Credit' : 'Opening Balance', val: pdfOpeningAmt, color: openingPres.isCredit ? cGreen : cDark, accent: [59, 130, 246] as [number, number, number] },
+        { label: 'Total Invoiced',  val: pdfFmt(totalInvoiced), color: cDark, accent: cNavy  },
+        { label: 'Total Paid',      val: pdfFmt(totalPaid),     color: cGreen, accent: [16, 185, 129] as [number, number, number] },
         { label: 'Closing Balance', val: pdfFmtBalance(s.closingBalance),
-          color: s.closingBalance > 0 ? cRed : s.closingBalance < 0 ? cGreen : cDark },
+          color: s.closingBalance > 0 ? cRed : s.closingBalance < 0 ? cGreen : cDark, accent: [239, 68, 68] as [number, number, number] },
       ];
-      const kpiCardH = 18;
-      const kpiW = colW / kpis.length;
-      kpis.forEach((k, i) => {
-        const x = margin + i * kpiW;
-        doc.setFillColor(...cBg);
-        doc.setDrawColor(226, 232, 240);
-        doc.rect(x, curY, kpiW - 2, kpiCardH, 'FD');
+      
+      const boxW = (colW - 8 * 3) / 4;
+      kpis.forEach((box, i) => {
+        const bx = margin + i * (boxW + 8);
+        const by = theme === 'economy' ? 28 : 38;
+        const bh = 14;
+        
+        if (theme === 'economy') {
+          doc.setFillColor(252, 252, 252);
+          doc.setDrawColor(226, 232, 240); // slate-200 border
+          doc.setLineWidth(0.3);
+          doc.roundedRect(bx, by, boxW, bh, 1, 1, 'FD');
+
+          doc.setFillColor(...box.accent);
+          doc.rect(bx, by + 0.3, 2.5, bh - 0.6, 'F');
+        } else {
+          // Pastel background mapped from the primary color for color theme
+          const bg = box.color === cRed ? [254, 242, 242] :
+                     box.color === cGreen ? [236, 253, 245] :
+                     [248, 250, 252];
+          doc.setFillColor(bg[0], bg[1], bg[2]);
+          doc.roundedRect(bx, by, boxW, bh, 2, 2, 'F');
+        }
 
         doc.setFont(pdfFont, 'bold');
         doc.setFontSize(5.5);
         doc.setTextColor(...cSlate);
-        doc.text(k.label.toUpperCase(), x + 3, curY + 6);
+        doc.text(box.label.toUpperCase(), bx + 3, by + 5);
 
-        // Bold, larger numeric value for finance-grade readability
         doc.setFont(pdfFont, 'bold');
-        doc.setFontSize(11);
-        doc.setTextColor(...k.color);
-        doc.text(k.val, x + 3, curY + 14);
+        doc.setFontSize(9);
+        doc.setTextColor(...box.color);
+        doc.text(box.val, bx + 3, by + 11);
       });
-      curY += kpiCardH + 4;
 
       // ── Ledger table ────────────────────────────────────────────────────
       const tableHead = [['Date', 'Type', 'Details', 'Invoice Amt', 'Payment Amt', 'Balance']];
@@ -520,30 +550,42 @@ export default function CustomerStatementView() {
       ];
 
       autoTable(doc, {
-        startY: curY,
+        startY: theme === 'economy' ? 46 : 56,
         head: tableHead,
         body: [openRow, ...txRows, totalsRow],
-        theme: 'striped',
-        headStyles: { fillColor: cNavy, textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold', font: pdfFont },
+        theme: 'grid',
+        headStyles: { 
+          fillColor: theme === 'economy' ? [243, 244, 246] : cNavy, 
+          textColor: theme === 'economy' ? [0, 0, 0] : [255, 255, 255], 
+          fontSize: 7, 
+          fontStyle: 'bold', 
+          font: pdfFont,
+          lineWidth: theme === 'economy' ? 0.2 : 0,
+          lineColor: theme === 'economy' ? [220, 220, 220] : undefined
+        },
         bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85], font: pdfFont },
+        alternateRowStyles: { fillColor: theme === 'economy' ? [250, 250, 250] : [250, 250, 250] },
         columnStyles: {
           0: { cellWidth: 22, overflow: 'visible' },
           1: { cellWidth: 16, overflow: 'visible' },
           2: { cellWidth: 58, overflow: 'linebreak' },
-          // Invoice Amt — bold, dark
           3: { halign: 'right', cellWidth: 28, fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
-          // Payment Amt — bold, green
           4: { halign: 'right', cellWidth: 28, textColor: [5, 150, 105], fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
-          // Balance — bold, coloured by sign
           5: { halign: 'right', cellWidth: 30, fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
         },
-        styles: { cellPadding: { top: 2.2, bottom: 2.2, left: 1.5, right: 1.5 }, font: pdfFont },
-        tableWidth: 182,
+        styles: { 
+          cellPadding: { top: 2.2, bottom: 2.2, left: 1.5, right: 1.5 }, 
+          font: pdfFont,
+          ...(theme === 'economy' ? { lineWidth: 0.1, lineColor: [226, 232, 240] } : {})
+        },
+        margin: { left: margin, right: margin, bottom: 65 },
         didParseCell: (data) => {
           if (data.section === 'body') {
             // Opening balance row — light blue tint
             if (data.row.index === 0) {
-              data.cell.styles.fillColor = [239, 246, 255];
+              if (theme !== 'economy') {
+                data.cell.styles.fillColor = [239, 246, 255];
+              }
               if (data.column.index === 5) {
                 data.cell.styles.textColor = openingPres.isCredit ? [5, 150, 105] : [15, 23, 42];
                 data.cell.styles.fontStyle = 'bold';
@@ -551,8 +593,23 @@ export default function CustomerStatementView() {
             }
             // Totals row — slate bg, all bold, larger balance
             const isLast = data.row.index === txRows.length + 1;
+            
+            // Transaction type badges for Invoice and Payment in economy mode
+            if (data.column.index === 1 && data.row.index > 0 && !isLast && theme === 'economy') {
+              const txType = txRows[data.row.index - 1][1];
+              if (txType === 'Invoice') {
+                data.cell.styles.fillColor = [239, 246, 255];
+                data.cell.styles.textColor = [30, 64, 175];
+              } else if (txType === 'Payment') {
+                data.cell.styles.fillColor = [236, 253, 245];
+                data.cell.styles.textColor = [6, 95, 70];
+              }
+            }
+
             if (isLast) {
-              data.cell.styles.fillColor = [241, 245, 249];
+              if (theme !== 'economy') {
+                data.cell.styles.fillColor = [241, 245, 249];
+              }
               data.cell.styles.fontStyle = 'bold';
               data.cell.styles.fontSize = 8.5;
               if (data.column.index === 3) data.cell.styles.textColor = [15, 23, 42];
@@ -572,16 +629,15 @@ export default function CustomerStatementView() {
               }
             }
           }
-        },
-        margin: { left: margin, right: margin, bottom: 65 },
+        }
       });
 
       // ── Footer / Payment Section (Fixed at bottom of page) ───────────────
       const closingBal = s.closingBalance;
-      const finalTableY = (doc as any).lastAutoTable?.finalY ?? (curY + 40);
+      const finalTableY = (doc as any).lastAutoTable?.finalY ?? 96;
 
       // Determine height of the footer
-      const footerHeight = 56;
+      const footerHeight = theme === 'economy' ? 42 : 56;
       const spaceRequired = footerHeight + 10; // 66mm total space needed at bottom
       
       // If table ended too low on the current page, add a new page
@@ -627,48 +683,89 @@ export default function CustomerStatementView() {
           console.warn('[PDF] QR generation failed via client-side QRCode library', err);
         }
 
-        const qrSize = 32; // mm
-        const qrX = pageW - margin - qrSize - 4; // Right-aligned with padding
-        const qrBoxY = footerY + 4;
+        if (theme === 'economy') {
+          const qrSize = 22; // mm
+          const boxW = 44;
+          const boxH = 38;
+          const boxX = pageW - margin - boxW;
+          const boxY = footerY + 2;
 
-        // Draw background box for QR code
-        doc.setFillColor(248, 250, 252);
-        doc.setDrawColor(226, 232, 240);
-        doc.rect(qrX - 4, qrBoxY - 2, qrSize + 8, qrSize + 22, 'FD');
+          doc.setFillColor(255, 255, 255);
+          doc.setDrawColor(200, 200, 200);
+          doc.rect(boxX, boxY, boxW, boxH, 'FD');
 
-        if (qrDataUrl) {
-          doc.addImage(qrDataUrl, 'PNG', qrX, qrBoxY, qrSize, qrSize);
-        } else {
-          // Fallback text if QR couldn't be generated
+          const centerX = boxX + boxW / 2;
+
+          doc.setFont(pdfFont, 'bold');
+          doc.setFontSize(7.5);
+          doc.setTextColor(...cDark);
+          doc.text('Amount Due', centerX, boxY + 5, { align: 'center' });
+
+          doc.setFont(pdfFont, 'bold');
+          doc.setFontSize(11);
+          doc.setTextColor(...cRed);
+          doc.text(pdfFmtBalance(closingBal), centerX, boxY + 10, { align: 'center' });
+
+          if (qrDataUrl) {
+            doc.addImage(qrDataUrl, 'PNG', centerX - qrSize / 2, boxY + 11, qrSize, qrSize);
+          } else {
+            doc.setFont(pdfFont, 'normal');
+            doc.setFontSize(6);
+            doc.setTextColor(...cSlate);
+            doc.text('[QR unavailable]', centerX, boxY + 22, { align: 'center', maxWidth: qrSize });
+          }
+
           doc.setFont(pdfFont, 'normal');
           doc.setFontSize(6);
           doc.setTextColor(...cSlate);
-          doc.text('[QR unavailable — pay via UPI ID]', qrX, qrBoxY + 15, { align: 'left', maxWidth: qrSize });
-        }
+          doc.text(UPI_ID, centerX, boxY + 12 + qrSize + 3, { align: 'center' });
+        } else {
+          const qrSize = 32; // mm
+          const qrX = pageW - margin - qrSize - 4; // Right-aligned with padding
+          const qrBoxY = footerY + 4;
 
-        const qrLabelX = qrX + qrSize / 2;
-        doc.setFont(pdfFont, 'bold');
-        doc.setFontSize(7.5);
-        doc.setTextColor(...cDark);
-        doc.text('Scan to Pay', qrLabelX, qrBoxY + qrSize + 4, { align: 'center' });
+          // Draw background box for QR code
+          doc.setFillColor(248, 250, 252);
+          doc.setDrawColor(226, 232, 240);
+          
+          const boxPadding = 4;
+          const boxExtraH = 22;
+          doc.rect(qrX - boxPadding, qrBoxY - 2, qrSize + boxPadding * 2, qrSize + boxExtraH, 'FD');
 
-        doc.setFont(pdfFont, 'normal');
-        doc.setFontSize(6);
-        doc.setTextColor(...cSlate);
-        doc.text(UPI_ID, qrLabelX, qrBoxY + qrSize + 8, { align: 'center' });
+          if (qrDataUrl) {
+            doc.addImage(qrDataUrl, 'PNG', qrX, qrBoxY, qrSize, qrSize);
+          } else {
+            // Fallback text if QR couldn't be generated
+            doc.setFont(pdfFont, 'normal');
+            doc.setFontSize(6);
+            doc.setTextColor(...cSlate);
+            doc.text('[QR unavailable — pay via UPI ID]', qrX, qrBoxY + 15, { align: 'left', maxWidth: qrSize });
+          }
 
-        // Outstanding amount label
-        doc.setFont(pdfFont, 'bold');
-        doc.setFontSize(7);
-        doc.setTextColor(...cRed);
-        doc.text(`Outstanding: ${pdfFmtBalance(closingBal)}`, qrLabelX, qrBoxY + qrSize + 13, { align: 'center' });
+          const qrLabelX = qrX + qrSize / 2;
+          doc.setFont(pdfFont, 'bold');
+          doc.setFontSize(7.5);
+          doc.setTextColor(...cDark);
+          doc.text('Scan to Pay', qrLabelX, qrBoxY + qrSize + 4, { align: 'center' });
 
-        if (closingBal >= 100000) {
-          // Note about manual amount entry
           doc.setFont(pdfFont, 'normal');
-          doc.setFontSize(5.5);
+          doc.setFontSize(6);
           doc.setTextColor(...cSlate);
-          doc.text('Enter amount manually when scanning', qrLabelX, qrBoxY + qrSize + 17, { align: 'center' });
+          doc.text(UPI_ID, qrLabelX, qrBoxY + qrSize + 8, { align: 'center' });
+
+          // Outstanding amount label
+          doc.setFont(pdfFont, 'bold');
+          doc.setFontSize(7);
+          doc.setTextColor(...cRed);
+          doc.text(`Outstanding: ${pdfFmtBalance(closingBal)}`, qrLabelX, qrBoxY + qrSize + 13, { align: 'center' });
+
+          if (closingBal >= 100000) {
+            // Note about manual amount entry
+            doc.setFont(pdfFont, 'normal');
+            doc.setFontSize(5.5);
+            doc.setTextColor(...cSlate);
+            doc.text('Enter amount manually when scanning', qrLabelX, qrBoxY + qrSize + 17, { align: 'center' });
+          }
         }
       } else {
         doc.setFont(pdfFont, 'normal');
@@ -746,6 +843,63 @@ export default function CustomerStatementView() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCustomerId]);
+
+  // ── Draft Status Fetcher ───────────────────────────────────────────────────
+  useEffect(() => {
+    const fetchDraftStatuses = async () => {
+      if (!statement?.data?.transactions) return;
+      
+      // Normalize date to IST for comparison
+      const now = new Date();
+      const istDate = new Date(now.getTime() + 330 * 60000);
+      const todayDate = istDate.toISOString().slice(0, 10);
+      
+      const todayInvoices = statement.data.transactions.filter(
+        t => t.type === 'invoice' && (t.date === todayDate || (t.datetime && t.datetime.startsWith(todayDate)))
+      );
+
+      if (todayInvoices.length === 0) return;
+
+      const newDraftStatuses = { ...draftStatuses };
+      let updated = false;
+
+      await Promise.all(
+        todayInvoices.map(async (inv) => {
+          if (draftStatuses[inv.id] !== undefined) return;
+          
+          try {
+            console.log(`[DRAFT CHECK] Fetching status for invoice ID: ${inv.id}`);
+            const res = await fetch(`/api/admin/dcr/invoices/${inv.id}`);
+            if (res.ok) {
+              const data = await res.json();
+              const invoice = data.invoice || data.data;
+              
+              if (invoice) {
+                const status = invoice.status || invoice.invoiceStatus;
+                console.log(`[DRAFT CHECK] invoiceNumber: ${invoice.invoiceNumber || inv.description}, invoiceDate: ${invoice.invoiceDate || inv.date}, invoiceStatus: ${status}`);
+                
+                if (status?.toUpperCase() === 'DRAFT') {
+                  newDraftStatuses[inv.id] = true;
+                  updated = true;
+                } else if (status) {
+                  newDraftStatuses[inv.id] = false;
+                  updated = true;
+                }
+              }
+            }
+          } catch (e) {
+            console.error('Failed to fetch invoice status', e);
+          }
+        })
+      );
+
+      if (updated) {
+        setDraftStatuses(newDraftStatuses);
+      }
+    };
+
+    fetchDraftStatuses();
+  }, [statement?.data?.transactions]);
 
   // ── API Telemetry ──────────────────────────────────────────────────────────
   const fetchApiUsage = async () => {
@@ -1021,14 +1175,36 @@ export default function CustomerStatementView() {
               {printing ? <RefreshCw size={15} className="animate-spin" /> : <Printer size={15} />}
               {printing ? 'Printing…' : 'Print'}
             </button>
-            <button
-              onClick={handleDownloadPDF}
-              disabled={pdfGenerating}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-emerald-700 text-white rounded-lg text-sm font-bold hover:bg-emerald-800 transition-colors disabled:opacity-50 h-[38px] print:hidden"
-            >
-              {pdfGenerating ? <RefreshCw size={15} className="animate-spin" /> : <Download size={15} />}
-              {pdfGenerating ? 'Generating PDF…' : 'Download Statement PDF'}
-            </button>
+            <div className="relative w-full sm:w-auto">
+              <button
+                onClick={() => setPdfMenuOpen(!pdfMenuOpen)}
+                disabled={pdfGenerating}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-emerald-700 text-white rounded-lg text-sm font-bold hover:bg-emerald-800 transition-colors disabled:opacity-50 h-[38px] print:hidden"
+              >
+                {pdfGenerating ? <RefreshCw size={15} className="animate-spin" /> : <Download size={15} />}
+                {pdfGenerating ? 'Generating PDF…' : 'Download Statement PDF'}
+                <ChevronDown size={14} className={`transition-transform ${pdfMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {pdfMenuOpen && (
+                <div className="absolute top-full right-0 sm:left-0 sm:right-auto mt-1 w-full sm:w-56 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden z-50">
+                  <button 
+                    onClick={() => { setPdfMenuOpen(false); handleDownloadPDF('color'); }}
+                    className="w-full text-left px-4 py-3 text-sm font-bold text-emerald-800 hover:bg-emerald-50 border-b border-gray-100 flex items-center gap-2.5 transition-colors"
+                  >
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm"></div>
+                    Color PDF
+                  </button>
+                  <button 
+                    onClick={() => { setPdfMenuOpen(false); handleDownloadPDF('economy'); }}
+                    className="w-full text-left px-4 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 transition-colors"
+                  >
+                    <div className="w-2.5 h-2.5 rounded-full border-2 border-gray-300"></div>
+                    Print PDF (Low Ink)
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               onClick={() => setIsCalcOpen(true)}
               className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-purple-700 text-white rounded-lg text-sm font-bold hover:bg-purple-800 transition-colors h-[38px] print:hidden"
@@ -1062,7 +1238,11 @@ export default function CustomerStatementView() {
       )}
 
       {s && (() => {
-        const visibleTransactions = isExpanded ? s.transactions : s.transactions.slice(-12);
+        const clipIdx = clipFromIndex !== null ? clipFromIndex : -1;
+        const isClipped = clipIdx !== -1;
+        const activeTxs = isClipped ? s.transactions.slice(clipIdx) : s.transactions;
+        const visibleTransactions = isExpanded ? activeTxs : activeTxs.slice(-12);
+
         const dynamicOpeningBalance = visibleTransactions.length > 0
           ? (visibleTransactions[0].balanceAfter - visibleTransactions[0].netEffect)
           : s.closingBalance;
@@ -1070,21 +1250,28 @@ export default function CustomerStatementView() {
 
         // Totals for visible period
         const totalInvoiceAmount = visibleTransactions
-          .filter(t => t.type === 'invoice')
-          .reduce((sum, t) => sum + Math.abs(t.netEffect), 0);
+          .filter((t: any) => t.type === 'invoice')
+          .reduce((sum: number, t: any) => sum + Math.abs(t.netEffect), 0);
         const totalPaymentAmount = visibleTransactions
-          .filter(t => t.type === 'payment')
-          .reduce((sum, t) => sum + Math.abs(t.netEffect), 0);
+          .filter((t: any) => t.type === 'payment')
+          .reduce((sum: number, t: any) => sum + Math.abs(t.netEffect), 0);
 
         // Payment breakdown (clean mode labels)
         const paymentBreakdown = visibleTransactions
-          .filter(t => t.type === 'payment')
-          .reduce((acc: Record<string, number>, p) => {
+          .filter((t: any) => t.type === 'payment')
+          .reduce((acc: Record<string, number>, p: any) => {
             const cleaned = cleanDescription(p.description, 'payment');
             const mode = cleaned || 'Other';
             acc[mode] = (acc[mode] || 0) + Math.abs(p.netEffect);
             return acc;
           }, {});
+
+        const activeUnpaidInvoices = s.unpaidInvoices ? (
+          isClipped ? s.unpaidInvoices.filter((inv: any) => {
+            const clippedTx = s.transactions[clipIdx];
+            return inv.invoiceDate >= clippedTx.date;
+          }) : s.unpaidInvoices
+        ) : [];
 
         return (
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
@@ -1155,6 +1342,22 @@ export default function CustomerStatementView() {
 
               {/* ── Section 2: Statement table ────────────────────────────── */}
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                {isClipped && clipIdx !== -1 && (
+                  <div className="bg-blue-50 border-b border-blue-100 px-5 py-2.5 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span>📌</span>
+                      <span className="text-xs font-semibold text-blue-800">
+                        Clipped From: <span className="font-bold">{fmtDate(s.transactions[clipIdx].date)}</span> — {cleanDescription(s.transactions[clipIdx].description, s.transactions[clipIdx].type)}
+                      </span>
+                    </div>
+                    <button 
+                      onClick={() => setClipFromIndex(null)}
+                      className="text-xs font-bold text-blue-600 hover:text-blue-800 bg-white border border-blue-200 px-3 py-1 rounded-md shadow-sm transition-colors"
+                    >
+                      Clear Clip
+                    </button>
+                  </div>
+                )}
                 {/* Table header bar */}
                 <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -1173,6 +1376,7 @@ export default function CustomerStatementView() {
                     <thead className="sticky top-0 bg-gray-50 text-[10px] uppercase text-gray-500 font-bold border-b border-gray-200 z-10 shadow-sm">
                       <tr>
                         <th className="px-3 py-2 text-left w-24">Date</th>
+                        <th className="w-[45px] text-center px-1" title="Clip column"></th>
                         <th className="px-3 py-2 text-left min-w-[120px] whitespace-nowrap">Type</th>
                         <th className="px-3 py-2 text-left">Details</th>
                         <th className="px-3 py-2 text-right whitespace-nowrap">Invoice Amt</th>
@@ -1184,6 +1388,7 @@ export default function CustomerStatementView() {
                       {/* Opening balance row */}
                       <tr className="bg-blue-50/20">
                         <td className="px-3 py-1.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
+                        <td className="w-[45px] px-1 py-1.5 text-center text-gray-300/50">—</td>
                         <td className="px-3 py-1.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
                         <td className="px-3 py-1.5 text-[11px]">
                           {openingPresentation.isCredit ? (
@@ -1230,12 +1435,26 @@ export default function CustomerStatementView() {
                             <td className="px-3 py-1.5 text-[11px] text-gray-500 whitespace-nowrap align-middle">
                               {fmtDateTime(tx.datetime || tx.date)}
                             </td>
+                            <td className="w-[45px] text-center px-1 py-1.5 align-middle">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); setClipFromIndex(s.transactions.indexOf(tx)); }}
+                                className={`text-gray-300 hover:text-blue-500 transition-colors print:hidden focus:opacity-100 ${clipIdx === s.transactions.indexOf(tx) ? 'opacity-100 text-blue-600' : 'opacity-0 group-hover:opacity-100'}`}
+                                title="Start statement from this transaction"
+                              >
+                                📌
+                              </button>
+                            </td>
                             <td className="px-3 py-1.5 text-[10px] font-semibold text-gray-600 align-middle uppercase tracking-wider whitespace-nowrap">
                               {tx.type === 'invoice' ? 'Invoice' : tx.type === 'payment' ? 'Payment' : 'Purchase Bill'}
                             </td>
                             <td className="px-3 py-1.5 text-[11px] font-medium text-blue-700 group-hover:text-blue-900 group-hover:underline underline-offset-2 align-middle relative">
                               <div className="flex items-center gap-1.5">
                                 <span>{displayDesc}</span>
+                                {draftStatuses[tx.id] && (
+                                  <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50">
+                                    Draft
+                                  </span>
+                                )}
                                 {tx.isVerified && (
                                   <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
                                     <Check size={9} strokeWidth={4} />
@@ -1300,7 +1519,7 @@ export default function CustomerStatementView() {
 
                       {visibleTransactions.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="px-3 py-6 text-center text-xs text-gray-400 font-medium">
+                          <td colSpan={7} className="px-3 py-6 text-center text-xs text-gray-400 font-medium">
                             No transactions in window.
                           </td>
                         </tr>
@@ -1308,7 +1527,7 @@ export default function CustomerStatementView() {
 
                       {/* ── TOTALS footer row ── */}
                       <tr className="border-t-2 border-gray-300 bg-gray-50">
-                        <td className="px-3 py-2.5 text-[10px] text-gray-400 font-bold uppercase tracking-widest" colSpan={2}>Totals</td>
+                        <td className="px-3 py-2.5 text-[10px] text-gray-400 font-bold uppercase tracking-widest" colSpan={3}>Totals</td>
                         <td className="px-3 py-2.5">
                           <span className="text-[11px] font-extrabold text-gray-700 uppercase tracking-wide">
                             {isExpanded ? 'All Transactions' : 'Visible Period'}
@@ -1358,68 +1577,6 @@ export default function CustomerStatementView() {
             {/* Right Column: Financial Summary and Telemetry */}
             <div className="xl:col-span-4 space-y-4">
               
-              {/* API Usage KPI Card */}
-              <div className="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden print:hidden">
-                <div className="px-5 py-3 border-b border-blue-100 bg-blue-50/50 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Activity size={14} className="text-blue-700" />
-                    <span className="text-xs font-bold text-gray-900 uppercase tracking-wide">
-                      API Telemetry
-                    </span>
-                  </div>
-                  <div className="flex bg-gray-100/80 p-0.5 rounded-lg">
-                    {['today', '7d', 'month'].map(p => (
-                      <button
-                        key={p}
-                        onClick={() => setUsagePeriod(p as any)}
-                        className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-colors uppercase ${
-                          usagePeriod === p ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                      >
-                        {p === 'today' ? 'Today' : p === '7d' ? '7D' : 'Month'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                
-                <div className="p-5">
-                  {isFetchingUsage && !apiUsage ? (
-                    <div className="flex justify-center py-4"><RefreshCw size={16} className="animate-spin text-gray-400" /></div>
-                  ) : apiUsage ? (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-3 gap-3 text-center">
-                        <div>
-                          <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Calls</div>
-                          <div className="text-lg font-extrabold text-gray-900">{apiUsage.totalCalls}</div>
-                        </div>
-                        <div className="border-l border-gray-100">
-                          <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Users</div>
-                          <div className="text-lg font-extrabold text-blue-600">{apiUsage.activeUsers}</div>
-                        </div>
-                        <div className="border-l border-gray-100">
-                          <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Avg/User</div>
-                          <div className="text-lg font-extrabold text-gray-900">{apiUsage.avgPerUser}</div>
-                        </div>
-                      </div>
-                      
-                      <div className="pt-3 border-t border-gray-100">
-                        <div className="text-[9px] uppercase text-gray-400 font-bold mb-2 tracking-wider">Module Breakdown</div>
-                        <div className="space-y-1.5">
-                          {Object.entries(apiUsage.breakdown).map(([mod, count]) => (
-                            <div key={mod} className="flex justify-between items-center text-xs">
-                              <span className="text-gray-600 font-medium">{mod}</span>
-                              <span className="font-bold text-gray-800 tabular-nums">{count as number}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-center text-gray-400">Failed to load</div>
-                  )}
-                </div>
-              </div>
-
               {/* Financial Summary Card */}
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
@@ -1570,6 +1727,68 @@ export default function CustomerStatementView() {
                   <span className="text-sm font-bold text-gray-600">No outstanding invoices</span>
                 </div>
               )}
+
+              {/* API Usage KPI Card */}
+              <div className="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden print:hidden">
+                <div className="px-5 py-3 border-b border-blue-100 bg-blue-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Activity size={14} className="text-blue-700" />
+                    <span className="text-xs font-bold text-gray-900 uppercase tracking-wide">
+                      API Telemetry
+                    </span>
+                  </div>
+                  <div className="flex bg-gray-100/80 p-0.5 rounded-lg">
+                    {['today', '7d', 'month'].map(p => (
+                      <button
+                        key={p}
+                        onClick={() => setUsagePeriod(p as any)}
+                        className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-colors uppercase ${
+                          usagePeriod === p ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        {p === 'today' ? 'Today' : p === '7d' ? '7D' : 'Month'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                <div className="p-5">
+                  {isFetchingUsage && !apiUsage ? (
+                    <div className="flex justify-center py-4"><RefreshCw size={16} className="animate-spin text-gray-400" /></div>
+                  ) : apiUsage ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-3 gap-3 text-center">
+                        <div>
+                          <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Calls</div>
+                          <div className="text-lg font-extrabold text-gray-900">{apiUsage.totalCalls}</div>
+                        </div>
+                        <div className="border-l border-gray-100">
+                          <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Users</div>
+                          <div className="text-lg font-extrabold text-blue-600">{apiUsage.activeUsers}</div>
+                        </div>
+                        <div className="border-l border-gray-100">
+                          <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Avg/User</div>
+                          <div className="text-lg font-extrabold text-gray-900">{apiUsage.avgPerUser}</div>
+                        </div>
+                      </div>
+                      
+                      <div className="pt-3 border-t border-gray-100">
+                        <div className="text-[9px] uppercase text-gray-400 font-bold mb-2 tracking-wider">Module Breakdown</div>
+                        <div className="space-y-1.5">
+                          {Object.entries(apiUsage.breakdown).map(([mod, count]) => (
+                            <div key={mod} className="flex justify-between items-center text-xs">
+                              <span className="text-gray-600 font-medium">{mod}</span>
+                              <span className="font-bold text-gray-800 tabular-nums">{count as number}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-center text-gray-400">Failed to load</div>
+                  )}
+                </div>
+              </div>
 
               {/* ── Section 4: Debug accordion ────────────────────────────── */}
               <div className="rounded-xl border border-gray-200 overflow-hidden text-xs print:hidden">

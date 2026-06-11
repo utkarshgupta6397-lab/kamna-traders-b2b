@@ -375,6 +375,65 @@ export default function SerialRegistryClient() {
     oldestPending: filteredVendorReport.length > 0 ? Math.max(...filteredVendorReport.map(i => i.daysPending)) : 0
   };
 
+  const handleCopyWhatsAppSummary = async () => {
+    // Group by tag -> product
+    const grouped: Record<string, Record<string, number>> = {};
+    
+    filteredVendorReport.forEach(item => {
+      const tag = item.tag && item.tag.trim() !== '' ? item.tag : 'No Data';
+      const product = item.productName || 'Unknown Product';
+      
+      if (!grouped[tag]) grouped[tag] = {};
+      if (!grouped[tag][product]) grouped[tag][product] = 0;
+      
+      grouped[tag][product]++;
+    });
+
+    // Convert to array and sort by total pending DESC
+    const tagsArray = Object.keys(grouped).map(tag => {
+      const products = Object.keys(grouped[tag]).map(product => ({
+        product,
+        count: grouped[tag][product]
+      })).sort((a, b) => b.count - a.count); // sort products by count DESC
+      
+      const totalPending = products.reduce((sum, p) => sum + p.count, 0);
+      return { tag, products, totalPending };
+    }).sort((a, b) => b.totalPending - a.totalPending); // sort tags by total DESC
+
+    // Format text
+    const now = new Date();
+    const formattedDate = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const formattedTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    
+    let text = `${formattedDate} ${formattedTime}\n\nDCR Pendency Report\n\n`;
+    
+    tagsArray.forEach(t => {
+      text += `${t.tag}\n-----------------------\n`;
+      t.products.forEach(p => {
+        text += `${p.product} × ${p.count}\n`;
+      });
+      text += `\nTotal Pending: ${t.totalPending}\n\n\n`;
+    });
+    
+    const uniqueTagsCount = tagsArray.length;
+    const uniqueProducts = new Set(filteredVendorReport.map(i => i.productName)).size;
+    const totalPendingSerials = filteredVendorReport.length;
+
+    text += `========================\n\n`;
+    text += `TOTALS\n\n`;
+    text += `Serial Tags: ${uniqueTagsCount}\n\n`;
+    text += `Products: ${uniqueProducts}\n\n`;
+    text += `Pending Serials: ${totalPendingSerials}\n\n`;
+    text += `========================`;
+
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('DCR Pendency Summary copied');
+    } catch (err) {
+      toast.error('Failed to copy to clipboard');
+    }
+  };
+
   const handleCopySerials = async (serialsToCopy: string[], separator: 'newline' | 'comma' = 'newline', contextMsg: string) => {
     const text = serialsToCopy.join(separator === 'comma' ? ',' : '\n');
     try {
@@ -1171,9 +1230,17 @@ export default function SerialRegistryClient() {
                 </h2>
                 <p className="text-sm text-gray-500 mt-1">Serials awaiting DCR from vendors.</p>
               </div>
-              <button onClick={() => setVendorReportOpen(false)} className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                <X size={24} />
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleCopyWhatsAppSummary}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <Copy size={14} /> Copy Today's Summary
+                </button>
+                <button onClick={() => setVendorReportOpen(false)} className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                  <X size={24} />
+                </button>
+              </div>
             </div>
 
             {/* KPIs */}

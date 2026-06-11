@@ -4,7 +4,8 @@ import { useState } from 'react';
 import {
   Search, RefreshCw, ChevronDown, ChevronRight,
   FileJson, Copy, AlertCircle, User, Phone,
-  TrendingUp, Activity, Lock, Printer, Check, Download
+  TrendingUp, Activity, Lock, Printer, Check, Download,
+  Calculator, Plus, Minus, Trash2, X
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
@@ -234,6 +235,42 @@ export default function CustomerStatementView() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [cachedAt, setCachedAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
+
+  // Autocomplete State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // API Telemetry State
+  const [apiUsage, setApiUsage] = useState<any>(null);
+  const [usagePeriod, setUsagePeriod] = useState<'today'|'7d'|'month'>('today');
+  const [isFetchingUsage, setIsFetchingUsage] = useState(false);
+
+  // Calculator State
+  const [isCalcOpen, setIsCalcOpen] = useState(false);
+  const [calcEntries, setCalcEntries] = useState<{ id: string; description: string; type: string; amount: number; netEffect: number }[]>([]);
+  const [manualAmount, setManualAmount] = useState('');
+  const [manualDesc, setManualDesc] = useState('');
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem('calc-session');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.isCalcOpen !== undefined) setIsCalcOpen(parsed.isCalcOpen);
+        if (parsed.calcEntries) setCalcEntries(parsed.calcEntries);
+      }
+    } catch (e) {}
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (isHydrated) {
+      sessionStorage.setItem('calc-session', JSON.stringify({ isCalcOpen, calcEntries }));
+    }
+  }, [isCalcOpen, calcEntries, isHydrated]);
 
   // Update "now" every 30s so cached age stays fresh without being noisy
   useEffect(() => {
@@ -710,6 +747,128 @@ export default function CustomerStatementView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCustomerId]);
 
+  // ── API Telemetry ──────────────────────────────────────────────────────────
+  const fetchApiUsage = async () => {
+    setIsFetchingUsage(true);
+    try {
+      const res = await fetch(`/api/admin/customer-statement/api-usage?period=${usagePeriod}`);
+      if (res.ok) {
+        const data = await res.json();
+        setApiUsage(data.data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsFetchingUsage(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchApiUsage();
+  }, [usagePeriod]);
+
+  // ── Autocomplete Search ──────────────────────────────────────────────────
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (searchQuery.trim().length >= 3) {
+        setIsSearching(true);
+        try {
+          const res = await fetch(`/api/admin/customer-statement/search?q=${encodeURIComponent(searchQuery)}`);
+          if (res.ok) {
+            const data = await res.json();
+            setSuggestions(data.customers || []);
+            setShowSuggestions(true);
+          }
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setIsSearching(false);
+        }
+      } else {
+        setSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // ── Calculator Helpers ───────────────────────────────────────────────────
+  const handleManualAdd = (isPositive: boolean) => {
+    const amt = parseFloat(manualAmount);
+    if (isNaN(amt) || amt <= 0) {
+      toast.error('Enter a valid amount');
+      return;
+    }
+    const type = isPositive ? 'manual-add' : 'manual-deduct';
+    const netEffect = isPositive ? amt : -amt;
+    const desc = manualDesc.trim() || (isPositive ? 'Manual Add' : 'Manual Deduct');
+    
+    setCalcEntries(prev => [...prev, {
+      id: `manual-${Date.now()}`,
+      description: desc,
+      type,
+      amount: amt,
+      netEffect
+    }]);
+    
+    setManualAmount('');
+    setManualDesc('');
+    toast.success('Added entry', { id: 'calc' });
+  };
+
+  const addCalcEntry = (tx: Transaction) => {
+    if (!calcEntries.find(e => e.id === tx.id)) {
+      setCalcEntries(prev => [...prev, {
+        id: tx.id,
+        description: cleanDescription(tx.description, tx.type),
+        type: tx.type,
+        amount: Math.abs(tx.netEffect),
+        netEffect: tx.netEffect
+      }]);
+      setIsCalcOpen(true);
+      toast.success('Added to calculator', { id: 'calc' });
+    }
+  };
+
+  const removeCalcEntry = (id: string) => {
+    setCalcEntries(prev => prev.filter(e => e.id !== id));
+  };
+
+  const clearCalc = () => {
+    setCalcEntries([]);
+    toast.success('Calculator cleared');
+  };
+
+  const calcRunningTotal = calcEntries.reduce((sum, e) => sum + e.netEffect, 0);
+
+  const getCalcFormulaText = () => {
+    let text = 'Balance Calculation:\n\n';
+    calcEntries.forEach(e => {
+      const sign = e.netEffect > 0 ? '+' : '-';
+      text += `${sign} ${e.description} ₹${e.amount.toLocaleString('en-IN')}\n`;
+    });
+    text += `\nResult: ₹${calcRunningTotal.toLocaleString('en-IN')}`;
+    return text;
+  };
+
+  const copyCalcFormula = async () => {
+    try {
+      await navigator.clipboard.writeText(getCalcFormulaText());
+      toast.success('Formula copied!');
+    } catch (e) {
+      toast.error('Copy failed');
+    }
+  };
+
+  const copyCalcTotal = async () => {
+    try {
+      await navigator.clipboard.writeText(Math.abs(calcRunningTotal).toString());
+      toast.success('Total copied!');
+    } catch (e) {
+      toast.error('Copy failed');
+    }
+  };
+
   const copyRaw = async () => {
     if (!statement) return;
     const textToCopy = JSON.stringify(statement.raw ?? statement, null, 2);
@@ -755,8 +914,9 @@ export default function CustomerStatementView() {
   }
 
   return (
-    <div className="space-y-4">
-      <div>
+    <div className="flex gap-5 items-start w-full relative">
+      <div className={`transition-all duration-300 space-y-4 shrink-0 ${isCalcOpen ? 'w-[calc(70%-1.25rem)]' : 'w-full'}`}>
+        <div>
         <h1 className="text-2xl font-bold">Customer Statement Preview</h1>
         <p className="text-xs text-gray-400 mt-0.5">
           Finance-grade customer ledger · Reverse-calculated opening balance
@@ -767,7 +927,7 @@ export default function CustomerStatementView() {
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-col sm:flex-row items-end gap-3">
         <div className="flex-1 w-full">
           <label className="flex items-center gap-2 text-xs font-bold text-gray-600 mb-1">
-            Zoho Customer / Contact ID
+            Search Customer
             {isLocked && (
               <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
                 <Lock size={10} /> Prefilled from Zoho Books
@@ -779,15 +939,59 @@ export default function CustomerStatementView() {
             <input
               id="customer-id-input"
               type="text"
-              placeholder="e.g. 1759923000018618057"
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-              onKeyDown={(e) => !isLocked && e.key === 'Enter' && handleFetch(undefined, true)}
+              placeholder="Name, Mobile, GST or ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              onKeyDown={(e) => {
+                if (!isLocked && e.key === 'Enter') {
+                  setCustomerId(searchQuery);
+                  handleFetch(searchQuery, true);
+                  setShowSuggestions(false);
+                }
+              }}
               disabled={isLocked}
               className={`w-full pl-9 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1A2766] focus:border-transparent ${
                 isLocked ? 'bg-gray-50 text-gray-500 border-gray-200 cursor-not-allowed' : 'border-gray-200'
               }`}
             />
+            {isSearching && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                <RefreshCw size={14} className="animate-spin text-gray-400" />
+              </div>
+            )}
+            
+            {/* Autocomplete Dropdown */}
+            {showSuggestions && suggestions.length > 0 && !isLocked && (
+              <div className="absolute z-50 w-full mt-1 bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden">
+                <div className="max-h-60 overflow-y-auto">
+                  {suggestions.map((c) => (
+                    <div 
+                      key={c.id} 
+                      className="px-4 py-3 border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors"
+                      onMouseDown={(e) => {
+                        e.preventDefault(); // Prevent blur
+                        setSearchQuery(c.name);
+                        setCustomerId(c.id);
+                        setShowSuggestions(false);
+                        handleFetch(c.id, true);
+                      }}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="text-sm font-bold text-gray-900">{c.name}</div>
+                          {c.gstNumber && c.gstNumber !== 'NOT_AVAILABLE' && (
+                            <div className="text-[10px] font-mono text-gray-500 mt-0.5 tracking-wide">GST: {c.gstNumber}</div>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-gray-400 font-mono">{c.id}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -824,6 +1028,12 @@ export default function CustomerStatementView() {
             >
               {pdfGenerating ? <RefreshCw size={15} className="animate-spin" /> : <Download size={15} />}
               {pdfGenerating ? 'Generating PDF…' : 'Download Statement PDF'}
+            </button>
+            <button
+              onClick={() => setIsCalcOpen(true)}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-purple-700 text-white rounded-lg text-sm font-bold hover:bg-purple-800 transition-colors h-[38px] print:hidden"
+            >
+              <Calculator size={15} /> Calculator
             </button>
             <a
               href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${customerId}&filterMode=ALL&statusFilter=ALL`}
@@ -1006,8 +1216,16 @@ export default function CustomerStatementView() {
                         return (
                           <tr 
                             key={tx.id} 
-                            onClick={() => tx.zohoUrl && window.open(tx.zohoUrl, '_blank')}
-                            className={`group even:bg-gray-50/40 hover:bg-blue-50/80 transition-all ${tx.zohoUrl ? 'cursor-pointer' : ''}`}
+                            onClick={() => {
+                              if (isCalcOpen) {
+                                addCalcEntry(tx);
+                              } else if (tx.zohoUrl) {
+                                window.open(tx.zohoUrl, '_blank');
+                              }
+                            }}
+                            className={`group even:bg-gray-50/40 hover:bg-blue-50/80 transition-all cursor-pointer relative ${
+                              calcEntries.some(e => e.id === tx.id) ? 'bg-purple-50/50 even:bg-purple-50/50' : ''
+                            }`}
                           >
                             <td className="px-3 py-1.5 text-[11px] text-gray-500 whitespace-nowrap align-middle">
                               {fmtDateTime(tx.datetime || tx.date)}
@@ -1015,7 +1233,7 @@ export default function CustomerStatementView() {
                             <td className="px-3 py-1.5 text-[10px] font-semibold text-gray-600 align-middle uppercase tracking-wider whitespace-nowrap">
                               {tx.type === 'invoice' ? 'Invoice' : tx.type === 'payment' ? 'Payment' : 'Purchase Bill'}
                             </td>
-                            <td className="px-3 py-1.5 text-[11px] font-medium text-blue-700 group-hover:text-blue-900 group-hover:underline underline-offset-2 align-middle">
+                            <td className="px-3 py-1.5 text-[11px] font-medium text-blue-700 group-hover:text-blue-900 group-hover:underline underline-offset-2 align-middle relative">
                               <div className="flex items-center gap-1.5">
                                 <span>{displayDesc}</span>
                                 {tx.isVerified && (
@@ -1024,6 +1242,16 @@ export default function CustomerStatementView() {
                                   </span>
                                 )}
                               </div>
+                              {/* Add to calc button on hover */}
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); addCalcEntry(tx); }}
+                                className={`absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full pr-2 opacity-0 group-hover:opacity-100 transition-opacity print:hidden ${calcEntries.some(e => e.id === tx.id) ? 'hidden' : ''}`}
+                                title="Add to Calculator"
+                              >
+                                <div className="bg-purple-100 text-purple-700 p-1 rounded hover:bg-purple-200">
+                                  <Plus size={12} />
+                                </div>
+                              </button>
                             </td>
                             <td className="px-3 py-1.5 text-right text-[11px] font-semibold text-gray-700 whitespace-nowrap align-middle tabular-nums">
                               {tx.netEffect > 0 ? fmt(tx.amount) : '—'}
@@ -1130,6 +1358,68 @@ export default function CustomerStatementView() {
             {/* Right Column: Financial Summary and Telemetry */}
             <div className="xl:col-span-4 space-y-4">
               
+              {/* API Usage KPI Card */}
+              <div className="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden print:hidden">
+                <div className="px-5 py-3 border-b border-blue-100 bg-blue-50/50 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Activity size={14} className="text-blue-700" />
+                    <span className="text-xs font-bold text-gray-900 uppercase tracking-wide">
+                      API Telemetry
+                    </span>
+                  </div>
+                  <div className="flex bg-gray-100/80 p-0.5 rounded-lg">
+                    {['today', '7d', 'month'].map(p => (
+                      <button
+                        key={p}
+                        onClick={() => setUsagePeriod(p as any)}
+                        className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-colors uppercase ${
+                          usagePeriod === p ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        {p === 'today' ? 'Today' : p === '7d' ? '7D' : 'Month'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                <div className="p-5">
+                  {isFetchingUsage && !apiUsage ? (
+                    <div className="flex justify-center py-4"><RefreshCw size={16} className="animate-spin text-gray-400" /></div>
+                  ) : apiUsage ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-3 gap-3 text-center">
+                        <div>
+                          <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Calls</div>
+                          <div className="text-lg font-extrabold text-gray-900">{apiUsage.totalCalls}</div>
+                        </div>
+                        <div className="border-l border-gray-100">
+                          <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Users</div>
+                          <div className="text-lg font-extrabold text-blue-600">{apiUsage.activeUsers}</div>
+                        </div>
+                        <div className="border-l border-gray-100">
+                          <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Avg/User</div>
+                          <div className="text-lg font-extrabold text-gray-900">{apiUsage.avgPerUser}</div>
+                        </div>
+                      </div>
+                      
+                      <div className="pt-3 border-t border-gray-100">
+                        <div className="text-[9px] uppercase text-gray-400 font-bold mb-2 tracking-wider">Module Breakdown</div>
+                        <div className="space-y-1.5">
+                          {Object.entries(apiUsage.breakdown).map(([mod, count]) => (
+                            <div key={mod} className="flex justify-between items-center text-xs">
+                              <span className="text-gray-600 font-medium">{mod}</span>
+                              <span className="font-bold text-gray-800 tabular-nums">{count as number}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-center text-gray-400">Failed to load</div>
+                  )}
+                </div>
+              </div>
+
               {/* Financial Summary Card */}
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
@@ -1329,6 +1619,158 @@ export default function CustomerStatementView() {
       })()}
 
       {/* PDF export is generated programmatically via jspdf — no hidden DOM required */}
+      </div>
+      
+      {/* ── Balance Calculator Panel ────────────────────────────────────────── */}
+      {isCalcOpen && (
+        <div className="w-[30%] bg-white border border-gray-200 shadow-sm z-10 flex flex-col sticky top-4 h-[calc(100vh-2rem)] rounded-xl overflow-hidden print:hidden shrink-0">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-purple-50/50">
+              <div className="flex items-center gap-2">
+                <Calculator size={18} className="text-purple-700" />
+                <h2 className="text-sm font-bold text-gray-900">Balance Calculator</h2>
+              </div>
+              <button 
+                onClick={() => setIsCalcOpen(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            
+            {/* Manual Entry Form */}
+            <div className="px-4 py-3 bg-white border-b border-gray-100 shadow-sm z-10 relative">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="number" 
+                    placeholder="Amount" 
+                    value={manualAmount}
+                    onChange={(e) => setManualAmount(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleManualAdd(true);
+                      else if (e.key === '+') { e.preventDefault(); handleManualAdd(true); }
+                      else if (e.key === '-') { e.preventDefault(); handleManualAdd(false); }
+                    }}
+                    className="flex-1 text-sm px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <input 
+                  type="text" 
+                  placeholder="Description (optional)" 
+                  value={manualDesc}
+                  onChange={(e) => setManualDesc(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleManualAdd(true)}
+                  className="w-full text-xs px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <div className="flex gap-2 mt-1">
+                  <button onClick={() => handleManualAdd(true)} className="flex-1 bg-purple-100 hover:bg-purple-200 text-purple-800 text-xs font-bold py-1.5 rounded-md transition-colors flex items-center justify-center gap-1">
+                    <Plus size={12} /> Add
+                  </button>
+                  <button onClick={() => handleManualAdd(false)} className="flex-1 bg-orange-100 hover:bg-orange-200 text-orange-800 text-xs font-bold py-1.5 rounded-md transition-colors flex items-center justify-center gap-1">
+                    <Minus size={12} /> Deduct
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Entry List */}
+            <div className="flex-1 overflow-y-auto p-4 bg-gray-50/30">
+              {calcEntries.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center px-6">
+                  <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center mb-3">
+                    <Calculator size={20} className="text-purple-300" />
+                  </div>
+                  <p className="text-sm font-semibold text-gray-700">Calculator is empty</p>
+                  <p className="text-xs text-gray-500 mt-1">Click the <Plus size={10} className="inline text-purple-500"/> button on any ledger row to add it here.</p>
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {calcEntries.map((e, idx) => {
+                    let colorClass = 'bg-gray-50 text-gray-600';
+                    let iconClass = 'text-gray-400';
+                    if (e.type === 'invoice') { colorClass = 'bg-blue-50/50 text-blue-700'; iconClass = 'text-blue-500'; }
+                    else if (e.type === 'payment') { colorClass = 'bg-emerald-50/50 text-emerald-700'; iconClass = 'text-emerald-500'; }
+                    else if (e.type === 'manual-add') { colorClass = 'bg-purple-50 text-purple-700'; iconClass = 'text-purple-500'; }
+                    else if (e.type === 'manual-deduct') { colorClass = 'bg-orange-50 text-orange-700'; iconClass = 'text-orange-500'; }
+                    
+                    return (
+                      <div key={idx} className={`flex items-center justify-between px-3 py-2 rounded-md group transition-colors ${colorClass}`}>
+                        <div className="flex items-center gap-2 overflow-hidden w-full">
+                          <div className={`shrink-0 font-bold ${iconClass}`}>
+                            {e.netEffect > 0 ? '+' : '-'}
+                          </div>
+                          <div className="truncate flex-1">
+                            <div className="text-[11px] font-bold truncate">{e.description}</div>
+                            <div className="text-[9px] uppercase tracking-wider opacity-60">{e.type.replace('-', ' ')}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                          <div className="text-sm font-bold tabular-nums">
+                            {fmt(e.amount)}
+                          </div>
+                          <button 
+                            onClick={() => removeCalcEntry(e.id)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-red-400 hover:text-red-600"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            
+            {/* Footer / Total */}
+            <div className="p-4 border-t border-gray-200 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+              <div className="mb-3">
+                <div className="flex justify-between items-center text-[10px] uppercase text-gray-400 font-bold mb-1">
+                  <span>Items: {calcEntries.length}</span>
+                  <span>Formula</span>
+                </div>
+                <div className="text-[11px] font-mono text-gray-600 bg-gray-50 p-2 rounded border border-gray-100 overflow-x-auto whitespace-nowrap scrollbar-hide">
+                  {calcEntries.length > 0 ? calcEntries.map(e => `${e.netEffect > 0 ? '+' : '-'}${e.amount}`).join(' ') : 'Empty'}
+                </div>
+              </div>
+              <div className="flex items-center justify-between mb-4 border-t border-gray-100 pt-3">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Result</span>
+                <span className={`text-2xl font-extrabold tabular-nums ${
+                  calcRunningTotal > 0 ? 'text-rose-600' :
+                  calcRunningTotal < 0 ? 'text-emerald-600' : 'text-gray-900'
+                }`}>
+                  {fmtBalance(calcRunningTotal)}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button 
+                  onClick={copyCalcFormula}
+                  disabled={calcEntries.length === 0}
+                  className="flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Copy size={14} /> Copy Formula
+                </button>
+                <button 
+                  onClick={copyCalcTotal}
+                  disabled={calcEntries.length === 0}
+                  className="flex items-center justify-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Copy size={14} /> Copy Total
+                </button>
+              </div>
+              <div className="mt-3 text-center">
+                <button 
+                  onClick={clearCalc}
+                  disabled={calcEntries.length === 0}
+                  className="text-[10px] font-bold text-gray-400 hover:text-red-500 transition-colors uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Clear All
+                </button>
+              </div>
+            </div>
+          </div>
+      )}
     </div>
   );
 }

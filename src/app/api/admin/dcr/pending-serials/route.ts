@@ -35,23 +35,8 @@ export async function GET(req: Request) {
       ];
     }
 
-    // Fetch ALL matching invoices to perform in-memory sort/filter
-    const allInvoices = await prisma.dcrInvoice.findMany({
-      where: whereClause,
-      include: {
-        items: {
-          where: { selectedForDCR: true },
-          include: {
-            serialAllocations: true
-          }
-        },
-        serialAllocations: true,
-      }
-    });
-
-    // Format and calculate fields
-    let formattedInvoices = allInvoices.map(inv => {
-      const dcrItems = inv.items.map(item => {
+    const formatInvoice = (inv: any) => {
+      const dcrItems = inv.items.map((item: any) => {
         const required = item.quantity;
         const allocated = item.serialAllocations.length;
         const balance = Math.max(0, required - allocated);
@@ -65,8 +50,8 @@ export async function GET(req: Request) {
         };
       });
 
-      const totalRequired = dcrItems.reduce((acc, i) => acc + i.required, 0);
-      const totalAllocated = dcrItems.reduce((acc, i) => acc + i.allocated, 0);
+      const totalRequired = dcrItems.reduce((acc: number, i: any) => acc + i.required, 0);
+      const totalAllocated = dcrItems.reduce((acc: number, i: any) => acc + i.allocated, 0);
       const remainingSerials = Math.max(0, totalRequired - totalAllocated);
       const allocationProgress = totalRequired === 0 ? 100 : Math.round((totalAllocated / totalRequired) * 100);
 
@@ -87,56 +72,110 @@ export async function GET(req: Request) {
         allocationProgress,
         totalBalance: remainingSerials
       };
-    });
+    };
 
-    // Apply Chip Filters
-    if (chip === 'partially_allocated') {
-      formattedInvoices = formattedInvoices.filter(i => i.totalAllocated > 0);
-    } else if (chip === 'unallocated') {
-      formattedInvoices = formattedInvoices.filter(i => i.totalAllocated === 0);
-    } else if (chip === 'nearly_complete') {
-      formattedInvoices = formattedInvoices.filter(i => i.allocationProgress >= 80);
-    }
+    let totalCount = 0;
+    let formattedInvoices: any[] = [];
 
-    // Apply Sorting
-    // If chip === 'largest_pending', force PENDING_DESC sort override
-    const activeSort = chip === 'largest_pending' ? 'PENDING_DESC' : sort.toUpperCase();
+    if (view === 'completed') {
+      // For Completed Queue, perform pagination, sorting, and counting entirely in PostgreSQL
+      totalCount = await prisma.dcrInvoice.count({ where: whereClause });
 
-    formattedInvoices.sort((a, b) => {
+      const prismaSort: any = [];
+      const activeSort = sort.toUpperCase();
       switch (activeSort) {
-        case 'NEWEST':
-          return new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
-        case 'OLDEST':
-          return new Date(a.invoiceDate).getTime() - new Date(b.invoiceDate).getTime();
-        case 'PENDING_DESC':
-          return b.remainingSerials - a.remainingSerials || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
-        case 'PENDING_ASC':
-          return a.remainingSerials - b.remainingSerials || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
-        case 'VALUE_DESC':
-          return b.invoiceValue - a.invoiceValue || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
-        case 'VALUE_ASC':
-          return a.invoiceValue - b.invoiceValue || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
-        case 'PROGRESS_DESC':
-          return b.allocationProgress - a.allocationProgress || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
-        case 'PROGRESS_ASC':
-          return a.allocationProgress - b.allocationProgress || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
-        case 'DCR_ITEMS_DESC':
-          return b.dcrItemCount - a.dcrItemCount || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
-        case 'DCR_ITEMS_ASC':
-          return a.dcrItemCount - b.dcrItemCount || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
-        case 'CUSTOMER_ASC':
-          return a.customerName.localeCompare(b.customerName);
-        case 'CUSTOMER_DESC':
-          return b.customerName.localeCompare(a.customerName);
-        default:
-          return new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
+        case 'NEWEST': prismaSort.push({ invoiceDate: 'desc' }); break;
+        case 'OLDEST': prismaSort.push({ invoiceDate: 'asc' }); break;
+        case 'VALUE_DESC': prismaSort.push({ invoiceTotal: 'desc' }); break;
+        case 'VALUE_ASC': prismaSort.push({ invoiceTotal: 'asc' }); break;
+        case 'CUSTOMER_ASC': prismaSort.push({ customerName: 'asc' }); break;
+        case 'CUSTOMER_DESC': prismaSort.push({ customerName: 'desc' }); break;
+        default: prismaSort.push({ invoiceDate: 'desc' }); break;
       }
-    });
 
-    const totalCount = formattedInvoices.length;
-    
-    // Apply Pagination
-    formattedInvoices = formattedInvoices.slice(skip, skip + limit);
+      const paginatedInvoices = await prisma.dcrInvoice.findMany({
+        where: whereClause,
+        orderBy: prismaSort,
+        skip,
+        take: limit,
+        include: {
+          items: {
+            where: { selectedForDCR: true },
+            include: {
+              serialAllocations: true
+            }
+          },
+          serialAllocations: true,
+        }
+      });
+
+      formattedInvoices = paginatedInvoices.map(formatInvoice);
+
+    } else {
+      // For Active Queue, keep in-memory formatting to support computed chip filters and complex sorts
+      const allInvoices = await prisma.dcrInvoice.findMany({
+        where: whereClause,
+        include: {
+          items: {
+            where: { selectedForDCR: true },
+            include: {
+              serialAllocations: true
+            }
+          },
+          serialAllocations: true,
+        }
+      });
+
+      formattedInvoices = allInvoices.map(formatInvoice);
+
+      // Apply Chip Filters
+      if (chip === 'partially_allocated') {
+        formattedInvoices = formattedInvoices.filter(i => i.totalAllocated > 0);
+      } else if (chip === 'unallocated') {
+        formattedInvoices = formattedInvoices.filter(i => i.totalAllocated === 0);
+      } else if (chip === 'nearly_complete') {
+        formattedInvoices = formattedInvoices.filter(i => i.allocationProgress >= 80);
+      }
+
+      // Apply Sorting
+      const activeSort = chip === 'largest_pending' ? 'PENDING_DESC' : sort.toUpperCase();
+
+      formattedInvoices.sort((a, b) => {
+        switch (activeSort) {
+          case 'NEWEST':
+            return new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
+          case 'OLDEST':
+            return new Date(a.invoiceDate).getTime() - new Date(b.invoiceDate).getTime();
+          case 'PENDING_DESC':
+            return b.remainingSerials - a.remainingSerials || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
+          case 'PENDING_ASC':
+            return a.remainingSerials - b.remainingSerials || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
+          case 'VALUE_DESC':
+            return b.invoiceValue - a.invoiceValue || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
+          case 'VALUE_ASC':
+            return a.invoiceValue - b.invoiceValue || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
+          case 'PROGRESS_DESC':
+            return b.allocationProgress - a.allocationProgress || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
+          case 'PROGRESS_ASC':
+            return a.allocationProgress - b.allocationProgress || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
+          case 'DCR_ITEMS_DESC':
+            return b.dcrItemCount - a.dcrItemCount || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
+          case 'DCR_ITEMS_ASC':
+            return a.dcrItemCount - b.dcrItemCount || new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
+          case 'CUSTOMER_ASC':
+            return a.customerName.localeCompare(b.customerName);
+          case 'CUSTOMER_DESC':
+            return b.customerName.localeCompare(a.customerName);
+          default:
+            return new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime();
+        }
+      });
+
+      totalCount = formattedInvoices.length;
+      
+      // Apply Pagination
+      formattedInvoices = formattedInvoices.slice(skip, skip + limit);
+    }
 
     // --- Calculate KPIs ---
     // 1. Invoices Waiting: invoices currently in PENDING_SERIALS or PARTIALLY_ALLOCATED status

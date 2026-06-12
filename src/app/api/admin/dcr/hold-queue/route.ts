@@ -133,6 +133,7 @@ export async function GET(req: Request) {
           serialsOnHold: 0,
           serialsIssued: 0,
           serialsDcrPending: 0,
+          oldestInvoiceDate: null,
           invoices: []
         });
       }
@@ -176,6 +177,7 @@ export async function GET(req: Request) {
     for (const c of customers) {
       c.customerGstNo = customerDbMap.get(c.customerId)?.gstNumber || null;
       c.outstandingBalance = c.invoices.reduce((sum: number, inv: any) => sum + inv.outstandingBalance, 0);
+      c.oldestInvoiceDate = new Date(Math.min(...c.invoices.map((i: any) => new Date(i.invoiceDate).getTime()))).toISOString();
     }
 
     // Sort customers
@@ -183,10 +185,17 @@ export async function GET(req: Request) {
       if (sort === 'outstanding_desc') return b.outstandingBalance - a.outstandingBalance;
       if (sort === 'outstanding_asc') return a.outstandingBalance - b.outstandingBalance;
       
-      const aMaxDate = Math.max(...a.invoices.map((i: any) => new Date(i.invoiceDate).getTime()));
-      const bMaxDate = Math.max(...b.invoices.map((i: any) => new Date(i.invoiceDate).getTime()));
-      if (sort === 'date_desc') return bMaxDate - aMaxDate;
-      if (sort === 'date_asc') return aMaxDate - bMaxDate;
+      if (sort === 'age_desc') {
+        const aMinDate = new Date(a.oldestInvoiceDate).getTime();
+        const bMinDate = new Date(b.oldestInvoiceDate).getTime();
+        return aMinDate - bMinDate; // smallest timestamp (oldest) first
+      }
+      
+      if (sort === 'date_desc') {
+        const aMaxDate = Math.max(...a.invoices.map((i: any) => new Date(i.invoiceDate).getTime()));
+        const bMaxDate = Math.max(...b.invoices.map((i: any) => new Date(i.invoiceDate).getTime()));
+        return bMaxDate - aMaxDate; // largest timestamp (newest) first
+      }
 
       return b.outstandingBalance - a.outstandingBalance;
     });

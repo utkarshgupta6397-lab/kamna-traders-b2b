@@ -376,55 +376,61 @@ export default function SerialRegistryClient() {
   };
 
   const handleCopyWhatsAppSummary = async () => {
-    // Group by tag -> product
+    // Group by vendor -> product
     const grouped: Record<string, Record<string, number>> = {};
     
     filteredVendorReport.forEach(item => {
-      const tag = item.tag && item.tag.trim() !== '' ? item.tag : 'No Data';
+      let vendor = item.vendorName || 'No Data';
+      if (vendor === 'Unknown Vendor' || vendor === 'null') vendor = 'No Data';
+      
+      // Shorten long vendor names
+      if (vendor.length > 50 && vendor.includes('->')) {
+        const parts = vendor.split('->');
+        vendor = parts[parts.length - 1].trim();
+      }
+
       const product = item.productName || 'Unknown Product';
       
-      if (!grouped[tag]) grouped[tag] = {};
-      if (!grouped[tag][product]) grouped[tag][product] = 0;
+      if (!grouped[vendor]) grouped[vendor] = {};
+      if (!grouped[vendor][product]) grouped[vendor][product] = 0;
       
-      grouped[tag][product]++;
+      grouped[vendor][product]++;
     });
 
     // Convert to array and sort by total pending DESC
-    const tagsArray = Object.keys(grouped).map(tag => {
-      const products = Object.keys(grouped[tag]).map(product => ({
+    const vendorsArray = Object.keys(grouped).map(vendor => {
+      const products = Object.keys(grouped[vendor]).map(product => ({
         product,
-        count: grouped[tag][product]
+        count: grouped[vendor][product]
       })).sort((a, b) => b.count - a.count); // sort products by count DESC
       
       const totalPending = products.reduce((sum, p) => sum + p.count, 0);
-      return { tag, products, totalPending };
-    }).sort((a, b) => b.totalPending - a.totalPending); // sort tags by total DESC
+      return { vendor, products, totalPending };
+    }).sort((a, b) => b.totalPending - a.totalPending); // sort vendors by total DESC
 
     // Format text
     const now = new Date();
     const formattedDate = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const formattedTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const formattedTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
     
-    let text = `${formattedDate} ${formattedTime}\n\nDCR Pendency Report\n\n`;
+    let text = `${formattedDate} ${formattedTime} | DCR Pendency Report\n\n`;
     
-    tagsArray.forEach(t => {
-      text += `${t.tag}\n-----------------------\n`;
-      t.products.forEach(p => {
+    vendorsArray.forEach(v => {
+      text += `Pending at ${v.vendor}\n-----------------------\n`;
+      v.products.forEach(p => {
         text += `${p.product} × ${p.count}\n`;
       });
-      text += `\nTotal Pending: ${t.totalPending}\n\n\n`;
+      text += `\n`;
     });
     
-    const uniqueTagsCount = tagsArray.length;
-    const uniqueProducts = new Set(filteredVendorReport.map(i => i.productName)).size;
+    const uniqueVendorsCount = vendorsArray.length;
+    const uniqueProductsCount = new Set(filteredVendorReport.map(i => i.productName)).size;
     const totalPendingSerials = filteredVendorReport.length;
 
-    text += `========================\n\n`;
-    text += `TOTALS\n\n`;
-    text += `Serial Tags: ${uniqueTagsCount}\n\n`;
-    text += `Products: ${uniqueProducts}\n\n`;
-    text += `Pending Serials: ${totalPendingSerials}\n\n`;
-    text += `========================`;
+    text += `--------------------------------\n`;
+    text += `Total Pending Serials: ${totalPendingSerials}\n`;
+    text += `Total Products: ${uniqueProductsCount}\n`;
+    text += `Total Vendor Tags: ${uniqueVendorsCount}`;
 
     try {
       await navigator.clipboard.writeText(text);

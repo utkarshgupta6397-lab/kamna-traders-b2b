@@ -53,8 +53,21 @@ interface CustomerHoldRecord {
   serialsOnHold: number;
   serialsIssued: number;
   serialsDcrPending: number;
+  oldestInvoiceDate: string | null;
   invoices: HoldInvoice[];
 }
+
+const getAgeInfo = (dateStr: string | null) => {
+  if (!dateStr) return { text: 'N/A', color: 'text-gray-500' };
+  const diffTime = Math.max(0, new Date().getTime() - new Date(dateStr).getTime());
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) return { text: 'Today', color: 'text-emerald-600' };
+  if (diffDays === 1) return { text: '1 Day', color: 'text-emerald-600' };
+  if (diffDays <= 3) return { text: `${diffDays} Days`, color: 'text-emerald-600' };
+  if (diffDays <= 7) return { text: `${diffDays} Days`, color: 'text-orange-500' };
+  return { text: `${diffDays} Days`, color: 'text-red-600' };
+};
 
 interface Kpis {
   customersOnHold: number;
@@ -167,8 +180,10 @@ export default function HoldQueueClient() {
     }
   };
 
-  const toggleSort = (col: 'outstanding') => {
-    setSort(prev => prev === 'outstanding_desc' ? 'outstanding_asc' : 'outstanding_desc');
+  const toggleSort = (col: 'outstanding' | 'age' | 'date') => {
+    if (col === 'outstanding') setSort(prev => prev === 'outstanding_desc' ? 'outstanding_asc' : 'outstanding_desc');
+    if (col === 'age') setSort(prev => prev === 'age_desc' ? 'age_asc' : 'age_desc');
+    if (col === 'date') setSort(prev => prev === 'date_desc' ? 'date_asc' : 'date_desc');
   };
 
   const openReview = async (customer: CustomerHoldRecord) => {
@@ -394,6 +409,22 @@ export default function HoldQueueClient() {
                   <tr>
                     <th className="px-3 py-2 w-10 text-center">#</th>
                     <th className="px-3 py-2">Customer Name</th>
+                    <th className="px-3 py-2 text-right cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => toggleSort('date')}>
+                      <div className="flex items-center justify-end gap-1">
+                        Oldest Invoice
+                        <span className={`text-[9px] ${sort.startsWith('date_') ? 'text-blue-600 font-bold' : 'text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity'}`}>
+                          {sort === 'date_desc' ? '▼' : sort === 'date_asc' ? '▲' : '↕'}
+                        </span>
+                      </div>
+                    </th>
+                    <th className="px-3 py-2 text-right cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => toggleSort('age')}>
+                      <div className="flex items-center justify-end gap-1">
+                        Age
+                        <span className={`text-[9px] ${sort.startsWith('age_') ? 'text-blue-600 font-bold' : 'text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity'}`}>
+                          {sort === 'age_desc' ? '▼' : sort === 'age_asc' ? '▲' : '↕'}
+                        </span>
+                      </div>
+                    </th>
                     <th className="px-3 py-2 text-right cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => toggleSort('outstanding')}>
                       <div className="flex items-center justify-end gap-1">
                         Outstanding Balance
@@ -418,6 +449,12 @@ export default function HoldQueueClient() {
                         <td className="px-3 py-2.5 text-center text-gray-500 font-medium">{index + 1}</td>
                         <td className="px-3 py-2.5 font-bold text-gray-900 truncate max-w-[200px]" title={customer.customerName}>
                           {customer.customerName}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-medium text-gray-600">
+                          {customer.oldestInvoiceDate ? format(new Date(customer.oldestInvoiceDate), 'dd MMM yyyy') : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-bold">
+                          <span className={getAgeInfo(customer.oldestInvoiceDate).color}>{getAgeInfo(customer.oldestInvoiceDate).text}</span>
                         </td>
                         <td className="px-3 py-2.5 text-right">
                           <span className={`font-bold text-sm ${hasOutstanding ? 'text-red-600' : 'text-emerald-600'}`}>
@@ -545,13 +582,20 @@ export default function HoldQueueClient() {
                           className="px-4 py-3 bg-gray-100 flex items-center justify-between cursor-pointer border-b border-gray-200 hover:bg-gray-200/70 transition-colors"
                           onClick={() => toggleInvoice(invoice.id)}
                         >
-                          <div className="flex items-center gap-3">
-                            <span className="font-bold text-gray-900 text-sm">{invoice.invoiceNumber}</span>
-                            <span className="text-[11px] text-gray-500 font-medium">Outst: {fmtCurrency(invoice.outstandingBalance)}</span>
-                            <span className="text-[11px] text-gray-500 font-medium px-2 border-l border-gray-300">Total: {invoice.totalSerials}</span>
-                            <span className="text-[11px] text-emerald-600 font-bold">Ready: {invoice.totalEligible}</span>
-                            <span className="text-[11px] text-orange-500 font-bold">Vendor DCR Pending: {dcrPending}</span>
-                            <span className="text-[11px] text-blue-600 font-bold">Released: {invoice.totalReleased}</span>
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-gray-900 text-sm">{invoice.invoiceNumber}</span>
+                              <span className="text-[11px] text-gray-500 font-medium">{format(new Date(invoice.invoiceDate), 'dd MMM yyyy')}</span>
+                              <span className="text-[11px] text-gray-400">•</span>
+                              <span className={`text-[11px] font-bold ${getAgeInfo(invoice.invoiceDate).color}`}>{getAgeInfo(invoice.invoiceDate).text}</span>
+                            </div>
+                            <div className="flex items-center gap-2.5">
+                              <span className="text-[11px] text-gray-500 font-medium">Outst: {fmtCurrency(invoice.outstandingBalance)}</span>
+                              <span className="text-[11px] text-gray-500 font-medium px-2.5 border-l border-gray-300">Total: {invoice.totalSerials}</span>
+                              <span className="text-[11px] text-emerald-600 font-bold">Ready: {invoice.totalEligible}</span>
+                              <span className="text-[11px] text-orange-500 font-bold">Vendor DCR Pending: {dcrPending}</span>
+                              <span className="text-[11px] text-blue-600 font-bold">Released: {invoice.totalReleased}</span>
+                            </div>
                           </div>
                           <div className="flex items-center gap-4" onClick={e => e.stopPropagation()}>
                             {hasEligible && (

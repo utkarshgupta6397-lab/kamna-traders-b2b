@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Search, Download, ExternalLink, Activity, Filter, Box, CheckCircle, Clock, AlertTriangle, ChevronLeft, ChevronRight, X, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { fetchWithCache } from '@/lib/client-cache';
 
 function useDebounce(value: string, delay: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -82,25 +83,33 @@ export default function SerialRegistryClient() {
     fetchStats();
   }, []);
 
-  useEffect(() => {
-    // Only search if length >= 3 or empty or if filtering by invoice
-    if (debouncedSearch.trim().length === 0 || debouncedSearch.trim().length >= 3 || invoiceIdFilter) {
-      setPage(1);
-      fetchSerials();
-    }
-  }, [debouncedSearch, statusFilter, vendorDcrFilter, invoiceIdFilter]);
+  const prevFilters = useRef({ debouncedSearch, statusFilter, vendorDcrFilter, invoiceIdFilter });
 
   useEffect(() => {
-    if (page > 1 || (debouncedSearch.trim().length === 0 || debouncedSearch.trim().length >= 3)) {
-       fetchSerials();
+    const filtersChanged = 
+      prevFilters.current.debouncedSearch !== debouncedSearch ||
+      prevFilters.current.statusFilter !== statusFilter ||
+      prevFilters.current.vendorDcrFilter !== vendorDcrFilter ||
+      prevFilters.current.invoiceIdFilter !== invoiceIdFilter;
+      
+    if (filtersChanged) {
+      prevFilters.current = { debouncedSearch, statusFilter, vendorDcrFilter, invoiceIdFilter };
+      if (page !== 1) {
+        setPage(1);
+        return; // State update will trigger the effect again with page=1
+      }
     }
-  }, [page]);
+
+    // Only search if length >= 3 or empty or if filtering by invoice
+    if (debouncedSearch.trim().length === 0 || debouncedSearch.trim().length >= 3 || invoiceIdFilter) {
+      fetchSerials();
+    }
+  }, [debouncedSearch, statusFilter, vendorDcrFilter, invoiceIdFilter, page]);
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/admin/dcr/serial-registry/stats');
-      const data = await res.json();
-      if (res.ok) setStats(data.stats);
+      const data = await fetchWithCache('/api/admin/dcr/serial-registry/stats', { ttl: 0 });
+      if (data && data.stats) setStats(data.stats);
     } catch (err) {
       console.error('Failed to fetch stats', err);
     }
@@ -169,13 +178,14 @@ export default function SerialRegistryClient() {
           params.append('invoiceId', invoiceIdFilter);
         }
 
-        const res = await fetch(`/api/admin/dcr/serial-registry?${params.toString()}`);
-        const data = await res.json();
-        if (res.ok) {
+        const data = await fetchWithCache(`/api/admin/dcr/serial-registry?${params.toString()}`, { ttl: 0 });
+        if (data && data.serials) {
           setSerials(data.serials);
           setTotal(data.total);
+        } else if (data && data.error) {
+          toast.error(data.error);
         } else {
-          toast.error(data.error || 'Failed to fetch serials');
+          toast.error('Failed to fetch serials');
         }
       }
     } catch (err) {

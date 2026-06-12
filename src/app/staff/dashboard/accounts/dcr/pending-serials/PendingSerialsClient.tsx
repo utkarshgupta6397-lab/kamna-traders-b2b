@@ -4,6 +4,18 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Search, ChevronLeft, ChevronRight, ExternalLink, Inbox, CheckCircle2, AlertCircle, X, ListTodo } from 'lucide-react';
+import { fetchWithCache } from '@/lib/client-cache';
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+}
 
 const ZOHO_ORG_ID = process.env.NEXT_PUBLIC_ZOHO_ORG_ID || '';
 
@@ -13,6 +25,7 @@ export default function PendingSerialsClient() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearch = useDebounce(searchQuery, 300);
   const [viewState, setViewState] = useState<'active' | 'completed'>('active');
   
   // Pagination
@@ -40,20 +53,20 @@ export default function PendingSerialsClient() {
 
   useEffect(() => {
     fetchPendingInvoices();
-  }, [viewState, page, limit, searchQuery, sortOrder, activeChip]);
+  }, [viewState, page, limit, debouncedSearch, sortOrder, activeChip]);
 
   const fetchPendingInvoices = async () => {
     try {
       setLoading(true);
-      const res = await fetch(
-        `/api/admin/dcr/pending-serials?view=${viewState}&page=${page}&limit=${limit}&search=${encodeURIComponent(searchQuery)}&sort=${sortOrder}&chip=${activeChip}`
+      const data = await fetchWithCache(
+        `/api/admin/dcr/pending-serials?view=${viewState}&page=${page}&limit=${limit}&search=${encodeURIComponent(debouncedSearch)}&sort=${sortOrder}&chip=${activeChip}`,
+        { ttl: 0 }
       );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (data && data.error) throw new Error(data.error);
 
-      setInvoices(data.invoices || []);
-      setTotalInvoices(data.total || 0);
-      if (data.kpis) setKpis(data.kpis);
+      setInvoices(data?.invoices || []);
+      setTotalInvoices(data?.total || 0);
+      if (data?.kpis) setKpis(data.kpis);
     } catch (err: any) {
       toast.error(err.message || 'Failed to fetch pending serials list');
     } finally {

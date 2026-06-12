@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { fetchWithCache } from '@/lib/client-cache';
 
 interface LineItem {
   id: string;
@@ -57,9 +58,8 @@ export default function PurchaseReceiveDashboard() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/dcr/purchase-receive?page=${page}&limit=${limit}`);
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || 'Failed to fetch data');
+      // Use fetchWithCache with ttl 0 to deduplicate simultaneous requests without aggressively caching
+      const d = await fetchWithCache(`/api/admin/dcr/purchase-receive?page=${page}&limit=${limit}`, { ttl: 0 });
       setData(d);
     } catch (err: any) {
       toast.error(err.message);
@@ -70,11 +70,16 @@ export default function PurchaseReceiveDashboard() {
 
   useEffect(() => {
     fetchData();
-    fetch('/api/staff/skus')
-      .then(r => r.json())
-      .then(d => setSkus((d.skus || d || []).filter((s: any) => s.caseSize > 1 && s.isActive !== false)))
-      .catch(() => setSkus([]));
   }, [fetchData]);
+
+  // Lazy load SKUs only when form is opened
+  useEffect(() => {
+    if (isFormOpen && skus.length === 0) {
+      fetchWithCache('/api/staff/skus')
+        .then(d => setSkus((d.skus || d || []).filter((s: any) => s.caseSize > 1 && s.isActive !== false)))
+        .catch(() => setSkus([]));
+    }
+  }, [isFormOpen, skus.length]);
 
   const toggleExpand = (id: string) => {
     setExpandedRows(prev => {

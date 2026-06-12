@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { fetchWithCache } from '@/lib/client-cache';
 
 interface DcrStats {
   reviewPending: number;
@@ -29,9 +30,8 @@ export default function DcrLayout({ children }: { children: React.ReactNode }) {
 
   const refreshStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/admin/dcr/stats');
-      if (res.ok) {
-        const data = await res.json();
+      const data = await fetchWithCache('/api/admin/dcr/stats', { ttl: 0 });
+      if (data) {
         setStats({
           reviewPending: data.reviewPending || 0,
           pendingSerials: data.pendingSerials || 0,

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import NextTopLoader from 'nextjs-toploader';
 import { initializeDatabase } from "@/lib/db";
+import TelemetryOverlay from "@/components/dev/TelemetryOverlay";
 import "./globals.css";
 
 // Trigger one-time initialization
@@ -48,6 +49,7 @@ export default function RootLayout({
           shadow="0 0 10px #1A2766,0 0 5px #1A2766"
         />
         {children}
+        <TelemetryOverlay />
       </body>
     </html>
   );

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Search, ChevronDown, ChevronUp, ExternalLink, Copy, AlertCircle, RefreshCw, X, Activity, ChevronRight } from 'lucide-react';
+import { fetchWithCache } from '@/lib/client-cache';
 
 const ZOHO_ORG_ID = process.env.NEXT_PUBLIC_ZOHO_ORG_ID || '';
 
@@ -66,9 +67,8 @@ export default function CustomerLookupClient() {
 
   const fetchApiMeter = async () => {
     try {
-      const res = await fetch('/api/admin/debug/zoho-api-usage');
-      if (res.ok) {
-        const data = await res.json();
+      const data = await fetchWithCache('/api/admin/debug/zoho-api-usage', { ttl: 0 });
+      if (data && data.data) {
         setZohoMeter(prev => ({ ...prev, today: data.data.today }));
       }
     } catch (e) {}
@@ -89,9 +89,8 @@ export default function CustomerLookupClient() {
         return;
       }
       
-      const res = await fetch(`/api/admin/dcr/customer/${customerId}`);
-      if (res.ok) {
-        const data = await res.json();
+      const data = await fetchWithCache(`/api/admin/dcr/customer/${customerId}`, { ttl: 5 * 60 * 1000 });
+      if (data && !data.error) {
         setSummary(data.data);
         if (data.data.customer) {
           setCustomer(data.data.customer);
@@ -100,7 +99,7 @@ export default function CustomerLookupClient() {
           setBalance(data.data.summary.kpis.closingBalance);
           setSessionCache(`dcr_balance_${customerId}`, data.data.summary.kpis.closingBalance);
         }
-        setSessionCache(`dcr_summary_v3_${customerId}`, data.data);
+        setSessionCache(`dcr_summary_v4_${customerId}`, data.data);
       }
     } catch (err) {
       toast.error('Failed to fetch summary');

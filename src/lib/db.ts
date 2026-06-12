@@ -41,7 +41,7 @@ export async function initializeDatabase() {
           if (urlStr.includes('zohoapis.in') || urlStr.includes('zoho')) {
             const start = performance.now();
             try {
-              const res = await originalFetch(...args);
+              const res = await (originalFetch as any)(...args);
               const durationMs = Math.round(performance.now() - start);
               
               if (!(globalThis as any).__ZOHO_TELEMETRY__) {
@@ -86,7 +86,7 @@ export async function initializeDatabase() {
               throw err;
             }
           }
-          return originalFetch(...args);
+          return (originalFetch as any)(...args);
         };
         (globalThis as any).__fetch_patched = true;
         console.log('[Telemetry] Backend Zoho API interceptor active.');

@@ -52,7 +52,7 @@ export default function TelemetryOverlay() {
   const fetchZohoCalls = useCallback(async () => {
     try {
       // Don't trace this fetch
-      const res = await window.__originalFetch("/api/dev/telemetry");
+      const res = await (window as any).__originalFetch("/api/dev/telemetry");
       if (res.ok) {
         const data = await res.json();
         if (data.calls && data.calls.length > 0) {

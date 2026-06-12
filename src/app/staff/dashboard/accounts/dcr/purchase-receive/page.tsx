@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { PackageOpen, Plus, Trash2, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, ExternalLink, X, FileCheck, Package, Clock, Activity, Loader2, Edit2, MoreVertical } from 'lucide-react';
+import { PackageOpen, Plus, Trash2, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, ExternalLink, X, FileCheck, Package, Clock, Activity, Loader2, Edit2, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 interface LineItem {
   id: string;
@@ -20,16 +21,23 @@ export default function PurchaseReceiveDashboard() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [editingRow, setEditingRow] = useState<any>(null);
-  const [actionMenuOpen, setActionMenuOpen] = useState<string | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const page = parseInt(searchParams.get('page') || '1');
+  const limit = parseInt(searchParams.get('limit') || '50');
 
-  // Click-outside to close dropdowns
-  useEffect(() => {
-    const handleGlobalClick = () => setActionMenuOpen(null);
-    if (actionMenuOpen) {
-       document.addEventListener('click', handleGlobalClick);
-    }
-    return () => document.removeEventListener('click', handleGlobalClick);
-  }, [actionMenuOpen]);
+  const setPage = (newPage: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('page', newPage.toString());
+    router.push(`?${params.toString()}`);
+  };
+
+  const setLimit = (newLimit: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('limit', newLimit.toString());
+    params.set('page', '1');
+    router.push(`?${params.toString()}`);
+  };
 
   // Edit states
   const [editVendor, setEditVendor] = useState('');
@@ -49,7 +57,7 @@ export default function PurchaseReceiveDashboard() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/dcr/purchase-receive');
+      const res = await fetch(`/api/admin/dcr/purchase-receive?page=${page}&limit=${limit}`);
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Failed to fetch data');
       setData(d);
@@ -58,7 +66,7 @@ export default function PurchaseReceiveDashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, limit]);
 
   useEffect(() => {
     fetchData();
@@ -219,50 +227,80 @@ export default function PurchaseReceiveDashboard() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-gray-50/80 border-b border-gray-200 text-gray-500 font-medium text-xs">
                   <tr>
-                    <th className="px-4 py-2 w-12 text-center">#</th>
-                    <th className="px-4 py-2">Date</th>
-                    <th className="px-4 py-2">Product</th>
-                    <th className="px-4 py-2 text-center">Received / Purchased</th>
-                    <th className="px-4 py-2 text-center">DCR Pndg</th>
-                    <th className="px-4 py-2 text-center">Completion</th>
-                    <th className="px-4 py-2 text-right">Actions</th>
+                    <th className="px-3 py-2 w-12 text-center">#</th>
+                    <th className="px-3 py-2">Date</th>
+                    <th className="px-3 py-2">Product</th>
+                    <th className="px-3 py-2 text-center">Received / Purchased</th>
+                    <th className="px-3 py-2 text-center">DCR Pndg</th>
+                    <th className="px-3 py-2 text-center">Completion</th>
+                    <th className="px-3 py-2 text-right w-[110px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {data.rows.map((row, index) => (
                     <React.Fragment key={row.id}>
-                      <tr className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-4 py-2 text-center text-gray-400 text-xs">{index + 1}</td>
-                        <td className="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">{format(new Date(row.date), 'dd MMM yyyy')}</td>
-                        <td className="px-4 py-2">
+                      <tr 
+                        className="hover:bg-gray-50/50 transition-colors cursor-pointer group"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          toggleExpand(row.id);
+                        }}
+                        onClick={(e) => {
+                          if (e.ctrlKey || e.metaKey) {
+                            e.stopPropagation();
+                            router.push(`/staff/dashboard/accounts/dcr/purchase-dcr-received?receiptId=${encodeURIComponent(row.id)}`);
+                          }
+                        }}
+                      >
+                        <td className="px-3 py-1.5 text-center text-gray-400 text-xs">{(page - 1) * limit + index + 1}</td>
+                        <td className="px-3 py-1.5 font-medium text-gray-900 whitespace-nowrap">{format(new Date(row.date), 'dd MMM yyyy')}</td>
+                        <td className="px-3 py-1.5">
                           <p className="font-semibold text-gray-800 line-clamp-1" title={row.skuName}>{row.skuName}</p>
                         </td>
-                        <td className="px-4 py-2 text-center font-bold text-gray-700">
+                        <td className="px-3 py-1.5 text-center font-bold text-gray-700">
                            <span className="text-emerald-600">{row.dcrReceived}</span> <span className="text-gray-400 font-normal">/</span> {row.purchasedQty}
                         </td>
-                        <td className="px-4 py-2 text-center text-orange-600 font-semibold">{row.dcrPending}</td>
-                        <td className="px-4 py-2 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${row.completion === 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
+                        <td className="px-3 py-1.5 text-center font-semibold">
+                          <span className={row.dcrPending === 0 ? 'text-emerald-600' : row.dcrPending <= 5 ? 'text-amber-500' : 'text-red-600'}>
+                            {row.dcrPending}
+                          </span>
+                        </td>
+                        <td className="px-3 py-1.5 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            row.completion === 100 ? 'bg-emerald-100 text-emerald-700' : 
+                            row.completion >= 50 ? 'bg-amber-100 text-amber-700' : 
+                            'bg-red-100 text-red-700'
+                          }`}>
                             {row.completion}%
                           </span>
                         </td>
-                        <td className="px-4 py-2 text-right relative">
-                           <button
-                             onClick={(e) => {
-                               e.stopPropagation();
-                               setActionMenuOpen(actionMenuOpen === row.id ? null : row.id);
-                             }}
-                             className="p-1 text-gray-400 hover:text-[#1A2766] transition-colors rounded hover:bg-gray-100 inline-flex items-center justify-center"
-                           >
-                             <MoreVertical size={16} />
-                           </button>
-                           {actionMenuOpen === row.id && (
-                             <div className="absolute right-0 top-8 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-10 py-1 text-left">
-                               <button onClick={(e) => { e.stopPropagation(); openEdit(row); setActionMenuOpen(null); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700"><Edit2 size={14} /> Edit Record</button>
-                               <Link href={`/staff/dashboard/accounts/dcr/purchase-dcr-received?receiptId=${encodeURIComponent(row.id)}`} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700"><ExternalLink size={14} /> Open DCR Received</Link>
-                               <button onClick={(e) => { e.stopPropagation(); toggleExpand(row.id); setActionMenuOpen(null); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700">{expandedRows.has(row.id) ? <><ChevronUp size={14} /> Hide Details</> : <><ChevronDown size={14} /> View Details</>}</button>
-                             </div>
-                           )}
+                        <td className="px-3 py-1.5 text-right w-[110px]">
+                           <div className="flex items-center justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                             <button
+                               onClick={(e) => { e.stopPropagation(); openEdit(row); }}
+                               className="p-1.5 text-gray-400 hover:text-[#1A2766] transition-colors rounded hover:bg-gray-100"
+                               title="Edit Record"
+                             >
+                               <Edit2 size={16} />
+                             </button>
+                             <button
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 router.push(`/staff/dashboard/accounts/dcr/purchase-dcr-received?receiptId=${encodeURIComponent(row.id)}`);
+                               }}
+                               className="p-1.5 text-gray-400 hover:text-emerald-600 transition-colors rounded hover:bg-emerald-50"
+                               title="Open DCR Received"
+                             >
+                               <FileCheck size={16} />
+                             </button>
+                             <button
+                               onClick={(e) => { e.stopPropagation(); toggleExpand(row.id); }}
+                               className={`p-1.5 transition-colors rounded ${expandedRows.has(row.id) ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                               title={expandedRows.has(row.id) ? "Hide Details" : "View Details"}
+                             >
+                               {expandedRows.has(row.id) ? <ChevronUp size={16} /> : <Eye size={16} />}
+                             </button>
+                           </div>
                         </td>
                       </tr>
                       {expandedRows.has(row.id) && (
@@ -294,6 +332,46 @@ export default function PurchaseReceiveDashboard() {
                   ))}
                 </tbody>
               </table>
+              
+              {/* Pagination Footer */}
+              <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between text-sm text-gray-600">
+                <div className="flex items-center gap-4">
+                  <span>
+                    Showing {data.total === 0 ? 0 : (page - 1) * limit + 1}-{Math.min(page * limit, data.total)} of {data.total.toLocaleString()} records
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span>Rows per page:</span>
+                    <select
+                      value={limit}
+                      onChange={(e) => setLimit(Number(e.target.value))}
+                      className="border border-gray-300 rounded px-2 py-1 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-[#1A2766]"
+                    >
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                      <option value={250}>250</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage(page - 1)}
+                    disabled={page === 1}
+                    className="p-1 rounded text-gray-500 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 font-medium"
+                  >
+                    <ChevronLeft size={16} /> Prev
+                  </button>
+                  <span className="px-2 font-medium">Page {page} of {Math.max(1, Math.ceil(data.total / limit))}</span>
+                  <button
+                    onClick={() => setPage(page + 1)}
+                    disabled={page >= Math.ceil(data.total / limit)}
+                    className="p-1 rounded text-gray-500 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 font-medium"
+                  >
+                    Next <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

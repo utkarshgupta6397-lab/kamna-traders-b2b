@@ -66,6 +66,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ serialNu
       }
     }
 
+    // Fetch user names for the history timeline
+    const userIds = Array.from(new Set(serial.history.map((h: any) => h.userId).filter(Boolean)));
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, name: true }
+    });
+    const userMap = new Map(users.map(u => [u.id, u.name]));
+
+    const historyWithUsers = serial.history.map((h: any) => ({
+      ...h,
+      userName: userMap.get(h.userId) || null
+    }));
+
     // Compute Product / SKU
     let computedProduct = null;
     let computedSku = null;
@@ -106,7 +119,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ serialNu
       },
       currentAllocation: serial.allocations[0] || null,
       allocations: serial.allocations,
-      history: serial.history,
+      history: historyWithUsers,
       issuedInfo
     };
 

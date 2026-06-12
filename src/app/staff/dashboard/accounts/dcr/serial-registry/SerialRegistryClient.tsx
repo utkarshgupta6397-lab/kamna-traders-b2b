@@ -1132,7 +1132,11 @@ export default function SerialRegistryClient() {
                                   <div className="flex items-center gap-2 mt-1.5 text-[11px] text-gray-500">
                                     <Clock size={10} />
                                     <span>{new Date(event.createdAt).toLocaleString('en-IN')}</span>
-                                    {event.userId && <span>• User ID: {event.userId.substring(0, 8)}</span>}
+                                    {event.userName ? (
+                                      <span>• By: {event.userName}</span>
+                                    ) : event.userId ? (
+                                      <span>• By: System</span>
+                                    ) : null}
                                   </div>
                                 </div>
                               </div>

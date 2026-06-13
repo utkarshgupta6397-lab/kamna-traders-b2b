@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Search, ChevronDown, ChevronUp, CheckCircle, Loader2, Package, Copy, ExternalLink, RefreshCcw, X } from 'lucide-react';
+import { Search, CheckCircle, Loader2, Package, Copy, ExternalLink, X, ChevronLeft, ChevronRight, RefreshCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { format, differenceInDays } from 'date-fns';
+import { format, differenceInDays, startOfDay } from 'date-fns';
 import { useDcrStats } from '../layout';
 
 interface SerialEntry {
@@ -34,15 +34,12 @@ interface ReadyInvoice {
   customer_gst_no?: string;
   invoiceDate: string;
   invoiceTotal: number;
-  outstandingAmount?: number;
   dcrStatus: string;
   totalSerials: number;
   totalAllocated: number;
   totalEligible: number;
   skuGroups: SkuGroup[];
 }
-
-const ZOHO_ORG_ID = process.env.NEXT_PUBLIC_ZOHO_ORG_ID;
 
 export default function ReadyToIssueClient() {
   const searchParams = useSearchParams();
@@ -52,10 +49,12 @@ export default function ReadyToIssueClient() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
+  const [totalPages, setTotalPages] = useState(1);
   const [drawerInvoice, setDrawerInvoice] = useState<ReadyInvoice | null>(null);
   const [serialSearch, setSerialSearch] = useState('');
   const [kpis, setKpis] = useState({ invoicesReady: 0, serialsReady: 0 });
-  const [selectedSerials, setSelectedSerials] = useState<Set<string>>(new Set());
   const [isIssuing, setIsIssuing] = useState(false);
   const [customerGsts, setCustomerGsts] = useState<Record<string, { gst: string; loading: boolean; error: boolean }>>({});
   const [drawerBalance, setDrawerBalance] = useState<number | null>(null);
@@ -79,6 +78,10 @@ export default function ReadyToIssueClient() {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(t);
   }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
 
   const handleFetchGst = async (customerId: string) => {
     if (customerGsts[customerId]?.loading) return;
@@ -124,13 +127,14 @@ export default function ReadyToIssueClient() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ limit: '50' });
+      const params = new URLSearchParams({ limit: limit.toString(), page: page.toString() });
       if (debouncedSearch) params.set('search', debouncedSearch);
       const res = await fetch(`/api/admin/dcr/ready-to-issue?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load');
       setInvoices(data.invoices || []);
       setTotal(data.total || 0);
+      setTotalPages(Math.ceil((data.total || 0) / limit) || 1);
       setKpis(data.kpis || { invoicesReady: 0, serialsReady: 0 });
 
       setDrawerInvoice(prev => {
@@ -145,7 +149,7 @@ export default function ReadyToIssueClient() {
     }
   }, [debouncedSearch]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData, page, limit]);
 
   // toggleExpand logic removed in favor of Drawer
 
@@ -279,27 +283,15 @@ export default function ReadyToIssueClient() {
     }
   };
 
-
-
-  const handleSelectAll = () => {
+  const handleDrawerIssueEligible = () => {
     if (!drawerInvoice) return;
     const eligibleSerials = drawerInvoice.skuGroups.flatMap(g => 
       g.serials.filter(s => s.status === 'READY_TO_ISSUE').map(s => s.serialNumber)
     );
-    setSelectedSerials(new Set(eligibleSerials));
-  };
-
-  const handleClearSelection = () => {
-    setSelectedSerials(new Set());
-  };
-
-  const handleToggleSerial = (serialNumber: string) => {
-    setSelectedSerials(prev => {
-      const next = new Set(prev);
-      if (next.has(serialNumber)) next.delete(serialNumber);
-      else next.add(serialNumber);
-      return next;
-    });
+    if (eligibleSerials.length === 0) return;
+    
+    // Pass 'true' for issueAll because we want to issue all eligible, which does the same on the backend.
+    handleIssue(drawerInvoice.id, undefined, true);
   };
 
   return (
@@ -372,49 +364,62 @@ export default function ReadyToIssueClient() {
               <table className="w-full text-left text-sm whitespace-nowrap">
                 <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 font-semibold text-xs uppercase tracking-wider">
                   <tr>
-                    <th className="px-5 py-4 w-12 text-center bg-gray-50 sticky left-0 z-20">#</th>
-                    <th className="px-5 py-4 bg-gray-50 sticky left-[48px] z-20">Invoice Number</th>
-                    <th className="px-5 py-4 bg-gray-50">Customer Name</th>
-                    <th className="px-5 py-4 text-center bg-gray-50">Age (Days)</th>
-                    <th className="px-5 py-4 text-right bg-gray-50">Outstanding Balance</th>
-                    <th className="px-5 py-4 text-center bg-gray-50">Ready Serials Count</th>
-                    <th className="px-5 py-4 text-right sticky right-0 bg-gray-50 z-20 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">Action</th>
+                    <th className="px-3 py-2 w-12 text-center bg-gray-50 sticky left-0 z-20">#</th>
+                    <th className="px-3 py-2 bg-gray-50 sticky left-[48px] z-20">Invoice Number</th>
+                    <th className="px-3 py-2 bg-gray-50">Customer Name</th>
+                    <th className="px-3 py-2 text-center bg-gray-50">Age</th>
+                    <th className="px-3 py-2 text-center bg-gray-50">Total Serials</th>
+                    <th className="px-3 py-2 text-center bg-gray-50">Ready Count</th>
+                    <th className="px-3 py-2 text-right sticky right-0 bg-gray-50 z-20 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {invoices.map((invoice, index) => {
+                    const ageDays = differenceInDays(startOfDay(new Date()), startOfDay(new Date(invoice.invoiceDate)));
+                    let ageColorClass = 'text-emerald-600 bg-emerald-50 border-emerald-200';
+                    if (ageDays >= 4 && ageDays <= 7) {
+                      ageColorClass = 'text-amber-600 bg-amber-50 border-amber-200';
+                    } else if (ageDays >= 8) {
+                      ageColorClass = 'text-red-600 bg-red-50 border-red-200';
+                    }
+
                     return (
                       <React.Fragment key={invoice.id}>
                         <tr className="hover:bg-emerald-50/20 transition-colors group">
-                          <td className="px-5 py-3 text-center text-gray-500 font-medium sticky left-0 bg-white group-hover:bg-[#f3faf7] z-10">{index + 1}</td>
-                          <td className="px-5 py-3 font-semibold text-[#1A2766] sticky left-[48px] bg-white group-hover:bg-[#f3faf7] z-10">
+                          <td className="px-3 py-2 text-center text-gray-500 font-medium sticky left-0 bg-white group-hover:bg-[#f3faf7] z-10 text-xs">{(page - 1) * limit + index + 1}</td>
+                          <td className="px-3 py-2 font-semibold text-[#1A2766] sticky left-[48px] bg-white group-hover:bg-[#f3faf7] z-10 text-xs">
                             <a href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${invoice.customerId}&invoiceId=${invoice.id}`} className="hover:underline flex items-center gap-1 w-fit">
-                              {invoice.invoiceNumber} <ExternalLink size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                              {invoice.invoiceNumber} <ExternalLink size={10} className="opacity-0 group-hover:opacity-100 transition-opacity" />
                             </a>
                           </td>
-                          <td className="px-5 py-3 font-medium text-gray-800 truncate max-w-xs">
+                          <td className="px-3 py-2 font-medium text-gray-800 truncate max-w-[200px] text-xs" title={invoice.customerName}>
                             <a href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${invoice.customerId}`} className="hover:underline hover:text-[#1A2766]">
                               {invoice.customerName}
                             </a>
                           </td>
-                          <td className="px-5 py-3 text-center font-medium text-gray-600">
-                            {differenceInDays(new Date(), new Date(invoice.invoiceDate))}
+                          <td className="px-3 py-2 text-center text-xs">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${ageColorClass}`}>
+                              {ageDays} day{ageDays !== 1 ? 's' : ''}
+                            </span>
                           </td>
-                          <td className="px-5 py-3 text-right font-medium text-gray-700">
-                            {formatCurrency(invoice.outstandingAmount ?? invoice.invoiceTotal)}
+                          <td className="px-3 py-2 text-center font-semibold text-gray-700 text-xs">{invoice.totalAllocated}</td>
+                          <td className="px-3 py-2 text-center text-xs">
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200 whitespace-nowrap">
+                              {invoice.totalEligible} Ready
+                            </span>
                           </td>
-                          <td className="px-5 py-3 text-center font-bold text-emerald-700">{invoice.totalSerials}</td>
-                          <td className="px-5 py-3 text-right sticky right-0 bg-white group-hover:bg-[#f3faf7] transition-colors z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
-                            <button
-                              onClick={() => {
-                                setDrawerInvoice(invoice);
-                                setSerialSearch('');
-                                setSelectedSerials(new Set());
-                              }}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-all shadow-sm inline-flex items-center justify-center"
-                            >
-                              Issue Serials
-                            </button>
+                          <td className="px-3 py-2 text-right sticky right-0 bg-white group-hover:bg-[#f3faf7] transition-colors z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
+                            <div className="flex justify-end">
+                              <button
+                                onClick={() => {
+                                  setDrawerInvoice(invoice);
+                                  setSerialSearch('');
+                                }}
+                                className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-[11px] font-bold px-2 py-1 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap shadow-sm"
+                              >
+                                Issue Serials <ChevronRight size={12} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       </React.Fragment>
@@ -423,6 +428,48 @@ export default function ReadyToIssueClient() {
                 </tbody>
               </table>
             </div>
+            
+            {/* Pagination Controls */}
+            {invoices.length > 0 && (
+              <div className="bg-gray-50 border-t border-gray-200 px-4 py-3 flex items-center justify-between sm:px-6">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-600">Rows per page:</span>
+                  <select 
+                    value={limit}
+                    onChange={(e) => {
+                      setLimit(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    className="bg-white border border-gray-300 text-gray-900 text-xs rounded focus:ring-emerald-500 focus:border-emerald-500 block px-2 py-1 outline-none"
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-xs text-gray-700">
+                    Showing <span className="font-semibold">{(page - 1) * limit + 1}</span> to <span className="font-semibold">{Math.min(page * limit, total)}</span> of <span className="font-semibold">{total}</span>
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                      className="p-1 rounded text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <button
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={page === totalPages}
+                      className="p-1 rounded text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -444,17 +491,40 @@ export default function ReadyToIssueClient() {
                   <div className="flex items-center gap-1.5">
                     <span className="text-gray-400">Invoice:</span> 
                     <span className="font-semibold text-[#1A2766]">{drawerInvoice.invoiceNumber}</span>
+                    <button onClick={() => handleCopyText(drawerInvoice.invoiceNumber, 'Invoice')} className="text-gray-400 hover:text-gray-700 transition-colors">
+                      <Copy size={12} />
+                    </button>
                   </div>
                   <div><span className="text-gray-400">Date:</span> <span>{format(new Date(drawerInvoice.invoiceDate), 'dd MMM yyyy')}</span></div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-gray-400">Customer:</span> 
                     <span className="truncate max-w-[200px]" title={drawerInvoice.customerName}>{drawerInvoice.customerName}</span>
+                    <button onClick={() => handleCopyText(drawerInvoice.customerName, 'Customer')} className="text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0">
+                      <Copy size={12} />
+                    </button>
                   </div>
                   <div className="flex flex-col gap-0.5">
-                    <div><span className="text-gray-400">Outstanding:</span> <span className="font-semibold text-gray-900">{formatCurrency(drawerInvoice.outstandingAmount ?? drawerInvoice.invoiceTotal)}</span></div>
+                    <div><span className="text-gray-400">Value:</span> <span className="font-semibold text-gray-900">{formatCurrency(drawerInvoice.invoiceTotal)}</span></div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-gray-400">Balance:</span> 
+                      {loadingBalance ? (
+                        <span className="text-gray-400 text-[11px] italic flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Fetching...</span>
+                      ) : drawerBalance !== null ? (
+                        <span className={`font-bold text-[11px] px-1.5 py-0.5 rounded ${
+                          drawerBalance === 0 ? 'bg-green-50 text-green-700' :
+                          drawerBalance === drawerInvoice.invoiceTotal ? 'bg-red-50 text-red-700' :
+                          'bg-amber-50 text-amber-700'
+                        }`}>
+                          {formatCurrency(drawerBalance)}
+                          {drawerBalance === 0 ? ' (FULLY PAID)' :
+                           drawerBalance === drawerInvoice.invoiceTotal ? ' (PAYMENT PENDING)' :
+                           ' (LOW BALANCE)'}
+                        </span>
+                      ) : (
+                        <span className="text-red-500 text-[11px]">Failed to load</span>
+                      )}
+                    </div>
                   </div>
-                  <div><span className="text-gray-400">Age:</span> <span>{differenceInDays(new Date(), new Date(drawerInvoice.invoiceDate))} Days</span></div>
-                  <div><span className="text-gray-400">Ready Serials:</span> <span className="font-bold text-emerald-600">{drawerInvoice.totalEligible}</span></div>
                   <div className="col-span-2 flex items-center gap-1.5">
                     <span className="text-gray-400">GST:</span> 
                     <span className="font-mono text-xs font-semibold">{(() => {
@@ -478,11 +548,44 @@ export default function ReadyToIssueClient() {
                     })()}
                   </div>
                 </div>
+                <div className="flex items-center gap-2 pt-1 flex-wrap">
+                  <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs font-semibold border border-gray-200">Allocated: {drawerInvoice.totalAllocated}</span>
+                  <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-xs font-semibold border border-emerald-200">Eligible: {drawerInvoice.totalEligible}</span>
+                  <span className="bg-red-50 text-red-700 px-2 py-0.5 rounded text-xs font-semibold border border-red-200">Blocked: {drawerInvoice.totalAllocated - drawerInvoice.totalEligible}</span>
+                </div>
               </div>
-              <div className="flex flex-col items-end gap-2 w-16">
+              <div className="flex flex-col items-end gap-2 w-36">
                 <button onClick={() => setDrawerInvoice(null)} className="p-1 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-800 transition-colors">
                   <X size={18} />
                 </button>
+                <div className="flex flex-col gap-2 mt-2 w-full">
+                  <button 
+                    onClick={handleDrawerIssueEligible}
+                    disabled={isIssuing || drawerInvoice.totalEligible === 0}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-bold bg-emerald-600 text-white hover:bg-emerald-700 rounded transition-colors disabled:opacity-50"
+                  >
+                    {isIssuing ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                    Issue Eligible ({drawerInvoice.totalEligible})
+                  </button>
+                  <button 
+                    onClick={() => {
+                      const eligibleSerials = (drawerInvoice?.skuGroups || []).flatMap(g => (g.serials || []).filter(s => s && s.status === 'READY_TO_ISSUE'));
+                      handleCopySerials(eligibleSerials, 'newline');
+                    }}
+                    className="w-full text-left flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded transition-colors"
+                  >
+                    <Copy size={12} /> Copy All Lines
+                  </button>
+                  <button 
+                    onClick={() => {
+                      const eligibleSerials = (drawerInvoice?.skuGroups || []).flatMap(g => (g.serials || []).filter(s => s && s.status === 'READY_TO_ISSUE'));
+                      handleCopySerials(eligibleSerials, 'comma');
+                    }}
+                    className="w-full text-left flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded transition-colors"
+                  >
+                    <Copy size={12} /> Copy All CSV
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -553,6 +656,16 @@ export default function ReadyToIssueClient() {
                         <div className="flex items-center gap-2 flex-wrap justify-end max-w-[200px]">
                           {(group.eligibleCount || 0) > 0 ? (
                             <>
+                              <button 
+                                onClick={() => {
+                                  const eligibleForThisItem = (group.serials || []).filter(s => s && s.status === 'READY_TO_ISSUE').map(s => s.serialNumber);
+                                  handleIssue(drawerInvoice.id, eligibleForThisItem);
+                                }}
+                                disabled={isIssuing}
+                                className="w-full flex items-center justify-center gap-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2 py-1 rounded transition-colors disabled:opacity-50"
+                              >
+                                Issue Item ({group.eligibleCount})
+                              </button>
                               <div className="flex items-center gap-2 w-full justify-end">
                                 <button 
                                   onClick={() => handleCopySerials((group.serials || []).filter(s => s && s.status === 'READY_TO_ISSUE'), 'newline', group.itemName)}
@@ -592,24 +705,12 @@ export default function ReadyToIssueClient() {
                             <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                               <span className="text-emerald-600">✓</span> Eligible To Issue ({eligibleSerials.length})
                             </div>
-                            <div className="flex flex-wrap gap-2 mt-3">
-                              {(eligibleSerials || []).map(serial => {
-                                const isSelected = selectedSerials.has(serial.serialNumber);
-                                return (
-                                  <button
-                                    key={serial.serialNumber}
-                                    onClick={() => handleToggleSerial(serial.serialNumber)}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-mono transition-colors ${
-                                      isSelected 
-                                        ? 'bg-emerald-100 border-emerald-400 text-emerald-800 font-bold' 
-                                        : 'bg-white border-gray-300 text-gray-600 hover:border-emerald-300 hover:bg-emerald-50'
-                                    }`}
-                                  >
-                                    {isSelected ? <CheckCircle size={14} className="text-emerald-600" /> : <div className="w-[14px] h-[14px] rounded-full border border-gray-400" />}
-                                    {serial.serialNumber}
-                                  </button>
-                                );
-                              })}
+                            <div className="flex flex-wrap gap-1.5">
+                              {(eligibleSerials || []).map(serial => (
+                                <span key={serial?.allocationId || Math.random()} className="font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-800 border-emerald-200 shadow-sm">
+                                  {serial?.serialNumber || 'UNKNOWN'}
+                                </span>
+                              ))}
                             </div>
                           </div>
                         );
@@ -657,24 +758,6 @@ export default function ReadyToIssueClient() {
                   <p className="text-gray-500 font-medium">No serials found matching &quot;{serialSearch}&quot;</p>
                 </div>
               )}
-            </div>
-
-            {/* Bottom CTA */}
-            <div className="mt-auto p-4 border-t border-gray-200 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-              <div className="flex items-center justify-between">
-                <div className="flex gap-2">
-                  <button onClick={handleSelectAll} className="text-xs font-semibold text-gray-600 hover:text-gray-900 border border-gray-300 rounded px-3 py-1.5 hover:bg-gray-50 transition-colors">Select All</button>
-                  <button onClick={handleClearSelection} className="text-xs font-semibold text-gray-600 hover:text-gray-900 border border-gray-300 rounded px-3 py-1.5 hover:bg-gray-50 transition-colors">Clear Selection</button>
-                </div>
-                <button 
-                  onClick={() => handleIssue(drawerInvoice.id, Array.from(selectedSerials), selectedSerials.size === drawerInvoice.totalEligible)}
-                  disabled={isIssuing || selectedSerials.size === 0}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
-                >
-                  {isIssuing && <Loader2 size={16} className="animate-spin" />}
-                  Issue Selected ({selectedSerials.size})
-                </button>
-              </div>
             </div>
 
           </div>

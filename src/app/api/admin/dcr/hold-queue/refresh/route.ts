@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { getCustomerById } from '@/lib/zoho/customer-statement';
+import { getCustomerInvoices } from '@/lib/zoho/customer-statement';
 import { trackZohoApiCall } from '@/lib/zoho-api-meter';
 
 export const maxDuration = 300; // Allow up to 5 minutes to prevent timeout on Vercel
@@ -47,28 +47,40 @@ export async function POST(req: Request) {
     // To respect rate limits but not take forever, we can process sequentially or in small batches
     for (const cid of customerIds) {
       console.log(`[HOLD_REFRESH] Step C: Zoho API call for: ${cid}`);
-      trackZohoApiCall('Customer Fetch (Hold Queue)');
-      const result = await getCustomerById(cid);
+      trackZohoApiCall('Customer Invoices Fetch (Hold Queue)');
+      const result = await getCustomerInvoices(cid);
       
       if (result.success && result.data) {
-        const c = result.data;
-        const customerNet = (c.outstandingReceivable || 0) - (c.unusedCreditsReceivable || 0);
-        const vendorNet = (c.outstandingPayable || 0) - (c.unusedCreditsPayable || 0);
-        const isHybrid = !!c.associatedVendorId;
-        const netClosingBalance = isHybrid ? (customerNet - vendorNet) : customerNet;
-
-        console.log(`[HOLD_REFRESH] Step D: Database write for: ${cid} with amount: ${netClosingBalance}`);
-        await prisma.dcrInvoice.updateMany({
-          where: { customerId: cid },
-          data: {
-            outstandingAmount: netClosingBalance,
-            outstandingUpdatedAt: now,
-          }
-        });
+        let customerUpdated = false;
         
-        updatedCount++;
+        // Calculate the total outstanding just for the debug log
+        const customerOutstanding = result.data.reduce((sum, inv) => sum + inv.balance, 0);
+        console.log(`[HOLD_QUEUE_DEBUG] customerOutstanding (from top 100 invoices): ${customerOutstanding} for customer ${cid}`);
+
+        for (const inv of result.data) {
+          if (!inv.invoiceId) continue;
+
+          console.log(`[HOLD_QUEUE_DEBUG] invoiceNumber: ${inv.invoiceNumber}, invoiceOutstanding: ${inv.balance}`);
+          console.log(`[HOLD_REFRESH] Step D: Database write for: ${cid}, Invoice: ${inv.invoiceNumber} with amount: ${inv.balance}`);
+          
+          const res = await prisma.dcrInvoice.updateMany({
+            where: { customerId: cid, zohoInvoiceId: inv.invoiceId },
+            data: {
+              outstandingAmount: inv.balance,
+              outstandingUpdatedAt: now,
+            }
+          });
+          
+          if (res.count > 0) {
+            customerUpdated = true;
+          }
+        }
+        
+        if (customerUpdated) {
+          updatedCount++;
+        }
       } else {
-        console.error(`[HOLD_REFRESH] Failed to fetch balance for customer ${cid}:`, result.error);
+        console.error(`[HOLD_REFRESH] Failed to fetch invoices for customer ${cid}:`, result.error);
       }
     }
 

@@ -791,8 +791,8 @@ export default function CustomerStatementView() {
   // ── Fetch ──────────────────────────────────────────────────────────────────
   const handleFetch = async (overrideId?: string, force = false) => {
     const idToFetch = (overrideId || customerId).trim();
-    if (!idToFetch || !/^\d+$/.test(idToFetch) || idToFetch.length < 15) {
-      toast.error('Please enter a valid Zoho Customer ID.');
+    if (!idToFetch) {
+      toast.error('Please select or enter a valid customer.');
       return;
     }
 
@@ -1129,7 +1129,6 @@ export default function CustomerStatementView() {
                         setSearchQuery(c.name);
                         setCustomerId(c.id);
                         setShowSuggestions(false);
-                        handleFetch(c.id, true);
                       }}
                     >
                       <div className="flex justify-between items-start">
@@ -1139,7 +1138,6 @@ export default function CustomerStatementView() {
                             <div className="text-[10px] font-mono text-gray-500 mt-0.5 tracking-wide">GST: {c.gstNumber}</div>
                           )}
                         </div>
-                        <div className="text-[10px] text-gray-400 font-mono">{c.id}</div>
                       </div>
                     </div>
                   ))}

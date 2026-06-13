@@ -21,14 +21,24 @@ async function searchZohoCustomer(query: string) {
     if (!res.ok) return null;
     const data = await res.json();
     if (data.contacts && data.contacts.length > 0) {
-      const c = data.contacts[0]; // Take top match
-      // Persist locally using unified helper
-      await ensureCustomerExists({
-        customerId: c.contact_id,
-        customerName: c.contact_name,
-        gstNumber: 'NOT_AVAILABLE'
+      const activeContacts = data.contacts.filter((c: any) => c.status === 'active');
+      console.log('[CUSTOMER_SEARCH_DEBUG] Zoho Fallback:', {
+        totalCustomersFound: data.contacts.length,
+        activeCustomersReturned: activeContacts.length,
+        inactiveCustomersFiltered: data.contacts.length - activeContacts.length
       });
-      return await prisma.customer.findUnique({ where: { id: c.contact_id } });
+      
+      if (activeContacts.length > 0) {
+        const c = activeContacts[0]; // Take top active match
+        // Persist locally using unified helper
+        await ensureCustomerExists({
+          customerId: c.contact_id,
+          customerName: c.contact_name,
+          gstNumber: 'NOT_AVAILABLE',
+          status: c.status
+        });
+        return await prisma.customer.findUnique({ where: { id: c.contact_id } });
+      }
     }
   } catch (e) {
     console.error('Zoho search fallback error:', e);
@@ -55,18 +65,18 @@ export async function GET(req: Request) {
 
     // 1. Exact Customer ID match
     if (/^\d{15,20}$/.test(query)) {
-      customer = await prisma.customer.findUnique({ where: { id: query } });
+      customer = await prisma.customer.findFirst({ where: { id: query, status: 'active' } });
     }
 
     // 2. GST Match
     if (!customer) {
-      customer = await prisma.customer.findFirst({ where: { gstNumber: query } });
+      customer = await prisma.customer.findFirst({ where: { gstNumber: query, status: 'active' } });
     }
 
     // 3. Name match (case-insensitive partial)
     if (!customer) {
       customer = await prisma.customer.findFirst({
-        where: { name: { contains: query, mode: 'insensitive' } }
+        where: { name: { contains: query, mode: 'insensitive' }, status: 'active' }
       });
     }
 

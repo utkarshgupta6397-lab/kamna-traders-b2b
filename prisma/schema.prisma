@@ -514,6 +514,8 @@ model Customer {
   id        String   @id // Zoho contact/customer ID
   name      String
   gstNumber String?  // Stores fetched GST number or 'NOT_AVAILABLE' if not found
+  status    String   @default("active")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   

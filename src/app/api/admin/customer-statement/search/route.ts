@@ -25,11 +25,21 @@ async function searchZohoCustomer(query: string) {
       const topContacts = data.contacts.slice(0, 3);
       const syncedCustomers = [];
       
+      let activeCustomersReturned = 0;
+      let inactiveCustomersFiltered = 0;
+
       for (const c of topContacts) {
+        if (c.status !== 'active') {
+          inactiveCustomersFiltered++;
+          continue;
+        }
+
+        activeCustomersReturned++;
         await ensureCustomerExists({
           customerId: c.contact_id,
           customerName: c.contact_name,
-          gstNumber: 'NOT_AVAILABLE'
+          gstNumber: 'NOT_AVAILABLE',
+          status: c.status
         });
         const saved = await prisma.customer.findUnique({ where: { id: c.contact_id } });
         if (saved) syncedCustomers.push(saved);
@@ -62,6 +72,7 @@ export async function GET(req: Request) {
 
     let customers = await prisma.customer.findMany({
       where: {
+        status: 'active',
         OR: [
           ...(isDigitId ? [{ id: query }] : []),
           { gstNumber: query },
@@ -79,6 +90,13 @@ export async function GET(req: Request) {
         customers = zohoResults.map(c => ({ id: c.id, name: c.name, gstNumber: c.gstNumber }));
       }
     }
+
+    // Temporary debug logging
+    console.log('[CUSTOMER_SEARCH_DEBUG]', {
+      query,
+      totalCustomersFound: customers.length,
+      // Zoho fallback already filtered internally, local Prisma query filters via where clause.
+    });
 
     return NextResponse.json({
       success: true,

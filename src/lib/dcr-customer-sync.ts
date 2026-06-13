@@ -1,12 +1,12 @@
 import { prisma } from '@/lib/db';
 
-export async function ensureCustomerExists(invoice: { customerId: string, customerName: string, gstNumber?: string | null }) {
+export async function ensureCustomerExists(invoice: { customerId: string, customerName: string, gstNumber?: string | null, status?: string }) {
   if (!invoice.customerId || !invoice.customerName) return;
   
   // Quick local check first to avoid UPSERT overhead where possible
   const exists = await prisma.customer.findUnique({
     where: { id: invoice.customerId },
-    select: { id: true }
+    select: { id: true, status: true }
   });
 
   if (!exists) {
@@ -20,12 +20,14 @@ export async function ensureCustomerExists(invoice: { customerId: string, custom
     update: {
       name: invoice.customerName,
       // Only update GST if it's explicitly provided and valid
-      ...(invoice.gstNumber ? { gstNumber: invoice.gstNumber } : {})
+      ...(invoice.gstNumber ? { gstNumber: invoice.gstNumber } : {}),
+      ...(invoice.status ? { status: invoice.status } : {})
     },
     create: {
       id: invoice.customerId,
       name: invoice.customerName,
-      gstNumber: invoice.gstNumber ?? 'NOT_AVAILABLE'
+      gstNumber: invoice.gstNumber ?? 'NOT_AVAILABLE',
+      status: invoice.status ?? 'active'
     }
   });
 }

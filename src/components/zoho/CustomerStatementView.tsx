@@ -242,6 +242,11 @@ export default function CustomerStatementView() {
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<{
+    customerId: string;
+    zohoCustomerId: string;
+    customerName: string;
+  } | null>(null);
 
   // API Telemetry State
   const [apiUsage, setApiUsage] = useState<any>(null);
@@ -790,7 +795,16 @@ export default function CustomerStatementView() {
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   const handleFetch = async (overrideId?: string, force = false) => {
-    const idToFetch = (overrideId || customerId).trim();
+    let idToFetch = overrideId;
+    if (!idToFetch) {
+      if (!selectedCustomer && !initialCustomerId) {
+        toast.error('Please search and select a customer from the dropdown.');
+        return;
+      }
+      idToFetch = selectedCustomer ? selectedCustomer.zohoCustomerId : initialCustomerId;
+    }
+    
+    idToFetch = idToFetch?.trim();
     if (!idToFetch) {
       toast.error('Please select or enter a valid customer.');
       return;
@@ -1100,8 +1114,11 @@ export default function CustomerStatementView() {
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               onKeyDown={(e) => {
                 if (!isLocked && e.key === 'Enter') {
-                  setCustomerId(searchQuery);
-                  handleFetch(searchQuery, true);
+                  if (selectedCustomer) {
+                    handleFetch(undefined, true);
+                  } else {
+                    toast.error('Please select a customer from the dropdown first.');
+                  }
                   setShowSuggestions(false);
                 }
               }}
@@ -1128,6 +1145,11 @@ export default function CustomerStatementView() {
                         e.preventDefault(); // Prevent blur
                         setSearchQuery(c.name);
                         setCustomerId(c.id);
+                        setSelectedCustomer({
+                          customerId: c.id,
+                          zohoCustomerId: c.id,
+                          customerName: c.name
+                        });
                         setShowSuggestions(false);
                       }}
                     >

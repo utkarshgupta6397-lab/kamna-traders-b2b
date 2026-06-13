@@ -242,11 +242,6 @@ export default function CustomerStatementView() {
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<{
-    customerId: string;
-    zohoCustomerId: string;
-    customerName: string;
-  } | null>(null);
 
   // API Telemetry State
   const [apiUsage, setApiUsage] = useState<any>(null);
@@ -795,18 +790,9 @@ export default function CustomerStatementView() {
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   const handleFetch = async (overrideId?: string, force = false) => {
-    let idToFetch = overrideId;
-    if (!idToFetch) {
-      if (!selectedCustomer && !initialCustomerId) {
-        toast.error('Please search and select a customer from the dropdown.');
-        return;
-      }
-      idToFetch = selectedCustomer ? selectedCustomer.zohoCustomerId : initialCustomerId;
-    }
-    
-    idToFetch = idToFetch?.trim();
-    if (!idToFetch) {
-      toast.error('Please select or enter a valid customer.');
+    const idToFetch = (overrideId || customerId).trim();
+    if (!idToFetch || !/^\d+$/.test(idToFetch) || idToFetch.length < 15) {
+      toast.error('Please enter a valid Zoho Customer ID.');
       return;
     }
 
@@ -1114,11 +1100,8 @@ export default function CustomerStatementView() {
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               onKeyDown={(e) => {
                 if (!isLocked && e.key === 'Enter') {
-                  if (selectedCustomer) {
-                    handleFetch(undefined, true);
-                  } else {
-                    toast.error('Please select a customer from the dropdown first.');
-                  }
+                  setCustomerId(searchQuery);
+                  handleFetch(searchQuery, true);
                   setShowSuggestions(false);
                 }
               }}
@@ -1145,12 +1128,8 @@ export default function CustomerStatementView() {
                         e.preventDefault(); // Prevent blur
                         setSearchQuery(c.name);
                         setCustomerId(c.id);
-                        setSelectedCustomer({
-                          customerId: c.id,
-                          zohoCustomerId: c.id,
-                          customerName: c.name
-                        });
                         setShowSuggestions(false);
+                        handleFetch(c.id, true);
                       }}
                     >
                       <div className="flex justify-between items-start">
@@ -1160,6 +1139,7 @@ export default function CustomerStatementView() {
                             <div className="text-[10px] font-mono text-gray-500 mt-0.5 tracking-wide">GST: {c.gstNumber}</div>
                           )}
                         </div>
+                        <div className="text-[10px] text-gray-400 font-mono">{c.id}</div>
                       </div>
                     </div>
                   ))}

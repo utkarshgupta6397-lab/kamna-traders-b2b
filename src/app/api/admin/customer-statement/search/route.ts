@@ -1,6 +1,47 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
+import { trackZohoApiCall } from '@/lib/zoho-api-meter';
+import { ensureCustomerExists } from '@/lib/dcr-customer-sync';
+
+const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
+
+async function searchZohoCustomer(query: string) {
+  try {
+    const orgId = getZohoOrgId();
+    const accessToken = await getZohoTokens();
+    if (!orgId || !accessToken) return [];
+
+    trackZohoApiCall('Customer Lookup');
+
+    // Zoho Books contact search (matches name, email, phone, etc.)
+    const url = `${API_BASE_URL}/books/v3/contacts?organization_id=${orgId}&search_text=${encodeURIComponent(query)}`;
+    const res = await fetch(url, { headers: { Authorization: `Zoho-oauthtoken ${accessToken}` } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    
+    if (data.contacts && data.contacts.length > 0) {
+      const topContacts = data.contacts.slice(0, 3);
+      const syncedCustomers = [];
+      
+      for (const c of topContacts) {
+        await ensureCustomerExists({
+          customerId: c.contact_id,
+          customerName: c.contact_name,
+          gstNumber: 'NOT_AVAILABLE'
+        });
+        const saved = await prisma.customer.findUnique({ where: { id: c.contact_id } });
+        if (saved) syncedCustomers.push(saved);
+      }
+      
+      return syncedCustomers;
+    }
+  } catch (e) {
+    console.error('Zoho search fallback error:', e);
+  }
+  return [];
+}
 
 export async function GET(req: Request) {
   try {
@@ -19,9 +60,8 @@ export async function GET(req: Request) {
     const query = q.trim();
     const isDigitId = /^\d{15,20}$/.test(query);
 
-    const customers = await prisma.customer.findMany({
+    let customers = await prisma.customer.findMany({
       where: {
-        status: 'active',
         OR: [
           ...(isDigitId ? [{ id: query }] : []),
           { gstNumber: query },
@@ -31,6 +71,14 @@ export async function GET(req: Request) {
       take: 10,
       select: { id: true, name: true, gstNumber: true }
     });
+
+    // Fallback to Zoho API if no local matches found
+    if (customers.length === 0) {
+      const zohoResults = await searchZohoCustomer(query);
+      if (zohoResults.length > 0) {
+        customers = zohoResults.map(c => ({ id: c.id, name: c.name, gstNumber: c.gstNumber }));
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -42,4 +90,3 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Failed to search customers' }, { status: 500 });
   }
 }
-

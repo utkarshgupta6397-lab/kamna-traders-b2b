@@ -13,9 +13,9 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const customerId = searchParams.get('customerId');
 
-  if (!customerId || customerId.trim() === '') {
+  if (!customerId || !/^\d+$/.test(customerId.trim()) || customerId.trim().length < 15) {
     return NextResponse.json(
-      { error: 'Invalid or missing customerId.' },
+      { error: 'Invalid or missing customerId. Must be a numeric ID (min 15 digits).' },
       { status: 400 }
     );
   }

@@ -12,6 +12,7 @@ npm install
 
 echo "3. Generating Prisma client..."
 npx prisma generate
+npx prisma db push --accept-data-loss
 
 echo "4. Backing up old production build..."
 cp -r .next .next.backup || true

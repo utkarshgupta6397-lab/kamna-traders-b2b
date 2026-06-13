@@ -188,7 +188,6 @@ export default function ReadyToIssueClient() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || data.errors?.join(', ') || 'Failed to issue');
       toast.success(`Successfully issued ${data.issued} serial(s)`);
-      setSelectedSerials(new Set()); // clear selection
       fetchData(); // reload
       refreshStats(); // update sidebar badges
 

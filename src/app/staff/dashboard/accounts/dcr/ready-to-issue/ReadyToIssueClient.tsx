@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Search, ChevronDown, ChevronUp, CheckCircle, Loader2, Package, Copy, ExternalLink, RefreshCcw, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { format } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import { useDcrStats } from '../layout';
 
 interface SerialEntry {
@@ -34,6 +34,7 @@ interface ReadyInvoice {
   customer_gst_no?: string;
   invoiceDate: string;
   invoiceTotal: number;
+  outstandingAmount?: number;
   dcrStatus: string;
   totalSerials: number;
   totalAllocated: number;
@@ -278,15 +279,27 @@ export default function ReadyToIssueClient() {
     }
   };
 
-  const handleDrawerIssueEligible = () => {
+
+
+  const handleSelectAll = () => {
     if (!drawerInvoice) return;
     const eligibleSerials = drawerInvoice.skuGroups.flatMap(g => 
       g.serials.filter(s => s.status === 'READY_TO_ISSUE').map(s => s.serialNumber)
     );
-    if (eligibleSerials.length === 0) return;
-    
-    // Pass 'true' for issueAll because we want to issue all eligible, which does the same on the backend.
-    handleIssue(drawerInvoice.id, undefined, true);
+    setSelectedSerials(new Set(eligibleSerials));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedSerials(new Set());
+  };
+
+  const handleToggleSerial = (serialNumber: string) => {
+    setSelectedSerials(prev => {
+      const next = new Set(prev);
+      if (next.has(serialNumber)) next.delete(serialNumber);
+      else next.add(serialNumber);
+      return next;
+    });
   };
 
   return (
@@ -362,18 +375,14 @@ export default function ReadyToIssueClient() {
                     <th className="px-5 py-4 w-12 text-center bg-gray-50 sticky left-0 z-20">#</th>
                     <th className="px-5 py-4 bg-gray-50 sticky left-[48px] z-20">Invoice Number</th>
                     <th className="px-5 py-4 bg-gray-50">Customer Name</th>
-                    <th className="px-5 py-4 bg-gray-50">GST Number</th>
-                    <th className="px-5 py-4 bg-gray-50">Invoice Date</th>
-                    <th className="px-5 py-4 text-right bg-gray-50">Invoice Value</th>
-                    <th className="px-5 py-4 text-center bg-gray-50">Serials Ready</th>
-                    <th className="px-5 py-4 text-center bg-gray-50">Status</th>
-                    <th className="px-5 py-4 text-right sticky right-0 bg-gray-50 z-20 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">Actions</th>
+                    <th className="px-5 py-4 text-center bg-gray-50">Age (Days)</th>
+                    <th className="px-5 py-4 text-right bg-gray-50">Outstanding Balance</th>
+                    <th className="px-5 py-4 text-center bg-gray-50">Ready Serials Count</th>
+                    <th className="px-5 py-4 text-right sticky right-0 bg-gray-50 z-20 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {invoices.map((invoice, index) => {
-                    const selectedForInvoice = invoice.skuGroups.flatMap(g => g.serials.map(s => s.serialNumber)).filter(sn => selectedSerials.has(sn));
-
                     return (
                       <React.Fragment key={invoice.id}>
                         <tr className="hover:bg-emerald-50/20 transition-colors group">
@@ -388,80 +397,24 @@ export default function ReadyToIssueClient() {
                               {invoice.customerName}
                             </a>
                           </td>
-                          <td className="px-5 py-3 text-gray-600 font-mono text-xs">
-                            {(() => {
-                              const gstInfo = customerGsts[invoice.customerId];
-                              const gstValue = gstInfo ? gstInfo.gst : invoice.customer_gst_no;
-                              
-                              const isMissing = !gstValue || gstValue.trim() === '' || gstValue === 'NOT_AVAILABLE' || gstValue === '—' || gstValue === 'GST_UNAVAILABLE';
-
-                              console.log('GST Render Debug:', {
-                                customerId: invoice.customerId,
-                                gstNumber: gstValue,
-                                needsGSTFetch: isMissing,
-                                buttonVisible: isMissing
-                              });
-
-                              if (gstInfo?.loading) {
-                                return <span className="text-gray-400 italic">Fetching...</span>;
-                              }
-
-                              if (isMissing) {
-                                return (
-                                  <div className="flex flex-col items-start gap-1.5">
-                                    <span className="text-red-500 font-medium text-[10px]">
-                                      {gstValue === 'NOT_AVAILABLE' || gstValue === 'GST_UNAVAILABLE' || gstValue === '—' ? 'GST Not Available' : 'Not Fetched'}
-                                    </span>
-                                    <button
-                                      onClick={() => handleFetchGst(invoice.customerId)}
-                                      className="bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 hover:text-blue-700 px-3 py-1.5 rounded-md text-[11px] font-bold transition-colors shadow-sm flex items-center gap-1.5"
-                                    >
-                                      <RefreshCcw size={12} />
-                                      {gstValue ? 'Retry GST' : 'Fetch GST'}
-                                    </button>
-                                  </div>
-                                );
-                              }
-
-                              return <span className="font-semibold text-gray-900">{gstValue}</span>;
-                            })()}
+                          <td className="px-5 py-3 text-center font-medium text-gray-600">
+                            {differenceInDays(new Date(), new Date(invoice.invoiceDate))}
                           </td>
-                          <td className="px-5 py-3 text-gray-600">{format(new Date(invoice.invoiceDate), 'dd MMM yyyy')}</td>
-                          <td className="px-5 py-3 text-right font-medium text-gray-700">{formatCurrency(invoice.invoiceTotal)}</td>
+                          <td className="px-5 py-3 text-right font-medium text-gray-700">
+                            {formatCurrency(invoice.outstandingAmount ?? invoice.invoiceTotal)}
+                          </td>
                           <td className="px-5 py-3 text-center font-bold text-emerald-700">{invoice.totalSerials}</td>
-                          <td className="px-5 py-3 text-center">
-                            <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
-                              ✓ Ready To Issue
-                            </span>
-                          </td>
                           <td className="px-5 py-3 text-right sticky right-0 bg-white group-hover:bg-[#f3faf7] transition-colors z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
-                            <div className="flex justify-end gap-2">
-                              {selectedForInvoice.length > 0 && (
-                                <button
-                                  onClick={() => handleIssue(invoice.id, selectedForInvoice)}
-                                  disabled={isIssuing}
-                                  className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-bold px-3 py-1.5 rounded-lg border border-emerald-300 transition-all disabled:opacity-50"
-                                >
-                                  Issue Selected ({selectedForInvoice.length})
-                                </button>
-                              )}
-                              <button
-                                onClick={() => handleIssue(invoice.id, undefined, true)}
-                                disabled={isIssuing}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all shadow-sm disabled:opacity-50"
-                              >
-                                Issue All
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setDrawerInvoice(invoice);
-                                  setSerialSearch('');
-                                }}
-                                className="text-gray-500 hover:text-gray-700 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-all flex items-center gap-1 bg-white shadow-sm"
-                              >
-                                View Serials ({invoice.totalSerials})
-                              </button>
-                            </div>
+                            <button
+                              onClick={() => {
+                                setDrawerInvoice(invoice);
+                                setSerialSearch('');
+                                setSelectedSerials(new Set());
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-all shadow-sm inline-flex items-center justify-center"
+                            >
+                              Issue Serials
+                            </button>
                           </td>
                         </tr>
                       </React.Fragment>
@@ -491,40 +444,17 @@ export default function ReadyToIssueClient() {
                   <div className="flex items-center gap-1.5">
                     <span className="text-gray-400">Invoice:</span> 
                     <span className="font-semibold text-[#1A2766]">{drawerInvoice.invoiceNumber}</span>
-                    <button onClick={() => handleCopyText(drawerInvoice.invoiceNumber, 'Invoice')} className="text-gray-400 hover:text-gray-700 transition-colors">
-                      <Copy size={12} />
-                    </button>
                   </div>
                   <div><span className="text-gray-400">Date:</span> <span>{format(new Date(drawerInvoice.invoiceDate), 'dd MMM yyyy')}</span></div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-gray-400">Customer:</span> 
                     <span className="truncate max-w-[200px]" title={drawerInvoice.customerName}>{drawerInvoice.customerName}</span>
-                    <button onClick={() => handleCopyText(drawerInvoice.customerName, 'Customer')} className="text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0">
-                      <Copy size={12} />
-                    </button>
                   </div>
                   <div className="flex flex-col gap-0.5">
-                    <div><span className="text-gray-400">Value:</span> <span className="font-semibold text-gray-900">{formatCurrency(drawerInvoice.invoiceTotal)}</span></div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-gray-400">Balance:</span> 
-                      {loadingBalance ? (
-                        <span className="text-gray-400 text-[11px] italic flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Fetching...</span>
-                      ) : drawerBalance !== null ? (
-                        <span className={`font-bold text-[11px] px-1.5 py-0.5 rounded ${
-                          drawerBalance === 0 ? 'bg-green-50 text-green-700' :
-                          drawerBalance === drawerInvoice.invoiceTotal ? 'bg-red-50 text-red-700' :
-                          'bg-amber-50 text-amber-700'
-                        }`}>
-                          {formatCurrency(drawerBalance)}
-                          {drawerBalance === 0 ? ' (FULLY PAID)' :
-                           drawerBalance === drawerInvoice.invoiceTotal ? ' (PAYMENT PENDING)' :
-                           ' (LOW BALANCE)'}
-                        </span>
-                      ) : (
-                        <span className="text-red-500 text-[11px]">Failed to load</span>
-                      )}
-                    </div>
+                    <div><span className="text-gray-400">Outstanding:</span> <span className="font-semibold text-gray-900">{formatCurrency(drawerInvoice.outstandingAmount ?? drawerInvoice.invoiceTotal)}</span></div>
                   </div>
+                  <div><span className="text-gray-400">Age:</span> <span>{differenceInDays(new Date(), new Date(drawerInvoice.invoiceDate))} Days</span></div>
+                  <div><span className="text-gray-400">Ready Serials:</span> <span className="font-bold text-emerald-600">{drawerInvoice.totalEligible}</span></div>
                   <div className="col-span-2 flex items-center gap-1.5">
                     <span className="text-gray-400">GST:</span> 
                     <span className="font-mono text-xs font-semibold">{(() => {
@@ -548,44 +478,11 @@ export default function ReadyToIssueClient() {
                     })()}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 pt-1 flex-wrap">
-                  <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs font-semibold border border-gray-200">Allocated: {drawerInvoice.totalAllocated}</span>
-                  <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-xs font-semibold border border-emerald-200">Eligible: {drawerInvoice.totalEligible}</span>
-                  <span className="bg-red-50 text-red-700 px-2 py-0.5 rounded text-xs font-semibold border border-red-200">Blocked: {drawerInvoice.totalAllocated - drawerInvoice.totalEligible}</span>
-                </div>
               </div>
-              <div className="flex flex-col items-end gap-2 w-36">
+              <div className="flex flex-col items-end gap-2 w-16">
                 <button onClick={() => setDrawerInvoice(null)} className="p-1 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-800 transition-colors">
                   <X size={18} />
                 </button>
-                <div className="flex flex-col gap-2 mt-2 w-full">
-                  <button 
-                    onClick={handleDrawerIssueEligible}
-                    disabled={isIssuing || drawerInvoice.totalEligible === 0}
-                    className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-bold bg-emerald-600 text-white hover:bg-emerald-700 rounded transition-colors disabled:opacity-50"
-                  >
-                    {isIssuing ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
-                    Issue Eligible ({drawerInvoice.totalEligible})
-                  </button>
-                  <button 
-                    onClick={() => {
-                      const eligibleSerials = (drawerInvoice?.skuGroups || []).flatMap(g => (g.serials || []).filter(s => s && s.status === 'READY_TO_ISSUE'));
-                      handleCopySerials(eligibleSerials, 'newline');
-                    }}
-                    className="w-full text-left flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded transition-colors"
-                  >
-                    <Copy size={12} /> Copy All Lines
-                  </button>
-                  <button 
-                    onClick={() => {
-                      const eligibleSerials = (drawerInvoice?.skuGroups || []).flatMap(g => (g.serials || []).filter(s => s && s.status === 'READY_TO_ISSUE'));
-                      handleCopySerials(eligibleSerials, 'comma');
-                    }}
-                    className="w-full text-left flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded transition-colors"
-                  >
-                    <Copy size={12} /> Copy All CSV
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -656,16 +553,6 @@ export default function ReadyToIssueClient() {
                         <div className="flex items-center gap-2 flex-wrap justify-end max-w-[200px]">
                           {(group.eligibleCount || 0) > 0 ? (
                             <>
-                              <button 
-                                onClick={() => {
-                                  const eligibleForThisItem = (group.serials || []).filter(s => s && s.status === 'READY_TO_ISSUE').map(s => s.serialNumber);
-                                  handleIssue(drawerInvoice.id, eligibleForThisItem);
-                                }}
-                                disabled={isIssuing}
-                                className="w-full flex items-center justify-center gap-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2 py-1 rounded transition-colors disabled:opacity-50"
-                              >
-                                Issue Item ({group.eligibleCount})
-                              </button>
                               <div className="flex items-center gap-2 w-full justify-end">
                                 <button 
                                   onClick={() => handleCopySerials((group.serials || []).filter(s => s && s.status === 'READY_TO_ISSUE'), 'newline', group.itemName)}
@@ -705,12 +592,24 @@ export default function ReadyToIssueClient() {
                             <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                               <span className="text-emerald-600">✓</span> Eligible To Issue ({eligibleSerials.length})
                             </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {(eligibleSerials || []).map(serial => (
-                                <span key={serial?.allocationId || Math.random()} className="font-mono text-[11px] font-medium px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-800 border-emerald-200 shadow-sm">
-                                  {serial?.serialNumber || 'UNKNOWN'}
-                                </span>
-                              ))}
+                            <div className="flex flex-wrap gap-2 mt-3">
+                              {(eligibleSerials || []).map(serial => {
+                                const isSelected = selectedSerials.has(serial.serialNumber);
+                                return (
+                                  <button
+                                    key={serial.serialNumber}
+                                    onClick={() => handleToggleSerial(serial.serialNumber)}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-mono transition-colors ${
+                                      isSelected 
+                                        ? 'bg-emerald-100 border-emerald-400 text-emerald-800 font-bold' 
+                                        : 'bg-white border-gray-300 text-gray-600 hover:border-emerald-300 hover:bg-emerald-50'
+                                    }`}
+                                  >
+                                    {isSelected ? <CheckCircle size={14} className="text-emerald-600" /> : <div className="w-[14px] h-[14px] rounded-full border border-gray-400" />}
+                                    {serial.serialNumber}
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
                         );
@@ -758,6 +657,24 @@ export default function ReadyToIssueClient() {
                   <p className="text-gray-500 font-medium">No serials found matching &quot;{serialSearch}&quot;</p>
                 </div>
               )}
+            </div>
+
+            {/* Bottom CTA */}
+            <div className="mt-auto p-4 border-t border-gray-200 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+              <div className="flex items-center justify-between">
+                <div className="flex gap-2">
+                  <button onClick={handleSelectAll} className="text-xs font-semibold text-gray-600 hover:text-gray-900 border border-gray-300 rounded px-3 py-1.5 hover:bg-gray-50 transition-colors">Select All</button>
+                  <button onClick={handleClearSelection} className="text-xs font-semibold text-gray-600 hover:text-gray-900 border border-gray-300 rounded px-3 py-1.5 hover:bg-gray-50 transition-colors">Clear Selection</button>
+                </div>
+                <button 
+                  onClick={() => handleIssue(drawerInvoice.id, Array.from(selectedSerials), selectedSerials.size === drawerInvoice.totalEligible)}
+                  disabled={isIssuing || selectedSerials.size === 0}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isIssuing && <Loader2 size={16} className="animate-spin" />}
+                  Issue Selected ({selectedSerials.size})
+                </button>
+              </div>
             </div>
 
           </div>

@@ -109,6 +109,7 @@ export async function GET(req: Request) {
         customer_gst_no: customerGstMap.get(inv.customerId) || null,
         invoiceDate: inv.invoiceDate,
         invoiceTotal: inv.invoiceTotal,
+        outstandingAmount: inv.outstandingAmount,
         dcrStatus: inv.dcrStatus,
         totalSerials: totalEligible,
         totalAllocated,

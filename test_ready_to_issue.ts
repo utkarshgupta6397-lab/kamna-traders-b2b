@@ -1,20 +1,9 @@
-import { NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
-import { prisma } from '@/lib/db';
+import { PrismaClient } from '@prisma/client';
 
-export async function GET(req: Request) {
+const prisma = new PrismaClient();
+
+async function main() {
   try {
-    const session = await getSession();
-    if (!session || (!session.dcr_management && session.role !== 'ADMIN')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(req.url);
-    const search = searchParams.get('search') || '';
-    const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
-    const limit = Math.min(100, parseInt(searchParams.get('limit') || '25'));
-    const skip = (page - 1) * limit;
-
     const whereClause: any = {
       invoiceStatus: { not: 'void' },
       serialAllocations: {
@@ -25,29 +14,14 @@ export async function GET(req: Request) {
         }
       }
     };
-    
-    if (search) {
-      whereClause.AND = [
-        {
-          OR: [
-            { invoiceNumber: { contains: search, mode: 'insensitive' } },
-            { customerName: { contains: search, mode: 'insensitive' } },
-            {
-              serialAllocations: {
-                some: { serialNumber: { contains: search, mode: 'insensitive' } }
-              }
-            }
-          ]
-        }
-      ];
-    }
 
+    console.log("Running query...");
     const [invoices, totalCount, kpiSerialData] = await Promise.all([
       prisma.dcrInvoice.findMany({
         where: whereClause,
         orderBy: { updatedAt: 'desc' },
-        skip,
-        take: limit,
+        skip: 0,
+        take: 50,
         include: {
           items: {
             where: { selectedForDCR: true },
@@ -66,7 +40,8 @@ export async function GET(req: Request) {
       prisma.dcrSerial.count({ where: { status: 'READY_TO_ISSUE' } })
     ]);
 
-    // Load local customer records corresponding to the returned invoices' customerId
+    console.log(`Found ${invoices.length} invoices, totalCount: ${totalCount}, kpi: ${kpiSerialData}`);
+
     const customerIds = Array.from(new Set(invoices.map(inv => inv.customerId)));
     const localCustomers = await prisma.customer.findMany({
       where: { id: { in: customerIds } }
@@ -117,18 +92,12 @@ export async function GET(req: Request) {
       };
     }).filter(inv => inv.totalEligible > 0);
 
-    return NextResponse.json({ 
-      invoices: formattedInvoices, 
-      total: totalCount, 
-      page, 
-      limit,
-      kpis: {
-        invoicesReady: totalCount,
-        serialsReady: kpiSerialData
-      }
-    });
-  } catch (error: any) {
-    console.error('[DCR Ready To Issue GET] Error:', error);
-    return NextResponse.json({ error: 'Failed to fetch ready-to-issue list' }, { status: 500 });
+    console.log(`Formatted ${formattedInvoices.length} invoices`);
+  } catch (e) {
+    console.error("ERROR:", e);
+  } finally {
+    await prisma.$disconnect();
   }
 }
+
+main();

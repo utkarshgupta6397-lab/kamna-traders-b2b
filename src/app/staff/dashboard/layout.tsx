@@ -37,20 +37,9 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
             <Link href="/staff/dashboard" className="flex items-center gap-1.5 hover:text-white transition-colors">
               <Home size={16} /><span className="hidden md:inline text-xs">Catalog</span>
             </Link>
-            <Link href="/staff/dashboard/carts" className="flex items-center gap-1.5 hover:text-white transition-colors">
-              <ClipboardList size={16} /><span className="hidden md:inline text-xs">Carts</span>
+            <Link href="/staff/dashboard/operations" className="flex items-center gap-1.5 hover:text-white transition-colors">
+              <Box size={16} /><span className="hidden md:inline text-xs">Operations</span>
             </Link>
-            <Link href="/staff/dashboard/inventory/history" className="flex items-center gap-1.5 hover:text-white transition-colors">
-              <History size={16} /><span className="hidden md:inline text-xs">Inventory History</span>
-            </Link>
-            <Link href="/staff/dashboard/current-stock" className="flex items-center gap-1.5 hover:text-white transition-colors">
-              <Box size={16} /><span className="hidden md:inline text-xs">Current Stock</span>
-            </Link>
-            {(session.canManageTransfers || session.role === 'ADMIN') && (
-              <Link href="/staff/dashboard/transfers" className="flex items-center gap-1.5 hover:text-white transition-colors">
-                <Truck size={16} /><span className="hidden md:inline text-xs">Transfers</span>
-              </Link>
-            )}
             {(session.accounts_customer_statement || session.accounts_transactions || session.role === 'ADMIN') && (
               <Link href="/staff/dashboard/accounts" className="flex items-center gap-1.5 hover:text-white transition-colors">
                 <FileText size={16} /><span className="hidden md:inline text-xs">Accounts</span>

@@ -1195,12 +1195,13 @@ export default function CustomerStatementView() {
                         oldestDue = Math.floor((Date.now() - oldestDate.getTime()) / (1000 * 3600 * 24));
                       }
 
-                      const firmTxs = visibleTransactions.filter((tx: any) => tx.firmId === firmId);
-                      const firmInvoiced = firmTxs.filter((tx: any) => tx.type === 'invoice').reduce((sum: number, tx: any) => sum + tx.amount, 0);
-                      const firmPaid = firmTxs.filter((tx: any) => tx.type === 'payment').reduce((sum: number, tx: any) => sum + tx.amount, 0);
+                      // Decouple from combined visibleTransactions to act as independent financial snapshots
+                      const firmVisibleTxs = isExpanded ? stmt.transactions : stmt.transactions.slice(-12);
+                      const firmInvoiced = firmVisibleTxs.filter((tx: any) => tx.type === 'invoice').reduce((sum: number, tx: any) => sum + Math.abs(tx.netEffect), 0);
+                      const firmPaid = firmVisibleTxs.filter((tx: any) => tx.type === 'payment').reduce((sum: number, tx: any) => sum + Math.abs(tx.netEffect), 0);
                       
-                      const firmDynamicOpening = firmTxs.length > 0
-                        ? (firmTxs[0].balanceAfter - firmTxs[0].netEffect)
+                      const firmDynamicOpening = firmVisibleTxs.length > 0
+                        ? (firmVisibleTxs[0].balanceAfter - firmVisibleTxs[0].netEffect)
                         : stmt.closingBalance;
                       const pres = getOpeningBalancePresentation(firmDynamicOpening);
 

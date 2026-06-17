@@ -140,6 +140,46 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
     setManualItems(prev => prev.filter(i => i.id !== id));
   };
 
+  const getAllocatedSerialsCount = (itemId: string) => {
+    const invoiceItem = invoice?.items?.find((i: any) => i.id === itemId);
+    if (!invoiceItem) return 0;
+    return invoiceItem.serialAllocations?.length || 0;
+  };
+
+  const handleUpdateManualQty = async (id: string, newQty: number) => {
+    if (newQty <= 0) return;
+
+    const allocatedCount = getAllocatedSerialsCount(id);
+    if (newQty < allocatedCount) {
+      toast.error(`Cannot reduce quantity below allocated serial count (${allocatedCount}).`);
+      return;
+    }
+
+    if (!id.startsWith('manual_')) {
+      try {
+        const res = await fetch(`/api/admin/dcr/items/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quantity: newQty })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update quantity');
+      } catch (err: any) {
+        toast.error(err.message || 'Failed to persist quantity');
+        return;
+      }
+    }
+
+    setManualItems(prev => prev.map(i => i.id === id ? { ...i, quantity: newQty } : i));
+    setInvoice(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        items: prev.items.map((i: any) => i.id === id ? { ...i, quantity: newQty } : i)
+      };
+    });
+  };
+
   const handleSave = async (andNext: boolean = false) => {
     try {
       // Validate deselections and removals against allocated serials
@@ -675,17 +715,37 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
                   <div key={item.id} className="p-3 hover:bg-red-50/30 transition-colors flex items-start justify-between gap-2 text-xs">
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-blue-900 leading-snug break-words whitespace-normal">{item.itemName}</div>
-                      <div className="text-gray-500 text-[10px] mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
-                        <span>Qty: <strong>{item.quantity}</strong></span>
-                        {item.remarks && <span className="break-all">| Remarks: {item.remarks}</span>}
+                      <div className="text-gray-500 text-[10px] mt-1 flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="shrink-0 mt-0.5">Qty:</span>
+                          <div className="flex items-center bg-white border border-gray-200 rounded px-1.5 py-0.5 shadow-sm">
+                            <button 
+                              onClick={() => handleUpdateManualQty(item.id, item.quantity - 1)}
+                              className="text-gray-500 hover:text-[#1A2766] px-1 font-bold transition-colors"
+                            >-</button>
+                            <span className="font-bold min-w-[20px] text-center text-[#1A2766]">{item.quantity}</span>
+                            <button 
+                              onClick={() => handleUpdateManualQty(item.id, item.quantity + 1)}
+                              className="text-gray-500 hover:text-[#1A2766] px-1 font-bold transition-colors"
+                            >+</button>
+                          </div>
+                        </div>
+                        {item.remarks && <span className="break-all">Remarks: {item.remarks}</span>}
                       </div>
                     </div>
-                    <button 
-                      onClick={() => handleRemoveManualItem(item.id)} 
-                      className="text-red-400 hover:text-red-600 transition-colors p-1 rounded-md hover:bg-red-50 shrink-0"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {getAllocatedSerialsCount(item.id) === 0 ? (
+                      <button 
+                        onClick={() => handleRemoveManualItem(item.id)} 
+                        className="text-red-400 hover:text-red-600 transition-colors p-1 rounded-md hover:bg-red-50 shrink-0 mt-1"
+                        title="Remove Item"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    ) : (
+                      <div className="p-1 shrink-0 cursor-not-allowed mt-1" title="Remove all allocated serials before deleting this item.">
+                        <Trash2 size={14} className="text-gray-300" />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

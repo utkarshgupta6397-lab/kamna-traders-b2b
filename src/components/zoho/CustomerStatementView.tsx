@@ -542,7 +542,7 @@ export default function CustomerStatementView() {
       </div>
 
       {/* ── Search bar ─────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-col sm:flex-row items-end gap-3">
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-col xl:flex-row items-start xl:items-end gap-3 sticky top-0 z-40 xl:static">
         <div className="flex-1 w-full">
           <label className="flex items-center gap-2 text-xs font-bold text-gray-600 mb-1">
             Search Customer
@@ -615,74 +615,76 @@ export default function CustomerStatementView() {
 
         {/* Cached label — stable position, right-aligned */}
         {cachedAt && (
-          <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-gray-400 font-medium self-end pb-2 shrink-0">
+          <div className="hidden xl:flex items-center gap-1.5 text-[10px] text-gray-400 font-medium self-end pb-2 shrink-0">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
             Cached {formatCachedAge(now - cachedAt)}
           </div>
         )}
 
-        <button
-          id="fetch-statement-btn"
-          onClick={() => handleFetch(undefined, true)}
-          disabled={loading}
-          className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-[#1A2766] text-white rounded-lg text-sm font-bold hover:bg-[#25368a] transition-colors disabled:opacity-50 h-[38px]"
-        >
-          {loading ? <RefreshCw size={15} className="animate-spin" /> : 'Load Statement'}
-        </button>
-        {s && (
-          <>
-            <button
-              onClick={handleThermalPrint}
-              disabled={printing}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-black transition-colors disabled:opacity-50 h-[38px] print:hidden"
-            >
-              {printing ? <RefreshCw size={15} className="animate-spin" /> : <Printer size={15} />}
-              {printing ? 'Printing…' : 'Print'}
-            </button>
-            <div className="relative w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-3 w-full xl:w-auto">
+          <button
+            id="fetch-statement-btn"
+            onClick={() => handleFetch(undefined, true)}
+            disabled={loading}
+            className="w-full sm:flex-1 xl:flex-none flex items-center justify-center gap-2 px-5 py-2 bg-[#1A2766] text-white rounded-lg text-sm font-bold hover:bg-[#25368a] transition-colors disabled:opacity-50 min-h-[44px] xl:min-h-0 xl:h-[38px]"
+          >
+            {loading ? <RefreshCw size={15} className="animate-spin" /> : 'Load Statement'}
+          </button>
+          {s && (
+            <>
               <button
-                onClick={() => setPdfMenuOpen(!pdfMenuOpen)}
-                disabled={pdfGenerating}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-emerald-700 text-white rounded-lg text-sm font-bold hover:bg-emerald-800 transition-colors disabled:opacity-50 h-[38px] print:hidden"
+                onClick={handleThermalPrint}
+                disabled={printing}
+                className="w-full sm:flex-1 xl:flex-none flex items-center justify-center gap-2 px-5 py-2 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-black transition-colors disabled:opacity-50 min-h-[44px] xl:min-h-0 xl:h-[38px] print:hidden"
               >
-                {pdfGenerating ? <RefreshCw size={15} className="animate-spin" /> : <Download size={15} />}
-                {pdfGenerating ? 'Generating PDF…' : 'Download Statement PDF'}
-                <ChevronDown size={14} className={`transition-transform ${pdfMenuOpen ? 'rotate-180' : ''}`} />
+                {printing ? <RefreshCw size={15} className="animate-spin" /> : <Printer size={15} />}
+                {printing ? 'Printing…' : 'Print'}
               </button>
-              
-              {pdfMenuOpen && (
-                <div className="absolute top-full right-0 sm:left-0 sm:right-auto mt-1 w-full sm:w-56 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden z-50">
-                  <button 
-                    onClick={() => { setPdfMenuOpen(false); handleDownloadPDF('color'); }}
-                    className="w-full text-left px-4 py-3 text-sm font-bold text-emerald-800 hover:bg-emerald-50 border-b border-gray-100 flex items-center gap-2.5 transition-colors"
-                  >
-                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm"></div>
-                    Color PDF
-                  </button>
-                  <button 
-                    onClick={() => { setPdfMenuOpen(false); handleDownloadPDF('economy'); }}
-                    className="w-full text-left px-4 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 transition-colors"
-                  >
-                    <div className="w-2.5 h-2.5 rounded-full border-2 border-gray-300"></div>
-                    Print PDF (Low Ink)
-                  </button>
-                </div>
-              )}
-            </div>
-            <button
-              onClick={() => setIsCalcOpen(true)}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-purple-700 text-white rounded-lg text-sm font-bold hover:bg-purple-800 transition-colors h-[38px] print:hidden"
-            >
-              <Calculator size={15} /> Calculator
-            </button>
-            <a
-              href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${customerId}&filterMode=ALL&statusFilter=ALL`}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors h-[38px] print:hidden"
-            >
-              View DCR Summary
-            </a>
-          </>
-        )}
+              <div className="relative w-full sm:flex-1 xl:flex-none">
+                <button
+                  onClick={() => setPdfMenuOpen(!pdfMenuOpen)}
+                  disabled={pdfGenerating}
+                  className="w-full flex items-center justify-center gap-2 px-5 py-2 bg-emerald-700 text-white rounded-lg text-sm font-bold hover:bg-emerald-800 transition-colors disabled:opacity-50 min-h-[44px] xl:min-h-0 xl:h-[38px] print:hidden"
+                >
+                  {pdfGenerating ? <RefreshCw size={15} className="animate-spin" /> : <Download size={15} />}
+                  {pdfGenerating ? 'Generating PDF…' : 'Download Statement PDF'}
+                  <ChevronDown size={14} className={`transition-transform ${pdfMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+                
+                {pdfMenuOpen && (
+                  <div className="absolute top-full right-0 sm:left-0 sm:right-auto mt-1 w-full xl:w-56 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden z-50">
+                    <button 
+                      onClick={() => { setPdfMenuOpen(false); handleDownloadPDF('color'); }}
+                      className="w-full text-left px-4 py-3 text-sm font-bold text-emerald-800 hover:bg-emerald-50 border-b border-gray-100 flex items-center gap-2.5 transition-colors min-h-[44px]"
+                    >
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm"></div>
+                      Color PDF
+                    </button>
+                    <button 
+                      onClick={() => { setPdfMenuOpen(false); handleDownloadPDF('economy'); }}
+                      className="w-full text-left px-4 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 transition-colors min-h-[44px]"
+                    >
+                      <div className="w-2.5 h-2.5 rounded-full border-2 border-gray-300"></div>
+                      Print PDF (Low Ink)
+                    </button>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setIsCalcOpen(true)}
+                className="w-full sm:flex-1 xl:flex-none flex items-center justify-center gap-2 px-5 py-2 bg-purple-700 text-white rounded-lg text-sm font-bold hover:bg-purple-800 transition-colors min-h-[44px] xl:min-h-0 xl:h-[38px] print:hidden"
+              >
+                <Calculator size={15} /> Calculator
+              </button>
+              <a
+                href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${customerId}&filterMode=ALL&statusFilter=ALL`}
+                className="w-full sm:flex-1 xl:flex-none flex items-center justify-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors min-h-[44px] xl:min-h-0 xl:h-[38px] print:hidden"
+              >
+                View DCR Summary
+              </a>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Mobile cached label */}
@@ -738,18 +740,18 @@ export default function CustomerStatementView() {
         ) : [];
 
         return (
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+          <div className="flex flex-col gap-4 xl:grid xl:grid-cols-12 xl:gap-6 items-start">
             {/* Left Column: Ledger and Customer Info */}
-            <div className="xl:col-span-8 space-y-4">
+            <div className="contents xl:block xl:col-span-8 xl:space-y-4">
               {/* ── Section 1: Customer card ──────────────────────────────── */}
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden order-1 xl:order-none">
                 <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
                   <User size={14} className="text-[#1A2766]" />
                   <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
                     {s.customer.associatedVendorId ? 'Hybrid Account' : 'Customer'}
                   </span>
                 </div>
-                <div className="px-4 py-2.5 grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                <div className="px-4 py-2.5 flex flex-col md:grid md:grid-cols-3 gap-3 text-xs">
                   <div className="col-span-2 sm:col-span-1">
                     <div className="text-[10px] uppercase text-gray-500 font-bold mb-0.5">Name</div>
                     <a 
@@ -775,7 +777,7 @@ export default function CustomerStatementView() {
 
               {/* ── Section 1b: Net Account Position summary (hybrid only) ── */}
               {s.isHybrid && (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden order-2 xl:order-none">
                   <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
                     <TrendingUp size={14} className="text-[#1A2766]" />
                     <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Net Account Position</span>
@@ -805,7 +807,7 @@ export default function CustomerStatementView() {
               )}
 
               {/* ── Section 2: Statement table ────────────────────────────── */}
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden order-5 xl:order-none">
                 {isClipped && clipIdx !== -1 && (
                   <div className="bg-blue-50 border-b border-blue-100 px-5 py-2.5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -835,7 +837,7 @@ export default function CustomerStatementView() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                <div className="hidden md:block overflow-x-auto max-h-[600px] overflow-y-auto">
                   <table className="w-full text-sm relative" style={{ fontVariantNumeric: 'tabular-nums' }}>
                     <thead className="sticky top-0 bg-gray-50 text-[10px] uppercase text-gray-500 font-bold border-b border-gray-200 z-10 shadow-sm">
                       <tr>
@@ -1024,6 +1026,128 @@ export default function CustomerStatementView() {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Mobile Statement Ledger Cards */}
+                <div className="md:hidden flex flex-col divide-y divide-gray-100 max-h-[600px] overflow-y-auto bg-gray-50/30">
+                  {/* Opening Balance Card */}
+                  <div className="p-4 bg-blue-50/30 flex justify-between items-center shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-bold text-gray-800 text-sm">Opening Balance</span>
+                      {openingPresentation.isCredit && (
+                        <span className="w-fit text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full tracking-wide uppercase">
+                          Advance / Credit
+                        </span>
+                      )}
+                    </div>
+                    <div className={`text-sm font-bold tabular-nums ${openingPresentation.isCredit ? 'text-emerald-600' : 'text-gray-900'}`}>
+                      {openingPresentation.amount}
+                    </div>
+                  </div>
+
+                  {/* Transaction Cards */}
+                  {visibleTransactions.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-gray-400 font-medium bg-white">
+                      No transactions in window.
+                    </div>
+                  ) : (
+                    visibleTransactions.map((tx: any) => {
+                      const displayDesc = cleanDescription(tx.description, tx.type);
+                      const isInvoice = tx.type === 'invoice';
+                      const isPayment = tx.type === 'payment';
+                      
+                      return (
+                        <div 
+                          key={tx.id} 
+                          onClick={() => {
+                            if (isCalcOpen) addCalcEntry(tx);
+                            else if (tx.zohoUrl) window.open(tx.zohoUrl, '_blank');
+                          }}
+                          className={`p-4 bg-white hover:bg-blue-50/80 transition-all flex flex-col gap-3 relative cursor-pointer ${calcEntries.some(e => e.id === tx.id) ? 'bg-purple-50/50' : ''}`}
+                        >
+                          {/* Header: Date & Type */}
+                          <div className="flex justify-between items-center">
+                            <span className="text-[11px] text-gray-500 font-medium">{fmtDateTime(tx.datetime || tx.date)}</span>
+                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                              {isInvoice ? 'Invoice' : isPayment ? 'Payment' : 'Purchase Bill'}
+                            </span>
+                          </div>
+
+                          {/* Details */}
+                          <div className="flex flex-col gap-1">
+                            <div className="text-sm font-bold text-blue-700 underline-offset-2 flex flex-wrap items-center gap-1.5">
+                              <span>{displayDesc}</span>
+                              {draftStatuses[tx.id] && (
+                                <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50">
+                                  Draft
+                                </span>
+                              )}
+                              {tx.isVerified && (
+                                <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
+                                  <Check size={9} strokeWidth={4} />
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Amounts */}
+                          <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-50">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[10px] text-gray-400 font-medium">Inv Amt</span>
+                              <span className="text-xs font-bold text-gray-700">{tx.netEffect > 0 ? fmt(tx.amount) : '—'}</span>
+                            </div>
+                            <div className="flex flex-col gap-0.5 text-right">
+                              <span className="text-[10px] text-gray-400 font-medium">Pay Amt</span>
+                              <span className="text-xs font-bold text-emerald-600">{tx.netEffect <= 0 ? fmt(tx.amount) : '—'}</span>
+                            </div>
+                          </div>
+
+                          {/* Balance */}
+                          <div className="flex justify-between items-center pt-2 border-t border-gray-50">
+                            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Balance</span>
+                            {(() => {
+                              const b = tx.balanceAfter;
+                              if (b === 0) return <span className="text-xs font-extrabold text-emerald-600 tabular-nums">{fmtBalance(b)}</span>;
+                              if (Math.abs(b) <= 100) return (
+                                <div className="flex flex-col items-end">
+                                  <span className="text-xs font-extrabold text-emerald-700 tabular-nums">{fmtBalance(b)}</span>
+                                  <span className="text-[8px] font-bold text-emerald-600/80 uppercase">Settled</span>
+                                </div>
+                              );
+                              return (
+                                <span className={`text-xs font-bold tabular-nums ${b > 0 ? 'text-rose-600' : b < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
+                                  {fmtBalance(b)}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {/* Totals Card */}
+                  <div className="p-4 bg-gray-50 border-t-2 border-gray-200 flex flex-col gap-3 shadow-inner">
+                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center">
+                      Totals {isExpanded ? '(All)' : '(Visible Period)'}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-gray-500">Total Invoiced</span>
+                      <span className="text-sm font-bold text-gray-900 tabular-nums">{fmt(totalInvoiceAmount)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-gray-500">Total Paid</span>
+                      <span className="text-sm font-bold text-emerald-700 tabular-nums">{fmt(totalPaymentAmount)}</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-3 mt-1 border-t border-gray-200">
+                      <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Closing Balance</span>
+                      <span className={`text-[15px] font-extrabold tabular-nums ${
+                        s.closingBalance > 0 ? 'text-rose-600' : s.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'
+                      }`}>
+                        {fmtBalance(s.closingBalance)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
                 {/* View All Toggle */}
                 {s.transactions.length > 12 && (
                   <div className="border-t border-gray-100 bg-gray-50 p-2 text-center">
@@ -1039,19 +1163,19 @@ export default function CustomerStatementView() {
             </div>
 
             {/* Right Column: Financial Summary and Telemetry */}
-            <div className="xl:col-span-4 space-y-4">
+            <div className="contents xl:block xl:col-span-4 xl:space-y-4">
               
               {/* Financial Summary Card */}
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden order-3 xl:order-none">
                 <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
                   <Activity size={14} className="text-[#1A2766]" />
                   <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
                     Period Summary {isExpanded ? '(All)' : '(Visible)'}
                   </span>
                 </div>
-                <div className="p-5 space-y-4">
+                <div className="p-5 grid grid-cols-2 gap-4 md:flex md:flex-col md:space-y-4 md:gap-0">
                   {/* Opening Balance — with credit clarity */}
-                  <div className="flex justify-between items-start text-sm gap-2">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center text-sm gap-1 md:gap-2">
                     <span className="text-gray-500 font-medium shrink-0">Opening Balance</span>
                     {openingPresentation.isCredit ? (
                       <div className="text-right">
@@ -1062,15 +1186,15 @@ export default function CustomerStatementView() {
                       <span className="font-semibold text-gray-900 tabular-nums">{openingPresentation.amount}</span>
                     )}
                   </div>
-                  <div className="flex justify-between items-center text-sm">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center text-sm gap-1 md:gap-2">
                     <span className="text-gray-500 font-medium">Total Invoiced</span>
                     <span className="font-semibold text-gray-900 tabular-nums">{fmt(totalInvoiceAmount)}</span>
                   </div>
-                  <div className="flex justify-between items-center text-sm">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center text-sm gap-1 md:gap-2">
                     <span className="text-gray-500 font-medium">Total Paid</span>
                     <span className="font-semibold text-emerald-600 tabular-nums">− {fmt(totalPaymentAmount)}</span>
                   </div>
-                  <div className="pt-3 border-t border-gray-100 flex justify-between items-center">
+                  <div className="md:pt-3 md:border-t md:border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-1 md:gap-0">
                     <span className="text-gray-900 font-bold uppercase text-xs tracking-wider">Closing Balance</span>
                     <span className={`text-lg font-extrabold tabular-nums ${s.closingBalance > 0 ? 'text-rose-600' : s.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
                       {fmtBalance(s.closingBalance)}
@@ -1078,7 +1202,7 @@ export default function CustomerStatementView() {
                   </div>
                   
                   {Object.keys(paymentBreakdown).length > 0 && (
-                    <div className="pt-4 border-t border-gray-100">
+                    <div className="md:pt-4 md:border-t md:border-gray-100 col-span-2 md:col-span-1">
                       <div className="text-[10px] uppercase text-gray-400 font-bold mb-2">Payment Breakdown</div>
                       <div className="space-y-1.5">
                         {Object.entries(paymentBreakdown).map(([mode, amt]) => (
@@ -1095,7 +1219,7 @@ export default function CustomerStatementView() {
 
               {/* Unpaid Invoices */}
               {s.unpaidInvoices && s.unpaidInvoices.length > 0 ? (
-                <div className="bg-white rounded-xl border border-rose-100 shadow-sm overflow-hidden">
+                <div className="bg-white rounded-xl border border-rose-100 shadow-sm overflow-hidden order-4 xl:order-none">
                   <div className="px-5 py-3 border-b border-rose-100 bg-rose-50/50 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <AlertCircle size={14} className="text-rose-600" />
@@ -1116,7 +1240,7 @@ export default function CustomerStatementView() {
                   </div>
                   
                   {/* Card Table Header */}
-                  <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                  <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
                     <div className="col-span-4">Invoice</div>
                     <div className="col-span-3 text-right">Value</div>
                     <div className="col-span-3 text-right">Pending</div>
@@ -1132,25 +1256,34 @@ export default function CustomerStatementView() {
                       else if (pendingDays > 30) pillClass = "bg-amber-50 text-amber-700 border border-amber-200/60";
 
                       return (
-                        <div key={inv.invoiceId} className="grid grid-cols-12 gap-2 px-4 py-2.5 items-center hover:bg-gray-50/80 transition-colors">
-                          <div className="col-span-4">
-                            <a 
-                              href={`https://books.zoho.in/app/60027595766#/invoices/${inv.invoiceId}`}
-                              target="_blank" 
-                              rel="noreferrer"
-                              className="text-[11px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
-                            >
-                              {inv.invoiceNumber}
-                            </a>
-                            <div className="text-[9px] text-gray-400 mt-0.5">{fmtDate(inv.invoiceDate)}</div>
+                        <div key={inv.invoiceId} className="flex flex-col md:grid md:grid-cols-12 gap-2 px-4 py-3 md:py-2.5 items-start md:items-center hover:bg-gray-50/80 transition-colors border-b border-gray-50 md:border-none">
+                          <div className="flex justify-between items-start md:block w-full md:w-auto md:col-span-4">
+                            <div>
+                              <a 
+                                href={`https://books.zoho.in/app/60027595766#/invoices/${inv.invoiceId}`}
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="text-[11px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
+                              >
+                                {inv.invoiceNumber}
+                              </a>
+                              <div className="text-[9px] text-gray-400 mt-0.5">{fmtDate(inv.invoiceDate)}</div>
+                            </div>
+                            <div className="md:hidden">
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${pillClass}`}>
+                                {pendingDays}d
+                              </span>
+                            </div>
                           </div>
-                          <div className="col-span-3 text-right text-[11px] text-gray-500 tabular-nums">
-                            {fmt(inv.total)}
+                          <div className="flex justify-between md:block w-full md:w-auto md:col-span-3 md:text-right text-[11px] text-gray-500 tabular-nums">
+                            <span className="md:hidden text-gray-400">Value</span>
+                            <span>{fmt(inv.total)}</span>
                           </div>
-                          <div className="col-span-3 text-right text-[11px] font-bold text-rose-600 tabular-nums">
-                            {fmt(inv.balance)}
+                          <div className="flex justify-between md:block w-full md:w-auto md:col-span-3 md:text-right text-[11px] font-bold text-rose-600 tabular-nums">
+                            <span className="md:hidden text-gray-400 font-medium">Pending</span>
+                            <span>{fmt(inv.balance)}</span>
                           </div>
-                          <div className="col-span-2 flex justify-end">
+                          <div className="hidden md:flex md:col-span-2 justify-end">
                             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${pillClass}`}>
                               {pendingDays}d
                             </span>
@@ -1186,14 +1319,14 @@ export default function CustomerStatementView() {
                   </div>
                 </div>
               ) : (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden p-6 flex flex-col items-center justify-center gap-2">
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden p-6 flex flex-col items-center justify-center gap-2 order-4 xl:order-none">
                   <Check size={20} className="text-emerald-500" />
                   <span className="text-sm font-bold text-gray-600">No outstanding invoices</span>
                 </div>
               )}
 
               {/* API Usage KPI Card */}
-              <div className="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden print:hidden">
+              <div className="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden print:hidden order-6 xl:order-none">
                 <div className="px-5 py-3 border-b border-blue-100 bg-blue-50/50 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Activity size={14} className="text-blue-700" />
@@ -1255,7 +1388,7 @@ export default function CustomerStatementView() {
               </div>
 
               {/* ── Section 4: Debug accordion ────────────────────────────── */}
-              <div className="rounded-xl border border-gray-200 overflow-hidden text-xs print:hidden">
+              <div className="rounded-xl border border-gray-200 overflow-hidden text-xs print:hidden order-7 xl:order-none">
                 <button
                   onClick={() => setDebugOpen((v) => !v)}
                   className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors text-gray-500 font-medium"

@@ -167,9 +167,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
         displayStatus = 'UNPROCESSED';
       } else {
         isUnprocessed = dcrInv.dcrStatus === 'NEW' || dcrInv.dcrStatus === 'UNDER_REVIEW';
+        let isNoDcr = dcrInv.dcrStatus === 'NO_DCR_REQUIRED' || dcrInv.dcrStatus === 'PROCESSED_NO_DCR';
 
-        if (isUnprocessed) {
+        if (isNoDcr) {
+          processingStatus = 'PROCESSED_NO_DCR';
+          displayStatus = 'PROCESSED - NO DCR REQUIRED';
+          invoicesReviewed++;
+        } else if (isUnprocessed) {
           invoicesPendingReview++;
+          processingStatus = 'UNPROCESSED';
         } else {
           invoicesReviewed++;
         }
@@ -177,7 +183,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
         dcrInv.items.forEach((item: any) => {
           if (item.selectedForDCR) {
             dcrPanels += item.quantity;
-            totalPanelsSold += item.quantity;
             
             if (item.quantity > item.serialAllocations.length) {
               serialEntryPending += (item.quantity - item.serialAllocations.length);
@@ -192,18 +197,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
             
             if (s.vendorDcrStatus !== 'RECEIVED') {
               vendorDcrPending++;
-              totalVendorDcrPending++;
             } else if (s.status === 'ISSUED') {
               issued++;
-              totalIssued++;
             } else if (s.status === 'READY_TO_ISSUE') {
               readyToIssue++;
-              totalReadyToIssue++;
             } else {
               // Any other status (HOLD, ALLOCATED, RETURNED) when vendor DCR is received is considered On Hold.
-              // This strictly maintains the invariant: DCR_PANELS = SERIAL_PENDING + VENDOR_DCR_PENDING + ON_HOLD + READY_TO_ISSUE + ISSUED
               onHold++;
-              totalOnHold++;
             }
           });
         });
@@ -211,31 +211,47 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
         // Processing Status Engine logic (Requested Update)
         const reviewRecordExists = !isUnprocessed;
         
-        if (!reviewRecordExists) {
-          processingStatus = 'UNPROCESSED';
-        } else if (reviewRecordExists && dcrPanels === 0) {
-          processingStatus = 'PROCESSED_NO_DCR';
-        } else if (reviewRecordExists && dcrPanels > 0) {
-          processingStatus = 'PROCESSED_DCR';
+        if (!isNoDcr) {
+          if (reviewRecordExists && dcrPanels === 0) {
+            processingStatus = 'PROCESSED_NO_DCR';
+            displayStatus = 'PROCESSED - NO DCR REQUIRED';
+            isNoDcr = true; // Cascade to zero out panel counts
+          } else if (reviewRecordExists && dcrPanels > 0) {
+            processingStatus = 'PROCESSED_DCR';
+            
+            // Only accumulate to globals if it actually requires DCR
+            totalPanelsSold += dcrPanels;
+            totalVendorDcrPending += vendorDcrPending;
+            totalIssued += issued;
+            totalReadyToIssue += readyToIssue;
+            totalOnHold += onHold;
+          }
         }
 
-        // Display Status Mapping
-        if (dcrInv.dcrStatus === 'NO_DCR_REQUIRED' || processingStatus === 'PROCESSED_NO_DCR') {
-          displayStatus = 'PROCESSED - NO DCR REQUIRED';
-        } else if (serialEntryPending > 0) {
-          displayStatus = 'SERIAL ENTRY PENDING';
-        } else if (vendorDcrPending > 0) {
-          displayStatus = 'VENDOR DCR PENDING';
-        } else if (onHold > 0) {
-          displayStatus = 'HOLD QUEUE';
-        } else if (readyToIssue > 0) {
-          displayStatus = 'READY TO ISSUE';
-        } else if (dcrPanels > 0 && issued === dcrPanels) {
-          displayStatus = 'FULLY ISSUED';
-        } else if (dcrPanels > 0) {
-          displayStatus = 'DCR IDENTIFIED';
-        } else if (isUnprocessed) {
-          displayStatus = 'UNPROCESSED';
+        // Display Status Mapping and zeroing out for No DCR
+        if (isNoDcr) {
+           dcrPanels = 0;
+           serialEntryPending = 0;
+           vendorDcrPending = 0;
+           issued = 0;
+           readyToIssue = 0;
+           onHold = 0;
+        } else {
+          if (serialEntryPending > 0) {
+            displayStatus = 'SERIAL ENTRY PENDING';
+          } else if (vendorDcrPending > 0) {
+            displayStatus = 'VENDOR DCR PENDING';
+          } else if (onHold > 0) {
+            displayStatus = 'HOLD QUEUE';
+          } else if (readyToIssue > 0) {
+            displayStatus = 'READY TO ISSUE';
+          } else if (dcrPanels > 0 && issued === dcrPanels) {
+            displayStatus = 'FULLY ISSUED';
+          } else if (dcrPanels > 0) {
+            displayStatus = 'DCR IDENTIFIED';
+          } else if (isUnprocessed) {
+            displayStatus = 'UNPROCESSED';
+          }
         }
       }
 

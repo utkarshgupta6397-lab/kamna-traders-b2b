@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { getZohoApiUsage } from '@/lib/zoho-api-meter';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
@@ -9,11 +10,23 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const usage = getZohoApiUsage();
+    const todayStr = new Date().toDateString();
+    let stats = (globalThis as any).__ZOHO_USAGE_STATS__;
+    
+    if (!stats || stats.date !== todayStr) {
+      stats = { date: todayStr, total: 0, customer: 0, invoice: 0, payment: 0, statement: 0, other: 0 };
+    }
 
     return NextResponse.json({
       success: true,
-      data: usage
+      today: {
+        total: stats.total,
+        customer: stats.customer,
+        invoice: stats.invoice,
+        payment: stats.payment,
+        statement: stats.statement,
+        other: stats.other
+      }
     });
   } catch (error: any) {
     console.error('[Zoho API Meter] Error:', error);

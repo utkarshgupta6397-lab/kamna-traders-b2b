@@ -31,8 +31,8 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { renderStatementToPdf } from '@/lib/zoho/pdf-statement-renderer';
+import { Download } from 'lucide-react';// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface InvoiceRow {
   invoiceId: string;
@@ -783,12 +783,16 @@ export default function AccountsSummaryView() {
   const [historicalCounts, setHistoricalCounts] = useState<Record<string, number>>({});
   const [historicalCustomerCounts, setHistoricalCustomerCounts] = useState<Record<string, number>>({});
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [filterNeedsReminder, setFilterNeedsReminder] = useState(false);
-  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
+  const [expandedCustomerIds, setExpandedCustomerIds] = useState<Set<string>>(new Set());
   const [taskLoadingId, setTaskLoadingId] = useState<string | null>(null);
   const [releaseAllowed, setReleaseAllowed] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
-  const [recoverySort, setRecoverySort] = useState<'overdue' | 'value'>('overdue');
+  const [recoverySort, setRecoverySort] = useState<'highest-outstanding' | 'oldest-invoice' | 'most-invoices' | 'alphabetical'>('highest-outstanding');
+  const [recoverySearch, setRecoverySearch] = useState('');
+  const [recoveryPage, setRecoveryPage] = useState(0);
+  const [batchPdfGenerating, setBatchPdfGenerating] = useState(false);
+  const [batchPdfProgress, setBatchPdfProgress] = useState<{ current: number, total: number, failures: string[] } | null>(null);
+  const RECOVERY_PAGE_SIZE = 15;
   const [syncingInvoiceIds, setSyncingInvoiceIds] = useState<Set<string>>(new Set());
   const [successSyncedIds, setSuccessSyncedIds] = useState<Set<string>>(new Set());
   const [syncPreviewOpen, setSyncPreviewOpen] = useState(false);
@@ -825,6 +829,24 @@ export default function AccountsSummaryView() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [flaggedDrawerOpen]);
 
+  const [apiUsage, setApiUsage] = useState<any>(null);
+
+  const fetchApiUsage = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/debug/zoho-api-usage');
+      const json = await res.json();
+      if (json.success) {
+        setApiUsage(json.today);
+      }
+    } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    if (flaggedDrawerOpen) {
+      fetchApiUsage();
+    }
+  }, [flaggedDrawerOpen, fetchApiUsage]);
+
   const activeTasksList = useMemo(() => {
     return tasks.filter(t => t.status === 'ACTIVE');
   }, [tasks]);
@@ -838,48 +860,123 @@ export default function AccountsSummaryView() {
     return ageDays > 7;
   }, [data]);
 
-  const filteredTasks = useMemo(() => {
-    let filtered = tasks.filter(t => t.status === 'ACTIVE');
-    if (filterNeedsReminder) {
-      filtered = filtered.filter(t => t.requiresReminder);
-    }
-    
-    // Sort tasks in memory without additional API fetches
-    return [...filtered].sort((a, b) => {
-      const invA = data?.rows?.find(r => r.invoiceId === a.invoiceId);
-      const invB = data?.rows?.find(r => r.invoiceId === b.invoiceId);
-      const pendingA = invA ? invA.amountPending : (a.lastKnownPendingAmount || 0);
-      const pendingB = invB ? invB.amountPending : (b.lastKnownPendingAmount || 0);
-
-      const dueDateA = invA?.dueDate ? new Date(invA.dueDate) : null;
-      const overdueDaysA = dueDateA 
-        ? Math.max(0, Math.ceil((Date.now() - dueDateA.getTime()) / (1000 * 60 * 60 * 24)))
-        : Math.max(0, Math.ceil((Date.now() - new Date(a.flaggedAt).getTime()) / (1000 * 60 * 60 * 24)));
-
-      const dueDateB = invB?.dueDate ? new Date(invB.dueDate) : null;
-      const overdueDaysB = dueDateB 
-        ? Math.max(0, Math.ceil((Date.now() - dueDateB.getTime()) / (1000 * 60 * 60 * 24)))
-        : Math.max(0, Math.ceil((Date.now() - new Date(b.flaggedAt).getTime()) / (1000 * 60 * 60 * 24)));
-
-      if (recoverySort === 'value') {
-        return pendingB - pendingA;
-      } else {
-        // Overdue sort: highest overdue days first. If same, secondary sort by pending amount descending.
-        if (overdueDaysB !== overdueDaysA) {
-          return overdueDaysB - overdueDaysA;
-        }
-        return pendingB - pendingA;
-      }
-    });
-  }, [tasks, filterNeedsReminder, recoverySort, data]);
-
-  const oldestAge = useMemo(() => {
+  const groupedCustomers = useMemo(() => {
     const active = tasks.filter(t => t.status === 'ACTIVE');
-    if (active.length === 0) return 'N/A';
-    const dates = active.map(t => new Date(t.flaggedAt).getTime());
-    const oldestTime = Math.min(...dates);
-    return timeAgo(new Date(oldestTime).toISOString());
-  }, [tasks]);
+
+    // Group invoices by customerId
+    const map = new Map<string, {
+      customerId: string;
+      customerName: string;
+      invoices: Array<{
+        task: RecoveryInvoiceTask;
+        inv: typeof data extends null ? null : NonNullable<typeof data>['rows'][number] | undefined;
+        pending: number;
+        ageDays: number;
+        invoiceDate: string;
+      }>;
+    }>();
+
+    for (const task of active) {
+      const inv = data?.rows?.find(r => r.invoiceId === task.invoiceId);
+      const pending = inv ? inv.amountPending : (task.lastKnownPendingAmount || 0);
+      const dueDateVal = inv?.dueDate ? new Date(inv.dueDate) : null;
+      const ageDays = dueDateVal
+        ? Math.max(0, Math.ceil((Date.now() - dueDateVal.getTime()) / 86400000))
+        : Math.max(0, Math.ceil((Date.now() - new Date(task.flaggedAt).getTime()) / 86400000));
+      const invoiceDate = inv ? inv.invoiceDate : task.flaggedAt;
+
+      const entry = map.get(task.customerId) ?? {
+        customerId: task.customerId,
+        customerName: task.customerName,
+        invoices: [],
+      };
+      entry.invoices.push({ task, inv, pending, ageDays, invoiceDate });
+      map.set(task.customerId, entry);
+    }
+
+    // Build flat list with aggregates
+    let customers = Array.from(map.values()).map(c => ({
+      ...c,
+      totalOutstanding: c.invoices.reduce((s, i) => s + i.pending, 0),
+      invoiceCount: c.invoices.length,
+      oldestDue: c.invoices.length > 0 ? Math.max(...c.invoices.map(i => i.ageDays)) : 0,
+    }));
+
+    // Search filter
+    if (recoverySearch.trim()) {
+      const q = recoverySearch.trim().toLowerCase();
+      customers = customers.filter(c =>
+        c.customerName.toLowerCase().includes(q) ||
+        c.invoices.some(i => i.task.invoiceNumber.toLowerCase().includes(q))
+      );
+    }
+
+    // Sort
+    switch (recoverySort) {
+      case 'highest-outstanding':
+        customers.sort((a, b) => b.totalOutstanding - a.totalOutstanding);
+        break;
+      case 'oldest-invoice':
+        customers.sort((a, b) => b.oldestDue - a.oldestDue);
+        break;
+      case 'most-invoices':
+        customers.sort((a, b) => b.invoiceCount - a.invoiceCount);
+        break;
+      case 'alphabetical':
+        customers.sort((a, b) => a.customerName.localeCompare(b.customerName));
+        break;
+    }
+
+    return customers;
+  }, [tasks, data, recoverySearch, recoverySort]);
+
+  const handleBatchDownloadPdf = async () => {
+    if (groupedCustomers.length === 0) return;
+    setBatchPdfGenerating(true);
+    setBatchPdfProgress({ current: 0, total: groupedCustomers.length, failures: [] });
+
+    try {
+      const jsPDF = (await import('jspdf')).default;
+      const autoTable = (await import('jspdf-autotable')).default;
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      
+      let failures: string[] = [];
+      for (let i = 0; i < groupedCustomers.length; i++) {
+        const customer = groupedCustomers[i];
+        setBatchPdfProgress({ current: i + 1, total: groupedCustomers.length, failures });
+        
+        try {
+          const res = await fetch(`/api/admin/customer-statement/statement?customerId=${customer.customerId}`);
+          const json = await res.json();
+          if (!json.success || !json.data) throw new Error('Failed to fetch statement');
+          
+          if (i > 0) doc.addPage();
+          
+          await renderStatementToPdf(doc, autoTable, json.data, 'economy', {
+            isExpanded: true,
+            clipFromIndex: null,
+            isBatchRecovery: true
+          });
+        } catch (e) {
+          console.error(`Batch PDF failed for ${customer.customerName}`, e);
+          failures.push(customer.customerName);
+          setBatchPdfProgress({ current: i + 1, total: groupedCustomers.length, failures });
+        }
+      }
+      
+      const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, ' ');
+      doc.save(`Recovery Statements - ${dateStr}.pdf`);
+      
+      fetchApiUsage();
+      toast.success(`Recovery Statements Generated. ${groupedCustomers.length - failures.length} successful, ${failures.length} failed.`, { id: 'batch-pdf' });
+    } catch (e) {
+      console.error('[Batch PDF Export Error]', e);
+      toast.error('Failed to generate batch PDF.', { id: 'batch-pdf' });
+    } finally {
+      setBatchPdfGenerating(false);
+      setTimeout(() => setBatchPdfProgress(null), 3000);
+    }
+  };
 
   const getWhatsAppUrl = useCallback((task: RecoveryInvoiceTask, amountPending: number) => {
     const statementLink = `${window.location.origin}/staff/dashboard/accounts?tab=statement&customerId=${encodeURIComponent(task.customerId)}`;
@@ -1086,6 +1183,7 @@ export default function AccountsSummaryView() {
         setCustomerCredits(json.customerCredits || []);
         setSyncStats(json.stats || null);
         setSyncPreviewOpen(true);
+        fetchApiUsage();
       } else {
         toast.error(json.error || 'Precheck failed');
       }
@@ -1152,26 +1250,28 @@ export default function AccountsSummaryView() {
 
   const sidebarKPIs = useMemo(() => {
     const active = tasks.filter(t => t.status === 'ACTIVE');
-    const totalPendingAmount = active.reduce((sum, t) => {
+    const totalOutstandingAmount = active.reduce((sum, t) => {
       const inv = data?.rows?.find(r => r.invoiceId === t.invoiceId);
       return sum + (inv ? inv.amountPending : (t.lastKnownPendingAmount || 0));
     }, 0);
     const pendingInvoicesCount = active.length;
-    const needsFollowUpCount = active.filter(t => t.requiresReminder).length;
-    
-    let avgAgeDays = 0;
-    if (active.length > 0) {
-      const totalAgeMs = active.reduce((sum, t) => {
-        return sum + (Date.now() - new Date(t.flaggedAt).getTime());
-      }, 0);
-      avgAgeDays = Math.round(totalAgeMs / active.length / (1000 * 60 * 60 * 24));
+    const uniqueCustomers = new Set(active.map(t => t.customerId)).size;
+
+    let oldestDueDays = 0;
+    for (const t of active) {
+      const inv = data?.rows?.find(r => r.invoiceId === t.invoiceId);
+      const dueDateVal = inv?.dueDate ? new Date(inv.dueDate) : null;
+      const ageDays = dueDateVal
+        ? Math.max(0, Math.ceil((Date.now() - dueDateVal.getTime()) / 86400000))
+        : Math.max(0, Math.ceil((Date.now() - new Date(t.flaggedAt).getTime()) / 86400000));
+      if (ageDays > oldestDueDays) oldestDueDays = ageDays;
     }
 
     return {
-      totalPendingAmount,
+      totalOutstandingAmount,
       pendingInvoicesCount,
-      needsFollowUpCount,
-      avgAgeDays
+      uniqueCustomers,
+      oldestDueDays,
     };
   }, [tasks, data]);
 
@@ -2841,384 +2941,316 @@ export default function AccountsSummaryView() {
       {/* Sliding Drawer Panel */}
       {flaggedDrawerOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div 
+          <div
             className="absolute inset-0 bg-slate-900/35 backdrop-blur-sm transition-opacity duration-300"
             onClick={() => setFlaggedDrawerOpen(false)}
           />
-          <div className="relative w-full max-w-[380px] h-full bg-slate-50 shadow-2xl flex flex-col z-10 border-l border-slate-200 animate-in slide-in-from-right duration-200">
-            {/* Header */}
-            <div className="p-3 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
-              <div>
-                <h3 className="text-xs font-bold flex items-center gap-1.5" style={{ color: '#1A2766' }}>
-                  <Flag size={12} className="text-amber-500 fill-amber-500" />
-                  Recovery Queue
-                </h3>
-                <p className="text-[9px] font-medium text-slate-400 mt-0.5">Pending statement follow-ups</p>
-              </div>
-              <div className="flex items-center gap-3">
-                {/* Custom Sort Dropdown */}
-                <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-[8.5px] font-bold text-slate-600 hover:bg-slate-100 transition-colors select-none">
-                  <span>{recoverySort === 'overdue' ? '🕒' : '₹'}</span>
+          <div className="relative w-full max-w-[520px] h-full bg-slate-50 shadow-2xl flex flex-col z-10 border-l border-slate-200 animate-in slide-in-from-right duration-200">
+
+            {/* ── STICKY HEADER ── */}
+            <div className="shrink-0 bg-white border-b border-slate-200">
+              {/* Top bar */}
+              <div className="p-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Flag size={13} className="text-amber-500 fill-amber-500 shrink-0" />
+                  <div className="min-w-0">
+                    <h3 className="text-xs font-bold leading-none" style={{ color: '#1A2766' }}>Recovery Queue</h3>
+                    <p className="text-[9px] text-slate-400 mt-0.5 leading-none">Outstanding invoices by customer</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Sort dropdown */}
                   <select
                     value={recoverySort}
-                    onChange={(e) => setRecoverySort(e.target.value as 'overdue' | 'value')}
-                    className="bg-transparent focus:outline-none cursor-pointer text-[8.5px] text-slate-700 border-none font-bold py-0"
+                    onChange={(e) => {
+                      setRecoverySort(e.target.value as typeof recoverySort);
+                      setRecoveryPage(0);
+                    }}
+                    className="text-[9px] font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded px-1.5 py-1 focus:outline-none cursor-pointer"
                   >
-                    <option value="overdue">Sort: Overdue</option>
-                    <option value="value">Sort: Value</option>
+                    <option value="highest-outstanding">↓ Highest Outstanding</option>
+                    <option value="oldest-invoice">↓ Oldest Invoice</option>
+                    <option value="most-invoices">↓ Most Invoices</option>
+                    <option value="alphabetical">A–Z Alphabetical</option>
                   </select>
-                </div>
 
-                {(() => {
-                  const elapsed = nowTick - lastSyncTime;
-                  const cooldownSec = Math.max(0, Math.ceil((60000 - elapsed) / 1000));
-                  const isSyncDisabled = refreshingInvoices || filteredTasks.length === 0 || cooldownSec > 0;
-
-                  return (
-                    <div className="flex flex-col items-end gap-0.5">
+                  {/* Sync button */}
+                  {(() => {
+                    const elapsed = nowTick - lastSyncTime;
+                    const cooldownSec = Math.max(0, Math.ceil((60000 - elapsed) / 1000));
+                    const allInvoiceIds = groupedCustomers.flatMap(c => c.invoices.map(i => i.task.invoiceId));
+                    const isSyncDisabled = refreshingInvoices || allInvoiceIds.length === 0 || cooldownSec > 0;
+                    return (
                       <button
-                        onClick={() => {
-                          const invoicesToSync = filteredTasks.slice(0, 100).map(t => t.invoiceId);
-                          startSyncPrecheck(invoicesToSync);
-                        }}
+                        onClick={() => startSyncPrecheck(allInvoiceIds.slice(0, 100))}
                         disabled={isSyncDisabled}
-                        className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50 flex items-center gap-1 text-[9px] font-bold leading-none"
-                        title={cooldownSec > 0 ? `Next sync available in ${cooldownSec}s` : "Sync status of active recovery invoices from Zoho"}
+                        className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50 flex items-center gap-1 text-[9px] font-bold leading-none"
+                        title={cooldownSec > 0 ? `Next sync in ${cooldownSec}s` : 'Sync outstanding from Zoho'}
                       >
                         <RefreshCw size={10} className={refreshingInvoices ? 'animate-spin' : ''} />
-                        {cooldownSec > 0 ? `Sync (${cooldownSec}s)` : 'Sync Zoho'}
+                        {cooldownSec > 0 ? `${cooldownSec}s` : 'Sync'}
                       </button>
-                      {filteredTasks.length > 100 && (
-                        <span className="text-[7.5px] text-slate-400 font-bold leading-none select-none">
-                          Syncing 100 of {filteredTasks.length}
-                        </span>
-                      )}
+                    );
+                  })()}
+
+                  {/* Batch Download PDF Button */}
+                  <button
+                    onClick={handleBatchDownloadPdf}
+                    disabled={batchPdfGenerating || groupedCustomers.length === 0}
+                    className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50 flex items-center gap-1 text-[9px] font-bold leading-none"
+                    title="Download PDFs for all listed customers"
+                  >
+                    {batchPdfGenerating ? (
+                      <Loader2 size={10} className="animate-spin" />
+                    ) : (
+                      <Download size={10} />
+                    )}
+                    Batch PDF
+                  </button>
+
+                  <button
+                    onClick={() => setFlaggedDrawerOpen(false)}
+                    className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-700 transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Batch PDF Progress UI */}
+              {batchPdfProgress && (
+                <div className="px-3 pb-2">
+                  <div className="bg-blue-50 border border-blue-100 rounded-md p-2 flex flex-col gap-1.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-semibold text-blue-800">
+                        {batchPdfGenerating ? 'Generating PDFs...' : 'Generation Complete'}
+                      </span>
+                      <span className="text-[9px] font-bold text-blue-600">
+                        {batchPdfProgress.current} / {batchPdfProgress.total}
+                      </span>
                     </div>
-                  );
-                })()}
-                <button 
-                  onClick={() => setFlaggedDrawerOpen(false)}
-                  className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition-colors"
-                >
-                  <X size={14} />
-                </button>
+                    <div className="w-full bg-blue-100 rounded-full h-1.5 overflow-hidden">
+                      <div 
+                        className="bg-blue-500 h-1.5 transition-all duration-300" 
+                        style={{ width: `${(batchPdfProgress.current / batchPdfProgress.total) * 100}%` }}
+                      />
+                    </div>
+                    {batchPdfProgress.failures.length > 0 && (
+                      <span className="text-[9px] text-red-600 font-semibold">
+                        {batchPdfProgress.failures.length} failed
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Search */}
+              <div className="px-3 pb-2 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Search customer or invoice number…"
+                  value={recoverySearch}
+                  onChange={(e) => { setRecoverySearch(e.target.value); setRecoveryPage(0); }}
+                  className="flex-1 text-[10px] px-2.5 py-1.5 border border-slate-200 rounded-md bg-slate-50 focus:outline-none focus:border-slate-400 placeholder-slate-400"
+                />
+              </div>
+
+              {/* API Usage Counter */}
+              <div className="px-3 pb-3">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-slate-100 border border-slate-200 rounded text-[9px] font-mono">
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-600">
+                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                    ZOHO API USAGE TODAY
+                  </div>
+                  <div className="flex gap-4 text-slate-500 items-center">
+                    <span>Total Calls</span>
+                    <strong className="text-slate-800 text-[10px]">{apiUsage ? apiUsage.total : '...'}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPI Cards — 4 cards 2×2 */}
+              <div className="px-3 pb-3 grid grid-cols-4 gap-1.5">
+                <div className="bg-rose-50 border border-rose-100 rounded-lg p-2 text-center">
+                  <span className="text-[7px] font-bold text-rose-400 uppercase tracking-wide block leading-none mb-1">Outstanding</span>
+                  <span className="text-[10px] font-black text-rose-700 leading-none">{formatINR(sidebarKPIs.totalOutstandingAmount)}</span>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
+                  <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide block leading-none mb-1">Customers</span>
+                  <span className="text-[10px] font-black text-slate-800 leading-none">{sidebarKPIs.uniqueCustomers}</span>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
+                  <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide block leading-none mb-1">Invoices</span>
+                  <span className="text-[10px] font-black text-slate-800 leading-none">{sidebarKPIs.pendingInvoicesCount}</span>
+                </div>
+                <div className="bg-amber-50 border border-amber-100 rounded-lg p-2 text-center">
+                  <span className="text-[7px] font-bold text-amber-500 uppercase tracking-wide block leading-none mb-1">Oldest Due</span>
+                  <span className="text-[10px] font-black text-amber-700 leading-none">{sidebarKPIs.oldestDueDays}d</span>
+                </div>
               </div>
             </div>
 
-            {/* Needs Rem KPI Filter Toggler */}
-            <div className="p-2 border-b border-slate-200 shrink-0">
-              <button 
-                onClick={() => setFilterNeedsReminder(!filterNeedsReminder)}
-                className={`w-full p-2 rounded-lg border text-center transition-all duration-200 cursor-pointer flex items-center justify-between shadow-sm ${
-                  filterNeedsReminder 
-                    ? 'border-rose-400 bg-rose-50 text-rose-800 ring-2 ring-rose-500/10' 
-                    : activeTasksList.filter(t => t.requiresReminder).length > 0 
-                      ? 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-medium' 
-                      : 'border-slate-100 bg-slate-50/50 text-slate-400 opacity-60'
-                }`}
-                title="Click to toggle follow-up required filter"
-              >
-                <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                  <span>🔔</span> Needs Follow-up
-                </span>
-                <span className="text-xs font-black">
-                  {activeTasksList.filter(t => t.requiresReminder).length}
-                </span>
-              </button>
-            </div>
-
-            {/* Sidebar KPIs */}
-            <div className="p-2 bg-slate-100/60 border-b border-slate-200 grid grid-cols-2 gap-1.5 shrink-0">
-              <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm text-center">
-                <span className="text-[7.5px] font-bold text-slate-400 uppercase tracking-wide block leading-none mb-1">Total Pending Amount</span>
-                <span className="text-xs font-black text-rose-700 leading-none">{formatINR(sidebarKPIs.totalPendingAmount)}</span>
-              </div>
-              <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm text-center">
-                <span className="text-[7.5px] font-bold text-slate-400 uppercase tracking-wide block leading-none mb-1">Pending Invoices</span>
-                <span className="text-xs font-black text-slate-800 leading-none">{sidebarKPIs.pendingInvoicesCount}</span>
-              </div>
-              <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-center">
-                <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide block leading-none mb-0.5">Average Age</span>
-                <span className="text-[10px] font-black text-slate-800 leading-none">{sidebarKPIs.avgAgeDays} days</span>
-              </div>
-              <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-center">
-                <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide block leading-none mb-0.5">Needs Follow-Up</span>
-                <span className="text-[10px] font-black text-amber-700 leading-none">{sidebarKPIs.needsFollowUpCount}</span>
-              </div>
-            </div>
-
-            {/* Content List */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
-              {filteredTasks.length === 0 ? (
+            {/* ── CUSTOMER LIST ── */}
+            <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+              {groupedCustomers.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center gap-1.5">
-                  <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-350">
-                    <Check size={14} className="stroke-[3]" />
+                  <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center">
+                    <Check size={14} className="stroke-[3] text-slate-400" />
                   </div>
                   <div>
-                    <p className="text-slate-800 font-bold text-[10px]">No invoices in this queue</p>
-                    <p className="text-[9px] text-slate-400 mt-0.5">Adjust filter or flag invoices to get started</p>
+                    <p className="text-slate-800 font-bold text-[10px]">No customers in queue</p>
+                    <p className="text-[9px] text-slate-400 mt-0.5">Flag invoices from the summary table to get started</p>
                   </div>
                 </div>
               ) : (
-                filteredTasks.map((item, taskIndex) => {
-                  const inv = data?.rows?.find(r => r.invoiceId === item.invoiceId);
-                  
-                  const pendingAmount = inv ? inv.amountPending : (item.lastKnownPendingAmount || 0);
-                  const totalAmount = inv ? inv.invoiceValue : (item.lastKnownPendingAmount || 0);
-                  const pendingPercent = totalAmount > 0 ? Math.round((pendingAmount / totalAmount) * 100) : 0;
-                  const displayInvoiceDate = inv ? formatDateDisplay(inv.invoiceDate, inv.createdTime || null).date : 'N/A';
-                  const isOverdue = getTaskOverdue(item);
-                  const dueDateVal = inv?.dueDate ? new Date(inv.dueDate) : null;
-                  const overdueDays = dueDateVal 
-                    ? Math.max(0, Math.ceil((Date.now() - dueDateVal.getTime()) / (1000 * 60 * 60 * 24)))
-                    : Math.max(0, Math.ceil((Date.now() - new Date(item.flaggedAt).getTime()) / (1000 * 60 * 60 * 24)));
-                  const unusedCredits = enrichMap[item.customerId]?.unusedCredits || 0;
-                  const loading = taskLoadingId === item.invoiceId;
-                  const isExpanded = expandedCardId === item.id;
+                <>
+                  {groupedCustomers
+                    .slice(recoveryPage * RECOVERY_PAGE_SIZE, (recoveryPage + 1) * RECOVERY_PAGE_SIZE)
+                    .map((customer) => {
+                      const isExpanded = expandedCustomerIds.has(customer.customerId);
+                      const totalOut = customer.totalOutstanding;
 
-                  const isSyncing = syncingInvoiceIds.has(item.invoiceId);
-                  const isSyncSuccess = successSyncedIds.has(item.invoiceId);
-                  const isQueued = filteredTasks.length > 100 && taskIndex >= 100;
+                      // Priority color coding
+                      const borderColor =
+                        totalOut > 500000 ? 'border-l-rose-500' :
+                        totalOut > 200000 ? 'border-l-orange-400' :
+                        totalOut > 50000  ? 'border-l-amber-400' :
+                                            'border-l-emerald-400';
+                      const amountColor =
+                        totalOut > 500000 ? 'text-rose-700' :
+                        totalOut > 200000 ? 'text-orange-600' :
+                        totalOut > 50000  ? 'text-amber-600' :
+                                            'text-emerald-700';
 
-                  return (
-                    <div 
-                      key={item.id} 
-                      className={`bg-white border rounded-md p-2 shadow-sm transition-all flex flex-col gap-1 border-slate-200 hover:border-slate-300 ${
-                        isExpanded ? 'ring-1 ring-[#1A2766]/5 border-slate-300 bg-white shadow-md' : ''
-                      } ${isSyncing ? 'opacity-60 animate-pulse bg-slate-50' : ''} ${isSyncSuccess ? 'bg-emerald-50/20 border-emerald-300 animate-none' : ''}`}
-                    >
-                      {/* COLLAPSED HEADER */}
-                      <div 
-                        onClick={() => setExpandedCardId(isExpanded ? null : item.id)}
-                        className="cursor-pointer select-none"
-                      >
-                        {/* ROW 1: Customer & Pending Amount */}
-                        <div className="flex justify-between items-start gap-2">
-                          <div className="flex items-center gap-1 min-w-0">
-                            {isExpanded ? <ChevronDown size={10} className="text-slate-400 shrink-0" /> : <ChevronRight size={10} className="text-slate-400 shrink-0" />}
-                            <span className="text-[10px] font-bold text-slate-800 truncate uppercase" title={item.customerName}>
-                              {item.customerName}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0 select-none">
-                            {isSyncing && (
-                              <span className="text-[8px] font-semibold text-blue-600 flex items-center gap-0.5 animate-spin">
-                                <RefreshCw size={8} />
-                              </span>
-                            )}
-                            {isSyncSuccess && (
-                              <span className="text-[8px] font-bold text-emerald-600 flex items-center gap-0.5 animate-bounce">
-                                <Check size={8} className="stroke-[3]" />
-                              </span>
-                            )}
-                            <span className="text-[10.5px] font-extrabold text-slate-900">
-                              {formatINR(pendingAmount)}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* ROW 2: Invoice Number */}
-                        <div className="pl-3.5 text-[8.5px] font-mono text-slate-400 leading-none mt-0.5">
-                          {item.invoiceNumber}
-                        </div>
-
-                        {/* ROW 3: Days Overdue, Follow-up indicator, Reminder Count */}
-                        <div className="pl-3.5 flex justify-between items-center mt-1 text-[8.5px] text-slate-500 font-medium">
-                          <div className="flex items-center gap-2">
-                            <span>{overdueDays}d overdue</span>
-                            {item.requiresReminder ? (
-                              <span className="flex items-center gap-0.5 text-rose-600 font-semibold">
-                                <span>🔔</span> Needs Follow-up
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-0.5 text-slate-400">
-                                <span>🔔</span> No Follow-up
-                              </span>
-                            )}
-                            {isQueued && (
-                              <span className="text-[7px] text-slate-400 bg-slate-100 px-1 rounded border border-slate-200 select-none" title="This invoice is queued for the next sync batch">
-                                Queued
-                              </span>
-                            )}
-                          </div>
-                          {item.reminderCount > 0 && (
-                            <span className="flex items-center gap-0.5 text-emerald-600 font-bold shrink-0">
-                              <span>📲</span> x{item.reminderCount}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* EXPANDED CONTENT */}
-                      {isExpanded && (
-                        <div className="border-t border-slate-100 pt-1.5 mt-1 space-y-2 text-[9.5px] animate-in fade-in duration-100">
-                          {/* KPI grid */}
-                          <div className="grid grid-cols-3 gap-1 bg-slate-50 p-1 rounded border border-slate-150 text-center">
-                            <div className="flex flex-col">
-                              <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide">Pending</span>
-                              <span className="text-[9px] font-black text-amber-700">{formatINR(pendingAmount)}</span>
-                            </div>
-                            <div className="flex flex-col border-x border-slate-200">
-                              <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide">Overdue</span>
-                              <span className="text-[9px] font-black text-slate-800">{overdueDays}d</span>
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="text-[7px] font-bold text-slate-400 uppercase tracking-wide">Credits</span>
-                              <span className={`text-[9px] font-black ${unusedCredits > 0 ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
-                                {unusedCredits > 0 ? formatINR(unusedCredits) : '₹0'}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Extra info / dates */}
-                          <div className="flex justify-between items-center text-[8.5px] text-slate-400 font-medium px-0.5">
-                            <span>Invoice Date: {displayInvoiceDate}</span>
-                            <span>FlagsRaised: {historicalCounts[item.invoiceId] || 0}x</span>
-                          </div>
-
-                          {/* Last Reminder */}
-                          {item.reminderSent && (
-                            <div className="bg-emerald-50/50 text-emerald-800 p-1 rounded border border-emerald-100/50 text-[8px] font-medium">
-                              Last Reminder: {item.reminderSentAt ? timeAgo(item.reminderSentAt) : 'N/A'} ({item.reminderCount}x)
-                            </div>
-                          )}
-
-                          {/* Notes */}
-                          <div className="flex flex-col gap-1">
-                            {item.notes ? (
-                              <p className="text-[8.5px] text-slate-500 italic bg-slate-50 p-1.5 rounded border border-dashed border-slate-200">
-                                <strong>Notes:</strong> {item.notes}
-                              </p>
-                            ) : null}
-                            <input
-                              type="text"
-                              placeholder="Add operational notes... (Press Enter)"
-                              defaultValue={item.notes || ''}
-                              onKeyDown={async (e) => {
-                                if (e.key === 'Enter') {
-                                  const val = e.currentTarget.value.trim();
-                                  setTaskLoadingId(item.invoiceId);
-                                  try {
-                                    const res = await fetch('/api/accounts/recovery', {
-                                      method: 'PUT',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ id: item.id, action: 'update_notes', notes: val }),
-                                    });
-                                    const json = await res.json();
-                                    if (json.success) {
-                                      toast.success('Notes updated');
-                                      fetchTasks();
-                                    } else {
-                                      toast.error(json.error || 'Failed to update notes');
-                                    }
-                                  } catch {
-                                    toast.error('Network error');
-                                  } finally {
-                                    setTaskLoadingId(null);
-                                  }
+                      return (
+                        <div
+                          key={customer.customerId}
+                          className={`bg-white border rounded-md shadow-sm border-l-4 ${borderColor} ${isExpanded ? 'border-slate-300 shadow-md' : 'border-slate-200 hover:border-slate-300'} transition-all`}
+                        >
+                          {/* Collapsed card header */}
+                          <div
+                            className="p-2.5 cursor-pointer select-none"
+                            onClick={() => {
+                              setExpandedCustomerIds(prev => {
+                                const next = new Set(prev);
+                                if (next.has(customer.customerId)) {
+                                  next.delete(customer.customerId);
+                                } else {
+                                  next.add(customer.customerId);
                                 }
-                              }}
-                              className="w-full text-[8.5px] px-2 py-1 bg-white border border-slate-200 rounded focus:outline-none focus:border-slate-400 placeholder-slate-450"
-                            />
+                                return next;
+                              });
+                            }}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                {isExpanded
+                                  ? <ChevronDown size={11} className="text-slate-400 shrink-0 mt-0.5" />
+                                  : <ChevronRight size={11} className="text-slate-400 shrink-0 mt-0.5" />}
+                                <span className="text-[10.5px] font-bold text-slate-800 uppercase truncate" title={customer.customerName}>
+                                  {customer.customerName}
+                                </span>
+                              </div>
+                              <span className={`text-[11px] font-extrabold shrink-0 ${amountColor}`}>
+                                {formatINR(totalOut)}
+                              </span>
+                            </div>
+                            <div className="pl-5 mt-0.5 flex items-center gap-3 text-[8.5px] text-slate-400 font-medium">
+                              <span>{customer.invoiceCount} invoice{customer.invoiceCount !== 1 ? 's' : ''}</span>
+                              <span className="text-slate-300">·</span>
+                              <span>Oldest: <span className="font-bold text-slate-600">{customer.oldestDue}d</span></span>
+                            </div>
                           </div>
 
-                          {/* Zoho Links */}
-                          <div className="flex items-center gap-1.5 text-[8.5px] font-bold text-blue-600">
-                            <a 
-                              href={`https://books.zoho.in/app#/contacts/${item.customerId}`} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="hover:underline flex items-center gap-0.5"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              Customer Link <ExternalLink size={8} />
-                            </a>
-                            <span className="text-slate-350 font-normal">|</span>
-                            <a 
-                              href={`https://books.zoho.in/app#/invoices/${item.invoiceId}`} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="hover:underline flex items-center gap-0.5"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              Invoice Link <ExternalLink size={8} />
-                            </a>
-                          </div>
-
-                          {/* Action Buttons */}
-                          <div className="flex gap-1 items-center border-t border-slate-100 pt-1.5">
+                          {/* View Statement — always visible */}
+                          <div className="px-2.5 pb-2 flex items-center gap-1.5">
                             <button
-                              onClick={() => {
-                                window.open(buildStatementUrl(item.customerId), '_blank');
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(buildStatementUrl(customer.customerId), '_blank');
                               }}
-                              className="flex-1 py-1 px-1 border border-slate-205 rounded hover:bg-slate-50 text-[8.5px] font-bold text-slate-600 flex items-center justify-center gap-0.5 transition-colors bg-white"
-                              title="Open Statement in new tab"
+                              className="flex items-center gap-1 px-2 py-1 border border-slate-200 rounded text-[8.5px] font-bold text-slate-600 hover:bg-slate-50 bg-white transition-colors"
                             >
                               <FileText size={9} />
-                              Statement
+                              View Statement
                             </button>
-                            <button
-                              onClick={() => {
-                                locateInvoice(item.customerId, item.invoiceId);
-                              }}
-                              className="flex-1 py-1 px-1 border border-slate-205 rounded hover:bg-slate-50 text-[8.5px] font-bold text-slate-600 flex items-center justify-center gap-0.5 transition-colors bg-white"
-                              title="Scroll main dashboard table to this row"
-                            >
-                              <MapPin size={9} />
-                              Locate
-                            </button>
-                            
-                            <button
-                              disabled={loading}
-                              onClick={() => {
-                                window.open(getWhatsAppUrl(item, pendingAmount), '_blank');
-                                handleMarkReminderSent(item.id, item.invoiceId);
-                              }}
-                              className="py-1 px-1.5 border border-[#25D366]/20 bg-[#25D366]/5 hover:bg-[#25D366]/10 text-[#128C7E] rounded text-[8.5px] font-bold flex items-center justify-center gap-0.5 transition-colors disabled:opacity-50"
-                              title="Send reminder via WhatsApp"
-                            >
-                              <MessageSquare size={9} />
-                              WhatsApp
-                            </button>
-
-                            <button
-                              disabled={loading}
-                              onClick={() => {
-                                handleToggleReminder(item.id, item.invoiceId, item.requiresReminder);
-                              }}
-                              className={`py-1 px-1.5 border rounded text-[8.5px] font-bold flex items-center justify-center transition-colors disabled:opacity-50 ${
-                                item.requiresReminder
-                                  ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
-                                  : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                              }`}
-                              title="Toggle Recovery/Follow-up flag status"
-                            >
-                              Follow-up
-                            </button>
-
-                            {releaseAllowed && (
-                              <button
-                                disabled={loading}
-                                onClick={() => {
-                                  handleReleaseStatement(item.id, item.invoiceId);
-                                }}
-                                className="py-1 px-1.5 border border-emerald-250 rounded hover:bg-emerald-50 text-[8.5px] font-bold text-emerald-700 flex items-center justify-center gap-0.5 transition-colors bg-emerald-50/20 disabled:opacity-50"
-                                title="Release invoice task from recovery list"
-                              >
-                                {loading ? (
-                                  <Loader2 size={9} className="animate-spin" />
-                                ) : (
-                                  <CheckCheck size={9} />
-                                )}
-                                Release
-                              </button>
-                            )}
                           </div>
+
+                          {/* Expanded: invoice table */}
+                          {isExpanded && (
+                            <div className="border-t border-slate-100 animate-in fade-in duration-100">
+                              <table className="w-full text-[9px] border-collapse">
+                                <thead>
+                                  <tr className="bg-slate-50 border-b border-slate-100">
+                                    <th className="px-2.5 py-1.5 text-left font-bold text-slate-500 uppercase tracking-wide text-[7.5px]">Invoice</th>
+                                    <th className="px-2 py-1.5 text-left font-bold text-slate-500 uppercase tracking-wide text-[7.5px]">Date</th>
+                                    <th className="px-2 py-1.5 text-right font-bold text-slate-500 uppercase tracking-wide text-[7.5px]">Age</th>
+                                    <th className="px-2.5 py-1.5 text-right font-bold text-slate-500 uppercase tracking-wide text-[7.5px]">Outstanding</th>
+                                    {releaseAllowed && <th className="px-2 py-1.5 text-center font-bold text-slate-500 uppercase tracking-wide text-[7.5px]">Action</th>}
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                  {customer.invoices.map(({ task, inv, pending, ageDays, invoiceDate }) => {
+                                    const loading = taskLoadingId === task.invoiceId;
+                                    const ageColor =
+                                      ageDays <= 3  ? 'text-emerald-600' :
+                                      ageDays <= 7  ? 'text-amber-600' :
+                                                      'text-rose-600';
+                                    const displayDate = inv
+                                      ? formatDateDisplay(inv.invoiceDate, inv.createdTime || null).date
+                                      : (invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—');
+                                    return (
+                                      <tr key={task.id} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-2.5 py-1.5 font-mono text-slate-700 font-medium text-[9px]">{task.invoiceNumber}</td>
+                                        <td className="px-2 py-1.5 text-slate-500">{displayDate}</td>
+                                        <td className={`px-2 py-1.5 text-right font-bold ${ageColor}`}>{ageDays}d</td>
+                                        <td className="px-2.5 py-1.5 text-right font-extrabold text-slate-800">{formatINR(pending)}</td>
+                                        {releaseAllowed && (
+                                          <td className="px-2 py-1.5 text-center">
+                                            <button
+                                              disabled={loading}
+                                              onClick={() => handleReleaseStatement(task.id, task.invoiceId)}
+                                              className="px-1.5 py-0.5 border border-emerald-200 rounded text-[8px] font-bold text-emerald-700 hover:bg-emerald-50 transition-colors disabled:opacity-50 flex items-center gap-0.5 mx-auto"
+                                            >
+                                              {loading ? <Loader2 size={8} className="animate-spin" /> : <CheckCheck size={8} />}
+                                              Release
+                                            </button>
+                                          </td>
+                                        )}
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      );
+                    })}
+
+                  {/* Pagination */}
+                  {groupedCustomers.length > RECOVERY_PAGE_SIZE && (
+                    <div className="flex items-center justify-center gap-3 pt-2 pb-1">
+                      <button
+                        disabled={recoveryPage === 0}
+                        onClick={() => setRecoveryPage(p => p - 1)}
+                        className="px-2.5 py-1 border border-slate-200 rounded text-[9px] font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-40 transition-colors"
+                      >
+                        ← Prev
+                      </button>
+                      <span className="text-[9px] text-slate-500 font-medium">
+                        Page {recoveryPage + 1} of {Math.ceil(groupedCustomers.length / RECOVERY_PAGE_SIZE)}
+                      </span>
+                      <button
+                        disabled={(recoveryPage + 1) * RECOVERY_PAGE_SIZE >= groupedCustomers.length}
+                        onClick={() => setRecoveryPage(p => p + 1)}
+                        className="px-2.5 py-1 border border-slate-200 rounded text-[9px] font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-40 transition-colors"
+                      >
+                        Next →
+                      </button>
                     </div>
-                  );
-                })
+                  )}
+                </>
               )}
             </div>
           </div>

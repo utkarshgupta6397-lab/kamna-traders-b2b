@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { getCustomerInvoices } from '@/lib/zoho/customer-statement';
-import { trackZohoApiCall } from '@/lib/zoho-api-meter';
 
 export const maxDuration = 300; // Allow up to 5 minutes to prevent timeout on Vercel
 
@@ -47,7 +46,6 @@ export async function POST(req: Request) {
     // To respect rate limits but not take forever, we can process sequentially or in small batches
     for (const cid of customerIds) {
       console.log(`[HOLD_REFRESH] Step C: Zoho API call for: ${cid}`);
-      trackZohoApiCall('Customer Invoices Fetch (Hold Queue)');
       const result = await getCustomerInvoices(cid);
       
       if (result.success && result.data) {

@@ -57,6 +57,22 @@ export async function initializeDatabase() {
               
               const cleanEndpoint = urlStr.split('?')[0].replace(/https?:\/\/[^\/]+/, 'ZOHO:');
               
+              // DAILY STATS TRACKER
+              if (!(globalThis as any).__ZOHO_USAGE_STATS__) {
+                (globalThis as any).__ZOHO_USAGE_STATS__ = { date: '', total: 0, customer: 0, invoice: 0, payment: 0, statement: 0, other: 0 };
+              }
+              const todayStr = new Date().toDateString();
+              if ((globalThis as any).__ZOHO_USAGE_STATS__.date !== todayStr) {
+                (globalThis as any).__ZOHO_USAGE_STATS__ = { date: todayStr, total: 0, customer: 0, invoice: 0, payment: 0, statement: 0, other: 0 };
+              }
+              const stats = (globalThis as any).__ZOHO_USAGE_STATS__;
+              stats.total++;
+              if (urlStr.includes('/contacts')) stats.customer++;
+              else if (urlStr.includes('/invoices')) stats.invoice++;
+              else if (urlStr.includes('/customerpayments')) stats.payment++;
+              else if (urlStr.includes('/customerstatements')) stats.statement++;
+              else stats.other++;
+
               (globalThis as any).__ZOHO_TELEMETRY__.push({
                 time: new Date().toISOString(),
                 method,
@@ -75,6 +91,22 @@ export async function initializeDatabase() {
               let method = 'GET';
               if (args[1] && args[1].method) method = args[1].method.toUpperCase();
               
+              // DAILY STATS TRACKER (also count failures)
+              if (!(globalThis as any).__ZOHO_USAGE_STATS__) {
+                (globalThis as any).__ZOHO_USAGE_STATS__ = { date: '', total: 0, customer: 0, invoice: 0, payment: 0, statement: 0, other: 0 };
+              }
+              const todayStr = new Date().toDateString();
+              if ((globalThis as any).__ZOHO_USAGE_STATS__.date !== todayStr) {
+                (globalThis as any).__ZOHO_USAGE_STATS__ = { date: todayStr, total: 0, customer: 0, invoice: 0, payment: 0, statement: 0, other: 0 };
+              }
+              const stats = (globalThis as any).__ZOHO_USAGE_STATS__;
+              stats.total++;
+              if (urlStr.includes('/contacts')) stats.customer++;
+              else if (urlStr.includes('/invoices')) stats.invoice++;
+              else if (urlStr.includes('/customerpayments')) stats.payment++;
+              else if (urlStr.includes('/customerstatements')) stats.statement++;
+              else stats.other++;
+
               (globalThis as any).__ZOHO_TELEMETRY__.push({
                 time: new Date().toISOString(),
                 method,

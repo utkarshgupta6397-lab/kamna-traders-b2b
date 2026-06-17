@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
-import { trackZohoApiCall } from '@/lib/zoho-api-meter';
 import { ensureCustomerExists } from '@/lib/dcr-customer-sync';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
@@ -13,7 +12,6 @@ async function searchZohoCustomer(query: string) {
     const accessToken = await getZohoTokens();
     if (!orgId || !accessToken) return [];
 
-    trackZohoApiCall('Customer Lookup');
 
     // Zoho Books contact search (matches name, email, phone, etc.)
     const url = `${API_BASE_URL}/books/v3/contacts?organization_id=${orgId}&search_text=${encodeURIComponent(query)}`;

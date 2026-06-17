@@ -1,5 +1,4 @@
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
-import { trackZohoApiCall } from '@/lib/zoho-api-meter';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
@@ -297,7 +296,6 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
   raw?: any;
   error?: string;
 }> {
-  trackZohoApiCall('Customer Statement');
   // 1. Parallelize base API calls
   console.time('customer');
   const customerPromise = getCustomerById(contactId).finally(() => console.timeEnd('customer'));

@@ -221,7 +221,7 @@ export default function LiveBankTransactionsView() {
   const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
   const [debugOpen, setDebugOpen] = useState(false);
   
-  const [sortOption, setSortOption] = useState<SortOption>('Latest First');
+  const [sortOption, setSortOption] = useState<SortOption>('Highest Amount');
 
   // Interactive Client-Side Filters
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);

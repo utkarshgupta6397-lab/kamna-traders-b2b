@@ -235,8 +235,11 @@ export async function GET(req: Request) {
 
     let zohoApiCallsToday = 0;
     try {
-      const { getZohoApiUsage } = await import('@/lib/zoho-api-meter');
-      zohoApiCallsToday = getZohoApiUsage().today;
+      const stats = (globalThis as any).__ZOHO_USAGE_STATS__;
+      const todayStr = new Date().toDateString();
+      if (stats && stats.date === todayStr) {
+        zohoApiCallsToday = stats.total;
+      }
     } catch(e) {
       console.error('Could not get Zoho API Usage:', e);
     }

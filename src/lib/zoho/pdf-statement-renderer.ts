@@ -162,7 +162,7 @@ const toBase64 = async (res: Response): Promise<string> => {
   });
 };
 
-async function getCachedAssets(theme: 'color' | 'economy') {
+export async function getCachedAssets(theme: 'color' | 'economy') {
   if (!cachedFontRegular) {
     try {
       const res = await fetch('/fonts/NotoSans-Regular.ttf?v=3');
@@ -282,7 +282,7 @@ export async function renderStatementToPdf(
   const totalInvoiced  = visibleTxs.filter(t => t.type === 'invoice').reduce((a, t) => a + Math.abs(t.netEffect), 0);
   const totalPaid      = visibleTxs.filter(t => t.type === 'payment').reduce((a, t) => a + Math.abs(t.netEffect), 0);
 
-  const headerH = theme === 'economy' ? 22 : 30;
+  const headerH = theme === 'economy' ? 24 : 32;
   if (theme === 'color') {
     doc.setFillColor(...cNavy);
     doc.rect(0, 0, pageW, headerH, 'F');
@@ -290,34 +290,47 @@ export async function renderStatementToPdf(
 
   const logoH = theme === 'economy' ? 14 : 18;
   const logoW = logoH * (599 / 579);
+  const logoY = 12; // Start logo further down to clear the 10mm border
   if (logo) {
-    doc.addImage(logo, 'PNG', margin, (headerH - logoH) / 2, logoW, logoH);
+    doc.addImage(logo, 'PNG', margin, logoY, logoW, logoH);
   }
 
   const titleX = logo ? margin + logoW + 4 : margin;
+  const rightX = pageW - margin;
+  const maxRightWidth = (pageW - margin * 2) * 0.45;
+  
+  // Baseline 1 (Title vs Name)
+  const base1 = logoY + 6;
   doc.setTextColor(...(theme === 'economy' ? cDark : [255, 255, 255] as [number, number, number]));
   doc.setFont(pdfFont, 'bold');
   doc.setFontSize(13);
-  doc.text('Customer Statement', titleX, theme === 'economy' ? 10 : 12);
+  doc.text('Customer Statement', titleX, base1);
+  
+  doc.setFontSize(10);
+  let cName = s.customer.contactName || 'Customer';
+  if (doc.getStringUnitWidth(cName) * doc.internal.getFontSize() / doc.internal.scaleFactor > maxRightWidth) {
+    while (cName.length > 0 && doc.getStringUnitWidth(cName + '...') * doc.internal.getFontSize() / doc.internal.scaleFactor > maxRightWidth) {
+      cName = cName.slice(0, -1);
+    }
+    cName += '...';
+  }
+  doc.text(cName, rightX, base1, { align: 'right' });
 
+  // Baseline 2 (Subtitle vs GST)
+  const base2 = logoY + 11;
   doc.setFont(pdfFont, 'normal');
   doc.setFontSize(7);
   doc.setTextColor(...(theme === 'economy' ? cSlate : [190, 205, 225] as [number, number, number]));
-  doc.text('Kamna Traders · Receivables Ledger', titleX, theme === 'economy' ? 15 : 20);
-
-  doc.setFont(pdfFont, 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(...(theme === 'economy' ? cDark : [255, 255, 255] as [number, number, number]));
-  doc.text(s.customer.contactName, pageW - margin, theme === 'economy' ? 9 : 11, { align: 'right' });
+  doc.text('Kamna Traders · Receivables Ledger', titleX, base2);
+  
   if (s.customer.gstNo) {
-    doc.setFont(pdfFont, 'normal');
-    doc.setFontSize(7);
-    doc.setTextColor(...(theme === 'economy' ? cSlate : [190, 205, 225] as [number, number, number]));
-    doc.text(`GST: ${s.customer.gstNo}`, pageW - margin, theme === 'economy' ? 14 : 18, { align: 'right' });
+    doc.text(`GST: ${s.customer.gstNo}`, pageW - margin, base2, { align: 'right' });
   }
+
+  // Baseline 3 (Phone)
+  const base3 = logoY + 15;
   if (s.customer.mobile) {
-    doc.setFontSize(7);
-    doc.text(s.customer.mobile, pageW - margin, theme === 'economy' ? 19 : 24, { align: 'right' });
+    doc.text(s.customer.mobile, pageW - margin, base3, { align: 'right' });
   }
 
   if (theme === 'economy') {
@@ -367,6 +380,59 @@ export async function renderStatementToPdf(
     doc.text(box.val, bx + 3, by + 11);
   });
 
+  const paymentBreakdown = visibleTxs
+    .filter(t => t.type === 'payment')
+    .reduce((acc: any, p: any) => {
+      const cleaned = cleanDescription(p.description, 'payment') || 'Other';
+      acc[cleaned] = (acc[cleaned] || 0) + Math.abs(p.netEffect);
+      return acc;
+    }, {});
+
+  let currentY = theme === 'economy' ? 42 : 52;
+  const breakDownKeys = Object.keys(paymentBreakdown);
+  if (breakDownKeys.length > 0) {
+    currentY += 4;
+    doc.setFont(pdfFont, 'bold');
+    doc.setFontSize(6);
+    doc.setTextColor(100, 116, 139);
+    doc.text('PAYMENT BREAKDOWN', margin, currentY);
+    
+    currentY += 4;
+    let currentX = margin;
+    let localY = currentY;
+    const maxAvailableWidth = pageW - margin * 2;
+    
+    breakDownKeys.forEach((k) => {
+      const amtStr = pdfFmt(paymentBreakdown[k]);
+      doc.setFont(pdfFont, 'normal');
+      doc.setFontSize(7);
+      const labelW = doc.getStringUnitWidth(k + '  ') * doc.internal.getFontSize() / doc.internal.scaleFactor;
+      
+      doc.setFont(pdfFont, 'bold');
+      const amtW = doc.getStringUnitWidth(amtStr) * doc.internal.getFontSize() / doc.internal.scaleFactor;
+      
+      const itemW = labelW + amtW + 8; // 8mm spacing between items
+      
+      if (currentX + itemW > margin + maxAvailableWidth && currentX > margin) {
+        currentX = margin;
+        localY += 4;
+      }
+      
+      doc.setFont(pdfFont, 'normal');
+      doc.setTextColor(51, 65, 85);
+      doc.text(k, currentX, localY);
+      
+      doc.setFont(pdfFont, 'bold');
+      doc.setTextColor(5, 150, 105);
+      doc.text(amtStr, currentX + labelW, localY);
+      
+      currentX += itemW;
+    });
+    currentY = localY + 6;
+  } else {
+    currentY += 4;
+  }
+
   const tableHead = [['Date', 'Type', 'Details', 'Invoice Amt', 'Payment Amt', 'Balance']];
 
   const openRow = [
@@ -392,7 +458,7 @@ export async function renderStatementToPdf(
   ];
 
   autoTable(doc, {
-    startY: theme === 'economy' ? 46 : 56,
+    startY: currentY,
     head: tableHead,
     body: [openRow, ...txRows, totalsRow],
     theme: 'grid',
@@ -490,7 +556,9 @@ export async function renderStatementToPdf(
   doc.setFont(pdfFont, 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(...cSlate);
-  doc.text('Generated By: Admin', margin, footerY + 8);
+  
+  // Left: Generated By/At
+  doc.text(`Generated By: ${options.isBatchRecovery ? 'Admin' : 'Staff'}`, margin, footerY + 8);
   doc.text(`Generated At: ${generatedAt}`, margin, footerY + 13);
 
   if (isTruncated && options.isBatchRecovery) {
@@ -500,6 +568,7 @@ export async function renderStatementToPdf(
     doc.text('Showing latest transactions only. Complete statement available in Customer Statement module.', margin, footerY + 22);
   }
 
+  // Right: QR Code and Outstanding
   const UPI_ID = 'ibkPOS.EP208232@icici';
   if (closingBal > 0) {
     const customerForRemarks = s.customer.contactName || s.customer.companyName || 'Customer';
@@ -521,86 +590,41 @@ export async function renderStatementToPdf(
       console.warn('[PDF] QR generation failed via client-side QRCode library', err);
     }
 
-    if (theme === 'economy') {
-      const qrSize = 22;
-      const boxW = 44;
-      const boxH = 38;
-      const boxX = pageW - margin - boxW;
-      const boxY = footerY + 2;
+    const qrSize = 22;
+    const boxW = 44;
+    const boxH = 38;
+    const boxX = pageW - margin - boxW;
+    const boxY = footerY + 2;
 
-      doc.setFillColor(255, 255, 255);
-      doc.setDrawColor(200, 200, 200);
-      doc.rect(boxX, boxY, boxW, boxH, 'FD');
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(200, 200, 200);
+    doc.rect(boxX, boxY, boxW, boxH, 'FD');
 
-      const centerX = boxX + boxW / 2;
+    const centerX = boxX + boxW / 2;
 
-      doc.setFont(pdfFont, 'bold');
-      doc.setFontSize(7.5);
-      doc.setTextColor(...cDark);
-      doc.text('Amount Due', centerX, boxY + 5, { align: 'center' });
+    doc.setFont(pdfFont, 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...cDark);
+    doc.text('Amount Due', centerX, boxY + 5, { align: 'center' });
 
-      doc.setFont(pdfFont, 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(...cRed);
-      doc.text(pdfFmtBalance(closingBal), centerX, boxY + 10, { align: 'center' });
+    doc.setFont(pdfFont, 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(...cRed);
+    doc.text(pdfFmtBalance(closingBal), centerX, boxY + 10, { align: 'center' });
 
-      if (qrDataUrl) {
-        doc.addImage(qrDataUrl, 'PNG', centerX - qrSize / 2, boxY + 11, qrSize, qrSize);
-      } else {
-        doc.setFont(pdfFont, 'normal');
-        doc.setFontSize(6);
-        doc.setTextColor(...cSlate);
-        doc.text('[QR unavailable]', centerX, boxY + 22, { align: 'center', maxWidth: qrSize });
-      }
-
-      doc.setFont(pdfFont, 'normal');
-      doc.setFontSize(6);
-      doc.setTextColor(...cSlate);
-      doc.text(UPI_ID, centerX, boxY + 12 + qrSize + 3, { align: 'center' });
+    if (qrDataUrl) {
+      doc.addImage(qrDataUrl, 'PNG', centerX - qrSize / 2, boxY + 11, qrSize, qrSize);
     } else {
-      const qrSize = 32;
-      const qrX = pageW - margin - qrSize - 4;
-      const qrBoxY = footerY + 4;
-
-      doc.setFillColor(248, 250, 252);
-      doc.setDrawColor(226, 232, 240);
-      
-      const boxPadding = 4;
-      const boxExtraH = 22;
-      doc.rect(qrX - boxPadding, qrBoxY - 2, qrSize + boxPadding * 2, qrSize + boxExtraH, 'FD');
-
-      if (qrDataUrl) {
-        doc.addImage(qrDataUrl, 'PNG', qrX, qrBoxY, qrSize, qrSize);
-      } else {
-        doc.setFont(pdfFont, 'normal');
-        doc.setFontSize(6);
-        doc.setTextColor(...cSlate);
-        doc.text('[QR unavailable — pay via UPI ID]', qrX, qrBoxY + 15, { align: 'left', maxWidth: qrSize });
-      }
-
-      const qrLabelX = qrX + qrSize / 2;
-      doc.setFont(pdfFont, 'bold');
-      doc.setFontSize(7.5);
-      doc.setTextColor(...cDark);
-      doc.text('Scan to Pay', qrLabelX, qrBoxY + qrSize + 4, { align: 'center' });
-
       doc.setFont(pdfFont, 'normal');
       doc.setFontSize(6);
       doc.setTextColor(...cSlate);
-      doc.text(UPI_ID, qrLabelX, qrBoxY + qrSize + 8, { align: 'center' });
-
-      doc.setFont(pdfFont, 'bold');
-      doc.setFontSize(7);
-      doc.setTextColor(...cRed);
-      doc.text(`Outstanding: ${pdfFmtBalance(closingBal)}`, qrLabelX, qrBoxY + qrSize + 13, { align: 'center' });
-
-      if (closingBal >= 100000) {
-        doc.setFont(pdfFont, 'normal');
-        doc.setFontSize(5.5);
-        doc.setTextColor(...cSlate);
-        doc.text('Enter amount manually when scanning', qrLabelX, qrBoxY + qrSize + 17, { align: 'center' });
-      }
+      doc.text('[QR unavailable]', centerX, boxY + 22, { align: 'center', maxWidth: qrSize });
     }
+
+    doc.setFont(pdfFont, 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(...cSlate);
+    doc.text(UPI_ID, centerX, boxY + 12 + qrSize + 3, { align: 'center' });
   } else {
     doc.setFont(pdfFont, 'normal');
     doc.setFontSize(7.5);

@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
-import { renderStatementToPdf } from '@/lib/zoho/pdf-statement-renderer';
+import { renderStatementToPdf, getCachedAssets } from '@/lib/zoho/pdf-statement-renderer';
 import { Download } from 'lucide-react';// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface InvoiceRow {
@@ -939,8 +939,215 @@ export default function AccountsSummaryView() {
     try {
       const jsPDF = (await import('jspdf')).default;
       const autoTable = (await import('jspdf-autotable')).default;
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       
+      // 1. Load assets
+      const { fontRegular, fontBold, logo } = await getCachedAssets('economy');
+
+      const applyFonts = (d: any) => {
+        if (fontRegular && !fontRegular.startsWith('PCF') && !fontRegular.includes('<!DOCTYPE')) {
+          d.addFileToVFS('NotoSans-Regular.ttf', fontRegular);
+          d.addFont('NotoSans-Regular.ttf', 'NotoSans', 'normal');
+        }
+        if (fontBold && !fontBold.startsWith('PCF') && !fontBold.includes('<!DOCTYPE')) {
+          d.addFileToVFS('NotoSans-Bold.ttf', fontBold);
+          d.addFont('NotoSans-Bold.ttf', 'NotoSans', 'bold');
+        }
+        return d.getFontList()['NotoSans'] ? 'NotoSans' : 'helvetica';
+      };
+
+      const cDark: [number, number, number] = [15, 23, 42];
+      const cGreen: [number, number, number] = [5, 150, 105];
+      const cRed: [number, number, number] = [220, 38, 38];
+      const cBlue: [number, number, number] = [37, 99, 235];
+      
+      const fmtCurrency = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
+
+      // Calculate how many pages the Index will take using a temporary document
+      const tempDoc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pdfFontTemp = applyFonts(tempDoc);
+      
+      const indexBody = groupedCustomers.map((c, i) => [
+        (i + 1).toString(),
+        c.customerName,
+        c.invoiceCount.toString(),
+        fmtCurrency(c.totalOutstanding),
+        c.oldestDue ? `${c.oldestDue} Days` : '—',
+        '...' // Placeholder
+      ]);
+      
+      const margin = 14;
+      autoTable(tempDoc, {
+        head: [['Sr No', 'Customer Name', 'Invoices', 'Outstanding', 'Oldest Due', 'Statement Page']],
+        body: indexBody,
+        startY: 30,
+        theme: 'grid',
+        headStyles: { fillColor: [241, 245, 249], textColor: cDark, fontSize: 8, font: pdfFontTemp },
+        bodyStyles: { fontSize: 8, font: pdfFontTemp },
+        alternateRowStyles: { fillColor: [250, 250, 250] },
+        columnStyles: {
+          0: { cellWidth: 12 },
+          2: { halign: 'center', cellWidth: 18 },
+          3: { halign: 'right' },
+          5: { halign: 'center', cellWidth: 25 }
+        },
+        margin: { top: 25, right: margin, bottom: 25, left: margin }
+      });
+      const indexPagesCount = (tempDoc as any).internal.getNumberOfPages() || (tempDoc as any).getNumberOfPages();
+      const totalCoverPages = 1 + indexPagesCount; // Page 1 + Index Pages
+      
+      // Now initialize the real document
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pdfFont = applyFonts(doc);
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      
+      // --- COVER PAGE 1: Portfolio KPI Summary ---
+      const headerH = 30;
+      
+      // Logo & Title
+      const logoH = 18;
+      const logoW = logoH * (599 / 579);
+      if (logo) {
+        doc.addImage(logo, 'PNG', margin, 12, logoW, logoH);
+      }
+      
+      doc.setTextColor(...cDark);
+      doc.setFont(pdfFont, 'bold');
+      doc.setFontSize(18);
+      const titleX = logo ? margin + logoW + 6 : margin;
+      doc.text('Portfolio Recovery Report', titleX, 22);
+      
+      doc.setFontSize(8);
+      doc.setFont(pdfFont, 'normal');
+      doc.setTextColor(100, 116, 139);
+      const generatedTimestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+      doc.text(`Generated: ${generatedTimestamp} | By: ${data?.refreshedBy || 'Admin'}`, titleX, 27);
+      
+      // Thin blue divider
+      doc.setDrawColor(...cBlue);
+      doc.setLineWidth(0.5);
+      doc.line(margin, headerH + 5, pageWidth - margin, headerH + 5);
+      
+      // Highest exposure customer logic
+      let highestExposureCustomer = groupedCustomers[0];
+      groupedCustomers.forEach(c => {
+        if (c.totalOutstanding > highestExposureCustomer.totalOutstanding) highestExposureCustomer = c;
+      });
+      const oldestDue = groupedCustomers.reduce((oldest, c) => (!oldest || (c.oldestDue && c.oldestDue > oldest) ? c.oldestDue : oldest), 0);
+      
+      let startY = headerH + 15;
+      doc.setTextColor(...cDark);
+      doc.setFont(pdfFont, 'bold');
+      doc.setFontSize(12);
+      doc.text('Key Performance Indicators', margin, startY);
+      
+      startY += 8;
+      
+      const drawKpiCard = (x: number, y: number, w: number, h: number, label: string, value: string, valColor: [number, number, number]) => {
+        doc.setFillColor(252, 252, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(x, y, w, h, 1, 1, 'FD');
+        
+        doc.setFont(pdfFont, 'bold');
+        doc.setFontSize(6);
+        doc.setTextColor(100, 116, 139);
+        doc.text(label.toUpperCase(), x + 3, y + 5);
+        
+        doc.setFont(pdfFont, 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(...valColor);
+        doc.text(value, x + 3, y + 12);
+      };
+      
+      const cardW = (pageWidth - margin * 2 - 8 * 2) / 3;
+      const cardH = 16;
+      
+      // Row 1
+      drawKpiCard(margin, startY, cardW, cardH, 'Total Customers', groupedCustomers.length.toString(), cDark);
+      drawKpiCard(margin + cardW + 8, startY, cardW, cardH, 'Total Invoices', metrics.totalInvoices.toString(), cDark);
+      drawKpiCard(margin + (cardW + 8) * 2, startY, cardW, cardH, 'Total Outstanding', fmtCurrency(metrics.totalPending), cRed);
+      
+      // Row 2
+      startY += cardH + 4;
+      drawKpiCard(margin, startY, cardW, cardH, 'Total Invoiced', fmtCurrency(metrics.totalValue), cDark);
+      drawKpiCard(margin + cardW + 8, startY, cardW, cardH, 'Total Paid', fmtCurrency(metrics.totalCollected), cGreen);
+      drawKpiCard(margin + (cardW + 8) * 2, startY, cardW, cardH, 'Collection Efficiency', `${metrics.collectionPct}%`, cBlue);
+      
+      // Row 3
+      startY += cardH + 4;
+      drawKpiCard(margin, startY, cardW, cardH, 'Average Outstanding', fmtCurrency(metrics.totalPending / (groupedCustomers.length || 1)), cDark);
+      drawKpiCard(margin + cardW + 8, startY, cardW, cardH, 'Highest Exposure Customer', highestExposureCustomer?.customerName || 'None', cDark);
+      drawKpiCard(margin + (cardW + 8) * 2, startY, cardW, cardH, 'Highest Exposure Amount', fmtCurrency(highestExposureCustomer?.totalOutstanding || 0), cRed);
+      
+      // Row 4
+      startY += cardH + 4;
+      drawKpiCard(margin, startY, cardW, cardH, 'Oldest Due Date', oldestDue ? `${oldestDue} Days` : '—', cRed);
+      
+      startY += cardH + 15;
+      
+      // Portfolio Statistics Table
+      doc.setTextColor(...cDark);
+      doc.setFont(pdfFont, 'bold');
+      doc.setFontSize(12);
+      doc.text('Portfolio Health Summary', margin, startY);
+      
+      autoTable(doc, {
+        startY: startY + 5,
+        head: [['Metric', 'Value', 'Status']],
+        body: [
+          ['Fully Paid Customers', metrics.fullyPaid.toString(), 'Healthy'],
+          ['Open Customers', metrics.openCount.toString(), 'Requires Follow-up'],
+          ['Overdue Invoices', metrics.overdue.toString(), 'Critical'],
+          ['Voided Invoices', metrics.voidCount.toString(), '—']
+        ],
+        theme: 'grid',
+        headStyles: { fillColor: [241, 245, 249], textColor: cDark, fontSize: 8, font: pdfFont },
+        bodyStyles: { fontSize: 8, font: pdfFont },
+        margin: { left: margin, right: margin }
+      });
+      
+      // --- COVER PAGE 2: Customer Summary (Index) ---
+      doc.addPage();
+      
+      doc.setTextColor(...cDark);
+      doc.setFont(pdfFont, 'bold');
+      doc.setFontSize(14);
+      doc.text('Customer Summary Index', margin, 20);
+      
+      // Calculate real statement pages
+      let currentStatementPage = totalCoverPages + 1;
+      const realIndexBody = groupedCustomers.map((c, i) => {
+        const row = [
+          (i + 1).toString(),
+          c.customerName,
+          c.invoiceCount.toString(),
+          fmtCurrency(c.totalOutstanding),
+          c.oldestDue ? `${c.oldestDue} Days` : '—',
+          currentStatementPage.toString()
+        ];
+        currentStatementPage++; // Since each statement fits exactly on 1 page as per requirements
+        return row;
+      });
+      
+      autoTable(doc, {
+        head: [['Sr No', 'Customer Name', 'Invoices', 'Outstanding', 'Oldest Due', 'Statement Page']],
+        body: realIndexBody,
+        startY: 25,
+        theme: 'grid',
+        headStyles: { fillColor: [241, 245, 249], textColor: cDark, fontSize: 8, font: pdfFont },
+        bodyStyles: { fontSize: 8, font: pdfFont },
+        alternateRowStyles: { fillColor: [250, 250, 250] },
+        columnStyles: {
+          0: { cellWidth: 12 },
+          2: { halign: 'center', cellWidth: 18 },
+          3: { halign: 'right' },
+          5: { halign: 'center', cellWidth: 25 }
+        },
+        margin: { top: 25, right: margin, bottom: 25, left: margin }
+      });
+      
+      // Render the actual statements
       let failures: string[] = [];
       for (let i = 0; i < groupedCustomers.length; i++) {
         const customer = groupedCustomers[i];
@@ -951,7 +1158,7 @@ export default function AccountsSummaryView() {
           const json = await res.json();
           if (!json.success || !json.data) throw new Error('Failed to fetch statement');
           
-          if (i > 0) doc.addPage();
+          doc.addPage();
           
           await renderStatementToPdf(doc, autoTable, json.data, 'economy', {
             isExpanded: true,
@@ -963,6 +1170,23 @@ export default function AccountsSummaryView() {
           failures.push(customer.customerName);
           setBatchPdfProgress({ current: i + 1, total: groupedCustomers.length, failures });
         }
+      }
+      
+      // Global Print Optimizations: Borders and Page Numbers
+      const totalPages = (doc as any).internal.getNumberOfPages() || (doc as any).getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        
+        // 10mm border
+        doc.setDrawColor(200, 200, 200); // Light Grey
+        doc.setLineWidth(0.15); // ~0.5 pt
+        doc.rect(10, 10, pageWidth - 20, pageHeight - 20, 'S');
+        
+        // Page X of Y footer
+        doc.setFont(pdfFont, 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text(`Page ${i} of ${totalPages}`, pageWidth / 2, pageHeight - 12, { align: 'center' });
       }
       
       const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, ' ');

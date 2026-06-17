@@ -50,6 +50,7 @@ interface InvoiceRow {
   paymentProgress: number;
   lastPaymentDate: string | null;
   lastRefreshedAt?: string | null;
+  salespersonName?: string | null;
 }
 
 interface ExtendedRow extends InvoiceRow {
@@ -1406,7 +1407,7 @@ export default function AccountsSummaryView() {
     const filename = `accounts-summary-${viewMode}-${new Date().toISOString().slice(0, 10)}.csv`;
 
     if (viewMode === 'invoice') {
-      headers = ['Invoice Number', 'Invoice Date', 'Due Date', 'Customer Name', 'GST Number', 'Invoice Value', 'Amount Paid', 'Amount Pending', 'Pending %', 'Status'];
+      headers = ['Invoice Number', 'Invoice Date', 'Due Date', 'Customer Name', 'GST Number', 'Salesman', 'Invoice Value', 'Amount Paid', 'Amount Pending', 'Pending %', 'Status'];
       rows = processedRows.map(r => {
         const pct = r.isOperationallySettled || r.paymentStatus === 'paid' || r.paymentStatus === 'void'
           ? 0
@@ -1417,6 +1418,7 @@ export default function AccountsSummaryView() {
           r.dueDate || '',
           r.customerName,
           r.resolvedGst,
+          r.salespersonName || '—',
           r.invoiceValue.toString(),
           r.amountPaid.toString(),
           r.amountPending.toString(),
@@ -1562,7 +1564,7 @@ export default function AccountsSummaryView() {
 
       // Table Render
       if (viewMode === 'invoice') {
-        const tableHeaders = [['#', 'Invoice Number', 'Date', 'Due Date', 'Customer Name', 'GST Number', 'Total Value', 'Amount Paid', 'Amount Pending', 'Pending %', 'Status']];
+        const tableHeaders = [['#', 'Invoice Number', 'Date', 'Due Date', 'Customer Name', 'GST Number', 'Salesman', 'Total Value', 'Amount Paid', 'Amount Pending', 'Pending %', 'Status']];
         const tableBody = processedRows.map((r, idx) => {
           const pct = r.isOperationallySettled || r.paymentStatus === 'paid' || r.paymentStatus === 'void'
             ? 0
@@ -1574,6 +1576,7 @@ export default function AccountsSummaryView() {
             r.dueDate || '—',
             r.customerName,
             r.resolvedGst || '—',
+            r.salespersonName || '—',
             formatPDFINR(r.invoiceValue),
             formatPDFINR(r.amountPaid),
             formatPDFINR(r.amountPending),
@@ -2082,6 +2085,7 @@ export default function AccountsSummaryView() {
     { label: 'Invoice',  field: 'invoiceNumber',   cls: 'w-[140px] text-left' },
     { label: 'Date',     field: 'invoiceDate',     cls: 'w-[120px] text-left' },
     { label: 'Customer', field: 'customerName',    cls: 'text-left'           },
+    { label: 'Salesman', field: 'salespersonName', cls: 'w-[110px] text-left' },
     { label: 'Value',    field: 'invoiceValue',    cls: 'w-[110px] text-right'},
     { label: 'Paid',     field: 'amountPaid',      cls: 'w-[115px] text-right'},
     { label: 'Pending',  field: 'amountPending',   cls: 'w-[115px] text-right'},

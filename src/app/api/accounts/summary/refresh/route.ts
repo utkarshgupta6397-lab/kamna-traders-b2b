@@ -648,20 +648,22 @@ export async function POST(request: Request) {
             const balance = status === 'paid' ? 0 : status === 'partially_paid' ? Math.round(total / 3) : total;
 
             const dueDateOffset = dayOffset === 0 ? 0 : dayOffset - 1;
-            const dueDate = getISTDateString(new Date(now.getTime() - dueDateOffset * 86400_000));
+            const dueDateString = getISTDateString(new Date(now.getTime() - dueDateOffset * 86400_000));
+            const salesperson = dayOffset % 2 === 0 ? 'Utkarsh Gupta' : 'Rajesh Kumar';
 
             invoices.push({
               invoice_id: `mock-inv-${i}`,
-              invoice_number: `INV-2026-${1000 + i}`,
+              invoice_number: `INV-24-${1000 + i}`,
               date: dateString,
-              due_date: dueDate,
+              due_date: dueDateString,
               created_time: invDate.toISOString(),
               customer_id: customer.id,
               customer_name: customer.name,
               gst_no: customer.gst,
-              status,
+              salesperson_name: salesperson,
               total,
-              balance,
+              balance_amount: balance,
+              status,
             });
           }
         }
@@ -722,6 +724,7 @@ export async function POST(request: Request) {
             customerName: inv.customer_name,
             customerId: custId,
             customerGst: resolvedGst,
+            salespersonName: inv.salesperson_name || null,
             invoiceValue: total,
             amountPaid: paid,
             amountPending: balance,

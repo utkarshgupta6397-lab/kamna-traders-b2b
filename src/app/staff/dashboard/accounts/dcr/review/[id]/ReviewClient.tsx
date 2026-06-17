@@ -170,8 +170,8 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
       }
     }
 
-    setManualItems(prev => prev.map(i => i.id === id ? { ...i, quantity: newQty } : i));
-    setInvoice(prev => {
+    setManualItems((prev: any[]) => prev.map((i: any) => i.id === id ? { ...i, quantity: newQty } : i));
+    setInvoice((prev: any) => {
       if (!prev) return prev;
       return {
         ...prev,

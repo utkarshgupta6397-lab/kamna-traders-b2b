@@ -1,14 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Search, RefreshCw, ChevronDown, ChevronRight,
   FileJson, Copy, AlertCircle, User, Phone,
   TrendingUp, Activity, Lock, Printer, Check, Download,
-  Calculator, Plus, Minus, Trash2, X
+  Calculator, Plus, Minus, Trash2, X, Users
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { useEffect } from 'react';
+
 import toast from 'react-hot-toast';
 import { qzManager } from '@/lib/print/qz-tray';
 import { renderStatementSlip } from '@/lib/print/slip-renderer';
@@ -129,6 +129,14 @@ export default function CustomerStatementView() {
     raw?: any;
     error?: string;
   } | null>(null);
+
+  const [groupStatement, setGroupStatement] = useState<{
+    success: boolean;
+    statements: Statement[];
+    error?: string;
+  } | null>(null);
+  const [groupLoading, setGroupLoading] = useState(false);
+  const [visibleFirmIds, setVisibleFirmIds] = useState<string[]>([]);
   const [debugOpen, setDebugOpen] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
@@ -161,8 +169,26 @@ export default function CustomerStatementView() {
   // Draft Invoices State
   const [draftStatuses, setDraftStatuses] = useState<Record<string, boolean>>({});
 
+  // Group Statement Mode State
+  const [statementMode, setStatementMode] = useState<'single' | 'group'>('single');
+  const [selectedCustomers, setSelectedCustomers] = useState<{id: string, name: string}[]>([]);
+  const [kpiMode, setKpiMode] = useState<'compact' | 'financial'>('compact');
+
+  const handleModeChange = (mode: 'single' | 'group') => {
+    setStatementMode(mode);
+    try {
+      sessionStorage.setItem('statementMode', mode);
+    } catch (e) {}
+    if (mode === 'single') {
+      setSelectedCustomers([]);
+    }
+  };
+
   useEffect(() => {
     try {
+      const mode = sessionStorage.getItem('statementMode');
+      if (mode === 'group') setStatementMode('group');
+
       const stored = sessionStorage.getItem('calc-session');
       if (stored) {
         const parsed = JSON.parse(stored);
@@ -204,26 +230,77 @@ export default function CustomerStatementView() {
           type: t.type,
           description: t.referenceNumber || t.description || '',
           amount: Math.abs(t.netEffect),
-          balance: t.balanceAfter
-        }))
+          balanceAfter: t.balanceAfter
+        })),
+        companyState: (s.customer.billingAddress as any)?.state || '',
+        telemetryId: (s.telemetry as any)?.id,
+        periodString: (statement?.data as any)?.periodString || 'Past 12 Months'
       };
 
-      const bytes = renderStatementSlip(payload);
-      await qzManager.printRaw(bytes);
-      toast.success('Statement sent to printer successfully');
-    } catch (err: unknown) {
+      const res = await fetch('/api/admin/dcr/print', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('Thermal Print Failed');
+      toast.success('Thermal Print Job Dispatched');
+    } catch (e: any) {
+      toast.error(e.message || 'Thermal printing failed');
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const handlePrint = async (sToPrint: any) => {
+    if (!sToPrint) return;
+    setPrinting(true);
+    try {
+      toast.loading('Preparing Print...', { id: 'print-stmt' });
+      const jsPDF = (await import('jspdf')).default;
+      const autoTable = (await import('jspdf-autotable')).default;
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      await renderStatementToPdf(doc, autoTable, sToPrint, 'economy', {
+        isExpanded,
+        clipFromIndex,
+        firmColors
+      });
+
+      const pdfBlob = doc.output('blob');
+      const blobUrl = URL.createObjectURL(pdfBlob);
+
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = blobUrl;
+
+      document.body.appendChild(iframe);
+      
+      iframe.onload = () => {
+        setTimeout(() => {
+          if (iframe.contentWindow) {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            toast.success('Print dialog opened', { id: 'print-stmt' });
+          }
+        }, 500);
+      };
+      
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+        URL.revokeObjectURL(blobUrl);
+      }, 300000); // cleanup after 5 mins
+
+    } catch (err) {
       const msg = err instanceof Error ? err.message : 'Printing Failed';
       console.error('Print error:', err);
-      toast.error(msg);
+      toast.error(msg, { id: 'print-stmt' });
     } finally {
       setPrinting(false);
     }
   };
 
   // ── PDF Download (visible statement only) ────────────────────────────────
-  const handleDownloadPDF = async (theme: 'color' | 'economy' = 'color') => {
-    const s = statement?.data;
-    if (!s) return;
+  const handleDownloadPDF = async (sToPrint: any, theme: 'color' | 'economy' = 'color') => {
+    if (!sToPrint) return;
     setPdfGenerating(true);
     try {
       toast.loading('Generating PDF…', { id: 'pdf-stmt' });
@@ -233,14 +310,16 @@ export default function CustomerStatementView() {
 
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-      await renderStatementToPdf(doc, autoTable, s, theme, {
+      await renderStatementToPdf(doc, autoTable, sToPrint, theme, {
         isExpanded,
-        clipFromIndex
+        clipFromIndex,
+        firmColors
       });
 
       // ── Save ────────────────────────────────────────────────────────────
-      const safeName = (s.customer.contactName || 'CUSTOMER')
-        .toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+      let safeName = sToPrint.customer.contactName || 'CUSTOMER';
+      if (sToPrint.isGroup) safeName = 'GROUP';
+      safeName = safeName.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
       const dateStr = new Date().toISOString().slice(0, 10);
       doc.save(`${safeName}_STATEMENT_${dateStr}.pdf`);
       toast.success('Statement PDF downloaded!', { id: 'pdf-stmt' });
@@ -253,39 +332,35 @@ export default function CustomerStatementView() {
   };
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
-  const handleFetch = async (overrideId?: string, force = false) => {
-    const idToFetch = (overrideId || customerId).trim();
-    if (!idToFetch || !/^\d+$/.test(idToFetch) || idToFetch.length < 15) {
-      toast.error('Please enter a valid Zoho Customer ID.');
-      return;
-    }
-
-    const cacheKey = `customer-statement-${idToFetch}`;
+  const handleFetch = async (id?: string, force = false) => {
+    const cid = id || customerId;
+    if (!cid) return;
     
+    // Check session cache if not forced
+    const cacheKey = `customer-statement-${cid}`;
     if (!force) {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
-          setStatement({ success: true, data: parsed.data });
+          setStatement(parsed.data);
           setCachedAt(parsed.cachedAt);
           return;
-        } catch (e) {
-          console.error('Failed to parse cache', e);
-        }
+        } catch (e) {}
       }
     }
 
     setLoading(true);
     setStatement(null);
     setCachedAt(null);
+    setClipFromIndex(null); // Reset clip mode
+    setIsCalcOpen(false); // Close calculator
+    setCalcEntries([]);
     try {
-      const res = await fetch(
-        `/api/admin/customer-statement/statement?customerId=${encodeURIComponent(idToFetch)}`
-      );
+      const res = await fetch(`/api/admin/customer-statement?customerId=${cid}`);
       const data = await res.json();
-      setStatement(data);
-      if (data.success && data.data) {
+      if (data.success) {
+        setStatement(data.data);
         const nowTs = Date.now();
         setCachedAt(nowTs);
         setNow(nowTs);
@@ -298,6 +373,54 @@ export default function CustomerStatementView() {
       toast.error(err.message || 'Network error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleFetchGroup = async (force = false, overrideCustomers?: {id: string, name: string}[]) => {
+    const activeCustomers = overrideCustomers || selectedCustomers;
+    if (activeCustomers.length === 0) {
+      setGroupStatement(null);
+      setVisibleFirmIds([]);
+      setCachedAt(null);
+      return;
+    }
+    const ids = activeCustomers.map(c => c.id).join(',');
+    const cacheKey = `group-statement-${ids}`;
+    
+    if (!force) {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setGroupStatement({ success: true, statements: parsed.data });
+          setVisibleFirmIds(activeCustomers.map(c => c.id));
+          setCachedAt(parsed.cachedAt);
+          return;
+        } catch (e) {}
+      }
+    }
+
+    setGroupLoading(true);
+    setGroupStatement(null);
+    setCachedAt(null);
+    try {
+      const res = await fetch(`/api/admin/customer-statement/group?customerIds=${ids}`);
+      const data = await res.json();
+      if (data.success && data.data) {
+        setGroupStatement({ success: true, statements: data.data });
+        setVisibleFirmIds(activeCustomers.map(c => c.id));
+        const nowTs = Date.now();
+        setCachedAt(nowTs);
+        setNow(nowTs);
+        sessionStorage.setItem(cacheKey, JSON.stringify({ data: data.data, cachedAt: nowTs }));
+        toast.success(force ? 'Group Statement refreshed.' : 'Group Statement loaded.');
+      } else {
+        toast.error(data.error || 'Failed to load group statement.');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Network error');
+    } finally {
+      setGroupLoading(false);
     }
   };
 
@@ -520,26 +643,140 @@ export default function CustomerStatementView() {
     }
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-  const s = statement?.data;
-
-  if (s) {
-    console.debug('[Statement Ledger Render]', {
-      transactionCount: s.transactionCount,
-      closingBalance: s.closingBalance,
-      isHybrid: s.isHybrid
+  // ── Render & Orchestration ───────────────────────────────────────────────────
+  const firmColors = useMemo(() => {
+    if (statementMode !== 'group' || !groupStatement?.statements) return {};
+    const palette = [
+      { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', bar: 'bg-blue-600', hex: [37, 99, 235] as [number, number, number], bgHex: [239, 246, 255] as [number, number, number] },
+      { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', bar: 'bg-emerald-600', hex: [5, 150, 105] as [number, number, number], bgHex: [236, 253, 245] as [number, number, number] },
+      { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', bar: 'bg-orange-600', hex: [234, 88, 12] as [number, number, number], bgHex: [255, 237, 213] as [number, number, number] },
+      { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', bar: 'bg-purple-600', hex: [147, 51, 234] as [number, number, number], bgHex: [250, 245, 255] as [number, number, number] },
+      { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200', bar: 'bg-teal-600', hex: [13, 148, 136] as [number, number, number], bgHex: [240, 253, 250] as [number, number, number] },
+    ];
+    const map: Record<string, typeof palette[0]> = {};
+    groupStatement.statements.forEach((stmt, idx) => {
+      map[stmt.customer.contactId] = palette[idx % palette.length];
     });
-  }
+    return map;
+  }, [statementMode, groupStatement]);
+
+  const s = useMemo(() => {
+    if (statementMode === 'single') return statement?.data;
+    if (statementMode === 'group' && groupStatement?.success && groupStatement.statements.length > 0) {
+      const visible = groupStatement.statements.filter(stmt => visibleFirmIds.includes(stmt.customer.contactId));
+      if (visible.length === 0) return undefined;
+
+      const combinedClosing = visible.reduce((acc, stmt) => acc + stmt.closingBalance, 0);
+      const combinedOpeningRaw = visible.reduce((acc, stmt) => acc + stmt.openingBalance, 0);
+
+      const mergedTransactionsRaw = visible.flatMap(stmt =>
+        stmt.transactions.map(t => ({
+          ...t,
+          firmName: stmt.customer.companyName || stmt.customer.contactName,
+          firmId: stmt.customer.contactId
+        }))
+      );
+
+      // Extract timestamp or compute it, then sort newest first
+      mergedTransactionsRaw.forEach((t: any) => {
+        if (!t.timestamp) {
+          t.timestamp = new Date(t.datetime || t.date || 0).getTime();
+        }
+      });
+      mergedTransactionsRaw.sort((a: any, b: any) => b.timestamp - a.timestamp);
+
+      let runningBalance = combinedClosing;
+      const transactions = [];
+      for (const t of mergedTransactionsRaw) {
+        transactions.push({
+          ...t,
+          balanceAfter: runningBalance
+        });
+        runningBalance -= t.netEffect;
+      }
+      const calculatedOpening = runningBalance;
+      transactions.reverse();
+
+      // Accounting Validation (Phase 4)
+      let integrityError = null;
+      if (Math.abs(calculatedOpening - combinedOpeningRaw) > 0.01) {
+        integrityError = `Accounting Integrity Error: Calculated opening (₹${calculatedOpening}) differs from sum of openings (₹${combinedOpeningRaw}). Tolerance exceeded.`;
+        console.error(integrityError);
+      }
+
+      const combinedReceivable = visible.reduce((acc, stmt) => acc + (stmt.outstandingReceivable || 0), 0);
+      const combinedPayable = visible.reduce((acc, stmt) => acc + (stmt.outstandingPayable || 0), 0);
+
+      const mergedStatement = {
+        isGroup: true,
+        integrityError,
+        firmNames: visible.map(stmt => stmt.customer.companyName || stmt.customer.contactName),
+        customer: {
+          contactId: 'GROUP',
+          contactName: `${visible.length} Firms Selected`,
+          companyName: 'Group Portfolio',
+        },
+        openingBalance: calculatedOpening,
+        closingBalance: combinedClosing,
+        outstandingReceivable: combinedReceivable,
+        outstandingPayable: combinedPayable,
+        isHybrid: visible.some(stmt => stmt.isHybrid),
+        transactions: transactions,
+        transactionCount: transactions.length,
+        unpaidInvoices: visible.flatMap(stmt =>
+          stmt.unpaidInvoices?.map(inv => ({ ...inv, firmName: stmt.customer.companyName || stmt.customer.contactName, firmId: stmt.customer.contactId })) || []
+        ),
+        telemetry: {
+          totalApiCalls: visible.reduce((acc, stmt) => acc + (stmt.telemetry?.totalApiCalls || 0), 0)
+        }
+      } as any;
+      
+      console.debug('[Group Statement Render]', {
+        visibleCount: visible.length,
+        transactionCount: mergedStatement.transactionCount,
+        closingBalance: mergedStatement.closingBalance,
+        calculatedOpening
+      });
+      return mergedStatement;
+    }
+    return undefined;
+  }, [statementMode, statement?.data, groupStatement, visibleFirmIds]);
 
   return (
     <div className="flex gap-5 items-start w-full relative">
       <div className={`transition-all duration-300 space-y-4 shrink-0 ${isCalcOpen ? 'w-[calc(70%-1.25rem)]' : 'w-full'}`}>
-        <div>
-        <h1 className="text-2xl font-bold">Customer Statement Preview</h1>
-        <p className="text-xs text-gray-400 mt-0.5">
-          Finance-grade customer ledger · Reverse-calculated opening balance
-        </p>
-      </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold">Customer Statement Preview</h1>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Finance-grade customer ledger · Reverse-calculated opening balance
+            </p>
+          </div>
+          
+          {/* Mode Toggle */}
+          <div className="flex bg-gray-100 p-1 rounded-lg self-start sm:self-auto shrink-0 border border-gray-200">
+            <button
+              onClick={() => handleModeChange('single')}
+              className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-all ${
+                statementMode === 'single' 
+                  ? 'bg-white text-[#1A2766] shadow-sm' 
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Single
+            </button>
+            <button
+              onClick={() => handleModeChange('group')}
+              className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-all ${
+                statementMode === 'group' 
+                  ? 'bg-[#1A2766] text-white shadow-sm' 
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Group
+            </button>
+          </div>
+        </div>
 
       {/* ── Search & Action Bar ─────────────────────────────────────────────────── */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-3 flex flex-col xl:flex-row items-start xl:items-end justify-between gap-4 sticky top-0 z-40 xl:static">
@@ -548,40 +785,62 @@ export default function CustomerStatementView() {
         <div className="flex-1 w-full xl:max-w-md flex flex-col gap-1.5 relative">
           <div className="flex items-center justify-between px-0.5">
             <label className="flex items-center gap-2 text-xs font-bold text-gray-700">
-              Customer Search
+              {statementMode === 'group' ? 'Selected Firms' : 'Customer Search'}
               {isLocked && (
                 <span className="flex items-center gap-1 text-[10px] text-[#1A2766] font-medium bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
                   <Lock size={10} /> Prefilled
                 </span>
               )}
             </label>
-            {cachedAt && (
+            {cachedAt && statementMode === 'single' && (
               <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-medium">
                 Cached {formatCachedAge(now - cachedAt)}
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
               </div>
             )}
           </div>
+
+          {statementMode === 'group' && selectedCustomers.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-1">
+              {selectedCustomers.map(c => (
+                <div key={c.id} className="flex items-center gap-1.5 bg-gray-100 border border-gray-200 text-gray-800 px-2.5 py-1 rounded-full text-xs font-semibold">
+                  <span className="truncate max-w-[200px]">{c.name}</span>
+                  <button 
+                    onClick={() => setSelectedCustomers(prev => prev.filter(x => x.id !== c.id))}
+                    className="text-gray-400 hover:text-red-500 transition-colors"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={15} />
             <input
               id="customer-id-input"
               type="text"
-              placeholder="Name, Mobile, GST or ID..."
+              placeholder={statementMode === 'group' 
+                ? (selectedCustomers.length >= 5 ? "Maximum 5 firms selected" : "+ Search...") 
+                : "Name, Mobile, GST or ID..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               onKeyDown={(e) => {
-                if (!isLocked && e.key === 'Enter') {
+                if (isLocked) return;
+                if (e.key === 'Enter' && statementMode === 'single') {
                   setCustomerId(searchQuery);
                   handleFetch(searchQuery, true);
                   setShowSuggestions(false);
                 }
               }}
-              disabled={isLocked}
+              disabled={isLocked || (statementMode === 'group' && selectedCustomers.length >= 5)}
               className={`w-full pl-9 pr-4 h-[36px] text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-[#1A2766] focus:border-transparent transition-all shadow-sm ${
-                isLocked ? 'bg-gray-50 text-gray-500 border-gray-200 cursor-not-allowed' : 'bg-white border-gray-300 hover:border-gray-400'
+                (isLocked || (statementMode === 'group' && selectedCustomers.length >= 5)) 
+                  ? 'bg-gray-50 text-gray-500 border-gray-200 cursor-not-allowed' 
+                  : 'bg-white border-gray-300 hover:border-gray-400'
               }`}
             />
             {isSearching && (
@@ -591,35 +850,53 @@ export default function CustomerStatementView() {
             )}
             
             {/* Autocomplete Dropdown */}
-            {showSuggestions && suggestions.length > 0 && !isLocked && (
-              <div className="absolute z-50 w-full mt-1 bg-white rounded-md shadow-lg border border-gray-200 overflow-hidden">
-                <div className="max-h-60 overflow-y-auto">
-                  {suggestions.map((c) => (
-                    <div 
-                      key={c.id} 
-                      className="px-4 py-2.5 border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors"
-                      onMouseDown={(e) => {
-                        e.preventDefault(); // Prevent blur
-                        setSearchQuery(c.name);
-                        setCustomerId(c.id);
-                        setShowSuggestions(false);
-                        handleFetch(c.id, true);
-                      }}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="text-sm font-semibold text-gray-900">{c.name}</div>
-                          {c.gstNumber && c.gstNumber !== 'NOT_AVAILABLE' && (
-                            <div className="text-[10px] font-mono text-gray-500 mt-0.5 tracking-wide">GST: {c.gstNumber}</div>
-                          )}
+            {showSuggestions && suggestions.length > 0 && !isLocked && (() => {
+              const filteredSuggestions = statementMode === 'group' 
+                ? suggestions.filter(c => !selectedCustomers.some(sc => sc.id === c.id))
+                : suggestions;
+                
+              return (
+                <div className="absolute z-50 w-full mt-1 bg-white rounded-md shadow-lg border border-gray-200 overflow-hidden">
+                  <div className="max-h-60 overflow-y-auto">
+                    {filteredSuggestions.length === 0 ? (
+                      <div className="px-4 py-3 text-sm text-gray-500 italic text-center">No additional firms found.</div>
+                    ) : (
+                      filteredSuggestions.map((c) => (
+                        <div 
+                          key={c.id} 
+                          className="px-4 py-2.5 border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors"
+                          onMouseDown={(e) => {
+                            e.preventDefault(); // Prevent blur
+                            if (statementMode === 'group') {
+                              if (selectedCustomers.length < 5 && !selectedCustomers.find(x => x.id === c.id)) {
+                                setSelectedCustomers(prev => [...prev, {id: c.id, name: c.name}]);
+                              }
+                              setSearchQuery('');
+                              setShowSuggestions(false);
+                            } else {
+                              setSearchQuery(c.name);
+                              setCustomerId(c.id);
+                              setShowSuggestions(false);
+                              handleFetch(c.id, true);
+                            }
+                          }}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="text-sm font-semibold text-gray-900">{c.name}</div>
+                              {c.gstNumber && c.gstNumber !== 'NOT_AVAILABLE' && (
+                                <div className="text-[10px] font-mono text-gray-500 mt-0.5 tracking-wide">GST: {c.gstNumber}</div>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-gray-400 font-mono">{c.id}</div>
+                          </div>
                         </div>
-                        <div className="text-[10px] text-gray-400 font-mono">{c.id}</div>
-                      </div>
-                    </div>
-                  ))}
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
 
@@ -627,11 +904,21 @@ export default function CustomerStatementView() {
         <div className="flex flex-row flex-wrap sm:flex-nowrap items-center gap-2.5 w-full xl:w-auto mt-2 xl:mt-0 shrink-0">
           <button
             id="fetch-statement-btn"
-            onClick={() => handleFetch(undefined, true)}
-            disabled={loading}
-            className="flex items-center justify-center gap-2 px-4 h-[36px] bg-[#1A2766] text-white rounded-md text-sm font-medium hover:bg-[#25368a] transition-colors shadow-sm disabled:opacity-50 w-full sm:w-auto"
+            onClick={() => {
+              if (statementMode === 'group') {
+                handleFetchGroup(true);
+              } else {
+                handleFetch(undefined, true);
+              }
+            }}
+            disabled={(statementMode === 'single' && loading) || (statementMode === 'group' && (groupLoading || selectedCustomers.length === 0))}
+            className="flex items-center justify-center gap-2 px-4 h-[36px] bg-[#1A2766] text-white rounded-md text-sm font-medium hover:bg-[#25368a] transition-colors shadow-sm disabled:opacity-50 w-full sm:w-auto whitespace-nowrap"
           >
-            {loading ? <RefreshCw size={14} className="animate-spin" /> : 'Load Statement'}
+            {(loading || groupLoading) ? <RefreshCw size={14} className="animate-spin" /> : (
+              statementMode === 'group' 
+                ? `Load Group Statement${selectedCustomers.length > 0 ? ` (${selectedCustomers.length} Firms)` : ''}`
+                : 'Load Statement'
+            )}
           </button>
           
           {s && (
@@ -661,14 +948,14 @@ export default function CustomerStatementView() {
                 {pdfMenuOpen && (
                   <div className="absolute top-full right-0 mt-1 w-[180px] bg-white border border-gray-200 rounded-md shadow-lg overflow-hidden z-50">
                     <button 
-                      onClick={() => { setPdfMenuOpen(false); handleDownloadPDF('color'); }}
+                      onClick={() => { setPdfMenuOpen(false); handleDownloadPDF(s, 'color'); }}
                       className="w-full text-left px-4 py-2.5 text-sm font-medium text-emerald-800 hover:bg-emerald-50 border-b border-gray-100 flex items-center gap-2 transition-colors"
                     >
                       <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm"></div>
                       Color PDF
                     </button>
                     <button 
-                      onClick={() => { setPdfMenuOpen(false); handleDownloadPDF('economy'); }}
+                      onClick={() => { setPdfMenuOpen(false); handleDownloadPDF(s, 'economy'); }}
                       className="w-full text-left px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
                     >
                       <div className="w-2 h-2 rounded-full border-2 border-gray-400"></div>
@@ -687,27 +974,48 @@ export default function CustomerStatementView() {
               </button>
 
               {/* Outline / Secondary: View DCR Summary */}
-              <a
-                href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${customerId}&filterMode=ALL&statusFilter=ALL`}
-                className="flex items-center justify-center gap-1.5 px-4 h-[36px] bg-white text-gray-700 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm w-full sm:w-auto print:hidden"
-              >
-                View DCR Summary
-              </a>
+              {statementMode === 'single' && (
+                <a
+                  href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${customerId}&filterMode=ALL&statusFilter=ALL`}
+                  className="flex items-center justify-center gap-1.5 px-4 h-[36px] bg-white text-gray-700 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm w-full sm:w-auto print:hidden"
+                >
+                  View DCR Summary
+                </a>
+              )}
             </>
           )}
         </div>
       </div>
 
       {/* ── Error state ────────────────────────────────────────────────── */}
-      {statement && !statement.success && (
+      {statementMode === 'single' && statement && !statement.success && (
         <div className="flex items-center gap-3 p-4 bg-red-50 text-red-700 border border-red-200 rounded-xl text-sm">
           <AlertCircle size={18} className="shrink-0" />
           <span>{statement.error || 'Unknown error'}</span>
         </div>
       )}
 
+      {/* ── Group Mode Empty State ─────────────────────────────────────── */}
+      {statementMode === 'group' && !groupStatement && (
+        <div className="w-full flex flex-col items-center justify-center py-20 text-center bg-white rounded-xl border border-gray-100 shadow-sm min-h-[400px]">
+          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4 text-[#1A2766]">
+            <Users size={32} />
+          </div>
+          <h3 className="text-lg font-bold text-gray-800 mb-2">Build Group Statement</h3>
+          <p className="text-gray-500 max-w-sm mb-6 text-sm whitespace-pre-wrap">
+            {selectedCustomers.length === 0 
+              ? "No firms selected.\nSearch and add between 2–5 firms to generate a Group Statement."
+              : "Search and add at least 1 more firm to generate a Group Statement."
+            }
+          </p>
+        </div>
+      )}
+
+      {/* ── Portfolio Health (Moved to Unified KPI Section below) ── */}
+
       {s && (() => {
-        const clipIdx = clipFromIndex !== null ? clipFromIndex : -1;
+        const isValidClip = clipFromIndex !== null && clipFromIndex >= 0 && clipFromIndex < s.transactions.length;
+        const clipIdx = isValidClip ? clipFromIndex : -1;
         const isClipped = clipIdx !== -1;
         const activeTxs = isClipped ? s.transactions.slice(clipIdx) : s.transactions;
         const visibleTransactions = isExpanded ? activeTxs : activeTxs.slice(-12);
@@ -743,11 +1051,40 @@ export default function CustomerStatementView() {
         ) : [];
 
         return (
-          <div className="flex flex-col gap-4 xl:grid xl:grid-cols-12 xl:gap-6 items-start">
+          <div className="flex flex-col w-full gap-4">
+            {statementMode === 'group' && selectedCustomers.length === 1 && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-lg flex items-center justify-between gap-3 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="shrink-0 text-amber-600" size={18} />
+                  <span className="font-medium text-sm">Only one firm remaining.</span>
+                </div>
+                <button 
+                  onClick={() => {
+                    handleModeChange('single');
+                    handleFetch(selectedCustomers[0].id, true);
+                  }}
+                  className="px-4 py-2 bg-white text-amber-700 text-xs font-bold rounded-md border border-amber-200 shadow-sm hover:bg-amber-100 transition-colors"
+                >
+                  Switch to Single Mode
+                </button>
+              </div>
+            )}
+            {s.integrityError && (
+              <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-lg flex items-start gap-3">
+                <AlertCircle className="shrink-0 mt-0.5 text-red-600" size={18} />
+                <div className="flex flex-col">
+                  <span className="font-bold">Accounting Integrity Error</span>
+                  <span className="text-sm mt-1">{s.integrityError}</span>
+                </div>
+              </div>
+            )}
+            {(!s.integrityError) && (
+              <div className="flex flex-col gap-4 xl:grid xl:grid-cols-12 xl:gap-6 items-start">
             {/* Left Column: Ledger and Customer Info */}
             <div className="contents xl:block xl:col-span-8 xl:space-y-4">
               {/* ── Section 1: Customer card ──────────────────────────────── */}
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden order-1 xl:order-none">
+              {statementMode === 'single' && (
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden order-1 xl:order-none">
                 <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
                   <User size={14} className="text-[#1A2766]" />
                   <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
@@ -776,7 +1113,8 @@ export default function CustomerStatementView() {
                     </div>
                   </div>
                 </div>
-              </div>
+                </div>
+              )}
 
               {/* ── Section 1b: Net Account Position summary (hybrid only) ── */}
               {s.isHybrid && (
@@ -805,6 +1143,173 @@ export default function CustomerStatementView() {
                       </div>
                       <div className="text-[10px] text-gray-400 mt-0.5">Receivables − Payables</div>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Unified Firm KPI Section (Group Mode) ── */}
+              {statementMode === 'group' && groupStatement?.success && groupStatement.statements.length > 0 && (
+                <div className="w-full flex flex-col gap-4 mb-2 order-3 xl:order-none">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
+                    <div className="flex items-center gap-2">
+                      <Activity size={16} className="text-[#1A2766]" />
+                      <h3 className="text-sm font-bold text-gray-800 tracking-wide uppercase">Portfolio Health</h3>
+                    </div>
+                    {/* Toggle */}
+                    <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200 self-start sm:self-auto shrink-0">
+                      <button
+                        onClick={() => setKpiMode('compact')}
+                        className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                          kpiMode === 'compact' ? 'bg-white text-[#1A2766] shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        Compact
+                      </button>
+                      <button
+                        onClick={() => setKpiMode('financial')}
+                        className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                          kpiMode === 'financial' ? 'bg-white text-[#1A2766] shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        Financial
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {groupStatement.statements.map(stmt => {
+                      const firmId = stmt.customer.contactId;
+                      const firmName = stmt.customer.companyName || stmt.customer.contactName;
+                      const isVisible = visibleFirmIds.includes(firmId);
+                      const fc = firmColors[firmId] || { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200', bar: 'bg-gray-400' };
+                      
+                      const outstanding = stmt.closingBalance;
+                      const totalOut = groupStatement.statements.reduce((acc, x) => acc + x.closingBalance, 0);
+                      const percent = totalOut === 0 ? 0 : Math.round((outstanding / totalOut) * 100);
+                      
+                      const unpaidInvoices = stmt.unpaidInvoices || [];
+                      const unpaidCount = unpaidInvoices.length;
+                      let oldestDue = 0;
+                      if (unpaidCount > 0) {
+                        const oldestDate = new Date(unpaidInvoices[unpaidInvoices.length - 1].invoiceDate);
+                        oldestDue = Math.floor((Date.now() - oldestDate.getTime()) / (1000 * 3600 * 24));
+                      }
+
+                      const firmTxs = visibleTransactions.filter((tx: any) => tx.firmId === firmId);
+                      const firmInvoiced = firmTxs.filter((tx: any) => tx.type === 'invoice').reduce((sum: number, tx: any) => sum + tx.amount, 0);
+                      const firmPaid = firmTxs.filter((tx: any) => tx.type === 'payment').reduce((sum: number, tx: any) => sum + tx.amount, 0);
+                      
+                      const firmDynamicOpening = firmTxs.length > 0
+                        ? (firmTxs[0].balanceAfter - firmTxs[0].netEffect)
+                        : stmt.closingBalance;
+                      const pres = getOpeningBalancePresentation(firmDynamicOpening);
+
+                      return (
+                        <div key={firmId} className={`relative flex flex-col bg-white rounded-xl border transition-all duration-200 overflow-hidden ${isVisible ? 'border-gray-200 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-md' : 'border-gray-100 bg-gray-50/50 grayscale opacity-60'}`}>
+                          {kpiMode === 'compact' && (
+                            <>
+                              <div className={`absolute top-0 left-0 h-1 transition-all duration-500 ease-out ${fc.bar}`} style={{ width: `${percent}%` }} />
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gray-100 -z-10" />
+                            </>
+                          )}
+                          {kpiMode === 'financial' && (
+                            <div className={`absolute top-0 left-0 w-full h-1 transition-all duration-500 ease-out ${fc.bar}`} />
+                          )}
+
+                          <div className={`px-4 pt-3 flex justify-between items-start ${kpiMode === 'financial' ? 'pb-2 border-b border-gray-100 bg-gray-50/30' : ''}`}>
+                            <div className="flex items-start gap-2.5">
+                              <div className="pt-0.5">
+                                <input
+                                  type="checkbox"
+                                  className="w-4 h-4 rounded border-gray-300 cursor-pointer"
+                                  style={{ accentColor: `rgb(${fc.hex.join(',')})` }}
+                                  checked={isVisible}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setVisibleFirmIds(prev => [...prev, firmId]);
+                                    } else {
+                                      if (visibleFirmIds.length > 1) {
+                                        setVisibleFirmIds(prev => prev.filter(id => id !== firmId));
+                                      } else {
+                                        toast.error('At least one firm must remain visible.');
+                                      }
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div className="flex flex-col">
+                                <span className={`text-xs font-bold uppercase leading-tight line-clamp-2 pr-2 ${kpiMode === 'financial' ? fc.text : 'text-gray-900'}`}>{firmName}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {kpiMode === 'compact' && (
+                                <div className="flex flex-col items-end mr-1">
+                                  <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Share</span>
+                                  <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-sm ${fc.text} ${fc.bg}`}>{percent}%</span>
+                                </div>
+                              )}
+                              <button 
+                                onClick={() => {
+                                  const newSel = selectedCustomers.filter(c => c.id !== firmId);
+                                  setSelectedCustomers(newSel);
+                                  handleFetchGroup(true, newSel);
+                                }}
+                                className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-1 rounded-md transition-colors"
+                                title="Remove Firm"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {kpiMode === 'compact' ? (
+                            <div className="p-4 pt-3 flex flex-col h-full">
+                              <div className="mt-auto">
+                                <div className="flex flex-col mb-3">
+                                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Outstanding</span>
+                                  <span className={`text-lg font-extrabold tabular-nums leading-none ${outstanding > 0 ? 'text-rose-600' : outstanding < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>{fmtBalance(outstanding)}</span>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4 pt-3 border-t border-gray-100">
+                                  <div className="flex flex-col">
+                                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Open Invoices</span>
+                                    <span className="text-[11px] font-bold text-gray-700">{unpaidCount}</span>
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Oldest Due</span>
+                                    <span className="text-[11px] font-bold text-gray-700">{oldestDue > 0 ? <span className="text-rose-600">{oldestDue} Days</span> : '—'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-4 flex flex-col gap-3 text-sm flex-1">
+                              <div className="flex justify-between items-center">
+                                <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wide">Opening Balance</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`font-extrabold tabular-nums ${pres.isCredit ? 'text-emerald-600' : 'text-gray-900'}`}>{pres.amount}</span>
+                                  {pres.isCredit && <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full uppercase font-bold tracking-wider leading-none">Cr</span>}
+                                </div>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wide">Total Invoiced</span>
+                                <span className="font-extrabold text-gray-900 tabular-nums">{fmt(firmInvoiced)}</span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wide">Total Paid</span>
+                                <span className="font-extrabold text-emerald-600 tabular-nums">− {fmt(firmPaid)}</span>
+                              </div>
+                              <div className="flex justify-between items-center pt-3 border-t border-gray-100 mt-auto">
+                                <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wide">Closing Balance</span>
+                                <span className={`font-extrabold tabular-nums ${stmt.closingBalance > 0 ? 'text-rose-600' : stmt.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
+                                  {fmtBalance(stmt.closingBalance)}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -844,26 +1349,28 @@ export default function CustomerStatementView() {
                   <table className="w-full text-sm relative" style={{ fontVariantNumeric: 'tabular-nums' }}>
                     <thead className="sticky top-0 bg-gray-50 text-[10px] uppercase text-gray-500 font-bold border-b border-gray-200 z-10 shadow-sm">
                       <tr>
-                        <th className="px-3 py-2 text-left w-24">Date</th>
-                        <th className="w-[45px] text-center px-1" title="Clip column"></th>
-                        <th className="px-3 py-2 text-left min-w-[120px] whitespace-nowrap">Type</th>
-                        <th className="px-3 py-2 text-left">Details</th>
-                        <th className="px-3 py-2 text-right whitespace-nowrap">Invoice Amt</th>
-                        <th className="px-3 py-2 text-right whitespace-nowrap">Payment Amt</th>
-                        <th className="px-3 py-2 text-right">Balance</th>
+                        <th className="px-4 py-3 text-left w-24 tracking-wider">Date</th>
+                        <th className="w-[45px] text-center px-1 py-3" title="Clip column"></th>
+                        {statementMode === 'group' && <th className="px-4 py-3 text-left whitespace-nowrap tracking-wider">Firm</th>}
+                        <th className="px-4 py-3 text-left min-w-[100px] whitespace-nowrap tracking-wider">Type</th>
+                        <th className="px-4 py-3 text-left tracking-wider">Document & Details</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap tracking-wider">Invoice Amt</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap tracking-wider">Payment Amt</th>
+                        <th className="px-4 py-3 text-right tracking-wider">Balance</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {/* Opening balance row */}
                       <tr className="bg-blue-50/20">
-                        <td className="px-3 py-1.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
-                        <td className="w-[45px] px-1 py-1.5 text-center text-gray-300/50">—</td>
-                        <td className="px-3 py-1.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
-                        <td className="px-3 py-1.5 text-[11px]">
+                        <td className="px-4 py-2.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
+                        <td className="w-[45px] px-1 py-2.5 text-center text-gray-300/50">—</td>
+                        {statementMode === 'group' && <td className="px-4 py-2.5 text-[11px] text-gray-400">—</td>}
+                        <td className="px-4 py-2.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
+                        <td className="px-4 py-2.5 text-[11px]">
                           {openingPresentation.isCredit ? (
                             <span className="inline-flex items-center gap-1.5">
                               <span className="font-bold text-gray-800">Opening Balance</span>
-                              <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full tracking-wide uppercase">
+                              <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full tracking-wide uppercase border border-emerald-200/50">
                                 Advance / Credit
                               </span>
                             </span>
@@ -873,9 +1380,9 @@ export default function CustomerStatementView() {
                             </span>
                           )}
                         </td>
-                        <td className="px-3 py-1.5 text-right text-[11px] text-gray-400">—</td>
-                        <td className="px-3 py-1.5 text-right text-[11px] text-gray-400">—</td>
-                        <td className="px-3 py-1.5 text-right text-xs font-bold tabular-nums">
+                        <td className="px-4 py-2.5 text-right text-[11px] text-gray-400">—</td>
+                        <td className="px-4 py-2.5 text-right text-[11px] text-gray-400">—</td>
+                        <td className="px-4 py-2.5 text-right text-[12px] font-extrabold tabular-nums">
                           {openingPresentation.isCredit ? (
                             <span className="text-emerald-600">{openingPresentation.amount}</span>
                           ) : (
@@ -885,7 +1392,7 @@ export default function CustomerStatementView() {
                       </tr>
 
                       {/* Transaction rows */}
-                      {visibleTransactions.map((tx) => {
+                      {visibleTransactions.map((tx: any) => {
                         const displayDesc = cleanDescription(tx.description, tx.type);
                         return (
                           <tr 
@@ -901,10 +1408,10 @@ export default function CustomerStatementView() {
                               calcEntries.some(e => e.id === tx.id) ? 'bg-purple-50/50 even:bg-purple-50/50' : ''
                             }`}
                           >
-                            <td className="px-3 py-1.5 text-[11px] text-gray-500 whitespace-nowrap align-middle">
+                            <td className="px-4 py-2.5 text-[11px] text-gray-500 whitespace-nowrap align-middle">
                               {fmtDateTime(tx.datetime || tx.date)}
                             </td>
-                            <td className="w-[45px] text-center px-1 py-1.5 align-middle">
+                            <td className="w-[45px] text-center px-1 py-2.5 align-middle">
                               <button 
                                 onClick={(e) => { e.stopPropagation(); setClipFromIndex(s.transactions.indexOf(tx)); }}
                                 className={`text-gray-300 hover:text-blue-500 transition-colors print:hidden focus:opacity-100 ${clipIdx === s.transactions.indexOf(tx) ? 'opacity-100 text-blue-600' : 'opacity-0 group-hover:opacity-100'}`}
@@ -913,41 +1420,67 @@ export default function CustomerStatementView() {
                                 📌
                               </button>
                             </td>
-                            <td className="px-3 py-1.5 text-[10px] font-semibold text-gray-600 align-middle uppercase tracking-wider whitespace-nowrap">
+                            {statementMode === 'group' && (
+                              <td className="px-4 py-2.5 align-middle whitespace-nowrap">
+                                {(() => {
+                                  const fc = firmColors[tx.firmId] || { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200' };
+                                  return (
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded border border-opacity-80 text-[10px] font-bold uppercase tracking-wide shadow-sm ${fc.bg} ${fc.text} ${fc.border}`}>
+                                      {tx.firmName}
+                                    </span>
+                                  );
+                                })()}
+                              </td>
+                            )}
+                            <td className="px-4 py-2.5 text-[10px] font-semibold text-gray-500 align-middle uppercase tracking-wider whitespace-nowrap">
                               {tx.type === 'invoice' ? 'Invoice' : tx.type === 'payment' ? 'Payment' : 'Purchase Bill'}
                             </td>
-                            <td className="px-3 py-1.5 text-[11px] font-medium text-blue-700 group-hover:text-blue-900 group-hover:underline underline-offset-2 align-middle relative">
-                              <div className="flex items-center gap-1.5">
-                                <span>{displayDesc}</span>
-                                {draftStatuses[tx.id] && (
-                                  <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50">
-                                    Draft
-                                  </span>
-                                )}
-                                {tx.isVerified && (
-                                  <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
-                                    <Check size={9} strokeWidth={4} />
-                                  </span>
-                                )}
-                              </div>
-                              {/* Add to calc button on hover */}
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); addCalcEntry(tx); }}
-                                className={`absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full pr-2 opacity-0 group-hover:opacity-100 transition-opacity print:hidden ${calcEntries.some(e => e.id === tx.id) ? 'hidden' : ''}`}
-                                title="Add to Calculator"
-                              >
-                                <div className="bg-purple-100 text-purple-700 p-1 rounded hover:bg-purple-200">
-                                  <Plus size={12} />
+                            <td className="px-4 py-2.5 align-middle">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-5 shrink-0 flex justify-center print:hidden">
+                                  {!calcEntries.some(e => e.id === tx.id) ? (
+                                    <button 
+                                      onClick={(e) => { e.stopPropagation(); addCalcEntry(tx); }}
+                                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                      title="Add to Calculator"
+                                    >
+                                      <div className="bg-purple-100 text-purple-700 w-5 h-5 flex items-center justify-center rounded hover:bg-purple-200 shadow-sm border border-purple-200">
+                                        <Plus size={12} strokeWidth={3} />
+                                      </div>
+                                    </button>
+                                  ) : (
+                                    <div className="text-purple-600 flex items-center justify-center w-5 h-5 bg-purple-50 rounded border border-purple-100" title="Added to Calculator">
+                                      <Check size={12} strokeWidth={4} />
+                                    </div>
+                                  )}
                                 </div>
-                              </button>
+                                <div className="flex flex-col">
+                                  <div className="flex items-center gap-1.5 text-[11px] font-medium text-blue-700 group-hover:text-blue-900 group-hover:underline underline-offset-2">
+                                    <span>{tx.referenceNumber || displayDesc}</span>
+                                    {draftStatuses[tx.id] && (
+                                      <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50">
+                                        Draft
+                                      </span>
+                                    )}
+                                    {tx.isVerified && (
+                                      <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
+                                        <Check size={9} strokeWidth={4} />
+                                      </span>
+                                    )}
+                                  </div>
+                                  {tx.referenceNumber && tx.referenceNumber !== displayDesc && (
+                                    <span className="text-[10px] text-gray-500 mt-0.5 leading-tight">{displayDesc}</span>
+                                  )}
+                                </div>
+                              </div>
                             </td>
-                            <td className="px-3 py-1.5 text-right text-[11px] font-semibold text-gray-700 whitespace-nowrap align-middle tabular-nums">
+                            <td className="px-4 py-2.5 text-right text-[11.5px] font-semibold text-gray-700 whitespace-nowrap align-middle tabular-nums">
                               {tx.netEffect > 0 ? fmt(tx.amount) : '—'}
                             </td>
-                            <td className="px-3 py-1.5 text-right text-[11px] font-semibold whitespace-nowrap align-middle tabular-nums" style={{ color: tx.netEffect <= 0 ? '#059669' : 'transparent' }}>
+                            <td className="px-4 py-2.5 text-right text-[11.5px] font-bold whitespace-nowrap align-middle tabular-nums" style={{ color: tx.netEffect <= 0 ? '#059669' : 'transparent' }}>
                               {tx.netEffect <= 0 ? fmt(tx.amount) : '—'}
                             </td>
-                            <td className="px-3 py-1.5 text-right whitespace-nowrap align-middle">
+                            <td className="px-4 py-2.5 text-right whitespace-nowrap align-middle">
                               {(() => {
                                 const b = tx.balanceAfter;
                                 const isZero = b === 0;
@@ -955,7 +1488,7 @@ export default function CustomerStatementView() {
                                 
                                 if (isZero) {
                                   return (
-                                    <span className="text-[11px] font-extrabold text-emerald-600 tabular-nums">
+                                    <span className="text-[12px] font-extrabold text-emerald-600 tabular-nums">
                                       {fmtBalance(b)}
                                     </span>
                                   );
@@ -964,16 +1497,16 @@ export default function CustomerStatementView() {
                                 if (isNearSettled) {
                                   return (
                                     <div className="flex flex-col items-end justify-center bg-emerald-50/50 -my-1 -mx-2 px-2 py-1 rounded border border-emerald-100/60">
-                                      <span className="text-[11px] tabular-nums font-extrabold text-emerald-700">
+                                      <span className="text-[12px] tabular-nums font-extrabold text-emerald-700">
                                         {fmtBalance(b)}
                                       </span>
-                                      <span className="text-[7px] font-bold text-emerald-600/80 tracking-widest uppercase leading-none mt-0.5">Settled</span>
+                                      <span className="text-[7.5px] font-bold text-emerald-600/80 tracking-widest uppercase leading-none mt-0.5">Settled</span>
                                     </div>
                                   );
                                 }
                                 
                                 return (
-                                  <span className={`text-[11px] tabular-nums font-semibold ${
+                                  <span className={`text-[12px] tabular-nums font-extrabold ${
                                     b > 0 ? 'text-rose-600' :
                                     b < 0 ? 'text-emerald-600' : 'text-gray-900'
                                   }`}>
@@ -988,7 +1521,7 @@ export default function CustomerStatementView() {
 
                       {visibleTransactions.length === 0 && (
                         <tr>
-                          <td colSpan={7} className="px-3 py-6 text-center text-xs text-gray-400 font-medium">
+                          <td colSpan={statementMode === 'group' ? 9 : 7} className="px-3 py-6 text-center text-xs text-gray-400 font-medium">
                             No transactions in window.
                           </td>
                         </tr>
@@ -996,7 +1529,7 @@ export default function CustomerStatementView() {
 
                       {/* ── TOTALS footer row ── */}
                       <tr className="border-t-2 border-gray-300 bg-gray-50">
-                        <td className="px-3 py-2.5 text-[10px] text-gray-400 font-bold uppercase tracking-widest" colSpan={3}>Totals</td>
+                        <td className="px-3 py-2.5 text-[10px] text-gray-400 font-bold uppercase tracking-widest" colSpan={statementMode === 'group' ? 4 : 3}>Totals</td>
                         <td className="px-3 py-2.5">
                           <span className="text-[11px] font-extrabold text-gray-700 uppercase tracking-wide">
                             {isExpanded ? 'All Transactions' : 'Visible Period'}
@@ -1251,49 +1784,109 @@ export default function CustomerStatementView() {
                   </div>
 
                   <div className="divide-y divide-gray-50">
-                    {s.unpaidInvoices.slice(0, 8).map((inv: any) => {
-                      const pendingDays = Math.floor((Date.now() - new Date(inv.invoiceDate).getTime()) / (1000 * 60 * 60 * 24));
-                      
-                      let pillClass = "bg-gray-100 text-gray-600";
-                      if (pendingDays > 60) pillClass = "bg-orange-100 text-orange-700 border border-orange-200/60";
-                      else if (pendingDays > 30) pillClass = "bg-amber-50 text-amber-700 border border-amber-200/60";
-
-                      return (
-                        <div key={inv.invoiceId} className="flex flex-col md:grid md:grid-cols-12 gap-2 px-4 py-3 md:py-2.5 items-start md:items-center hover:bg-gray-50/80 transition-colors border-b border-gray-50 md:border-none">
-                          <div className="flex justify-between items-start md:block w-full md:w-auto md:col-span-4">
-                            <div>
-                              <a 
-                                href={`https://books.zoho.in/app/60027595766#/invoices/${inv.invoiceId}`}
-                                target="_blank" 
-                                rel="noreferrer"
-                                className="text-[11px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
-                              >
-                                {inv.invoiceNumber}
-                              </a>
-                              <div className="text-[9px] text-gray-400 mt-0.5">{fmtDate(inv.invoiceDate)}</div>
+                    {statementMode === 'group' ? (
+                      Object.entries(
+                        s.unpaidInvoices.reduce((acc: any, inv: any) => {
+                          const firmId = inv.firmId || 'Unknown';
+                          if (!acc[firmId]) acc[firmId] = { firmName: inv.firmName, invoices: [] };
+                          acc[firmId].invoices.push(inv);
+                          return acc;
+                        }, {})
+                      ).map(([firmId, data]: [string, any]) => {
+                        const { firmName, invoices } = data;
+                        const totalOut = invoices.reduce((sum: number, inv: any) => sum + inv.balance, 0);
+                        const count = invoices.length;
+                        const oldest = Math.max(...invoices.map((inv: any) => Math.floor((Date.now() - new Date(inv.invoiceDate).getTime()) / (1000 * 60 * 60 * 24))));
+                        const fc = firmColors[firmId] || { bg: 'bg-gray-50', text: 'text-gray-800', border: 'border-gray-200' };
+                        
+                        return (
+                          <details key={firmId} open className="group/details">
+                            <summary className={`flex justify-between items-center px-4 py-2.5 cursor-pointer list-none border-y border-white/50 hover:opacity-80 transition-opacity ${fc.bg}`}>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[9px] group-open/details:rotate-90 transition-transform ${fc.text}`}>▶</span>
+                                <span className={`text-[11px] font-bold uppercase tracking-wide ${fc.text}`}>{firmName}</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-[10px] text-gray-500 font-semibold hidden md:inline">{count} Invoices</span>
+                                <span className="text-[10px] text-rose-500 font-semibold hidden md:inline">Oldest: {oldest}d</span>
+                                <span className="text-[11px] text-gray-900 font-bold tabular-nums">{fmt(totalOut)}</span>
+                              </div>
+                            </summary>
+                            <div className="divide-y divide-gray-50 bg-white">
+                              {invoices.map((inv: any) => {
+                                const pendingDays = Math.floor((Date.now() - new Date(inv.invoiceDate).getTime()) / (1000 * 60 * 60 * 24));
+                                let pillClass = "bg-gray-100 text-gray-600";
+                                if (pendingDays > 60) pillClass = "bg-orange-100 text-orange-700 border border-orange-200/60";
+                                else if (pendingDays > 30) pillClass = "bg-amber-50 text-amber-700 border border-amber-200/60";
+                                return (
+                                  <div key={inv.invoiceId} className="flex flex-col md:grid md:grid-cols-12 gap-2 px-4 py-3 md:py-2.5 items-start md:items-center hover:bg-blue-50/30 transition-colors pl-8">
+                                    <div className="flex justify-between items-start md:block w-full md:w-auto md:col-span-4">
+                                      <div>
+                                        <span className="text-[11px] font-bold text-blue-700">{inv.invoiceNumber}</span>
+                                        <div className="text-[9px] text-gray-400 mt-0.5">{fmtDate(inv.invoiceDate)}</div>
+                                      </div>
+                                    </div>
+                                    <div className="flex justify-between md:block w-full md:w-auto md:col-span-3 md:text-right text-[11px] text-gray-500 tabular-nums">
+                                      <span>{fmt(inv.total)}</span>
+                                    </div>
+                                    <div className="flex justify-between md:block w-full md:w-auto md:col-span-3 md:text-right text-[11px] font-bold text-rose-600 tabular-nums">
+                                      <span>{fmt(inv.balance)}</span>
+                                    </div>
+                                    <div className="hidden md:flex md:col-span-2 justify-end">
+                                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${pillClass}`}>{pendingDays}d</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
-                            <div className="md:hidden">
+                          </details>
+                        );
+                      })
+                    ) : (
+                      s.unpaidInvoices.slice(0, 8).map((inv: any) => {
+                        const pendingDays = Math.floor((Date.now() - new Date(inv.invoiceDate).getTime()) / (1000 * 60 * 60 * 24));
+                        
+                        let pillClass = "bg-gray-100 text-gray-600";
+                        if (pendingDays > 60) pillClass = "bg-orange-100 text-orange-700 border border-orange-200/60";
+                        else if (pendingDays > 30) pillClass = "bg-amber-50 text-amber-700 border border-amber-200/60";
+
+                        return (
+                          <div key={inv.invoiceId} className="flex flex-col md:grid md:grid-cols-12 gap-2 px-4 py-3 md:py-2.5 items-start md:items-center hover:bg-gray-50/80 transition-colors border-b border-gray-50 md:border-none">
+                            <div className="flex justify-between items-start md:block w-full md:w-auto md:col-span-4">
+                              <div>
+                                <a 
+                                  href={`https://books.zoho.in/app/60027595766#/invoices/${inv.invoiceId}`}
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="text-[11px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
+                                >
+                                  {inv.invoiceNumber}
+                                </a>
+                                <div className="text-[9px] text-gray-400 mt-0.5">{fmtDate(inv.invoiceDate)}</div>
+                              </div>
+                              <div className="md:hidden">
+                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${pillClass}`}>
+                                  {pendingDays}d
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex justify-between md:block w-full md:w-auto md:col-span-3 md:text-right text-[11px] text-gray-500 tabular-nums">
+                              <span className="md:hidden text-gray-400">Value</span>
+                              <span>{fmt(inv.total)}</span>
+                            </div>
+                            <div className="flex justify-between md:block w-full md:w-auto md:col-span-3 md:text-right text-[11px] font-bold text-rose-600 tabular-nums">
+                              <span className="md:hidden text-gray-400 font-medium">Pending</span>
+                              <span>{fmt(inv.balance)}</span>
+                            </div>
+                            <div className="hidden md:flex md:col-span-2 justify-end">
                               <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${pillClass}`}>
                                 {pendingDays}d
                               </span>
                             </div>
                           </div>
-                          <div className="flex justify-between md:block w-full md:w-auto md:col-span-3 md:text-right text-[11px] text-gray-500 tabular-nums">
-                            <span className="md:hidden text-gray-400">Value</span>
-                            <span>{fmt(inv.total)}</span>
-                          </div>
-                          <div className="flex justify-between md:block w-full md:w-auto md:col-span-3 md:text-right text-[11px] font-bold text-rose-600 tabular-nums">
-                            <span className="md:hidden text-gray-400 font-medium">Pending</span>
-                            <span>{fmt(inv.balance)}</span>
-                          </div>
-                          <div className="hidden md:flex md:col-span-2 justify-end">
-                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${pillClass}`}>
-                              {pendingDays}d
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                    )}
                     {s.unpaidInvoices.length > 8 && (
                       <div className="px-4 py-2 bg-gray-50 text-center text-[10px] font-bold text-gray-500 uppercase tracking-widest">
                         + {s.unpaidInvoices.length - 8} more
@@ -1303,7 +1896,7 @@ export default function CustomerStatementView() {
                       <div className="flex justify-between items-center">
                         <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Total Pending</span>
                         <span className="text-xs font-bold text-rose-600 tabular-nums">
-                          {fmt(s.unpaidInvoices.reduce((sum, i) => sum + i.balance, 0))}
+                          {fmt(s.unpaidInvoices.reduce((sum: number, i: any) => sum + i.balance, 0))}
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
@@ -1315,7 +1908,7 @@ export default function CustomerStatementView() {
                       <div className="pt-2 mt-1 border-t border-gray-100 flex justify-between items-center">
                         <span className="text-[11px] font-bold text-gray-900 uppercase tracking-wider">Net Receivable</span>
                         <span className="text-sm font-extrabold text-gray-900 tabular-nums">
-                          {fmt((s.unpaidInvoices.reduce((sum, i) => sum + i.balance, 0)) - (s.customer.unusedCreditsReceivable || 0))}
+                          {fmt((s.unpaidInvoices.reduce((sum: number, i: any) => sum + i.balance, 0)) - (s.customer.unusedCreditsReceivable || 0))}
                         </span>
                       </div>
                     </div>
@@ -1434,8 +2027,10 @@ export default function CustomerStatementView() {
               </div>
             </div>
           </div>
-        );
-      })()}
+        )}
+      </div>
+    );
+  })()}
 
       {/* PDF export is generated programmatically via jspdf — no hidden DOM required */}
       </div>

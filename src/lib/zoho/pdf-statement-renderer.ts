@@ -232,6 +232,7 @@ export async function renderStatementToPdf(
     isExpanded: boolean;
     clipFromIndex: number | null;
     isBatchRecovery?: boolean;
+    firmColors?: any;
   }
 ) {
   const { fontRegular, fontBold, logo } = await getCachedAssets(theme);
@@ -304,10 +305,10 @@ export async function renderStatementToPdf(
   doc.setTextColor(...(theme === 'economy' ? cDark : [255, 255, 255] as [number, number, number]));
   doc.setFont(pdfFont, 'bold');
   doc.setFontSize(13);
-  doc.text('Customer Statement', titleX, base1);
+  doc.text((s as any).isGroup ? 'Group Statement' : 'Customer Statement', titleX, base1);
   
   doc.setFontSize(10);
-  let cName = s.customer.contactName || 'Customer';
+  let cName = (s as any).isGroup ? 'Combined Portfolio' : (s.customer.contactName || 'Customer');
   if (doc.getStringUnitWidth(cName) * doc.internal.getFontSize() / doc.internal.scaleFactor > maxRightWidth) {
     while (cName.length > 0 && doc.getStringUnitWidth(cName + '...') * doc.internal.getFontSize() / doc.internal.scaleFactor > maxRightWidth) {
       cName = cName.slice(0, -1);
@@ -327,8 +328,17 @@ export async function renderStatementToPdf(
     doc.text(`GST: ${s.customer.gstNo}`, pageW - margin, base2, { align: 'right' });
   }
 
-  // Baseline 3 (Phone)
+  // Baseline 3 (Phone & Firms)
   const base3 = logoY + 15;
+  if ((s as any).isGroup && (s as any).firmNames) {
+    let firmsStr = `Included Firms: ${(s as any).firmNames.join(', ')}`;
+    // Truncate if it exceeds half the page
+    if (doc.getStringUnitWidth(firmsStr) * doc.internal.getFontSize() / doc.internal.scaleFactor > (pageW - margin * 2) * 0.5) {
+      firmsStr = `${(s as any).firmNames.length} Firms Included`;
+    }
+    doc.text(firmsStr, titleX, base3);
+  }
+
   if (s.customer.mobile) {
     doc.text(s.customer.mobile, pageW - margin, base3, { align: 'right' });
   }
@@ -432,25 +442,57 @@ export async function renderStatementToPdf(
   } else {
     currentY += 4;
   }
+  const isGroup = !!(s as any).isGroup;
+  
+  const tableHead = [
+    isGroup
+      ? ['Date', 'Firm', 'Type', 'Document & Details', 'Invoice Amt', 'Payment Amt', 'Balance']
+      : ['Date', 'Type', 'Details', 'Invoice Amt', 'Payment Amt', 'Balance']
+  ];
 
-  const tableHead = [['Date', 'Type', 'Details', 'Invoice Amt', 'Payment Amt', 'Balance']];
-
-  const openRow = [
+  const openRow = isGroup ? [
+    '—', '—', '—',
+    `Opening Balance${openingPres.isCredit ? ' (Advance/Credit)' : ''}`,
+    '—', '—', pdfOpeningAmt
+  ] : [
     '—', '—',
     `Opening Balance${openingPres.isCredit ? ' (Advance/Credit)' : ''}`,
     '—', '—', pdfOpeningAmt
   ];
 
-  const txRows = visibleTxs.map(tx => [
-    fmtDate(tx.date),
-    tx.type === 'invoice' ? 'Invoice' : tx.type === 'payment' ? 'Payment' : 'Bill',
-    cleanDescription(tx.description, tx.type),
-    tx.netEffect > 0  ? pdfFmt(tx.amount) : '—',
-    tx.netEffect <= 0 ? pdfFmt(tx.amount) : '—',
-    pdfFmtBalance(tx.balanceAfter),
-  ]);
+  const txRows = visibleTxs.map((tx: any) => {
+    const typeLabel = tx.type === 'invoice' ? 'Invoice' : tx.type === 'payment' ? 'Payment' : 'Bill';
+    const displayDesc = cleanDescription(tx.description, tx.type);
+    const combinedDesc = tx.referenceNumber ? (tx.referenceNumber !== displayDesc ? `${tx.referenceNumber}\n${displayDesc}` : tx.referenceNumber) : displayDesc;
+    
+    if (isGroup) {
+      return [
+        fmtDate(tx.date),
+        tx.firmName || '—',
+        typeLabel,
+        combinedDesc,
+        tx.netEffect > 0  ? pdfFmt(tx.amount) : '—',
+        tx.netEffect <= 0 ? pdfFmt(tx.amount) : '—',
+        pdfFmtBalance(tx.balanceAfter),
+      ];
+    }
 
-  const totalsRow = [
+    return [
+      fmtDate(tx.date),
+      typeLabel,
+      combinedDesc,
+      tx.netEffect > 0  ? pdfFmt(tx.amount) : '—',
+      tx.netEffect <= 0 ? pdfFmt(tx.amount) : '—',
+      pdfFmtBalance(tx.balanceAfter),
+    ];
+  });
+
+  const totalsRow = isGroup ? [
+    '', '', '', 'TOTALS',
+    pdfFmt(totalInvoiced),
+    pdfFmt(totalPaid),
+    pdfFmtBalance(s.closingBalance),
+  ] : [
     '', '', 'TOTALS',
     pdfFmt(totalInvoiced),
     pdfFmt(totalPaid),
@@ -458,22 +500,27 @@ export async function renderStatementToPdf(
   ];
 
   autoTable(doc, {
-    startY: currentY,
+    startY: logoY + 30,
     head: tableHead,
     body: [openRow, ...txRows, totalsRow],
     theme: 'grid',
-    headStyles: { 
-      fillColor: theme === 'economy' ? [243, 244, 246] : cNavy, 
-      textColor: theme === 'economy' ? [0, 0, 0] : [255, 255, 255], 
-      fontSize: 7, 
-      fontStyle: 'bold', 
-      font: pdfFont,
-      lineWidth: theme === 'economy' ? 0.2 : 0,
-      lineColor: theme === 'economy' ? [220, 220, 220] : undefined
+    headStyles: {
+      fillColor: theme === 'economy' ? [241, 245, 249] : cNavy,
+      textColor: theme === 'economy' ? cDark : [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8,
+      cellPadding: { top: 3, bottom: 3, left: 2, right: 2 }
     },
     bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85], font: pdfFont },
-    alternateRowStyles: { fillColor: theme === 'economy' ? [250, 250, 250] : [250, 250, 250] },
-    columnStyles: {
+    columnStyles: isGroup ? {
+      0: { cellWidth: 20, overflow: 'visible' },
+      1: { cellWidth: 26, overflow: 'linebreak' },
+      2: { cellWidth: 16, overflow: 'visible' },
+      3: { cellWidth: 50, overflow: 'linebreak' },
+      4: { halign: 'right', cellWidth: 22, fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
+      5: { halign: 'right', cellWidth: 22, textColor: [5, 150, 105], fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
+      6: { halign: 'right', cellWidth: 24, fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
+    } : {
       0: { cellWidth: 22, overflow: 'visible' },
       1: { cellWidth: 16, overflow: 'visible' },
       2: { cellWidth: 58, overflow: 'linebreak' },
@@ -493,15 +540,15 @@ export async function renderStatementToPdf(
           if (theme !== 'economy') {
             data.cell.styles.fillColor = [239, 246, 255];
           }
-          if (data.column.index === 5) {
-            data.cell.styles.textColor = openingPres.isCredit ? [5, 150, 105] : [15, 23, 42];
-            data.cell.styles.fontStyle = 'bold';
-          }
         }
         const isLast = data.row.index === txRows.length + 1;
+        const typeColIdx = isGroup ? 2 : 1;
+        const invColIdx = isGroup ? 4 : 3;
+        const pmtColIdx = isGroup ? 5 : 4;
+        const balColIdx = isGroup ? 6 : 5;
         
-        if (data.column.index === 1 && data.row.index > 0 && !isLast && theme === 'economy') {
-          const txType = txRows[data.row.index - 1][1];
+        if (data.column.index === typeColIdx && data.row.index > 0 && !isLast && theme === 'economy') {
+          const txType = txRows[data.row.index - 1][typeColIdx];
           if (txType === 'Invoice') {
             data.cell.styles.fillColor = [239, 246, 255];
             data.cell.styles.textColor = [30, 64, 175];
@@ -511,21 +558,33 @@ export async function renderStatementToPdf(
           }
         }
 
+        if (isGroup && data.column.index === 1 && data.row.index > 0 && !isLast) {
+          const txIdx = data.row.index - 1;
+          if (txIdx >= 0 && txIdx < visibleTxs.length) {
+            const tx = visibleTxs[txIdx];
+            const fc = options.firmColors?.[(tx as any).firmId];
+            if (fc && fc.bgHex && fc.hex) {
+              data.cell.styles.fillColor = fc.bgHex;
+              data.cell.styles.textColor = fc.hex;
+            }
+          }
+        }
+
         if (isLast) {
           if (theme !== 'economy') {
             data.cell.styles.fillColor = [241, 245, 249];
           }
           data.cell.styles.fontStyle = 'bold';
           data.cell.styles.fontSize = 8.5;
-          if (data.column.index === 3) data.cell.styles.textColor = [15, 23, 42];
-          if (data.column.index === 4) data.cell.styles.textColor = [5, 150, 105];
-          if (data.column.index === 5) {
+          if (data.column.index === invColIdx) data.cell.styles.textColor = [15, 23, 42];
+          if (data.column.index === pmtColIdx) data.cell.styles.textColor = [5, 150, 105];
+          if (data.column.index === balColIdx) {
             data.cell.styles.textColor = s.closingBalance > 0 ? [220, 38, 38]
               : s.closingBalance < 0 ? [5, 150, 105] : [15, 23, 42];
             data.cell.styles.fontSize = 9;
           }
         }
-        if (data.column.index === 5 && data.row.index > 0 && !isLast) {
+        if (data.column.index === balColIdx && data.row.index > 0 && !isLast) {
           const txIdx = data.row.index - 1;
           if (txIdx >= 0 && txIdx < visibleTxs.length) {
             const b = visibleTxs[txIdx].balanceAfter;

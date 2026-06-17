@@ -20,11 +20,18 @@ export async function GET(request: Request) {
     );
   }
 
-  const minDate = '2026-03-01';
-  const result = await getCustomerStatement(customerId.trim(), minDate);
-  if (!result.success) {
-    return NextResponse.json({ error: result.error, raw: result.raw }, { status: 400 });
-  }
+  try {
+    const minDate = '2026-03-01';
+    const result = await getCustomerStatement(customerId.trim(), minDate);
+    if (!result.success) {
+      return NextResponse.json({ error: result.error, raw: result.raw }, { status: 400 });
+    }
 
-  return NextResponse.json(result);
+    return NextResponse.json(result);
+  } catch (e: any) {
+    return NextResponse.json({
+      success: false,
+      error: String(e)
+    }, { status: 500 });
+  }
 }

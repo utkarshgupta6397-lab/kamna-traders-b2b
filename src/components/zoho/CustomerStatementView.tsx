@@ -343,7 +343,7 @@ export default function CustomerStatementView() {
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
-          setStatement(parsed.data);
+          setStatement({ success: true, data: parsed.data });
           setCachedAt(parsed.cachedAt);
           return;
         } catch (e) {}
@@ -357,10 +357,18 @@ export default function CustomerStatementView() {
     setIsCalcOpen(false); // Close calculator
     setCalcEntries([]);
     try {
-      const res = await fetch(`/api/admin/customer-statement?customerId=${cid}`);
+      const res = await fetch(`/api/admin/customer-statement/statement?customerId=${cid}`);
       const data = await res.json();
+
+      if (!res.ok) {
+          console.error(data);
+          throw new Error(data.message || data.error || "Unknown server error");
+      }
+
       if (data.success) {
-        setStatement(data.data);
+        // Fix: Do not set statement to data.data, keep it as data so statement.success is defined!
+        // Alternatively, update the UI check, but setting it as data keeps it consistent with GroupStatement which has success: true
+        setStatement(data);
         const nowTs = Date.now();
         setCachedAt(nowTs);
         setNow(nowTs);
@@ -1014,7 +1022,7 @@ export default function CustomerStatementView() {
       {/* ── Portfolio Health (Moved to Unified KPI Section below) ── */}
 
       {s && (() => {
-        const isValidClip = clipFromIndex !== null && clipFromIndex >= 0 && clipFromIndex < s.transactions.length;
+        const isValidClip = clipFromIndex !== null && clipFromIndex >= 0 && clipFromIndex < s.transactions.length && !!s.transactions[clipFromIndex];
         const clipIdx = isValidClip ? clipFromIndex : -1;
         const isClipped = clipIdx !== -1;
         const activeTxs = isClipped ? s.transactions.slice(clipIdx) : s.transactions;

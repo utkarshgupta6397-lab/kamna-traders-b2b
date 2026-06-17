@@ -541,19 +541,29 @@ export default function CustomerStatementView() {
         </p>
       </div>
 
-      {/* ── Search bar ─────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-col xl:flex-row items-start xl:items-end gap-3 sticky top-0 z-40 xl:static">
-        <div className="flex-1 w-full">
-          <label className="flex items-center gap-2 text-xs font-bold text-gray-600 mb-1">
-            Search Customer
-            {isLocked && (
-              <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
-                <Lock size={10} /> Prefilled from Zoho Books
-              </span>
+      {/* ── Search & Action Bar ─────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-3 flex flex-col xl:flex-row items-start xl:items-end justify-between gap-4 sticky top-0 z-40 xl:static">
+        
+        {/* Left: Search & Cache Status */}
+        <div className="flex-1 w-full xl:max-w-md flex flex-col gap-1.5 relative">
+          <div className="flex items-center justify-between px-0.5">
+            <label className="flex items-center gap-2 text-xs font-bold text-gray-700">
+              Customer Search
+              {isLocked && (
+                <span className="flex items-center gap-1 text-[10px] text-[#1A2766] font-medium bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                  <Lock size={10} /> Prefilled
+                </span>
+              )}
+            </label>
+            {cachedAt && (
+              <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-medium">
+                Cached {formatCachedAge(now - cachedAt)}
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+              </div>
             )}
-          </label>
+          </div>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={15} />
             <input
               id="customer-id-input"
               type="text"
@@ -570,8 +580,8 @@ export default function CustomerStatementView() {
                 }
               }}
               disabled={isLocked}
-              className={`w-full pl-9 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1A2766] focus:border-transparent ${
-                isLocked ? 'bg-gray-50 text-gray-500 border-gray-200 cursor-not-allowed' : 'border-gray-200'
+              className={`w-full pl-9 pr-4 h-[36px] text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-[#1A2766] focus:border-transparent transition-all shadow-sm ${
+                isLocked ? 'bg-gray-50 text-gray-500 border-gray-200 cursor-not-allowed' : 'bg-white border-gray-300 hover:border-gray-400'
               }`}
             />
             {isSearching && (
@@ -582,12 +592,12 @@ export default function CustomerStatementView() {
             
             {/* Autocomplete Dropdown */}
             {showSuggestions && suggestions.length > 0 && !isLocked && (
-              <div className="absolute z-50 w-full mt-1 bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden">
+              <div className="absolute z-50 w-full mt-1 bg-white rounded-md shadow-lg border border-gray-200 overflow-hidden">
                 <div className="max-h-60 overflow-y-auto">
                   {suggestions.map((c) => (
                     <div 
                       key={c.id} 
-                      className="px-4 py-3 border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors"
+                      className="px-4 py-2.5 border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors"
                       onMouseDown={(e) => {
                         e.preventDefault(); // Prevent blur
                         setSearchQuery(c.name);
@@ -598,7 +608,7 @@ export default function CustomerStatementView() {
                     >
                       <div className="flex justify-between items-start">
                         <div>
-                          <div className="text-sm font-bold text-gray-900">{c.name}</div>
+                          <div className="text-sm font-semibold text-gray-900">{c.name}</div>
                           {c.gstNumber && c.gstNumber !== 'NOT_AVAILABLE' && (
                             <div className="text-[10px] font-mono text-gray-500 mt-0.5 tracking-wide">GST: {c.gstNumber}</div>
                           )}
@@ -613,72 +623,73 @@ export default function CustomerStatementView() {
           </div>
         </div>
 
-        {/* Cached label — stable position, right-aligned */}
-        {cachedAt && (
-          <div className="hidden xl:flex items-center gap-1.5 text-[10px] text-gray-400 font-medium self-end pb-2 shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-            Cached {formatCachedAge(now - cachedAt)}
-          </div>
-        )}
-
-        <div className="flex flex-col sm:flex-row flex-wrap gap-3 w-full xl:w-auto">
+        {/* Right: Action Buttons */}
+        <div className="flex flex-row flex-wrap sm:flex-nowrap items-center gap-2.5 w-full xl:w-auto mt-2 xl:mt-0 shrink-0">
           <button
             id="fetch-statement-btn"
             onClick={() => handleFetch(undefined, true)}
             disabled={loading}
-            className="w-full sm:flex-1 xl:flex-none flex items-center justify-center gap-2 px-5 py-2 bg-[#1A2766] text-white rounded-lg text-sm font-bold hover:bg-[#25368a] transition-colors disabled:opacity-50 min-h-[44px] xl:min-h-0 xl:h-[38px]"
+            className="flex items-center justify-center gap-2 px-4 h-[36px] bg-[#1A2766] text-white rounded-md text-sm font-medium hover:bg-[#25368a] transition-colors shadow-sm disabled:opacity-50 w-full sm:w-auto"
           >
-            {loading ? <RefreshCw size={15} className="animate-spin" /> : 'Load Statement'}
+            {loading ? <RefreshCw size={14} className="animate-spin" /> : 'Load Statement'}
           </button>
+          
           {s && (
             <>
+              {/* Secondary: Print */}
               <button
                 onClick={handleThermalPrint}
                 disabled={printing}
-                className="w-full sm:flex-1 xl:flex-none flex items-center justify-center gap-2 px-5 py-2 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-black transition-colors disabled:opacity-50 min-h-[44px] xl:min-h-0 xl:h-[38px] print:hidden"
+                className="flex items-center justify-center gap-1.5 px-4 h-[36px] bg-white text-gray-700 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50 w-full sm:w-auto print:hidden"
               >
-                {printing ? <RefreshCw size={15} className="animate-spin" /> : <Printer size={15} />}
+                {printing ? <RefreshCw size={14} className="animate-spin" /> : <Printer size={14} />}
                 {printing ? 'Printing…' : 'Print'}
               </button>
-              <div className="relative w-full sm:flex-1 xl:flex-none">
+
+              {/* Success: Download PDF */}
+              <div className="relative w-full sm:w-auto print:hidden">
                 <button
                   onClick={() => setPdfMenuOpen(!pdfMenuOpen)}
                   disabled={pdfGenerating}
-                  className="w-full flex items-center justify-center gap-2 px-5 py-2 bg-emerald-700 text-white rounded-lg text-sm font-bold hover:bg-emerald-800 transition-colors disabled:opacity-50 min-h-[44px] xl:min-h-0 xl:h-[38px] print:hidden"
+                  className="flex items-center justify-center gap-1.5 px-4 h-[36px] bg-emerald-600 text-white rounded-md text-sm font-medium hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50 w-full sm:w-auto"
                 >
-                  {pdfGenerating ? <RefreshCw size={15} className="animate-spin" /> : <Download size={15} />}
-                  {pdfGenerating ? 'Generating PDF…' : 'Download Statement PDF'}
+                  {pdfGenerating ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+                  Download PDF
                   <ChevronDown size={14} className={`transition-transform ${pdfMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
                 
                 {pdfMenuOpen && (
-                  <div className="absolute top-full right-0 sm:left-0 sm:right-auto mt-1 w-full xl:w-56 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden z-50">
+                  <div className="absolute top-full right-0 mt-1 w-[180px] bg-white border border-gray-200 rounded-md shadow-lg overflow-hidden z-50">
                     <button 
                       onClick={() => { setPdfMenuOpen(false); handleDownloadPDF('color'); }}
-                      className="w-full text-left px-4 py-3 text-sm font-bold text-emerald-800 hover:bg-emerald-50 border-b border-gray-100 flex items-center gap-2.5 transition-colors min-h-[44px]"
+                      className="w-full text-left px-4 py-2.5 text-sm font-medium text-emerald-800 hover:bg-emerald-50 border-b border-gray-100 flex items-center gap-2 transition-colors"
                     >
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm"></div>
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm"></div>
                       Color PDF
                     </button>
                     <button 
                       onClick={() => { setPdfMenuOpen(false); handleDownloadPDF('economy'); }}
-                      className="w-full text-left px-4 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 transition-colors min-h-[44px]"
+                      className="w-full text-left px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
                     >
-                      <div className="w-2.5 h-2.5 rounded-full border-2 border-gray-300"></div>
+                      <div className="w-2 h-2 rounded-full border-2 border-gray-400"></div>
                       Print PDF (Low Ink)
                     </button>
                   </div>
                 )}
               </div>
+
+              {/* Accent: Calculator */}
               <button
                 onClick={() => setIsCalcOpen(true)}
-                className="w-full sm:flex-1 xl:flex-none flex items-center justify-center gap-2 px-5 py-2 bg-purple-700 text-white rounded-lg text-sm font-bold hover:bg-purple-800 transition-colors min-h-[44px] xl:min-h-0 xl:h-[38px] print:hidden"
+                className="flex items-center justify-center gap-1.5 px-4 h-[36px] bg-purple-50 text-purple-700 border border-purple-200 rounded-md text-sm font-medium hover:bg-purple-100 transition-colors shadow-sm w-full sm:w-auto print:hidden"
               >
-                <Calculator size={15} /> Calculator
+                <Calculator size={14} /> Calculator
               </button>
+
+              {/* Outline / Secondary: View DCR Summary */}
               <a
                 href={`/staff/dashboard/accounts/dcr/customer-lookup?customerId=${customerId}&filterMode=ALL&statusFilter=ALL`}
-                className="w-full sm:flex-1 xl:flex-none flex items-center justify-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors min-h-[44px] xl:min-h-0 xl:h-[38px] print:hidden"
+                className="flex items-center justify-center gap-1.5 px-4 h-[36px] bg-white text-gray-700 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm w-full sm:w-auto print:hidden"
               >
                 View DCR Summary
               </a>
@@ -686,14 +697,6 @@ export default function CustomerStatementView() {
           )}
         </div>
       </div>
-
-      {/* Mobile cached label */}
-      {cachedAt && (
-        <div className="sm:hidden flex items-center gap-1.5 text-[10px] text-gray-400 font-medium px-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-          Cached {formatCachedAge(now - cachedAt)}
-        </div>
-      )}
 
       {/* ── Error state ────────────────────────────────────────────────── */}
       {statement && !statement.success && (

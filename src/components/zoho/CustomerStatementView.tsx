@@ -187,7 +187,7 @@ export default function CustomerStatementView() {
   useEffect(() => {
     try {
       const mode = sessionStorage.getItem('statementMode');
-      if (mode === 'group') setStatementMode('group');
+      // Intentionally removed the lookup that set statementMode to 'group' so that it defaults to 'single'
 
       const stored = sessionStorage.getItem('calc-session');
       if (stored) {
@@ -1046,7 +1046,10 @@ export default function CustomerStatementView() {
         const activeUnpaidInvoices = s.unpaidInvoices ? (
           isClipped ? s.unpaidInvoices.filter((inv: any) => {
             const clippedTx = s.transactions[clipIdx];
-            return inv.invoiceDate >= clippedTx.date;
+            if (!clippedTx) return true;
+            const clipDate = clippedTx.date || clippedTx.datetime || 0;
+            const invDate = inv.invoiceDate || 0;
+            return new Date(invDate).getTime() >= new Date(clipDate).getTime();
           }) : s.unpaidInvoices
         ) : [];
 

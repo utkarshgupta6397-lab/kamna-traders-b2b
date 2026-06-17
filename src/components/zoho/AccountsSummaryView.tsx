@@ -2165,7 +2165,7 @@ export default function AccountsSummaryView() {
 
           <div className="flex items-center rounded-lg overflow-hidden border" style={{ borderColor: '#E2E8F0', background: '#fff' }}>
             {PERIOD_OPTIONS.map((p) => (
-              <button key={p.id} onClick={() => setLookback(p.id)} disabled={refreshing || autoFetching}
+              <button key={p.id} onClick={() => setLookback(p.id)} disabled={isAnyRefreshing || cooldownRemaining > 0}
                 className="last:border-r-0 disabled:opacity-50 hover:bg-slate-50"
                 style={{
                   borderRight: '1px solid #E2E8F0',
@@ -2426,6 +2426,13 @@ export default function AccountsSummaryView() {
                             onFlag={handleFlagStatement}
                             historicalCount={historicalCounts[row.invoiceId] || 0}
                           />
+                        </td>
+
+                        {/* Salesman */}
+                        <td className="py-3 px-4 text-left">
+                          <p className="text-[11px] font-medium" style={{ color: '#475569' }}>
+                            {row.salespersonName || '—'}
+                          </p>
                         </td>
 
                         {/* Value */}

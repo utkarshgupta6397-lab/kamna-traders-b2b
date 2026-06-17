@@ -1226,6 +1226,7 @@ export default function CustomerStatementView() {
                                   style={{ accentColor: `rgb(${fc.hex.join(',')})` }}
                                   checked={isVisible}
                                   onChange={(e) => {
+                                    setClipFromIndex(null);
                                     if (e.target.checked) {
                                       setVisibleFirmIds(prev => [...prev, firmId]);
                                     } else {

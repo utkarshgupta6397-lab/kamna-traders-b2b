@@ -500,7 +500,7 @@ export async function renderStatementToPdf(
   ];
 
   autoTable(doc, {
-    startY: logoY + 30,
+    startY: currentY + 4,
     head: tableHead,
     body: [openRow, ...txRows, totalsRow],
     theme: 'grid',

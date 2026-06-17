@@ -163,7 +163,7 @@ export default function SerialCorrectionsClient() {
   };
 
   const handleBulkLoad = async () => {
-    const lines = bulkInput.split('\n').map(l => l.trim().toUpperCase()).filter(l => l.length > 0);
+    const lines = bulkInput.split(/[\n,]+/).map(l => l.trim().toUpperCase()).filter(l => l.length > 0);
     const uniqueSerials = Array.from(new Set(lines));
     if (uniqueSerials.length === 0) return;
 
@@ -626,8 +626,8 @@ export default function SerialCorrectionsClient() {
                 <textarea
                   value={bulkInput}
                   onChange={e => setBulkInput(e.target.value)}
-                  placeholder="Paste serial numbers here (one per line)..."
-                  className="w-full h-32 px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#1A2766] font-mono text-sm resize-y"
+                  placeholder={"Paste serial numbers here...\n• One serial per line\n• OR comma-separated\n• OR a combination of both"}
+                  className="w-full h-32 px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#1A2766] font-mono text-sm resize-y placeholder:text-gray-400"
                   disabled={bulkIsLoading || bulkIsExecuting}
                 />
                 <button

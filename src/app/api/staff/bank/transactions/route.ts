@@ -6,6 +6,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const fetchStartedAt = Date.now();
+  const { searchParams } = new URL(request.url);
+  const from_date = searchParams.get('from_date');
+  const to_date = searchParams.get('to_date');
 
   try {
     const session = await getSession();
@@ -39,7 +42,10 @@ export async function GET(request: Request) {
     // Fetch Statements
     const fetchStatements = async () => {
       while (hasMorePage && page <= 10) {
-        const url = `${apiBase}/books/v3/bankaccounts/${accountId}/statements?organization_id=${orgId}&page=${page}&per_page=200`;
+        let url = `${apiBase}/books/v3/bankaccounts/${accountId}/statements?organization_id=${orgId}&page=${page}&per_page=200`;
+        if (from_date && to_date) {
+          url += `&from_date=${from_date}&to_date=${to_date}`;
+        }
         const response = await fetch(url, {
           method,
           headers: {
@@ -81,7 +87,12 @@ export async function GET(request: Request) {
       const y = parts.find(p => p.type === 'year')?.value;
       const todayIST = `${y}-${m}-${d}`;
       
-      const url = `${apiBase}/books/v3/customerpayments?organization_id=${orgId}&date=${todayIST}&per_page=200`;
+      let targetDate = todayIST;
+      if (from_date && to_date && from_date === to_date) {
+        targetDate = from_date;
+      }
+      
+      const url = `${apiBase}/books/v3/customerpayments?organization_id=${orgId}&date=${targetDate}&per_page=200`;
       
       const response = await fetch(url, {
         method,

@@ -106,7 +106,7 @@ export default function HoldQueueClient() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [sort, setSort] = useState('outstanding_desc');
+  const [sort, setSort] = useState('age_desc');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshingCustomerId, setRefreshingCustomerId] = useState<string | null>(null);
   

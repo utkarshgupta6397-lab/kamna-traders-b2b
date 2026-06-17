@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { RefreshCw, Terminal, CheckCircle2, AlertCircle, Building2, ChevronDown, ChevronUp, ArrowUpDown, PieChart } from 'lucide-react';
+import { RefreshCw, Terminal, CheckCircle2, AlertCircle, Building2, ChevronDown, ChevronUp, ArrowUpDown, PieChart, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface ZohoTransaction {
@@ -227,6 +227,8 @@ export default function LiveBankTransactionsView() {
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [selectedParty, setSelectedParty] = useState<string | null>(null);
   const [uncategorizedOnly, setUncategorizedOnly] = useState<boolean>(false);
+  const [activeViewingDate, setActiveViewingDate] = useState<string>(getTodayIST());
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
   const fetchTriggered = useRef(false);
 
@@ -264,7 +266,6 @@ export default function LiveBankTransactionsView() {
 
   // Merge and Deduplicate Logic
   const { mergedTransactions, mergeStats } = useMemo(() => {
-    const todayIST = getTodayIST();
     let feedCount = 0;
     let manualCount = 0;
     let duplicatesRemoved = 0;
@@ -273,7 +274,7 @@ export default function LiveBankTransactionsView() {
     const bankFeed = statements.filter(txn => 
       txn.account_id === ICICI_ACCOUNT_ID &&
       txn.debit_or_credit === 'debit' &&
-      txn.date === todayIST
+      txn.date === activeViewingDate
     ).map(txn => {
       feedCount++;
       const { displayDate, timestamp } = extractDateTime(txn);
@@ -287,7 +288,7 @@ export default function LiveBankTransactionsView() {
     });
 
     // Process Customer Payments
-    const customerPayments = payments.filter(p => p.date === todayIST).map(p => {
+    const customerPayments = payments.filter(p => p.date === activeViewingDate).map(p => {
       manualCount++;
       const { displayDate, timestamp } = extractDateTime(p);
       return {
@@ -355,7 +356,7 @@ export default function LiveBankTransactionsView() {
       mergedTransactions: Array.from(merged.values()) as ZohoTransaction[], 
       mergeStats: { feedCount, manualCount, duplicatesRemoved, finalCount: merged.size }
     };
-  }, [statements, payments]);
+  }, [statements, payments, activeViewingDate]);
 
 
   // Apply Sorting
@@ -403,12 +404,16 @@ export default function LiveBankTransactionsView() {
     });
   }, [sortedTransactions, selectedMethod, selectedParty, uncategorizedOnly]);
 
-  const handleFetch = async () => {
+  const handleFetch = async (targetDate?: string) => {
     setLoading(true);
     setError(null);
     
     try {
-      const res = await fetch('/api/staff/bank/transactions');
+      let url = '/api/staff/bank/transactions';
+      if (targetDate) {
+        url += `?from_date=${targetDate}&to_date=${targetDate}`;
+      }
+      const res = await fetch(url);
       const json = await res.json();
       
       if (!res.ok || !json.success) {
@@ -418,9 +423,11 @@ export default function LiveBankTransactionsView() {
       if (json.data && json.data.statements) {
         setStatements(json.data.statements);
         setPayments(json.data.payments);
+        setActiveViewingDate(targetDate || getTodayIST());
       } else {
         // Fallback for old API format
         setStatements(Array.isArray(json.data) ? json.data : []);
+        setActiveViewingDate(targetDate || getTodayIST());
       }
       
       setTelemetry(json.telemetry);
@@ -500,6 +507,9 @@ export default function LiveBankTransactionsView() {
 
   const methodColors = ['#059669', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b'];
 
+  const isToday = activeViewingDate === getTodayIST();
+  const displayDateStr = isToday ? "Today" : new Date(activeViewingDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -520,8 +530,29 @@ export default function LiveBankTransactionsView() {
               Last synced at {new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }).format(new Date(lastRefresh))}
             </span>
           )}
+          <div className="flex items-center ml-2 mr-2">
+            <button 
+              onClick={() => dateInputRef.current?.showPicker()} 
+              disabled={loading} 
+              className="px-3 py-2 text-sm rounded-lg font-medium transition-all shadow-sm flex items-center gap-2 disabled:opacity-50 bg-[#1A2766]/10 hover:bg-[#1A2766]/20 text-[#1A2766]"
+            >
+              <Calendar size={16} /> Fetch Previous Date
+            </button>
+            <input 
+              type="date" 
+              ref={dateInputRef} 
+              className="w-0 h-0 p-0 m-0 border-0 absolute" 
+              max={new Date(Date.now() - 86400000).toISOString().split('T')[0]}
+              onChange={(e) => {
+                 if (e.target.value) {
+                   handleFetch(e.target.value);
+                 }
+              }}
+            />
+          </div>
+
           <button
-            onClick={handleFetch}
+            onClick={() => handleFetch()}
             disabled={loading}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm ${
               loading
@@ -751,7 +782,7 @@ export default function LiveBankTransactionsView() {
         <div className="w-full lg:w-[30%] space-y-4 sticky top-4 h-fit">
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-4">
             <h3 className="text-xs font-bold text-gray-800 uppercase tracking-widest border-b border-gray-100 pb-2">
-              Today's Overview
+              {isToday ? "Today's" : displayDateStr} Overview
             </h3>
             
             <div className="grid grid-cols-2 gap-3">
@@ -898,13 +929,13 @@ export default function LiveBankTransactionsView() {
                     </div>
                   </>
                 )}
-                <div className="flex justify-between border-t border-gray-100 pt-1 mt-1">
-                  <span className="text-gray-400">Bank Feed (Today):</span>
-                  <span className="text-blue-600 font-bold">{mergeStats.feedCount}</span>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-gray-400">Bank Feed ({isToday ? 'Today' : displayDateStr}):</span>
+                  <span className="font-semibold text-gray-900">{mergeStats.feedCount}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Manual Payments (Today):</span>
-                  <span className="text-purple-600 font-bold">{mergeStats.manualCount}</span>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-gray-400">Manual Payments ({isToday ? 'Today' : displayDateStr}):</span>
+                  <span className="font-semibold text-gray-900">{mergeStats.manualCount}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Duplicates Removed:</span>
@@ -927,6 +958,7 @@ export default function LiveBankTransactionsView() {
           </div>
         </div>
       </div>
+
     </div>
   );
 }

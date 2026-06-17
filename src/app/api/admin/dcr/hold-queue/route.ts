@@ -16,6 +16,7 @@ export async function GET(req: Request) {
     const skip = (page - 1) * limit;
     
     const sort = searchParams.get('sort') || 'outstanding_desc';
+    const customerId = searchParams.get('customerId');
 
     // --- Build where clause ---
     const whereClause: any = {
@@ -44,6 +45,10 @@ export async function GET(req: Request) {
           ]
         }
       ];
+    }
+    
+    if (customerId) {
+      whereClause.customerId = customerId;
     }
 
     // Fetch ALL matching invoices without DB pagination

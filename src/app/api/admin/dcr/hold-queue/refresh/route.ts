@@ -13,25 +13,43 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    // 1. Get all unique customer IDs currently in the hold queue
-    const kpiWhereClause: any = {
-      invoiceStatus: { not: 'void' },
-      serialAllocations: {
-        some: {
-          serial: {
-            vendorDcrStatus: 'RECEIVED',
-            status: { notIn: ['READY_TO_ISSUE', 'ISSUED'] }
+    let targetCustomerId: string | null = null;
+    try {
+      const body = await req.json();
+      if (body?.customerId) {
+        targetCustomerId = body.customerId;
+      }
+    } catch {
+      // no body or invalid JSON
+    }
+
+    let customerIds: string[] = [];
+
+    if (targetCustomerId) {
+      customerIds = [targetCustomerId];
+      console.log('[HOLD_REFRESH] Customer Outstanding Refresh started for:', targetCustomerId);
+    } else {
+      console.log('[HOLD_REFRESH] Global Outstanding Refresh started');
+      // 1. Get all unique customer IDs currently in the hold queue
+      const kpiWhereClause: any = {
+        invoiceStatus: { not: 'void' },
+        serialAllocations: {
+          some: {
+            serial: {
+              vendorDcrStatus: 'RECEIVED',
+              status: { notIn: ['READY_TO_ISSUE', 'ISSUED'] }
+            }
           }
         }
-      }
-    };
+      };
 
-    const holdInvoices = await prisma.dcrInvoice.findMany({
-      where: kpiWhereClause,
-      select: { customerId: true },
-    });
+      const holdInvoices = await prisma.dcrInvoice.findMany({
+        where: kpiWhereClause,
+        select: { customerId: true },
+      });
 
-    const customerIds = Array.from(new Set(holdInvoices.map((inv: any) => inv.customerId)));
+      customerIds = Array.from(new Set(holdInvoices.map((inv: any) => inv.customerId)));
+    }
     
     console.log('[HOLD_REFRESH] Step B: Outstanding refresh service - Customers found:', customerIds.length);
 

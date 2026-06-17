@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Search, ChevronDown, ChevronUp, Clock, Users, CheckCircle, Loader2, Package, ArrowRightCircle, IndianRupee, FileText, X, ExternalLink, Activity } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Clock, Users, CheckCircle, Loader2, Package, ArrowRightCircle, IndianRupee, FileText, X, ExternalLink, Activity, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { useDcrStats } from '../layout';
@@ -108,6 +108,7 @@ export default function HoldQueueClient() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sort, setSort] = useState('outstanding_desc');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshingCustomerId, setRefreshingCustomerId] = useState<string | null>(null);
   
   // Modal states
   const [reviewCustomer, setReviewCustomer] = useState<CustomerHoldRecord | null>(null);
@@ -177,6 +178,43 @@ export default function HoldQueueClient() {
       toast.error(err.message, { id: toastId });
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  const handleRefreshCustomer = async (e: React.MouseEvent, customerId: string) => {
+    e.stopPropagation();
+    setRefreshingCustomerId(customerId);
+    try {
+      const res = await fetch('/api/admin/dcr/hold-queue/refresh', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to refresh');
+      }
+
+      // Fetch the updated customer row
+      const rowRes = await fetch(`/api/admin/dcr/hold-queue?customerId=${customerId}`);
+      const rowData = await rowRes.json();
+      
+      if (rowRes.ok && rowData.customers && rowData.customers.length > 0) {
+        const updatedCustomer = rowData.customers[0];
+        setCustomers(prev => prev.map(c => c.customerId === customerId ? updatedCustomer : c));
+        
+        // Update review modal if open
+        setReviewCustomer(prev => {
+          if (prev?.customerId === customerId) return updatedCustomer;
+          return prev;
+        });
+      }
+      
+      toast.success('Outstanding refreshed successfully.');
+    } catch (err: any) {
+      toast.error('Unable to refresh customer outstanding.');
+    } finally {
+      setRefreshingCustomerId(null);
     }
   };
 
@@ -473,12 +511,22 @@ export default function HoldQueueClient() {
                           <span className="font-bold text-orange-600">{customer.serialsDcrPending}</span>
                         </td>
                         <td className="px-3 py-2.5 text-right sticky right-0 bg-white group-hover:bg-[#f8fafc] transition-colors z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.05)]">
-                          <button
-                            onClick={() => openReview(customer)}
-                            className="bg-[#1A2766] hover:bg-[#1A2766]/90 text-white text-[11px] font-semibold px-3 py-1.5 rounded transition-colors shadow-sm"
-                          >
-                            Review Customer
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={(e) => handleRefreshCustomer(e, customer.customerId)}
+                              disabled={refreshingCustomerId === customer.customerId}
+                              className="p-1.5 text-gray-400 hover:text-[#1A2766] hover:bg-blue-50 rounded transition-colors disabled:opacity-50"
+                              title="Refresh Outstanding"
+                            >
+                              <RefreshCw size={14} className={refreshingCustomerId === customer.customerId ? "animate-spin" : ""} />
+                            </button>
+                            <button
+                              onClick={() => openReview(customer)}
+                              className="bg-[#1A2766] hover:bg-[#1A2766]/90 text-white text-[11px] font-semibold px-3 py-1.5 rounded transition-colors shadow-sm"
+                            >
+                              Review Customer
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

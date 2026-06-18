@@ -717,6 +717,7 @@ export default function CustomerStatementView() {
 
       const mergedStatement = {
         isGroup: true,
+        groupFirms: visible,
         integrityError,
         firmNames: visible.map(stmt => stmt.customer.companyName || stmt.customer.contactName),
         customer: {
@@ -889,14 +890,31 @@ export default function CustomerStatementView() {
                             }
                           }}
                         >
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <div className="text-sm font-semibold text-gray-900">{c.name}</div>
-                              {c.gstNumber && c.gstNumber !== 'NOT_AVAILABLE' && (
-                                <div className="text-[10px] font-mono text-gray-500 mt-0.5 tracking-wide">GST: {c.gstNumber}</div>
+                          <div className="flex flex-col gap-1.5">
+                            <div className="flex justify-between items-start">
+                              <div className="text-sm font-semibold text-gray-900 pr-2">{c.name}</div>
+                              {c.status === 'active' ? (
+                                <div className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white flex items-center gap-1 shadow-sm shrink-0 bg-[#16a34a]">
+                                  <span className="text-[8px]">🟢</span>ACTIVE
+                                </div>
+                              ) : c.status === 'inactive' ? (
+                                <div className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white flex items-center gap-1 shadow-sm shrink-0 bg-[#dc2626]">
+                                  <span className="text-[8px]">🔴</span>INACTIVE
+                                </div>
+                              ) : (
+                                <div className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white flex items-center gap-1 shadow-sm shrink-0 bg-gray-500">
+                                  <span className="text-[8px]">⚪</span>UNKNOWN
+                                </div>
                               )}
                             </div>
-                            <div className="text-[10px] text-gray-400 font-mono">{c.id}</div>
+                            <div className="flex justify-between items-end">
+                              <div>
+                                {c.gstNumber && c.gstNumber !== 'NOT_AVAILABLE' && (
+                                  <div className="text-[10px] font-mono text-gray-500 tracking-wide">GST: {c.gstNumber}</div>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-gray-400 font-mono">ID: {c.id}</div>
+                            </div>
                           </div>
                         </div>
                       ))

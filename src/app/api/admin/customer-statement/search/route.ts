@@ -20,6 +20,9 @@ async function searchZohoCustomer(query: string) {
     const data = await res.json();
     
     if (data.contacts && data.contacts.length > 0) {
+      if (query === '1759923000016495139') {
+        console.log('RAW ZOHO SEARCH PAYLOAD:', JSON.stringify(data.contacts[0], null, 2));
+      }
       const topContacts = data.contacts.slice(0, 3);
       const syncedCustomers = [];
       
@@ -27,7 +30,8 @@ async function searchZohoCustomer(query: string) {
         await ensureCustomerExists({
           customerId: c.contact_id,
           customerName: c.contact_name,
-          gstNumber: 'NOT_AVAILABLE'
+          gstNumber: 'NOT_AVAILABLE',
+          status: c.status
         });
         const saved = await prisma.customer.findUnique({ where: { id: c.contact_id } });
         if (saved) syncedCustomers.push(saved);
@@ -58,23 +62,42 @@ export async function GET(req: Request) {
     const query = q.trim();
     const isDigitId = /^\d{15,20}$/.test(query);
 
-    let customers = await prisma.customer.findMany({
-      where: {
-        OR: [
-          ...(isDigitId ? [{ id: query }] : []),
-          { gstNumber: query },
-          { name: { contains: query, mode: 'insensitive' } }
-        ]
-      },
-      take: 10,
-      select: { id: true, name: true, gstNumber: true }
-    });
+    let customers = [];
+    const orgId = getZohoOrgId();
+    const accessToken = await getZohoTokens();
 
-    // Fallback to Zoho API if no local matches found
-    if (customers.length === 0) {
-      const zohoResults = await searchZohoCustomer(query);
-      if (zohoResults.length > 0) {
-        customers = zohoResults.map(c => ({ id: c.id, name: c.name, gstNumber: c.gstNumber }));
+    if (orgId && accessToken) {
+      if (isDigitId) {
+        // Search by exact ID
+        const url = `${API_BASE_URL}/books/v3/contacts/${query}?organization_id=${orgId}`;
+        const res = await fetch(url, { headers: { Authorization: `Zoho-oauthtoken ${accessToken}` } });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.contact) {
+            customers.push({
+              id: data.contact.contact_id,
+              name: data.contact.contact_name,
+              gstNumber: data.contact.gst_no || 'NOT_AVAILABLE',
+              status: data.contact.status || 'unknown'
+            });
+          }
+        }
+      } else {
+        // Search by text
+        const url = `${API_BASE_URL}/books/v3/contacts?organization_id=${orgId}&search_text=${encodeURIComponent(query)}`;
+        const res = await fetch(url, { headers: { Authorization: `Zoho-oauthtoken ${accessToken}` } });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.contacts && data.contacts.length > 0) {
+            const topContacts = data.contacts.slice(0, 5);
+            customers = topContacts.map((c: any) => ({
+              id: c.contact_id,
+              name: c.contact_name,
+              gstNumber: c.gst_no || 'NOT_AVAILABLE',
+              status: c.status || 'unknown'
+            }));
+          }
+        }
       }
     }
 

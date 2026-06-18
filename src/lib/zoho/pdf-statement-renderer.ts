@@ -250,7 +250,7 @@ export async function renderStatementToPdf(
 
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const margin = 14;
+  const margin = 18;
   const colW = pageW - margin * 2;
 
   const cNavy: [number, number, number]   = [26,  39, 102];

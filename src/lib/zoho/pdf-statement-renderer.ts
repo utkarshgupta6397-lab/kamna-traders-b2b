@@ -250,7 +250,7 @@ export async function renderStatementToPdf(
 
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const margin = 10;
+  const margin = 14;
   const colW = pageW - margin * 2;
 
   const cNavy: [number, number, number]   = [26,  39, 102];
@@ -279,10 +279,10 @@ export async function renderStatementToPdf(
     const availableHeight = pageHeight - startY - bottomMargin;
     
     // Measure one transaction row height
-    const rowHeight = 5.5; // Compact row height with padding + font
+    const rowHeight = 7.5; // Taller row height with padding + font
     const tableHeaderHeight = 6;
     const totalsRowHeight = 6.5;
-    const openingBalRowHeight = 5.5;
+    const openingBalRowHeight = 7.5;
     
     const heightForTransactions = availableHeight - tableHeaderHeight - openingBalRowHeight - totalsRowHeight;
     
@@ -293,7 +293,7 @@ export async function renderStatementToPdf(
     maxVisibleRows -= 1; 
 
     // Hard limit 16 transactions
-    maxVisibleRows = Math.min(16, maxVisibleRows);
+    maxVisibleRows = Math.min(20, maxVisibleRows);
 
     if (activeTxs.length > maxVisibleRows) {
       visibleTxs = activeTxs.slice(-maxVisibleRows);
@@ -788,7 +788,7 @@ export async function renderStatementToPdf(
       textColor: theme === 'economy' ? cDark : [255, 255, 255],
       fontStyle: 'bold',
       fontSize: 7.5,
-      cellPadding: { top: 1.5, bottom: 1.5, left: 1.5, right: 1.5 }
+      cellPadding: { top: 2.5, bottom: 2.5, left: 1.5, right: 1.5 }
     },
     bodyStyles: { fontSize: 6.5, textColor: [51, 65, 85], font: pdfFont },
     columnStyles: isGroup ? {
@@ -808,7 +808,7 @@ export async function renderStatementToPdf(
       5: { halign: 'right', cellWidth: 30, fontStyle: 'bold', fontSize: 6.5, overflow: 'visible' },
     },
     styles: { 
-      cellPadding: { top: 1.5, bottom: 1.5, left: 1.5, right: 1.5 }, 
+      cellPadding: { top: 2.5, bottom: 2.5, left: 1.5, right: 1.5 }, 
       font: pdfFont,
       ...(theme === 'economy' ? { lineWidth: 0.1, lineColor: [226, 232, 240] } : {})
     },

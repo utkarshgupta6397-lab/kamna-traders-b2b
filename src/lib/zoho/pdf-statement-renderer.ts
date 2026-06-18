@@ -264,8 +264,9 @@ export async function renderStatementToPdf(
   
   let visibleTxs = activeTxs;
   let isTruncated = false;
+  const isGroup = !!(s as any).isGroup;
 
-  if (options.isBatchRecovery) {
+  if (!isGroup) {
     // REQUIRED ARCHITECTURAL CHANGE: Calculate available height before rendering
     const pageHeight = 297;
     const headerHeight = 20; // From top of page to divider
@@ -288,15 +289,16 @@ export async function renderStatementToPdf(
     // Calculate maxVisibleRows
     let maxVisibleRows = Math.floor(heightForTransactions / rowHeight);
     
-    // Safety buffer for text wrapping (reduce transactions by one if it's tight)
+    // Safety buffer for text wrapping
     maxVisibleRows -= 1; 
+
+    // Hard limit 16 transactions
+    maxVisibleRows = Math.min(16, maxVisibleRows);
 
     if (activeTxs.length > maxVisibleRows) {
       visibleTxs = activeTxs.slice(-maxVisibleRows);
       isTruncated = true;
     }
-  } else if (!options.isExpanded) {
-    visibleTxs = activeTxs.slice(-12);
   }
 
   const openingBal = visibleTxs.length > 0
@@ -308,7 +310,6 @@ export async function renderStatementToPdf(
   const totalPaid      = visibleTxs.filter(t => t.type === 'payment').reduce((a, t) => a + Math.abs(t.netEffect), 0);
 
   
-  const isGroup = !!(s as any).isGroup;
   let currentY = 12;
 
   if (!isGroup) {
@@ -814,8 +815,8 @@ export async function renderStatementToPdf(
     margin: { top: 20, left: margin, right: margin, bottom: 38 },
     willDrawCell: (data: any) => {
       // Prevent the Totals row from being orphaned on a new page.
-      // We skip this for Batch Recovery because we already mathematically pre-sliced the exact rows.
-      if (data.row.section === 'body' && !options.isBatchRecovery) {
+      // We skip this since we mathematically pre-sliced the exact rows for all single statements.
+      if (data.row.section === 'body' && isGroup) {
         const isApproachingEnd = data.row.index >= txRows.length - 2;
         if (isApproachingEnd) {
           data.settings.margin.bottom = 95;
@@ -1029,9 +1030,9 @@ export async function renderStatementToPdf(
       console.warn('[PDF] QR generation failed via client-side QRCode library', err);
     }
 
-    const qrSize = 22;
-    const boxW = 44;
-    const boxH = 38;
+    const qrSize = 18;
+    const boxW = 34;
+    const boxH = 32;
     const boxX = pageW - margin - boxW;
     const boxY = footerY + 2;
 
@@ -1052,18 +1053,18 @@ export async function renderStatementToPdf(
     doc.text(pdfFmtBalance(closingBal), centerX, boxY + 10, { align: 'center' });
 
     if (qrDataUrl) {
-      doc.addImage(qrDataUrl, 'PNG', centerX - qrSize / 2, boxY + 11, qrSize, qrSize);
+      doc.addImage(qrDataUrl, 'PNG', centerX - qrSize / 2, boxY + 12, qrSize, qrSize);
     } else {
       doc.setFont(pdfFont, 'normal');
       doc.setFontSize(6);
       doc.setTextColor(...cSlate);
-      doc.text('[QR unavailable]', centerX, boxY + 22, { align: 'center', maxWidth: qrSize });
+      doc.text('[QR unavailable]', centerX, boxY + 20, { align: 'center', maxWidth: qrSize });
     }
 
     doc.setFont(pdfFont, 'normal');
     doc.setFontSize(6);
     doc.setTextColor(...cSlate);
-    doc.text(UPI_ID, centerX, boxY + 12 + qrSize + 3, { align: 'center' });
+    doc.text(UPI_ID, centerX, boxY + 13 + qrSize + 3, { align: 'center' });
   } else {
     doc.setFont(pdfFont, 'normal');
     doc.setFontSize(7.5);

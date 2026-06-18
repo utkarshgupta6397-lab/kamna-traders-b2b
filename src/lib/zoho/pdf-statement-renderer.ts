@@ -288,58 +288,50 @@ export async function renderStatementToPdf(
   let currentY = 12;
 
   if (!isGroup) {
-    const headerH = theme === 'economy' ? 24 : 32;
+    const logoH = theme === 'economy' ? 14 : 18;
+    const logoW = logoH * (599 / 579);
+    const logoY = 14;
+    
+    // Vertical Stacking layout
+    const titleY = logoY + logoH + 10;
+    const cNameY = titleY + 8;
+    const infoY = cNameY + 5;
+    const dividerY = infoY + 6;
+    
+    // Banner height if color theme
+    const headerH = dividerY;
+    
     if (theme === 'color') {
       doc.setFillColor(...cNavy);
       doc.rect(0, 0, pageW, headerH, 'F');
     }
 
-    const logoH = theme === 'economy' ? 14 : 18;
-    const logoW = logoH * (599 / 579);
-    const logoY = 12;
     if (logo) {
       doc.addImage(logo, 'PNG', margin, logoY, logoW, logoH);
     }
-
-    const titleX = logo ? margin + logoW + 4 : margin;
-    const rightX = pageW - margin;
-    const maxRightWidth = (pageW - margin * 2) * 0.45;
     
-    const base1 = logoY + 6;
     doc.setTextColor(...(theme === 'economy' ? cDark : [255, 255, 255] as [number, number, number]));
     doc.setFont(pdfFont, 'bold');
-    doc.setFontSize(13);
-    doc.text('Customer Statement', titleX, base1);
+    doc.setFontSize(14);
+    doc.text('Customer Statement', margin, titleY);
     
     doc.setFontSize(10);
     let cName = s.customer.contactName || 'Customer';
-    if (doc.getStringUnitWidth(cName) * doc.internal.getFontSize() / doc.internal.scaleFactor > maxRightWidth) {
-      while (cName.length > 0 && doc.getStringUnitWidth(cName + '...') * doc.internal.getFontSize() / doc.internal.scaleFactor > maxRightWidth) {
-        cName = cName.slice(0, -1);
-      }
-      cName += '...';
-    }
-    doc.text(cName, rightX, base1, { align: 'right' });
+    doc.text(cName, margin, cNameY);
 
-    const base2 = logoY + 11;
     doc.setFont(pdfFont, 'normal');
-    doc.setFontSize(7);
+    doc.setFontSize(8);
     doc.setTextColor(...(theme === 'economy' ? cSlate : [190, 205, 225] as [number, number, number]));
-    doc.text('Kamna Traders · Receivables Ledger', titleX, base2);
     
-    if (s.customer.gstNo) {
-      doc.text(`GST: ${s.customer.gstNo}`, pageW - margin, base2, { align: 'right' });
-    }
-
-    const base3 = logoY + 15;
-    if (s.customer.mobile) {
-      doc.text(s.customer.mobile, pageW - margin, base3, { align: 'right' });
-    }
+    let infoText = 'Kamna Traders · Receivables Ledger';
+    if (s.customer.gstNo) infoText += `  |  GST: ${s.customer.gstNo}`;
+    if (s.customer.mobile) infoText += `  |  Phone: ${s.customer.mobile}`;
+    doc.text(infoText, margin, infoY);
 
     if (theme === 'economy') {
       doc.setDrawColor(...cNavy);
       doc.setLineWidth(0.3);
-      doc.line(margin, headerH, pageW - margin, headerH);
+      doc.line(margin, dividerY, pageW - margin, dividerY);
     }
 
     const kpis = [
@@ -351,39 +343,39 @@ export async function renderStatementToPdf(
     ];
     
     const boxW = (colW - 8 * 3) / 4;
+    const kpiY = dividerY + 8; // Breathing room above KPIs
     kpis.forEach((box, i) => {
       const bx = margin + i * (boxW + 8);
-      const by = theme === 'economy' ? 28 : 38;
-      const bh = 14;
+      const bh = 16; // Taller for breathing room
       
       if (theme === 'economy') {
         doc.setFillColor(252, 252, 252);
         doc.setDrawColor(226, 232, 240);
         doc.setLineWidth(0.3);
-        doc.roundedRect(bx, by, boxW, bh, 1, 1, 'FD');
+        doc.roundedRect(bx, kpiY, boxW, bh, 1, 1, 'FD');
 
         doc.setFillColor(...box.accent);
-        doc.rect(bx, by + 0.3, 2.5, bh - 0.6, 'F');
+        doc.rect(bx, kpiY + 0.3, 2.5, bh - 0.6, 'F');
       } else {
         const bg = box.color === cRed ? [254, 242, 242] :
                    box.color === cGreen ? [236, 253, 245] :
                    [248, 250, 252];
         doc.setFillColor(bg[0], bg[1], bg[2]);
-        doc.roundedRect(bx, by, boxW, bh, 2, 2, 'F');
+        doc.roundedRect(bx, kpiY, boxW, bh, 2, 2, 'F');
       }
 
       doc.setFont(pdfFont, 'bold');
-      doc.setFontSize(5.5);
+      doc.setFontSize(6);
       doc.setTextColor(...cSlate);
-      doc.text(box.label.toUpperCase(), bx + 3, by + 5);
+      doc.text(box.label.toUpperCase(), bx + 4, kpiY + 6);
 
       doc.setFont(pdfFont, 'bold');
-      doc.setFontSize(9);
+      doc.setFontSize(9.5);
       doc.setTextColor(...box.color);
-      doc.text(box.val, bx + 3, by + 11);
+      doc.text(box.val, bx + 4, kpiY + 12);
     });
 
-    currentY = theme === 'economy' ? 42 : 52;
+    currentY = kpiY + 16 + 8; // Spacing below KPIs, before Payment Breakdown
 
   } else {
     // ---- GROUP STATEMENT HEADER REDESIGN ----
@@ -745,8 +737,22 @@ export async function renderStatementToPdf(
     pdfFmtBalance(s.closingBalance),
   ];
 
+  // Smart Pagination for Single Statements
+  let rowsPerPage = 16; // Approximate optimal rows per page after compactness
+  if (!isGroup) {
+      const totalTx = txRows.length;
+      if (totalTx > 0) {
+          const pagesNeeded = Math.ceil(totalTx / rowsPerPage);
+          if (pagesNeeded > 1) {
+              // Balance rows perfectly across required pages
+              const optimal = Math.ceil(totalTx / pagesNeeded);
+              rowsPerPage = optimal;
+          }
+      }
+  }
+
   autoTable(doc, {
-    startY: currentY + 4,
+    startY: currentY + 12, // Move table position slightly downward for breathing room
     head: tableHead,
     body: [openRow, ...txRows, totalsRow],
     theme: 'grid',
@@ -759,30 +765,49 @@ export async function renderStatementToPdf(
       fontSize: 8,
       cellPadding: { top: 3.5, bottom: 3.5, left: 2, right: 2 }
     },
-    bodyStyles: { fontSize: 7.5, textColor: [51, 65, 85], font: pdfFont },
+    bodyStyles: { fontSize: 7.25, textColor: [51, 65, 85], font: pdfFont },
     columnStyles: isGroup ? {
       0: { cellWidth: 20, overflow: 'visible' },
       1: { cellWidth: 26, overflow: 'linebreak' },
       2: { cellWidth: 16, overflow: 'visible' },
       3: { cellWidth: 50, overflow: 'linebreak' },
-      4: { halign: 'right', cellWidth: 22, fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
-      5: { halign: 'right', cellWidth: 22, textColor: [5, 150, 105], fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
-      6: { halign: 'right', cellWidth: 24, fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
+      4: { halign: 'right', cellWidth: 22, fontStyle: 'bold', fontSize: 7.5, overflow: 'visible' },
+      5: { halign: 'right', cellWidth: 22, textColor: [5, 150, 105], fontStyle: 'bold', fontSize: 7.5, overflow: 'visible' },
+      6: { halign: 'right', cellWidth: 24, fontStyle: 'bold', fontSize: 7.5, overflow: 'visible' },
     } : {
       0: { cellWidth: 22, overflow: 'visible' },
       1: { cellWidth: 16, overflow: 'visible' },
       2: { cellWidth: 58, overflow: 'linebreak' },
-      3: { halign: 'right', cellWidth: 28, fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
-      4: { halign: 'right', cellWidth: 28, textColor: [5, 150, 105], fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
-      5: { halign: 'right', cellWidth: 30, fontStyle: 'bold', fontSize: 8, overflow: 'visible' },
+      3: { halign: 'right', cellWidth: 28, fontStyle: 'bold', fontSize: 7.5, overflow: 'visible' },
+      4: { halign: 'right', cellWidth: 28, textColor: [5, 150, 105], fontStyle: 'bold', fontSize: 7.5, overflow: 'visible' },
+      5: { halign: 'right', cellWidth: 30, fontStyle: 'bold', fontSize: 7.5, overflow: 'visible' },
     },
     styles: { 
-      cellPadding: { top: 3.5, bottom: 3.5, left: 1.5, right: 1.5 }, 
+      cellPadding: { top: 2.5, bottom: 2.5, left: 1.5, right: 1.5 }, 
       font: pdfFont,
       ...(theme === 'economy' ? { lineWidth: 0.1, lineColor: [226, 232, 240] } : {})
     },
     margin: { left: margin, right: margin, bottom: 65 },
+    willDrawCell: (data: any) => {
+      // Prevent the Totals row from being orphaned on a new page.
+      // By dynamically increasing the bottom margin for the last few transaction rows,
+      // we force autoTable to break the page earlier. This ensures the Totals row 
+      // is always accompanied by at least the final few transactions.
+      if (data.row.section === 'body') {
+        const isApproachingEnd = data.row.index >= txRows.length - 2;
+        if (isApproachingEnd) {
+          data.settings.margin.bottom = 105;
+        }
+      }
+    },
     didParseCell: (data: any) => {
+      // Smart Pagination trigger for balanced pages
+      if (!isGroup && data.section === 'body' && data.row.index > 0 && data.row.index < txRows.length) {
+         if (data.row.index % rowsPerPage === 0) {
+             data.row.pageBreak = 'always';
+         }
+      }
+
       if (data.section === 'head' && theme === 'economy') {
         data.cell.styles.lineWidth = { bottom: 0.5 };
         data.cell.styles.lineColor = [15, 23, 42];

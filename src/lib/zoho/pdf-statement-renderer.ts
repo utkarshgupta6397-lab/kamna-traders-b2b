@@ -266,7 +266,7 @@ export async function renderStatementToPdf(
   let isTruncated = false;
 
   if (options.isBatchRecovery) {
-    const maxRows = 20;
+    const maxRows = 15;
     if (activeTxs.length > maxRows) {
       visibleTxs = activeTxs.slice(-maxRows);
       isTruncated = true;
@@ -292,13 +292,16 @@ export async function renderStatementToPdf(
     const logoW = logoH * (599 / 579);
     const logoY = 14;
     
-    // Vertical Stacking layout
-    const titleY = logoY + logoH + 10;
-    const cNameY = titleY + 8;
-    const infoY = cNameY + 5;
-    const dividerY = infoY + 6;
+    // Left Side
+    const titleY = logoY + logoH + 8;
+    const ledgerY = titleY + 5;
     
-    // Banner height if color theme
+    // Right Side
+    const cNameY = logoY + 6;
+    const gstY = cNameY + 5;
+    const phoneY = gstY + 5;
+    
+    const dividerY = Math.max(ledgerY, phoneY) + 6;
     const headerH = dividerY;
     
     if (theme === 'color') {
@@ -315,18 +318,34 @@ export async function renderStatementToPdf(
     doc.setFontSize(14);
     doc.text('Customer Statement', margin, titleY);
     
-    doc.setFontSize(10);
+    doc.setFont(pdfFont, 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...(theme === 'economy' ? cSlate : [190, 205, 225] as [number, number, number]));
+    doc.text('Kamna Traders · Receivables Ledger', margin, ledgerY);
+
+    const rightX = pageW - margin;
+    doc.setFont(pdfFont, 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(...(theme === 'economy' ? cDark : [255, 255, 255] as [number, number, number]));
     let cName = s.customer.contactName || 'Customer';
-    doc.text(cName, margin, cNameY);
+    const maxRightWidth = (pageW - margin * 2) * 0.5;
+    if (doc.getStringUnitWidth(cName) * doc.internal.getFontSize() / doc.internal.scaleFactor > maxRightWidth) {
+      while (cName.length > 0 && doc.getStringUnitWidth(cName + '...') * doc.internal.getFontSize() / doc.internal.scaleFactor > maxRightWidth) {
+        cName = cName.slice(0, -1);
+      }
+      cName += '...';
+    }
+    doc.text(cName, rightX, cNameY, { align: 'right' });
 
     doc.setFont(pdfFont, 'normal');
     doc.setFontSize(8);
     doc.setTextColor(...(theme === 'economy' ? cSlate : [190, 205, 225] as [number, number, number]));
-    
-    let infoText = 'Kamna Traders · Receivables Ledger';
-    if (s.customer.gstNo) infoText += `  |  GST: ${s.customer.gstNo}`;
-    if (s.customer.mobile) infoText += `  |  Phone: ${s.customer.mobile}`;
-    doc.text(infoText, margin, infoY);
+    if (s.customer.gstNo) {
+      doc.text(`GST: ${s.customer.gstNo}`, rightX, gstY, { align: 'right' });
+    }
+    if (s.customer.mobile) {
+      doc.text(`Phone: ${s.customer.mobile}`, rightX, phoneY, { align: 'right' });
+    }
 
     if (theme === 'economy') {
       doc.setDrawColor(...cNavy);
@@ -787,17 +806,38 @@ export async function renderStatementToPdf(
       font: pdfFont,
       ...(theme === 'economy' ? { lineWidth: 0.1, lineColor: [226, 232, 240] } : {})
     },
-    margin: { left: margin, right: margin, bottom: 65 },
+    margin: { top: 25, left: margin, right: margin, bottom: 65 },
     willDrawCell: (data: any) => {
       // Prevent the Totals row from being orphaned on a new page.
-      // By dynamically increasing the bottom margin for the last few transaction rows,
-      // we force autoTable to break the page earlier. This ensures the Totals row 
-      // is always accompanied by at least the final few transactions.
       if (data.row.section === 'body') {
         const isApproachingEnd = data.row.index >= txRows.length - 2;
         if (isApproachingEnd) {
           data.settings.margin.bottom = 105;
         }
+      }
+    },
+    didDrawPage: (data: any) => {
+      if (data.pageNumber > 1 && !isGroup) {
+        const logoH = 8;
+        const logoW = logoH * (599 / 579);
+        if (logo) {
+          doc.addImage(logo, 'PNG', margin, 8, logoW, logoH);
+        }
+        
+        doc.setFont(pdfFont, 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42); 
+        let cName = s.customer.contactName || 'Customer';
+        doc.text(cName, margin + logoW + 4, 12);
+        
+        doc.setFontSize(7);
+        doc.setFont(pdfFont, 'normal');
+        doc.setTextColor(100, 116, 139);
+        doc.text('Customer Statement (Cont.)', margin + logoW + 4, 15.5);
+        
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.3);
+        doc.line(margin, 19, pageW - margin, 19);
       }
     },
     didParseCell: (data: any) => {
@@ -813,6 +853,19 @@ export async function renderStatementToPdf(
         data.cell.styles.lineColor = [15, 23, 42];
       }
       if (data.section === 'body') {
+        if (data.row.index === txRows.length + 1) {
+           data.cell.styles.fontStyle = 'bold';
+           data.cell.styles.fontSize = 8;
+           if (theme !== 'economy') {
+             data.cell.styles.fillColor = [226, 232, 240];
+             data.cell.styles.textColor = [15, 23, 42];
+           } else {
+             data.cell.styles.fillColor = [248, 250, 252];
+             data.cell.styles.lineWidth = { top: 1, bottom: 1 };
+             data.cell.styles.lineColor = [100, 116, 139];
+           }
+        }
+
         const isLast = data.row.index === txRows.length + 1;
         if (!isLast && theme === 'economy') {
           if (data.row.index % 2 !== 0) {

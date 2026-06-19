@@ -128,10 +128,60 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           }
         }
 
+        // Recalculate status based on allocations to preserve existing workflow state
+        const updatedInvoice = await tx.dcrInvoice.findUnique({
+          where: { id },
+          include: {
+            items: {
+              where: { selectedForDCR: true },
+              include: { serialAllocations: true }
+            }
+          }
+        });
+
+        let nextStatus = invoice.dcrStatus;
+        if (updatedInvoice) {
+          let totalRequired = 0;
+          let totalAllocated = 0;
+
+          updatedInvoice.items.forEach(item => {
+            totalRequired += item.quantity;
+            totalAllocated += item.serialAllocations.length;
+          });
+
+          if (totalRequired === 0) {
+            nextStatus = 'PROCESSED_NO_DCR';
+          } else if (totalAllocated === 0) {
+            nextStatus = 'PENDING_SERIALS';
+          } else if (totalAllocated < totalRequired) {
+            nextStatus = 'PARTIALLY_ALLOCATED';
+          } else {
+            const invSerialNumbers = updatedInvoice.items.flatMap(item => item.serialAllocations.map(a => a.serialNumber));
+            const invSerials = await tx.dcrSerial.findMany({
+              where: { serialNumber: { in: invSerialNumbers } }
+            });
+            
+            let anyVendorDcrPending = false;
+            invSerials.forEach(s => {
+              if (s.vendorDcrStatus === 'NOT_RECEIVED') {
+                anyVendorDcrPending = true;
+              }
+            });
+            
+            if (anyVendorDcrPending) {
+              nextStatus = 'VENDOR_DCR_PENDING';
+            } else {
+              nextStatus = 'HOLD';
+            }
+          }
+        } else {
+          nextStatus = 'PENDING_SERIALS';
+        }
+
         await tx.dcrInvoice.update({
           where: { id },
           data: { 
-            dcrStatus: 'PENDING_SERIALS',
+            dcrStatus: nextStatus,
             reviewedAt: new Date(),
             archived: true,
             processedAt: new Date(),

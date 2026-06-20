@@ -83,7 +83,7 @@ export default function ReadyToIssueClient() {
     setPage(1);
   }, [debouncedSearch]);
 
-  const handleFetchGst = async (customerId: string) => {
+  const handleFetchGst = async (customerId: string, invoiceId: string) => {
     if (customerGsts[customerId]?.loading) return;
 
     setCustomerGsts(prev => ({
@@ -92,19 +92,23 @@ export default function ReadyToIssueClient() {
     }));
 
     try {
-      const res = await fetch(`/api/admin/customer-statement/customer?customerId=${customerId}`);
+      const res = await fetch(`/api/admin/dcr/ready-to-issue/fetch-gst`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId, invoiceId })
+      });
       const result = await res.json();
-      if (res.ok && result.success && result.data) {
-        const fetchedGst = result.data.gstNo || '';
-        const isUnavailable = fetchedGst.trim() === '' || fetchedGst === 'NOT_AVAILABLE' || fetchedGst === 'GST_UNAVAILABLE';
+      if (res.ok && result.success) {
+        const fetchedGst = result.gst || '';
+        const isUnavailable = fetchedGst.trim() === '' || fetchedGst === 'NOT_AVAILABLE_IN_ZOHO';
         
         setCustomerGsts(prev => ({
           ...prev,
-          [customerId]: { gst: isUnavailable ? 'GST_UNAVAILABLE' : fetchedGst, loading: false, error: false }
+          [customerId]: { gst: isUnavailable ? 'NOT_AVAILABLE_IN_ZOHO' : fetchedGst, loading: false, error: false }
         }));
         
         if (!isUnavailable) {
-          toast.success('GST fetched and saved successfully');
+          toast.success('✓ GST fetched successfully.');
         } else {
           toast.error('GST not available in Zoho');
         }
@@ -113,14 +117,16 @@ export default function ReadyToIssueClient() {
           ...prev,
           [customerId]: { gst: '', loading: false, error: true }
         }));
-        toast.error('Failed to fetch GST');
+        toast.error('Unable to fetch GST from Zoho.');
+        console.error(result.error);
       }
     } catch (err) {
       setCustomerGsts(prev => ({
         ...prev,
         [customerId]: { gst: '', loading: false, error: true }
       }));
-      toast.error('Failed to fetch GST');
+      toast.error('Unable to fetch GST from Zoho.');
+      console.error(err);
     }
   };
 
@@ -524,26 +530,51 @@ export default function ReadyToIssueClient() {
                       )}
                     </div>
                   </div>
-                  <div className="col-span-2 flex items-center gap-1.5">
+                  <div className="col-span-2 flex items-center gap-2">
                     <span className="text-gray-400">GST:</span> 
-                    <span className="font-mono text-xs font-semibold">{(() => {
-                      const gstInfo = customerGsts[drawerInvoice.customerId];
-                      const gstValue = gstInfo ? gstInfo.gst : drawerInvoice.customer_gst_no;
-                      const isMissing = !gstValue || gstValue.trim() === '' || gstValue === 'NOT_AVAILABLE' || gstValue === '—' || gstValue === 'GST_UNAVAILABLE';
-                      return isMissing ? 'N/A' : gstValue;
-                    })()}</span>
                     {(() => {
                       const gstInfo = customerGsts[drawerInvoice.customerId];
                       const gstValue = gstInfo ? gstInfo.gst : drawerInvoice.customer_gst_no;
+                      const isUnavailableInZoho = gstValue === 'NOT_AVAILABLE_IN_ZOHO';
                       const isMissing = !gstValue || gstValue.trim() === '' || gstValue === 'NOT_AVAILABLE' || gstValue === '—' || gstValue === 'GST_UNAVAILABLE';
-                      if (!isMissing) {
-                         return (
-                           <button onClick={() => handleCopyText(gstValue, 'GST')} className="text-gray-400 hover:text-gray-700 transition-colors">
-                             <Copy size={12} />
-                           </button>
-                         );
+                      
+                      if (gstInfo?.loading) {
+                        return <span className="font-mono text-xs font-semibold text-gray-500 flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Fetching...</span>;
                       }
-                      return null;
+
+                      if (isUnavailableInZoho) {
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-semibold text-gray-500">Not Available in Zoho</span>
+                            <button disabled className="text-[10px] px-2 py-0.5 rounded border border-gray-200 bg-gray-100 text-gray-400 opacity-50 font-semibold cursor-not-allowed">
+                              Fetch from Zoho
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      if (isMissing) {
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-semibold text-gray-500">Not Available</span>
+                            <button 
+                              onClick={() => handleFetchGst(drawerInvoice.customerId, drawerInvoice.id)}
+                              className="text-[10px] px-2 py-0.5 rounded border border-[#1A2766] bg-blue-50 text-[#1A2766] hover:bg-blue-100 transition-colors font-semibold shadow-sm"
+                            >
+                              Fetch from Zoho
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-xs font-semibold">{gstValue}</span>
+                          <button onClick={() => handleCopyText(gstValue, 'GST')} className="text-gray-400 hover:text-gray-700 transition-colors">
+                            <Copy size={12} />
+                          </button>
+                        </div>
+                      );
                     })()}
                   </div>
                 </div>

@@ -49,6 +49,7 @@ export type StatementTransaction = {
   isVerified?: boolean;
   zohoUrl?: string;
   appliedBills?: { billNumber: string; appliedAmount: number }[];
+  notes?: string;
 };
 
 export type CustomerStatement = {
@@ -153,6 +154,7 @@ export type CustomerStatementPayment = {
   amount: number;
   referenceNumber?: string;
   isVerified?: boolean;
+  notes?: string;
 };
 
 export async function getCustomerPayments(contactId: string): Promise<{
@@ -195,6 +197,7 @@ export async function getCustomerPayments(contactId: string): Promise<{
           amount: Number(pmt.amount),
           referenceNumber: pmt.reference_number,
           isVerified,
+          notes: pmt.description,
         };
       });
       
@@ -289,6 +292,7 @@ export type CustomerStatementVendorPayment = {
   amount: number;
   referenceNumber?: string;
   appliedBills?: { billNumber: string; appliedAmount: number }[];
+  notes?: string;
 };
 
 export async function getVendorPayments(vendorId: string): Promise<{
@@ -342,6 +346,7 @@ export async function getVendorPayments(vendorId: string): Promise<{
             amount: Number(vp.amount),
             referenceNumber: vp.reference_number,
             appliedBills,
+            notes: vp.description,
           };
         } catch (e) {
           return {
@@ -352,6 +357,7 @@ export async function getVendorPayments(vendorId: string): Promise<{
             amount: Number(vp.amount),
             referenceNumber: vp.reference_number,
             appliedBills: [],
+            notes: vp.description,
           };
         }
       })
@@ -444,6 +450,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
     isVerified?: boolean;
     zohoUrl?: string;
     appliedBills?: { billNumber: string; appliedAmount: number }[];
+    notes?: string;
   }> = [
     ...invoices.map((inv: any) => ({
       id: inv.invoiceId,
@@ -470,6 +477,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
         netEffect: -pmt.amount,
         isVerified: pmt.isVerified,
         zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/customerpayments/${pmt.paymentId}` : undefined,
+        notes: pmt.notes,
       };
     }),
     ...bills.map((b: any) => ({
@@ -499,6 +507,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
         netEffect: vp.amount,
         appliedBills: vp.appliedBills,
         zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/paymentsmade/${vp.paymentId}` : undefined,
+        notes: vp.notes,
       };
     }),
   ];

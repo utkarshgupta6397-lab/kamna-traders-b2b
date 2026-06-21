@@ -180,6 +180,7 @@ export default function CustomerStatementView() {
   const [filterBills, setFilterBills] = useState(true);
   const [filterVendorPmts, setFilterVendorPmts] = useState(true);
   const [ledgerSearch, setLedgerSearch] = useState('');
+  const [invertBalanceColor, setInvertBalanceColor] = useState(false);
 
   const handleModeChange = (mode: 'single' | 'group') => {
     setStatementMode(mode);
@@ -1514,7 +1515,20 @@ export default function CustomerStatementView() {
                         <th className="px-4 py-3 text-left tracking-wider">Document & Details</th>
                         <th className="px-4 py-3 text-right whitespace-nowrap tracking-wider">Debit</th>
                         <th className="px-4 py-3 text-right whitespace-nowrap tracking-wider">Credit</th>
-                        <th className="px-4 py-3 text-right tracking-wider">Running Balance</th>
+                        <th className="px-4 py-3 text-right tracking-wider">
+                          <div className="inline-flex items-center gap-2 float-right">
+                            <span>Running Balance</span>
+                            <label className="relative inline-flex items-center cursor-pointer" title="Toggle Running Balance Colors">
+                              <input
+                                type="checkbox"
+                                checked={invertBalanceColor}
+                                onChange={(e) => setInvertBalanceColor(e.target.checked)}
+                                className="sr-only peer"
+                              />
+                              <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-[#1A2766]"></div>
+                            </label>
+                          </div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -1634,19 +1648,9 @@ export default function CustomerStatementView() {
                                   {tx.referenceNumber && tx.referenceNumber !== displayDesc && (
                                     <span className="text-[10px] text-gray-500 mt-0.5 leading-tight">{displayDesc}</span>
                                   )}
-                                  {tx.type === 'vendor_payment' && tx.appliedBills && tx.appliedBills.length > 0 && (
-                                    <div className="mt-1.5" onClick={e => e.stopPropagation()}>
-                                      <details className="text-[10px] text-gray-500 marker:text-gray-400">
-                                        <summary className="cursor-pointer hover:text-gray-700 font-medium">Applied to {tx.appliedBills.length} Bill{tx.appliedBills.length !== 1 ? 's' : ''}</summary>
-                                        <ul className="mt-1 space-y-0.5 pl-3 border-l-2 border-gray-100 py-0.5">
-                                          {tx.appliedBills.map((b: any, idx: number) => (
-                                            <li key={idx} className="flex gap-2 items-center">
-                                              <span className="font-semibold text-gray-600">{b.billNumber}</span>
-                                              <span className="text-gray-400 tabular-nums">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(b.appliedAmount)}</span>
-                                            </li>
-                                          ))}
-                                        </ul>
-                                      </details>
+                                  {(tx.type === 'payment' || tx.type === 'vendor_payment') && tx.notes && (
+                                    <div className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal max-w-sm">
+                                      {tx.notes}
                                     </div>
                                   )}
                                 </div>
@@ -1675,8 +1679,10 @@ export default function CustomerStatementView() {
                                 }
                                 
                                 const isPositive = b > 0;
+                                const positiveColorClass = invertBalanceColor ? 'text-emerald-600' : 'text-rose-600';
+                                const negativeColorClass = invertBalanceColor ? 'text-rose-600' : 'text-emerald-600';
                                 return (
-                                  <span className={`text-[11.5px] tabular-nums font-extrabold ${isPositive ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                  <span className={`text-[11.5px] tabular-nums font-extrabold ${isPositive ? positiveColorClass : negativeColorClass}`}>
                                     {fmtBalance(b)}
                                   </span>
                                 );
@@ -1760,6 +1766,11 @@ export default function CustomerStatementView() {
                                 </span>
                               )}
                             </div>
+                            {(tx.type === 'payment' || tx.type === 'vendor_payment') && tx.notes && (
+                              <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
+                                {tx.notes}
+                              </div>
+                            )}
                           </div>
 
                           {/* Amounts */}
@@ -1786,8 +1797,13 @@ export default function CustomerStatementView() {
                                   <span className="text-[8px] font-bold text-emerald-600/80 uppercase">Settled</span>
                                 </div>
                               );
+                              
+                              const isPositive = b > 0;
+                              const positiveColorClass = invertBalanceColor ? 'text-emerald-600' : 'text-rose-600';
+                              const negativeColorClass = invertBalanceColor ? 'text-rose-600' : 'text-emerald-600';
+                              
                               return (
-                                <span className={`text-xs font-bold tabular-nums ${b > 0 ? 'text-rose-600' : b < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
+                                <span className={`text-xs font-bold tabular-nums ${isPositive ? positiveColorClass : negativeColorClass}`}>
                                   {fmtBalance(b)}
                                 </span>
                               );

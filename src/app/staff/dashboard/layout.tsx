@@ -20,7 +20,7 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
     <div className="min-h-screen bg-[#f8f9fb] print:bg-white flex flex-col">
       <Toaster position="top-right" />
       <header className="print:hidden sticky top-0 z-50 bg-gradient-to-r from-[#1A2766] via-[#1f3180] to-[#AE1B1E] shadow-lg">
-        <div className="max-w-screen-2xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
+        <div className="max-w-[96%] mx-auto px-4 h-14 flex items-center justify-between gap-4">
           {/* Logo */}
           <Link href="/staff/dashboard" className="flex items-center gap-2 flex-shrink-0">
             <Image src="/logo.svg" alt="Kamna Traders" width={100} height={40} className="object-contain brightness-0 invert h-9 w-auto" priority />
@@ -58,7 +58,7 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
         </div>
       </header>
 
-      <main className="flex-1 max-w-screen-2xl mx-auto w-full px-3 py-3 print:p-0 print:m-0 print:max-w-none">
+      <main className="flex-1 max-w-[96%] mx-auto w-full px-2 py-3 print:p-0 print:m-0 print:max-w-none">
         {children}
       </main>
     </div>

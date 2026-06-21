@@ -16,6 +16,7 @@ export type CustomerStatementCustomer = {
   outstandingPayable?: number;
   unusedCreditsPayable?: number;
   billingAddress?: string;
+  rawAddress?: any;
 };
 
 export type CustomerStatementInvoice = {
@@ -33,7 +34,7 @@ export type CustomerStatementInvoice = {
 
 export type StatementTransaction = {
   id: string;
-  type: 'invoice' | 'payment' | 'bill';
+  type: 'invoice' | 'payment' | 'bill' | 'vendor_payment';
   datetime?: string;
   date: string;
   timestamp?: number;
@@ -47,6 +48,7 @@ export type StatementTransaction = {
   balanceAfter: number;
   isVerified?: boolean;
   zohoUrl?: string;
+  appliedBills?: { billNumber: string; appliedAmount: number }[];
 };
 
 export type CustomerStatement = {
@@ -279,6 +281,93 @@ export async function getVendorBills(vendorId: string): Promise<{
   }
 }
 
+export type CustomerStatementVendorPayment = {
+  paymentId: string;
+  paymentNumber: string;
+  paymentMode: string;
+  date: string;
+  amount: number;
+  referenceNumber?: string;
+  appliedBills?: { billNumber: string; appliedAmount: number }[];
+};
+
+export async function getVendorPayments(vendorId: string): Promise<{
+  success: boolean;
+  data?: CustomerStatementVendorPayment[];
+  raw?: any;
+  error?: string;
+}> {
+  try {
+    const orgId = getZohoOrgId();
+    if (!orgId) throw new Error('Missing ZOHO_BOOKS_ORG_ID or ZOHO_ORGANIZATION_ID in environment variables');
+    const accessToken = await getZohoTokens();
+    if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
+
+    const url = `${API_BASE_URL}/books/v3/vendorpayments?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=30&sort_column=date&sort_order=D`;
+    console.log('[Zoho Vendor Payments] API URL:', url);
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+    });
+    const data = await response.json();
+    
+    if (!response.ok) {
+      console.warn('[Zoho Vendor Payments] Failed to fetch vendor payments:', data);
+      return { success: false, error: data.message || 'Failed to fetch vendor payments', raw: data };
+    }
+    const raw: any[] = data.vendorpayments ?? [];
+    
+    // Fetch detailed allocations
+    const detailedPayments = await Promise.all(
+      raw.map(async (vp: any) => {
+        try {
+          const detailUrl = `${API_BASE_URL}/books/v3/vendorpayments/${vp.payment_id}?organization_id=${orgId}`;
+          const detailRes = await fetch(detailUrl, {
+            method: 'GET',
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+          });
+          const detailData = await detailRes.json();
+          let appliedBills = [];
+          if (detailRes.ok && detailData.vendorpayment?.bills) {
+            appliedBills = detailData.vendorpayment.bills.map((b: any) => ({
+              billNumber: b.bill_number,
+              appliedAmount: Number(b.amount_applied),
+            }));
+          }
+          return {
+            paymentId: vp.payment_id,
+            paymentNumber: vp.payment_number,
+            paymentMode: vp.payment_mode,
+            date: vp.date,
+            amount: Number(vp.amount),
+            referenceNumber: vp.reference_number,
+            appliedBills,
+          };
+        } catch (e) {
+          return {
+            paymentId: vp.payment_id,
+            paymentNumber: vp.payment_number,
+            paymentMode: vp.payment_mode,
+            date: vp.date,
+            amount: Number(vp.amount),
+            referenceNumber: vp.reference_number,
+            appliedBills: [],
+          };
+        }
+      })
+    );
+      
+    return {
+      success: true,
+      data: detailedPayments,
+      raw: data,
+      _meta: { rawFetched: raw.length, validCount: detailedPayments.length },
+    } as any;
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Internal Server Error' };
+  }
+}
+
 /**
  * Build a reverse-calculated statement prototype.
  *
@@ -317,13 +406,19 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
   }
   const customer = customerResult.data;
 
-  // 2. Conditionally fetch bills only if hybrid AND payable > 0
+  // 2. Conditionally fetch bills and vendor payments only if hybrid AND payable > 0
   let billsResult: any = { success: true, data: [] };
+  let vendorPaymentsResult: any = { success: true, data: [] };
   const outstandingPayable = customer.outstandingPayable ?? 0;
   if (customer.associatedVendorId && outstandingPayable > 0) {
-    console.time('bills');
-    billsResult = await getVendorBills(customer.associatedVendorId);
-    console.timeEnd('bills');
+    console.time('billsAndVendorPayments');
+    const [bRes, vpRes] = await Promise.all([
+      getVendorBills(customer.associatedVendorId),
+      getVendorPayments(customer.associatedVendorId)
+    ]);
+    billsResult = bRes;
+    vendorPaymentsResult = vpRes;
+    console.timeEnd('billsAndVendorPayments');
   }
   
   if (!invoicesResult.success) {
@@ -333,12 +428,13 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
   const invoices = invoicesResult.data ?? [];
   const payments = (paymentsResult.success ? paymentsResult.data : []) ?? [];
   const bills = (billsResult.success ? billsResult.data : []) ?? [];
+  const vendorPayments = (vendorPaymentsResult.success ? vendorPaymentsResult.data : []) ?? [];
 
   // 3. Merge into unified timeline with signed netEffect and memoized timestamp
   const orgId = getZohoOrgId() || process.env.ZOHO_BOOKS_ORG_ID;
   let mergedRaw: Array<{
     id: string;
-    type: 'invoice' | 'payment' | 'bill';
+    type: 'invoice' | 'payment' | 'bill' | 'vendor_payment';
     date: string;
     datetime: string;
     timestamp: number;
@@ -347,6 +443,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
     netEffect: number;
     isVerified?: boolean;
     zohoUrl?: string;
+    appliedBills?: { billNumber: string; appliedAmount: number }[];
   }> = [
     ...invoices.map((inv: any) => ({
       id: inv.invoiceId,
@@ -372,7 +469,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
         amount: pmt.amount,
         netEffect: -pmt.amount,
         isVerified: pmt.isVerified,
-        zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/paymentsreceived/${pmt.paymentId}` : undefined,
+        zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/customerpayments/${pmt.paymentId}` : undefined,
       };
     }),
     ...bills.map((b: any) => ({
@@ -386,6 +483,24 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
       netEffect: -b.amount,
       zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/bills/${b.billId}` : undefined,
     })),
+    ...vendorPayments.map((vp: any) => {
+      let desc = vp.paymentMode ? `Payment Made - ${vp.paymentMode}` : 'Payment Made';
+      if (vp.referenceNumber) {
+        desc += ` (${vp.referenceNumber})`;
+      }
+      return {
+        id: vp.paymentId,
+        type: 'vendor_payment' as const,
+        date: vp.date,
+        datetime: vp.date,
+        timestamp: new Date(vp.date || 0).getTime(),
+        description: desc,
+        amount: vp.amount,
+        netEffect: vp.amount,
+        appliedBills: vp.appliedBills,
+        zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/paymentsmade/${vp.paymentId}` : undefined,
+      };
+    }),
   ];
 
   if (minDate) {
@@ -472,12 +587,12 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
         customerApiCalls: 1,
         invoiceApiCalls: 1,
         paymentApiCalls: 1,
-        billApiCalls: isHybrid ? 1 : 0,
-        totalApiCalls: isHybrid ? 4 : 3,
+        billApiCalls: isHybrid ? 2 : 0, // bills + vendor payments
+        totalApiCalls: isHybrid ? 5 : 3,
         rawInvoicesFetched: invMeta.rawFetched + pmtMeta.rawFetched,
         validInvoicesAfterFilter: invMeta.validCount + pmtMeta.validCount,
-        rawBillsFetched: billMeta.rawFetched,
-        validBillsAfterFilter: billMeta.validCount,
+        rawBillsFetched: billMeta.rawFetched + (vendorPaymentsResult._meta?.rawFetched || 0),
+        validBillsAfterFilter: billMeta.validCount + (vendorPaymentsResult._meta?.validCount || 0),
         debugReceivable: outstandingReceivable,
         debugPayable: outstandingPayable,
         debugNetClosingBalance: netClosingBalance,
@@ -550,7 +665,8 @@ export async function getCustomerById(contactId: string): Promise<{ success: boo
       // NOTE: outstanding_payable_amount lives inside associated_vendor_details, NOT at top level
       outstandingPayable: contact.associated_vendor_details?.outstanding_payable_amount ?? 0,
       unusedCreditsPayable: contact.associated_vendor_details?.unused_credits_payable_amount ?? 0,
-      billingAddress: billingAddr
+      billingAddress: billingAddr,
+      rawAddress: contact.billing_address || contact.shipping_address || null
     };
 
     return { success: true, data: normalized, raw: data };

@@ -201,6 +201,7 @@ export function getAuthorizationUrl(): string {
     'ZohoBooks.invoices.READ',
     'ZohoBooks.customerpayments.READ',
     'ZohoBooks.bills.READ',
+    'ZohoBooks.vendorpayments.READ',
     'ZohoBooks.banking.READ'
   ];
 

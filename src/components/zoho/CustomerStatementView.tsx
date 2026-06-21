@@ -41,7 +41,7 @@ function fmt(n: number) {
  *   negative -> negative (we owe customer / advance)
  */
 function fmtBalance(n: number) {
-  if (n === 0) return '₹0.00';
+  if (n === 0 || Math.abs(n) < 0.01) return '₹0.00';
   const val = new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
@@ -173,6 +173,13 @@ export default function CustomerStatementView() {
   const [statementMode, setStatementMode] = useState<'single' | 'group'>('single');
   const [selectedCustomers, setSelectedCustomers] = useState<{id: string, name: string}[]>([]);
   const [kpiMode, setKpiMode] = useState<'compact' | 'financial'>('compact');
+
+  // Ledger Filter State
+  const [filterSales, setFilterSales] = useState(true);
+  const [filterCustPmts, setFilterCustPmts] = useState(true);
+  const [filterBills, setFilterBills] = useState(true);
+  const [filterVendorPmts, setFilterVendorPmts] = useState(true);
+  const [ledgerSearch, setLedgerSearch] = useState('');
 
   const handleModeChange = (mode: 'single' | 'group') => {
     setStatementMode(mode);
@@ -354,8 +361,6 @@ export default function CustomerStatementView() {
     setStatement(null);
     setCachedAt(null);
     setClipFromIndex(null); // Reset clip mode
-    setIsCalcOpen(false); // Close calculator
-    setCalcEntries([]);
     try {
       const res = await fetch(`/api/admin/customer-statement/statement?customerId=${cid}`);
       const data = await res.json();
@@ -369,6 +374,7 @@ export default function CustomerStatementView() {
         // Fix: Do not set statement to data.data, keep it as data so statement.success is defined!
         // Alternatively, update the UI check, but setting it as data keeps it consistent with GroupStatement which has success: true
         setStatement(data);
+        setIsCalcOpen(true); // Auto-open calculator on load
         const nowTs = Date.now();
         setCachedAt(nowTs);
         setNow(nowTs);
@@ -416,6 +422,7 @@ export default function CustomerStatementView() {
       const data = await res.json();
       if (data.success && data.data) {
         setGroupStatement({ success: true, statements: data.data });
+        setIsCalcOpen(true); // Auto-open calculator on load
         setVisibleFirmIds(activeCustomers.map(c => c.id));
         const nowTs = Date.now();
         setCachedAt(nowTs);
@@ -1044,20 +1051,40 @@ export default function CustomerStatementView() {
         const clipIdx = isValidClip ? clipFromIndex : -1;
         const isClipped = clipIdx !== -1;
         const activeTxs = isClipped ? s.transactions.slice(clipIdx) : s.transactions;
-        const visibleTransactions = isExpanded ? activeTxs : activeTxs.slice(-12);
-
-        const dynamicOpeningBalance = visibleTransactions.length > 0
-          ? (visibleTransactions[0].balanceAfter - visibleTransactions[0].netEffect)
+        const chronologicalVisible = isExpanded ? activeTxs : activeTxs.slice(-12);
+        const dynamicOpeningBalance = chronologicalVisible.length > 0
+          ? (chronologicalVisible[0].balanceAfter - chronologicalVisible[0].netEffect)
           : s.closingBalance;
+
+        const visibleTransactions = chronologicalVisible.filter((tx: any) => {
+          if (tx.type === 'invoice' && !filterSales) return false;
+          if (tx.type === 'payment' && !filterCustPmts) return false;
+          if (tx.type === 'bill' && !filterBills) return false;
+          if (tx.type === 'vendor_payment' && !filterVendorPmts) return false;
+          
+          if (ledgerSearch.trim()) {
+            const term = ledgerSearch.toLowerCase();
+            const searchable = [
+              tx.referenceNumber,
+              tx.description,
+              tx.type,
+              tx.firmName,
+              ...(tx.appliedBills || []).map((b: any) => b.billNumber)
+            ].filter(Boolean).join(' ').toLowerCase();
+            if (!searchable.includes(term)) return false;
+          }
+          return true;
+        });
         const openingPresentation = getOpeningBalancePresentation(dynamicOpeningBalance);
 
-        // Totals for visible period
-        const totalInvoiceAmount = visibleTransactions
-          .filter((t: any) => t.type === 'invoice')
+        // Totals for visible/filtered period
+        const totalDebitAmount = visibleTransactions
+          .filter((t: any) => t.type === 'invoice' || t.type === 'vendor_payment')
           .reduce((sum: number, t: any) => sum + Math.abs(t.netEffect), 0);
-        const totalPaymentAmount = visibleTransactions
-          .filter((t: any) => t.type === 'payment')
+        const totalCreditAmount = visibleTransactions
+          .filter((t: any) => t.type === 'payment' || t.type === 'bill')
           .reduce((sum: number, t: any) => sum + Math.abs(t.netEffect), 0);
+        const dynamicClosingBalance = dynamicOpeningBalance + visibleTransactions.reduce((sum: number, t: any) => sum + t.netEffect, 0);
 
         // Payment breakdown (clean mode labels)
         const paymentBreakdown = visibleTransactions
@@ -1108,20 +1135,20 @@ export default function CustomerStatementView() {
               </div>
             )}
             {(!s.integrityError) && (
-              <div className="flex flex-col gap-4 xl:grid xl:grid-cols-12 xl:gap-6 items-start">
-            {/* Left Column: Ledger and Customer Info */}
-            <div className="contents xl:block xl:col-span-8 xl:space-y-4">
+              <div className="flex flex-col gap-4">
+            {/* Primary Content: Full Width */}
+            <div className="space-y-4 pb-20">
               {/* ── Section 1: Customer card ──────────────────────────────── */}
               {statementMode === 'single' && (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden order-1 xl:order-none">
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
                   <User size={14} className="text-[#1A2766]" />
                   <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
                     {s.customer.associatedVendorId ? 'Hybrid Account' : 'Customer'}
                   </span>
                 </div>
-                <div className="px-4 py-2.5 flex flex-col md:grid md:grid-cols-3 gap-3 text-xs">
-                  <div className="col-span-2 sm:col-span-1">
+                <div className="px-4 py-2.5 flex flex-col md:grid md:grid-cols-4 gap-3 text-xs">
+                  <div className="col-span-2 sm:col-span-2 md:col-span-2">
                     <div className="text-[10px] uppercase text-gray-500 font-bold mb-0.5">Name</div>
                     <a 
                       href={`https://books.zoho.in/app/60027595766#/contacts/${s.customer.contactId}`}
@@ -1134,11 +1161,34 @@ export default function CustomerStatementView() {
                       <div className="text-[11px] font-mono text-gray-400 leading-tight mt-0.5 tracking-wide">{s.customer.gstNo}</div>
                     )}
                   </div>
-                  <div>
+                  <div className="col-span-1">
                     <div className="text-[10px] uppercase text-gray-500 font-bold mb-0.5">Mobile</div>
                     <div className="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800">
                       <Phone size={12} className="text-gray-400" />
                       {s.customer.mobile || '—'}
+                    </div>
+                  </div>
+                  <div className="col-span-1 min-w-0">
+                    <div className="text-[10px] uppercase text-gray-500 font-bold mb-0.5">Address</div>
+                    <div className="text-[12px] font-medium text-gray-800 leading-tight">
+                      {(() => {
+                        const addr = s.customer.rawAddress;
+                        if (!addr) return '—';
+                        
+                        const line1 = addr.address ? addr.address.replace(/\n/g, ', ') : '';
+                        const line2 = [addr.city, addr.state, addr.zip].filter(Boolean).join(', ');
+                        
+                        if (!line1 && !line2) return '—';
+                        
+                        const fullAddress = [line1, line2].filter(Boolean).join(' | ');
+                        
+                        return (
+                          <div title={fullAddress} className="flex flex-col">
+                            {line1 && <div className="truncate">{line1}</div>}
+                            {line2 && <div className="truncate text-gray-500">{line2}</div>}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -1147,30 +1197,75 @@ export default function CustomerStatementView() {
 
               {/* ── Section 1b: Net Account Position summary (hybrid only) ── */}
               {s.isHybrid && (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden order-2 xl:order-none">
-                  <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
-                    <TrendingUp size={14} className="text-[#1A2766]" />
-                    <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Net Account Position</span>
-                  </div>
-                  <div className="px-5 py-4 grid grid-cols-3 gap-4 text-center">
-                    <div>
-                      <div className="text-[10px] uppercase text-gray-400 font-bold mb-1">Outstanding Receivables</div>
-                      <div className="text-base font-extrabold text-rose-600">{fmt(s.outstandingReceivable)}</div>
-                      <div className="text-[10px] text-gray-400 mt-0.5">Customer owes us</div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Sales Card */}
+                  <div className="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden flex flex-col">
+                    <div className="px-4 py-2 border-b border-blue-100 bg-blue-50/50 flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wide">Sales</span>
+                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">Receivable</span>
                     </div>
-                    <div>
-                      <div className="text-[10px] uppercase text-gray-400 font-bold mb-1">Outstanding Payables</div>
-                      <div className="text-base font-extrabold text-amber-600">{fmt(s.outstandingPayable)}</div>
-                      <div className="text-[10px] text-gray-400 mt-0.5">We owe vendor</div>
-                    </div>
-                    <div className="border-l border-gray-100 pl-4">
-                      <div className="text-[10px] uppercase text-gray-400 font-bold mb-1">Net Position</div>
-                      <div className={`text-base font-extrabold ${
-                        s.closingBalance > 0 ? 'text-[#1A2766]' : s.closingBalance < 0 ? 'text-amber-600' : 'text-gray-400'
-                      }`}>
-                        {fmtBalance(s.closingBalance)}
+                    <div className="px-4 py-3 flex-1 flex flex-col justify-between gap-3">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-gray-500 font-medium">Total Invoiced</span>
+                        <span className="font-bold text-gray-800">{fmt(s.transactions.filter((t:any) => t.type === 'invoice').reduce((sum:number, t:any) => sum + Math.abs(t.netEffect), 0))}</span>
                       </div>
-                      <div className="text-[10px] text-gray-400 mt-0.5">Receivables − Payables</div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-gray-500 font-medium">Total Received</span>
+                        <span className="font-bold text-emerald-600">{fmt(s.transactions.filter((t:any) => t.type === 'payment').reduce((sum:number, t:any) => sum + Math.abs(t.netEffect), 0))}</span>
+                      </div>
+                      <div className="pt-2 border-t border-gray-100 flex justify-between items-center">
+                        <span className="text-[10px] uppercase font-bold text-gray-400">Outstanding</span>
+                        <span className="font-extrabold text-emerald-600 text-sm">{fmt(s.outstandingReceivable)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Purchase Card */}
+                  <div className="bg-white rounded-xl border border-orange-100 shadow-sm overflow-hidden flex flex-col">
+                    <div className="px-4 py-2 border-b border-orange-100 bg-orange-50/50 flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-orange-800 uppercase tracking-wide">Purchase</span>
+                      <span className="text-[10px] font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">Payable</span>
+                    </div>
+                    <div className="px-4 py-3 flex-1 flex flex-col justify-between gap-3">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-gray-500 font-medium">Total Billed</span>
+                        <span className="font-bold text-gray-800">{fmt(s.transactions.filter((t:any) => t.type === 'bill').reduce((sum:number, t:any) => sum + Math.abs(t.netEffect), 0))}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-gray-500 font-medium">Total Paid</span>
+                        <span className="font-bold text-blue-600">{fmt(s.transactions.filter((t:any) => t.type === 'vendor_payment').reduce((sum:number, t:any) => sum + Math.abs(t.netEffect), 0))}</span>
+                      </div>
+                      <div className="pt-2 border-t border-gray-100 flex justify-between items-center">
+                        <span className="text-[10px] uppercase font-bold text-gray-400">Outstanding</span>
+                        <span className="font-extrabold text-rose-600 text-sm">{fmt(s.outstandingPayable)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Net Position Card */}
+                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+                    <div className="px-4 py-2 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wide">Net Position</span>
+                      {(() => {
+                        const net = s.closingBalance;
+                        const isZero = net === 0 || Math.abs(net) < 0.01;
+                        if (isZero) return <span className="text-[10px] font-bold text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">Settled</span>;
+                        return net > 0 
+                          ? <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">Receivable</span>
+                          : <span className="text-[10px] font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">Payable</span>;
+                      })()}
+                    </div>
+                    <div className="px-4 py-3 flex-1 flex flex-col justify-center items-center text-center">
+                      <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Final Balance</div>
+                      <div className={`text-xl font-black tabular-nums ${
+                        s.closingBalance === 0 || Math.abs(s.closingBalance) < 0.01 ? 'text-gray-800' :
+                        s.closingBalance > 0 ? 'text-emerald-600' : 'text-rose-600'
+                      }`}>
+                        {s.closingBalance === 0 || Math.abs(s.closingBalance) < 0.01 ? '₹0' : fmt(Math.abs(s.closingBalance))}
+                      </div>
+                      <div className="text-[9px] text-gray-400 mt-2 font-medium bg-gray-50 px-2 py-1 rounded">
+                        Receivables − Payables
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1346,7 +1441,7 @@ export default function CustomerStatementView() {
               )}
 
               {/* ── Section 2: Statement table ────────────────────────────── */}
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden order-5 xl:order-none">
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                 {isClipped && clipIdx !== -1 && (
                   <div className="bg-blue-50 border-b border-blue-100 px-5 py-2.5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -1364,19 +1459,51 @@ export default function CustomerStatementView() {
                   </div>
                 )}
                 {/* Table header bar */}
-                <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between">
+                <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <TrendingUp size={14} className="text-[#1A2766]" />
                     <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
                       Statement Ledger
                     </span>
                     <span className="text-[10px] text-gray-400 font-medium">
-                      ({s.transactionCount} transaction{s.transactionCount !== 1 ? 's' : ''})
+                      ({visibleTransactions.length} transaction{visibleTransactions.length !== 1 ? 's' : ''})
                     </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {s.isHybrid && (
+                      <div className="flex bg-white border border-gray-200 rounded-md shadow-sm p-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-600">
+                        <label className={`cursor-pointer px-2 py-1 rounded transition-colors ${filterSales ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50 text-gray-400'}`}>
+                          <input type="checkbox" className="hidden" checked={filterSales} onChange={e => setFilterSales(e.target.checked)} />
+                          Sales Invoices
+                        </label>
+                        <label className={`cursor-pointer px-2 py-1 rounded transition-colors ${filterCustPmts ? 'bg-emerald-50 text-emerald-700' : 'hover:bg-gray-50 text-gray-400'}`}>
+                          <input type="checkbox" className="hidden" checked={filterCustPmts} onChange={e => setFilterCustPmts(e.target.checked)} />
+                          Cust Payments
+                        </label>
+                        <label className={`cursor-pointer px-2 py-1 rounded transition-colors ${filterBills ? 'bg-orange-50 text-orange-700' : 'hover:bg-gray-50 text-gray-400'}`}>
+                          <input type="checkbox" className="hidden" checked={filterBills} onChange={e => setFilterBills(e.target.checked)} />
+                          Purchase Bills
+                        </label>
+                        <label className={`cursor-pointer px-2 py-1 rounded transition-colors ${filterVendorPmts ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50 text-gray-400'}`}>
+                          <input type="checkbox" className="hidden" checked={filterVendorPmts} onChange={e => setFilterVendorPmts(e.target.checked)} />
+                          Vendor Payments
+                        </label>
+                      </div>
+                    )}
+                    <div className="relative">
+                      <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input 
+                        type="text" 
+                        placeholder="Filter transactions..."
+                        value={ledgerSearch}
+                        onChange={(e) => setLedgerSearch(e.target.value)}
+                        className="pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-[#1A2766] focus:ring-1 focus:ring-[#1A2766] w-[180px]"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                <div className="hidden md:block overflow-x-auto max-h-[600px] overflow-y-auto">
+                <div className="hidden md:block overflow-x-auto max-h-[75vh] overflow-y-auto">
                   <table className="w-full text-sm relative" style={{ fontVariantNumeric: 'tabular-nums' }}>
                     <thead className="sticky top-0 bg-gray-50 text-[10px] uppercase text-gray-500 font-bold border-b border-gray-200 z-10 shadow-sm">
                       <tr>
@@ -1385,24 +1512,24 @@ export default function CustomerStatementView() {
                         {statementMode === 'group' && <th className="px-4 py-3 text-left whitespace-nowrap tracking-wider">Firm</th>}
                         <th className="px-4 py-3 text-left min-w-[100px] whitespace-nowrap tracking-wider">Type</th>
                         <th className="px-4 py-3 text-left tracking-wider">Document & Details</th>
-                        <th className="px-4 py-3 text-right whitespace-nowrap tracking-wider">Invoice Amt</th>
-                        <th className="px-4 py-3 text-right whitespace-nowrap tracking-wider">Payment Amt</th>
-                        <th className="px-4 py-3 text-right tracking-wider">Balance</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap tracking-wider">Debit</th>
+                        <th className="px-4 py-3 text-right whitespace-nowrap tracking-wider">Credit</th>
+                        <th className="px-4 py-3 text-right tracking-wider">Running Balance</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {/* Opening balance row */}
                       <tr className="bg-blue-50/20">
-                        <td className="px-4 py-2.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
-                        <td className="w-[45px] px-1 py-2.5 text-center text-gray-300/50">—</td>
-                        {statementMode === 'group' && <td className="px-4 py-2.5 text-[11px] text-gray-400">—</td>}
-                        <td className="px-4 py-2.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
-                        <td className="px-4 py-2.5 text-[11px]">
+                        <td className="px-4 py-1.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
+                        <td className="w-[45px] px-1 py-1.5 text-center text-gray-300/50">—</td>
+                        {statementMode === 'group' && <td className="px-4 py-1.5 text-[11px] text-gray-400">—</td>}
+                        <td className="px-4 py-1.5 text-[11px] text-gray-400 whitespace-nowrap">—</td>
+                        <td className="px-4 py-1.5 text-[11px]">
                           {openingPresentation.isCredit ? (
                             <span className="inline-flex items-center gap-1.5">
                               <span className="font-bold text-gray-800">Opening Balance</span>
-                              <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full tracking-wide uppercase border border-emerald-200/50">
-                                Advance / Credit
+                              <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded tracking-wide border border-emerald-200/50">
+                                ADVANCE
                               </span>
                             </span>
                           ) : (
@@ -1411,9 +1538,9 @@ export default function CustomerStatementView() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-right text-[11px] text-gray-400">—</td>
-                        <td className="px-4 py-2.5 text-right text-[11px] text-gray-400">—</td>
-                        <td className="px-4 py-2.5 text-right text-[12px] font-extrabold tabular-nums">
+                        <td className="px-4 py-1.5 text-right text-[11px] text-gray-400">—</td>
+                        <td className="px-4 py-1.5 text-right text-[11px] text-gray-400">—</td>
+                        <td className="px-4 py-1.5 text-right text-[11.5px] font-extrabold tabular-nums">
                           {openingPresentation.isCredit ? (
                             <span className="text-emerald-600">{openingPresentation.amount}</span>
                           ) : (
@@ -1428,21 +1555,14 @@ export default function CustomerStatementView() {
                         return (
                           <tr 
                             key={tx.id} 
-                            onClick={() => {
-                              if (isCalcOpen) {
-                                addCalcEntry(tx);
-                              } else if (tx.zohoUrl) {
-                                window.open(tx.zohoUrl, '_blank');
-                              }
-                            }}
-                            className={`group even:bg-gray-50/40 hover:bg-blue-50/80 transition-all cursor-pointer relative ${
+                            className={`group even:bg-gray-50/40 hover:bg-blue-50/80 transition-all relative ${
                               calcEntries.some(e => e.id === tx.id) ? 'bg-purple-50/50 even:bg-purple-50/50' : ''
                             }`}
                           >
-                            <td className="px-4 py-2.5 text-[11px] text-gray-500 whitespace-nowrap align-middle">
+                            <td className="px-4 py-1.5 text-[10.5px] text-gray-500 whitespace-nowrap align-middle">
                               {fmtDateTime(tx.datetime || tx.date)}
                             </td>
-                            <td className="w-[45px] text-center px-1 py-2.5 align-middle">
+                            <td className="w-[45px] text-center px-1 py-1.5 align-middle">
                               <button 
                                 onClick={(e) => { e.stopPropagation(); setClipFromIndex(s.transactions.indexOf(tx)); }}
                                 className={`text-gray-300 hover:text-blue-500 transition-colors print:hidden focus:opacity-100 ${clipIdx === s.transactions.indexOf(tx) ? 'opacity-100 text-blue-600' : 'opacity-0 group-hover:opacity-100'}`}
@@ -1452,7 +1572,7 @@ export default function CustomerStatementView() {
                               </button>
                             </td>
                             {statementMode === 'group' && (
-                              <td className="px-4 py-2.5 align-middle whitespace-nowrap">
+                              <td className="px-4 py-1.5 align-middle whitespace-nowrap">
                                 {(() => {
                                   const fc = firmColors[tx.firmId] || { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200' };
                                   return (
@@ -1463,10 +1583,16 @@ export default function CustomerStatementView() {
                                 })()}
                               </td>
                             )}
-                            <td className="px-4 py-2.5 text-[10px] font-semibold text-gray-500 align-middle uppercase tracking-wider whitespace-nowrap">
-                              {tx.type === 'invoice' ? 'Invoice' : tx.type === 'payment' ? 'Payment' : 'Purchase Bill'}
+                            <td className="px-4 py-1.5 align-middle whitespace-nowrap">
+                              {(() => {
+                                if (tx.type === 'invoice') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[9px] font-bold text-slate-700 uppercase tracking-wide">Sales Invoice</span>;
+                                if (tx.type === 'payment') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-emerald-200 bg-emerald-50 text-[9px] font-bold text-emerald-700 uppercase tracking-wide">Customer Payment</span>;
+                                if (tx.type === 'vendor_payment') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-purple-200 bg-purple-50 text-[9px] font-bold text-purple-700 uppercase tracking-wide">Vendor Payment</span>;
+                                if (tx.type === 'bill') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-[9px] font-bold text-orange-700 uppercase tracking-wide">Purchase Bill</span>;
+                                return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px] font-bold text-gray-500 uppercase tracking-wide">{tx.type}</span>;
+                              })()}
                             </td>
-                            <td className="px-4 py-2.5 align-middle">
+                            <td className="px-4 py-1.5 align-middle">
                               <div className="flex items-center gap-2.5">
                                 <div className="w-5 shrink-0 flex justify-center print:hidden">
                                   {!calcEntries.some(e => e.id === tx.id) ? (
@@ -1486,8 +1612,14 @@ export default function CustomerStatementView() {
                                   )}
                                 </div>
                                 <div className="flex flex-col">
-                                  <div className="flex items-center gap-1.5 text-[11px] font-medium text-blue-700 group-hover:text-blue-900 group-hover:underline underline-offset-2">
-                                    <span>{tx.referenceNumber || displayDesc}</span>
+                                  <div className="flex items-center gap-1.5 text-[11px] font-medium text-blue-700 underline-offset-2">
+                                    {tx.zohoUrl ? (
+                                      <a href={tx.zohoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-blue-900 hover:underline">
+                                        {tx.referenceNumber || displayDesc}
+                                      </a>
+                                    ) : (
+                                      <span>{tx.referenceNumber || displayDesc}</span>
+                                    )}
                                     {draftStatuses[tx.id] && (
                                       <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50">
                                         Draft
@@ -1502,45 +1634,49 @@ export default function CustomerStatementView() {
                                   {tx.referenceNumber && tx.referenceNumber !== displayDesc && (
                                     <span className="text-[10px] text-gray-500 mt-0.5 leading-tight">{displayDesc}</span>
                                   )}
+                                  {tx.type === 'vendor_payment' && tx.appliedBills && tx.appliedBills.length > 0 && (
+                                    <div className="mt-1.5" onClick={e => e.stopPropagation()}>
+                                      <details className="text-[10px] text-gray-500 marker:text-gray-400">
+                                        <summary className="cursor-pointer hover:text-gray-700 font-medium">Applied to {tx.appliedBills.length} Bill{tx.appliedBills.length !== 1 ? 's' : ''}</summary>
+                                        <ul className="mt-1 space-y-0.5 pl-3 border-l-2 border-gray-100 py-0.5">
+                                          {tx.appliedBills.map((b: any, idx: number) => (
+                                            <li key={idx} className="flex gap-2 items-center">
+                                              <span className="font-semibold text-gray-600">{b.billNumber}</span>
+                                              <span className="text-gray-400 tabular-nums">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(b.appliedAmount)}</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </details>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </td>
-                            <td className="px-4 py-2.5 text-right text-[11.5px] font-semibold text-gray-700 whitespace-nowrap align-middle tabular-nums">
-                              {tx.netEffect > 0 ? fmt(tx.amount) : '—'}
+                            {/* DEBIT Column: Sales Invoices & Vendor Payments */}
+                            <td className="px-4 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums text-slate-800">
+                              {(tx.type === 'invoice' || tx.type === 'vendor_payment') ? fmt(tx.amount) : '—'}
                             </td>
-                            <td className="px-4 py-2.5 text-right text-[11.5px] font-bold whitespace-nowrap align-middle tabular-nums" style={{ color: tx.netEffect <= 0 ? '#059669' : 'transparent' }}>
-                              {tx.netEffect <= 0 ? fmt(tx.amount) : '—'}
+                            {/* CREDIT Column: Customer Payments & Purchase Bills */}
+                            <td className="px-4 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums" style={{ color: (tx.type === 'payment' || tx.type === 'bill') ? (tx.type === 'payment' ? '#059669' : '#c2410c') : 'transparent' }}>
+                              {(tx.type === 'payment' || tx.type === 'bill') ? fmt(tx.amount) : '—'}
                             </td>
-                            <td className="px-4 py-2.5 text-right whitespace-nowrap align-middle">
+                            {/* RUNNING BALANCE */}
+                            <td className="px-4 py-1.5 text-right whitespace-nowrap align-middle pr-5">
                               {(() => {
                                 const b = tx.balanceAfter;
-                                const isZero = b === 0;
-                                const isNearSettled = !isZero && Math.abs(b) <= 100;
+                                const isZero = b === 0 || Math.abs(b) < 0.01;
                                 
                                 if (isZero) {
                                   return (
-                                    <span className="text-[12px] font-extrabold text-emerald-600 tabular-nums">
-                                      {fmtBalance(b)}
+                                    <span className="text-[11.5px] tabular-nums font-extrabold text-gray-400">
+                                      ₹0
                                     </span>
                                   );
                                 }
                                 
-                                if (isNearSettled) {
-                                  return (
-                                    <div className="flex flex-col items-end justify-center bg-emerald-50/50 -my-1 -mx-2 px-2 py-1 rounded border border-emerald-100/60">
-                                      <span className="text-[12px] tabular-nums font-extrabold text-emerald-700">
-                                        {fmtBalance(b)}
-                                      </span>
-                                      <span className="text-[7.5px] font-bold text-emerald-600/80 tracking-widest uppercase leading-none mt-0.5">Settled</span>
-                                    </div>
-                                  );
-                                }
-                                
+                                const isPositive = b > 0;
                                 return (
-                                  <span className={`text-[12px] tabular-nums font-extrabold ${
-                                    b > 0 ? 'text-rose-600' :
-                                    b < 0 ? 'text-emerald-600' : 'text-gray-900'
-                                  }`}>
+                                  <span className={`text-[11.5px] tabular-nums font-extrabold ${isPositive ? 'text-rose-600' : 'text-emerald-600'}`}>
                                     {fmtBalance(b)}
                                   </span>
                                 );
@@ -1558,38 +1694,6 @@ export default function CustomerStatementView() {
                         </tr>
                       )}
 
-                      {/* ── TOTALS footer row ── */}
-                      <tr className="border-t-2 border-gray-300 bg-gray-50">
-                        <td className="px-3 py-2.5 text-[10px] text-gray-400 font-bold uppercase tracking-widest" colSpan={statementMode === 'group' ? 4 : 3}>Totals</td>
-                        <td className="px-3 py-2.5">
-                          <span className="text-[11px] font-extrabold text-gray-700 uppercase tracking-wide">
-                            {isExpanded ? 'All Transactions' : 'Visible Period'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          <div className="flex flex-col items-end">
-                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">Total Invoiced</span>
-                            <span className="text-[12px] font-extrabold text-gray-800 tabular-nums">{fmt(totalInvoiceAmount)}</span>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          <div className="flex flex-col items-end">
-                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">Total Paid</span>
-                            <span className="text-[12px] font-extrabold text-emerald-700 tabular-nums">{fmt(totalPaymentAmount)}</span>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          <div className="flex flex-col items-end">
-                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">Closing Balance</span>
-                            <span className={`text-[13px] font-extrabold tabular-nums ${
-                              s.closingBalance > 0 ? 'text-rose-600' :
-                              s.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'
-                            }`}>
-                              {fmtBalance(s.closingBalance)}
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -1625,11 +1729,7 @@ export default function CustomerStatementView() {
                       return (
                         <div 
                           key={tx.id} 
-                          onClick={() => {
-                            if (isCalcOpen) addCalcEntry(tx);
-                            else if (tx.zohoUrl) window.open(tx.zohoUrl, '_blank');
-                          }}
-                          className={`p-4 bg-white hover:bg-blue-50/80 transition-all flex flex-col gap-3 relative cursor-pointer ${calcEntries.some(e => e.id === tx.id) ? 'bg-purple-50/50' : ''}`}
+                          className={`p-4 bg-white hover:bg-blue-50/80 transition-all flex flex-col gap-3 relative ${calcEntries.some(e => e.id === tx.id) ? 'bg-purple-50/50' : ''}`}
                         >
                           {/* Header: Date & Type */}
                           <div className="flex justify-between items-center">
@@ -1642,7 +1742,13 @@ export default function CustomerStatementView() {
                           {/* Details */}
                           <div className="flex flex-col gap-1">
                             <div className="text-sm font-bold text-blue-700 underline-offset-2 flex flex-wrap items-center gap-1.5">
-                              <span>{displayDesc}</span>
+                              {tx.zohoUrl ? (
+                                <a href={tx.zohoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-blue-900 hover:underline">
+                                  {displayDesc}
+                                </a>
+                              ) : (
+                                <span>{displayDesc}</span>
+                              )}
                               {draftStatuses[tx.id] && (
                                 <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50">
                                   Draft
@@ -1692,28 +1798,6 @@ export default function CustomerStatementView() {
                     })
                   )}
 
-                  {/* Totals Card */}
-                  <div className="p-4 bg-gray-50 border-t-2 border-gray-200 flex flex-col gap-3 shadow-inner">
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center">
-                      Totals {isExpanded ? '(All)' : '(Visible Period)'}
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-gray-500">Total Invoiced</span>
-                      <span className="text-sm font-bold text-gray-900 tabular-nums">{fmt(totalInvoiceAmount)}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-gray-500">Total Paid</span>
-                      <span className="text-sm font-bold text-emerald-700 tabular-nums">{fmt(totalPaymentAmount)}</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-3 mt-1 border-t border-gray-200">
-                      <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Closing Balance</span>
-                      <span className={`text-[15px] font-extrabold tabular-nums ${
-                        s.closingBalance > 0 ? 'text-rose-600' : s.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'
-                      }`}>
-                        {fmtBalance(s.closingBalance)}
-                      </span>
-                    </div>
-                  </div>
                 </div>
                 {/* View All Toggle */}
                 {s.transactions.length > 12 && (
@@ -1726,24 +1810,21 @@ export default function CustomerStatementView() {
                     </button>
                   </div>
                 )}
-              </div>
-            </div>
+              </div>{/* end ledger card */}
 
-            {/* Right Column: Financial Summary and Telemetry */}
-            <div className="contents xl:block xl:col-span-4 xl:space-y-4">
-              
-              {/* Financial Summary Card */}
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden order-3 xl:order-none">
+            {/* ── Secondary Section: moved below ledger ─────────────────────── */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
                   <Activity size={14} className="text-[#1A2766]" />
                   <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
                     Period Summary {isExpanded ? '(All)' : '(Visible)'}
                   </span>
                 </div>
-                <div className="p-5 grid grid-cols-2 gap-4 md:flex md:flex-col md:space-y-4 md:gap-0">
-                  {/* Opening Balance — with credit clarity */}
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center text-sm gap-1 md:gap-2">
-                    <span className="text-gray-500 font-medium shrink-0">Opening Balance</span>
+                <div className="p-5 space-y-3">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500 font-medium">Opening Balance</span>
                     {openingPresentation.isCredit ? (
                       <div className="text-right">
                         <div className="font-semibold text-emerald-600 tabular-nums">{openingPresentation.amount}</div>
@@ -1753,23 +1834,27 @@ export default function CustomerStatementView() {
                       <span className="font-semibold text-gray-900 tabular-nums">{openingPresentation.amount}</span>
                     )}
                   </div>
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center text-sm gap-1 md:gap-2">
-                    <span className="text-gray-500 font-medium">Total Invoiced</span>
-                    <span className="font-semibold text-gray-900 tabular-nums">{fmt(totalInvoiceAmount)}</span>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500 font-medium">Total Debit</span>
+                    <span className="font-semibold text-blue-700 tabular-nums">{fmt(totalDebitAmount)}</span>
                   </div>
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center text-sm gap-1 md:gap-2">
-                    <span className="text-gray-500 font-medium">Total Paid</span>
-                    <span className="font-semibold text-emerald-600 tabular-nums">− {fmt(totalPaymentAmount)}</span>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500 font-medium">Total Credit</span>
+                    <span className="font-semibold text-emerald-600 tabular-nums">− {fmt(totalCreditAmount)}</span>
                   </div>
-                  <div className="md:pt-3 md:border-t md:border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-1 md:gap-0">
+                  <div className="pt-3 border-t border-gray-100 flex justify-between items-center">
                     <span className="text-gray-900 font-bold uppercase text-xs tracking-wider">Closing Balance</span>
-                    <span className={`text-lg font-extrabold tabular-nums ${s.closingBalance > 0 ? 'text-rose-600' : s.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
-                      {fmtBalance(s.closingBalance)}
-                    </span>
+                    <div className="text-right">
+                      <div className={`text-lg font-extrabold tabular-nums ${
+                        Math.abs(dynamicClosingBalance) < 0.01 ? 'text-gray-500' :
+                        dynamicClosingBalance > 0 ? 'text-rose-600' : 'text-emerald-600'
+                      }`}>
+                        {fmtBalance(dynamicClosingBalance)}
+                      </div>
+                    </div>
                   </div>
-                  
                   {Object.keys(paymentBreakdown).length > 0 && (
-                    <div className="md:pt-4 md:border-t md:border-gray-100 col-span-2 md:col-span-1">
+                    <div className="pt-3 border-t border-gray-100">
                       <div className="text-[10px] uppercase text-gray-400 font-bold mb-2">Payment Breakdown</div>
                       <div className="space-y-1.5">
                         {Object.entries(paymentBreakdown).map(([mode, amt]) => (
@@ -1786,7 +1871,7 @@ export default function CustomerStatementView() {
 
               {/* Unpaid Invoices */}
               {s.unpaidInvoices && s.unpaidInvoices.length > 0 ? (
-                <div className="bg-white rounded-xl border border-rose-100 shadow-sm overflow-hidden order-4 xl:order-none">
+                <div className="bg-white rounded-xl border border-rose-100 shadow-sm overflow-hidden">
                   <div className="px-5 py-3 border-b border-rose-100 bg-rose-50/50 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <AlertCircle size={14} className="text-rose-600" />
@@ -1946,14 +2031,14 @@ export default function CustomerStatementView() {
                   </div>
                 </div>
               ) : (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden p-6 flex flex-col items-center justify-center gap-2 order-4 xl:order-none">
+                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden p-6 flex flex-col items-center justify-center gap-2">
                   <Check size={20} className="text-emerald-500" />
                   <span className="text-sm font-bold text-gray-600">No outstanding invoices</span>
                 </div>
               )}
 
               {/* API Usage KPI Card */}
-              <div className="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden print:hidden order-6 xl:order-none">
+              <div className="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden print:hidden">
                 <div className="px-5 py-3 border-b border-blue-100 bg-blue-50/50 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Activity size={14} className="text-blue-700" />
@@ -2014,8 +2099,10 @@ export default function CustomerStatementView() {
                 </div>
               </div>
 
-              {/* ── Section 4: Debug accordion ────────────────────────────── */}
-              <div className="rounded-xl border border-gray-200 overflow-hidden text-xs print:hidden order-7 xl:order-none">
+            </div>{/* end secondary grid */}
+
+              {/* ── Debug accordion: full-width below secondary section ────── */}
+              <div className="rounded-xl border border-gray-200 overflow-hidden text-xs print:hidden">
                 <button
                   onClick={() => setDebugOpen((v) => !v)}
                   className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors text-gray-500 font-medium"
@@ -2057,6 +2144,29 @@ export default function CustomerStatementView() {
                 )}
               </div>
             </div>
+
+            {/* ── Sticky Footer ────────────────────────────────────────────── */}
+            <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] print:hidden">
+              <div className="max-w-[96%] mx-auto px-4 h-16 flex items-center justify-center gap-12">
+                <div className="flex flex-col items-center justify-center">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Total Debit</span>
+                  <span className="text-[14px] font-extrabold text-slate-800 tabular-nums">{fmt(totalDebitAmount)}</span>
+                </div>
+                <div className="w-px h-8 bg-gray-200 hidden sm:block"></div>
+                <div className="flex flex-col items-center justify-center">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Total Credit</span>
+                  <span className="text-[14px] font-extrabold text-emerald-600 tabular-nums">{fmt(totalCreditAmount)}</span>
+                </div>
+                <div className="w-px h-8 bg-gray-200 hidden sm:block"></div>
+                <div className="flex flex-col items-center justify-center">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Final Balance</span>
+                  <span className={`text-[15px] font-black tabular-nums ${dynamicClosingBalance > 0 ? 'text-rose-600' : dynamicClosingBalance < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
+                    {fmtBalance(dynamicClosingBalance)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
           </div>
         )}
       </div>
@@ -2068,7 +2178,7 @@ export default function CustomerStatementView() {
       
       {/* ── Balance Calculator Panel ────────────────────────────────────────── */}
       {isCalcOpen && (
-        <div className="w-[30%] bg-white border border-gray-200 shadow-sm z-10 flex flex-col sticky top-4 h-[calc(100vh-2rem)] rounded-xl overflow-hidden print:hidden shrink-0">
+        <div className="w-[30%] bg-white border border-gray-200 shadow-sm z-10 flex flex-col sticky top-4 h-[calc(100vh-6.5rem)] rounded-xl overflow-hidden print:hidden shrink-0">
             {/* Header */}
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-purple-50/50">
               <div className="flex items-center gap-2">

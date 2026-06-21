@@ -16,7 +16,7 @@ export type Customer = {
 
 export type Transaction = {
   id: string;
-  type: 'invoice' | 'payment' | 'bill';
+  type: 'invoice' | 'payment' | 'bill' | 'vendor_payment';
   date: string;
   datetime?: string;
   description: string;
@@ -100,6 +100,9 @@ export function cleanDescription(desc: string, type: string): string {
   }
   if (type === 'invoice' || type === 'bill') {
     return desc.replace(/^(invoice|bill)\s+/i, '').trim();
+  }
+  if (type === 'vendor_payment') {
+    return desc.replace(/^payment made\s*[-–]\s*/i, '').trim();
   }
   return desc;
 }
@@ -306,8 +309,8 @@ export async function renderStatementToPdf(
     : s.closingBalance;
   const openingPres = getOpeningBalancePresentation(openingBal);
   const pdfOpeningAmt  = pdfFmt(openingBal);
-  const totalInvoiced  = visibleTxs.filter(t => t.type === 'invoice').reduce((a, t) => a + Math.abs(t.netEffect), 0);
-  const totalPaid      = visibleTxs.filter(t => t.type === 'payment').reduce((a, t) => a + Math.abs(t.netEffect), 0);
+  const totalDebit  = visibleTxs.filter(t => t.type === 'invoice' || t.type === 'vendor_payment').reduce((a, t) => a + Math.abs(t.netEffect), 0);
+  const totalCredit = visibleTxs.filter(t => t.type === 'payment' || t.type === 'bill').reduce((a, t) => a + Math.abs(t.netEffect), 0);
 
   
   let currentY = 12;
@@ -366,8 +369,8 @@ export async function renderStatementToPdf(
 
     const kpis = [
       { label: openingPres.isCredit ? 'Advance / Credit' : 'Opening Balance', val: pdfOpeningAmt, color: openingPres.isCredit ? cGreen : cDark, accent: [59, 130, 246] as [number, number, number] },
-      { label: 'Total Invoiced',  val: pdfFmt(totalInvoiced), color: cDark, accent: cNavy  },
-      { label: 'Total Paid',      val: pdfFmt(totalPaid),     color: cGreen, accent: [16, 185, 129] as [number, number, number] },
+      { label: 'Total Debit',  val: pdfFmt(totalDebit), color: cDark, accent: cNavy  },
+      { label: 'Total Credit', val: pdfFmt(totalCredit),     color: cGreen, accent: [16, 185, 129] as [number, number, number] },
       { label: 'Closing Balance', val: pdfFmtBalance(s.closingBalance), color: s.closingBalance > 0 ? cRed : s.closingBalance < 0 ? cGreen : cDark, accent: [239, 68, 68] as [number, number, number] },
     ];
     
@@ -519,8 +522,8 @@ export async function renderStatementToPdf(
 
     const groupKpis = [
       { label: openingPres.isCredit ? 'Advance / Credit' : 'Opening Balance', val: pdfOpeningAmt, color: openingPres.isCredit ? cGreen : cDark, accent: [59, 130, 246] as [number, number, number] },
-      { label: 'Total Invoiced',  val: pdfFmt(totalInvoiced), color: cDark, accent: cNavy  },
-      { label: 'Total Paid',      val: pdfFmt(totalPaid),     color: cGreen, accent: [16, 185, 129] as [number, number, number] },
+      { label: 'Total Debit',  val: pdfFmt(totalDebit), color: cDark, accent: cNavy  },
+      { label: 'Total Credit', val: pdfFmt(totalCredit),     color: cGreen, accent: [16, 185, 129] as [number, number, number] },
       { label: 'Closing Balance', val: pdfFmtBalance(s.closingBalance),
         color: s.closingBalance > 0 ? cRed : s.closingBalance < 0 ? cGreen : cDark, accent: [239, 68, 68] as [number, number, number] },
     ];
@@ -709,8 +712,8 @@ export async function renderStatementToPdf(
   }
   const tableHead = [
     isGroup
-      ? ['Date', 'Firm', 'Type', 'Document & Details', 'Invoice Amt', 'Payment Amt', 'Balance']
-      : ['Date', 'Type', 'Details', 'Invoice Amt', 'Payment Amt', 'Balance']
+      ? ['Date', 'Firm', 'Type', 'Document & Details', 'Debit', 'Credit', 'Balance']
+      : ['Date', 'Type', 'Details', 'Debit', 'Credit', 'Balance']
   ];
 
   const openRow = isGroup ? [
@@ -724,7 +727,7 @@ export async function renderStatementToPdf(
   ];
 
   const txRows = visibleTxs.map((tx: any) => {
-    const typeLabel = tx.type === 'invoice' ? 'Invoice' : tx.type === 'payment' ? 'Payment' : 'Bill';
+    const typeLabel = tx.type === 'invoice' ? 'Invoice' : tx.type === 'payment' ? 'Payment' : tx.type === 'vendor_payment' ? 'Payment Made' : 'Bill';
     const displayDesc = cleanDescription(tx.description, tx.type);
     const combinedDesc = tx.referenceNumber ? (tx.referenceNumber !== displayDesc ? `${tx.referenceNumber}\n${displayDesc}` : tx.referenceNumber) : displayDesc;
     
@@ -752,13 +755,13 @@ export async function renderStatementToPdf(
 
   const totalsRow = isGroup ? [
     '', '', '', 'TOTALS',
-    pdfFmt(totalInvoiced),
-    pdfFmt(totalPaid),
+    pdfFmt(totalDebit),
+    pdfFmt(totalCredit),
     pdfFmtBalance(s.closingBalance),
   ] : [
     '', '', 'TOTALS',
-    pdfFmt(totalInvoiced),
-    pdfFmt(totalPaid),
+    pdfFmt(totalDebit),
+    pdfFmt(totalCredit),
     pdfFmtBalance(s.closingBalance),
   ];
 

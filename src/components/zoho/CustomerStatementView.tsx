@@ -1080,10 +1080,10 @@ export default function CustomerStatementView() {
 
         // Totals for visible/filtered period
         const totalDebitAmount = visibleTransactions
-          .filter((t: any) => t.type === 'invoice' || t.type === 'vendor_payment')
+          .filter((t: any) => t.type === 'invoice' || t.type === 'vendor_payment' || (t.type === 'journal' && t.netEffect > 0))
           .reduce((sum: number, t: any) => sum + Math.abs(t.netEffect), 0);
         const totalCreditAmount = visibleTransactions
-          .filter((t: any) => t.type === 'payment' || t.type === 'bill')
+          .filter((t: any) => t.type === 'payment' || t.type === 'bill' || (t.type === 'journal' && t.netEffect <= 0))
           .reduce((sum: number, t: any) => sum + Math.abs(t.netEffect), 0);
         const dynamicClosingBalance = dynamicOpeningBalance + visibleTransactions.reduce((sum: number, t: any) => sum + t.netEffect, 0);
 
@@ -1603,6 +1603,7 @@ export default function CustomerStatementView() {
                                 if (tx.type === 'payment') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-emerald-200 bg-emerald-50 text-[9px] font-bold text-emerald-700 uppercase tracking-wide">Customer Payment</span>;
                                 if (tx.type === 'vendor_payment') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-purple-200 bg-purple-50 text-[9px] font-bold text-purple-700 uppercase tracking-wide">Vendor Payment</span>;
                                 if (tx.type === 'bill') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-[9px] font-bold text-orange-700 uppercase tracking-wide">Purchase Bill</span>;
+                                if (tx.type === 'journal') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px] font-bold text-gray-600 uppercase tracking-wide">JOURNAL</span>;
                                 return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px] font-bold text-gray-500 uppercase tracking-wide">{tx.type}</span>;
                               })()}
                             </td>
@@ -1629,10 +1630,10 @@ export default function CustomerStatementView() {
                                   <div className="flex items-center gap-1.5 text-[11px] font-medium text-blue-700 underline-offset-2">
                                     {tx.zohoUrl ? (
                                       <a href={tx.zohoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-blue-900 hover:underline">
-                                        {tx.referenceNumber || displayDesc}
+                                        {tx.type === 'journal' ? (tx.entryNumber || 'Journal') : (tx.referenceNumber || displayDesc)}
                                       </a>
                                     ) : (
-                                      <span>{tx.referenceNumber || displayDesc}</span>
+                                      <span>{tx.type === 'journal' ? (tx.entryNumber || 'Journal') : (tx.referenceNumber || displayDesc)}</span>
                                     )}
                                     {draftStatuses[tx.id] && (
                                       <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50">
@@ -1645,24 +1646,58 @@ export default function CustomerStatementView() {
                                       </span>
                                     )}
                                   </div>
-                                  {tx.referenceNumber && tx.referenceNumber !== displayDesc && (
-                                    <span className="text-[10px] text-gray-500 mt-0.5 leading-tight">{displayDesc}</span>
-                                  )}
-                                  {(tx.type === 'payment' || tx.type === 'vendor_payment') && tx.notes && (
-                                    <div className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal max-w-sm">
-                                      {tx.notes}
-                                    </div>
+                                  {tx.type === 'journal' ? (
+                                    <>
+                                      {(() => {
+                                        const entryNum = (tx.entryNumber || '').trim();
+                                        const refNum = (tx.referenceNumber || '').trim();
+                                        const cleanDesc = tx.description ? cleanDescription(tx.description, tx.type).trim() : '';
+                                        const cleanNotes = tx.notes ? tx.notes.trim() : '';
+
+                                        const showRef = refNum && (refNum !== cleanDesc) && (refNum !== entryNum);
+                                        const showNotes = cleanNotes && (cleanNotes !== cleanDesc);
+
+                                        return (
+                                          <>
+                                            {showRef && (
+                                              <span className="text-[11px] text-gray-500 mt-0.5 leading-tight">Ref: {refNum}</span>
+                                            )}
+                                            {cleanDesc && (
+                                              <div className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal max-w-sm">
+                                                {cleanDesc}
+                                              </div>
+                                            )}
+                                            {showNotes && (
+                                              <div className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal max-w-sm">
+                                                {cleanNotes}
+                                              </div>
+                                            )}
+                                          </>
+                                        );
+                                      })()}
+                                    </>
+                                  ) : (
+                                    <>
+                                      {tx.referenceNumber && tx.referenceNumber !== displayDesc && (
+                                        <span className="text-[10px] text-gray-500 mt-0.5 leading-tight">{displayDesc}</span>
+                                      )}
+                                      {(tx.type === 'payment' || tx.type === 'vendor_payment') && tx.notes && (
+                                        <div className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal max-w-sm">
+                                          {tx.notes}
+                                        </div>
+                                      )}
+                                    </>
                                   )}
                                 </div>
                               </div>
                             </td>
                             {/* DEBIT Column: Sales Invoices & Vendor Payments */}
                             <td className="px-4 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums text-slate-800">
-                              {(tx.type === 'invoice' || tx.type === 'vendor_payment') ? fmt(tx.amount) : '—'}
+                              {(tx.type === 'invoice' || tx.type === 'vendor_payment' || (tx.type === 'journal' && tx.netEffect > 0)) ? fmt(tx.amount) : '—'}
                             </td>
                             {/* CREDIT Column: Customer Payments & Purchase Bills */}
-                            <td className="px-4 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums" style={{ color: (tx.type === 'payment' || tx.type === 'bill') ? (tx.type === 'payment' ? '#059669' : '#c2410c') : 'transparent' }}>
-                              {(tx.type === 'payment' || tx.type === 'bill') ? fmt(tx.amount) : '—'}
+                            <td className="px-4 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums" style={{ color: (tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) ? ((tx.type === 'payment' || (tx.type === 'journal' && tx.netEffect <= 0)) ? '#059669' : '#c2410c') : 'transparent' }}>
+                              {(tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) ? fmt(tx.amount) : '—'}
                             </td>
                             {/* RUNNING BALANCE */}
                             <td className="px-4 py-1.5 text-right whitespace-nowrap align-middle pr-5">
@@ -1741,7 +1776,7 @@ export default function CustomerStatementView() {
                           <div className="flex justify-between items-center">
                             <span className="text-[11px] text-gray-500 font-medium">{fmtDateTime(tx.datetime || tx.date)}</span>
                             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                              {isInvoice ? 'Invoice' : isPayment ? 'Payment' : 'Purchase Bill'}
+                              {isInvoice ? 'Invoice' : isPayment ? 'Payment' : tx.type === 'vendor_payment' ? 'Vendor Pmt' : tx.type === 'journal' ? 'JOURNAL' : 'Purchase Bill'}
                             </span>
                           </div>
 
@@ -1750,10 +1785,10 @@ export default function CustomerStatementView() {
                             <div className="text-sm font-bold text-blue-700 underline-offset-2 flex flex-wrap items-center gap-1.5">
                               {tx.zohoUrl ? (
                                 <a href={tx.zohoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-blue-900 hover:underline">
-                                  {displayDesc}
+                                  {tx.type === 'journal' ? (tx.entryNumber || 'Journal') : displayDesc}
                                 </a>
                               ) : (
-                                <span>{displayDesc}</span>
+                                <span>{tx.type === 'journal' ? (tx.entryNumber || 'Journal') : displayDesc}</span>
                               )}
                               {draftStatuses[tx.id] && (
                                 <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50">
@@ -1766,10 +1801,42 @@ export default function CustomerStatementView() {
                                 </span>
                               )}
                             </div>
-                            {(tx.type === 'payment' || tx.type === 'vendor_payment') && tx.notes && (
-                              <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
-                                {tx.notes}
-                              </div>
+                            {tx.type === 'journal' ? (
+                              <>
+                                {(() => {
+                                  const entryNum = (tx.entryNumber || '').trim();
+                                  const refNum = (tx.referenceNumber || '').trim();
+                                  const cleanDesc = tx.description ? cleanDescription(tx.description, tx.type).trim() : '';
+                                  const cleanNotes = tx.notes ? tx.notes.trim() : '';
+
+                                  const showRef = refNum && (refNum !== cleanDesc) && (refNum !== entryNum);
+                                  const showNotes = cleanNotes && (cleanNotes !== cleanDesc);
+
+                                  return (
+                                    <>
+                                      {showRef && (
+                                        <span className="text-[11px] text-gray-500 mt-0.5 leading-tight">Ref: {refNum}</span>
+                                      )}
+                                      {cleanDesc && (
+                                        <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
+                                          {cleanDesc}
+                                        </div>
+                                      )}
+                                      {showNotes && (
+                                        <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
+                                          {cleanNotes}
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+                              </>
+                            ) : (
+                              (tx.type === 'payment' || tx.type === 'vendor_payment') && tx.notes && (
+                                <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
+                                  {tx.notes}
+                                </div>
+                              )
                             )}
                           </div>
 

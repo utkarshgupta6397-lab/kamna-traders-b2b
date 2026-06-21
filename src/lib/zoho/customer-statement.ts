@@ -34,7 +34,7 @@ export type CustomerStatementInvoice = {
 
 export type StatementTransaction = {
   id: string;
-  type: 'invoice' | 'payment' | 'bill' | 'vendor_payment';
+  type: 'invoice' | 'payment' | 'bill' | 'vendor_payment' | 'journal';
   datetime?: string;
   date: string;
   timestamp?: number;
@@ -50,6 +50,8 @@ export type StatementTransaction = {
   zohoUrl?: string;
   appliedBills?: { billNumber: string; appliedAmount: number }[];
   notes?: string;
+  entryNumber?: string;
+  referenceNumber?: string;
 };
 
 export type CustomerStatement = {
@@ -374,6 +376,131 @@ export async function getVendorPayments(vendorId: string): Promise<{
   }
 }
 
+export type CustomerStatementJournal = {
+  journalId: string;
+  entryNumber: string;
+  date: string;
+  amount: number;
+  netEffect: number; // calculated from line items
+  referenceNumber?: string;
+  notes?: string;
+};
+
+export async function getHybridJournals(contactId: string, associatedVendorId: string): Promise<{
+  success: boolean;
+  data?: CustomerStatementJournal[];
+  raw?: any;
+  error?: string;
+}> {
+  try {
+    const orgId = getZohoOrgId();
+    if (!orgId) throw new Error('Missing ZOHO_BOOKS_ORG_ID or ZOHO_ORGANIZATION_ID in environment variables');
+    const accessToken = await getZohoTokens();
+    if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
+
+    // Fetch journals. We filter by both customer_id and vendor_id if necessary,
+    // but Zoho API only supports one customer_id per request. We'll make two requests if needed and merge,
+    // or just fetch all for the org if we don't know (but org might have too many).
+    // Let's do two requests: one for customer and one for vendor, then merge.
+    const urlC = `${API_BASE_URL}/books/v3/journals?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=100`;
+    const urlV = `${API_BASE_URL}/books/v3/journals?organization_id=${orgId}&customer_id=${associatedVendorId}&page=1&per_page=100`;
+    
+    console.log('[Zoho Journals] API URL C:', urlC);
+    console.log('[Zoho Journals] API URL V:', urlV);
+    
+    const [resC, resV] = await Promise.all([
+      fetch(urlC, { headers: { Authorization: `Zoho-oauthtoken ${accessToken}` } }),
+      fetch(urlV, { headers: { Authorization: `Zoho-oauthtoken ${accessToken}` } })
+    ]);
+    
+    const dataC = await resC.json();
+    const dataV = await resV.json();
+    
+    if (!resC.ok && !resV.ok) {
+      return { success: false, error: dataC.message || 'Failed to fetch journals', raw: dataC };
+    }
+    
+    const rawC: any[] = dataC.journals ?? [];
+    const rawV: any[] = dataV.journals ?? [];
+    
+    // Merge and deduplicate by journal_id
+    const mergedJournals = new Map();
+    [...rawC, ...rawV].forEach(j => mergedJournals.set(j.journal_id, j));
+    const raw = Array.from(mergedJournals.values());
+    
+    // Fetch detailed journal entries to get line_items
+    const detailedJournals = await Promise.all(
+      raw.map(async (j: any) => {
+        try {
+          const detailUrl = `${API_BASE_URL}/books/v3/journals/${j.journal_id}?organization_id=${orgId}`;
+          const detailRes = await fetch(detailUrl, {
+            method: 'GET',
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+          });
+          const detailData = await detailRes.json();
+          const journal = detailData.journal;
+          if (!journal || !journal.line_items) return null;
+          
+          // Filter line items for this customer/vendor
+          // Note: Zoho line_items use 'customer_id' to store the contact ID regardless if it's a vendor or customer.
+          const relevantLines = journal.line_items.filter((li: any) => 
+            li.customer_id === contactId || li.customer_id === associatedVendorId
+          );
+          
+          if (relevantLines.length === 0) return null;
+          
+          // Determine netEffect from line items. 
+          // From the statement perspective: Debit is positive (adds to customer balance), Credit is negative.
+          let netEffect = 0;
+          let amount = 0;
+          
+          for (const line of relevantLines) {
+            const lineAmount = Number(line.amount);
+            if (line.debit_or_credit === 'debit') {
+              netEffect += lineAmount;
+              amount += lineAmount;
+            } else if (line.debit_or_credit === 'credit') {
+              netEffect -= lineAmount;
+              amount += lineAmount;
+            }
+          }
+
+          // Let's filter out empty or duplicate line item descriptions
+          const lineDescriptions = relevantLines
+            .map((li: any) => li.description)
+            .filter(Boolean)
+            .filter((val: string, idx: number, self: string[]) => self.indexOf(val) === idx);
+          const description = lineDescriptions.join(', ') || journal.notes || '';
+
+          return {
+            journalId: journal.journal_id,
+            entryNumber: journal.entry_number,
+            date: journal.journal_date,
+            amount: Math.abs(amount), // absolute value for the display amount
+            netEffect,
+            referenceNumber: journal.reference_number,
+            notes: journal.notes,
+            description,
+          };
+        } catch (e) {
+          return null;
+        }
+      })
+    );
+      
+    const validJournals = detailedJournals.filter(Boolean) as CustomerStatementJournal[];
+    
+    return {
+      success: true,
+      data: validJournals,
+      raw: { rawC, rawV },
+      _meta: { rawFetched: raw.length, validCount: validJournals.length },
+    } as any;
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Internal Server Error' };
+  }
+}
+
 /**
  * Build a reverse-calculated statement prototype.
  *
@@ -412,19 +539,32 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
   }
   const customer = customerResult.data;
 
-  // 2. Conditionally fetch bills and vendor payments only if hybrid AND payable > 0
+  // 2. Conditionally fetch bills, vendor payments, and journals for Hybrid accounts
   let billsResult: any = { success: true, data: [] };
   let vendorPaymentsResult: any = { success: true, data: [] };
+  let journalsResult: any = { success: true, data: [] };
+  
   const outstandingPayable = customer.outstandingPayable ?? 0;
-  if (customer.associatedVendorId && outstandingPayable > 0) {
-    console.time('billsAndVendorPayments');
-    const [bRes, vpRes] = await Promise.all([
-      getVendorBills(customer.associatedVendorId),
-      getVendorPayments(customer.associatedVendorId)
-    ]);
+  if (customer.associatedVendorId) {
+    console.time('hybridData');
+    const promises: Promise<any>[] = [];
+    
+    if (outstandingPayable > 0) {
+      promises.push(getVendorBills(customer.associatedVendorId));
+      promises.push(getVendorPayments(customer.associatedVendorId));
+    } else {
+      promises.push(Promise.resolve({ success: true, data: [] }));
+      promises.push(Promise.resolve({ success: true, data: [] }));
+    }
+    
+    // Always fetch journals for Hybrid accounts
+    promises.push(getHybridJournals(contactId, customer.associatedVendorId));
+    
+    const [bRes, vpRes, jRes] = await Promise.all(promises);
     billsResult = bRes;
     vendorPaymentsResult = vpRes;
-    console.timeEnd('billsAndVendorPayments');
+    journalsResult = jRes;
+    console.timeEnd('hybridData');
   }
   
   if (!invoicesResult.success) {
@@ -440,7 +580,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
   const orgId = getZohoOrgId() || process.env.ZOHO_BOOKS_ORG_ID;
   let mergedRaw: Array<{
     id: string;
-    type: 'invoice' | 'payment' | 'bill' | 'vendor_payment';
+    type: 'invoice' | 'payment' | 'bill' | 'vendor_payment' | 'journal';
     date: string;
     datetime: string;
     timestamp: number;
@@ -508,6 +648,22 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
         appliedBills: vp.appliedBills,
         zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/paymentsmade/${vp.paymentId}` : undefined,
         notes: vp.notes,
+      };
+    }),
+    ...(journalsResult.success ? journalsResult.data : []).map((j: any) => {
+      return {
+        id: j.journalId,
+        type: 'journal' as const,
+        date: j.date,
+        datetime: j.date,
+        timestamp: new Date(j.date || 0).getTime(),
+        description: j.description || '',
+        amount: j.amount,
+        netEffect: j.netEffect,
+        zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/accountant/journals/${j.journalId}?filter_by=Status.All%2CJournalDate.All&per_page=25&sort_column=journal_date&sort_order=D` : undefined,
+        notes: j.notes,
+        entryNumber: j.entryNumber,
+        referenceNumber: j.referenceNumber,
       };
     }),
   ];

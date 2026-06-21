@@ -89,7 +89,9 @@ export async function GET(req: Request) {
         if (res.ok) {
           const data = await res.json();
           if (data.contacts && data.contacts.length > 0) {
-            const topContacts = data.contacts.slice(0, 5);
+            const customerContacts = data.contacts.filter((c: any) => c.contact_type === 'customer' || c.is_customer === true);
+            const topContacts = customerContacts.slice(0, 5);
+
             customers = topContacts.map((c: any) => ({
               id: c.contact_id,
               name: c.contact_name,

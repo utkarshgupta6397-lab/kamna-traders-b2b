@@ -476,7 +476,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
         amount: pmt.amount,
         netEffect: -pmt.amount,
         isVerified: pmt.isVerified,
-        zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/customerpayments/${pmt.paymentId}` : undefined,
+        zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/paymentsreceived/${pmt.paymentId}?customview_id=1759923000006656536&per_page=200&sort_column=date&sort_order=D` : undefined,
         notes: pmt.notes,
       };
     }),

@@ -182,40 +182,41 @@ export default function CustomerStatementView() {
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [invertBalanceColor, setInvertBalanceColor] = useState(false);
 
-  // Expanded Bills State
-  const [expandedBills, setExpandedBills] = useState<Record<string, boolean>>({});
-  const [billLineItems, setBillLineItems] = useState<Record<string, any[]>>({});
-  const [loadingBills, setLoadingBills] = useState<Record<string, boolean>>({});
-  const [billErrors, setBillErrors] = useState<Record<string, string>>({});
+  // Expanded Transactions State
+  const [expandedTx, setExpandedTx] = useState<Record<string, boolean>>({});
+  const [txLineItems, setTxLineItems] = useState<Record<string, any[]>>({});
+  const [loadingTx, setLoadingTx] = useState<Record<string, boolean>>({});
+  const [txErrors, setTxErrors] = useState<Record<string, string>>({});
 
-  const toggleBillExpand = async (billId: string, e: React.MouseEvent) => {
+  const toggleTxExpand = async (txId: string, txType: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const isExpanded = !!expandedBills[billId];
-    setExpandedBills(prev => ({ ...prev, [billId]: !isExpanded }));
+    const isExpanded = !!expandedTx[txId];
+    setExpandedTx(prev => ({ ...prev, [txId]: !isExpanded }));
 
     if (!isExpanded) {
-      if (billLineItems[billId]) {
-        console.log(`[Bill Expand Cache Hit] Using cached line items for Bill ${billId}`);
-      } else if (!loadingBills[billId]) {
-        console.log(`[Bill Expand Fetch] Fetching bill details from API for Bill ${billId}`);
-        setLoadingBills(prev => ({ ...prev, [billId]: true }));
-        setBillErrors(prev => ({ ...prev, [billId]: '' }));
+      if (txLineItems[txId]) {
+        console.log(`[Tx Expand Cache Hit] Using cached line items for ${txType} ${txId}`);
+      } else if (!loadingTx[txId]) {
+        console.log(`[Tx Expand Fetch] Fetching details from API for ${txType} ${txId}`);
+        setLoadingTx(prev => ({ ...prev, [txId]: true }));
+        setTxErrors(prev => ({ ...prev, [txId]: '' }));
         try {
-          const res = await fetch(`/api/admin/customer-statement/bill/${billId}`);
+          const endpoint = txType === 'invoice' ? 'invoice' : 'bill';
+          const res = await fetch(`/api/admin/customer-statement/${endpoint}/${txId}`);
           const data = await res.json();
           if (data.success && data.data && data.data.line_items) {
-            setBillLineItems(prev => ({ ...prev, [billId]: data.data.line_items }));
+            setTxLineItems(prev => ({ ...prev, [txId]: data.data.line_items }));
           } else {
-            setBillErrors(prev => ({ ...prev, [billId]: data.error || 'Unable to load bill items' }));
+            setTxErrors(prev => ({ ...prev, [txId]: data.error || `Unable to load ${txType} items` }));
           }
         } catch (err: any) {
-          setBillErrors(prev => ({ ...prev, [billId]: err.message || 'Unable to load bill items' }));
+          setTxErrors(prev => ({ ...prev, [txId]: err.message || `Unable to load ${txType} items` }));
         } finally {
-          setLoadingBills(prev => ({ ...prev, [billId]: false }));
+          setLoadingTx(prev => ({ ...prev, [txId]: false }));
         }
       }
     } else {
-      console.log(`[Bill Collapse] Collapsing Bill ${billId}`);
+      console.log(`[Tx Collapse] Collapsing ${txType} ${txId}`);
     }
   };
 
@@ -1647,10 +1648,10 @@ export default function CustomerStatementView() {
                       {/* Transaction rows */}
                       {visibleTransactions.map((tx: any) => {
                         const displayDesc = cleanDescription(tx.description, tx.type);
-                        const isExpanded = expandedBills[tx.id];
-                        const lineItems = billLineItems[tx.id];
-                        const isLoading = loadingBills[tx.id];
-                        const errorMsg = billErrors[tx.id];
+                        const isExpanded = expandedTx[tx.id];
+                        const lineItems = txLineItems[tx.id];
+                        const isLoading = loadingTx[tx.id];
+                        const errorMsg = txErrors[tx.id];
 
                         return (
                           <React.Fragment key={tx.id}>
@@ -1658,8 +1659,8 @@ export default function CustomerStatementView() {
                               className={`group even:bg-gray-50/40 hover:bg-blue-50/80 transition-all relative ${
                                 calcEntries.some(e => e.id === tx.id) ? 'bg-purple-50/50 even:bg-purple-50/50' : ''
                               }`}
-                              onClick={tx.type === 'bill' ? (e) => toggleBillExpand(tx.id, e) : undefined}
-                              style={{ cursor: tx.type === 'bill' ? 'pointer' : 'default' }}
+                              onClick={(tx.type === 'bill' || tx.type === 'invoice') ? (e) => toggleTxExpand(tx.id, tx.type, e) : undefined}
+                              style={{ cursor: (tx.type === 'bill' || tx.type === 'invoice') ? 'pointer' : 'default' }}
                             >
                             <td className="px-4 py-1.5 text-[10.5px] text-gray-500 whitespace-nowrap align-middle">
                               {fmtDateTime(tx.datetime || tx.date)}
@@ -1687,7 +1688,12 @@ export default function CustomerStatementView() {
                             )}
                             <td className="px-4 py-1.5 align-middle whitespace-nowrap">
                               {(() => {
-                                if (tx.type === 'invoice') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[9px] font-bold text-slate-700 uppercase tracking-wide">Sales Invoice</span>;
+                                if (tx.type === 'invoice') return (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`text-[10px] text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[9px] font-bold text-slate-700 uppercase tracking-wide">Sales Invoice</span>
+                                  </div>
+                                );
                                 if (tx.type === 'payment') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-emerald-200 bg-emerald-50 text-[9px] font-bold text-emerald-700 uppercase tracking-wide">Customer Payment</span>;
                                 if (tx.type === 'vendor_payment') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-purple-200 bg-purple-50 text-[9px] font-bold text-purple-700 uppercase tracking-wide">Vendor Payment</span>;
                                 if (tx.type === 'bill') return (
@@ -1817,13 +1823,26 @@ export default function CustomerStatementView() {
                               })()}
                             </td>
                             </tr>
-                            {isExpanded && tx.type === 'bill' && (
-                              <tr className="bg-orange-50/20">
-                                <td colSpan={statementMode === 'group' ? 8 : 7} className="px-4 py-3 border-l-[3px] border-orange-300">
+                            {isExpanded && (tx.type === 'bill' || tx.type === 'invoice') && (() => {
+                              const isBill = tx.type === 'bill';
+                              const theme = isBill ? {
+                                bg: 'bg-orange-50/20',
+                                borderLeft: 'border-orange-300',
+                                spinner: 'border-orange-400',
+                                rowBorder: 'border-orange-100/60'
+                              } : {
+                                bg: 'bg-slate-50/40',
+                                borderLeft: 'border-slate-300',
+                                spinner: 'border-slate-400',
+                                rowBorder: 'border-slate-200/60'
+                              };
+                              return (
+                              <tr className={theme.bg}>
+                                <td colSpan={statementMode === 'group' ? 8 : 7} className={`px-4 py-3 border-l-[3px] ${theme.borderLeft}`}>
                                   <div className="pl-6">
                                     {isLoading ? (
                                       <div className="text-xs text-gray-500 flex items-center gap-2">
-                                        <span className="w-3 h-3 border-2 border-orange-400 border-t-transparent rounded-full animate-spin"></span>
+                                        <span className={`w-3 h-3 border-2 ${theme.spinner} border-t-transparent rounded-full animate-spin`}></span>
                                         Loading items...
                                       </div>
                                     ) : errorMsg ? (
@@ -1843,7 +1862,7 @@ export default function CustomerStatementView() {
                                           }
 
                                           return (
-                                            <div key={item.line_item_id || idx} className="text-[11px] flex items-center justify-between text-gray-600 pb-1.5 border-b border-orange-100/60 last:border-0 last:pb-0">
+                                            <div key={item.line_item_id || idx} className={`text-[11px] flex items-center justify-between text-gray-600 pb-1.5 border-b ${theme.rowBorder} last:border-0 last:pb-0`}>
                                               <div className="flex items-center gap-2">
                                                 <span className="text-[10px] text-gray-400 font-mono">#{idx + 1}</span>
                                                 <span className="font-medium text-gray-800">{item.name}</span>
@@ -1862,7 +1881,8 @@ export default function CustomerStatementView() {
                                   </div>
                                 </td>
                               </tr>
-                            )}
+                              );
+                            })()}
                           </React.Fragment>
                         );
                       })}

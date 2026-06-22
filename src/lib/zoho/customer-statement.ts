@@ -45,6 +45,8 @@ export type StatementTransaction = {
    * invoice => +amount, payment => -amount, bill => -amount, vendor_payment => +amount
    */
   netEffect: number;
+  customerNetEffect?: number;
+  vendorNetEffect?: number;
   balanceAfter: number;
   isVerified?: boolean;
   zohoUrl?: string;
@@ -62,6 +64,10 @@ export type CustomerStatement = {
   outstandingReceivable: number;
   /** For hybrid accounts: raw outstanding_payable_amount from Zoho */
   outstandingPayable: number;
+  /** True net customer position including unused credits */
+  customerNet: number;
+  /** True net vendor position including unused credits */
+  vendorNet: number;
   /** true for hybrid contacts (customer + vendor) */
   isHybrid: boolean;
   transactions: StatementTransaction[];
@@ -286,6 +292,35 @@ export async function getVendorBills(vendorId: string): Promise<{
   }
 }
 
+export async function getVendorBillById(billId: string): Promise<{
+  success: boolean;
+  data?: any;
+  raw?: any;
+  error?: string;
+}> {
+  try {
+    const orgId = getZohoOrgId();
+    if (!orgId) throw new Error('Missing ZOHO_BOOKS_ORG_ID or ZOHO_ORGANIZATION_ID in environment variables');
+    const accessToken = await getZohoTokens();
+    if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
+
+    const url = `${API_BASE_URL}/books/v3/bills/${billId}?organization_id=${orgId}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+    });
+    const data = await response.json();
+    
+    if (!response.ok) {
+      return { success: false, error: data.message || 'Failed to fetch bill details', raw: data };
+    }
+    
+    return { success: true, data: data.bill, raw: data };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Internal Server Error' };
+  }
+}
+
 export type CustomerStatementVendorPayment = {
   paymentId: string;
   paymentNumber: string;
@@ -452,15 +487,24 @@ export async function getHybridJournals(contactId: string, associatedVendorId: s
           // Determine netEffect from line items. 
           // From the statement perspective: Debit is positive (adds to customer balance), Credit is negative.
           let netEffect = 0;
+          let customerNetEffect = 0;
+          let vendorNetEffect = 0;
           let amount = 0;
           
           for (const line of relevantLines) {
             const lineAmount = Number(line.amount);
+            const isCustomerRow = line.customer_id === contactId;
+            const isVendorRow = line.customer_id === associatedVendorId;
+            
             if (line.debit_or_credit === 'debit') {
               netEffect += lineAmount;
+              if (isCustomerRow) customerNetEffect += lineAmount;
+              if (isVendorRow) vendorNetEffect += lineAmount;
               amount += lineAmount;
             } else if (line.debit_or_credit === 'credit') {
               netEffect -= lineAmount;
+              if (isCustomerRow) customerNetEffect -= lineAmount;
+              if (isVendorRow) vendorNetEffect -= lineAmount;
               amount += lineAmount;
             }
           }
@@ -478,6 +522,8 @@ export async function getHybridJournals(contactId: string, associatedVendorId: s
             date: journal.journal_date,
             amount: Math.abs(amount), // absolute value for the display amount
             netEffect,
+            customerNetEffect,
+            vendorNetEffect,
             referenceNumber: journal.reference_number,
             notes: journal.notes,
             description,
@@ -548,15 +594,8 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
   if (customer.associatedVendorId) {
     console.time('hybridData');
     const promises: Promise<any>[] = [];
-    
-    if (outstandingPayable > 0) {
-      promises.push(getVendorBills(customer.associatedVendorId));
-      promises.push(getVendorPayments(customer.associatedVendorId));
-    } else {
-      promises.push(Promise.resolve({ success: true, data: [] }));
-      promises.push(Promise.resolve({ success: true, data: [] }));
-    }
-    
+    promises.push(getVendorBills(customer.associatedVendorId));
+    promises.push(getVendorPayments(customer.associatedVendorId));
     // Always fetch journals for Hybrid accounts
     promises.push(getHybridJournals(contactId, customer.associatedVendorId));
     
@@ -587,6 +626,8 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
     description: string;
     amount: number;
     netEffect: number;
+    customerNetEffect?: number;
+    vendorNetEffect?: number;
     isVerified?: boolean;
     zohoUrl?: string;
     appliedBills?: { billNumber: string; appliedAmount: number }[];
@@ -601,6 +642,8 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
       description: `Invoice ${inv.invoiceNumber}`,
       amount: inv.total,
       netEffect: inv.total,
+      customerNetEffect: inv.total,
+      vendorNetEffect: 0,
       zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/invoices/${inv.invoiceId}` : undefined,
     })),
     ...payments.map((pmt: any) => {
@@ -615,6 +658,8 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
         description: desc,
         amount: pmt.amount,
         netEffect: -pmt.amount,
+        customerNetEffect: -pmt.amount,
+        vendorNetEffect: 0,
         isVerified: pmt.isVerified,
         zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/paymentsreceived/${pmt.paymentId}?customview_id=1759923000006656536&per_page=200&sort_column=date&sort_order=D` : undefined,
         notes: pmt.notes,
@@ -629,6 +674,8 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
       description: b.referenceNumber ? `Purchase Bill - ${b.referenceNumber}` : `Purchase Bill - ${b.billNumber}`,
       amount: b.amount,
       netEffect: -b.amount,
+      customerNetEffect: 0,
+      vendorNetEffect: -b.amount,
       zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/bills/${b.billId}` : undefined,
     })),
     ...vendorPayments.map((vp: any) => {
@@ -645,7 +692,12 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
         description: desc,
         amount: vp.amount,
         netEffect: vp.amount,
-        appliedBills: vp.appliedBills,
+        customerNetEffect: 0,
+        vendorNetEffect: vp.amount,
+        appliedBills: vp.bills ? vp.bills.map((b: any) => ({
+          billNumber: b.billNumber,
+          appliedAmount: b.amountApplied
+        })) : undefined,
         zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/paymentsmade/${vp.paymentId}` : undefined,
         notes: vp.notes,
       };
@@ -743,6 +795,8 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
       closingBalance: netClosingBalance,
       outstandingReceivable,
       outstandingPayable,
+      customerNet,
+      vendorNet,
       isHybrid,
       transactions,
       transactionCount: transactions.length,

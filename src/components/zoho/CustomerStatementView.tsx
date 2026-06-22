@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Search, RefreshCw, ChevronDown, ChevronRight,
   FileJson, Copy, AlertCircle, User, Phone,
@@ -181,6 +181,43 @@ export default function CustomerStatementView() {
   const [filterVendorPmts, setFilterVendorPmts] = useState(true);
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [invertBalanceColor, setInvertBalanceColor] = useState(false);
+
+  // Expanded Bills State
+  const [expandedBills, setExpandedBills] = useState<Record<string, boolean>>({});
+  const [billLineItems, setBillLineItems] = useState<Record<string, any[]>>({});
+  const [loadingBills, setLoadingBills] = useState<Record<string, boolean>>({});
+  const [billErrors, setBillErrors] = useState<Record<string, string>>({});
+
+  const toggleBillExpand = async (billId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const isExpanded = !!expandedBills[billId];
+    setExpandedBills(prev => ({ ...prev, [billId]: !isExpanded }));
+
+    if (!isExpanded) {
+      if (billLineItems[billId]) {
+        console.log(`[Bill Expand Cache Hit] Using cached line items for Bill ${billId}`);
+      } else if (!loadingBills[billId]) {
+        console.log(`[Bill Expand Fetch] Fetching bill details from API for Bill ${billId}`);
+        setLoadingBills(prev => ({ ...prev, [billId]: true }));
+        setBillErrors(prev => ({ ...prev, [billId]: '' }));
+        try {
+          const res = await fetch(`/api/admin/customer-statement/bill/${billId}`);
+          const data = await res.json();
+          if (data.success && data.data && data.data.line_items) {
+            setBillLineItems(prev => ({ ...prev, [billId]: data.data.line_items }));
+          } else {
+            setBillErrors(prev => ({ ...prev, [billId]: data.error || 'Unable to load bill items' }));
+          }
+        } catch (err: any) {
+          setBillErrors(prev => ({ ...prev, [billId]: err.message || 'Unable to load bill items' }));
+        } finally {
+          setLoadingBills(prev => ({ ...prev, [billId]: false }));
+        }
+      }
+    } else {
+      console.log(`[Bill Collapse] Collapsing Bill ${billId}`);
+    }
+  };
 
   const handleModeChange = (mode: 'single' | 'group') => {
     setStatementMode(mode);
@@ -1205,18 +1242,40 @@ export default function CustomerStatementView() {
                       <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wide">Sales</span>
                       <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">Receivable</span>
                     </div>
-                    <div className="px-4 py-3 flex-1 flex flex-col justify-between gap-3">
+                    <div className="px-4 py-3 flex-1 flex flex-col justify-between gap-2.5">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-gray-500 font-medium">Opening Balance</span>
+                        {(() => {
+                          const customerNetEffectSum = s.transactions.reduce((sum: number, t: any) => sum + (t.customerNetEffect || 0), 0);
+                          const salesOpening = s.customerNet - customerNetEffectSum;
+                          const isCredit = salesOpening < 0;
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <span className={`font-bold ${isCredit ? 'text-emerald-600' : 'text-gray-800'}`}>{fmt(Math.abs(salesOpening))}</span>
+                              {isCredit && <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded-sm uppercase font-bold tracking-wider leading-none">Cr</span>}
+                            </div>
+                          );
+                        })()}
+                      </div>
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-gray-500 font-medium">Total Invoiced</span>
-                        <span className="font-bold text-gray-800">{fmt(s.transactions.filter((t:any) => t.type === 'invoice').reduce((sum:number, t:any) => sum + Math.abs(t.netEffect), 0))}</span>
+                        <span className="font-bold text-gray-800">{fmt(s.transactions.filter((t:any) => (t.customerNetEffect || 0) > 0).reduce((sum:number, t:any) => sum + Math.abs(t.customerNetEffect), 0))}</span>
                       </div>
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-gray-500 font-medium">Total Received</span>
-                        <span className="font-bold text-emerald-600">{fmt(s.transactions.filter((t:any) => t.type === 'payment').reduce((sum:number, t:any) => sum + Math.abs(t.netEffect), 0))}</span>
+                        <span className="font-bold text-emerald-600">{fmt(s.transactions.filter((t:any) => (t.customerNetEffect || 0) < 0).reduce((sum:number, t:any) => sum + Math.abs(t.customerNetEffect), 0))}</span>
                       </div>
                       <div className="pt-2 border-t border-gray-100 flex justify-between items-center">
                         <span className="text-[10px] uppercase font-bold text-gray-400">Outstanding</span>
-                        <span className="font-extrabold text-emerald-600 text-sm">{fmt(s.outstandingReceivable)}</span>
+                        {(() => {
+                          const isCredit = s.customerNet < 0;
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <span className={`font-extrabold text-sm ${isCredit ? 'text-emerald-600' : 'text-gray-800'}`}>{fmt(Math.abs(s.customerNet))}</span>
+                              {isCredit && <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded-sm uppercase font-bold tracking-wider leading-none">Cr</span>}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -1227,18 +1286,40 @@ export default function CustomerStatementView() {
                       <span className="text-[10px] font-bold text-orange-800 uppercase tracking-wide">Purchase</span>
                       <span className="text-[10px] font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">Payable</span>
                     </div>
-                    <div className="px-4 py-3 flex-1 flex flex-col justify-between gap-3">
+                    <div className="px-4 py-3 flex-1 flex flex-col justify-between gap-2.5">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-gray-500 font-medium">Opening Balance</span>
+                        {(() => {
+                          const vendorNetEffectSum = s.transactions.reduce((sum: number, t: any) => sum + (t.vendorNetEffect || 0), 0);
+                          const purchaseOpening = s.vendorNet - vendorNetEffectSum;
+                          const isCredit = purchaseOpening < 0;
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <span className={`font-bold ${isCredit ? 'text-rose-600' : 'text-gray-800'}`}>{fmt(Math.abs(purchaseOpening))}</span>
+                              {isCredit && <span className="text-[8px] bg-rose-100 text-rose-700 px-1 py-0.5 rounded-sm uppercase font-bold tracking-wider leading-none">Cr</span>}
+                            </div>
+                          );
+                        })()}
+                      </div>
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-gray-500 font-medium">Total Billed</span>
-                        <span className="font-bold text-gray-800">{fmt(s.transactions.filter((t:any) => t.type === 'bill').reduce((sum:number, t:any) => sum + Math.abs(t.netEffect), 0))}</span>
+                        <span className="font-bold text-gray-800">{fmt(s.transactions.filter((t:any) => (t.vendorNetEffect || 0) < 0).reduce((sum:number, t:any) => sum + Math.abs(t.vendorNetEffect), 0))}</span>
                       </div>
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-gray-500 font-medium">Total Paid</span>
-                        <span className="font-bold text-blue-600">{fmt(s.transactions.filter((t:any) => t.type === 'vendor_payment').reduce((sum:number, t:any) => sum + Math.abs(t.netEffect), 0))}</span>
+                        <span className="font-bold text-blue-600">{fmt(s.transactions.filter((t:any) => (t.vendorNetEffect || 0) > 0).reduce((sum:number, t:any) => sum + Math.abs(t.vendorNetEffect), 0))}</span>
                       </div>
                       <div className="pt-2 border-t border-gray-100 flex justify-between items-center">
                         <span className="text-[10px] uppercase font-bold text-gray-400">Outstanding</span>
-                        <span className="font-extrabold text-rose-600 text-sm">{fmt(s.outstandingPayable)}</span>
+                        {(() => {
+                          const isCredit = s.vendorNet < 0;
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <span className={`font-extrabold text-sm ${isCredit ? 'text-rose-600' : 'text-gray-800'}`}>{fmt(Math.abs(s.vendorNet))}</span>
+                              {isCredit && <span className="text-[9px] bg-rose-100 text-rose-700 px-1 py-0.5 rounded-sm uppercase font-bold tracking-wider leading-none">Cr</span>}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -1566,13 +1647,20 @@ export default function CustomerStatementView() {
                       {/* Transaction rows */}
                       {visibleTransactions.map((tx: any) => {
                         const displayDesc = cleanDescription(tx.description, tx.type);
+                        const isExpanded = expandedBills[tx.id];
+                        const lineItems = billLineItems[tx.id];
+                        const isLoading = loadingBills[tx.id];
+                        const errorMsg = billErrors[tx.id];
+
                         return (
-                          <tr 
-                            key={tx.id} 
-                            className={`group even:bg-gray-50/40 hover:bg-blue-50/80 transition-all relative ${
-                              calcEntries.some(e => e.id === tx.id) ? 'bg-purple-50/50 even:bg-purple-50/50' : ''
-                            }`}
-                          >
+                          <React.Fragment key={tx.id}>
+                            <tr 
+                              className={`group even:bg-gray-50/40 hover:bg-blue-50/80 transition-all relative ${
+                                calcEntries.some(e => e.id === tx.id) ? 'bg-purple-50/50 even:bg-purple-50/50' : ''
+                              }`}
+                              onClick={tx.type === 'bill' ? (e) => toggleBillExpand(tx.id, e) : undefined}
+                              style={{ cursor: tx.type === 'bill' ? 'pointer' : 'default' }}
+                            >
                             <td className="px-4 py-1.5 text-[10.5px] text-gray-500 whitespace-nowrap align-middle">
                               {fmtDateTime(tx.datetime || tx.date)}
                             </td>
@@ -1602,7 +1690,12 @@ export default function CustomerStatementView() {
                                 if (tx.type === 'invoice') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[9px] font-bold text-slate-700 uppercase tracking-wide">Sales Invoice</span>;
                                 if (tx.type === 'payment') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-emerald-200 bg-emerald-50 text-[9px] font-bold text-emerald-700 uppercase tracking-wide">Customer Payment</span>;
                                 if (tx.type === 'vendor_payment') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-purple-200 bg-purple-50 text-[9px] font-bold text-purple-700 uppercase tracking-wide">Vendor Payment</span>;
-                                if (tx.type === 'bill') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-[9px] font-bold text-orange-700 uppercase tracking-wide">Purchase Bill</span>;
+                                if (tx.type === 'bill') return (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`text-[10px] text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-[9px] font-bold text-orange-700 uppercase tracking-wide">Purchase Bill</span>
+                                  </div>
+                                );
                                 if (tx.type === 'journal') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px] font-bold text-gray-600 uppercase tracking-wide">JOURNAL</span>;
                                 return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px] font-bold text-gray-500 uppercase tracking-wide">{tx.type}</span>;
                               })()}
@@ -1723,7 +1816,54 @@ export default function CustomerStatementView() {
                                 );
                               })()}
                             </td>
-                          </tr>
+                            </tr>
+                            {isExpanded && tx.type === 'bill' && (
+                              <tr className="bg-orange-50/20">
+                                <td colSpan={statementMode === 'group' ? 8 : 7} className="px-4 py-3 border-l-[3px] border-orange-300">
+                                  <div className="pl-6">
+                                    {isLoading ? (
+                                      <div className="text-xs text-gray-500 flex items-center gap-2">
+                                        <span className="w-3 h-3 border-2 border-orange-400 border-t-transparent rounded-full animate-spin"></span>
+                                        Loading items...
+                                      </div>
+                                    ) : errorMsg ? (
+                                      <div className="text-xs text-red-500 flex items-center gap-1.5">
+                                        <span className="font-bold">⚠️</span> {errorMsg}
+                                      </div>
+                                    ) : lineItems && lineItems.length > 0 ? (
+                                      <div className="flex flex-col gap-1.5 max-w-3xl">
+                                        {lineItems.map((item: any, idx: number) => {
+                                          let qty = Number(item.quantity || 0);
+                                          let rate = Number(item.rate || 0);
+                                          let unit = item.unit ? ` ${item.unit}` : '';
+                                          
+                                          const caseSize = Number(item.case_size || 0);
+                                          if (caseSize > 0) {
+                                            rate = rate / caseSize;
+                                          }
+
+                                          return (
+                                            <div key={item.line_item_id || idx} className="text-[11px] flex items-center justify-between text-gray-600 pb-1.5 border-b border-orange-100/60 last:border-0 last:pb-0">
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-[10px] text-gray-400 font-mono">#{idx + 1}</span>
+                                                <span className="font-medium text-gray-800">{item.name}</span>
+                                              </div>
+                                              <div className="flex items-center gap-4 text-right tabular-nums">
+                                                <span className="w-32 text-gray-500 whitespace-nowrap">{qty}{unit} @ {fmt(rate)}</span>
+                                                <span className="w-20 font-semibold text-gray-900">{fmt(item.item_total)}</span>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <div className="text-xs text-gray-500 italic">No line items found.</div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
                         );
                       })}
 

@@ -51,6 +51,19 @@ function fmtBalance(n: number) {
   return n > 0 ? val : `-${val}`;
 }
 
+const BalanceIndicator = ({ balance }: { balance: number }) => {
+  if (balance === 0 || Math.abs(balance) < 0.01) return null;
+  const isReceivable = balance > 0;
+  return (
+    <span 
+      className={`inline-flex items-center justify-center mr-1 text-[11px] font-bold ${isReceivable ? 'text-emerald-500' : 'text-rose-500'}`} 
+      title={isReceivable ? 'Receivable (Owes You)' : 'Payable (You Owe)'}
+    >
+      {isReceivable ? '↙' : '↗'}
+    </span>
+  );
+};
+
 /** Humanize cached age in ms */
 function formatCachedAge(ms: number): string {
   const seconds = Math.floor(ms / 1000);
@@ -1090,7 +1103,7 @@ export default function CustomerStatementView() {
         const clipIdx = isValidClip ? clipFromIndex : -1;
         const isClipped = clipIdx !== -1;
         const activeTxs = isClipped ? s.transactions.slice(clipIdx) : s.transactions;
-        const chronologicalVisible = isExpanded ? activeTxs : activeTxs.slice(-50);
+        const chronologicalVisible = isExpanded ? activeTxs : activeTxs.slice(-10);
         const dynamicOpeningBalance = chronologicalVisible.length > 0
           ? (chronologicalVisible[0].balanceAfter - chronologicalVisible[0].netEffect)
           : s.closingBalance;
@@ -1340,10 +1353,11 @@ export default function CustomerStatementView() {
                     </div>
                     <div className="px-4 py-3 flex-1 flex flex-col justify-center items-center text-center">
                       <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Final Balance</div>
-                      <div className={`text-xl font-black tabular-nums ${
+                      <div className={`text-xl font-black tabular-nums flex items-center justify-center ${
                         s.closingBalance === 0 || Math.abs(s.closingBalance) < 0.01 ? 'text-gray-800' :
                         s.closingBalance > 0 ? 'text-emerald-600' : 'text-rose-600'
                       }`}>
+                        <BalanceIndicator balance={s.closingBalance} />
                         {s.closingBalance === 0 || Math.abs(s.closingBalance) < 0.01 ? '₹0' : fmt(Math.abs(s.closingBalance))}
                       </div>
                       <div className="text-[9px] text-gray-400 mt-2 font-medium bg-gray-50 px-2 py-1 rounded">
@@ -1403,7 +1417,7 @@ export default function CustomerStatementView() {
                       }
 
                       // Decouple from combined visibleTransactions to act as independent financial snapshots
-                      const firmVisibleTxs = isExpanded ? stmt.transactions : stmt.transactions.slice(-50);
+                      const firmVisibleTxs = isExpanded ? stmt.transactions : stmt.transactions.slice(-10);
                       const firmInvoiced = firmVisibleTxs.filter((tx: any) => tx.type === 'invoice').reduce((sum: number, tx: any) => sum + Math.abs(tx.netEffect), 0);
                       const firmPaid = firmVisibleTxs.filter((tx: any) => tx.type === 'payment').reduce((sum: number, tx: any) => sum + Math.abs(tx.netEffect), 0);
                       
@@ -1510,7 +1524,8 @@ export default function CustomerStatementView() {
                               </div>
                               <div className="flex justify-between items-center pt-3 border-t border-gray-100 mt-auto">
                                 <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wide">Closing Balance</span>
-                                <span className={`font-extrabold tabular-nums ${stmt.closingBalance > 0 ? 'text-rose-600' : stmt.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
+                                <span className={`font-extrabold tabular-nums flex items-center justify-end ${stmt.closingBalance > 0 ? 'text-rose-600' : stmt.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
+                                  <BalanceIndicator balance={stmt.closingBalance} />
                                   {fmtBalance(stmt.closingBalance)}
                                 </span>
                               </div>
@@ -1637,6 +1652,7 @@ export default function CustomerStatementView() {
                         <td className="px-4 py-1.5 text-right text-[11px] text-gray-400">—</td>
                         <td className="px-4 py-1.5 text-right text-[11px] text-gray-400">—</td>
                         <td className="px-4 py-1.5 text-right text-[11.5px] font-extrabold tabular-nums">
+                          <BalanceIndicator balance={dynamicOpeningBalance} />
                           {openingPresentation.isCredit ? (
                             <span className="text-emerald-600">{openingPresentation.amount}</span>
                           ) : (
@@ -1816,7 +1832,8 @@ export default function CustomerStatementView() {
                                 const positiveColorClass = invertBalanceColor ? 'text-emerald-600' : 'text-rose-600';
                                 const negativeColorClass = invertBalanceColor ? 'text-rose-600' : 'text-emerald-600';
                                 return (
-                                  <span className={`text-[11.5px] tabular-nums font-extrabold ${isPositive ? positiveColorClass : negativeColorClass}`}>
+                                  <span className={`text-[11.5px] tabular-nums font-extrabold flex items-center justify-end ${isPositive ? positiveColorClass : negativeColorClass}`}>
+                                    <BalanceIndicator balance={b} />
                                     {fmtBalance(b)}
                                   </span>
                                 );
@@ -1894,6 +1911,7 @@ export default function CustomerStatementView() {
                           </td>
                         </tr>
                       )}
+
 
                     </tbody>
                   </table>
@@ -2043,13 +2061,13 @@ export default function CustomerStatementView() {
 
                 </div>
                 {/* View All Toggle */}
-                {s.transactions.length > 50 && (
-                  <div className="border-t border-gray-100 bg-gray-50 p-2 text-center">
+                {s.transactions.length > 10 && (
+                  <div className="border-t border-gray-100 bg-gray-50 p-2 text-center print:hidden">
                     <button
                       onClick={() => setIsExpanded(!isExpanded)}
                       className="text-xs font-bold text-[#1A2766] hover:text-[#25368a] px-4 py-1.5 rounded-md hover:bg-blue-50 transition-colors"
                     >
-                      {isExpanded ? 'Show Less' : `View All Transactions (${s.transactions.length})`}
+                      {isExpanded ? 'Show Less' : `View Remaining Transactions (${s.transactions.length - 10})`}
                     </button>
                   </div>
                 )}
@@ -2397,13 +2415,22 @@ export default function CustomerStatementView() {
                 </div>
                 <div className="w-px h-8 bg-gray-200 hidden sm:block"></div>
                 <div className="flex flex-col items-center justify-center">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Opening Balance</span>
+                  <span className={`text-[14px] font-extrabold tabular-nums flex items-center justify-center ${dynamicOpeningBalance > 0 ? 'text-rose-600' : dynamicOpeningBalance < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
+                    <BalanceIndicator balance={dynamicOpeningBalance} />
+                    {fmtBalance(dynamicOpeningBalance)}
+                  </span>
+                </div>
+                <div className="w-px h-8 bg-gray-200 hidden sm:block"></div>
+                <div className="flex flex-col items-center justify-center">
                   <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Total Credit</span>
                   <span className="text-[14px] font-extrabold text-emerald-600 tabular-nums">{fmt(totalCreditAmount)}</span>
                 </div>
                 <div className="w-px h-8 bg-gray-200 hidden sm:block"></div>
                 <div className="flex flex-col items-center justify-center">
                   <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Final Balance</span>
-                  <span className={`text-[15px] font-black tabular-nums ${dynamicClosingBalance > 0 ? 'text-rose-600' : dynamicClosingBalance < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
+                  <span className={`text-[15px] font-black tabular-nums flex items-center justify-center ${dynamicClosingBalance > 0 ? 'text-rose-600' : dynamicClosingBalance < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
+                    <BalanceIndicator balance={dynamicClosingBalance} />
                     {fmtBalance(dynamicClosingBalance)}
                   </span>
                 </div>

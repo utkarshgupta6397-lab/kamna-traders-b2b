@@ -1090,7 +1090,7 @@ export default function CustomerStatementView() {
         const clipIdx = isValidClip ? clipFromIndex : -1;
         const isClipped = clipIdx !== -1;
         const activeTxs = isClipped ? s.transactions.slice(clipIdx) : s.transactions;
-        const chronologicalVisible = isExpanded ? activeTxs : activeTxs.slice(-12);
+        const chronologicalVisible = isExpanded ? activeTxs : activeTxs.slice(-50);
         const dynamicOpeningBalance = chronologicalVisible.length > 0
           ? (chronologicalVisible[0].balanceAfter - chronologicalVisible[0].netEffect)
           : s.closingBalance;
@@ -1403,7 +1403,7 @@ export default function CustomerStatementView() {
                       }
 
                       // Decouple from combined visibleTransactions to act as independent financial snapshots
-                      const firmVisibleTxs = isExpanded ? stmt.transactions : stmt.transactions.slice(-12);
+                      const firmVisibleTxs = isExpanded ? stmt.transactions : stmt.transactions.slice(-50);
                       const firmInvoiced = firmVisibleTxs.filter((tx: any) => tx.type === 'invoice').reduce((sum: number, tx: any) => sum + Math.abs(tx.netEffect), 0);
                       const firmPaid = firmVisibleTxs.filter((tx: any) => tx.type === 'payment').reduce((sum: number, tx: any) => sum + Math.abs(tx.netEffect), 0);
                       
@@ -2043,7 +2043,7 @@ export default function CustomerStatementView() {
 
                 </div>
                 {/* View All Toggle */}
-                {s.transactions.length > 12 && (
+                {s.transactions.length > 50 && (
                   <div className="border-t border-gray-100 bg-gray-50 p-2 text-center">
                     <button
                       onClick={() => setIsExpanded(!isExpanded)}

@@ -113,7 +113,7 @@ export async function getCustomerInvoices(contactId: string): Promise<{
     // Fetch invoices — no custom sort/status params (Zoho rejects unsupported enums)
     // We filter void and sort locally after receiving the response
     // Fetch 15 as buffer — void invoices are filtered in-app
-    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=100&sort_column=date&sort_order=D`;
+    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=50&sort_column=date&sort_order=D`;
     const response = await fetch(url, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
@@ -206,7 +206,7 @@ export async function getCustomerPayments(contactId: string): Promise<{
     const accessToken = await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    const url = `${API_BASE_URL}/books/v3/customerpayments?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=30&sort_column=date&sort_order=D`;
+    const url = `${API_BASE_URL}/books/v3/customerpayments?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=50&sort_column=date&sort_order=D`;
     const response = await fetch(url, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
@@ -271,7 +271,7 @@ export async function getVendorBills(vendorId: string): Promise<{
     const accessToken = await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    const url = `${API_BASE_URL}/books/v3/bills?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=30&sort_column=date&sort_order=D`;
+    const url = `${API_BASE_URL}/books/v3/bills?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=50&sort_column=date&sort_order=D`;
     console.log('[Zoho Bills] Vendor ID Used:', vendorId);
     console.log('[Zoho Bills] API URL:', url);
     const response = await fetch(url, {
@@ -373,7 +373,7 @@ export async function getVendorPayments(vendorId: string): Promise<{
     const accessToken = await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    const url = `${API_BASE_URL}/books/v3/vendorpayments?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=30&sort_column=date&sort_order=D`;
+    const url = `${API_BASE_URL}/books/v3/vendorpayments?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=50&sort_column=date&sort_order=D`;
     console.log('[Zoho Vendor Payments] API URL:', url);
     const response = await fetch(url, {
       method: 'GET',
@@ -466,8 +466,8 @@ export async function getHybridJournals(contactId: string, associatedVendorId: s
     // but Zoho API only supports one customer_id per request. We'll make two requests if needed and merge,
     // or just fetch all for the org if we don't know (but org might have too many).
     // Let's do two requests: one for customer and one for vendor, then merge.
-    const urlC = `${API_BASE_URL}/books/v3/journals?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=100`;
-    const urlV = `${API_BASE_URL}/books/v3/journals?organization_id=${orgId}&customer_id=${associatedVendorId}&page=1&per_page=100`;
+    const urlC = `${API_BASE_URL}/books/v3/journals?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=50`;
+    const urlV = `${API_BASE_URL}/books/v3/journals?organization_id=${orgId}&customer_id=${associatedVendorId}&page=1&per_page=50`;
     
     console.log('[Zoho Journals] API URL C:', urlC);
     console.log('[Zoho Journals] API URL V:', urlV);

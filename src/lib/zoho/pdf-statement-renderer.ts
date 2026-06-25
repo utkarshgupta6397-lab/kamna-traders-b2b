@@ -544,10 +544,10 @@ export async function renderStatementToPdf(
       : ['Date', 'Type', 'Details', 'Debit', 'Credit', 'Balance'],
   ];
 
-  // Balance indicator — [IN]/[OUT] flags are stripped in didParseCell, arrows drawn in didDrawCell
+  // Balance indicator — [OUT] for Receivable (Red) and [IN] for Payable/Credit (Green)
   function pdfFmtBalanceWithIndicator(balance: number) {
-    if (balance > 0) return '[IN] '  + pdfFmtBalance(balance);
-    if (balance < 0) return '[OUT] ' + pdfFmtBalance(balance);
+    if (balance > 0) return '[OUT] ' + pdfFmtBalance(balance); // Receivable by Kamna (customer owes us)
+    if (balance < 0) return '[IN] '  + pdfFmtBalance(balance); // Payable by Kamna (customer has credit / we owe them)
     return pdfFmtBalance(balance);
   }
 
@@ -559,11 +559,11 @@ export async function renderStatementToPdf(
   const openRow = isGroup ? [
     '\u2014', '\u2014', '\u2014',
     `Opening Balance${openingPres.isCredit ? ' (Advance/Credit)' : ''}`,
-    '\u2014', '\u2014', pdfOpeningAmt,
+    '\u2014', '\u2014', pdfFmtBalanceWithIndicator(openingBal),
   ] : [
     '\u2014', '\u2014',
     `Opening Balance${openingPres.isCredit ? ' (Advance/Credit)' : ''}`,
-    '\u2014', '\u2014', pdfOpeningAmt,
+    '\u2014', '\u2014', pdfFmtBalanceWithIndicator(openingBal),
   ];
   finalTableRows.push(openRow);
 
@@ -580,13 +580,12 @@ export async function renderStatementToPdf(
   visibleTxs.forEach((tx: any) => {
     const txMonth = getMonthStr(tx.date);
     if (!monthTotalsMap.has(txMonth)) {
-      monthTotalsMap.set(txMonth, { debit: 0, credit: 0, balance: runningBalForPrecalc });
+      monthTotalsMap.set(txMonth, { debit: 0, credit: 0, balance: 0 });
     }
     const current = monthTotalsMap.get(txMonth)!;
     if (tx.netEffect > 0) current.debit += Math.abs(tx.netEffect);
     else if (tx.netEffect < 0) current.credit += Math.abs(tx.netEffect);
     runningBalForPrecalc = tx.balanceAfter;
-    current.balance = runningBalForPrecalc;
   });
 
   visibleTxs.forEach((tx: any, i: number) => {
@@ -596,6 +595,7 @@ export async function renderStatementToPdf(
     if (currentMonth !== txMonth) {
       currentMonth = txMonth;
       const totals = monthTotalsMap.get(txMonth) || { debit: 0, credit: 0, balance: 0 };
+      const monthlyNet = totals.debit - totals.credit;
       monthHeaderRowIndices.add(finalTableRows.length);
       finalTableRows.push(isGroup ? [
         {
@@ -612,7 +612,7 @@ export async function renderStatementToPdf(
         },
         { content: pdfFmt(totals.debit), styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
         { content: pdfFmt(totals.credit), styles: { fontStyle: 'bold', textColor: [5, 150, 105], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
-        { content: pdfFmtBalanceWithIndicator(totals.balance), styles: { fontStyle: 'bold', fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
+        { content: pdfFmtBalanceWithIndicator(monthlyNet), styles: { fontStyle: 'bold', fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
       ] : [
         {
           content: currentMonth,
@@ -628,7 +628,7 @@ export async function renderStatementToPdf(
         },
         { content: pdfFmt(totals.debit), styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
         { content: pdfFmt(totals.credit), styles: { fontStyle: 'bold', textColor: [5, 150, 105], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
-        { content: pdfFmtBalanceWithIndicator(totals.balance), styles: { fontStyle: 'bold', fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
+        { content: pdfFmtBalanceWithIndicator(monthlyNet), styles: { fontStyle: 'bold', fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
       ]);
     }
 
@@ -872,99 +872,100 @@ export async function renderStatementToPdf(
           data.cell.styles.textColor   = [51, 65, 85];
         }
 
-        // ── Balance column: strip [IN]/[OUT] flags, colour, tag for arrows
-        if (data.column.index === balColIdx && !isFirst) {
-          const strVal = Array.isArray(data.cell.text)
-            ? data.cell.text.join('')
-            : String(data.cell.text ?? '');
+      // Balance column: strip [IN]/[OUT] flags, colour, tag for arrows
+      if (data.column.index === balColIdx && !isFirst) {
+        const strVal = Array.isArray(data.cell.text)
+          ? data.cell.text.join('')
+          : String(data.cell.text ?? '');
 
-          const drawIndicator = !isFirst && !isMonthHeader;
+        // Draw indicator on normal transactions, month summaries, and grand totals
+        const drawIndicator = !isFirst;
 
-          if (strVal.includes('[IN]')) {
-            data.cell.styles.textColor = [5, 150, 105];
-            if (data.cell.raw && typeof data.cell.raw !== 'object') {
-              data.cell.raw = { _content: strVal.replace('[IN] ', ''), _indicator: drawIndicator ? 'IN' : undefined };
-            } else if (data.cell.raw) {
-              data.cell.raw._indicator = drawIndicator ? 'IN' : undefined;
-            }
-            data.cell.text = [strVal.replace('[IN] ', '')];
-
-          } else if (strVal.includes('[OUT]')) {
-            data.cell.styles.textColor = [220, 38, 38];
-            if (data.cell.raw && typeof data.cell.raw !== 'object') {
-              data.cell.raw = { _content: strVal.replace('[OUT] ', ''), _indicator: drawIndicator ? 'OUT' : undefined };
-            } else if (data.cell.raw) {
-              data.cell.raw._indicator = drawIndicator ? 'OUT' : undefined;
-            }
-            data.cell.text = [strVal.replace('[OUT] ', '')];
-
-          } else {
-            data.cell.styles.textColor = [15, 23, 42];
+        if (strVal.includes('[IN]')) {
+          data.cell.styles.textColor = [5, 150, 105];
+          if (data.cell.raw && typeof data.cell.raw !== 'object') {
+            data.cell.raw = { _content: strVal.replace('[IN] ', ''), _indicator: drawIndicator ? 'IN' : undefined };
+          } else if (data.cell.raw) {
+            data.cell.raw._indicator = drawIndicator ? 'IN' : undefined;
           }
+          data.cell.text = [strVal.replace('[IN] ', '')];
+
+        } else if (strVal.includes('[OUT]')) {
+          data.cell.styles.textColor = [220, 38, 38];
+          if (data.cell.raw && typeof data.cell.raw !== 'object') {
+            data.cell.raw = { _content: strVal.replace('[OUT] ', ''), _indicator: drawIndicator ? 'OUT' : undefined };
+          } else if (data.cell.raw) {
+            data.cell.raw._indicator = drawIndicator ? 'OUT' : undefined;
+          }
+          data.cell.text = [strVal.replace('[OUT] ', '')];
+
+        } else {
+          data.cell.styles.textColor = [15, 23, 42];
         }
       }
-    },
+    }
+  },
 
-    // ── didDrawCell ──────────────────────────────────────────────────────
-    didDrawCell: (data: any) => {
-      const descColIdx = isGroup ? 3 : 2;
+  // ── didDrawCell ──────────────────────────────────────────────────────
+  didDrawCell: (data: any) => {
+    const descColIdx = isGroup ? 3 : 2;
 
-      // Two-tier typography for Details column
-      if (data.section === 'body' && data.column.index === descColIdx && data.cell.raw && data.cell.raw._primary) {
-        const { _primary, _secondary } = data.cell.raw;
-        const x = data.cell.x + data.cell.padding('left');
-        const y = data.cell.y + data.cell.padding('top') + 2;
+    // Two-tier typography for Details column
+    if (data.section === 'body' && data.column.index === descColIdx && data.cell.raw && data.cell.raw._primary) {
+      const { _primary, _secondary } = data.cell.raw;
+      const x = data.cell.x + data.cell.padding('left');
+      const y = data.cell.y + data.cell.padding('top') + 2;
 
-        const maxW = data.cell.width - data.cell.padding('left') - data.cell.padding('right');
-        const truncateText = (txt: string, fSize: number, availW: number): string => {
-          if (safeWidth(txt, fSize) <= availW) return txt;
-          let temp = txt;
-          while (temp.length > 0 && safeWidth(temp + '...', fSize) > availW) {
-            temp = temp.slice(0, -1);
-          }
-          return temp + '...';
-        };
+      const maxW = data.cell.width - data.cell.padding('left') - data.cell.padding('right');
+      const truncateText = (txt: string, fSize: number, availW: number): string => {
+        if (safeWidth(txt, fSize) <= availW) return txt;
+        let temp = txt;
+        while (temp.length > 0 && safeWidth(temp + '...', fSize) > availW) {
+          temp = temp.slice(0, -1);
+        }
+        return temp + '...';
+      };
 
-        const primTrunc = truncateText(_primary, 6.5, maxW);
+      const primTrunc = truncateText(_primary, 6.5, maxW);
+      doc.setFont(pdfFont, 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(primTrunc, x, y);
+
+      if (_secondary) {
+        const secTrunc = truncateText(_secondary, 5.5, maxW);
         doc.setFont(pdfFont, 'normal');
-        doc.setFontSize(6.5);
-        doc.setTextColor(15, 23, 42);
-        doc.text(primTrunc, x, y);
-
-        if (_secondary) {
-          const secTrunc = truncateText(_secondary, 5.5, maxW);
-          doc.setFont(pdfFont, 'normal');
-          doc.setFontSize(5.5);
-          doc.setTextColor(100, 116, 139);
-          doc.text(secTrunc, x, y + 3.5);
-        }
+        doc.setFontSize(5.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text(secTrunc, x, y + 3.5);
       }
+    }
 
-      // Balance directional arrows (only on normal transaction rows, NOT month headers)
-      const balColIdx = isGroup ? 6 : 5;
-      if (data.section === 'body' && data.column.index === balColIdx && data.cell.raw && data.cell.raw._indicator) {
-        const ind = data.cell.raw._indicator as string | undefined;
-        if (!ind) return;
+    // Balance directional arrows
+    const balColIdx = isGroup ? 6 : 5;
+    if (data.section === 'body' && data.column.index === balColIdx && data.cell.raw && data.cell.raw._indicator) {
+      const ind = data.cell.raw._indicator as string | undefined;
+      if (!ind) return;
 
-        const cx = data.cell.x + 1.8;
-        const cy = data.cell.y + data.cell.height / 2;
+      const cx = data.cell.x + 1.8;
+      const cy = data.cell.y + data.cell.height / 2;
 
-        doc.setLineWidth(0.25);
-        if (ind === 'IN') {
-          // Down-left corner arrow — Receivable (green)
-          doc.setDrawColor(5, 150, 105);
-          doc.line(cx + 1.4, cy - 0.8, cx,       cy + 0.6);
-          doc.line(cx,       cy + 0.6, cx + 1.1,  cy + 0.6);
-          doc.line(cx,       cy + 0.6, cx,        cy - 0.6);
-        } else if (ind === 'OUT') {
-          // Up-right corner arrow — Payable (red)
-          doc.setDrawColor(220, 38, 38);
-          doc.line(cx,       cy + 0.6, cx + 1.4, cy - 0.8);
-          doc.line(cx + 1.4, cy - 0.8, cx + 0.3, cy - 0.8);
-          doc.line(cx + 1.4, cy - 0.8, cx + 1.4, cy + 0.4);
-        }
+      doc.setLineWidth(0.25);
+      if (ind === 'OUT') {
+        // Down-left corner arrow — Receivable (Red)
+        doc.setDrawColor(220, 38, 38);
+        doc.line(cx + 1.4, cy - 0.8, cx,       cy + 0.6);
+        doc.line(cx,       cy + 0.6, cx + 1.1,  cy + 0.6);
+        doc.line(cx,       cy + 0.6, cx,        cy - 0.6);
+      } else if (ind === 'IN') {
+        // Up-right corner arrow — Payable/Credit (Green)
+        doc.setDrawColor(5, 150, 105);
+        doc.line(cx,       cy + 0.6, cx + 1.4, cy - 0.8);
+        doc.line(cx + 1.4, cy - 0.8, cx + 0.3, cy - 0.8);
+        doc.line(cx + 1.4, cy - 0.8, cx + 1.4, cy + 0.4);
       }
-    },
+    }
+  },
   });
 
   // ─── Footer ───────────────────────────────────────────────────────────────

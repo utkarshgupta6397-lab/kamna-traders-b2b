@@ -892,13 +892,13 @@ export async function renderStatementToPdf(
         }
 
       // Balance column: strip [IN]/[OUT] flags, colour, tag for arrows
-      if (data.column.index === balColIdx && !isFirst) {
+      if (data.column.index === balColIdx) {
         const strVal = Array.isArray(data.cell.text)
           ? data.cell.text.join('')
           : String(data.cell.text ?? '');
 
-        // Draw indicator on normal transactions, month summaries, and grand totals
-        const drawIndicator = !isFirst;
+        // Draw indicator on normal transactions, month summaries, grand totals, and opening balance
+        const drawIndicator = true;
 
         if (strVal.includes('[IN]')) {
           data.cell.styles.textColor = [5, 150, 105];

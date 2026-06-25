@@ -941,18 +941,26 @@ export default function AccountsSummaryView() {
       const autoTable = (await import('jspdf-autotable')).default;
       
       // 1. Load assets
-      const { fontRegular, fontBold, logo } = await getCachedAssets('economy');
+      const { fontRegular, fontBold, logo } = await getCachedAssets();
 
       const applyFonts = (d: any) => {
-        if (fontRegular && !fontRegular.startsWith('PCF') && !fontRegular.includes('<!DOCTYPE')) {
-          d.addFileToVFS('NotoSans-Regular.ttf', fontRegular);
-          d.addFont('NotoSans-Regular.ttf', 'NotoSans', 'normal');
+        if (fontRegular && fontRegular.length > 1000 && !fontRegular.startsWith('PCF') && !fontRegular.includes('<!DOCTYPE')) {
+          try {
+            d.addFileToVFS('Inter-Regular.ttf', fontRegular);
+            d.addFont('Inter-Regular.ttf', 'Inter', 'normal');
+          } catch (e) {
+            console.warn('Failed to register Inter-Regular.ttf in batch generator', e);
+          }
         }
-        if (fontBold && !fontBold.startsWith('PCF') && !fontBold.includes('<!DOCTYPE')) {
-          d.addFileToVFS('NotoSans-Bold.ttf', fontBold);
-          d.addFont('NotoSans-Bold.ttf', 'NotoSans', 'bold');
+        if (fontBold && fontBold.length > 1000 && !fontBold.startsWith('PCF') && !fontBold.includes('<!DOCTYPE')) {
+          try {
+            d.addFileToVFS('Inter-Bold.ttf', fontBold);
+            d.addFont('Inter-Bold.ttf', 'Inter', 'bold');
+          } catch (e) {
+            console.warn('Failed to register Inter-Bold.ttf in batch generator', e);
+          }
         }
-        return d.getFontList()['NotoSans'] ? 'NotoSans' : 'helvetica';
+        return d.getFontList()['Inter'] ? 'Inter' : 'helvetica';
       };
 
       const cDark: [number, number, number] = [15, 23, 42];
@@ -1160,7 +1168,7 @@ export default function AccountsSummaryView() {
           
           doc.addPage();
           
-          await renderStatementToPdf(doc, autoTable, json.data, 'economy', {
+          await renderStatementToPdf(doc, autoTable, json.data, {
             isExpanded: true,
             clipFromIndex: null,
             isBatchRecovery: true

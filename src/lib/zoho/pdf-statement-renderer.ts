@@ -172,16 +172,16 @@ const toBase64 = async (res: Response): Promise<string> => {
 export async function getCachedAssets() {
   if (!cachedFontRegular) {
     try {
-      const res = await fetch('/fonts/Inter-Regular.ttf?v=4');
+      const res = await fetch('/fonts/NotoSans-Regular.ttf?v=4');
       if (res.ok) cachedFontRegular = await toBase64(res);
-    } catch (e) { console.warn('Failed to load Inter Regular font', e); }
+    } catch (e) { console.warn('Failed to load NotoSans Regular font', e); }
   }
 
   if (!cachedFontBold) {
     try {
-      const res = await fetch('/fonts/Inter-Bold.ttf?v=4');
+      const res = await fetch('/fonts/NotoSans-Bold.ttf?v=4');
       if (res.ok) cachedFontBold = await toBase64(res);
-    } catch (e) { console.warn('Failed to load Inter Bold font', e); }
+    } catch (e) { console.warn('Failed to load NotoSans Bold font', e); }
   }
 
   if (!cachedLogoEconomy) {

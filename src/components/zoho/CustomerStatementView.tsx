@@ -194,6 +194,66 @@ export default function CustomerStatementView() {
   const [filterVendorPmts, setFilterVendorPmts] = useState(true);
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [invertBalanceColor, setInvertBalanceColor] = useState(false);
+  const [userName, setUserName] = useState('Staff');
+
+  // Memoize visible statement transactions and calculations for export synchronization
+  const visibleStatementData = useMemo(() => {
+    const s = (statementMode === 'group' ? groupStatement : statement?.data) as any;
+    if (!s) return null;
+
+    // For Group Statements: We don't filter/clip in-memory ledger list in the same way, but let's handle single statements.
+    if (statementMode === 'group') return s;
+
+    const isValidClip = clipFromIndex !== null && clipFromIndex >= 0 && clipFromIndex < s.transactions.length && !!s.transactions[clipFromIndex];
+    const clipIdx = isValidClip ? clipFromIndex : -1;
+    const isClipped = clipIdx !== -1;
+    const activeTxs = isClipped ? s.transactions.slice(clipIdx) : s.transactions;
+    const chronologicalVisible = isExpanded ? activeTxs : activeTxs.slice(-10);
+    const dynamicOpeningBalance = chronologicalVisible.length > 0
+      ? (chronologicalVisible[0].balanceAfter - chronologicalVisible[0].netEffect)
+      : s.closingBalance;
+
+    const visibleTransactions = chronologicalVisible.filter((tx: any) => {
+      if (tx.type === 'invoice' && !filterSales) return false;
+      if (tx.type === 'payment' && !filterCustPmts) return false;
+      if (tx.type === 'bill' && !filterBills) return false;
+      if (tx.type === 'vendor_payment' && !filterVendorPmts) return false;
+      
+      if (ledgerSearch.trim()) {
+        const term = ledgerSearch.toLowerCase();
+        const searchable = [
+          tx.referenceNumber,
+          tx.description,
+          tx.type,
+          tx.firmName,
+          ...(tx.appliedBills || []).map((b: any) => b.billNumber)
+        ].filter(Boolean).join(' ').toLowerCase();
+        if (!searchable.includes(term)) return false;
+      }
+      return true;
+    });
+
+    const dynamicClosingBalance = dynamicOpeningBalance + visibleTransactions.reduce((sum: number, t: any) => sum + t.netEffect, 0);
+
+    const activeUnpaidInvoices = s.unpaidInvoices ? (
+      isClipped ? s.unpaidInvoices.filter((inv: any) => {
+        const clippedTx = s.transactions[clipIdx];
+        if (!clippedTx) return true;
+        const clipDate = clippedTx.date || clippedTx.datetime || 0;
+        const invDate = inv.invoiceDate || 0;
+        return new Date(invDate).getTime() >= new Date(clipDate).getTime();
+      }) : s.unpaidInvoices
+    ) : [];
+
+    return {
+      ...s,
+      openingBalance: dynamicOpeningBalance,
+      closingBalance: dynamicClosingBalance,
+      transactions: visibleTransactions,
+      transactionCount: visibleTransactions.length,
+      unpaidInvoices: activeUnpaidInvoices
+    };
+  }, [statementMode, groupStatement, statement, clipFromIndex, isExpanded, filterSales, filterCustPmts, filterBills, filterVendorPmts, ledgerSearch]);
 
   // Expanded Transactions State
   const [expandedTx, setExpandedTx] = useState<Record<string, boolean>>({});
@@ -255,6 +315,17 @@ export default function CustomerStatementView() {
         if (parsed.calcEntries) setCalcEntries(parsed.calcEntries);
       }
     } catch (e) {}
+
+    // Fetch logged-in user name
+    fetch('/api/auth/session')
+      .then(res => res.json())
+      .catch(() => null)
+      .then(data => {
+        if (data && data.authenticated && data.session && data.session.name) {
+          setUserName(data.session.name);
+        }
+      });
+
     setIsHydrated(true);
   }, []);
 
@@ -318,10 +389,11 @@ export default function CustomerStatementView() {
       const jsPDF = (await import('jspdf')).default;
       const autoTable = (await import('jspdf-autotable')).default;
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      await renderStatementToPdf(doc, autoTable, sToPrint, 'economy', {
+      await renderStatementToPdf(doc, autoTable, sToPrint, {
         isExpanded,
         clipFromIndex,
-        firmColors
+        firmColors,
+        generatedBy: userName
       });
 
       const pdfBlob = doc.output('blob');
@@ -358,7 +430,7 @@ export default function CustomerStatementView() {
   };
 
   // ── PDF Download (visible statement only) ────────────────────────────────
-  const handleDownloadPDF = async (sToPrint: any, theme: 'color' | 'economy' = 'color') => {
+  const handleDownloadPDF = async (sToPrint: any) => {
     if (!sToPrint) return;
     setPdfGenerating(true);
     try {
@@ -369,10 +441,11 @@ export default function CustomerStatementView() {
 
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-      await renderStatementToPdf(doc, autoTable, sToPrint, theme, {
+      await renderStatementToPdf(doc, autoTable, sToPrint, {
         isExpanded,
         clipFromIndex,
-        firmColors
+        firmColors,
+        generatedBy: userName
       });
 
       // ── Save ────────────────────────────────────────────────────────────
@@ -1019,36 +1092,24 @@ export default function CustomerStatementView() {
               </button>
 
               {/* Success: Download PDF */}
-              <div className="relative w-full sm:w-auto print:hidden">
-                <button
-                  onClick={() => setPdfMenuOpen(!pdfMenuOpen)}
-                  disabled={pdfGenerating}
-                  className="flex items-center justify-center gap-1.5 px-4 h-[36px] bg-emerald-600 text-white rounded-md text-sm font-medium hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50 w-full sm:w-auto"
-                >
-                  {pdfGenerating ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
-                  Download PDF
-                  <ChevronDown size={14} className={`transition-transform ${pdfMenuOpen ? 'rotate-180' : ''}`} />
-                </button>
-                
-                {pdfMenuOpen && (
-                  <div className="absolute top-full right-0 mt-1 w-[180px] bg-white border border-gray-200 rounded-md shadow-lg overflow-hidden z-50">
-                    <button 
-                      onClick={() => { setPdfMenuOpen(false); handleDownloadPDF(s, 'color'); }}
-                      className="w-full text-left px-4 py-2.5 text-sm font-medium text-emerald-800 hover:bg-emerald-50 border-b border-gray-100 flex items-center gap-2 transition-colors"
-                    >
-                      <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm"></div>
-                      Color PDF
-                    </button>
-                    <button 
-                      onClick={() => { setPdfMenuOpen(false); handleDownloadPDF(s, 'economy'); }}
-                      className="w-full text-left px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
-                    >
-                      <div className="w-2 h-2 rounded-full border-2 border-gray-400"></div>
-                      Print PDF (Low Ink)
-                    </button>
-                  </div>
-                )}
-              </div>
+              <button
+                onClick={() => handleDownloadPDF(visibleStatementData)}
+                disabled={pdfGenerating}
+                className="flex items-center justify-center gap-1.5 px-4 h-[36px] bg-emerald-600 text-white rounded-md text-sm font-medium hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50 w-full sm:w-auto print:hidden"
+              >
+                {pdfGenerating ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+                {pdfGenerating ? 'Generating…' : 'Download PDF'}
+              </button>
+
+              {/* Printable PDF Dialog */}
+              <button
+                onClick={() => handlePrint(visibleStatementData)}
+                disabled={printing}
+                className="flex items-center justify-center gap-1.5 px-4 h-[36px] bg-white text-gray-700 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50 w-full sm:w-auto print:hidden"
+              >
+                {printing ? <RefreshCw size={14} className="animate-spin" /> : <Printer size={14} />}
+                {printing ? 'Preparing…' : 'Print PDF'}
+              </button>
 
               {/* Accent: Calculator */}
               <button
@@ -1098,7 +1159,9 @@ export default function CustomerStatementView() {
 
       {/* ── Portfolio Health (Moved to Unified KPI Section below) ── */}
 
-      {s && (() => {
+      {(() => {
+        if (!s) return null;
+        // Calculate visible statement data dynamically based on UI state/filters
         const isValidClip = clipFromIndex !== null && clipFromIndex >= 0 && clipFromIndex < s.transactions.length && !!s.transactions[clipFromIndex];
         const clipIdx = isValidClip ? clipFromIndex : -1;
         const isClipped = clipIdx !== -1;
@@ -1157,6 +1220,16 @@ export default function CustomerStatementView() {
             return new Date(invDate).getTime() >= new Date(clipDate).getTime();
           }) : s.unpaidInvoices
         ) : [];
+
+        // Dynamic Statement object for PDF print/download to ensure accurate sync
+        const dynamicStatementToPrint = {
+          ...s,
+          openingBalance: dynamicOpeningBalance,
+          closingBalance: dynamicClosingBalance,
+          transactions: visibleTransactions,
+          transactionCount: visibleTransactions.length,
+          unpaidInvoices: activeUnpaidInvoices
+        };
 
         return (
           <div className="flex flex-col w-full gap-4">

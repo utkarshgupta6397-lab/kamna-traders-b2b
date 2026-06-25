@@ -129,15 +129,19 @@ export function fmtDate(iso: string) {
 }
 
 export function pdfFmt(n: number): string {
-  return '\u20b9' + new Intl.NumberFormat('en-IN', {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Math.abs(n));
 }
 
 export function pdfFmtBalance(n: number): string {
-  if (n === 0) return '\u20b90.00';
-  const val = '\u20b9' + new Intl.NumberFormat('en-IN', {
+  if (n === 0) return '₹0.00';
+  const val = new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Math.abs(n));
@@ -236,24 +240,39 @@ export async function renderStatementToPdf(
   // ─── Font Registration ────────────────────────────────────────────────────
   const { fontRegular, fontBold, logo } = await getCachedAssets();
 
-  if (fontRegular && fontRegular.length > 1000 && !fontRegular.startsWith('PCF') && !fontRegular.includes('<!DOCTYPE')) {
+  const isValidBase64Font = (b64: string | null) => {
+    if (!b64 || b64.length < 1000) return false;
     try {
-      doc.addFileToVFS('Inter-Regular.ttf', fontRegular);
-      doc.addFont('Inter-Regular.ttf', 'Inter', 'normal');
-    } catch (e) {
-      console.warn('Failed to register Inter-Regular.ttf', e);
+      const decoded = typeof window !== 'undefined' ? atob(b64.slice(0, 1000)) : Buffer.from(b64.slice(0, 1000), 'base64').toString('ascii');
+      return !decoded.toLowerCase().includes('<!doctype') && !decoded.toLowerCase().includes('<html');
+    } catch {
+      return true;
     }
-  }
-  if (fontBold && fontBold.length > 1000 && !fontBold.startsWith('PCF') && !fontBold.includes('<!DOCTYPE')) {
+  };
+
+  if (isValidBase64Font(fontRegular)) {
     try {
-      doc.addFileToVFS('Inter-Bold.ttf', fontBold);
-      doc.addFont('Inter-Bold.ttf', 'Inter', 'bold');
+      doc.addFileToVFS('NotoSans-Regular.ttf', fontRegular!);
+      doc.addFont('NotoSans-Regular.ttf', 'NotoSans', 'normal');
     } catch (e) {
-      console.warn('Failed to register Inter-Bold.ttf', e);
+      console.error('Failed to register NotoSans-Regular.ttf', e);
     }
+  } else {
+    console.error('Invalid font payload detected for Regular font. Aborting registration to prevent fallback corruption.');
   }
 
-  const pdfFont = doc.getFontList()['Inter'] ? 'Inter' : 'helvetica';
+  if (isValidBase64Font(fontBold)) {
+    try {
+      doc.addFileToVFS('NotoSans-Bold.ttf', fontBold!);
+      doc.addFont('NotoSans-Bold.ttf', 'NotoSans', 'bold');
+    } catch (e) {
+      console.error('Failed to register NotoSans-Bold.ttf', e);
+    }
+  } else {
+    console.error('Invalid font payload detected for Bold font. Aborting registration to prevent fallback corruption.');
+  }
+
+  const pdfFont = doc.getFontList()['NotoSans'] ? 'NotoSans' : 'helvetica';
 
   // Safe string width — falls back to char-count when font metrics aren't ready
   const safeWidth = (text: string, fontSize: number): number => {

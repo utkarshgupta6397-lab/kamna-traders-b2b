@@ -944,23 +944,33 @@ export default function AccountsSummaryView() {
       const { fontRegular, fontBold, logo } = await getCachedAssets();
 
       const applyFonts = (d: any) => {
-        if (fontRegular && fontRegular.length > 1000 && !fontRegular.startsWith('PCF') && !fontRegular.includes('<!DOCTYPE')) {
+        const isValidBase64Font = (b64: string | null) => {
+          if (!b64 || b64.length < 1000) return false;
           try {
-            d.addFileToVFS('Inter-Regular.ttf', fontRegular);
-            d.addFont('Inter-Regular.ttf', 'Inter', 'normal');
+            const decoded = typeof window !== 'undefined' ? atob(b64.slice(0, 1000)) : Buffer.from(b64.slice(0, 1000), 'base64').toString('ascii');
+            return !decoded.toLowerCase().includes('<!doctype') && !decoded.toLowerCase().includes('<html');
+          } catch {
+            return true;
+          }
+        };
+
+        if (isValidBase64Font(fontRegular)) {
+          try {
+            d.addFileToVFS('NotoSans-Regular.ttf', fontRegular!);
+            d.addFont('NotoSans-Regular.ttf', 'NotoSans', 'normal');
           } catch (e) {
-            console.warn('Failed to register Inter-Regular.ttf in batch generator', e);
+            console.warn('Failed to register NotoSans-Regular.ttf in batch generator', e);
           }
         }
-        if (fontBold && fontBold.length > 1000 && !fontBold.startsWith('PCF') && !fontBold.includes('<!DOCTYPE')) {
+        if (isValidBase64Font(fontBold)) {
           try {
-            d.addFileToVFS('Inter-Bold.ttf', fontBold);
-            d.addFont('Inter-Bold.ttf', 'Inter', 'bold');
+            d.addFileToVFS('NotoSans-Bold.ttf', fontBold!);
+            d.addFont('NotoSans-Bold.ttf', 'NotoSans', 'bold');
           } catch (e) {
-            console.warn('Failed to register Inter-Bold.ttf in batch generator', e);
+            console.warn('Failed to register NotoSans-Bold.ttf in batch generator', e);
           }
         }
-        return d.getFontList()['Inter'] ? 'Inter' : 'helvetica';
+        return d.getFontList()['NotoSans'] ? 'NotoSans' : 'helvetica';
       };
 
       const cDark: [number, number, number] = [15, 23, 42];

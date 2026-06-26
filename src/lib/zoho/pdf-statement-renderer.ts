@@ -302,7 +302,17 @@ export async function renderStatementToPdf(
   const isGroup = !!(s as any).isGroup;
 
   // ─── Financial Summaries ─────────────────────────────────────────────────
-  const openingBal    = s.openingBalance;
+  let openingBal = s.openingBalance;
+  if (options.isBatchRecovery) {
+    visibleTxs = visibleTxs.slice(-30);
+    if (s.transactions.length > 30) {
+      isTruncated = true;
+      openingBal = visibleTxs.length > 0
+        ? (visibleTxs[0].balanceAfter - visibleTxs[0].netEffect)
+        : s.closingBalance;
+    }
+  }
+
   const openingPres   = getOpeningBalancePresentation(openingBal);
   const pdfOpeningAmt = pdfFmt(openingBal);
   const totalDebit    = visibleTxs
@@ -1074,10 +1084,12 @@ export async function renderStatementToPdf(
     const boxX   = pageW - margin - boxW;
     const boxY   = footerY + 1.5;
 
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(210, 218, 228);
-    doc.setLineWidth(0.2);
-    doc.rect(boxX, boxY, boxW, boxH, 'FD');
+    if (!options.isBatchRecovery) {
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(210, 218, 228);
+      doc.setLineWidth(0.2);
+      doc.rect(boxX, boxY, boxW, boxH, 'FD');
+    }
 
     const centerX = boxX + boxW / 2;
 

@@ -1046,10 +1046,47 @@ export default function AccountsSummaryView() {
       doc.setLineWidth(0.5);
       doc.line(margin, headerH + 5, pageWidth - margin, headerH + 5);
       
-      // Highest exposure customer logic
+      // Calculate batch metrics from the exact dataset being exported
+      const batchTotalCustomers = groupedCustomers.length;
+      let batchTotalInvoices = 0;
+      let batchTotalOutstanding = 0;
+      let batchTotalInvoiced = 0;
+      let batchTotalPaid = 0;
+      let batchOverdueInvoices = 0;
+      let batchVoidedInvoices = 0;
+
+      groupedCustomers.forEach(c => {
+        batchTotalInvoices += c.invoices.length;
+        batchTotalOutstanding += c.totalOutstanding;
+        c.invoices.forEach(i => {
+          const inv = i.inv;
+          const pending = i.pending;
+          const value = inv ? inv.invoiceValue : pending;
+          const paid = inv ? inv.amountPaid : 0;
+          
+          batchTotalInvoiced += value;
+          batchTotalPaid += paid;
+          
+          const isOverdue = inv ? (inv as any).isOverdue : i.ageDays > 7;
+          if (isOverdue) {
+            batchOverdueInvoices++;
+          }
+          if ((inv as any)?.paymentStatus === 'void') {
+            batchVoidedInvoices++;
+          }
+        });
+      });
+
+      const batchCollectionPct = batchTotalInvoiced > 0 ? Math.round((batchTotalPaid / batchTotalInvoiced) * 100) : 0;
+      const batchAvgOutstanding = batchTotalOutstanding / (batchTotalCustomers || 1);
+      const batchFullyPaidCustomers = groupedCustomers.filter(c => c.totalOutstanding === 0).length;
+      const batchOpenCustomers = groupedCustomers.filter(c => c.totalOutstanding > 0).length;
+
       let highestExposureCustomer = groupedCustomers[0];
       groupedCustomers.forEach(c => {
-        if (c.totalOutstanding > highestExposureCustomer.totalOutstanding) highestExposureCustomer = c;
+        if (!highestExposureCustomer || c.totalOutstanding > highestExposureCustomer.totalOutstanding) {
+          highestExposureCustomer = c;
+        }
       });
       const oldestDue = groupedCustomers.reduce((oldest, c) => (!oldest || (c.oldestDue && c.oldestDue > oldest) ? c.oldestDue : oldest), 0);
       
@@ -1062,10 +1099,8 @@ export default function AccountsSummaryView() {
       startY += 8;
       
       const drawKpiCard = (x: number, y: number, w: number, h: number, label: string, value: string, valColor: [number, number, number]) => {
-        doc.setFillColor(252, 252, 252);
-        doc.setDrawColor(226, 232, 240);
-        doc.setLineWidth(0.3);
-        doc.roundedRect(x, y, w, h, 1, 1, 'FD');
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(x, y, w, h, 1, 1, 'F'); // Fill only, no border outline
         
         doc.setFont(pdfFont, 'bold');
         doc.setFontSize(6);
@@ -1082,19 +1117,19 @@ export default function AccountsSummaryView() {
       const cardH = 16;
       
       // Row 1
-      drawKpiCard(margin, startY, cardW, cardH, 'Total Customers', groupedCustomers.length.toString(), cDark);
-      drawKpiCard(margin + cardW + 8, startY, cardW, cardH, 'Total Invoices', metrics.totalInvoices.toString(), cDark);
-      drawKpiCard(margin + (cardW + 8) * 2, startY, cardW, cardH, 'Total Outstanding', fmtCurrency(metrics.totalPending), cRed);
+      drawKpiCard(margin, startY, cardW, cardH, 'Total Customers', batchTotalCustomers.toString(), cDark);
+      drawKpiCard(margin + cardW + 8, startY, cardW, cardH, 'Total Invoices', batchTotalInvoices.toString(), cDark);
+      drawKpiCard(margin + (cardW + 8) * 2, startY, cardW, cardH, 'Total Outstanding', fmtCurrency(batchTotalOutstanding), cRed);
       
       // Row 2
       startY += cardH + 4;
-      drawKpiCard(margin, startY, cardW, cardH, 'Total Invoiced', fmtCurrency(metrics.totalValue), cDark);
-      drawKpiCard(margin + cardW + 8, startY, cardW, cardH, 'Total Paid', fmtCurrency(metrics.totalCollected), cGreen);
-      drawKpiCard(margin + (cardW + 8) * 2, startY, cardW, cardH, 'Collection Efficiency', `${metrics.collectionPct}%`, cBlue);
+      drawKpiCard(margin, startY, cardW, cardH, 'Total Invoiced', fmtCurrency(batchTotalInvoiced), cDark);
+      drawKpiCard(margin + cardW + 8, startY, cardW, cardH, 'Total Paid', fmtCurrency(batchTotalPaid), cGreen);
+      drawKpiCard(margin + (cardW + 8) * 2, startY, cardW, cardH, 'Collection Efficiency', `${batchCollectionPct}%`, cBlue);
       
       // Row 3
       startY += cardH + 4;
-      drawKpiCard(margin, startY, cardW, cardH, 'Average Outstanding', fmtCurrency(metrics.totalPending / (groupedCustomers.length || 1)), cDark);
+      drawKpiCard(margin, startY, cardW, cardH, 'Average Outstanding', fmtCurrency(batchAvgOutstanding), cDark);
       drawKpiCard(margin + cardW + 8, startY, cardW, cardH, 'Highest Exposure Customer', highestExposureCustomer?.customerName || 'None', cDark);
       drawKpiCard(margin + (cardW + 8) * 2, startY, cardW, cardH, 'Highest Exposure Amount', fmtCurrency(highestExposureCustomer?.totalOutstanding || 0), cRed);
       
@@ -1114,10 +1149,10 @@ export default function AccountsSummaryView() {
         startY: startY + 5,
         head: [['Metric', 'Value', 'Status']],
         body: [
-          ['Fully Paid Customers', metrics.fullyPaid.toString(), 'Healthy'],
-          ['Open Customers', metrics.openCount.toString(), 'Requires Follow-up'],
-          ['Overdue Invoices', metrics.overdue.toString(), 'Critical'],
-          ['Voided Invoices', metrics.voidCount.toString(), '—']
+          ['Fully Paid Customers', batchFullyPaidCustomers.toString(), 'Healthy'],
+          ['Open Customers', batchOpenCustomers.toString(), 'Requires Follow-up'],
+          ['Overdue Invoices', batchOverdueInvoices.toString(), 'Critical'],
+          ['Voided Invoices', batchVoidedInvoices.toString(), '—']
         ],
         theme: 'grid',
         headStyles: { fillColor: [241, 245, 249], textColor: cDark, fontSize: 8, font: pdfFont },
@@ -1190,15 +1225,10 @@ export default function AccountsSummaryView() {
         }
       }
       
-      // Global Print Optimizations: Borders and Page Numbers
+      // Global Print Optimizations: Page Numbers
       const totalPages = (doc as any).internal.getNumberOfPages() || (doc as any).getNumberOfPages();
       for (let i = 1; i <= totalPages; i++) {
         doc.setPage(i);
-        
-        // 10mm border
-        doc.setDrawColor(200, 200, 200); // Light Grey
-        doc.setLineWidth(0.15); // ~0.5 pt
-        doc.rect(10, 10, pageWidth - 20, pageHeight - 20, 'S');
         
         // Page X of Y footer
         doc.setFont(pdfFont, 'normal');

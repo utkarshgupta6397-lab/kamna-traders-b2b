@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Loader2, Circle, AlertCircle, Lock, ArrowRight, Info, ShieldCheck, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
+import { Check, Loader2, Circle, AlertCircle, Lock, ArrowRight, Info, ShieldCheck, ChevronLeft, ChevronRight, MessageSquare, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import WorkflowDocumentUploader from './WorkflowDocumentUploader';
 
@@ -37,7 +37,8 @@ export default function DocumentationTabClient({
   const [selectedStepId, setSelectedStepId] = useState<string>(steps[safeInitialIndex]?.id || '');
   
   const [remarks, setRemarks] = useState('');
-  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showCorrectionsModal, setShowCorrectionsModal] = useState(false);
+  const [targetStepId, setTargetStepId] = useState<string>('');
   
   const [chunkSize, setChunkSize] = useState(6);
   const snakeContainerRef = useRef<HTMLDivElement>(null);
@@ -74,7 +75,6 @@ export default function DocumentationTabClient({
       const data = await res.json();
       if (res.ok) {
         toast.success(`Stage ${newStatus === 'COMPLETED' ? 'completed' : newStatus === 'IN_PROGRESS' ? 'started' : 'rejected'}`);
-        setShowRejectModal(false);
         setRemarks('');
         
         // Auto-advance to next step if completed
@@ -91,6 +91,41 @@ export default function DocumentationTabClient({
         router.refresh();
       } else {
         toast.error(data.error || 'Failed to update stage');
+      }
+    } catch (e) {
+      toast.error('Network error');
+    } finally {
+      setLoadingStep(null);
+    }
+  };
+
+  const requestCorrections = async () => {
+    if (!remarks.trim()) {
+      toast.error('Remarks are mandatory when requesting corrections');
+      return;
+    }
+    if (!targetStepId) {
+      toast.error('Please select a stage to send back to');
+      return;
+    }
+
+    setLoadingStep(selectedStepId);
+    try {
+      const res = await fetch(`/api/solar-orders/${orderId}/workflow/${selectedStepId}/corrections`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetStepId, notes: remarks })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success('Workflow sent back for corrections');
+        setShowCorrectionsModal(false);
+        setRemarks('');
+        setTargetStepId('');
+        setSelectedStepId(targetStepId); // Jump to the reopened stage
+        router.refresh();
+      } else {
+        toast.error(data.error || 'Failed to request corrections');
       }
     } catch (e) {
       toast.error('Network error');
@@ -412,11 +447,11 @@ export default function DocumentationTabClient({
                       Approve Stage
                     </button>
                     <button
-                      onClick={() => setShowRejectModal(true)}
+                      onClick={() => setShowCorrectionsModal(true)}
                       disabled={loadingStep === selectedStep.id}
-                      className="w-full px-6 py-3 bg-white border-2 border-red-200 text-red-600 font-bold rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50"
+                      className="w-full px-6 py-3 bg-white border-2 border-orange-200 text-orange-600 font-bold rounded-xl hover:bg-orange-50 transition-colors disabled:opacity-50"
                     >
-                      Reject
+                      Request Corrections
                     </button>
                   </div>
                 ) : (
@@ -447,47 +482,72 @@ export default function DocumentationTabClient({
         </div>
       )}
 
-      {/* Reject Modal */}
-      {showRejectModal && selectedStep && (
+      {/* Request Corrections Modal */}
+      {showCorrectionsModal && selectedStep && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-red-50/50">
-              <h3 className="text-lg font-bold text-red-900 flex items-center gap-2">
-                <AlertCircle size={20} className="text-red-500" />
-                Reject Stage
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-orange-50/50">
+              <h3 className="text-lg font-bold text-orange-900 flex items-center gap-2">
+                <AlertCircle size={20} className="text-orange-500" />
+                Request Corrections
               </h3>
-              <button onClick={() => setShowRejectModal(false)} className="text-gray-400 hover:text-gray-600 bg-white rounded-full p-1 border border-gray-200">
-                X
+              <button onClick={() => setShowCorrectionsModal(false)} className="text-gray-400 hover:text-gray-600 bg-white rounded-full p-1 border border-gray-200">
+                <X size={16} />
               </button>
             </div>
             
-            <div className="p-6 bg-gray-50/30">
-              <label className="block text-sm font-bold text-gray-700 mb-2">
-                Rejection Remarks <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                value={remarks}
-                onChange={e => setRemarks(e.target.value)}
-                placeholder="Reason for rejection..."
-                className="w-full border-2 border-gray-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-4 focus:ring-red-500/10 focus:border-red-500 transition-all min-h-[120px] resize-none bg-white"
-                autoFocus
-              />
+            <div className="p-6 bg-gray-50/30 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Send Back To <span className="text-orange-500">*</span>
+                </label>
+                <select
+                  value={targetStepId}
+                  onChange={(e) => setTargetStepId(e.target.value)}
+                  className="w-full border-2 border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all bg-white"
+                >
+                  <option value="">-- Select Stage --</option>
+                  {steps
+                    .filter(s => s.stepIndex < selectedStep.stepIndex && s.status === 'COMPLETED')
+                    .map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.metadata?.name || s.stepKey}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Remarks / Issues <span className="text-orange-500">*</span>
+                </label>
+                <textarea
+                  value={remarks}
+                  onChange={e => setRemarks(e.target.value)}
+                  placeholder="e.g., Customer mobile number does not match bill."
+                  className="w-full border-2 border-gray-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all min-h-[100px] resize-none bg-white"
+                />
+              </div>
+
+              <div className="bg-orange-50 text-orange-800 text-xs p-3 rounded-lg border border-orange-100">
+                <strong>Notice:</strong> This stage will be reopened for editing. Subsequent workflow stages will be locked until it is completed again. The overall order will not be cancelled.
+              </div>
             </div>
             
             <div className="p-5 border-t border-gray-100 bg-white flex justify-end gap-3">
               <button
-                onClick={() => setShowRejectModal(false)}
+                onClick={() => setShowCorrectionsModal(false)}
                 className="px-5 py-2.5 text-sm font-bold text-gray-600 bg-white border-2 border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={() => updateStep(selectedStep.id, 'REJECTED', remarks)}
-                disabled={loadingStep === selectedStep.id || !remarks.trim()}
-                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-50 transition-all shadow-sm"
+                onClick={requestCorrections}
+                disabled={loadingStep === selectedStep.id || !remarks.trim() || !targetStepId}
+                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-orange-600 rounded-xl hover:bg-orange-700 disabled:opacity-50 transition-all shadow-sm"
               >
                 {loadingStep === selectedStep.id && <Loader2 size={16} className="animate-spin" />}
-                Confirm Rejection
+                Request Corrections
               </button>
             </div>
           </div>

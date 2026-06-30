@@ -415,13 +415,13 @@ export default function WorkflowEngine({
 
           {/* Render Extensible Actions Area */}
           {selectedStep.status === 'COMPLETED' ? (
-             <div className={`p-6 md:p-8 w-full xl:w-[400px] ${currentTheme.stageActionBg} flex flex-col items-center justify-center text-center border-t xl:border-t-0 border-gray-100`}>
+             <div className={`p-6 md:p-8 w-full xl:w-2/5 ${currentTheme.stageActionBg} flex flex-col items-center justify-center text-center border-t xl:border-t-0 border-gray-100`}>
                <Check size={40} className={`${currentTheme.stageActionIcon} mb-3`} />
                <h3 className="text-lg font-bold text-gray-800 mb-1">Stage Completed</h3>
                <p className="text-sm text-gray-500">This stage has been finalized and requires no further action.</p>
              </div>
           ) : (
-            <div className="w-full xl:w-[400px] border-t xl:border-t-0 xl:border-l border-gray-100 flex-shrink-0 flex flex-col justify-center">
+            <div className="w-full xl:w-2/5 border-t xl:border-t-0 xl:border-l border-gray-100 flex-shrink-0 flex flex-col justify-center relative">
               {renderStageAction(
                 selectedStep, 
                 (newStatus: string, notes?: string, metaOverride?: any) => updateStep(newStatus, notes, metaOverride),

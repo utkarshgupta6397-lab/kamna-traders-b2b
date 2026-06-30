@@ -29,8 +29,6 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState<string | null>(null);
   
-  // Local state for tracking uploads and inputs before submission
-  // It now stores all file metadata so it can be persisted correctly
   const [localState, setLocalState] = useState<Record<string, { 
     id?: string;
     fileUrl?: string; 
@@ -42,7 +40,6 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
   }>>({});
   
   const [submitting, setSubmitting] = useState(false);
-
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 
   useEffect(() => {
@@ -55,9 +52,7 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
       const data = await res.json();
       if (res.ok) {
         setDocuments(data.files);
-        // Pre-fill local state if already uploaded
         const newState: any = {};
-        // We only care about documentation files for this specific uploader
         const docFiles = data.files.filter((f: any) => f.fileCategory === 'DOCUMENTATION');
         
         docFiles.forEach((doc: any) => {
@@ -142,7 +137,6 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
     if (!state) return;
 
     if (state.isSavedToDb && state.id) {
-      // Physically delete from database
       try {
         const res = await fetch(`/api/solar-orders/${orderId}/files?fileId=${state.id}`, {
           method: 'DELETE'
@@ -155,7 +149,6 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
       }
     }
 
-    // Remove from local state
     setLocalState(p => {
       const newState = { ...p };
       delete newState[type];
@@ -184,7 +177,6 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
 
     setSubmitting(true);
     try {
-      // Save all documents that are not yet saved to db or whose phone numbers changed
       for (const item of summary) {
         if (!item.hasFile) continue;
         const state = localState[item.req.type];
@@ -214,7 +206,7 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
 
   if (loading) {
     return (
-      <div className="p-8 flex justify-center items-center">
+      <div className="p-8 flex justify-center items-center h-full">
         <Loader2 className="animate-spin text-blue-500" size={32} />
       </div>
     );
@@ -231,13 +223,13 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
   };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-      <div className="bg-slate-50 border-b border-gray-200 p-5">
+    <div className="bg-white h-full flex flex-col">
+      <div className="bg-slate-50 border-b border-gray-100 p-6">
         <h3 className="text-lg font-bold text-gray-900 mb-1">Customer Verification Documents</h3>
         <p className="text-sm text-gray-500">Please provide all mandatory verification documents to proceed.</p>
       </div>
 
-      <div className="divide-y divide-gray-100">
+      <div className="flex-1 overflow-y-auto px-6 py-6 divide-y divide-gray-100 space-y-6">
         {requirements.map((req, idx) => {
           const state = localState[req.type];
           const isUploaded = !!state?.fileUrl;
@@ -245,88 +237,44 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
           const phoneValid = phoneConfig ? state?.phone && phoneConfig.validationRegex.test(state.phone) : true;
 
           return (
-            <div key={req.type} className="p-6">
-              <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
-                
-                {/* Left side: Instructions */}
-                <div className="flex-1">
-                  <h4 className="text-base font-bold text-gray-900 flex items-center gap-2 mb-2">
-                    {req.label}
-                    {req.required && <span className="text-red-500 text-xs uppercase tracking-wider bg-red-50 px-1.5 py-0.5 rounded">Required</span>}
-                  </h4>
-                  <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs font-medium text-gray-500 mb-4">
-                    <span>Formats: {req.acceptedTypes.map(t => t.replace('.', '').toUpperCase()).join(', ')}</span>
-                    <span>Max Size: {req.maxMb} MB</span>
-                  </div>
-                  
-                  {isUploaded ? (
-                    <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-sm font-bold">
-                      <CheckCircle2 size={16} /> Uploaded Successfully
-                    </div>
-                  ) : (
-                    <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-50 text-gray-500 border border-gray-200 rounded-lg text-sm font-medium">
-                      <Circle size={16} /> Not Uploaded
-                    </div>
-                  )}
+            <div key={req.type} className={idx > 0 ? "pt-6" : ""}>
+              
+              {/* Vertical Stack: Title & Meta */}
+              <div className="mb-4">
+                <h4 className="text-base font-bold text-gray-900 flex items-center gap-2 mb-1.5">
+                  {req.label}
+                  {req.required && <span className="text-red-500 text-[10px] font-black uppercase tracking-wider bg-red-50 px-2 py-0.5 rounded border border-red-100">Required</span>}
+                </h4>
+                <div className="flex items-center gap-3 text-xs font-medium text-gray-500">
+                  <span className="bg-gray-50 px-2 py-1 rounded border border-gray-100">Formats: {req.acceptedTypes.map(t => t.replace('.', '').toUpperCase()).join(', ')}</span>
+                  <span className="bg-gray-50 px-2 py-1 rounded border border-gray-100">Max: {req.maxMb} MB</span>
                 </div>
+              </div>
 
-                {/* Right side: Uploader */}
-                <div className="flex-shrink-0 w-full md:w-80">
-                  {isUploaded ? (
-                    <div className="flex flex-col border border-gray-200 rounded-xl bg-gray-50 p-3">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-10 h-10 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-blue-600 flex-shrink-0">
-                          <FileText size={20} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-gray-900 truncate" title={state.fileName}>{state.fileName || req.label}</p>
-                          <p className="text-xs text-gray-500">{state.fileSizeBytes ? formatBytes(state.fileSizeBytes) : 'Unknown size'}</p>
-                        </div>
+              {/* Vertical Stack: Uploader Box */}
+              <div>
+                {isUploaded ? (
+                  <div className="flex flex-col border border-gray-200 rounded-xl bg-gray-50 p-4">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-12 h-12 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-emerald-600 flex-shrink-0 shadow-sm">
+                        <CheckCircle2 size={24} />
                       </div>
-                      
-                      <div className="flex gap-2">
-                        <a 
-                          href={state.fileUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
-                          className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-bold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                        >
-                          View
-                        </a>
-                        
-                        <input 
-                          type="file" 
-                          ref={el => { fileInputRefs.current[req.type] = el; }}
-                          className="hidden" 
-                          accept={req.acceptedTypes.join(',')} 
-                          onChange={(e) => {
-                            if (e.target.files && e.target.files[0]) {
-                              handleFileUpload(req.type, e.target.files[0]);
-                            }
-                          }}
-                        />
-
-                        {canProgress && (
-                          <>
-                            <button 
-                              onClick={() => fileInputRefs.current[req.type]?.click()}
-                              className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-bold bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                            >
-                              Replace
-                            </button>
-                            <button 
-                              onClick={() => handleDelete(req.type)}
-                              className="flex-none p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 border border-transparent rounded-lg transition-colors"
-                              title="Delete Document"
-                            >
-                              <X size={16} />
-                            </button>
-                          </>
-                        )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-gray-900 truncate" title={state.fileName}>{state.fileName || req.label}</p>
+                        <p className="text-xs text-gray-500">{state.fileSizeBytes ? formatBytes(state.fileSizeBytes) : 'Unknown size'}</p>
                       </div>
                     </div>
-                  ) : (
-                    <div className="relative">
+                    
+                    <div className="flex gap-3 w-full">
+                      <a 
+                        href={state.fileUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-bold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors shadow-sm"
+                      >
+                        Preview
+                      </a>
+                      
                       <input 
                         type="file" 
                         ref={el => { fileInputRefs.current[req.type] = el; }}
@@ -338,38 +286,70 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
                           }
                         }}
                       />
-                      <button 
-                        type="button"
-                        onClick={() => fileInputRefs.current[req.type]?.click()}
-                        disabled={uploading === req.type || !canProgress}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-6 border-2 border-dashed border-gray-300 rounded-xl text-sm font-bold text-gray-600 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-white"
-                      >
-                        {uploading === req.type ? <Loader2 size={24} className="animate-spin text-blue-500" /> : <Upload size={24} className="text-gray-400 group-hover:text-blue-500" />}
-                        <div className="flex flex-col items-start ml-2 text-left">
-                          <span className="text-gray-900">{uploading === req.type ? 'Uploading...' : 'Click to Upload File'}</span>
-                          <span className="text-xs text-gray-500 font-normal mt-0.5">or drag and drop</span>
-                        </div>
-                      </button>
+
+                      {canProgress && (
+                        <>
+                          <button 
+                            onClick={() => fileInputRefs.current[req.type]?.click()}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-bold bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg transition-colors shadow-sm"
+                          >
+                            Replace
+                          </button>
+                          <button 
+                            onClick={() => handleDelete(req.type)}
+                            className="flex-none px-4 text-gray-400 hover:text-red-600 hover:bg-red-50 border border-gray-200 hover:border-red-100 rounded-lg transition-colors bg-white shadow-sm"
+                            title="Delete Document"
+                          >
+                            <X size={18} />
+                          </button>
+                        </>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div className="relative w-full">
+                    <input 
+                      type="file" 
+                      ref={el => { fileInputRefs.current[req.type] = el; }}
+                      className="hidden" 
+                      accept={req.acceptedTypes.join(',')} 
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handleFileUpload(req.type, e.target.files[0]);
+                        }
+                      }}
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => fileInputRefs.current[req.type]?.click()}
+                      disabled={uploading === req.type || !canProgress}
+                      className="w-full min-h-[120px] flex flex-col items-center justify-center gap-3 px-4 py-6 border-2 border-dashed border-gray-300 rounded-xl text-sm font-bold text-gray-600 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-gray-50/50"
+                    >
+                      {uploading === req.type ? <Loader2 size={32} className="animate-spin text-blue-500" /> : <Upload size={32} className="text-gray-400 group-hover:text-blue-500" />}
+                      <div className="flex flex-col items-center text-center">
+                        <span className="text-gray-900">{uploading === req.type ? 'Uploading...' : 'Click to Upload File'}</span>
+                        <span className="text-xs text-gray-500 font-normal mt-1">or drag and drop</span>
+                      </div>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Dependent Phone Field */}
               {phoneConfig && (
-                <div className={`mt-6 pt-6 border-t border-gray-100 ${isUploaded ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                <div className={`mt-6 p-5 bg-gray-50 border border-gray-200 rounded-xl ${isUploaded ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
                   <h4 className="text-sm font-bold text-gray-900 mb-1">{phoneConfig.label} <span className="text-red-500">*</span></h4>
-                  <p className="text-xs text-gray-500 mb-3">{phoneConfig.description}</p>
+                  <p className="text-xs text-gray-500 mb-4">{phoneConfig.description}</p>
                   
-                  <div className="relative max-w-xs">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm">+91</span>
+                  <div className="relative w-full">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm">+91</span>
                     <input 
                       type="text"
                       placeholder="__________"
                       value={state?.phone || ''}
                       onChange={(e) => handlePhoneChange(req.type, e.target.value)}
                       disabled={!canProgress}
-                      className={`w-full pl-10 pr-4 py-2.5 border-2 rounded-xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all ${
+                      className={`w-full pl-12 pr-4 py-3 border-2 rounded-xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all bg-white shadow-sm ${
                         state?.phone && !phoneValid 
                           ? 'border-red-300 focus:border-red-500' 
                           : state?.phone && phoneValid 
@@ -379,7 +359,9 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
                     />
                   </div>
                   {state?.phone && !phoneValid && (
-                    <p className="text-xs text-red-500 mt-1.5 font-medium">Please enter a valid 10-digit number</p>
+                    <p className="text-xs text-red-500 mt-2 font-bold flex items-center gap-1">
+                      <Circle size={12} className="fill-red-500" /> Please enter a valid 10-digit number
+                    </p>
                   )}
                 </div>
               )}
@@ -388,19 +370,21 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
         })}
       </div>
 
-      {/* Validation Summary & Submit */}
+      {/* Validation Summary & Submit - Sticky Bottom */}
       {canProgress && (
-        <div className="bg-slate-50 border-t border-gray-200 p-6 flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div>
+        <div className="bg-white border-t border-gray-200 p-6 sticky bottom-0 z-10 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)] w-full mt-auto">
+          <div className="mb-5">
             <h4 className="text-sm font-bold text-gray-900 mb-3">Validation Summary</h4>
             <div className="space-y-2">
               {summary.map(s => (
                 <div key={s.req.type} className="flex items-center gap-2 text-sm font-medium text-gray-600">
                   {s.isValid ? <CheckCircle2 size={16} className="text-emerald-500" /> : <Circle size={16} className="text-gray-300" />}
-                  {s.req.label} {s.hasFile ? 'Uploaded' : 'Pending'}
+                  <span className={s.isValid ? "text-gray-900" : "text-gray-500"}>{s.req.label}</span>
+                  {s.hasFile ? <span className="text-emerald-600 text-xs font-bold">(Uploaded)</span> : <span className="text-orange-500 text-xs font-bold">(Pending)</span>}
+                  
                   {s.req.requiresPhone && (
-                    <span className="ml-2">
-                      ({s.hasValidPhone ? 'Valid Phone Number' : 'Pending Phone Number'})
+                    <span className="ml-1 text-xs">
+                      {s.hasValidPhone ? <span className="text-emerald-600 font-bold">• Valid Phone Number</span> : <span className="text-orange-500 font-bold">• Pending Phone Number</span>}
                     </span>
                   )}
                 </div>
@@ -408,16 +392,14 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
             </div>
           </div>
           
-          <div className="flex-shrink-0 w-full md:w-auto">
-            <button
-              onClick={handleSubmit}
-              disabled={!allValid || submitting}
-              className="w-full md:w-auto flex items-center justify-center gap-2 px-8 py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:shadow-none disabled:bg-gray-300 disabled:text-gray-500"
-            >
-              {submitting ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}
-              Submit Documents
-            </button>
-          </div>
+          <button
+            onClick={handleSubmit}
+            disabled={!allValid || submitting}
+            className="w-full flex items-center justify-center gap-2 px-8 py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:shadow-none disabled:bg-gray-200 disabled:text-gray-400"
+          >
+            {submitting ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}
+            Submit Documents
+          </button>
         </div>
       )}
     </div>

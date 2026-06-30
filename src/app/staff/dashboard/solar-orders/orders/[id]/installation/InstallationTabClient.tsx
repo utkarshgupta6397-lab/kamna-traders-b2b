@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ArrowRight, Loader2, Check } from 'lucide-react';
+import toast from 'react-hot-toast';
 import WorkflowEngine, { WorkflowStep } from '../components/WorkflowEngine';
 import WorkflowInstallationUploader from '../components/WorkflowInstallationUploader';
 
@@ -83,9 +84,9 @@ export default function InstallationTabClient({
           return (
             <div className="p-6 md:p-8 w-full bg-slate-50 flex flex-col justify-center">
               <div className="mb-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-1">Required Action</h3>
+                <h3 className="text-lg font-bold text-gray-900 mb-1">Inverter Serial Number</h3>
                 <p className="text-sm text-gray-500">
-                  Please enter the inverter serial number to proceed.
+                  Please enter or scan the inverter serial number to proceed.
                 </p>
               </div>
 
@@ -97,7 +98,7 @@ export default function InstallationTabClient({
                     </label>
                     <input
                       type="text"
-                      placeholder="Scan or Enter S/N..."
+                      placeholder="Scan or enter inverter serial number"
                       value={inverterNumber}
                       onChange={(e) => setInverterNumber(e.target.value)}
                       className="w-full border-2 border-gray-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-4 focus:ring-[#00C2FF]/10 focus:border-[#00C2FF] transition-all bg-white font-mono uppercase"
@@ -117,21 +118,18 @@ export default function InstallationTabClient({
 
               <button
                 onClick={() => {
-                  if (selectedStep.status === 'PENDING') {
-                    updateStep('IN_PROGRESS', remarks);
-                  } else {
-                    if (!inverterNumber.trim()) {
-                      alert('Inverter Serial is required');
-                      return;
-                    }
-                    updateStep('COMPLETED', remarks, { inverterNumber: inverterNumber.trim().toUpperCase() });
+                  if (!inverterNumber.trim()) {
+                    toast.error('Inverter Serial Number is mandatory');
+                    return;
                   }
+                  // Send COMPLETED immediately, skipping IN_PROGRESS
+                  updateStep('COMPLETED', remarks, { inverterNumber: inverterNumber.trim().toUpperCase() });
                 }}
                 disabled={loadingStep === selectedStep.id || !canEdit}
                 className={`w-full flex items-center justify-center gap-2 px-6 py-4 font-bold text-base rounded-xl transition-all shadow-md group ${canEdit ? 'bg-[#00C2FF] text-white hover:bg-[#0091C2] hover:shadow-lg' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-none'}`}
               >
-                {loadingStep === selectedStep.id ? <Loader2 size={22} className="animate-spin" /> : (canEdit && <ArrowRight size={22} className="group-hover:translate-x-1 transition-transform" />)}
-                {selectedStep.status === 'PENDING' ? `Start: ${stepName}` : `Complete: ${stepName}`}
+                {loadingStep === selectedStep.id ? <Loader2 size={22} className="animate-spin" /> : (canEdit && <Check size={22} className="group-hover:scale-110 transition-transform" />)}
+                Save & Continue
               </button>
             </div>
           );

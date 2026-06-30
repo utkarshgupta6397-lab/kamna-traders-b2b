@@ -55,6 +55,34 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       }
     }
 
+    // Business Logic Validation: Inverter Number Entered
+    if (status === 'COMPLETED' && (step.metadata as any)?.name === 'Inverter Number Entered') {
+      const inverterNumber = metadata?.inverterNumber;
+      if (!inverterNumber || typeof inverterNumber !== 'string' || inverterNumber.trim() === '') {
+        return NextResponse.json({ error: 'Inverter Serial Number is mandatory' }, { status: 400 });
+      }
+
+      // Format serial number
+      const cleanSerial = inverterNumber.trim().replace(/\s+/g, ' ').toUpperCase();
+      metadata.inverterNumber = cleanSerial;
+
+      // Check for duplicates
+      const existing = await prisma.solarWorkflowStep.findFirst({
+        where: {
+          workflowType: 'INSTALLATION',
+          id: { not: stepId },
+          metadata: {
+            path: ['inverterNumber'],
+            equals: cleanSerial
+          }
+        }
+      });
+
+      if (existing) {
+        return NextResponse.json({ error: 'This inverter serial number is already registered.' }, { status: 400 });
+      }
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       // If marking as COMPLETED
       let completedData = {};
@@ -91,7 +119,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
       // Log the activity
       let logDesc = `Updated workflow step '${(newMetadata as any)?.name || step.stepKey}'`;
-      if (status === 'COMPLETED') logDesc = `Completed workflow step '${(newMetadata as any)?.name || step.stepKey}'`;
+      if (status === 'COMPLETED') {
+        if ((newMetadata as any)?.name === 'Inverter Number Entered') {
+          logDesc = `Inverter Serial Number Entered. Serial Number: ${(newMetadata as any).inverterNumber}, Remarks: ${notes || 'None'}`;
+        } else {
+          logDesc = `Completed workflow step '${(newMetadata as any)?.name || step.stepKey}'`;
+        }
+      }
       else if (status === 'BLOCKED') logDesc = `Blocked workflow step '${(newMetadata as any)?.name || step.stepKey}' - ${blockedReason}`;
 
       await tx.solarActivityLog.create({

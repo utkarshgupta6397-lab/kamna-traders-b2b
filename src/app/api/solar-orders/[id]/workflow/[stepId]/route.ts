@@ -104,14 +104,33 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           const nextDocStep = await tx.solarWorkflowStep.findFirst({
             where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepIndex: step.stepIndex + 1 }
           });
-          if (nextDocStep && nextDocStep.status === 'BLOCKED' && !nextDocStep.blockedReason) {
-             // Only unblock if it's not explicitly blocked by an installation step
+          if (nextDocStep && nextDocStep.status === 'BLOCKED') {
              const stepName = (nextDocStep.metadata as any)?.name;
-             const requiresInstallUnblock = ['DCR Certificate Pending', 'File Upload Approval Pending'].includes(stepName);
-             if (!requiresInstallUnblock) {
+             let shouldUnblock = true;
+
+             if (stepName === 'DCR Certificate Pending') {
+               // Check if Inverter Number Entered is completed
+               const installStep4 = await tx.solarWorkflowStep.findFirst({
+                 where: { solarOrderId: id, workflowType: 'INSTALLATION', stepIndex: 4 }
+               });
+               if (!installStep4 || installStep4.status !== 'COMPLETED') {
+                 shouldUnblock = false;
+               }
+             } else if (stepName === 'File Upload Approval Pending') {
+               // Check if install steps 2,3,4 are completed
+               const requiredInstalls = await tx.solarWorkflowStep.findMany({
+                 where: { solarOrderId: id, workflowType: 'INSTALLATION', stepIndex: { in: [2, 3, 4] } }
+               });
+               const allRequiredDone = requiredInstalls.length === 3 && requiredInstalls.every(s => s.status === 'COMPLETED');
+               if (!allRequiredDone) {
+                 shouldUnblock = false;
+               }
+             }
+
+             if (shouldUnblock) {
                 await tx.solarWorkflowStep.update({
                   where: { id: nextDocStep.id },
-                  data: { status: 'PENDING' }
+                  data: { status: 'PENDING', blockedReason: null }
                 });
              }
           }

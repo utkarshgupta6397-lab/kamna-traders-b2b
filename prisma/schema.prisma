@@ -768,6 +768,7 @@ model SolarOrder {
   workflowSteps SolarWorkflowStep[]
   files         SolarOrderFile[]
   activityLogs  SolarActivityLog[]
+  payments      SolarOrderPayment[]
 
   @@index([status])
   @@index([createdById])
@@ -857,4 +858,20 @@ model City {
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model SolarOrderPayment {
+  id           String   @id @default(cuid())
+  solarOrderId String
+  amount       Float
+  paymentDate  DateTime @default(now())
+  paymentMode  String   // CASH, BANK_TRANSFER, CHEQUE, UPI
+  referenceNo  String?
+  remarks      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+
+  @@index([solarOrderId])
 }

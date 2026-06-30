@@ -12,8 +12,13 @@ interface SolarOrder {
   customerName: string;
   phoneNumber: string;
   systemSize: number;
+  systemType: string;
   totalOrderAmount: number;
+  leadSource: string;
   salesman: { name: string } | null;
+  callingExecutive: { name: string } | null;
+  subVendor: { name: string } | null;
+  payments: { amount: number }[];
   createdById: string;
 }
 
@@ -103,6 +108,22 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
     return configs[status] || configs.DRAFT;
   };
 
+  const getLeadSourceBadge = (source: string) => {
+    switch(source) {
+      case 'WALK_IN': return { bg: 'bg-blue-50', text: 'text-blue-700', label: 'WALK-IN' };
+      case 'WHATSAPP': return { bg: 'bg-green-50', text: 'text-green-700', label: 'WHATSAPP' };
+      case 'REFERRAL': return { bg: 'bg-purple-50', text: 'text-purple-700', label: 'REFERRAL' };
+      case 'CALLING_ACTIVITY': return { bg: 'bg-orange-50', text: 'text-orange-700', label: 'CALLING' };
+      case 'SUB_VENDOR': return { bg: 'bg-indigo-50', text: 'text-indigo-700', label: 'SUB-VENDOR' };
+      default: return { bg: 'bg-gray-100', text: 'text-gray-700', label: 'OTHER' };
+    }
+  };
+
+  const formatSystemType = (type: string) => {
+    if (!type) return '';
+    return type.split('_').map(word => word.charAt(0) + word.slice(1).toLowerCase()).join('-');
+  };
+
   const handleRowClick = (order: SolarOrder) => {
     if (order.status === 'PENDING_APPROVAL' || order.status === 'REJECTED') {
       if (order.createdById !== currentUserId && !canApprove) {
@@ -181,31 +202,34 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
       {/* Modern Data Table */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left whitespace-nowrap">
-            <thead className="bg-gray-50/80 border-b border-gray-200 text-gray-500 font-medium tracking-wider">
+          <table className="w-full text-left whitespace-nowrap">
+            <thead className="bg-gray-50/80 border-b border-gray-200 text-gray-500 font-semibold tracking-wide text-[13.5px]">
               <tr>
                 <th className="px-4 py-2 pl-6 w-10 text-center">#</th>
                 <th className="px-4 py-2">Customer & Order</th>
+                <th className="px-4 py-2">Lead Source</th>
+                <th className="px-4 py-2">Assigned To</th>
                 <th className="px-4 py-2">System Spec</th>
                 <th className="px-4 py-2">Amount</th>
+                <th className="px-4 py-2">Pending Payment</th>
                 <th className="px-4 py-2 w-40">Workflow %</th>
                 <th className="px-4 py-2">Status</th>
                 <th className="px-4 py-2 text-right pr-6"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 text-[14px]">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center">
+                  <td colSpan={10} className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center justify-center gap-3 text-gray-400">
                       <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-                      <span className="text-xs">Fetching orders...</span>
+                      <span className="text-sm">Fetching orders...</span>
                     </div>
                   </td>
                 </tr>
               ) : orders.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center">
+                  <td colSpan={10} className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center justify-center gap-2 text-gray-500">
                       <Filter className="text-gray-300 mb-2" size={24} />
                       <p className="font-medium text-gray-900 text-sm">No orders found</p>
@@ -216,8 +240,13 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
               ) : (
                 orders.map((order, index) => {
                   const config = getStatusConfig(order.status);
+                  const leadConfig = getLeadSourceBadge(order.leadSource);
                   const initials = order.customerName.substring(0, 2).toUpperCase();
                   const isLocked = (order.status === 'PENDING_APPROVAL' || order.status === 'REJECTED') && order.createdById !== currentUserId && !canApprove;
+                  
+                  const totalReceived = order.payments ? order.payments.reduce((acc, p) => acc + p.amount, 0) : 0;
+                  const outstanding = order.totalOrderAmount - totalReceived;
+                  const pendingPct = order.totalOrderAmount > 0 ? (outstanding / order.totalOrderAmount) * 100 : 0;
                   
                   return (
                     <tr key={order.id} className="group hover:bg-gray-50/80 transition-colors cursor-pointer" onClick={() => handleRowClick(order)}>
@@ -226,21 +255,62 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                       </td>
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-600 flex-shrink-0 shadow-sm">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-200 flex items-center justify-center text-[12px] font-bold text-gray-600 flex-shrink-0 shadow-sm">
                             {initials}
                           </div>
                           <div>
                             <div className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">{order.customerName}</div>
-                            <div className="text-[10px] font-medium text-gray-500 mt-0.5">{order.orderNumber}</div>
+                            <div className="text-[12px] font-medium text-gray-500 mt-0.5">{order.orderNumber}</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-2">
-                        <div className="font-medium text-gray-900">{order.systemSize} <span className="text-gray-500 text-[10px]">kW</span></div>
-                        <div className="text-[10px] text-gray-500 mt-0.5 truncate max-w-[120px]">{order.salesman?.name || 'Unassigned'}</div>
+                        <div className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider ${leadConfig.bg} ${leadConfig.text}`}>
+                          {leadConfig.label}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2">
+                        {(() => {
+                          if (order.leadSource === 'CALLING_ACTIVITY') {
+                            return order.callingExecutive ? (
+                              <div>
+                                <div className="font-medium text-gray-900">{order.callingExecutive.name}</div>
+                                <div className="text-[12px] text-gray-500">Calling Executive</div>
+                              </div>
+                            ) : '—';
+                          }
+                          if (order.leadSource === 'SUB_VENDOR') {
+                            return order.subVendor ? (
+                              <div>
+                                <div className="font-medium text-gray-900">{order.subVendor.name}</div>
+                                <div className="text-[12px] text-gray-500">Sub-Vendor</div>
+                              </div>
+                            ) : '—';
+                          }
+                          return order.salesman ? (
+                            <div className="font-medium text-gray-900">{order.salesman.name}</div>
+                          ) : '—';
+                        })()}
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="font-semibold text-gray-900">{order.systemSize} <span className="text-gray-500 text-[12px] font-medium">kW</span></div>
+                        <div className="text-[12px] text-gray-500">{formatSystemType(order.systemType)}</div>
                       </td>
                       <td className="px-4 py-2 font-medium text-gray-900">
                         ₹{order.totalOrderAmount.toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-4 py-2">
+                        {outstanding <= 0 ? (
+                          <>
+                            <div className="font-semibold text-gray-900">₹0</div>
+                            <div className="text-[12px] text-emerald-600 font-medium mt-0.5">Paid</div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="font-semibold text-gray-900">₹{outstanding.toLocaleString('en-IN')}</div>
+                            <div className="text-[12px] text-orange-600 font-medium mt-0.5">{pendingPct.toFixed(1)}% Pending</div>
+                          </>
+                        )}
                       </td>
                       <td className="px-4 py-2">
                         <div className="w-full max-w-[120px]">

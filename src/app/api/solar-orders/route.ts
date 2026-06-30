@@ -44,7 +44,9 @@ export async function GET(request: Request) {
         orderBy: { createdAt: 'desc' },
         include: {
           salesman: { select: { name: true } },
-          callingExecutive: { select: { name: true } }
+          callingExecutive: { select: { name: true } },
+          subVendor: { select: { name: true } },
+          payments: { select: { amount: true } }
         }
       }),
       prisma.solarOrder.count({ where }),
@@ -75,20 +77,19 @@ export async function POST(request: Request) {
     const body = await request.json();
 
     const newOrder = await prisma.$transaction(async (tx) => {
-      // 1. Check if we need a new year format based on current fiscal year
+      // 1. Generate new sequence based on YYMM
       const now = new Date();
-      const currentYear = now.getFullYear();
-      const fiscalYearStr = now.getMonth() >= 3 
-        ? `${currentYear}-${(currentYear + 1).toString().slice(2)}` 
-        : `${currentYear - 1}-${currentYear.toString().slice(2)}`;
+      const currentYear = now.getFullYear().toString().slice(2);
+      const currentMonth = (now.getMonth() + 1).toString().padStart(2, '0');
+      const yearMonthStr = `${currentYear}${currentMonth}`;
       
       const seqRecord = await tx.solarOrderSequence.upsert({
-        where: { year: fiscalYearStr },
+        where: { year: yearMonthStr },
         update: { sequence: { increment: 1 } },
-        create: { year: fiscalYearStr, sequence: 1 },
+        create: { year: yearMonthStr, sequence: 1 },
       });
 
-      const orderNumber = `SOL-${fiscalYearStr}-${seqRecord.sequence.toString().padStart(3, '0')}`;
+      const orderNumber = `OD-${yearMonthStr}-${seqRecord.sequence.toString().padStart(3, '0')}`;
 
       const newOrder = await tx.solarOrder.create({
         data: {

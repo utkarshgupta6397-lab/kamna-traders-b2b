@@ -22,11 +22,11 @@ interface SolarOrder {
   callingExecutive: { name: string } | null;
   subVendor: { name: string } | null;
   createdById: string;
+  payments?: { amount: number }[];
 }
 
 interface Counts {
   all: number;
-  draft: number;
   pendingApproval: number;
   execution: number;
   completed: number;
@@ -47,7 +47,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
   const [orders, setOrders] = useState<SolarOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [counts, setCounts] = useState<Counts>({
-    all: 0, draft: 0, pendingApproval: 0, execution: 0, completed: 0, rejected: 0
+    all: 0, pendingApproval: 0, execution: 0, completed: 0, rejected: 0
   });
   const [totalPages, setTotalPages] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
@@ -136,7 +136,6 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
 
   const getStatusConfig = (status: string) => {
     const configs: Record<string, { bg: string, text: string, dot: string, progress: number }> = {
-      DRAFT: { bg: 'bg-slate-100', text: 'text-slate-700', dot: 'bg-slate-500', progress: 5 },
       PENDING_APPROVAL: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500', progress: 15 },
       APPROVED: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500', progress: 25 },
       EXECUTION: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500', progress: 65 },
@@ -144,7 +143,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
       REJECTED: { bg: 'bg-red-100', text: 'text-red-700', dot: 'bg-red-500', progress: 100 },
       CANCELLED: { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500', progress: 0 },
     };
-    return configs[status] || configs.DRAFT;
+    return configs[status] || configs.PENDING_APPROVAL;
   };
 
   const getLeadSourceBadge = (source: string) => {
@@ -216,7 +215,6 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 xl:pb-0">
             {[
               { id: 'All', label: 'All', count: counts.all },
-              { id: 'DRAFT', label: 'Draft', count: counts.draft },
               { id: 'PENDING_APPROVAL', label: 'Pending Approval', count: counts.pendingApproval },
               { id: 'EXECUTION', label: 'Execution', count: counts.execution },
               { id: 'COMPLETED', label: 'Completed', count: counts.completed },
@@ -403,7 +401,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                   const initials = order.customerName.substring(0, 2).toUpperCase();
                   const isLocked = (order.status === 'PENDING_APPROVAL' || order.status === 'REJECTED') && order.createdById !== currentUserId && !canApprove;
                   
-                  const pendingAmt = order.pendingAmount ?? (order.totalOrderAmount - (order.payments ? order.payments.reduce((acc, p) => acc + p.amount, 0) : 0));
+                  const pendingAmt = order.pendingAmount ?? (order.totalOrderAmount - (order.payments ? order.payments.reduce((acc: any, p: any) => acc + p.amount, 0) : 0));
                   const pendingPct = order.totalOrderAmount > 0 ? (pendingAmt / order.totalOrderAmount) * 100 : 0;
                   
                   return (

@@ -25,7 +25,6 @@ export async function GET() {
 
     return NextResponse.json({
       all: total,
-      draft: formattedCounts['DRAFT'] || 0,
       pendingApproval: formattedCounts['PENDING_APPROVAL'] || 0,
       execution: formattedCounts['EXECUTION'] || 0,
       completed: formattedCounts['COMPLETED'] || 0,

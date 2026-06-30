@@ -1,0 +1,94 @@
+--- src/lib/zoho/pdf-statement-renderer.ts
++++ src/lib/zoho/pdf-statement-renderer.ts
+@@ -253,7 +253,7 @@
+ 
+   const pageW = doc.internal.pageSize.getWidth();
+   const pageH = doc.internal.pageSize.getHeight();
+-  const margin = 18;
++  const margin = 20;
+   const colW = pageW - margin * 2;
+ 
+   const cNavy: [number, number, number]   = [26,  39, 102];
+@@ -316,56 +316,68 @@
+   let currentY = 12;
+ 
+   if (!isGroup) {
+-    const logoH = 12;
++    const logoH = 16;
+     const logoW = logoH * (599 / 579);
+-    const logoY = 10;
+-    const dividerY = logoY + 16;
++    const logoY = 24; // top margin
++    const headerBottomY = logoY + logoH + 8;
++    const dividerY = headerBottomY;
+     
+     if (theme === 'color') {
+       doc.setFillColor(...cNavy);
+       doc.rect(0, 0, pageW, dividerY, 'F');
+     }
+ 
+     if (logo) {
+       doc.addImage(logo, 'PNG', margin, logoY, logoW, logoH);
+     }
+     
+-    const titleX = margin + logoW + 4;
+-    doc.setFontSize(14);
++    const titleX = margin + logoW + 8;
++    doc.setFontSize(20);
+     doc.setFont(pdfFont, 'bold');
+     doc.setTextColor(...(theme === 'economy' ? cDark : [255, 255, 255] as [number, number, number]));
+-    doc.text('Customer Statement', titleX, logoY + 7);
++    doc.text('Customer Statement', titleX, logoY + 8);
+     
+-    doc.setFontSize(8);
++    doc.setFontSize(10.5);
+     doc.setFont(pdfFont, 'normal');
+     doc.setTextColor(...(theme === 'economy' ? [100, 116, 139] : [190, 205, 225] as [number, number, number]));
+-    doc.text('Kamna Traders · Receivables Ledger', titleX, logoY + 11.5);
++    doc.text('Kamna Traders B2B · Receivables Ledger', titleX, logoY + 14);
+ 
+     const rightX = pageW - margin;
+-    doc.setFontSize(11);
++    doc.setFontSize(18);
+     doc.setFont(pdfFont, 'bold');
+     doc.setTextColor(...(theme === 'economy' ? cDark : [255, 255, 255] as [number, number, number]));
+     let cName = s.customer.contactName || 'Customer';
+-    const maxRightWidth = (pageW - margin * 2) * 0.45;
++    const maxRightWidth = (pageW - margin * 2) * 0.40;
+     if (doc.getStringUnitWidth(cName) * doc.internal.getFontSize() / doc.internal.scaleFactor > maxRightWidth) {
+       while (cName.length > 0 && doc.getStringUnitWidth(cName + '...') * doc.internal.getFontSize() / doc.internal.scaleFactor > maxRightWidth) {
+         cName = cName.slice(0, -1);
+       }
+       cName += '...';
+     }
+-    doc.text(cName, rightX, logoY + 5, { align: 'right' });
++    doc.text(cName, rightX, logoY + 4, { align: 'right' });
+ 
+-    doc.setFontSize(8);
++    doc.setFontSize(11);
+     doc.setFont(pdfFont, 'normal');
+-    doc.setTextColor(...(theme === 'economy' ? [100, 116, 139] : [190, 205, 225] as [number, number, number]));
+-    if (s.customer.gstNo) doc.text(`GST: ${s.customer.gstNo}`, rightX, logoY + 9, { align: 'right' });
+-    if (s.customer.mobile) doc.text(`Phone: ${s.customer.mobile}`, rightX, logoY + 13, { align: 'right' });
++    doc.setTextColor(...(theme === 'economy' ? [100, 116, 139] : [226, 232, 240] as [number, number, number]));
++    let curRightY = logoY + 9;
++    
++    if (s.customer.gstNo) {
++      doc.text(`GST: ${s.customer.gstNo}`, rightX, curRightY, { align: 'right' });
++      curRightY += 5;
++    }
++    if (s.customer.mobile) {
++      doc.text(`Phone: ${s.customer.mobile}`, rightX, curRightY, { align: 'right' });
++      curRightY += 5;
++    }
++    
++    const rawAddr = (s.customer as any).rawAddress;
++    if (rawAddr && rawAddr.city) {
++      doc.text(`${rawAddr.city}, ${rawAddr.state || ''}`.trim().replace(/,$/, ''), rightX, curRightY, { align: 'right' });
++    }
+ 
+     if (theme === 'economy') {
+       doc.setDrawColor(...cNavy);
+       doc.setLineWidth(0.3);
+       doc.line(margin, dividerY, pageW - margin, dividerY);
+     }

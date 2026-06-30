@@ -35,14 +35,13 @@ export default async function OrderDetailLayout({
 
   // Authorization Check
   if (order.status === 'PENDING_APPROVAL' || order.status === 'REJECTED') {
-    if (order.createdById !== session?.userId && !(isAdmin || !!session?.solar_orders_approve)) {
+    if (order.createdById !== session?.userId && !(isAdmin || !!session?.solar_orders_approval)) {
       redirect('/staff/dashboard/solar-orders/orders');
     }
   }
 
   const getStatusBadge = (status: string) => {
     const configs: Record<string, string> = {
-      DRAFT: 'bg-slate-100 text-slate-700 border-slate-200',
       PENDING_APPROVAL: 'bg-amber-50 text-amber-700 border-amber-200',
       APPROVED: 'bg-blue-50 text-blue-700 border-blue-200',
       EXECUTION: 'bg-purple-50 text-purple-700 border-purple-200',
@@ -50,7 +49,7 @@ export default async function OrderDetailLayout({
       REJECTED: 'bg-red-50 text-red-700 border-red-200',
       CANCELLED: 'bg-gray-50 text-gray-700 border-gray-200',
     };
-    const config = configs[status] || configs.DRAFT;
+    const config = configs[status] || configs.PENDING_APPROVAL;
     return (
       <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border ${config}`}>
         <span className={`w-1.5 h-1.5 rounded-full ${config.replace('bg-', 'bg-').replace('-50', '-500').replace('-100', '-500')}`}></span>
@@ -108,7 +107,7 @@ export default async function OrderDetailLayout({
             <OrderHeaderActions 
               orderId={id} 
               status={order.status} 
-              canApprove={isAdmin || !!session?.solar_orders_approve} 
+              canApprove={isAdmin || !!session?.solar_orders_approval} 
             />
           </div>
         </div>

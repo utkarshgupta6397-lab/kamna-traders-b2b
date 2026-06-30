@@ -8,6 +8,7 @@ export default async function TimelineTab({ params }: { params: { id: string } }
   const logs = await prisma.solarActivityLog.findMany({
     where: { solarOrderId: id },
     orderBy: { createdAt: 'desc' },
+    include: { actor: { select: { name: true } } },
   });
 
   return (
@@ -39,7 +40,9 @@ export default async function TimelineTab({ params }: { params: { id: string } }
                   <time className="font-medium text-xs text-slate-500">{format(new Date(log.createdAt), 'MMM d, h:mm a')}</time>
                 </div>
                 <div className="text-slate-500 text-sm">{log.description}</div>
-                <div className="text-slate-400 text-xs mt-2 text-right">— {log.actorName}</div>
+                <div className="text-slate-400 text-xs mt-2 text-right">
+                  — {log.actor?.name || (log.actorName && log.actorName !== 'Staff' ? log.actorName : 'Unknown User')}
+                </div>
               </div>
             </div>
           ))}

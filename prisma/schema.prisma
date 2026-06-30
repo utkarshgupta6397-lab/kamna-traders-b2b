@@ -42,21 +42,7 @@ model User {
   dcr_issue_customer_dcr      Boolean @default(false)
   solar_orders_view           Boolean @default(false)
   solar_orders_create         Boolean @default(false)
-  solar_orders_edit           Boolean @default(false)
-  solar_orders_edit_draft     Boolean @default(false)
-  solar_orders_submit         Boolean @default(false)
-  solar_orders_approve        Boolean @default(false)
-  solar_orders_reject         Boolean @default(false)
-  solar_orders_delete         Boolean @default(false)
-  solar_orders_view_rejected  Boolean @default(false)
-  solar_documentation_view    Boolean @default(false)
-  solar_documentation_edit    Boolean @default(false)
-  solar_documentation_approve Boolean @default(false)
-  solar_installation_view     Boolean @default(false)
-  solar_installation_complete Boolean @default(false)
-  solar_upload_documents      Boolean @default(false)
-  solar_view_financials       Boolean @default(false)
-  solar_manage_workflow       Boolean @default(false)
+  solar_orders_approval       Boolean @default(false)
 
   sessions            ActiveSession[]
   carts               Cart[]
@@ -734,6 +720,8 @@ model SolarOrder {
   subVendor             SubVendor? @relation("SolarOrderSubVendor", fields: [subVendorId], references: [id])
   loanCustomer          Boolean  @default(false)
   totalOrderAmount      Float
+  receivedAmount        Float    @default(0)
+  pendingAmount         Float    @default(0)
   systemSize            Float
   systemType            String // ON_GRID, OFF_GRID, HYBRID
   zohoBooksCustomerId   String?

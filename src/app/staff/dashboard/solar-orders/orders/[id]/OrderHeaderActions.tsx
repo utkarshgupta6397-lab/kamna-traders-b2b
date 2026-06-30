@@ -49,16 +49,7 @@ export default function OrderHeaderActions({ orderId, status, canApprove }: Orde
   return (
     <>
       <div className="flex items-center gap-3">
-        {status === 'DRAFT' && (
-          <button
-            onClick={() => updateStatus('PENDING_APPROVAL')}
-            disabled={loading}
-            className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 text-sm font-medium rounded transition-colors shadow-sm disabled:opacity-70 flex items-center gap-2"
-          >
-            {loading && <Loader2 size={16} className="animate-spin" />}
-            Submit for Approval
-          </button>
-        )}
+
         {status === 'PENDING_APPROVAL' && canApprove && (
           <>
             <button

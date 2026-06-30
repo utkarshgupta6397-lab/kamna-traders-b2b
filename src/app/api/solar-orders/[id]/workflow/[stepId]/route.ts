@@ -77,7 +77,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         data: {
           solarOrderId: id,
           actorId: session.userId,
-          actorName: session.name || 'Staff',
+          actorName: session.name || 'Unknown User',
           eventType: 'WORKFLOW_UPDATED',
           description: logDesc,
         }

@@ -69,7 +69,7 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       return null;
     }
 
-    const merged = { ...payload, ...(validation.permissions || {}) };
+    const merged = { ...payload, name: validation.name, ...(validation.permissions || {}) };
 
     // ── ADMIN OVERRIDE ──
     // If user is ADMIN, force full access
@@ -92,17 +92,7 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.dcr_hold_release = true;
       merged.solar_orders_view = true;
       merged.solar_orders_create = true;
-      merged.solar_orders_edit = true;
-      merged.solar_orders_approve = true;
-      merged.solar_orders_delete = true;
-      merged.solar_documentation_view = true;
-      merged.solar_documentation_edit = true;
-      merged.solar_documentation_approve = true;
-      merged.solar_installation_view = true;
-      merged.solar_installation_complete = true;
-      merged.solar_upload_documents = true;
-      merged.solar_view_financials = true;
-      merged.solar_manage_workflow = true;
+      merged.solar_orders_approval = true;
     }
 
     console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);

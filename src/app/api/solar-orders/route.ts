@@ -15,6 +15,12 @@ export async function GET(request: Request) {
     const status = searchParams.get('status');
     const systemType = searchParams.get('systemType');
     const search = searchParams.get('search');
+    const leadSource = searchParams.get('leadSource');
+    const systemSizeMin = searchParams.get('systemSizeMin');
+    const systemSizeMax = searchParams.get('systemSizeMax');
+    const assignedTo = searchParams.get('assignedTo');
+    const sortField = searchParams.get('sortField');
+    const sortDirection = searchParams.get('sortDirection') === 'asc' ? 'asc' : 'desc';
 
     const skip = (page - 1) * limit;
 
@@ -27,6 +33,16 @@ export async function GET(request: Request) {
     if (systemType && systemType !== 'All') {
       where.systemType = systemType;
     }
+    
+    if (leadSource) {
+      where.leadSource = { in: leadSource.split(',') };
+    }
+    
+    if (systemSizeMin || systemSizeMax) {
+      where.systemSize = {};
+      if (systemSizeMin) where.systemSize.gte = parseFloat(systemSizeMin);
+      if (systemSizeMax) where.systemSize.lte = parseFloat(systemSizeMax);
+    }
 
     if (search) {
       where.OR = [
@@ -35,13 +51,44 @@ export async function GET(request: Request) {
         { phoneNumber: { contains: search, mode: 'insensitive' } },
       ];
     }
+    
+    if (assignedTo && assignedTo !== 'All') {
+      if (assignedTo === 'Unassigned') {
+        where.salesmanId = null;
+        where.callingExecutiveId = null;
+        where.subVendorId = null;
+      } else {
+        const assigneeOR = [
+          { salesmanId: assignedTo },
+          { callingExecutiveId: assignedTo },
+          { subVendorId: assignedTo }
+        ];
+        if (where.OR) {
+          where.AND = [ { OR: where.OR }, { OR: assigneeOR } ];
+          delete where.OR;
+        } else {
+          where.OR = assigneeOR;
+        }
+      }
+    }
+    
+    let orderBy: any = { createdAt: 'desc' };
+    if (sortField) {
+      switch(sortField) {
+        case 'orderAmount': orderBy = { totalOrderAmount: sortDirection }; break;
+        case 'pendingAmount': orderBy = { pendingAmount: sortDirection }; break;
+        case 'orderDate': orderBy = { orderDate: sortDirection }; break;
+        case 'customerName': orderBy = { customerName: sortDirection }; break;
+        case 'systemSize': orderBy = { systemSize: sortDirection }; break;
+      }
+    }
 
     const [orders, totalCount] = await Promise.all([
       prisma.solarOrder.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         include: {
           salesman: { select: { name: true } },
           callingExecutive: { select: { name: true } },
@@ -121,7 +168,7 @@ export async function POST(request: Request) {
         data: {
           solarOrderId: newOrder.id,
           actorId: session.userId,
-          actorName: session.name || 'Staff',
+          actorName: session.name || 'Unknown User',
           eventType: 'ORDER_SUBMITTED',
           description: `Created and submitted new solar order ${orderNumber} for approval`,
         }

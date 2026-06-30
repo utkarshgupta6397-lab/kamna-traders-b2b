@@ -208,7 +208,8 @@ export default function SolarOrdersDashboardClient() {
               ) : (
                 <div className="relative before:absolute before:inset-0 before:ml-3 before:-translate-x-px md:before:translate-x-0 before:h-full before:w-px before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
                   {recentActivity.map((act: any) => {
-                    const isSystem = act.actorName === 'System' || act.actorName.includes('Admin');
+                    const resolvedName = act.actor?.name || (act.actorName && act.actorName !== 'Staff' ? act.actorName : 'Unknown User');
+                    const isSystem = resolvedName === 'System' || resolvedName.includes('Admin');
                     return (
                       <div key={act.id} className="relative flex items-start gap-4 mb-6 last:mb-0 group">
                         <div className={`mt-1 flex-shrink-0 w-6 h-6 rounded-full border-[3px] border-white flex items-center justify-center ${isSystem ? 'bg-slate-200 text-slate-500' : 'bg-blue-100 text-blue-600'} z-10 shadow-sm`}>
@@ -216,7 +217,7 @@ export default function SolarOrdersDashboardClient() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-gray-900 leading-tight">
-                            <span className="font-semibold text-gray-900">{act.actorName}</span>{' '}
+                            <span className="font-semibold text-gray-900">{resolvedName}</span>{' '}
                             <span className="text-gray-600">{act.description.replace(act.solarOrder?.orderNumber, '')}</span>
                             <Link href={`/staff/dashboard/solar-orders/orders/${act.solarOrderId}`} className="font-semibold text-blue-600 hover:underline">
                               {act.solarOrder?.orderNumber}

@@ -48,23 +48,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     // Validation Rules based on Blueprint
     if (status === 'PENDING_APPROVAL') {
-      if (order.status !== 'DRAFT') return NextResponse.json({ error: 'Only DRAFT orders can be submitted' }, { status: 400 });
-      // Can be triggered by creator or admin/approver
+      return NextResponse.json({ error: 'Cannot manually transition to Pending Approval' }, { status: 400 });
     }
 
     if (status === 'APPROVED') {
       if (order.status !== 'PENDING_APPROVAL') return NextResponse.json({ error: 'Only PENDING_APPROVAL orders can be approved' }, { status: 400 });
-      if (!isAdmin && !session.solar_orders_approve) return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
+      if (!isAdmin && !session.solar_orders_approval) return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
     }
 
     if (status === 'CANCELLED') {
-      if (!isAdmin && !session.solar_orders_delete) return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
+      if (!isAdmin) return NextResponse.json({ error: 'Only Administrators can cancel orders' }, { status: 403 });
       if (!remarks) return NextResponse.json({ error: 'Cancellation remarks are required' }, { status: 400 });
     }
 
     if (status === 'REJECTED') {
       if (order.status !== 'PENDING_APPROVAL') return NextResponse.json({ error: 'Only PENDING_APPROVAL orders can be rejected' }, { status: 400 });
-      if (!isAdmin && !session.solar_orders_reject && !session.solar_orders_approve) return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
+      if (!isAdmin && !session.solar_orders_approval) return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
       if (!remarks || remarks.trim() === '') return NextResponse.json({ error: 'Rejection remarks are mandatory' }, { status: 400 });
     }
 
@@ -97,7 +96,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         data: {
           solarOrderId: id,
           actorId: session.userId,
-          actorName: session.name || 'Staff',
+          actorName: session.name || 'Unknown User',
           eventType,
           description: status === 'REJECTED' ? `Order rejected: ${remarks}` : `Changed status from ${order.status} to ${finalStatus}${remarks ? ` (Remarks: ${remarks})` : ''}`,
         }

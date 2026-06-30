@@ -9,9 +9,8 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    const [totalOrders, draftOrders, pendingApproval, activeInstallations, completedOrders] = await Promise.all([
+    const [totalOrders, pendingApproval, activeInstallations, completedOrders] = await Promise.all([
       prisma.solarOrder.count({ where: { status: { not: 'CANCELLED' } } }),
-      prisma.solarOrder.count({ where: { status: 'DRAFT' } }),
       prisma.solarOrder.count({ where: { status: 'PENDING_APPROVAL' } }),
       prisma.solarOrder.count({ where: { status: 'EXECUTION' } }),
       prisma.solarOrder.count({ where: { status: 'COMPLETED' } }),
@@ -20,13 +19,15 @@ export async function GET() {
     const recentActivity = await prisma.solarActivityLog.findMany({
       take: 10,
       orderBy: { createdAt: 'desc' },
-      include: { solarOrder: { select: { orderNumber: true, customerName: true } } }
+      include: { 
+        solarOrder: { select: { orderNumber: true, customerName: true } },
+        actor: { select: { name: true } }
+      }
     });
 
     return NextResponse.json({
       kpis: {
         totalOrders,
-        draftOrders,
         pendingApproval,
         activeInstallations,
         completedOrders,

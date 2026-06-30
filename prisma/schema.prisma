@@ -43,6 +43,7 @@ model User {
   solar_orders_view           Boolean @default(false)
   solar_orders_create         Boolean @default(false)
   solar_orders_approval       Boolean @default(false)
+  solar_orders_docs_progress  Boolean @default(false)
 
   sessions            ActiveSession[]
   carts               Cart[]
@@ -760,7 +761,6 @@ model SolarOrder {
   payments      SolarOrderPayment[]
   panels        SolarOrderPanel[]
   inverters     SolarOrderInverter[]
-  siteImages    SolarOrderSiteImage[]
 
   @@index([status])
   @@index([createdById])
@@ -804,13 +804,17 @@ model SolarOrderFile {
   fileUrl       String
   fileType      String
   fileSizeBytes Int?
-  fileCategory  String // SITE_IMAGE, DOCUMENT, ROOFTOP_PHOTO, OTHER
+  fileCategory  String // SITE_IMAGE, DOCUMENTATION, ROOFTOP_PHOTO, OTHER
+  documentType  String? // e.g., 'CANCELLED_CHEQUE', 'ELECTRICITY_BILL'
+  metadata      Json?
+  
   uploadedById  String
   isDeleted     Boolean   @default(false)
   deletedAt     DateTime?
   deletedById   String?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
   uploadedBy User       @relation("SolarFileUploadedBy", fields: [uploadedById], references: [id])
@@ -856,20 +860,6 @@ model SolarOrderInverter {
   solarOrderId String
   description  String
   quantity     Int
-  orderIndex   Int
-
-  solarOrder   SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
-  
-  @@index([solarOrderId])
-}
-
-model SolarOrderSiteImage {
-  id           String @id @default(cuid())
-  solarOrderId String
-  fileUrl      String
-  fileName     String
-  fileSize     Int
-  mimeType     String
   orderIndex   Int
 
   solarOrder   SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)

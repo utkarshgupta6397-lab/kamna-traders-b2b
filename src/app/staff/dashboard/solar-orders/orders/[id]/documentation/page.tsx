@@ -12,8 +12,8 @@ export default async function DocumentationTab({ params }: { params: { id: strin
     include: { completedBy: { select: { name: true } } }
   });
 
-  const canEdit = session?.role === 'ADMIN' || session?.solar_documentation_edit;
-  const canApprove = session?.role === 'ADMIN' || session?.solar_documentation_approve;
+  const canProgress = session?.role === 'ADMIN' || session?.solar_orders_view;
+  const canApprove = session?.role === 'ADMIN' || session?.solar_orders_approval;
 
   if (steps.length === 0) {
     return (
@@ -28,11 +28,7 @@ export default async function DocumentationTab({ params }: { params: { id: strin
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-lg font-bold text-gray-900">Documentation Checklist</h2>
-        <p className="text-sm text-gray-500">Step {steps.filter(s => s.status === 'COMPLETED').length} of {steps.length} completed</p>
-      </div>
-      <DocumentationTabClient orderId={id} steps={steps} canEdit={!!canEdit} canApprove={!!canApprove} />
+      <DocumentationTabClient orderId={id} steps={steps} canProgress={!!canProgress} canApprove={!!canApprove} />
     </div>
   );
 }

@@ -14,7 +14,7 @@ export default async function ApprovalReviewScreen({ orderId, canApprove }: { or
       subVendor: { select: { name: true } },
       panels: { orderBy: { orderIndex: 'asc' } },
       inverters: { orderBy: { orderIndex: 'asc' } },
-      siteImages: { orderBy: { orderIndex: 'asc' } },
+      files: { where: { fileCategory: 'SITE_IMAGE', isDeleted: false } },
     }
   });
 
@@ -200,8 +200,8 @@ export default async function ApprovalReviewScreen({ orderId, canApprove }: { or
         {/* Uploaded Site Images */}
         <div>
           <SectionTitle icon={Building2} title="Uploaded Site Images" />
-          {order.siteImages.length > 0 ? (
-            <ApprovalImageGallery images={order.siteImages.map(img => img.fileUrl)} />
+          {order.files && order.files.length > 0 ? (
+            <ApprovalImageGallery images={order.files.map((img: any) => img.fileUrl)} />
           ) : (
             <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 flex items-center justify-center bg-gray-50">
               <p className="text-sm text-gray-500 font-medium">No site images uploaded.</p>

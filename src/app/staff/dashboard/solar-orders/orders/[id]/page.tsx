@@ -15,7 +15,7 @@ export default async function OrderDetailOverview({ params }: { params: Promise<
       subVendor: { select: { name: true } },
       panels: { orderBy: { orderIndex: 'asc' } },
       inverters: { orderBy: { orderIndex: 'asc' } },
-      siteImages: { orderBy: { orderIndex: 'asc' } },
+      files: { where: { fileCategory: 'SITE_IMAGE', isDeleted: false } },
     }
   });
 
@@ -132,7 +132,7 @@ export default async function OrderDetailOverview({ params }: { params: Promise<
             />
             <Property 
               label="Site Images" 
-              value={`${order.siteImages.length} Uploaded`} 
+              value={`${order.files?.length || 0} Uploaded`} 
             />
           </div>
         </div>

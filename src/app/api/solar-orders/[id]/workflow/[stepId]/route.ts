@@ -16,16 +16,30 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const isAdmin = session.role === 'ADMIN';
 
+    // Sequential Workflow Protection
+    // Ensure that the step being updated is not a FUTURE step.
+    const allSteps = await prisma.solarWorkflowStep.findMany({
+      where: { solarOrderId: id, workflowType: step.workflowType },
+      orderBy: { stepIndex: 'asc' }
+    });
+    const firstPending = allSteps.find(s => s.status !== 'COMPLETED' && s.status !== 'SKIPPED');
+    
+    // Allow updates to completed steps (e.g., adding notes) or the current active step
+    // Reject updates to steps that are in the future
+    if (firstPending && step.stepIndex > firstPending.stepIndex) {
+      return NextResponse.json({ error: 'Stage is locked. Complete previous stages first.' }, { status: 403 });
+    }
+
     // Permission check based on workflow type
     if (!isAdmin && !session.solar_manage_workflow) {
       if (step.workflowType === 'DOCUMENTATION') {
         // Some steps require approve permission
         const reviewSteps = ['Review & Approval', 'Review Pending', 'File Upload Approval Pending'];
         const stepName = (step.metadata as any)?.name;
-        if (reviewSteps.includes(stepName) && !session.solar_documentation_approve) {
+        if (reviewSteps.includes(stepName) && !session.solar_orders_approval && !session.solar_documentation_approve) {
           return NextResponse.json({ error: 'Documentation approve permission required' }, { status: 403 });
-        } else if (!session.solar_documentation_edit) {
-          return NextResponse.json({ error: 'Documentation edit permission required' }, { status: 403 });
+        } else if (!session.solar_orders_view) {
+          return NextResponse.json({ error: 'Solar orders view permission required to update documentation' }, { status: 403 });
         }
       } else if (step.workflowType === 'INSTALLATION') {
         if (!session.solar_installation_complete) {

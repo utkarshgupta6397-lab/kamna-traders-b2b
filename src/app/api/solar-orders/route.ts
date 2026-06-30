@@ -176,15 +176,16 @@ export async function POST(request: Request) {
               orderIndex: idx
             }))
           },
-          siteImages: body.siteImages && body.siteImages.length > 0 ? {
+          files: body.siteImages && body.siteImages.length > 0 ? {
             create: body.siteImages.map((img: any, idx: number) => ({
               fileUrl: img.url,
               fileName: img.fileName,
-              fileSize: img.fileSize,
-              mimeType: img.mimeType,
-              orderIndex: idx
+              fileType: img.mimeType,
+              fileSizeBytes: img.fileSize,
+              fileCategory: 'SITE_IMAGE',
+              uploadedById: session.userId
             }))
-          } : undefined
+          } : undefined,
         }
       });
 

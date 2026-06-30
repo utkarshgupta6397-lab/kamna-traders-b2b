@@ -161,6 +161,30 @@ export async function POST(request: Request) {
           status: 'PENDING_APPROVAL',
           submittedById: session.userId,
           submittedAt: new Date(),
+          floorNumber: body.floorNumber !== '' ? parseInt(body.floorNumber, 10) : null,
+          panels: {
+            create: body.panels.map((p: any, idx: number) => ({
+              description: p.description,
+              quantity: parseInt(p.quantity, 10),
+              orderIndex: idx
+            }))
+          },
+          inverters: {
+            create: body.inverters.map((i: any, idx: number) => ({
+              description: i.description,
+              quantity: parseInt(i.quantity, 10),
+              orderIndex: idx
+            }))
+          },
+          siteImages: body.siteImages && body.siteImages.length > 0 ? {
+            create: body.siteImages.map((img: any, idx: number) => ({
+              fileUrl: img.url,
+              fileName: img.fileName,
+              fileSize: img.fileSize,
+              mimeType: img.mimeType,
+              orderIndex: idx
+            }))
+          } : undefined
         }
       });
 

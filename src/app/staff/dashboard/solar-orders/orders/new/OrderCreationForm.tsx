@@ -67,6 +67,12 @@ export default function OrderCreationForm() {
   // Assignment
   const [salesmanId, setSalesmanId] = useState('');
   
+  // Site & Item Details
+  const [panels, setPanels] = useState<{ id: string; description: string; quantity: string }[]>([{ id: '1', description: '', quantity: '' }]);
+  const [inverters, setInverters] = useState<{ id: string; description: string; quantity: string }[]>([{ id: '1', description: '', quantity: '' }]);
+  const [floorNumber, setFloorNumber] = useState('');
+  const [siteImages, setSiteImages] = useState<{ id: string; file: File; preview: string }[]>([]);
+
   // Remarks
   const [remarks, setRemarks] = useState('');
 
@@ -215,6 +221,18 @@ export default function OrderCreationForm() {
       toast.error('Total Order Amount must be a positive integer');
       return false;
     }
+    if (panels.length === 0 || panels.some(p => !p.description.trim() || !p.quantity || Number(p.quantity) <= 0 || !Number.isInteger(Number(p.quantity)))) {
+      toast.error('Please add at least one valid panel with description and positive integer quantity');
+      return false;
+    }
+    if (inverters.length === 0 || inverters.some(i => !i.description.trim() || !i.quantity || Number(i.quantity) <= 0 || !Number.isInteger(Number(i.quantity)))) {
+      toast.error('Please add at least one valid inverter with description and positive integer quantity');
+      return false;
+    }
+    if (floorNumber && (Number(floorNumber) < 0 || Number(floorNumber) > 100 || !Number.isInteger(Number(floorNumber)))) {
+      toast.error('Floor number must be an integer between 0 and 100');
+      return false;
+    }
     return true;
   };
 
@@ -242,6 +260,57 @@ export default function OrderCreationForm() {
     }
   };
 
+  const addPanelRow = () => setPanels([...panels, { id: Math.random().toString(), description: '', quantity: '' }]);
+  const removePanelRow = (id: string) => setPanels(panels.filter(p => p.id !== id));
+  const updatePanel = (id: string, field: string, value: string) => {
+    setPanels(panels.map(p => p.id === id ? { ...p, [field]: value } : p));
+  };
+
+  const addInverterRow = () => setInverters([...inverters, { id: Math.random().toString(), description: '', quantity: '' }]);
+  const removeInverterRow = (id: string) => setInverters(inverters.filter(i => i.id !== id));
+  const updateInverter = (id: string, field: string, value: string) => {
+    setInverters(inverters.map(i => i.id === id ? { ...i, [field]: value } : i));
+  };
+
+  const handleFileDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files);
+    processFiles(files);
+  };
+  
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      processFiles(Array.from(e.target.files));
+    }
+  };
+
+  const processFiles = (files: File[]) => {
+    const validFiles = files.filter(f => {
+      const isType = ['image/jpeg', 'image/png', 'image/heic'].includes(f.type) || f.name.toLowerCase().endsWith('.heic');
+      const isSize = f.size <= 5 * 1024 * 1024;
+      if (!isType) toast.error(`${f.name} has unsupported format.`);
+      if (!isSize) toast.error(`${f.name} exceeds 5MB limit.`);
+      return isType && isSize;
+    });
+
+    if (siteImages.length + validFiles.length > 5) {
+      toast.error('Maximum 5 images allowed.');
+      validFiles.splice(5 - siteImages.length);
+    }
+
+    const newImages = validFiles.map(file => ({
+      id: Math.random().toString(),
+      file,
+      preview: URL.createObjectURL(file)
+    }));
+
+    setSiteImages([...siteImages, ...newImages]);
+  };
+  
+  const removeImage = (id: string) => {
+    setSiteImages(siteImages.filter(img => img.id !== id));
+  };
+
   const handleConfirmSubmit = async () => {
     setLoading(true);
     // Combine Address and City into remarks for backward compatibility with schema
@@ -252,6 +321,36 @@ export default function OrderCreationForm() {
     ].filter(Boolean).join('\n');
 
     try {
+      // 1. Upload Images
+      const uploadedImages = [];
+      for (const img of siteImages) {
+        const formData = new FormData();
+        formData.append('file', img.file);
+        
+        try {
+          const upRes = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+          });
+          if (upRes.ok) {
+            const result = await upRes.json();
+            uploadedImages.push({
+              url: result.url,
+              fileName: result.fileName,
+              fileSize: result.fileSize,
+              mimeType: result.mimeType,
+            });
+          } else {
+            throw new Error('Upload failed');
+          }
+        } catch (e) {
+          toast.error(`Failed to upload ${img.file.name}`);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 2. Submit Order
       const res = await fetch('/api/solar-orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -271,6 +370,10 @@ export default function OrderCreationForm() {
           remarks: combinedRemarks,
           zohoBooksCustomerId: selectedZohoCustomer?.id || null,
           zohoBooksCustomerName: selectedZohoCustomer?.name || null,
+          floorNumber,
+          panels,
+          inverters,
+          siteImages: uploadedImages
         }),
       });
 
@@ -536,6 +639,159 @@ export default function OrderCreationForm() {
               </div>
             </div>
 
+            {/* Site & Item Details */}
+            <div className={sectionClasses}>
+              <h2 className={sectionTitleClasses}>
+                <ClipboardList size={14} className="text-blue-500" />
+                Site & Item Details
+              </h2>
+              
+              <div className="space-y-6">
+                {/* Solar Panels */}
+                <div>
+                  <div className="flex justify-between items-center mb-3">
+                    <label className={labelClasses}>1. Solar Panels <RequiredMark/></label>
+                    <button type="button" onClick={addPanelRow} className="text-xs text-blue-600 font-semibold hover:text-blue-800">+ Add Panel</button>
+                  </div>
+                  <div className="space-y-3">
+                    {panels.map((panel, idx) => (
+                      <div key={panel.id} className="flex gap-4 items-start">
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            value={panel.description}
+                            onChange={(e) => updatePanel(panel.id, 'description', e.target.value)}
+                            className={`${inputClasses} bg-gray-50/50 px-3 rounded-lg`}
+                            placeholder="e.g. Adani DCR 545 Watt"
+                          />
+                        </div>
+                        <div className="w-24">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={panel.quantity}
+                            onChange={(e) => updatePanel(panel.id, 'quantity', e.target.value.replace(/\D/g, ''))}
+                            className={`${inputClasses} bg-gray-50/50 px-3 rounded-lg text-center`}
+                            placeholder="Qty"
+                          />
+                        </div>
+                        {panels.length > 1 && (
+                          <button type="button" onClick={() => removePanelRow(panel.id)} className="mt-2 text-gray-400 hover:text-red-500 p-1">
+                            <X size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-100"></div>
+
+                {/* Inverters */}
+                <div>
+                  <div className="flex justify-between items-center mb-3">
+                    <label className={labelClasses}>2. Inverter <RequiredMark/></label>
+                    <button type="button" onClick={addInverterRow} className="text-xs text-blue-600 font-semibold hover:text-blue-800">+ Add Inverter</button>
+                  </div>
+                  <div className="space-y-3">
+                    {inverters.map((inverter, idx) => (
+                      <div key={inverter.id} className="flex gap-4 items-start">
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            value={inverter.description}
+                            onChange={(e) => updateInverter(inverter.id, 'description', e.target.value)}
+                            className={`${inputClasses} bg-gray-50/50 px-3 rounded-lg`}
+                            placeholder="e.g. Sungrow SG5K-D"
+                          />
+                        </div>
+                        <div className="w-24">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={inverter.quantity}
+                            onChange={(e) => updateInverter(inverter.id, 'quantity', e.target.value.replace(/\D/g, ''))}
+                            className={`${inputClasses} bg-gray-50/50 px-3 rounded-lg text-center`}
+                            placeholder="Qty"
+                          />
+                        </div>
+                        {inverters.length > 1 && (
+                          <button type="button" onClick={() => removeInverterRow(inverter.id)} className="mt-2 text-gray-400 hover:text-red-500 p-1">
+                            <X size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-100"></div>
+
+                {/* Floor Number & Site Images */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div>
+                    <label className={labelClasses}>3. Floor No. (Optional)</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={floorNumber}
+                      onChange={(e) => setFloorNumber(e.target.value.replace(/\D/g, ''))}
+                      className={inputClasses}
+                      placeholder="e.g. 0 for Ground Floor, 1 for First Floor"
+                    />
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-100"></div>
+
+                {/* File Uploads */}
+                <div>
+                  <label className={labelClasses}>4. Site Images (Optional)</label>
+                  <p className="text-xs text-gray-400 mb-3">Maximum 5 Images • 5 MB each • PNG, JPG, JPEG, HEIC</p>
+                  
+                  <div 
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={handleFileDrop}
+                    className="border-2 border-dashed border-gray-200 hover:border-blue-400 transition-colors rounded-xl p-8 flex flex-col items-center justify-center bg-gray-50/50 text-center cursor-pointer relative"
+                  >
+                    <input 
+                      type="file"
+                      multiple
+                      accept="image/jpeg,image/png,image/heic"
+                      onChange={handleFileSelect}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      title="Upload site images"
+                    />
+                    <div className="bg-white p-3 rounded-full shadow-sm mb-3">
+                      <FileText size={20} className="text-blue-500" />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-700">Drag & Drop Images Here</p>
+                    <p className="text-xs text-gray-500 mt-1">or click to Browse Files</p>
+                  </div>
+                  
+                  {siteImages.length > 0 && (
+                    <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                      {siteImages.map(img => (
+                        <div key={img.id} className="relative group rounded-lg overflow-hidden border border-gray-200 aspect-square">
+                          <img src={img.preview} alt="Site" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <button 
+                              type="button" 
+                              onClick={() => removeImage(img.id)}
+                              className="bg-white text-red-500 p-1.5 rounded-full hover:bg-red-50"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            </div>
+
             {/* Additional Remarks */}
             <div className={sectionClasses}>
               <h2 className={sectionTitleClasses}>
@@ -737,6 +993,43 @@ export default function OrderCreationForm() {
                   </div>
                 </div>
 
+                <div className="border-t border-slate-800/60 pt-3 space-y-2">
+                  <span className="text-[10px] text-slate-500 block uppercase">Items & Site</span>
+                  
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-slate-400">Solar Panels</span>
+                    <ul className="text-xs text-white space-y-0.5">
+                      {panels.filter(p => p.description && p.quantity).length > 0 ? 
+                        panels.filter(p => p.description && p.quantity).map(p => (
+                          <li key={p.id}>• {p.description} × {p.quantity}</li>
+                        )) : <li className="text-slate-500">—</li>
+                      }
+                    </ul>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-slate-400">Inverters</span>
+                    <ul className="text-xs text-white space-y-0.5">
+                      {inverters.filter(i => i.description && i.quantity).length > 0 ? 
+                        inverters.filter(i => i.description && i.quantity).map(i => (
+                          <li key={i.id}>• {i.description} × {i.quantity}</li>
+                        )) : <li className="text-slate-500">—</li>
+                      }
+                    </ul>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <span className="text-[10px] text-slate-400">Floor</span>
+                      <p className="text-xs text-white">{floorNumber || '—'}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400">Images</span>
+                      <p className="text-xs text-white">{siteImages.length} Uploaded</p>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="border-t border-slate-800/60 pt-3">
                   <span className="text-[10px] text-slate-500 block uppercase">Commercial Value</span>
                   <div className="flex justify-between items-end">
@@ -930,6 +1223,41 @@ export default function OrderCreationForm() {
                     <div className="flex justify-between">
                       <span className="text-xs text-gray-500">Financing</span>
                       <span className="text-xs font-semibold text-gray-900">{loanCustomer ? 'Loan Processing Required' : 'Direct Payment'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Site & Items Details */}
+                <div className="space-y-4">
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Site & Items</h3>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-3">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs text-gray-500">Panels</span>
+                      <ul className="text-xs font-semibold text-gray-900 space-y-0.5">
+                        {panels.filter(p => p.description && p.quantity).length > 0 ? 
+                          panels.filter(p => p.description && p.quantity).map(p => (
+                            <li key={p.id}>• {p.description} × {p.quantity}</li>
+                          )) : <li className="text-gray-400">—</li>
+                        }
+                      </ul>
+                    </div>
+                    <div className="flex flex-col gap-1 border-t border-slate-200 pt-2">
+                      <span className="text-xs text-gray-500">Inverters</span>
+                      <ul className="text-xs font-semibold text-gray-900 space-y-0.5">
+                        {inverters.filter(i => i.description && i.quantity).length > 0 ? 
+                          inverters.filter(i => i.description && i.quantity).map(i => (
+                            <li key={i.id}>• {i.description} × {i.quantity}</li>
+                          )) : <li className="text-gray-400">—</li>
+                        }
+                      </ul>
+                    </div>
+                    <div className="flex justify-between border-t border-slate-200 pt-2">
+                      <span className="text-xs text-gray-500">Floor</span>
+                      <span className="text-xs font-semibold text-gray-900">{floorNumber || '—'}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-slate-200 pt-2">
+                      <span className="text-xs text-gray-500">Images</span>
+                      <span className="text-xs font-semibold text-gray-900">{siteImages.length} Uploaded</span>
                     </div>
                   </div>
                 </div>

@@ -728,6 +728,7 @@ model SolarOrder {
   zohoBooksCustomerName String?
   remarks               String?
   cancellationReason    String?
+  floorNumber           Int?
 
   createdById   String
   approvedById  String?
@@ -757,6 +758,9 @@ model SolarOrder {
   files         SolarOrderFile[]
   activityLogs  SolarActivityLog[]
   payments      SolarOrderPayment[]
+  panels        SolarOrderPanel[]
+  inverters     SolarOrderInverter[]
+  siteImages    SolarOrderSiteImage[]
 
   @@index([status])
   @@index([createdById])
@@ -833,6 +837,44 @@ model SolarActivityLog {
   @@index([solarOrderId])
   @@index([eventType])
   @@index([createdAt])
+}
+
+model SolarOrderPanel {
+  id           String @id @default(cuid())
+  solarOrderId String
+  description  String
+  quantity     Int
+  orderIndex   Int
+
+  solarOrder   SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  
+  @@index([solarOrderId])
+}
+
+model SolarOrderInverter {
+  id           String @id @default(cuid())
+  solarOrderId String
+  description  String
+  quantity     Int
+  orderIndex   Int
+
+  solarOrder   SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  
+  @@index([solarOrderId])
+}
+
+model SolarOrderSiteImage {
+  id           String @id @default(cuid())
+  solarOrderId String
+  fileUrl      String
+  fileName     String
+  fileSize     Int
+  mimeType     String
+  orderIndex   Int
+
+  solarOrder   SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  
+  @@index([solarOrderId])
 }
 
 model SolarOrderSequence {

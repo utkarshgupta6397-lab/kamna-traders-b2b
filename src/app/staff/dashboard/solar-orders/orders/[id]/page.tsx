@@ -13,6 +13,9 @@ export default async function OrderDetailOverview({ params }: { params: Promise<
       callingExecutive: { select: { name: true } },
       approvedBy: { select: { name: true } },
       subVendor: { select: { name: true } },
+      panels: { orderBy: { orderIndex: 'asc' } },
+      inverters: { orderBy: { orderIndex: 'asc' } },
+      siteImages: { orderBy: { orderIndex: 'asc' } },
     }
   });
 
@@ -98,6 +101,38 @@ export default async function OrderDetailOverview({ params }: { params: Promise<
             <Property 
               label="Total Value" 
               value={`₹${order.totalOrderAmount.toLocaleString('en-IN')}`} 
+            />
+          </div>
+        </div>
+
+        {/* Site & Item Details */}
+        <div className={cardClasses}>
+          <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+          <SectionTitle icon={Zap} title="Site & Item Details" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-y-6 gap-x-8">
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-1">Solar Panels</p>
+              <ul className="text-sm font-medium text-gray-900 space-y-1">
+                {order.panels.length > 0 ? order.panels.map(p => (
+                  <li key={p.id}>• {p.description} <span className="text-gray-500">× {p.quantity}</span></li>
+                )) : <li className="text-gray-400">None</li>}
+              </ul>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-1">Inverters</p>
+              <ul className="text-sm font-medium text-gray-900 space-y-1">
+                {order.inverters.length > 0 ? order.inverters.map(i => (
+                  <li key={i.id}>• {i.description} <span className="text-gray-500">× {i.quantity}</span></li>
+                )) : <li className="text-gray-400">None</li>}
+              </ul>
+            </div>
+            <Property 
+              label="Floor Number" 
+              value={order.floorNumber !== null ? order.floorNumber : '—'} 
+            />
+            <Property 
+              label="Site Images" 
+              value={`${order.siteImages.length} Uploaded`} 
             />
           </div>
         </div>

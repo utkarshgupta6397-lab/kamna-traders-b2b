@@ -119,6 +119,7 @@ export async function validateSession(sessionToken: string): Promise<{
           solar_orders_view: true,
           solar_orders_create: true,
           solar_orders_approval: true,
+          solar_orders_docs_progress: true,
         }
       }
     }

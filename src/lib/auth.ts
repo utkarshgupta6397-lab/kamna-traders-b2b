@@ -93,6 +93,7 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.solar_orders_view = true;
       merged.solar_orders_create = true;
       merged.solar_orders_approval = true;
+      merged.solar_orders_docs_progress = true;
     }
 
     console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);

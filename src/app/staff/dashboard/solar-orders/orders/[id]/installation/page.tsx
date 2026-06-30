@@ -15,8 +15,8 @@ export default async function InstallationTab({ params }: { params: { id: string
 
   const steps = order?.workflowSteps.filter(s => s.workflowType === 'INSTALLATION').sort((a, b) => a.stepIndex - b.stepIndex) || [];
   
-  // They unified the permission to solar_orders_progress earlier
-  const hasPermission = session?.role === 'ADMIN' || !!session?.solar_orders_progress;
+  // They unified the permission to solar_orders_docs_progress earlier
+  const hasPermission = session?.role === 'ADMIN' || !!session?.solar_orders_docs_progress;
 
   if (steps.length === 0) {
     return (

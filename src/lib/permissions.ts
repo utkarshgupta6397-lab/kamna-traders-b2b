@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval' | 'solar_orders_docs_progress';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -106,6 +106,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'solar_orders_approval',
     label: 'Order Approval',
     description: 'Ability to approve or reject solar orders'
+  },
+  {
+    key: 'solar_orders_docs_progress',
+    label: 'Workflow Progress',
+    description: 'Ability to progress orders through documentation and installation workflows'
   }
 ];
 
@@ -128,5 +133,6 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'dcr_hold_release',
   'solar_orders_view',
   'solar_orders_create',
-  'solar_orders_approval'
+  'solar_orders_approval',
+  'solar_orders_docs_progress'
 ];

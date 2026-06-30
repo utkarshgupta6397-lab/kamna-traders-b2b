@@ -38,11 +38,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         const stepName = (step.metadata as any)?.name;
         if (reviewSteps.includes(stepName) && !session.solar_orders_approval) {
           return NextResponse.json({ error: 'Order approval permission required' }, { status: 403 });
-        } else if (!session.solar_orders_progress) {
+        } else if (!session.solar_orders_docs_progress) {
           return NextResponse.json({ error: 'Workflow Progress permission required to update documentation' }, { status: 403 });
         }
       } else if (step.workflowType === 'INSTALLATION') {
-        if (!session.solar_orders_progress) {
+        if (!session.solar_orders_docs_progress) {
           return NextResponse.json({ error: 'Workflow Progress permission required' }, { status: 403 });
         }
       }

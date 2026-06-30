@@ -38,13 +38,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         const stepName = (step.metadata as any)?.name;
         if (reviewSteps.includes(stepName) && !session.solar_orders_approval) {
           return NextResponse.json({ error: 'Order approval permission required' }, { status: 403 });
-        } else if (!session.solar_orders_view) {
-          return NextResponse.json({ error: 'Solar orders view permission required to update documentation' }, { status: 403 });
+        } else if (!session.solar_orders_progress) {
+          return NextResponse.json({ error: 'Workflow Progress permission required to update documentation' }, { status: 403 });
         }
       } else if (step.workflowType === 'INSTALLATION') {
-        if (!session.solar_installation_complete) {
-          return NextResponse.json({ error: 'Installation edit permission required' }, { status: 403 });
+        if (!session.solar_orders_progress) {
+          return NextResponse.json({ error: 'Workflow Progress permission required' }, { status: 403 });
         }
+      }
+    }
+
+    // Business Logic Validation: Starting Installation
+    if (status === 'COMPLETED' && (step.metadata as any)?.name === 'Ready to Install') {
+      if (step.solarOrder.status !== 'EXECUTION') {
+        return NextResponse.json({ error: 'Order must be in EXECUTION to start installation' }, { status: 400 });
       }
     }
 

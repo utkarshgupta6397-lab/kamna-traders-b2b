@@ -6,13 +6,17 @@ export default async function InstallationTab({ params }: { params: { id: string
   const { id } = await params;
   const session = await getSession();
   
-  const steps = await prisma.solarWorkflowStep.findMany({
-    where: { solarOrderId: id, workflowType: 'INSTALLATION' },
-    orderBy: { stepIndex: 'asc' },
-    include: { completedBy: { select: { name: true } } }
+  const order = await prisma.solarOrder.findUnique({
+    where: { id },
+    include: {
+      workflowSteps: true
+    }
   });
 
-  const canEdit = session?.role === 'ADMIN' || session?.solar_installation_complete;
+  const steps = order?.workflowSteps.filter(s => s.workflowType === 'INSTALLATION').sort((a, b) => a.stepIndex - b.stepIndex) || [];
+  
+  // They unified the permission to solar_orders_progress earlier
+  const hasPermission = session?.role === 'ADMIN' || !!session?.solar_orders_progress;
 
   if (steps.length === 0) {
     return (
@@ -31,7 +35,15 @@ export default async function InstallationTab({ params }: { params: { id: string
         <h2 className="text-lg font-bold text-gray-900">Installation Checklist</h2>
         <p className="text-sm text-gray-500">Step {steps.filter(s => s.status === 'COMPLETED').length} of {steps.length} completed</p>
       </div>
-      <InstallationTabClient orderId={id} steps={steps} canEdit={!!canEdit} />
+      <InstallationTabClient 
+        orderId={id} 
+        steps={steps as any} 
+        canEdit={hasPermission}
+        debugInfo={{
+          orderStatus: order?.status || 'UNKNOWN',
+          hasPermission
+        }}
+      />
     </div>
   );
 }

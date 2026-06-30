@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ChevronLeft, Zap, IndianRupee, Phone, CalendarDays } from 'lucide-react';
 import OrderDetailTabs from './OrderDetailTabs';
 import OrderHeaderActions from './OrderHeaderActions';
+import ApprovalReviewScreen from './ApprovalReviewScreen';
 
 export default async function OrderDetailLayout({
   children,
@@ -59,6 +60,17 @@ export default async function OrderDetailLayout({
   };
 
   const initials = order.customerName.substring(0, 2).toUpperCase();
+
+  if (order.status === 'PENDING_APPROVAL') {
+    return (
+      <div className="space-y-4 animate-in fade-in duration-500">
+        <Link href="/staff/dashboard/solar-orders/orders" className="text-xs font-medium text-gray-500 hover:text-gray-900 flex items-center gap-1 w-max transition-colors">
+          <ChevronLeft size={14} /> Back to Orders
+        </Link>
+        <ApprovalReviewScreen orderId={id} canApprove={isAdmin || !!session?.solar_orders_approval} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 animate-in fade-in duration-500">

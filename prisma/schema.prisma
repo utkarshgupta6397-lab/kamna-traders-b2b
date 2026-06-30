@@ -40,6 +40,23 @@ model User {
   dcr_serial_mapping_override Boolean @default(false)
   dcr_hold_release            Boolean @default(false)
   dcr_issue_customer_dcr      Boolean @default(false)
+  solar_orders_view           Boolean @default(false)
+  solar_orders_create         Boolean @default(false)
+  solar_orders_edit           Boolean @default(false)
+  solar_orders_edit_draft     Boolean @default(false)
+  solar_orders_submit         Boolean @default(false)
+  solar_orders_approve        Boolean @default(false)
+  solar_orders_reject         Boolean @default(false)
+  solar_orders_delete         Boolean @default(false)
+  solar_orders_view_rejected  Boolean @default(false)
+  solar_documentation_view    Boolean @default(false)
+  solar_documentation_edit    Boolean @default(false)
+  solar_documentation_approve Boolean @default(false)
+  solar_installation_view     Boolean @default(false)
+  solar_installation_complete Boolean @default(false)
+  solar_upload_documents      Boolean @default(false)
+  solar_view_financials       Boolean @default(false)
+  solar_manage_workflow       Boolean @default(false)
 
   sessions            ActiveSession[]
   carts               Cart[]
@@ -56,22 +73,35 @@ model User {
   printerId     String?
   printer       Printer?       @relation(fields: [printerId], references: [id])
   qzCertificate QzCertificate?
+
+  // Solar Orders Relations
+  solarOrdersCreated   SolarOrder[]        @relation("SolarOrderCreatedBy")
+  solarOrdersApproved  SolarOrder[]        @relation("SolarOrderApprovedBy")
+  solarOrdersCancelled SolarOrder[]        @relation("SolarOrderCancelledBy")
+  solarOrdersCalled    SolarOrder[]        @relation("SolarOrderCallingExecutive")
+  solarOrdersSold      SolarOrder[]        @relation("SolarOrderSalesman")
+  solarOrdersSubmitted SolarOrder[]        @relation("SolarOrderSubmittedBy")
+  solarOrdersRejected  SolarOrder[]        @relation("SolarOrderRejectedBy")
+  solarStepsCompleted  SolarWorkflowStep[] @relation("SolarStepCompletedBy")
+  solarFilesUploaded   SolarOrderFile[]    @relation("SolarFileUploadedBy")
+  solarFilesDeleted    SolarOrderFile[]    @relation("SolarFileDeletedBy")
+  solarActivityLogs    SolarActivityLog[]  @relation("SolarActivityActor")
 }
 
 model Warehouse {
-  id                String               @id @default(cuid())
+  id                String                @id @default(cuid())
   name              String
   address           String?
-  active            Boolean              @default(true)
-  printZonalSlips   Boolean              @default(true) // Deprecated
-  isSystemWarehouse Boolean              @default(false)
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  active            Boolean               @default(true)
+  printZonalSlips   Boolean               @default(true) // Deprecated
+  isSystemWarehouse Boolean               @default(false)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
   carts             Cart[]
   inventoryHistory  InventoryHistory[]
   inventory         WarehouseInventory[]
-  transfersSent     Transfer[]           @relation("SourceWarehouse")
-  transfersReceived Transfer[]           @relation("DestinationWarehouse")
+  transfersSent     Transfer[]            @relation("SourceWarehouse")
+  transfersReceived Transfer[]            @relation("DestinationWarehouse")
   stockAlerts       StockAlertThreshold[]
 }
 
@@ -97,30 +127,30 @@ model Category {
 }
 
 model Sku {
-  id             String               @id
+  id             String                @id
   name           String
   brandId        String?
   unit           String?
-  moq            Int                  @default(1)
-  stepQty        Int                  @default(1)
-  price          Float                @default(0.0)
-  gstPercent     Float                @default(0.0)
+  moq            Int                   @default(1)
+  stepQty        Int                   @default(1)
+  price          Float                 @default(0.0)
+  gstPercent     Float                 @default(0.0)
   hsnCode        String?
   description    String?
-  caseSize       Int                  @default(1)
+  caseSize       Int                   @default(1)
   lastSyncedAt   DateTime?
-  zohoBookItemId String?              @unique // String to prevent JS precision corruption
+  zohoBookItemId String?               @unique // String to prevent JS precision corruption
   zohoBooksId2   String?
   categoryId     String?
-  isActive       Boolean              @default(true)
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-  isUnlimited    Boolean              @default(false)
+  isActive       Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  isUnlimited    Boolean               @default(false)
   updatedById    String?
   cartItems      CartItem[]
-  brand          Brand?               @relation(fields: [brandId], references: [id])
-  category       Category?            @relation(fields: [categoryId], references: [id])
-  updatedBy      User?                @relation("SkuUnlimitedUpdatedBy", fields: [updatedById], references: [id])
+  brand          Brand?                @relation(fields: [brandId], references: [id])
+  category       Category?             @relation(fields: [categoryId], references: [id])
+  updatedBy      User?                 @relation("SkuUnlimitedUpdatedBy", fields: [updatedById], references: [id])
   inventory      WarehouseInventory[]
   transferItems  TransferItem[]
   stockAlerts    StockAlertThreshold[]
@@ -445,55 +475,55 @@ model CustomerStatementTask {
 }
 
 model StockAlertThreshold {
-  id           String   @id @default(cuid())
-  warehouseId  String
-  skuId        String
-  minimumQty   Int
-  isEnabled    Boolean  @default(true)
-  createdById  String?
-  updatedById  String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(cuid())
+  warehouseId String
+  skuId       String
+  minimumQty  Int
+  isEnabled   Boolean  @default(true)
+  createdById String?
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  warehouse    Warehouse @relation(fields: [warehouseId], references: [id])
-  sku          Sku       @relation(fields: [skuId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  sku       Sku       @relation(fields: [skuId], references: [id])
 
   @@unique([warehouseId, skuId])
 }
 
 model RecoveryInvoiceTask {
-  id              String   @id @default(cuid())
-  invoiceId       String   // Zoho invoice ID
-  invoiceNumber   String
-  customerId      String   // Zoho customer ID  
-  customerName    String
+  id            String @id @default(cuid())
+  invoiceId     String // Zoho invoice ID
+  invoiceNumber String
+  customerId    String // Zoho customer ID  
+  customerName  String
 
-  status          String   // ACTIVE | RELEASED | RESOLVED
+  status String // ACTIVE | RELEASED | RESOLVED
 
-  requiresReminder Boolean @default(false)
-  reminderSent     Boolean @default(false)
-  reminderCount    Int     @default(0)
-  reminderSentAt   DateTime?
-  reminderSentById String?
+  requiresReminder   Boolean   @default(false)
+  reminderSent       Boolean   @default(false)
+  reminderCount      Int       @default(0)
+  reminderSentAt     DateTime?
+  reminderSentById   String?
   reminderSentByName String?
 
-  flagCount        Int     @default(1)
-  flaggedByUserId  String
-  flaggedByName    String
-  flaggedAt        DateTime @default(now())
+  flagCount       Int      @default(1)
+  flaggedByUserId String
+  flaggedByName   String
+  flaggedAt       DateTime @default(now())
 
-  releasedByUserId  String?
-  releasedByName    String?
-  releasedAt        DateTime?
+  releasedByUserId String?
+  releasedByName   String?
+  releasedAt       DateTime?
 
-  resolvedByUserId  String?
-  resolvedByName    String?
-  resolvedAt        DateTime?
-  resolvedReason    String?  // "AUTO_RESOLVED" | "MANUAL"
+  resolvedByUserId String?
+  resolvedByName   String?
+  resolvedAt       DateTime?
+  resolvedReason   String? // "AUTO_RESOLVED" | "MANUAL"
 
-  lastKnownPendingAmount   Float?
-  lastKnownInvoiceStatus   String?
-  lastSyncedAt             DateTime?
+  lastKnownPendingAmount Float?
+  lastKnownInvoiceStatus String?
+  lastSyncedAt           DateTime?
 
   notes     String?
   createdAt DateTime @default(now())
@@ -503,6 +533,7 @@ model RecoveryInvoiceTask {
   @@index([customerId])
   @@index([status])
 }
+
 enum DcrImportSource {
   ZOHO_SYNC
   MANUAL
@@ -511,100 +542,100 @@ enum DcrImportSource {
 // ─── DCR Module Phase 1 ───────────────────────────────────────────────────────
 
 model Customer {
-  id        String   @id // Zoho contact/customer ID
+  id        String  @id // Zoho contact/customer ID
   name      String
-  gstNumber String?  // Stores fetched GST number or 'NOT_AVAILABLE' if not found
-  status    String   @default("active")
+  gstNumber String? // Stores fetched GST number or 'NOT_AVAILABLE' if not found
+  status    String  @default("active")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   dcrInvoices DcrInvoice[]
 }
 
 model DcrInvoice {
-  id              String   @id @default(cuid())
-  zohoInvoiceId   String   @unique
-  invoiceNumber   String
-  customerId      String
-  customerName    String
-  invoiceDate     DateTime
-  invoiceStatus   String
-  invoiceTotal    Float
-  outstandingAmount Float?
+  id                   String          @id @default(cuid())
+  zohoInvoiceId        String          @unique
+  invoiceNumber        String
+  customerId           String
+  customerName         String
+  invoiceDate          DateTime
+  invoiceStatus        String
+  invoiceTotal         Float
+  outstandingAmount    Float?
   outstandingUpdatedAt DateTime?
-  locationId      String?
-  locationName    String?
-  dcrStatus       String   @default("NEW") // NEW, UNDER_REVIEW, DCR_IDENTIFIED, PENDING_SERIALS
-  syncedAt          DateTime @default(now())
-  reviewedAt        DateTime?
-  archived          Boolean   @default(false)
-  processedAt       DateTime?
-  processingReason  String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  importSource      DcrImportSource @default(ZOHO_SYNC)
-  importedBy        String?
-  importedAt        DateTime?
-  
+  locationId           String?
+  locationName         String?
+  dcrStatus            String          @default("NEW") // NEW, UNDER_REVIEW, DCR_IDENTIFIED, PENDING_SERIALS
+  syncedAt             DateTime        @default(now())
+  reviewedAt           DateTime?
+  archived             Boolean         @default(false)
+  processedAt          DateTime?
+  processingReason     String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  importSource         DcrImportSource @default(ZOHO_SYNC)
+  importedBy           String?
+  importedAt           DateTime?
+
   items             DcrInvoiceItem[]
   serialAllocations DcrSerialAllocation[]
-  customer          Customer? @relation(fields: [customerId], references: [id])
+  customer          Customer?             @relation(fields: [customerId], references: [id])
 
   @@index([dcrStatus])
   @@index([zohoInvoiceId])
 }
 
 model DcrInvoiceItem {
-  id              String   @id @default(cuid())
-  dcrInvoiceId    String
-  itemId          String?
-  itemName        String
-  sku             String?
-  quantity        Int
-  rate            Float?
-  amount          Float?
-  description     String?
-  source          String   @default("ZOHO") // ZOHO or MANUAL
-  selectedForDCR  Boolean  @default(false)
-  remarks         String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  invoice           DcrInvoice @relation(fields: [dcrInvoiceId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  dcrInvoiceId   String
+  itemId         String?
+  itemName       String
+  sku            String?
+  quantity       Int
+  rate           Float?
+  amount         Float?
+  description    String?
+  source         String   @default("ZOHO") // ZOHO or MANUAL
+  selectedForDCR Boolean  @default(false)
+  remarks        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  invoice           DcrInvoice            @relation(fields: [dcrInvoiceId], references: [id], onDelete: Cascade)
   serialAllocations DcrSerialAllocation[]
 }
 
 model DcrAuditLog {
-  id            String   @id @default(cuid())
-  entityType    String   // e.g. "INVOICE", "ITEM"
-  entityId      String
-  action        String
-  userId        String
-  metadata      Json?
-  createdAt     DateTime @default(now())
+  id         String   @id @default(cuid())
+  entityType String // e.g. "INVOICE", "ITEM"
+  entityId   String
+  action     String
+  userId     String
+  metadata   Json?
+  createdAt  DateTime @default(now())
 }
 
 model ZohoApiLog {
-  id            String   @id @default(cuid())
-  endpoint      String
-  module        String   // e.g. "DCR", "SYNC"
-  userId        String?
-  timestamp     DateTime @default(now())
+  id        String   @id @default(cuid())
+  endpoint  String
+  module    String // e.g. "DCR", "SYNC"
+  userId    String?
+  timestamp DateTime @default(now())
 }
 
 model DcrSerialAllocation {
-  id           String         @id @default(cuid())
+  id           String   @id @default(cuid())
   invoiceId    String
-  skuId        String         // References DcrInvoiceItem.id
-  serialNumber String         @unique
-  allocatedAt  DateTime       @default(now())
+  skuId        String // References DcrInvoiceItem.id
+  serialNumber String   @unique
+  allocatedAt  DateTime @default(now())
   allocatedBy  String
 
-  invoice      DcrInvoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  invoiceItem  DcrInvoiceItem @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  invoice     DcrInvoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceItem DcrInvoiceItem @relation(fields: [skuId], references: [id], onDelete: Cascade)
 
-  serial       DcrSerial?     @relation(fields: [serialNumber], references: [serialNumber], onDelete: Restrict)
+  serial DcrSerial? @relation(fields: [serialNumber], references: [serialNumber], onDelete: Restrict)
 
   @@index([invoiceId])
   @@index([skuId])
@@ -622,28 +653,28 @@ enum SerialStatus {
 }
 
 model DcrSerial {
-  id                  String                 @id @default(cuid())
-  serialNumber        String                 @unique
+  id                  String       @id @default(cuid())
+  serialNumber        String       @unique
   skuId               String?
-  serialSource        String                 @default("MANUAL_ENTRY")
-  status              SerialStatus           @default(AVAILABLE)
-  purchaseReceived    Boolean                @default(false)
+  serialSource        String       @default("MANUAL_ENTRY")
+  status              SerialStatus @default(AVAILABLE)
+  purchaseReceived    Boolean      @default(false)
   vendorName          String?
   billNumber          String?
-  vendorDcrStatus     String                 @default("NOT_RECEIVED")
+  vendorDcrStatus     String       @default("NOT_RECEIVED")
   vendorDcrReceivedAt DateTime?
   vendorDcrReceivedBy String?
-  skuLocked           Boolean                @default(true)
-  isDeleted           Boolean                @default(false)
+  skuLocked           Boolean      @default(true)
+  isDeleted           Boolean      @default(false)
   deletedAt           DateTime?
   deletedBy           String?
   deleteReason        String?
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
-  history      DcrSerialHistory[]
-  allocations  DcrSerialAllocation[]
-  tag          SerialTag?
+  history     DcrSerialHistory[]
+  allocations DcrSerialAllocation[]
+  tag         SerialTag?
 
   @@index([skuId])
 }
@@ -656,20 +687,174 @@ model SerialTag {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  serial    DcrSerial @relation(fields: [serialId], references: [id], onDelete: Cascade)
+  serial DcrSerial @relation(fields: [serialId], references: [id], onDelete: Cascade)
 
   @@index([serialId])
 }
 
 model DcrSerialHistory {
-  id               String      @id @default(cuid())
+  id               String   @id @default(cuid())
   serialId         String
   eventType        String
   eventDescription String
-  createdAt        DateTime    @default(now())
+  createdAt        DateTime @default(now())
   userId           String
 
-  serial           DcrSerial   @relation(fields: [serialId], references: [id], onDelete: Cascade)
+  serial DcrSerial @relation(fields: [serialId], references: [id], onDelete: Cascade)
 
   @@index([serialId])
+}
+
+// ─── Solar Orders Module Phase 1 ──────────────────────────────────────────────
+
+model SubVendor {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  solarOrders SolarOrder[] @relation("SolarOrderSubVendor")
+}
+
+model SolarOrder {
+  id                    String   @id @default(cuid())
+  orderNumber           String   @unique
+  orderDate             DateTime @default(now())
+  status                String   @default("DRAFT") // DRAFT, PENDING_APPROVAL, APPROVED, EXECUTION, COMPLETED, CANCELLED
+  customerName          String
+  phoneNumber           String
+  whatsappEnabled       Boolean  @default(false)
+  leadSource            String // WALK_IN, REFERRAL, ONLINE, EXHIBITION, OTHER
+  referralCustomerId    String?
+  referralName          String?
+  callingExecutiveId    String?
+  salesmanId            String?
+  subVendorId           String?
+  subVendor             SubVendor? @relation("SolarOrderSubVendor", fields: [subVendorId], references: [id])
+  loanCustomer          Boolean  @default(false)
+  totalOrderAmount      Float
+  systemSize            Float
+  systemType            String // ON_GRID, OFF_GRID, HYBRID
+  zohoBooksCustomerId   String?
+  zohoBooksCustomerName String?
+  remarks               String?
+  cancellationReason    String?
+
+  createdById   String
+  approvedById  String?
+  approvedAt    DateTime?
+  submittedById String?
+  submittedAt   DateTime?
+  rejectedById  String?
+  rejectedAt    DateTime?
+  rejectionRemarks String?
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  cancelledById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  callingExecutive User? @relation("SolarOrderCallingExecutive", fields: [callingExecutiveId], references: [id])
+  salesman         User? @relation("SolarOrderSalesman", fields: [salesmanId], references: [id])
+  createdBy        User  @relation("SolarOrderCreatedBy", fields: [createdById], references: [id])
+  approvedBy       User? @relation("SolarOrderApprovedBy", fields: [approvedById], references: [id])
+  submittedBy      User? @relation("SolarOrderSubmittedBy", fields: [submittedById], references: [id])
+  rejectedBy       User? @relation("SolarOrderRejectedBy", fields: [rejectedById], references: [id])
+  cancelledBy      User? @relation("SolarOrderCancelledBy", fields: [cancelledById], references: [id])
+
+  workflowSteps SolarWorkflowStep[]
+  files         SolarOrderFile[]
+  activityLogs  SolarActivityLog[]
+
+  @@index([status])
+  @@index([createdById])
+  @@index([orderDate])
+  @@index([zohoBooksCustomerId])
+  @@index([orderNumber])
+  @@index([subVendorId])
+}
+
+model SolarWorkflowStep {
+  id            String    @id @default(cuid())
+  solarOrderId  String
+  workflowType  String // DOCUMENTATION, INSTALLATION
+  stepKey       String
+  stepIndex     Int
+  status        String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, BLOCKED, SKIPPED
+  blockedReason String?
+  notes         String?
+  completedById String?
+  completedAt   DateTime?
+  startedAt     DateTime?
+  metadata      Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  solarOrder  SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  completedBy User?      @relation("SolarStepCompletedBy", fields: [completedById], references: [id])
+
+  @@unique([solarOrderId, stepKey])
+  @@index([solarOrderId])
+  @@index([workflowType])
+  @@index([status])
+  @@index([stepKey])
+}
+
+model SolarOrderFile {
+  id            String    @id @default(cuid())
+  solarOrderId  String
+  fileName      String
+  fileUrl       String
+  fileType      String
+  fileSizeBytes Int?
+  fileCategory  String // SITE_IMAGE, DOCUMENT, ROOFTOP_PHOTO, OTHER
+  uploadedById  String
+  isDeleted     Boolean   @default(false)
+  deletedAt     DateTime?
+  deletedById   String?
+
+  createdAt DateTime @default(now())
+
+  solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  uploadedBy User       @relation("SolarFileUploadedBy", fields: [uploadedById], references: [id])
+  deletedBy  User?      @relation("SolarFileDeletedBy", fields: [deletedById], references: [id])
+
+  @@index([solarOrderId])
+  @@index([fileCategory])
+}
+
+model SolarActivityLog {
+  id           String @id @default(cuid())
+  solarOrderId String
+  eventType    String
+  actorId      String
+  actorName    String
+  description  String
+  metadata     Json?
+
+  createdAt DateTime @default(now())
+
+  solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  actor      User       @relation("SolarActivityActor", fields: [actorId], references: [id])
+
+  @@index([solarOrderId])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+model SolarOrderSequence {
+  year     String @id
+  sequence Int    @default(0)
+}
+
+model City {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

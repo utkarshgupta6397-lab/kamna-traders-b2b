@@ -114,6 +114,23 @@ export async function validateSession(sessionToken: string): Promise<{
           dcr_management: true,
           dcr_serial_mapping_override: true,
           dcr_hold_release: true,
+          solar_orders_view: true,
+          solar_orders_create: true,
+          solar_orders_edit: true,
+          solar_orders_edit_draft: true,
+          solar_orders_submit: true,
+          solar_orders_approve: true,
+          solar_orders_reject: true,
+          solar_orders_delete: true,
+          solar_orders_view_rejected: true,
+          solar_documentation_view: true,
+          solar_documentation_edit: true,
+          solar_documentation_approve: true,
+          solar_installation_view: true,
+          solar_installation_complete: true,
+          solar_upload_documents: true,
+          solar_view_financials: true,
+          solar_manage_workflow: true,
         }
       }
     }
@@ -136,6 +153,23 @@ export async function validateSession(sessionToken: string): Promise<{
     session.user.dcr_management = true;
     session.user.dcr_serial_mapping_override = true;
     session.user.dcr_hold_release = true;
+    session.user.solar_orders_view = true;
+    session.user.solar_orders_create = true;
+    session.user.solar_orders_edit = true;
+    session.user.solar_orders_edit_draft = true;
+    session.user.solar_orders_submit = true;
+    session.user.solar_orders_approve = true;
+    session.user.solar_orders_reject = true;
+    session.user.solar_orders_delete = true;
+    session.user.solar_orders_view_rejected = true;
+    session.user.solar_documentation_view = true;
+    session.user.solar_documentation_edit = true;
+    session.user.solar_documentation_approve = true;
+    session.user.solar_installation_view = true;
+    session.user.solar_installation_complete = true;
+    session.user.solar_upload_documents = true;
+    session.user.solar_view_financials = true;
+    session.user.solar_manage_workflow = true;
   }
 
   const result = session 

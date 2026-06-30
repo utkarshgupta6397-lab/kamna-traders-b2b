@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { Package, Users, Warehouse, Tags, Database, LayoutDashboard, LogOut, Bookmark, RefreshCw, Terminal, Printer, Shield, Lock, FileText } from 'lucide-react';
+import { Package, Users, Warehouse, Tags, Database, LayoutDashboard, LogOut, Bookmark, RefreshCw, Terminal, Printer, Shield, Lock, FileText, Briefcase } from 'lucide-react';
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { Toaster } from 'react-hot-toast';
@@ -10,6 +10,8 @@ const navItems = [
   { href: '/admin/user-permissions', label: 'User Permissions', icon: Lock },
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/warehouses', label: 'Warehouses', icon: Warehouse },
+  { href: '/admin/sub-vendors', label: 'Sub-Vendors', icon: Briefcase },
+  { href: '/admin/cities', label: 'Cities', icon: Bookmark },
   { href: '/admin/categories', label: 'Categories', icon: Tags },
   { href: '/admin/brands', label: 'Brands', icon: Bookmark },
   { href: '/admin/skus', label: 'SKUs', icon: Package },

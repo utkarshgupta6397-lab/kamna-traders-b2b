@@ -90,6 +90,19 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.dcr_management = true;
       merged.dcr_serial_mapping_override = true;
       merged.dcr_hold_release = true;
+      merged.solar_orders_view = true;
+      merged.solar_orders_create = true;
+      merged.solar_orders_edit = true;
+      merged.solar_orders_approve = true;
+      merged.solar_orders_delete = true;
+      merged.solar_documentation_view = true;
+      merged.solar_documentation_edit = true;
+      merged.solar_documentation_approve = true;
+      merged.solar_installation_view = true;
+      merged.solar_installation_complete = true;
+      merged.solar_upload_documents = true;
+      merged.solar_view_financials = true;
+      merged.solar_manage_workflow = true;
     }
 
     console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);

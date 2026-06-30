@@ -22,9 +22,20 @@ interface WorkflowDocumentUploaderProps {
   requirements: DocumentRequirement[];
   onComplete: () => void;
   canProgress: boolean;
+  title?: string;
+  subtitle?: string;
+  submitButtonText?: string;
 }
 
-export default function WorkflowDocumentUploader({ orderId, requirements, onComplete, canProgress }: WorkflowDocumentUploaderProps) {
+export default function WorkflowDocumentUploader({ 
+  orderId, 
+  requirements, 
+  onComplete, 
+  canProgress,
+  title = "Customer Verification Documents",
+  subtitle = "Please provide all mandatory verification documents to proceed.",
+  submitButtonText = "Submit Documents"
+}: WorkflowDocumentUploaderProps) {
   const [documents, setDocuments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState<string | null>(null);
@@ -181,6 +192,9 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
         if (!item.hasFile) continue;
         const state = localState[item.req.type];
         
+        // Let's log activity only if it's a DCR_CERTIFICATE, or we could do it in general.
+        // The API route doesn't automatically log when we upload files from here, 
+        // because this posts directly to `/api/solar-orders/[id]/files`.
         await fetch(`/api/solar-orders/${orderId}/files`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -194,6 +208,18 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
             metadata: item.req.requiresPhone ? { phone: state.phone } : undefined
           })
         });
+
+        // Special Audit Log for DCR
+        if (item.req.type === 'DCR_CERTIFICATE') {
+          await fetch(`/api/solar-orders/${orderId}/activity`, {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({
+               eventType: 'FILES_UPLOADED',
+               description: `DCR Certificate Uploaded: ${state.fileName}`,
+             })
+          });
+        }
       }
 
       onComplete();
@@ -225,8 +251,8 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
   return (
     <div className="bg-white h-full flex flex-col">
       <div className="bg-slate-50 border-b border-gray-100 p-6">
-        <h3 className="text-lg font-bold text-gray-900 mb-1">Customer Verification Documents</h3>
-        <p className="text-sm text-gray-500">Please provide all mandatory verification documents to proceed.</p>
+        <h3 className="text-lg font-bold text-gray-900 mb-1">{title}</h3>
+        <p className="text-sm text-gray-500">{subtitle}</p>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-6 divide-y divide-gray-100 space-y-6">
@@ -398,7 +424,7 @@ export default function WorkflowDocumentUploader({ orderId, requirements, onComp
             className="w-full flex items-center justify-center gap-2 px-8 py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:shadow-none disabled:bg-gray-200 disabled:text-gray-400"
           >
             {submitting ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}
-            Submit Documents
+            {submitButtonText}
           </button>
         </div>
       )}

@@ -62,6 +62,30 @@ export default function DocumentationTabClient({
           );
         }
 
+        if (stepName === 'DCR Certificate Pending') {
+          return (
+            <div className="w-full">
+               <WorkflowDocumentUploader 
+                 orderId={orderId}
+                 title="DCR Certificate Upload"
+                 subtitle="Please upload the official DCR Certificate from the vendor."
+                 submitButtonText="Submit DCR Certificate"
+                 requirements={[
+                   {
+                     type: 'DCR_CERTIFICATE',
+                     label: 'DCR Certificate',
+                     required: true,
+                     maxMb: 10,
+                     acceptedTypes: ['.pdf']
+                   }
+                 ]}
+                 canProgress={canProgress}
+                 onComplete={() => updateStep('COMPLETED', 'DCR Certificate Uploaded')}
+               />
+            </div>
+          );
+        }
+
         if (selectedStep.status === 'PENDING' || selectedStep.status === 'IN_PROGRESS' || selectedStep.status === 'REJECTED') {
           return (
             <div className="p-6 md:p-8 w-full bg-slate-50 flex flex-col justify-center">

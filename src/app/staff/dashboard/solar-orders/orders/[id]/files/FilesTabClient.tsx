@@ -47,8 +47,10 @@ export default function FilesTabClient({ orderId, files: initialFiles, canUpload
           .split('_')
           .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
           .join(' ');
-      } else if (file.fileCategory === 'SITE_IMAGE') {
+      } else if (file.fileCategory === 'INSTALLATION_SITE') {
         logicalName = `Site Image ${siteImageCounter++}`;
+      } else if (file.fileCategory === 'INSTALLATION_GPS') {
+        logicalName = `GPS Verification Photo`;
       } else if (file.fileCategory === 'INSTALLATION') {
         logicalName = `Installation Image ${otherCounter++}`;
       }
@@ -75,7 +77,7 @@ export default function FilesTabClient({ orderId, files: initialFiles, canUpload
       if (activeFilter !== 'All') {
         if (activeFilter === 'Site Images' && f.fileCategory !== 'SITE_IMAGE') matchesFilter = false;
         if (activeFilter === 'Documentation' && f.fileCategory !== 'DOCUMENTATION') matchesFilter = false;
-        if (activeFilter === 'Installation' && f.fileCategory !== 'INSTALLATION') matchesFilter = false;
+        if (activeFilter === 'Installation' && !f.fileCategory.startsWith('INSTALLATION')) matchesFilter = false;
         if (activeFilter === 'Finance' && f.fileCategory !== 'FINANCE') matchesFilter = false;
         if (activeFilter === 'Generated' && f.fileCategory !== 'GENERATED') matchesFilter = false;
       }
@@ -92,6 +94,8 @@ export default function FilesTabClient({ orderId, files: initialFiles, canUpload
       if (f.fileCategory === 'SITE_IMAGE') groupName = 'Site Images';
       if (f.fileCategory === 'DOCUMENTATION') groupName = 'Documentation';
       if (f.fileCategory === 'INSTALLATION') groupName = 'Installation';
+      if (f.fileCategory === 'INSTALLATION_GPS') groupName = 'GPS Verification Photo';
+      if (f.fileCategory === 'INSTALLATION_SITE') groupName = 'Installed Site Photos';
       if (f.fileCategory === 'FINANCE') groupName = 'Financial';
       if (f.fileCategory === 'GENERATED') groupName = 'Generated';
       
@@ -143,6 +147,8 @@ export default function FilesTabClient({ orderId, files: initialFiles, canUpload
     switch(category) {
       case 'SITE_IMAGE': return 'bg-amber-100 text-amber-800';
       case 'DOCUMENTATION': return 'bg-blue-100 text-blue-800';
+      case 'INSTALLATION_GPS': return 'bg-red-100 text-red-800';
+      case 'INSTALLATION_SITE': return 'bg-emerald-100 text-emerald-800';
       case 'INSTALLATION': return 'bg-emerald-100 text-emerald-800';
       case 'FINANCE': return 'bg-purple-100 text-purple-800';
       case 'GENERATED': return 'bg-gray-100 text-gray-800';

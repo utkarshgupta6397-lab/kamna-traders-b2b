@@ -40,6 +40,32 @@ export default function InstallationTabClient({
           );
         }
 
+        if (stepName === 'Ready to Install') {
+          return (
+            <div className="p-6 md:p-8 w-full bg-slate-50 flex flex-col justify-center">
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-1">Installation Ready</h3>
+                <p className="text-sm text-gray-500">
+                  Documentation is complete. You can now start the installation phase.
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  if (window.confirm('Start Installation for this order?')) {
+                    updateStep('COMPLETED', 'Installation Started');
+                  }
+                }}
+                disabled={loadingStep === selectedStep.id || !canEdit}
+                className={`w-full flex items-center justify-center gap-2 px-6 py-4 font-bold text-base rounded-xl transition-all shadow-md group ${canEdit ? 'bg-[#00C2FF] text-white hover:bg-[#0091C2] hover:shadow-lg' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-none'}`}
+              >
+                {loadingStep === selectedStep.id ? <Loader2 size={22} className="animate-spin" /> : (canEdit && <ArrowRight size={22} className="group-hover:translate-x-1 transition-transform" />)}
+                Start Installation
+              </button>
+            </div>
+          );
+        }
+
         if (stepName === 'Inverter Number Entered') {
           return (
             <div className="p-6 md:p-8 w-full bg-slate-50 flex flex-col justify-center">

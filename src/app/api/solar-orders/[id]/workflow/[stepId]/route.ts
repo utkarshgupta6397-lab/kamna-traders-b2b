@@ -150,6 +150,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
           // Cross-workflow unblocking
           const stepName = (step.metadata as any)?.name;
+          
+          if (stepName === 'Ready to Install') {
+            await tx.solarOrder.update({
+              where: { id },
+              data: { status: 'INSTALLATION_IN_PROGRESS' }
+            });
+            await tx.solarActivityLog.create({
+              data: {
+                solarOrderId: id,
+                actorId: session.userId,
+                actorName: session.name || 'Unknown User',
+                eventType: 'STATUS_CHANGED',
+                description: 'Installation Started',
+              }
+            });
+          }
+
           if (stepName === 'Inverter Number Entered') {
             // Unblocks DCR Certificate Pending (Doc Step 10)
             const docStep10 = await tx.solarWorkflowStep.findFirst({

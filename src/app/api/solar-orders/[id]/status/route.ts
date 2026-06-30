@@ -24,7 +24,7 @@ const DOCUMENTATION_STEPS = [
 ];
 
 const INSTALLATION_STEPS = [
-  'Installation Pending',
+  'Ready to Install',
   'Installation Completed',
   'Rooftop Photos Uploaded',
   'Inverter Number Entered',

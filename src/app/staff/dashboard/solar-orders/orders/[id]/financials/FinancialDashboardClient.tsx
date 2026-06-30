@@ -57,7 +57,7 @@ function useZohoData(orderId: string, endpoint: string) {
   return { data, error, loading, retry: fetchData };
 }
 
-export default function FinancialDashboardClient({ orderId, orgId }: { orderId: string, orgId: string }) {
+export default function FinancialDashboardClient({ orderId, orgId, orderAmount = 0 }: { orderId: string, orgId: string, orderAmount?: number }) {
   const customerApi = useZohoData(orderId, 'customer');
   const quotesApi = useZohoData(orderId, 'quotes');
   const salesOrdersApi = useZohoData(orderId, 'sales-orders');
@@ -131,9 +131,15 @@ export default function FinancialDashboardClient({ orderId, orgId }: { orderId: 
     salesOrders: salesOrdersApi.data?.salesorders?.length || 0,
     invoices: invoicesApi.data?.invoices?.length || 0,
     received: (paymentsApi.data?.payments || []).reduce((acc: number, p: any) => acc + p.amount, 0),
-    outstanding: customer?.outstanding_receivable_amount || 0,
     invoiceTotal: (invoicesApi.data?.invoices || []).reduce((acc: number, i: any) => acc + i.total, 0)
   };
+  
+  const pendingAmount = Math.max(0, orderAmount - kpis.received);
+  const paymentPercentage = orderAmount > 0 ? Math.min(Math.round((kpis.received / orderAmount) * 100), 100) : 0;
+  
+  const hasVerifiedPayments = paymentsApi.data?.payments?.some((p: any) => p.cf_is_verified);
+  const verifiedPaymentCount = paymentsApi.data?.payments?.filter((p: any) => p.cf_is_verified).length || 0;
+  const lastPaymentDate = paymentsApi.data?.payments?.[0]?.date;
 
   const needsReauth = 
     customerApi.error === 'REAUTH_REQUIRED' || 
@@ -141,8 +147,6 @@ export default function FinancialDashboardClient({ orderId, orgId }: { orderId: 
     salesOrdersApi.error === 'REAUTH_REQUIRED' || 
     invoicesApi.error === 'REAUTH_REQUIRED' || 
     paymentsApi.error === 'REAUTH_REQUIRED';
-
-  const paymentPercentage = kpis.invoiceTotal > 0 ? Math.min(Math.round((kpis.received / kpis.invoiceTotal) * 100), 100) : 0;
 
   return (
     <div className="space-y-4 max-w-full text-sm">
@@ -177,7 +181,7 @@ export default function FinancialDashboardClient({ orderId, orgId }: { orderId: 
       )}
 
       {/* Debug Panel (Dev Only) */}
-      {(process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_DEBUG_ZOHO === 'true') && (
+      {process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_DEBUG_ZOHO === 'true' && (
         <div className="bg-gray-900 rounded-lg p-3 text-[10px] font-mono text-green-400 overflow-x-auto shadow-inner border border-gray-800">
           <h3 className="text-white font-bold mb-2 uppercase tracking-wider flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span> 
@@ -210,9 +214,9 @@ export default function FinancialDashboardClient({ orderId, orgId }: { orderId: 
           { label: 'Quotations', value: kpis.quotes, api: quotesApi },
           { label: 'Sales Orders', value: kpis.salesOrders, api: salesOrdersApi },
           { label: 'Invoices', value: kpis.invoices, api: invoicesApi },
-          { label: 'Total Invoiced', value: formatCurrency(kpis.invoiceTotal), api: invoicesApi },
-          { label: 'Total Received', value: formatCurrency(kpis.received), color: 'text-green-600', api: paymentsApi },
-          { label: 'Outstanding', value: formatCurrency(kpis.outstanding), color: 'text-red-600', api: customerApi },
+          { label: 'Order Amount', value: formatCurrency(orderAmount), api: customerApi },
+          { label: 'Collected', value: formatCurrency(kpis.received), color: 'text-green-600', api: paymentsApi },
+          { label: 'Pending', value: formatCurrency(pendingAmount), color: 'text-orange-500', api: customerApi },
         ].map((kpi, i) => (
           <div 
             key={i} 
@@ -229,6 +233,98 @@ export default function FinancialDashboardClient({ orderId, orgId }: { orderId: 
             </div>
           </div>
         ))}
+      </div>
+
+      {/* 2. Collection Progress Hero Card */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="flex flex-col lg:flex-row">
+          {/* LEFT: Collection KPIs, Progress bar, Summary */}
+          <div className="flex-1 p-6 lg:p-8 flex flex-col justify-center border-b lg:border-b-0 lg:border-r border-gray-100">
+            <div className="space-y-6">
+              {/* ORDER VALUE */}
+              <div className="border-b border-gray-100 pb-5">
+                <div className="text-xs text-gray-500 font-semibold tracking-wider mb-1.5 uppercase">Order Value</div>
+                <div className="text-3xl lg:text-4xl font-black text-gray-900">{formatCurrency(orderAmount)}</div>
+              </div>
+              
+              {/* COLLECTED */}
+              <div className="border-b border-gray-100 pb-5">
+                <div className="text-xs text-gray-500 font-semibold tracking-wider mb-1.5 uppercase">Collected</div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="text-3xl lg:text-4xl font-black text-green-600">{formatCurrency(kpis.received)}</div>
+                  {hasVerifiedPayments && (
+                    <span className="text-[11px] font-bold bg-green-50 text-green-700 px-2.5 py-1.5 rounded-md flex items-center gap-1 border border-green-200/50 shadow-sm">
+                      <CheckCircle2 size={14}/> Verified Payments
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* PENDING */}
+              <div>
+                <div className="text-xs text-gray-500 font-semibold tracking-wider mb-1.5 uppercase">Pending</div>
+                <div className="text-3xl lg:text-4xl font-black text-orange-500">{formatCurrency(pendingAmount)}</div>
+              </div>
+            </div>
+
+            {/* Collection Summary & Progress Bar */}
+            <div className="mt-8 bg-gray-50/80 p-5 lg:p-6 rounded-xl border border-gray-200/60 shadow-sm">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div>
+                  <div className="text-[11px] text-gray-500 mb-1 uppercase font-semibold">Collection Rate</div>
+                  <div className="font-bold text-gray-900 text-lg">{paymentPercentage}%</div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-gray-500 mb-1 uppercase font-semibold">Remaining Amount</div>
+                  <div className="font-bold text-orange-500 text-lg">{formatCurrency(pendingAmount)}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-gray-500 mb-1 uppercase font-semibold">Verified Payments</div>
+                  <div className="font-bold text-gray-900 text-lg">{verifiedPaymentCount}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-gray-500 mb-1 uppercase font-semibold">Last Payment</div>
+                  <div className="font-bold text-gray-900 text-base mt-0.5">{lastPaymentDate || '-'}</div>
+                </div>
+              </div>
+
+              {/* Thin progress bar */}
+              <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2.5 overflow-hidden">
+                <div className="bg-green-500 h-1.5 rounded-full" style={{width: `${paymentPercentage}%`}}></div>
+              </div>
+              <div className="text-xs text-gray-500">
+                <span className="font-semibold text-green-600">{formatCurrency(kpis.received)}</span> collected of {formatCurrency(orderAmount)}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT: Large Donut */}
+          <div className="lg:w-[45%] flex flex-col items-center justify-center p-8 lg:p-12 bg-gray-50/40">
+            <div className="relative w-full max-w-[320px] aspect-[2/1] flex justify-center flex-shrink-0">
+              <svg viewBox="0 0 100 50" className="w-full h-full overflow-visible">
+                {/* Background Track */}
+                <path d="M 5 50 A 45 45 0 0 1 95 50" fill="none" stroke="#E5E7EB" strokeWidth="10" strokeLinecap="round" />
+                {/* Progress Fill */}
+                <path 
+                  d="M 5 50 A 45 45 0 0 1 95 50" 
+                  fill="none" 
+                  stroke="#22C55E" 
+                  strokeWidth="10" 
+                  strokeLinecap="round" 
+                  strokeDasharray="141.37"
+                  strokeDashoffset={141.37 - (141.37 * paymentPercentage) / 100}
+                  className="transition-all duration-1000 ease-in-out"
+                />
+              </svg>
+              <div className="absolute bottom-0 text-center w-full flex flex-col items-center translate-y-3">
+                <div className="text-6xl font-black text-gray-900 tracking-tighter">{paymentPercentage}%</div>
+                <div className="text-[13px] font-semibold text-gray-500 mt-3 bg-white px-3 py-1 rounded-full border border-gray-200 shadow-sm">
+                  {formatCurrency(kpis.received)} / {formatCurrency(orderAmount)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Main Content Layout */}
@@ -273,28 +369,8 @@ export default function FinancialDashboardClient({ orderId, orgId }: { orderId: 
           </Card>
         </div>
 
-        {/* Right Column: Chart & Invoices */}
+        {/* Right Column: Invoices */}
         <div className="space-y-4 lg:col-span-2">
-          
-          {/* Payment Progress Chart */}
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex flex-col justify-center">
-            <div className="flex justify-between items-end mb-2">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-800">Payment Progress</h3>
-                <div className="text-xs text-gray-500 mt-0.5">
-                  <span className="font-bold text-green-600">{formatCurrency(kpis.received)}</span> Collected vs <span className="font-medium text-gray-700">{formatCurrency(kpis.invoiceTotal)}</span> Total
-                </div>
-              </div>
-              <div className="text-xl font-black text-gray-800">{paymentPercentage}%</div>
-            </div>
-            <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden border border-gray-200">
-              <div 
-                className={`h-full rounded-full ${paymentPercentage >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} 
-                style={{ width: `${paymentPercentage}%`, transition: 'width 1s ease-in-out' }}
-              ></div>
-            </div>
-          </div>
-
           <Card title="Invoices" icon={Receipt} loading={invoicesApi.loading} error={invoicesApi.error} retry={invoicesApi.retry}>
             {invoicesApi.data?.invoices?.length > 0 && (
               <table className="w-full text-xs text-left">

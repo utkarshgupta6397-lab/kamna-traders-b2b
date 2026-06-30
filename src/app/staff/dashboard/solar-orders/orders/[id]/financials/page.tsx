@@ -8,7 +8,7 @@ export default async function FinancialsTab({ params }: { params: Promise<{ id: 
   
   const order = await prisma.solarOrder.findUnique({
     where: { id },
-    select: { zohoBooksCustomerId: true }
+    select: { zohoBooksCustomerId: true, totalOrderAmount: true }
   });
 
   if (!order) {
@@ -22,7 +22,7 @@ export default async function FinancialsTab({ params }: { params: Promise<{ id: 
       {!order.zohoBooksCustomerId ? (
         <ZohoCustomerMapper orderId={id} />
       ) : (
-        <FinancialDashboardClient orderId={id} orgId={orgId} />
+        <FinancialDashboardClient orderId={id} orgId={orgId} orderAmount={order.totalOrderAmount} />
       )}
     </div>
   );

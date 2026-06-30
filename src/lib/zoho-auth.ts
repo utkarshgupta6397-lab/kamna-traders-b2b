@@ -61,6 +61,22 @@ export async function addZohoTrace(cartId: string, step: string) {
   }
 }
 
+export async function getZohoAuthStatus() {
+  const tokenRecord = await prisma.zohoToken.findUnique({
+    where: { id: 'singleton' }
+  });
+  if (!tokenRecord) return { isConfigured: false, isScopeMismatch: false };
+  
+  const isScopeMismatch = tokenRecord.scopeVersion !== CURRENT_SCOPE_VERSION;
+  return {
+    isConfigured: true,
+    isScopeMismatch,
+    currentVersion: tokenRecord.scopeVersion,
+    requiredVersion: CURRENT_SCOPE_VERSION,
+    grantedScopes: tokenRecord.grantedScopes || 'UNKNOWN'
+  };
+}
+
 /**
  * Gets valid tokens from DB. Automatically refreshes if expired.
  */
@@ -176,13 +192,19 @@ export async function exchangeAuthCode(code: string): Promise<{ success: boolean
       update: {
         accessToken: data.access_token,
         refreshToken: data.refresh_token || undefined,
-        expiresAt
+        expiresAt,
+        scopeVersion: CURRENT_SCOPE_VERSION,
+        grantedScopes: data.scope || 'ALL_REQUESTED',
+        dataCenter: 'in'
       },
       create: {
         id: 'singleton',
         accessToken: data.access_token,
         refreshToken: data.refresh_token,
-        expiresAt
+        expiresAt,
+        scopeVersion: CURRENT_SCOPE_VERSION,
+        grantedScopes: data.scope || 'ALL_REQUESTED',
+        dataCenter: 'in'
       }
     });
 
@@ -193,17 +215,24 @@ export async function exchangeAuthCode(code: string): Promise<{ success: boolean
   }
 }
 
+export const CURRENT_SCOPE_VERSION = 3;
+
 export function getAuthorizationUrl(): string {
   const scopes = [
-    'ZohoBooks.salesorders.CREATE',
-    'ZohoBooks.items.READ',
     'ZohoBooks.contacts.READ',
+    'ZohoBooks.contacts.CREATE',
+    'ZohoBooks.items.READ',
+    'ZohoBooks.estimates.READ',
+    'ZohoBooks.estimates.CREATE',
+    'ZohoBooks.salesorders.READ',
+    'ZohoBooks.salesorders.CREATE',
     'ZohoBooks.invoices.READ',
+    'ZohoBooks.invoices.CREATE',
     'ZohoBooks.customerpayments.READ',
     'ZohoBooks.bills.READ',
     'ZohoBooks.vendorpayments.READ',
     'ZohoBooks.banking.READ',
-    'ZohoBooks.accountants.READ'
+    'ZohoBooks.settings.READ'
   ];
 
   console.log('ZOHO REDIRECT URI', process.env.ZOHO_REDIRECT_URI);

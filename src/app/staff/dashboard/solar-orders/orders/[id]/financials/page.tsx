@@ -1,10 +1,29 @@
-export default function FinancialsTab() {
+import { prisma } from '@/lib/db';
+import ZohoCustomerMapper from './ZohoCustomerMapper';
+import FinancialDashboardClient from './FinancialDashboardClient';
+import { getZohoOrgId } from '@/lib/zoho-auth';
+
+export default async function FinancialsTab({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  
+  const order = await prisma.solarOrder.findUnique({
+    where: { id },
+    select: { zohoBooksCustomerId: true }
+  });
+
+  if (!order) {
+    return null;
+  }
+
+  const orgId = getZohoOrgId();
+
   return (
-    <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm text-center py-12">
-      <h2 className="text-xl font-bold text-[#1A2766] mb-2">Financials & Zoho Sync</h2>
-      <p className="text-gray-500 max-w-md mx-auto">
-        This tab will show payment milestones, invoices, and live data from Zoho Books.
-      </p>
+    <div className="space-y-6">
+      {!order.zohoBooksCustomerId ? (
+        <ZohoCustomerMapper orderId={id} />
+      ) : (
+        <FinancialDashboardClient orderId={id} orgId={orgId} />
+      )}
     </div>
   );
 }

@@ -308,11 +308,14 @@ model CartHistory {
 }
 
 model ZohoToken {
-  id           String   @id @default(cuid())
-  accessToken  String
-  refreshToken String
-  expiresAt    DateTime
-  updatedAt    DateTime @updatedAt
+  id            String   @id @default(cuid())
+  accessToken   String
+  refreshToken  String
+  expiresAt     DateTime
+  scopeVersion  Int      @default(1)
+  grantedScopes String?
+  dataCenter    String?
+  updatedAt     DateTime @updatedAt
 }
 
 model ActiveSession {

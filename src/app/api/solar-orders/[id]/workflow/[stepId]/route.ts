@@ -36,8 +36,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         // Some steps require approve permission
         const reviewSteps = ['Review & Approval', 'Review Pending', 'File Upload Approval Pending'];
         const stepName = (step.metadata as any)?.name;
-        if (reviewSteps.includes(stepName) && !session.solar_orders_approval && !session.solar_documentation_approve) {
-          return NextResponse.json({ error: 'Documentation approve permission required' }, { status: 403 });
+        if (reviewSteps.includes(stepName) && !session.solar_orders_approval) {
+          return NextResponse.json({ error: 'Order approval permission required' }, { status: 403 });
         } else if (!session.solar_orders_view) {
           return NextResponse.json({ error: 'Solar orders view permission required to update documentation' }, { status: 403 });
         }

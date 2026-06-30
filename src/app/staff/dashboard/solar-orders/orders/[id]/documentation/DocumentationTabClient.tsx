@@ -332,7 +332,7 @@ export default function DocumentationTabClient({
               <div>
                 <span className="block text-xs font-medium text-gray-500 mb-1">Permission Requirement</span>
                 <span className="text-sm font-bold text-gray-900">
-                  {reviewSteps.includes(selectedStep.metadata?.name || selectedStep.stepKey) ? 'Administrator Approval' : 'Workflow Progress'}
+                  {reviewSteps.includes(selectedStep.metadata?.name || selectedStep.stepKey) ? 'Order Approval' : 'Workflow Progress'}
                 </span>
               </div>
             </div>

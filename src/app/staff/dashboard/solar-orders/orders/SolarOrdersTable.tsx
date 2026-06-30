@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Search, Filter, Plus, ChevronLeft, ChevronRight, ArrowRight, Lock } from 'lucide-react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { Search, Filter, Plus, ChevronLeft, ChevronRight, ArrowRight, Lock, X } from 'lucide-react';
 
 interface SolarOrder {
   id: string;
@@ -14,11 +15,12 @@ interface SolarOrder {
   systemSize: number;
   systemType: string;
   totalOrderAmount: number;
+  receivedAmount: number;
+  pendingAmount: number;
   leadSource: string;
   salesman: { name: string } | null;
   callingExecutive: { name: string } | null;
   subVendor: { name: string } | null;
-  payments: { amount: number }[];
   createdById: string;
 }
 
@@ -38,27 +40,51 @@ interface SolarOrdersTableProps {
 }
 
 export default function SolarOrdersTable({ currentUserId, canApprove, canCreate }: SolarOrdersTableProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [orders, setOrders] = useState<SolarOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(25);
-  const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
-  
   const [counts, setCounts] = useState<Counts>({
     all: 0, draft: 0, pendingApproval: 0, execution: 0, completed: 0, rejected: 0
   });
+  const [totalPages, setTotalPages] = useState(1);
+  const [showFilters, setShowFilters] = useState(false);
+  const [assigneeOptions, setAssigneeOptions] = useState<{id: string, name: string}[]>([]);
+
+  // Derived state from URL
+  const page = parseInt(searchParams.get('page') || '1');
+  const limit = parseInt(searchParams.get('limit') || '25');
+  const search = searchParams.get('search') || '';
+  const statusFilter = searchParams.get('status') || 'All';
+  const systemType = searchParams.get('systemType') || 'All';
+  const systemSizeMin = searchParams.get('systemSizeMin') || '';
+  const systemSizeMax = searchParams.get('systemSizeMax') || '';
+  const leadSourceParam = searchParams.get('leadSource') || '';
+  const leadSources = leadSourceParam ? leadSourceParam.split(',') : [];
+  const assignedTo = searchParams.get('assignedTo') || 'All';
+  const sortField = searchParams.get('sortField') || '';
+  const sortDirection = searchParams.get('sortDirection') || 'desc';
+
+  const updateParams = (updates: Record<string, string | null>) => {
+    const current = new URLSearchParams(Array.from(searchParams.entries()));
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === '') {
+        current.delete(key);
+      } else {
+        current.set(key, value);
+      }
+    }
+    router.push(`${pathname}?${current.toString()}`, { scroll: false });
+  };
 
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      const query = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-        status: statusFilter,
-        search,
-      });
+      const query = new URLSearchParams(Array.from(searchParams.entries()));
+      if (!query.has('page')) query.set('page', '1');
+      if (!query.has('limit')) query.set('limit', '25');
 
       const [res, countRes] = await Promise.all([
         fetch(`/api/solar-orders?${query}`),
@@ -84,16 +110,29 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
 
   useEffect(() => {
     fetchOrders();
-  }, [page, limit, statusFilter]);
+  }, [searchParams]);
 
-  // Debounced search
   useEffect(() => {
-    const handler = setTimeout(() => {
-      setPage(1);
-      fetchOrders();
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [search]);
+    if (leadSources.includes('WALK_IN') || leadSources.includes('Walk-in')) {
+      fetch('/api/solar-orders/assignees?type=salesmen').then(r => r.json()).then(setAssigneeOptions);
+    } else if (leadSources.includes('CALLING_ACTIVITY') || leadSources.includes('Calling Activity')) {
+      fetch('/api/solar-orders/assignees?type=calling').then(r => r.json()).then(setAssigneeOptions);
+    } else if (leadSources.includes('SUB_VENDOR') || leadSources.includes('Sub-Vendor')) {
+      fetch('/api/solar-orders/assignees?type=subvendor').then(r => r.json()).then(setAssigneeOptions);
+    } else {
+      setAssigneeOptions([]);
+      if (assignedTo !== 'All' && assignedTo !== 'Unassigned') {
+        updateParams({ assignedTo: 'All' });
+      }
+    }
+  }, [leadSourceParam]);
+
+  const toggleLeadSource = (source: string) => {
+    const newSources = leadSources.includes(source)
+      ? leadSources.filter(s => s !== source)
+      : [...leadSources, source];
+    updateParams({ leadSource: newSources.join(','), page: '1' });
+  };
 
   const getStatusConfig = (status: string) => {
     const configs: Record<string, { bg: string, text: string, dot: string, progress: number }> = {
@@ -109,13 +148,22 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
   };
 
   const getLeadSourceBadge = (source: string) => {
-    switch(source) {
-      case 'WALK_IN': return { bg: 'bg-blue-50', text: 'text-blue-700', label: 'WALK-IN' };
-      case 'WHATSAPP': return { bg: 'bg-green-50', text: 'text-green-700', label: 'WHATSAPP' };
-      case 'REFERRAL': return { bg: 'bg-purple-50', text: 'text-purple-700', label: 'REFERRAL' };
-      case 'CALLING_ACTIVITY': return { bg: 'bg-orange-50', text: 'text-orange-700', label: 'CALLING' };
-      case 'SUB_VENDOR': return { bg: 'bg-indigo-50', text: 'text-indigo-700', label: 'SUB-VENDOR' };
-      default: return { bg: 'bg-gray-100', text: 'text-gray-700', label: 'OTHER' };
+    switch(source?.toUpperCase()) {
+      case 'WALK_IN': 
+      case 'WALK-IN': 
+        return { bg: 'bg-blue-50', text: 'text-blue-700', label: 'WALK-IN' };
+      case 'WHATSAPP': 
+        return { bg: 'bg-green-50', text: 'text-green-700', label: 'WHATSAPP' };
+      case 'REFERRAL': 
+        return { bg: 'bg-purple-50', text: 'text-purple-700', label: 'REFERRAL' };
+      case 'CALLING_ACTIVITY': 
+      case 'CALLING ACTIVITY': 
+        return { bg: 'bg-orange-50', text: 'text-orange-700', label: 'CALLING' };
+      case 'SUB_VENDOR': 
+      case 'SUB-VENDOR': 
+        return { bg: 'bg-indigo-50', text: 'text-indigo-700', label: 'SUB-VENDOR' };
+      default: 
+        return { bg: 'bg-gray-100', text: 'text-gray-700', label: 'OTHER' };
     }
   };
 
@@ -131,7 +179,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
         return;
       }
     }
-    window.location.href = `/staff/dashboard/solar-orders/orders/${order.id}`;
+    router.push(`/staff/dashboard/solar-orders/orders/${order.id}`);
   };
 
   return (
@@ -145,11 +193,25 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
             <input
               type="text"
               placeholder="Search orders..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              defaultValue={search}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  updateParams({ search: e.currentTarget.value, page: '1' });
+                }
+              }}
+              onBlur={(e) => updateParams({ search: e.target.value, page: '1' })}
               className="w-full pl-8 pr-4 py-1.5 text-xs bg-gray-50/50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-400"
             />
           </div>
+          
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors border ${showFilters ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+          >
+            <Filter size={14} />
+            Filters {showFilters ? '▲' : '▼'}
+          </button>
+
           <div className="h-5 w-px bg-gray-200 hidden sm:block"></div>
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 xl:pb-0">
             {[
@@ -162,16 +224,16 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
             ].map(status => (
               <button
                 key={status.id}
-                onClick={() => { setStatusFilter(status.id); setPage(1); }}
+                onClick={() => updateParams({ status: status.id, page: '1' })}
                 className={`whitespace-nowrap px-3 py-1 text-[11px] font-medium rounded-full transition-all border flex items-center gap-1.5 ${
                   statusFilter === status.id 
-                    ? 'bg-[#1A2766] text-white border-[#1A2766] shadow-sm' 
+                    ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-sm' 
                     : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                 }`}
               >
                 {status.label}
                 <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${
-                  statusFilter === status.id ? 'bg-white/20' : 'bg-gray-100 text-gray-500'
+                  statusFilter === status.id ? 'bg-blue-100' : 'bg-gray-100 text-gray-500'
                 }`}>
                   {status.count}
                 </span>
@@ -179,28 +241,125 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
             ))}
           </div>
         </div>
-        {canCreate ? (
-          <Link
-            href="/staff/dashboard/solar-orders/orders/new"
-            className="flex items-center justify-center gap-2 bg-[#1A2766] text-white px-4 py-1.5 text-xs font-medium rounded-lg shadow-sm hover:bg-[#152054] transition-all w-full xl:w-auto active:scale-[0.98]"
-          >
-            <Plus size={14} />
-            <span>New Order</span>
+
+        {canCreate && (
+          <Link href="/staff/dashboard/solar-orders/orders/new">
+            <button className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg font-medium text-xs transition-colors shadow-sm w-full xl:w-auto justify-center whitespace-nowrap">
+              <Plus size={14} />
+              <span>New Order</span>
+            </button>
           </Link>
-        ) : (
-          <button
-            disabled
-            title="You do not have permission to create Solar Orders. Please contact your administrator."
-            className="flex items-center justify-center gap-2 bg-[#1A2766] text-white px-4 py-1.5 text-xs font-medium rounded-lg shadow-sm w-full xl:w-auto opacity-50 cursor-not-allowed"
-          >
-            <Plus size={14} />
-            <span>New Order</span>
-          </button>
         )}
       </div>
 
+      {showFilters && (
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-in slide-in-from-top-2">
+          
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">System Type</label>
+            <select 
+              value={systemType} 
+              onChange={(e) => updateParams({ systemType: e.target.value, page: '1' })}
+              className="w-full text-xs p-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
+            >
+              <option value="All">All</option>
+              <option value="ON_GRID">On-Grid</option>
+              <option value="OFF_GRID">Off-Grid</option>
+              <option value="HYBRID">Hybrid</option>
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">System Size (kW)</label>
+            <div className="flex items-center gap-2">
+              <input 
+                type="number" 
+                placeholder="Min" 
+                defaultValue={systemSizeMin}
+                onBlur={(e) => updateParams({ systemSizeMin: e.target.value, page: '1' })}
+                className="w-full text-xs p-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
+              />
+              <span className="text-gray-400">-</span>
+              <input 
+                type="number" 
+                placeholder="Max" 
+                defaultValue={systemSizeMax}
+                onBlur={(e) => updateParams({ systemSizeMax: e.target.value, page: '1' })}
+                className="w-full text-xs p-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Lead Source</label>
+            <div className="flex flex-wrap gap-1.5">
+              {['Walk-in', 'WhatsApp', 'Referral', 'Calling Activity', 'Sub-Vendor', 'Other'].map(src => (
+                <button
+                  key={src}
+                  onClick={() => toggleLeadSource(src)}
+                  className={`px-2 py-1 text-[10px] font-medium rounded border transition-colors ${
+                    leadSources.includes(src) ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {src}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Assigned To</label>
+            <select 
+              value={assignedTo} 
+              onChange={(e) => updateParams({ assignedTo: e.target.value, page: '1' })}
+              className="w-full text-xs p-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
+            >
+              <option value="All">All</option>
+              <option value="Unassigned">Unassigned</option>
+              {assigneeOptions.map(opt => (
+                <option key={opt.id} value={opt.id}>{opt.name}</option>
+              ))}
+            </select>
+            {assigneeOptions.length === 0 && leadSources.length > 0 && (
+              <p className="text-[9px] text-orange-500">Select 'Walk-in', 'Calling Activity' or 'Sub-Vendor' to see assignees.</p>
+            )}
+          </div>
+
+        </div>
+      )}
+
       {/* Modern Data Table */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50/50">
+          <div className="text-xs text-gray-500 font-medium">
+            Sort By
+          </div>
+          <div className="flex items-center gap-2">
+            <select 
+              value={sortField} 
+              onChange={(e) => updateParams({ sortField: e.target.value })}
+              className="text-xs p-1.5 bg-transparent border-none focus:ring-0 text-gray-700 font-medium cursor-pointer"
+            >
+              <option value="">Default (Newest First)</option>
+              <option value="orderAmount">Order Amount</option>
+              <option value="pendingAmount">Pending Amount</option>
+              <option value="orderDate">Order Date</option>
+              <option value="customerName">Customer Name</option>
+              <option value="systemSize">System Size</option>
+            </select>
+            {sortField && (
+              <select
+                value={sortDirection}
+                onChange={(e) => updateParams({ sortDirection: e.target.value })}
+                className="text-xs p-1.5 bg-transparent border-none focus:ring-0 text-gray-700 font-medium cursor-pointer"
+              >
+                <option value="desc">Descending</option>
+                <option value="asc">Ascending</option>
+              </select>
+            )}
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-left whitespace-nowrap">
             <thead className="bg-gray-50/80 border-b border-gray-200 text-gray-500 font-semibold tracking-wide text-[13.5px]">
@@ -244,9 +403,8 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                   const initials = order.customerName.substring(0, 2).toUpperCase();
                   const isLocked = (order.status === 'PENDING_APPROVAL' || order.status === 'REJECTED') && order.createdById !== currentUserId && !canApprove;
                   
-                  const totalReceived = order.payments ? order.payments.reduce((acc, p) => acc + p.amount, 0) : 0;
-                  const outstanding = order.totalOrderAmount - totalReceived;
-                  const pendingPct = order.totalOrderAmount > 0 ? (outstanding / order.totalOrderAmount) * 100 : 0;
+                  const pendingAmt = order.pendingAmount ?? (order.totalOrderAmount - (order.payments ? order.payments.reduce((acc, p) => acc + p.amount, 0) : 0));
+                  const pendingPct = order.totalOrderAmount > 0 ? (pendingAmt / order.totalOrderAmount) * 100 : 0;
                   
                   return (
                     <tr key={order.id} className="group hover:bg-gray-50/80 transition-colors cursor-pointer" onClick={() => handleRowClick(order)}>
@@ -271,7 +429,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                       </td>
                       <td className="px-4 py-2">
                         {(() => {
-                          if (order.leadSource === 'CALLING_ACTIVITY') {
+                          if (order.leadSource === 'CALLING_ACTIVITY' || order.leadSource === 'Calling Activity') {
                             return order.callingExecutive ? (
                               <div>
                                 <div className="font-medium text-gray-900">{order.callingExecutive.name}</div>
@@ -279,7 +437,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                               </div>
                             ) : '—';
                           }
-                          if (order.leadSource === 'SUB_VENDOR') {
+                          if (order.leadSource === 'SUB_VENDOR' || order.leadSource === 'Sub-Vendor') {
                             return order.subVendor ? (
                               <div>
                                 <div className="font-medium text-gray-900">{order.subVendor.name}</div>
@@ -300,14 +458,14 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                         ₹{order.totalOrderAmount.toLocaleString('en-IN')}
                       </td>
                       <td className="px-4 py-2">
-                        {outstanding <= 0 ? (
+                        {pendingAmt <= 0 ? (
                           <>
                             <div className="font-semibold text-gray-900">₹0</div>
                             <div className="text-[12px] text-emerald-600 font-medium mt-0.5">Paid</div>
                           </>
                         ) : (
                           <>
-                            <div className="font-semibold text-gray-900">₹{outstanding.toLocaleString('en-IN')}</div>
+                            <div className="font-semibold text-gray-900">₹{pendingAmt.toLocaleString('en-IN')}</div>
                             <div className="text-[12px] text-orange-600 font-medium mt-0.5">{pendingPct.toFixed(1)}% Pending</div>
                           </>
                         )}
@@ -361,7 +519,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                 <span>Rows per page:</span>
                 <select 
                   value={limit} 
-                  onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
+                  onChange={(e) => updateParams({ limit: e.target.value, page: '1' })}
                   className="bg-transparent border-none text-gray-700 font-semibold focus:ring-0 cursor-pointer text-[11px] py-0 pr-6"
                 >
                   <option value={25}>25</option>
@@ -374,7 +532,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
             <div className="flex items-center gap-1">
               <button
                 disabled={page === 1}
-                onClick={() => setPage(p => p - 1)}
+                onClick={() => updateParams({ page: (page - 1).toString() })}
                 className="inline-flex items-center justify-center w-6 h-6 rounded bg-white border border-gray-200 text-gray-600 disabled:opacity-50 disabled:bg-transparent hover:bg-gray-50 transition-colors shadow-sm"
               >
                 <ChevronLeft size={12} />
@@ -382,7 +540,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
               <span className="text-[11px] font-medium px-2 text-gray-600">{page} / {totalPages}</span>
               <button
                 disabled={page === totalPages}
-                onClick={() => setPage(p => p + 1)}
+                onClick={() => updateParams({ page: (page + 1).toString() })}
                 className="inline-flex items-center justify-center w-6 h-6 rounded bg-white border border-gray-200 text-gray-600 disabled:opacity-50 disabled:bg-transparent hover:bg-gray-50 transition-colors shadow-sm"
               >
                 <ChevronRight size={12} />

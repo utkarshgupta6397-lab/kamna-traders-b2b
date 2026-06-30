@@ -126,16 +126,19 @@ export default function FinancialDashboardClient({ orderId, orgId, orderAmount =
   );
 
   const customer = customerApi.data?.contact;
+  
+  const syncedReceived = paymentsApi.data?.syncedReceivedAmount ?? (paymentsApi.data?.payments || []).filter((p: any) => p.cf_is_verified).reduce((acc: number, p: any) => acc + p.amount, 0);
+  const pendingAmount = paymentsApi.data?.syncedPendingAmount ?? Math.max(0, orderAmount - syncedReceived);
+  
   const kpis = {
     quotes: quotesApi.data?.quotes?.length || 0,
     salesOrders: salesOrdersApi.data?.salesorders?.length || 0,
     invoices: invoicesApi.data?.invoices?.length || 0,
-    received: (paymentsApi.data?.payments || []).reduce((acc: number, p: any) => acc + p.amount, 0),
+    received: syncedReceived,
     invoiceTotal: (invoicesApi.data?.invoices || []).reduce((acc: number, i: any) => acc + i.total, 0)
   };
   
-  const pendingAmount = Math.max(0, orderAmount - kpis.received);
-  const paymentPercentage = orderAmount > 0 ? Math.min(Math.round((kpis.received / orderAmount) * 100), 100) : 0;
+  const paymentPercentage = orderAmount > 0 ? Math.min(Math.round((syncedReceived / orderAmount) * 100), 100) : 0;
   
   const hasVerifiedPayments = paymentsApi.data?.payments?.some((p: any) => p.cf_is_verified);
   const verifiedPaymentCount = paymentsApi.data?.payments?.filter((p: any) => p.cf_is_verified).length || 0;

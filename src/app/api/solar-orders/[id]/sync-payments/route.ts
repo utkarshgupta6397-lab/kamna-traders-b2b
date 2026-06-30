@@ -6,7 +6,7 @@ import { syncOrderPayments } from '@/lib/zoho-financials';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -41,7 +41,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Customer mapping invalid or stale' }, { status: 400 });
     }
 
-    const { payments, receivedAmount, pendingAmount, lastPaymentSyncAt } = await syncOrderPayments(
+    const { receivedAmount, pendingAmount, lastPaymentSyncAt } = await syncOrderPayments(
       id,
       order.zohoBooksCustomerId,
       order.totalOrderAmount,
@@ -50,7 +50,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     );
 
     return NextResponse.json({ 
-      payments,
       syncedReceivedAmount: receivedAmount,
       syncedPendingAmount: pendingAmount,
       lastPaymentSyncAt

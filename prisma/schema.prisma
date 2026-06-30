@@ -738,6 +738,8 @@ model SolarOrder {
   approvedById  String?
   approvedAt    DateTime?
   submittedById String?
+  
+  lastPaymentSyncAt DateTime?
   submittedAt   DateTime?
   rejectedById  String?
   rejectedAt    DateTime?

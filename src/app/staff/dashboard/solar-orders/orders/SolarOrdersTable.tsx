@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Search, Filter, Plus, ChevronLeft, ChevronRight, ArrowRight, Lock, X } from 'lucide-react';
+import { Search, Filter, Plus, ChevronLeft, ChevronRight, ArrowRight, Lock, X, RefreshCw, Check } from 'lucide-react';
 
 interface SolarOrder {
   id: string;
@@ -22,6 +22,8 @@ interface SolarOrder {
   callingExecutive: { name: string } | null;
   subVendor: { name: string } | null;
   createdById: string;
+  zohoBooksCustomerId?: string | null;
+  lastPaymentSyncAt?: string | null;
   payments?: { amount: number }[];
 }
 
@@ -52,6 +54,10 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
   const [totalPages, setTotalPages] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
   const [assigneeOptions, setAssigneeOptions] = useState<{id: string, name: string}[]>([]);
+  
+  const [syncingRows, setSyncingRows] = useState<Record<string, boolean>>({});
+  const [bulkSyncProgress, setBulkSyncProgress] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<{text: string, type: 'success'|'error'} | null>(null);
 
   // Derived state from URL
   const page = parseInt(searchParams.get('page') || '1');
@@ -181,8 +187,65 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
     router.push(`/staff/dashboard/solar-orders/orders/${order.id}`);
   };
 
+  const handleSyncRow = async (e: React.MouseEvent, order: SolarOrder) => {
+    e.stopPropagation();
+    if (!order.zohoBooksCustomerId) {
+      setToastMsg({ text: 'Order not mapped to Zoho yet.', type: 'error' });
+      setTimeout(() => setToastMsg(null), 3000);
+      return;
+    }
+    setSyncingRows(prev => ({ ...prev, [order.id]: true }));
+    try {
+      const res = await fetch(`/api/solar-orders/${order.id}/sync-payments`, { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to sync');
+      await fetchOrders();
+      setToastMsg({ text: 'Payments updated.', type: 'success' });
+    } catch (err) {
+      console.error(err);
+      setToastMsg({ text: 'Failed to sync payments.', type: 'error' });
+    } finally {
+      setSyncingRows(prev => ({ ...prev, [order.id]: false }));
+      setTimeout(() => setToastMsg(null), 3000);
+    }
+  };
+
+  const handleBulkSync = async () => {
+    try {
+      setBulkSyncProgress("Fetching pending orders...");
+      const res = await fetch('/api/solar-orders/pending-sync-list');
+      const data = await res.json();
+      const ids = data.ids || [];
+      if (ids.length === 0) {
+        setBulkSyncProgress(null);
+        setToastMsg({ text: 'No pending orders to sync.', type: 'success' });
+        setTimeout(() => setToastMsg(null), 3000);
+        return;
+      }
+      for (let i = 0; i < ids.length; i++) {
+        setBulkSyncProgress(`Updating ${i + 1} of ${ids.length}...`);
+        await fetch(`/api/solar-orders/${ids[i]}/sync-payments`, { method: 'POST' });
+      }
+      setBulkSyncProgress("Pending payments updated successfully.");
+      setTimeout(() => {
+        setBulkSyncProgress(null);
+        fetchOrders();
+      }, 2000);
+    } catch (err) {
+      console.error(err);
+      setBulkSyncProgress(null);
+      setToastMsg({ text: 'Bulk sync failed.', type: 'error' });
+      setTimeout(() => setToastMsg(null), 3000);
+    }
+  };
+
   return (
-    <div className="space-y-4 animate-in fade-in duration-500">
+    <div className="space-y-4 animate-in fade-in duration-500 relative">
+      {/* Toast Notification */}
+      {toastMsg && (
+        <div className={`fixed bottom-4 right-4 z-50 px-4 py-2 rounded-lg shadow-lg text-sm font-medium transition-all ${toastMsg.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+          {toastMsg.text}
+        </div>
+      )}
       
       {/* Filters and Actions Bar */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white p-3 rounded-xl border border-gray-200 shadow-sm sticky top-0 z-10">
@@ -240,14 +303,31 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
           </div>
         </div>
 
-        {canCreate && (
-          <Link href="/staff/dashboard/solar-orders/orders/new">
-            <button className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg font-medium text-xs transition-colors shadow-sm w-full xl:w-auto justify-center whitespace-nowrap">
-              <Plus size={14} />
-              <span>New Order</span>
+        <div className="flex items-center gap-3 w-full xl:w-auto overflow-x-auto hide-scrollbar mt-2 xl:mt-0">
+          {bulkSyncProgress ? (
+            <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-medium border border-blue-100 flex-shrink-0">
+              <RefreshCw className="h-3 w-3 animate-spin" />
+              {bulkSyncProgress}
+            </div>
+          ) : (
+            <button
+              onClick={handleBulkSync}
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-blue-600 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shadow-sm flex-shrink-0"
+            >
+              <RefreshCw size={12} />
+              Refresh Payments
             </button>
-          </Link>
-        )}
+          )}
+
+          {canCreate && (
+            <Link href="/staff/dashboard/solar-orders/orders/new" className="flex-shrink-0">
+              <button className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg font-medium text-xs transition-colors shadow-sm justify-center whitespace-nowrap">
+                <Plus size={14} />
+                <span>New Order</span>
+              </button>
+            </Link>
+          )}
+        </div>
       </div>
 
       {showFilters && (
@@ -456,17 +536,31 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                         ₹{order.totalOrderAmount.toLocaleString('en-IN')}
                       </td>
                       <td className="px-4 py-2">
-                        {pendingAmt <= 0 ? (
-                          <>
-                            <div className="font-semibold text-gray-900">₹0</div>
-                            <div className="text-[12px] text-emerald-600 font-medium mt-0.5">Paid</div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="font-semibold text-gray-900">₹{pendingAmt.toLocaleString('en-IN')}</div>
-                            <div className="text-[12px] text-orange-600 font-medium mt-0.5">{pendingPct.toFixed(1)}% Pending</div>
-                          </>
-                        )}
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1">
+                            {pendingAmt <= 0 ? (
+                              <>
+                                <div className="font-semibold text-green-600 flex items-center gap-1 text-[13px]">₹0</div>
+                                <div className="text-[11px] text-green-600 font-medium flex items-center gap-1"><Check size={10}/> Paid</div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="font-semibold text-orange-600 text-[13px]">₹{pendingAmt.toLocaleString('en-IN')}</div>
+                                <div className="text-[10px] text-gray-400 font-medium whitespace-nowrap mt-0.5">
+                                  {order.lastPaymentSyncAt ? `Last Synced: ${new Date(order.lastPaymentSyncAt).toLocaleDateString()}` : 'Never synced'}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          <button 
+                            onClick={(e) => handleSyncRow(e, order)}
+                            disabled={syncingRows[order.id]}
+                            className={`p-1.5 rounded border ${syncingRows[order.id] ? 'bg-blue-50 border-blue-200 text-blue-500' : 'bg-white border-gray-200 text-gray-400 hover:text-blue-600 hover:border-blue-300'} transition-all flex-shrink-0 group relative shadow-sm`}
+                            title="Refresh latest verified payments from Zoho Books"
+                          >
+                            <RefreshCw size={13} className={syncingRows[order.id] ? 'animate-spin' : ''} />
+                          </button>
+                        </div>
                       </td>
                       <td className="px-4 py-2">
                         <div className="w-full max-w-[120px]">

@@ -25,11 +25,12 @@ const DOCUMENTATION_STEPS = [
 
 const INSTALLATION_STEPS = [
   'Ready to Install',
-  'Installation Completed',
-  'Rooftop Photos Uploaded',
-  'Inverter Number Entered',
-  'Wiring Completed',
-  'System Completed'
+  'Physical Installation Completed',
+  'Installation Checklist',
+  'Net Metering Done',
+  'System Start Done',
+  'System WiFi Setup Done',
+  'Installation Completed'
 ];
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {

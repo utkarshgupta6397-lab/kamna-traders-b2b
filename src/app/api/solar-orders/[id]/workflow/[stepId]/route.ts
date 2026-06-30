@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 
@@ -55,9 +56,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       }
     }
 
-    // Business Logic Validation: Inverter Number Entered
-    if (status === 'COMPLETED' && (step.metadata as any)?.name === 'Inverter Number Entered') {
+    // Business Logic Validation: Installation Checklist
+    if (status === 'COMPLETED' && (step.metadata as any)?.name === 'Installation Checklist') {
       const inverterNumber = metadata?.inverterNumber;
+      if (!metadata?.wiringCompleted || !metadata?.inverterInstalled) {
+        return NextResponse.json({ error: 'All checklist items must be completed' }, { status: 400 });
+      }
       if (!inverterNumber || typeof inverterNumber !== 'string' || inverterNumber.trim() === '') {
         return NextResponse.json({ error: 'Inverter Serial Number is mandatory' }, { status: 400 });
       }
@@ -81,6 +85,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       if (existing) {
         return NextResponse.json({ error: 'This inverter serial number is already registered.' }, { status: 400 });
       }
+    }
+
+    // Business Logic Validation: System WiFi Setup Done
+    if (status === 'COMPLETED' && (step.metadata as any)?.name === 'System WiFi Setup Done') {
+      const wifiUsername = metadata?.wifiUsername;
+      let wifiPassword = metadata?.wifiPassword;
+
+      if (!wifiUsername || !wifiPassword || wifiUsername.trim() === '' || wifiPassword.trim() === '') {
+        return NextResponse.json({ error: 'WiFi Username and Password are required' }, { status: 400 });
+      }
+
+      // Encrypt the password before saving
+      const ENCRYPTION_KEY = process.env.NEXTAUTH_SECRET || 'kamna_default_secret_key_1234567';
+      const key = crypto.scryptSync(ENCRYPTION_KEY, 'salt', 32);
+      const iv = crypto.randomBytes(16);
+      const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+      let encrypted = cipher.update(wifiPassword, 'utf8', 'hex');
+      encrypted += cipher.final('hex');
+      metadata.wifiPassword = `${iv.toString('hex')}:${encrypted}`; // Safe encrypted storage
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -118,15 +141,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       });
 
       // Log the activity
-      let logDesc = `Updated workflow step '${(newMetadata as any)?.name || step.stepKey}'`;
+      const stepName = (newMetadata as any)?.name || step.stepKey;
+      let logDesc = `Updated workflow step '${stepName}'`;
       if (status === 'COMPLETED') {
-        if ((newMetadata as any)?.name === 'Inverter Number Entered') {
-          logDesc = `Inverter Serial Number Entered. Serial Number: ${(newMetadata as any).inverterNumber}, Remarks: ${notes || 'None'}`;
+        if (stepName === 'Installation Checklist') {
+          logDesc = `Installation Checklist Completed. Wiring Completed: Yes, Inverter Installed: Yes. Inverter Serial Number Saved: ${(newMetadata as any).inverterNumber}`;
+        } else if (stepName === 'System WiFi Setup Done') {
+          logDesc = `WiFi Configured for Inverter. Username: ${(newMetadata as any).wifiUsername}`;
         } else {
-          logDesc = `Completed workflow step '${(newMetadata as any)?.name || step.stepKey}'`;
+          logDesc = `Completed workflow step '${stepName}'`;
         }
       }
-      else if (status === 'BLOCKED') logDesc = `Blocked workflow step '${(newMetadata as any)?.name || step.stepKey}' - ${blockedReason}`;
+      else if (status === 'BLOCKED') logDesc = `Blocked workflow step '${stepName}' - ${blockedReason}`;
 
       await tx.solarActivityLog.create({
         data: {
@@ -149,20 +175,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
              const stepName = (nextDocStep.metadata as any)?.name;
              let shouldUnblock = true;
 
-             if (stepName === 'DCR Certificate Pending') {
-               // Check if Inverter Number Entered is completed
-               const installStep4 = await tx.solarWorkflowStep.findFirst({
-                 where: { solarOrderId: id, workflowType: 'INSTALLATION', stepIndex: 4 }
+              if (stepName === 'DCR Certificate Pending') {
+               // Check if Installation Checklist is completed
+               const installStep3 = await tx.solarWorkflowStep.findFirst({
+                 where: { solarOrderId: id, workflowType: 'INSTALLATION', stepIndex: 3 }
                });
-               if (!installStep4 || installStep4.status !== 'COMPLETED') {
+               if (!installStep3 || installStep3.status !== 'COMPLETED') {
                  shouldUnblock = false;
                }
              } else if (stepName === 'File Upload Approval Pending') {
-               // Check if install steps 2,3,4 are completed
+               // Check if install steps 7 is completed
                const requiredInstalls = await tx.solarWorkflowStep.findMany({
-                 where: { solarOrderId: id, workflowType: 'INSTALLATION', stepIndex: { in: [2, 3, 4] } }
+                 where: { solarOrderId: id, workflowType: 'INSTALLATION', stepIndex: 7 }
                });
-               const allRequiredDone = requiredInstalls.length === 3 && requiredInstalls.every(s => s.status === 'COMPLETED');
+               const allRequiredDone = requiredInstalls.length === 1 && requiredInstalls[0].status === 'COMPLETED';
                if (!allRequiredDone) {
                  shouldUnblock = false;
                }
@@ -208,7 +234,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             });
           }
 
-          if (stepName === 'Inverter Number Entered') {
+          if (stepName === 'Installation Checklist') {
             // Unblocks DCR Certificate Pending (Doc Step 10)
             const docStep10 = await tx.solarWorkflowStep.findFirst({
               where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepIndex: 10 }
@@ -226,20 +252,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             }
           }
 
-          if (['Installation Completed', 'Rooftop Photos Uploaded', 'Inverter Number Entered'].includes(stepName)) {
-            // Unblocks File Upload Approval Pending (Doc Step 11) IF all 3 are done
-            const allThree = await tx.solarWorkflowStep.findMany({
-              where: { 
-                solarOrderId: id, 
-                workflowType: 'INSTALLATION', 
-                metadata: { path: ['name'], string_contains: 'Installation Completed' } // Simplify check in real life or use step keys
-              }
-            });
-            // Actually, we'll check step indexes 2, 3, 4
-            const requiredInstalls = await tx.solarWorkflowStep.findMany({
-              where: { solarOrderId: id, workflowType: 'INSTALLATION', stepIndex: { in: [2, 3, 4] } }
-            });
-            const allRequiredDone = requiredInstalls.every(s => s.status === 'COMPLETED');
+          if (stepName === 'Installation Completed') {
+            // Unblocks File Upload Approval Pending (Doc Step 11) IF all 7 are done
+            const allRequiredDone = true; // since step 7 completed, we assume all are done linearly
             if (allRequiredDone) {
               const docStep11 = await tx.solarWorkflowStep.findFirst({
                 where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepIndex: 11 }
@@ -253,10 +268,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 }
               }
             }
-          }
 
-          // If step 6 is completed, check if doc step 18 is completed. If both, set order to COMPLETED
-          if (stepName === 'System Completed') {
+            // Also check if doc step 18 is completed. If both, set order to COMPLETED
             const finalDocStep = await tx.solarWorkflowStep.findFirst({
               where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepIndex: 18 }
             });
@@ -269,7 +282,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         // Check doc completion
         if (step.workflowType === 'DOCUMENTATION' && step.stepIndex === 18) {
            const finalInstStep = await tx.solarWorkflowStep.findFirst({
-             where: { solarOrderId: id, workflowType: 'INSTALLATION', stepIndex: 6 }
+             where: { solarOrderId: id, workflowType: 'INSTALLATION', stepIndex: 7 }
            });
            if (finalInstStep && finalInstStep.status === 'COMPLETED') {
              await tx.solarOrder.update({ where: { id }, data: { status: 'COMPLETED' } });

@@ -176,38 +176,38 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
         <button
           onClick={() => setLegendOpen(v => !v)}
-          className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+          className="w-full flex items-center justify-between px-3 py-1.5 text-left hover:bg-gray-50 transition-colors"
         >
           <div className="flex items-center gap-4 flex-wrap">
-            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mr-2">Legend</span>
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
-              <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-emerald-500 text-white text-[9px] font-bold">✓</span> Completed
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mr-2">Legend</span>
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-600">
+              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded bg-emerald-500 text-white text-[8px] font-bold">✓</span> Completed
             </span>
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
-              <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-blue-500 text-white text-[9px]">●</span> In Progress
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-600">
+              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded bg-blue-500 text-white text-[8px]">●</span> In Progress
             </span>
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
-              <span className="inline-flex items-center justify-center w-4 h-4 rounded border border-gray-200 bg-white text-gray-400 text-[9px]">·</span> Pending
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-600">
+              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded border border-gray-200 bg-white text-gray-400 text-[8px]">·</span> Pending
             </span>
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
-              <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-orange-400 text-white text-[9px]">⏳</span> Review
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-600">
+              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded bg-orange-400 text-white text-[8px]">⏳</span> Review
             </span>
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
-              <span className="inline-flex items-center justify-center w-4 h-4 rounded border border-red-200 bg-red-50 text-red-500 text-[9px]">✕</span> Blocked/Rejected
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-600">
+              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded border border-red-200 bg-red-50 text-red-500 text-[8px]">✕</span> Blocked/Rejected
             </span>
           </div>
-          <div className="flex items-center gap-1.5 text-[11px] text-gray-500 shrink-0 ml-4">
-            <span>{legendOpen ? 'Hide' : 'Show'} step abbreviations</span>
-            {legendOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          <div className="flex items-center gap-1 text-[10px] text-gray-500 shrink-0 ml-4">
+            <span>{legendOpen ? 'Hide' : 'Show'} abbreviations</span>
+            {legendOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </div>
         </button>
 
         {legendOpen && (
-          <div className="border-t border-gray-100 px-4 py-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-6 gap-y-2.5">
+          <div className="border-t border-gray-100 px-3 py-2.5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-6 gap-y-1.5">
             {allSteps.map(step => (
-              <div key={step} className="flex items-start gap-2 text-[11px] text-gray-600">
-                <span className="font-bold text-gray-800 font-mono text-[11px] w-8 shrink-0">{abbrMap[step]}</span>
-                <span className="text-gray-600 font-medium">{step}</span>
+              <div key={step} className="flex items-start gap-1.5 text-[10px] text-gray-600">
+                <span className="font-bold text-gray-800 font-mono text-[10px] w-6 shrink-0">{abbrMap[step]}</span>
+                <span className="text-gray-600 font-medium leading-tight">{step}</span>
               </div>
             ))}
           </div>
@@ -221,16 +221,16 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
             <thead className="text-[11px] text-gray-700 bg-gray-50 border-b border-gray-200 sticky top-0 z-20">
               <tr>
                 {/* ── Frozen left ── */}
-                <th className="px-2 py-3 font-semibold sticky left-0 z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[38px] text-center">
+                <th className="px-1.5 py-1.5 font-semibold sticky left-0 z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[30px] text-center">
                   #
                 </th>
-                <th className="px-3 py-3 font-semibold sticky left-[38px] z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[200px]">
+                <th className="px-2.5 py-1.5 font-semibold sticky left-[30px] z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[190px]">
                   Customer
                 </th>
-                <th className="px-4 py-3 font-semibold bg-gray-50 border-r border-gray-200 w-[160px]">
+                <th className="px-2.5 py-1.5 font-semibold bg-gray-50 border-r border-gray-200 w-[140px]">
                   Current Stage
                 </th>
-                <th className="px-4 py-3 font-semibold bg-gray-50 border-r border-gray-200 w-[120px]">
+                <th className="px-2.5 py-1.5 font-semibold bg-gray-50 border-r border-gray-200 w-[100px]">
                   Progress
                 </th>
 
@@ -241,27 +241,27 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                     <th
                       key={group.phase}
                       colSpan={group.steps.length}
-                      className={`px-2 py-0 border-r border-gray-200 text-center transition-colors ${cfg.bg} ${cfg.text} ${hoveredPhase === group.phase ? 'brightness-95' : ''}`}
+                      className={`px-1 py-0 border-r border-gray-200 text-center transition-colors ${cfg.bg} ${cfg.text} ${hoveredPhase === group.phase ? 'brightness-95' : ''}`}
                     >
-                      <div className="flex items-center justify-center gap-1.5 py-2">
-                        <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
-                        <span className="font-bold text-[11px] tracking-wide">{group.phase}</span>
-                        <span className={`text-[9px] font-medium opacity-70`}>{group.steps.length}</span>
+                      <div className="flex items-center justify-center gap-1.5 py-1">
+                        <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                        <span className="font-bold text-[10px] tracking-wide">{group.phase}</span>
+                        <span className={`text-[8.5px] font-medium opacity-70`}>{group.steps.length}</span>
                       </div>
                     </th>
                   );
                 })}
 
                 {/* ── Frozen right ── */}
-                <th className="px-2 py-3 font-semibold sticky right-0 z-30 bg-gray-50 shadow-[-1px_0_0_#e5e7eb] border-l border-gray-200 w-[60px] text-center">
+                <th className="px-1.5 py-1.5 font-semibold sticky right-0 z-30 bg-gray-50 shadow-[-1px_0_0_#e5e7eb] border-l border-gray-200 w-[46px] text-center">
                   Action
                 </th>
               </tr>
 
               {/* ── Step abbreviation sub-row ── */}
               <tr className="border-b border-gray-200">
-                <th colSpan={4} className="sticky left-0 z-30 bg-gray-50 border-r border-gray-200 px-4 py-2">
-                  <span className="text-[10px] text-gray-400 italic font-medium">Hover workflow chips for full names & details</span>
+                <th colSpan={4} className="sticky left-0 z-30 bg-gray-50 border-r border-gray-200 px-2.5 py-1">
+                  <span className="text-[9.5px] text-gray-400 italic font-medium">Hover workflow chips for full names & details</span>
                 </th>
 
                 {allSteps.map(step => {
@@ -270,17 +270,17 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                   return (
                     <th
                       key={step}
-                      className={`min-w-[42px] px-1 py-1.5 text-center border-r border-gray-200 transition-colors cursor-default ${cfg.bg} ${isColHov ? 'brightness-90' : ''}`}
+                      className={`min-w-[34px] px-0.5 py-1 text-center border-r border-gray-200 transition-colors cursor-default ${cfg.bg} ${isColHov ? 'brightness-90' : ''}`}
                       title={step}
                       onMouseEnter={() => setHoveredStep(step)}
                       onMouseLeave={() => setHoveredStep(null)}
                     >
-                      <span className={`text-[10px] font-bold font-mono ${cfg.text}`}>{abbrMap[step]}</span>
+                      <span className={`text-[9.5px] font-bold font-mono ${cfg.text}`}>{abbrMap[step]}</span>
                     </th>
                   );
                 })}
 
-                <th className="sticky right-0 z-30 bg-gray-50 border-l border-gray-200 w-[60px]" />
+                <th className="sticky right-0 z-30 bg-gray-50 border-l border-gray-200 w-[46px]" />
               </tr>
             </thead>
 
@@ -294,43 +294,44 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                   <tr
                     key={item.id}
                     className={`transition-colors ${base}`}
-                    style={{ height: 58 }}
+                    style={{ height: 42 }}
                     onMouseEnter={() => setHoveredRow(item.id)}
                     onMouseLeave={() => setHoveredRow(null)}
                   >
                     {/* # */}
-                    <td className={`px-2 py-2 sticky left-0 z-10 border-r border-gray-100 text-center text-[11px] text-gray-400 font-medium transition-colors ${frozen}`}>
+                    <td className={`px-1.5 py-1 sticky left-0 z-10 border-r border-gray-100 text-center text-[10px] text-gray-400 font-medium transition-colors ${frozen}`}>
                       {idx + 1}
                     </td>
 
                     {/* Customer */}
-                    <td className={`px-3 py-2 sticky left-[38px] z-10 border-r border-gray-100 transition-colors ${frozen}`}>
-                      <span className="block text-[12px] font-bold text-gray-900 truncate w-[180px]" title={item.customerName}>{item.customerName}</span>
-                      <span className="block text-[11px] font-medium text-[#1A2766] truncate w-[180px] mt-0.5">{item.orderNumber}</span>
-                      <span className="block text-[10px] text-gray-400 truncate w-[180px] mt-0.5">{item.assignedExecutive}</span>
+                    <td className={`px-2.5 py-1 sticky left-[30px] z-10 border-r border-gray-100 transition-colors ${frozen}`}>
+                      <span className="block text-[11px] font-bold text-gray-900 truncate w-[180px]" title={item.customerName}>{item.customerName}</span>
+                      <span className="block text-[9.5px] font-medium text-gray-500 truncate w-[180px] mt-0.5">
+                        <span className="text-[#1A2766]">{item.orderNumber}</span> · {item.assignedExecutive}
+                      </span>
                     </td>
 
                     {/* Current Stage */}
-                    <td className={`px-4 py-2 border-r border-gray-100 transition-colors ${base}`}>
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] text-[11px] font-bold max-w-[140px] shadow-sm border ${
+                    <td className={`px-2.5 py-1 border-r border-gray-100 transition-colors ${base}`}>
+                      <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-[4px] text-[9.5px] font-bold max-w-[130px] shadow-sm border ${
                         item.currentStage === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                         item.isOverdue ? 'bg-red-50 text-red-700 border-red-200' : 'bg-blue-50 text-blue-700 border-blue-200'
                       }`} title={item.currentStage}>
-                        {item.currentStage === 'Completed' ? <CheckCircle2 size={13} className="shrink-0" /> : <Clock size={13} className="shrink-0" />}
+                        {item.currentStage === 'Completed' ? <CheckCircle2 size={11} className="shrink-0" /> : <Clock size={11} className="shrink-0" />}
                         <span className="truncate">{item.currentStage}</span>
                       </span>
                     </td>
 
                     {/* Progress */}
-                    <td className={`px-4 py-2 border-r border-gray-100 transition-colors ${base}`}>
-                      <div className="flex flex-col justify-center gap-1.5 w-full min-w-[90px]">
-                        <div className="flex justify-between items-center w-full">
-                          <span className="text-[11px] font-bold text-gray-800">{item.workflowPercentage}%</span>
-                          <span className="text-[9px] font-semibold text-gray-500">{getStepSubtitle(item.currentStage)}</span>
+                    <td className={`px-2.5 py-1 border-r border-gray-100 transition-colors ${base}`}>
+                      <div className="flex flex-col justify-center gap-0.5 w-full min-w-[80px]">
+                        <div className="flex items-center gap-1.5 w-full">
+                          <div className="w-full h-[4px] bg-gray-200 rounded-full overflow-hidden shadow-inner flex-grow">
+                            <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${item.workflowPercentage}%` }} />
+                          </div>
+                          <span className="text-[10px] font-bold text-gray-800 shrink-0 w-[24px] text-right">{item.workflowPercentage}%</span>
                         </div>
-                        <div className="w-full h-[5px] bg-gray-200 rounded-full overflow-hidden shadow-inner">
-                          <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${item.workflowPercentage}%` }} />
-                        </div>
+                        <span className="text-[8.5px] font-medium text-gray-400 text-left">{getStepSubtitle(item.currentStage)}</span>
                       </div>
                     </td>
 
@@ -355,7 +356,7 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                         return (
                           <td
                             key={step}
-                            className={`px-1 py-2 text-center transition-colors align-middle ${isLastInGroup ? 'border-r border-gray-200' : 'border-r border-gray-50'} ${
+                            className={`px-0.5 py-1 text-center transition-colors align-middle ${isLastInGroup ? 'border-r border-gray-200' : 'border-r border-gray-50'} ${
                               isColHov && !isRowHov ? `${cfg.bg}` : isCross ? 'bg-blue-50/60' : ''
                             }`}
                             onMouseEnter={() => setHoveredStep(step)}
@@ -364,15 +365,15 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                             {/* Chip */}
                             <div className="relative group flex items-center justify-center">
                               <button
-                                className={`w-8 h-8 md:w-9 md:h-9 rounded-[6px] border flex items-center justify-center text-[11px] font-bold transition-all hover:scale-110 cursor-default ${style.chip}`}
+                                className={`w-[26px] h-[26px] rounded-[4px] border flex items-center justify-center text-[10px] font-bold transition-all hover:scale-110 cursor-default ${style.chip}`}
                                 title=""
                                 tabIndex={-1}
                               >
-                                {status === 'COMPLETED'      ? <Check size={14} strokeWidth={3} /> :
-                                 status === 'IN_PROGRESS'    ? <span className="w-2.5 h-2.5 rounded-full bg-white block shadow-sm" /> :
-                                 status === 'PENDING_REVIEW' ? <Clock size={13} strokeWidth={2.5} /> :
-                                 status === 'BLOCKED' || status === 'REJECTED' ? <XCircle size={14} strokeWidth={2.5} /> :
-                                 <span className="w-1.5 h-1.5 rounded-full bg-gray-300 block" />}
+                                {status === 'COMPLETED'      ? <Check size={12} strokeWidth={3} /> :
+                                 status === 'IN_PROGRESS'    ? <span className="w-2 h-2 rounded-full bg-white block shadow-sm" /> :
+                                 status === 'PENDING_REVIEW' ? <Clock size={10} strokeWidth={2.5} /> :
+                                 status === 'BLOCKED' || status === 'REJECTED' ? <XCircle size={12} strokeWidth={2.5} /> :
+                                 <span className="w-1 h-1 rounded-full bg-gray-300 block" />}
                               </button>
                               <StepTooltip
                                 stepName={step}
@@ -389,12 +390,14 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                     })}
 
                     {/* Action */}
-                    <td className={`px-2 py-2 sticky right-0 z-10 border-l border-gray-100 text-center transition-colors ${frozen}`}>
-                      <Link href={`/staff/dashboard/solar-orders/orders/${item.id}/documentation`}>
-                        <button className="text-gray-400 hover:text-[#1A2766] bg-white hover:bg-blue-50 border border-gray-200 rounded-md p-1.5 shadow-sm transition-all" title="View Documentation">
-                          <ArrowRight size={14} />
-                        </button>
-                      </Link>
+                    <td className={`px-1.5 py-1 sticky right-0 z-10 border-l border-gray-100 text-center transition-colors ${frozen}`}>
+                      <div className="flex justify-center items-center h-full">
+                        <Link href={`/staff/dashboard/solar-orders/orders/${item.id}/documentation`}>
+                          <button className="text-gray-400 hover:text-[#1A2766] bg-white hover:bg-blue-50 border border-gray-200 rounded p-1 shadow-sm transition-all" title="View Documentation">
+                            <ArrowRight size={12} />
+                          </button>
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );

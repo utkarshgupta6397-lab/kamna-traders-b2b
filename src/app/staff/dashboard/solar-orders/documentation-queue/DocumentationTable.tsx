@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Clock, XCircle, FileText, ArrowRight, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { Clock, XCircle, FileText, ArrowRight, Check, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 
 interface DocumentationTableProps {
@@ -32,7 +32,6 @@ const getPhase = (stepName: string) => {
 
 const phaseConfig = (phase: string) => PHASES.find(p => p.key === phase) ?? PHASES[PHASES.length - 1];
 
-// Build a short abbreviation for any step name (max 3 chars)
 const toAbbr = (name: string): string => {
   const stop = new Set(['&', 'and', 'or', 'the', 'a', 'an', 'of', 'for', 'to', 'in', 'at', 'by', 'from']);
   const words = name.split(/[\s\/\-]+/).filter(w => !stop.has(w.toLowerCase()));
@@ -45,6 +44,14 @@ const isValidValue = (val: any) => {
   if (val === null || val === undefined) return false;
   const s = String(val).trim().toLowerCase();
   return s !== '' && s !== '?' && s !== 'undefined' && s !== 'null' && s !== 'n/a';
+};
+
+const formatDateTime = (dateStr: string) => {
+  if (!isValidValue(dateStr)) return '';
+  const d = new Date(dateStr);
+  const datePart = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timePart = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${datePart} • ${timePart}`;
 };
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
@@ -65,9 +72,9 @@ const STATUS_STYLES: Record<StepStatus, { chip: string; icon: string }> = {
   COMPLETED:     { chip: 'bg-emerald-500 border-emerald-600 text-white shadow-sm',           icon: '✓' },
   IN_PROGRESS:   { chip: 'bg-blue-500   border-blue-600   text-white shadow-sm',            icon: '●' },
   PENDING_REVIEW:{ chip: 'bg-orange-400 border-orange-500 text-white shadow-sm',            icon: '⏳' },
-  BLOCKED:       { chip: 'bg-red-500    border-red-600    text-white shadow-sm',             icon: '✕' },
-  REJECTED:      { chip: 'bg-red-500    border-red-600    text-white shadow-sm',             icon: '✕' },
-  PENDING:       { chip: 'bg-white      border-gray-300   text-gray-400',                   icon: '·' },
+  BLOCKED:       { chip: 'bg-red-50     border-red-200    text-red-500 shadow-sm',           icon: '✕' },
+  REJECTED:      { chip: 'bg-red-50     border-red-200    text-red-500 shadow-sm',           icon: '✕' },
+  PENDING:       { chip: 'bg-white      border-gray-200   text-gray-300 hover:border-gray-300 hover:text-gray-400', icon: '·' },
 };
 
 const STATUS_LABELS: Record<StepStatus, string> = {
@@ -88,7 +95,7 @@ function StepTooltip({
 }) {
   return (
     <div className="opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-150
-      absolute z-[9999] bottom-full left-1/2 -translate-x-1/2 mb-2 w-[220px]
+      absolute z-[9999] bottom-full left-1/2 -translate-x-1/2 mb-2 w-[240px]
       bg-gray-950 text-white text-[11px] rounded-lg shadow-xl border border-gray-800
       p-3 text-left leading-relaxed">
       <div className="font-semibold text-[12px] mb-1.5 border-b border-gray-700 pb-1.5 text-gray-100">{stepName}</div>
@@ -98,9 +105,9 @@ function StepTooltip({
           {STATUS_LABELS[status]}
         </span>
       </div>
-      {completedBy  && <div className="flex items-center justify-between mb-0.5"><span className="text-gray-400">Completed By</span><span className="text-gray-200 text-right max-w-[120px]">{completedBy}</span></div>}
-      {completedAt  && <div className="flex items-center justify-between mb-0.5"><span className="text-gray-400">Completed</span><span className="text-gray-200">{completedAt}</span></div>}
-      {updatedAt && !completedAt && <div className="flex items-center justify-between mb-0.5"><span className="text-gray-400">Updated</span><span className="text-gray-200">{updatedAt}</span></div>}
+      {completedBy  && <div className="flex items-center justify-between mb-0.5"><span className="text-gray-400">Completed By</span><span className="text-gray-200 text-right max-w-[130px] truncate" title={completedBy}>{completedBy}</span></div>}
+      {completedAt  && <div className="flex items-center justify-between mb-0.5"><span className="text-gray-400">Completed</span><span className="text-gray-200 text-right">{completedAt}</span></div>}
+      {updatedAt && !completedAt && <div className="flex items-center justify-between mb-0.5"><span className="text-gray-400">Updated</span><span className="text-gray-200 text-right">{updatedAt}</span></div>}
       {notes && <div className="mt-1.5 pt-1.5 border-t border-gray-700 text-gray-400 italic text-[10px]">"{notes}"</div>}
       <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-[5px] border-transparent border-t-gray-950" />
     </div>
@@ -113,7 +120,6 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
   const [hoveredStep, setHoveredStep] = useState<string | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
 
-  // Group allSteps into phases (in order)
   const groupedSteps = (() => {
     const groups: { phase: string; steps: string[] }[] = [];
     if (!allSteps.length) return groups;
@@ -128,7 +134,6 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
     return groups;
   })();
 
-  // Build abbreviation map (deduplicate collisions by appending digit)
   const abbrMap: Record<string, string> = {};
   const seen: Record<string, number> = {};
   for (const step of allSteps) {
@@ -157,9 +162,9 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
   }
 
   const getStepSubtitle = (currentStage: string) => {
-    if (currentStage === 'Completed') return 'All done';
+    if (currentStage === 'Completed') return 'Done';
     const i = allSteps.indexOf(currentStage);
-    return i >= 0 ? `Step ${i + 1} of ${allSteps.length}` : '';
+    return i >= 0 ? `Step ${i + 1} / ${allSteps.length}` : '';
   };
 
   const hoveredPhase = hoveredStep ? getPhase(hoveredStep) : null;
@@ -173,23 +178,22 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
           onClick={() => setLegendOpen(v => !v)}
           className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
         >
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Status chips */}
-            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mr-1">Legend</span>
-            <span className="inline-flex items-center gap-1 text-[11px] text-gray-600">
+          <div className="flex items-center gap-4 flex-wrap">
+            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mr-2">Legend</span>
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
               <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-emerald-500 text-white text-[9px] font-bold">✓</span> Completed
             </span>
-            <span className="inline-flex items-center gap-1 text-[11px] text-gray-600">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
               <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-blue-500 text-white text-[9px]">●</span> In Progress
             </span>
-            <span className="inline-flex items-center gap-1 text-[11px] text-gray-600">
-              <span className="inline-flex items-center justify-center w-4 h-4 rounded border border-gray-300 bg-white text-gray-400 text-[9px]">·</span> Pending
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
+              <span className="inline-flex items-center justify-center w-4 h-4 rounded border border-gray-200 bg-white text-gray-400 text-[9px]">·</span> Pending
             </span>
-            <span className="inline-flex items-center gap-1 text-[11px] text-gray-600">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
               <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-orange-400 text-white text-[9px]">⏳</span> Review
             </span>
-            <span className="inline-flex items-center gap-1 text-[11px] text-gray-600">
-              <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-red-500 text-white text-[9px]">✕</span> Blocked/Rejected
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
+              <span className="inline-flex items-center justify-center w-4 h-4 rounded border border-red-200 bg-red-50 text-red-500 text-[9px]">✕</span> Blocked/Rejected
             </span>
           </div>
           <div className="flex items-center gap-1.5 text-[11px] text-gray-500 shrink-0 ml-4">
@@ -199,11 +203,11 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
         </button>
 
         {legendOpen && (
-          <div className="border-t border-gray-100 px-4 py-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-6 gap-y-1.5">
+          <div className="border-t border-gray-100 px-4 py-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-6 gap-y-2.5">
             {allSteps.map(step => (
-              <div key={step} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+              <div key={step} className="flex items-start gap-2 text-[11px] text-gray-600">
                 <span className="font-bold text-gray-800 font-mono text-[11px] w-8 shrink-0">{abbrMap[step]}</span>
-                <span className="text-gray-500">{step}</span>
+                <span className="text-gray-600 font-medium">{step}</span>
               </div>
             ))}
           </div>
@@ -213,20 +217,20 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
       {/* ── Table ── */}
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col relative z-0">
         <div className="overflow-x-auto">
-          <table className="text-left border-collapse" style={{ minWidth: 'max-content' }}>
+          <table className="w-full text-left border-collapse" style={{ minWidth: '1000px' }}>
             <thead className="text-[11px] text-gray-700 bg-gray-50 border-b border-gray-200 sticky top-0 z-20">
               <tr>
                 {/* ── Frozen left ── */}
                 <th className="px-2 py-3 font-semibold sticky left-0 z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[38px] text-center">
                   #
                 </th>
-                <th className="px-3 py-3 font-semibold sticky left-[38px] z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[190px]">
+                <th className="px-3 py-3 font-semibold sticky left-[38px] z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[200px]">
                   Customer
                 </th>
-                <th className="px-3 py-3 font-semibold bg-gray-50 border-r border-gray-200 w-[150px]">
+                <th className="px-4 py-3 font-semibold bg-gray-50 border-r border-gray-200 w-[160px]">
                   Current Stage
                 </th>
-                <th className="px-3 py-3 font-semibold bg-gray-50 border-r border-gray-200 w-[90px]">
+                <th className="px-4 py-3 font-semibold bg-gray-50 border-r border-gray-200 w-[120px]">
                   Progress
                 </th>
 
@@ -256,9 +260,8 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
 
               {/* ── Step abbreviation sub-row ── */}
               <tr className="border-b border-gray-200">
-                {/* Span the frozen cols */}
-                <th colSpan={4} className="sticky left-0 z-30 bg-gray-50 border-r border-gray-200 px-3 py-1.5">
-                  <span className="text-[10px] text-gray-400 italic">Hover chips for full name</span>
+                <th colSpan={4} className="sticky left-0 z-30 bg-gray-50 border-r border-gray-200 px-4 py-2">
+                  <span className="text-[10px] text-gray-400 italic font-medium">Hover workflow chips for full names & details</span>
                 </th>
 
                 {allSteps.map(step => {
@@ -267,7 +270,7 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                   return (
                     <th
                       key={step}
-                      className={`w-[38px] min-w-[38px] max-w-[38px] py-1.5 text-center border-r border-gray-200 transition-colors cursor-default ${cfg.bg} ${isColHov ? 'brightness-90' : ''}`}
+                      className={`min-w-[42px] px-1 py-1.5 text-center border-r border-gray-200 transition-colors cursor-default ${cfg.bg} ${isColHov ? 'brightness-90' : ''}`}
                       title={step}
                       onMouseEnter={() => setHoveredStep(step)}
                       onMouseLeave={() => setHoveredStep(null)}
@@ -284,14 +287,14 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
             <tbody className="divide-y divide-gray-100">
               {items.map((item, idx) => {
                 const isRowHov = hoveredRow === item.id;
-                const base = isRowHov ? 'bg-blue-50/40' : item.isOverdue ? 'bg-red-50/20' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40';
+                const base = isRowHov ? 'bg-blue-50/40' : item.isOverdue ? 'bg-red-50/20' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30';
                 const frozen = isRowHov ? 'bg-blue-50/80' : item.isOverdue ? 'bg-red-50/80' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50';
 
                 return (
                   <tr
                     key={item.id}
                     className={`transition-colors ${base}`}
-                    style={{ height: 56 }}
+                    style={{ height: 58 }}
                     onMouseEnter={() => setHoveredRow(item.id)}
                     onMouseLeave={() => setHoveredRow(null)}
                   >
@@ -302,28 +305,31 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
 
                     {/* Customer */}
                     <td className={`px-3 py-2 sticky left-[38px] z-10 border-r border-gray-100 transition-colors ${frozen}`}>
-                      <span className="block text-[12px] font-bold text-gray-900 truncate w-[170px]" title={item.customerName}>{item.customerName}</span>
-                      <span className="block text-[11px] font-medium text-[#1A2766] truncate w-[170px]">{item.orderNumber}</span>
-                      <span className="block text-[10px] text-gray-400 truncate w-[170px]">{item.assignedExecutive}</span>
+                      <span className="block text-[12px] font-bold text-gray-900 truncate w-[180px]" title={item.customerName}>{item.customerName}</span>
+                      <span className="block text-[11px] font-medium text-[#1A2766] truncate w-[180px] mt-0.5">{item.orderNumber}</span>
+                      <span className="block text-[10px] text-gray-400 truncate w-[180px] mt-0.5">{item.assignedExecutive}</span>
                     </td>
 
                     {/* Current Stage */}
-                    <td className={`px-3 py-2 border-r border-gray-100 transition-colors ${base}`}>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold max-w-[130px] truncate ${
-                        item.currentStage === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
-                        item.isOverdue ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
+                    <td className={`px-4 py-2 border-r border-gray-100 transition-colors ${base}`}>
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[6px] text-[11px] font-bold max-w-[140px] shadow-sm border ${
+                        item.currentStage === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        item.isOverdue ? 'bg-red-50 text-red-700 border-red-200' : 'bg-blue-50 text-blue-700 border-blue-200'
                       }`} title={item.currentStage}>
-                        {item.currentStage}
+                        {item.currentStage === 'Completed' ? <CheckCircle2 size={13} className="shrink-0" /> : <Clock size={13} className="shrink-0" />}
+                        <span className="truncate">{item.currentStage}</span>
                       </span>
-                      <span className="block text-[9px] text-gray-400 mt-0.5">{getStepSubtitle(item.currentStage)}</span>
                     </td>
 
                     {/* Progress */}
-                    <td className={`px-3 py-2 border-r border-gray-100 transition-colors ${base}`}>
-                      <div className="flex flex-col gap-1 w-[70px]">
-                        <span className="text-[11px] font-bold text-gray-700 text-right">{item.workflowPercentage}%</span>
-                        <div className="w-full h-[3px] bg-gray-200 rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${item.workflowPercentage}%` }} />
+                    <td className={`px-4 py-2 border-r border-gray-100 transition-colors ${base}`}>
+                      <div className="flex flex-col justify-center gap-1.5 w-full min-w-[90px]">
+                        <div className="flex justify-between items-center w-full">
+                          <span className="text-[11px] font-bold text-gray-800">{item.workflowPercentage}%</span>
+                          <span className="text-[9px] font-semibold text-gray-500">{getStepSubtitle(item.currentStage)}</span>
+                        </div>
+                        <div className="w-full h-[5px] bg-gray-200 rounded-full overflow-hidden shadow-inner">
+                          <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${item.workflowPercentage}%` }} />
                         </div>
                       </div>
                     </td>
@@ -331,11 +337,6 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                     {/* ── Per-phase chip groups ── */}
                     {groupedSteps.map(group => {
                       const cfg = phaseConfig(group.phase);
-                      // Count completed steps in this phase for this order
-                      const phaseDone = group.steps.filter(s => {
-                        const d = item.stepsMap?.[s];
-                        return d?.status === 'COMPLETED';
-                      }).length;
 
                       return group.steps.map((step, si) => {
                         const stepData = item.stepsMap?.[step];
@@ -345,34 +346,32 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                         const isCross = isRowHov && isColHov;
 
                         const completedBy = isValidValue(stepData?.completedByName) ? stepData.completedByName : '';
-                        const completedAt = isValidValue(stepData?.completedAt) ? new Date(stepData.completedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
-                        const updatedAt   = isValidValue(stepData?.updatedAt)    ? new Date(stepData.updatedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
-                        const notes       = isValidValue(stepData?.notes)        ? stepData.notes : '';
+                        const completedAt = formatDateTime(stepData?.completedAt);
+                        const updatedAt   = formatDateTime(stepData?.updatedAt);
+                        const notes       = isValidValue(stepData?.notes) ? stepData.notes : '';
 
-                        // Phase separator between groups
                         const isLastInGroup = si === group.steps.length - 1;
 
                         return (
                           <td
                             key={step}
-                            className={`py-2 text-center transition-colors align-middle ${isLastInGroup ? 'border-r border-gray-200' : 'border-r border-gray-100'} ${
-                              isColHov && !isRowHov ? `${cfg.bg}` : isCross ? 'bg-blue-50' : ''
+                            className={`px-1 py-2 text-center transition-colors align-middle ${isLastInGroup ? 'border-r border-gray-200' : 'border-r border-gray-50'} ${
+                              isColHov && !isRowHov ? `${cfg.bg}` : isCross ? 'bg-blue-50/60' : ''
                             }`}
-                            style={{ width: 38, minWidth: 38, maxWidth: 38 }}
                             onMouseEnter={() => setHoveredStep(step)}
                             onMouseLeave={() => setHoveredStep(null)}
                           >
                             {/* Chip */}
                             <div className="relative group flex items-center justify-center">
                               <button
-                                className={`w-[28px] h-[28px] rounded-md border flex items-center justify-center text-[11px] font-bold transition-transform hover:scale-110 cursor-default ${style.chip}`}
+                                className={`w-8 h-8 md:w-9 md:h-9 rounded-[6px] border flex items-center justify-center text-[11px] font-bold transition-all hover:scale-110 cursor-default ${style.chip}`}
                                 title=""
                                 tabIndex={-1}
                               >
-                                {status === 'COMPLETED'      ? <Check size={12} strokeWidth={3} /> :
-                                 status === 'IN_PROGRESS'    ? <span className="w-2 h-2 rounded-full bg-white block" /> :
-                                 status === 'PENDING_REVIEW' ? <Clock size={11} /> :
-                                 status === 'BLOCKED' || status === 'REJECTED' ? <XCircle size={12} /> :
+                                {status === 'COMPLETED'      ? <Check size={14} strokeWidth={3} /> :
+                                 status === 'IN_PROGRESS'    ? <span className="w-2.5 h-2.5 rounded-full bg-white block shadow-sm" /> :
+                                 status === 'PENDING_REVIEW' ? <Clock size={13} strokeWidth={2.5} /> :
+                                 status === 'BLOCKED' || status === 'REJECTED' ? <XCircle size={14} strokeWidth={2.5} /> :
                                  <span className="w-1.5 h-1.5 rounded-full bg-gray-300 block" />}
                               </button>
                               <StepTooltip
@@ -402,22 +401,6 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
               })}
             </tbody>
           </table>
-        </div>
-
-        {/* Footer */}
-        <div className="px-4 py-2 border-t border-gray-200 bg-gray-50 text-[11px] text-gray-500 flex justify-between items-center">
-          <span>{items.length} orders in queue</span>
-          <div className="flex items-center gap-3">
-            {groupedSteps.map(g => {
-              const cfg = phaseConfig(g.phase);
-              return (
-                <span key={g.phase} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-                  {g.phase} · {g.steps.length}
-                </span>
-              );
-            })}
-          </div>
         </div>
       </div>
     </div>

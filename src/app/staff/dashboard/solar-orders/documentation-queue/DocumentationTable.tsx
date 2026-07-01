@@ -1,5 +1,6 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Clock, XCircle, FileText, ArrowRight, Check, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -86,18 +87,34 @@ const STATUS_LABELS: Record<StepStatus, string> = {
   PENDING:       'Pending',
 };
 
-// ─── Tooltip component ────────────────────────────────────────────────────────
-function StepTooltip({
-  stepName, status, completedBy, completedAt, updatedAt, notes,
-}: {
-  stepName: string; status: StepStatus; completedBy: string;
-  completedAt: string; updatedAt: string; notes: string;
-}) {
-  return (
-    <div className="opacity-0 group-hover:opacity-100 pointer-events-none transition-all duration-150
-      absolute z-[9999] bottom-full left-1/2 -translate-x-1/2 mb-2 w-[240px]
-      bg-gray-950 text-white text-[11px] rounded-lg shadow-xl border border-gray-800
-      p-3 text-left leading-relaxed">
+// ─── Portal Tooltip Component ─────────────────────────────────────────────────
+function TooltipPortal({ activeTooltip }: { activeTooltip: any }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  if (!mounted || !activeTooltip) return null;
+
+  const { rect, stepName, completedBy, completedAt, updatedAt, notes } = activeTooltip;
+  const status = activeTooltip.status as StepStatus;
+
+  // Auto-flip if space above is less than ~150px
+  const isFlipped = rect.top < 150;
+
+  const style = isFlipped ? {
+    left: rect.left + rect.width / 2,
+    top: rect.bottom + 8,
+    transform: 'translate(-50%, 0)',
+  } : {
+    left: rect.left + rect.width / 2,
+    top: rect.top - 8,
+    transform: 'translate(-50%, -100%)',
+  };
+
+  const content = (
+    <div 
+      className="fixed z-[99999] w-[260px] pointer-events-none bg-gray-950 text-white text-[11px] rounded-lg shadow-2xl border border-gray-800 p-3 text-left leading-relaxed animate-in fade-in duration-150"
+      style={style}
+    >
       <div className="font-semibold text-[12px] mb-1.5 border-b border-gray-700 pb-1.5 text-gray-100">{stepName}</div>
       <div className="flex items-center justify-between mb-0.5">
         <span className="text-gray-400">Status</span>
@@ -105,13 +122,21 @@ function StepTooltip({
           {STATUS_LABELS[status]}
         </span>
       </div>
-      {completedBy  && <div className="flex items-center justify-between mb-0.5"><span className="text-gray-400">Completed By</span><span className="text-gray-200 text-right max-w-[130px] truncate" title={completedBy}>{completedBy}</span></div>}
+      {completedBy  && <div className="flex items-center justify-between mb-0.5"><span className="text-gray-400">Completed By</span><span className="text-gray-200 text-right max-w-[140px] truncate" title={completedBy}>{completedBy}</span></div>}
       {completedAt  && <div className="flex items-center justify-between mb-0.5"><span className="text-gray-400">Completed</span><span className="text-gray-200 text-right">{completedAt}</span></div>}
       {updatedAt && !completedAt && <div className="flex items-center justify-between mb-0.5"><span className="text-gray-400">Updated</span><span className="text-gray-200 text-right">{updatedAt}</span></div>}
       {notes && <div className="mt-1.5 pt-1.5 border-t border-gray-700 text-gray-400 italic text-[10px]">"{notes}"</div>}
-      <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-[5px] border-transparent border-t-gray-950" />
+      
+      {/* Tooltip Arrow */}
+      {isFlipped ? (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 -mb-px border-[5px] border-transparent border-b-gray-800" />
+      ) : (
+        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-[5px] border-transparent border-t-gray-800" />
+      )}
     </div>
   );
+
+  return createPortal(content, document.body);
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -119,6 +144,7 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredStep, setHoveredStep] = useState<string | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
+  const [activeTooltip, setActiveTooltip] = useState<any>(null);
 
   const groupedSteps = (() => {
     const groups: { phase: string; steps: string[] }[] = [];
@@ -171,6 +197,8 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
 
   return (
     <div className="flex flex-col gap-2">
+
+      <TooltipPortal activeTooltip={activeTooltip} />
 
       {/* ── Legend row ── */}
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
@@ -360,14 +388,23 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                               isColHov && !isRowHov ? `${cfg.bg}` : isCross ? 'bg-blue-50/60' : ''
                             }`}
                             onMouseEnter={() => setHoveredStep(step)}
-                            onMouseLeave={() => setHoveredStep(null)}
+                            onMouseLeave={() => {
+                              setHoveredStep(null);
+                              setActiveTooltip(null);
+                            }}
                           >
                             {/* Chip */}
-                            <div className="relative group flex items-center justify-center">
+                            <div className="relative flex items-center justify-center">
                               <button
                                 className={`w-[26px] h-[26px] rounded-[4px] border flex items-center justify-center text-[10px] font-bold transition-all hover:scale-110 cursor-default ${style.chip}`}
                                 title=""
                                 tabIndex={-1}
+                                onMouseEnter={(e) => {
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  setActiveTooltip({
+                                    rect, stepName: step, status, completedBy, completedAt, updatedAt, notes
+                                  });
+                                }}
                               >
                                 {status === 'COMPLETED'      ? <Check size={12} strokeWidth={3} /> :
                                  status === 'IN_PROGRESS'    ? <span className="w-2 h-2 rounded-full bg-white block shadow-sm" /> :
@@ -375,14 +412,6 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                                  status === 'BLOCKED' || status === 'REJECTED' ? <XCircle size={12} strokeWidth={2.5} /> :
                                  <span className="w-1 h-1 rounded-full bg-gray-300 block" />}
                               </button>
-                              <StepTooltip
-                                stepName={step}
-                                status={status}
-                                completedBy={completedBy}
-                                completedAt={completedAt}
-                                updatedAt={updatedAt}
-                                notes={notes}
-                              />
                             </div>
                           </td>
                         );

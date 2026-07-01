@@ -83,7 +83,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const [orders, totalCount] = await Promise.all([
+    const [ordersData, totalCount] = await Promise.all([
       prisma.solarOrder.findMany({
         where,
         skip,
@@ -93,11 +93,25 @@ export async function GET(request: Request) {
           salesman: { select: { name: true } },
           callingExecutive: { select: { name: true } },
           subVendor: { select: { name: true } },
-          payments: { select: { amount: true } }
+          payments: { select: { amount: true } },
+          workflowSteps: { select: { status: true } }
         }
       }),
       prisma.solarOrder.count({ where }),
     ]);
+
+    const { DOCUMENTATION_STEPS, INSTALLATION_STEPS } = await import('@/lib/solar-workflow-config');
+    const totalPossibleSteps = DOCUMENTATION_STEPS.length + INSTALLATION_STEPS.length;
+
+    const orders = ordersData.map((order: any) => {
+      const completedSteps = order.workflowSteps?.filter((s: any) => s.status === 'COMPLETED').length || 0;
+      const workflowPercentage = totalPossibleSteps > 0 ? Math.round((completedSteps / totalPossibleSteps) * 100) : 0;
+      return {
+        ...order,
+        workflowPercentage,
+        workflowSteps: undefined // Avoid sending unnecessary data
+      };
+    });
 
     return NextResponse.json({
       orders,

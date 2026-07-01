@@ -24,6 +24,7 @@ interface SolarOrder {
   createdById: string;
   zohoBooksCustomerId?: string | null;
   lastPaymentSyncAt?: string | null;
+  workflowPercentage?: number;
   payments?: { amount: number }[];
 }
 
@@ -538,7 +539,12 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-3">
                           <div className="flex-1">
-                            {pendingAmt <= 0 ? (
+                            {!order.zohoBooksCustomerId ? (
+                              <>
+                                <div className="font-semibold text-gray-400 text-[13px]">--</div>
+                                <div className="text-[10px] text-gray-400 font-medium">Zoho customer not linked</div>
+                              </>
+                            ) : pendingAmt <= 0 ? (
                               <>
                                 <div className="font-semibold text-green-600 flex items-center gap-1 text-[13px]">₹0</div>
                                 <div className="text-[11px] text-green-600 font-medium flex items-center gap-1"><Check size={10}/> Paid</div>
@@ -554,9 +560,9 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                           </div>
                           <button 
                             onClick={(e) => handleSyncRow(e, order)}
-                            disabled={syncingRows[order.id]}
-                            className={`p-1.5 rounded border ${syncingRows[order.id] ? 'bg-blue-50 border-blue-200 text-blue-500' : 'bg-white border-gray-200 text-gray-400 hover:text-blue-600 hover:border-blue-300'} transition-all flex-shrink-0 group relative shadow-sm`}
-                            title="Refresh latest verified payments from Zoho Books"
+                            disabled={syncingRows[order.id] || !order.zohoBooksCustomerId}
+                            className={`p-1.5 rounded border ${!order.zohoBooksCustomerId ? 'bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed' : syncingRows[order.id] ? 'bg-blue-50 border-blue-200 text-blue-500' : 'bg-white border-gray-200 text-gray-400 hover:text-blue-600 hover:border-blue-300'} transition-all flex-shrink-0 group relative shadow-sm`}
+                            title={!order.zohoBooksCustomerId ? "Map Zoho customer first" : "Refresh latest verified payments from Zoho Books"}
                           >
                             <RefreshCw size={13} className={syncingRows[order.id] ? 'animate-spin' : ''} />
                           </button>
@@ -566,12 +572,12 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                         <div className="w-full max-w-[120px]">
                           <div className="flex items-center justify-between text-[9px] font-medium text-gray-500 mb-1">
                             <span>Progress</span>
-                            <span>{config.progress}%</span>
+                            <span>{order.workflowPercentage || 0}%</span>
                           </div>
                           <div className="h-1 w-full bg-gray-100 rounded-full overflow-hidden">
                             <div 
-                              className={`h-full rounded-full transition-all duration-1000 ${config.bg.replace('bg-', 'bg-').replace('-100', '-500')}`}
-                              style={{ width: `${config.progress}%` }}
+                              className={`h-full rounded-full transition-all duration-1000 bg-blue-500`}
+                              style={{ width: `${order.workflowPercentage || 0}%` }}
                             />
                           </div>
                         </div>

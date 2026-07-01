@@ -13,9 +13,11 @@ export default async function SolarOrdersLayout({ children }: { children: React.
     redirect('/staff/dashboard?error=unauthorized_solar_orders');
   }
 
-  const canViewOrders = !!session.solar_orders_view;
-  const canViewDocQueue = !!session.solar_documentation_view;
-  const canViewInstallQueue = !!session.solar_installation_view;
+  const isAdmin = session.role === 'ADMIN';
+  const isStaff = session.role === 'STAFF';
+  const canViewOrders = isAdmin || !!session.solar_orders_view;
+  const canViewDocQueue = isAdmin || isStaff || !!session.solar_documentation_view;
+  const canViewInstallQueue = isAdmin || !!session.solar_installation_view;
 
   return (
     <SolarOrdersTabs

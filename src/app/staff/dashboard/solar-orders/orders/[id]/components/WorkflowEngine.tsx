@@ -60,15 +60,24 @@ export default function WorkflowEngine({
 
   useEffect(() => {
     if (!snakeContainerRef.current) return;
+    let timeoutId: NodeJS.Timeout;
+
     const observer = new ResizeObserver((entries) => {
-      for (let entry of entries) {
-        const width = entry.contentRect.width;
-        const calculatedSize = Math.max(3, Math.floor(width / 140));
-        setChunkSize(calculatedSize);
-      }
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        for (let entry of entries) {
+          const width = entry.contentRect.width;
+          const calculatedSize = Math.max(3, Math.floor(width / 140));
+          setChunkSize(prev => (prev !== calculatedSize ? calculatedSize : prev));
+        }
+      }, 150);
     });
+
     observer.observe(snakeContainerRef.current);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      clearTimeout(timeoutId);
+    };
   }, []);
 
   const updateStep = async (newStatus: string, notes?: string, metaOverride?: any) => {

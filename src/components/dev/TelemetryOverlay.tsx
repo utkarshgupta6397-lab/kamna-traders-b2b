@@ -83,8 +83,15 @@ export default function TelemetryOverlay() {
         else if (args[0] && "url" in (args[0] as any)) urlStr = (args[0] as any).url;
         else if (args[0] && typeof args[0].toString === "function") urlStr = args[0].toString();
         
-        // Ignore telemetry endpoint
-        if (urlStr.includes("/api/dev/telemetry") || urlStr.includes("_next")) {
+        // Ignore telemetry endpoint and static assets
+        if (
+          urlStr.includes("/api/dev/telemetry") || 
+          urlStr.includes("_next") ||
+          urlStr.includes("webpack") ||
+          urlStr.includes("favicon") ||
+          urlStr.endsWith(".js") ||
+          urlStr.endsWith(".css")
+        ) {
           return (window as any).__originalFetch(...args);
         }
 

@@ -68,7 +68,7 @@ export default function SolarOrdersTabs({
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            Documentation Queue
+            Documentation
           </Link>
         )}
         

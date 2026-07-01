@@ -2,36 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 
-const DOCUMENTATION_STEPS = [
-  'Document Upload',
-  'Customer Registration',
-  'Vendor Portal Accepted',
-  'Review & Approval',
-  'Notarised Pending',
-  'Customer Signature Pending',
-  'Review Pending',
-  'Authority Signature Pending',
-  'Company Stamp Pending',
-  'DCR Certificate Pending',
-  'File Upload Approval Pending',
-  'File Upload Pending',
-  'Customer Portal Final Submission',
-  'Electricity Department Submission',
-  'Central Subsidy Request',
-  'Central Subsidy Claimed',
-  'Central Subsidy Received',
-  'State Subsidy Received'
-];
-
-const INSTALLATION_STEPS = [
-  'Ready to Install',
-  'Physical Installation Completed',
-  'Installation Checklist',
-  'Net Metering Done',
-  'System Start Done',
-  'System WiFi Setup Done',
-  'Installation Completed'
-];
+import { DOCUMENTATION_STEPS, INSTALLATION_STEPS } from '@/lib/solar-workflow-config';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {

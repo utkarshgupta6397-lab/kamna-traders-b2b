@@ -107,6 +107,25 @@ function DispatchProgressOverlay() {
   );
 }
 
+const timeAgoListeners = new Set<() => void>();
+let timeAgoTimer: ReturnType<typeof setInterval> | null = null;
+
+function subscribeTimeAgo(fn: () => void) {
+  timeAgoListeners.add(fn);
+  if (!timeAgoTimer) {
+    timeAgoTimer = setInterval(() => {
+      timeAgoListeners.forEach(l => l());
+    }, 30000);
+  }
+  return () => {
+    timeAgoListeners.delete(fn);
+    if (timeAgoListeners.size === 0 && timeAgoTimer) {
+      clearInterval(timeAgoTimer);
+      timeAgoTimer = null;
+    }
+  };
+}
+
 /** Lightweight component to handle relative time updates without re-rendering the whole dashboard */
 function TimeAgo({ timestamp }: { timestamp: number | null }) {
   const [text, setText] = useState('Just now');
@@ -121,8 +140,7 @@ function TimeAgo({ timestamp }: { timestamp: number | null }) {
       else setText(`${Math.floor(sec / 60)}m ago`);
     };
     update();
-    const interval = setInterval(update, 30000); // 30s is precise enough
-    return () => clearInterval(interval);
+    return subscribeTimeAgo(update);
   }, [timestamp]);
 
   return <span>{text}</span>;

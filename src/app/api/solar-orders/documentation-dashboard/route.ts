@@ -9,7 +9,8 @@ export async function GET(request: Request) {
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const isAdmin = session.role === 'ADMIN';
-    const canViewDocQueue = isAdmin || !!session.solar_documentation_view;
+    const isStaff = session.role === 'STAFF';
+    const canViewDocQueue = isAdmin || isStaff || !!session.solar_documentation_view;
 
     if (!canViewDocQueue) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
@@ -21,7 +22,9 @@ export async function GET(request: Request) {
     const assignedTo = searchParams.get('assignedTo');
     const documentationStage = searchParams.get('documentationStage');
 
-    const where: any = { status: 'EXECUTION' }; // Only show executing orders in this pipeline
+    const where: any = { 
+      status: { notIn: ['CANCELLED', 'REJECTED'] } 
+    };
 
     if (search) {
       where.OR = [
@@ -139,11 +142,10 @@ export async function GET(request: Request) {
       }
 
       if (orderIsCompleted) {
-        totalCompleted++;
-      } else {
-        totalInProgress++;
+        return null; // Exclude fully completed workflows from the dashboard
       }
 
+      totalInProgress++;
       if (isOverdue) totalOverdue++;
 
       const workflowPercentage = totalSteps === 0 ? 0 : Math.round((completedSteps / totalSteps) * 100);
@@ -162,7 +164,7 @@ export async function GET(request: Request) {
         isOverdue,
         stepsMap
       };
-    });
+    }).filter(Boolean);
 
     // Apply documentationStage filter if present (post-processing since we derived currentStage)
     let filteredItems = transformedItems;

@@ -4,6 +4,7 @@ import { ShieldCheck, ArrowRight, Loader2, Lock } from 'lucide-react';
 import WorkflowDocumentUploader from './WorkflowDocumentUploader';
 import WorkflowEngine, { WorkflowStep } from '../components/WorkflowEngine';
 import VendorPortalAcceptedStep from './VendorPortalAcceptedStep';
+import DocumentationApprovalStage from './DocumentationApprovalStage';
 import { getWorkflowStageName } from '@/lib/solar-workflow-config';
 
 export default function DocumentationTabClient({ 
@@ -37,6 +38,36 @@ export default function DocumentationTabClient({
       renderStageAction={(selectedStep, updateStep, remarks, setRemarks, loadingStep, isEditMode) => {
         const stepName = getWorkflowStageName(selectedStep.workflowType, selectedStep.stepKey);
         
+        if (reviewSteps.includes(stepName) && selectedStep.status !== 'COMPLETED') {
+          return (
+            <DocumentationApprovalStage
+              order={order}
+              steps={steps}
+              selectedStep={selectedStep}
+              onApprove={() => updateStep('COMPLETED', undefined, undefined, isEditMode)}
+              onRequestCorrections={async (targetStepId, correctionRemarks) => {
+                try {
+                  const res = await fetch(`/api/solar-orders/${order.id}/workflow/${selectedStep.id}/corrections`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ targetStepId, notes: correctionRemarks })
+                  });
+                  if (res.ok) {
+                    window.location.reload();
+                  } else {
+                    const data = await res.json();
+                    alert(data.error || 'Failed to request corrections');
+                  }
+                } catch (e) {
+                  alert('Network error');
+                }
+              }}
+              canApprove={canApprove}
+              loadingStep={loadingStep}
+            />
+          );
+        }
+
         if (stepName === 'Document Upload') {
           const requirements: any[] = [
             {
@@ -176,7 +207,7 @@ export default function DocumentationTabClient({
                 </p>
               </div>
 
-              {!reviewSteps.includes(stepName) && canProgress && (
+              {canProgress && (
                  <div className="mb-4">
                    <textarea
                      placeholder="Optional remarks before progressing..."
@@ -188,33 +219,15 @@ export default function DocumentationTabClient({
                  </div>
               )}
 
-              {reviewSteps.includes(stepName) ? (
-                canApprove ? (
-                  <button
-                    onClick={() => updateStep('COMPLETED')}
-                    disabled={loadingStep === selectedStep.id}
-                    className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-green-600 border border-green-700 text-white font-bold rounded-xl hover:bg-green-700 transition-all shadow-md disabled:opacity-50"
-                  >
-                    {loadingStep === selectedStep.id ? <Loader2 size={20} className="animate-spin" /> : <ShieldCheck size={20} />}
-                    Approve Stage
-                  </button>
-                ) : (
-                  <button disabled className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-gray-200 text-gray-500 font-bold rounded-xl cursor-not-allowed border border-gray-300" title="You don't have permission to progress this workflow.">
-                    <Lock size={18} />
-                    Waiting for Administrator
-                  </button>
-                )
-              ) : (
-                <button
-                  onClick={() => updateStep(selectedStep.status === 'PENDING' ? 'IN_PROGRESS' : 'COMPLETED', remarks)}
-                  disabled={loadingStep === selectedStep.id || !canProgress || selectedStep.status === 'REJECTED'}
-                  className={`w-full flex items-center justify-center gap-2 px-6 py-4 font-bold text-base rounded-xl transition-all shadow-md group ${canProgress ? 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-none'}`}
-                  title={!canProgress ? "You don't have permission to progress this documentation workflow." : undefined}
-                >
-                  {loadingStep === selectedStep.id ? <Loader2 size={22} className="animate-spin" /> : (canProgress && <ArrowRight size={22} className="group-hover:translate-x-1 transition-transform" />)}
-                  {selectedStep.status === 'PENDING' ? `Start: ${stepName}` : `Complete: ${stepName}`}
-                </button>
-              )}
+              <button
+                onClick={() => updateStep(selectedStep.status === 'PENDING' ? 'IN_PROGRESS' : 'COMPLETED', remarks)}
+                disabled={loadingStep === selectedStep.id || !canProgress || selectedStep.status === 'REJECTED'}
+                className={`w-full flex items-center justify-center gap-2 px-6 py-4 font-bold text-base rounded-xl transition-all shadow-md group ${canProgress ? 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-none'}`}
+                title={!canProgress ? "You don't have permission to progress this documentation workflow." : undefined}
+              >
+                {loadingStep === selectedStep.id ? <Loader2 size={22} className="animate-spin" /> : (canProgress && <ArrowRight size={22} className="group-hover:translate-x-1 transition-transform" />)}
+                {selectedStep.status === 'PENDING' ? `Start: ${stepName}` : `Complete: ${stepName}`}
+              </button>
             </div>
           );
         }

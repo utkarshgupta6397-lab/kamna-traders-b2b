@@ -515,18 +515,7 @@ export default function WorkflowEngine({
                 )}
               </div>
 
-              {/* Only show corrections button if it's a review step in documentation */}
-              {reviewSteps.includes(getWorkflowStageName(selectedStep.workflowType, selectedStep.stepKey)) && canApprove && (
-                <div className="px-6 md:px-8 pb-6 md:pb-8 bg-slate-50">
-                  <button
-                    onClick={() => setShowCorrectionsModal(true)}
-                    disabled={loadingStep === selectedStep.id}
-                    className="w-full px-6 py-3 bg-white border-2 border-orange-200 text-orange-600 font-bold rounded-xl hover:bg-orange-50 transition-colors disabled:opacity-50 mt-3"
-                  >
-                    Request Corrections
-                  </button>
-                </div>
-              )}
+              {/* The Request Corrections UI is now handled inside the specific stage components (e.g. DocumentationApprovalStage) */}
             </div>
           )}
         </div>

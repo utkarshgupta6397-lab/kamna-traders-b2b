@@ -28,9 +28,10 @@ interface City {
   active: boolean;
 }
 
-export default function OrderCreationForm() {
+export default function SolarOrderForm({ mode = 'CREATE', initialOrder, users, canMasterEdit, session }: { mode?: 'CREATE' | 'EDIT' | 'VIEW', initialOrder?: any, users?: any[], canMasterEdit?: boolean, session?: any }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [currentMode, setCurrentMode] = useState(mode);
   
   // Data State
   const [staffList, setStaffList] = useState<StaffUser[]>([]);
@@ -41,41 +42,62 @@ export default function OrderCreationForm() {
   const [citiesLoading, setCitiesLoading] = useState(true);
   const [citiesError, setCitiesError] = useState(false);
   
+  const parseRemarks = (raw: string) => {
+    let address = '';
+    let city = '';
+    let remainder = raw || '';
+    if (remainder.includes('Address: ')) {
+      const parts = remainder.split('Address: ');
+      const afterAddress = parts[1].split('\\nCity: ');
+      address = afterAddress[0];
+      if (afterAddress.length > 1) {
+        city = afterAddress[1];
+      }
+      remainder = parts[0];
+    } else if (remainder.includes('City: ')) {
+      const parts = remainder.split('City: ');
+      city = parts[1];
+      remainder = parts[0];
+    }
+    return { remarks: remainder.trim(), address, city };
+  };
+  const parsed = initialOrder ? parseRemarks(initialOrder.remarks) : { remarks: '', address: '', city: '' };
+
   // Form State
-  const [customerName, setCustomerName] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
-  const [leadSource, setLeadSource] = useState('Walk-in');
+  const [customerName, setCustomerName] = useState(initialOrder?.customerName || '');
+  const [phoneNumber, setPhoneNumber] = useState(initialOrder?.phoneNumber || '');
+  const [orderDate, setOrderDate] = useState(initialOrder ? new Date(initialOrder.orderDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+  const [leadSource, setLeadSource] = useState(initialOrder?.leadSource?.replace('_', ' ') || 'Walk-in');
   
   // Conditional Lead Source Fields
-  const [referralName, setReferralName] = useState('');
-  const [callingExecutiveId, setCallingExecutiveId] = useState('');
+  const [referralName, setReferralName] = useState(initialOrder?.referralName || '');
+  const [callingExecutiveId, setCallingExecutiveId] = useState(initialOrder?.callingExecutiveId || '');
   const [otherLeadSource, setOtherLeadSource] = useState('');
-  const [subVendorId, setSubVendorId] = useState('');
+  const [subVendorId, setSubVendorId] = useState(initialOrder?.subVendorId || '');
   
   // Mandatory Address Fields
-  const [address, setAddress] = useState('');
-  const [city, setCity] = useState('');
+  const [address, setAddress] = useState(parsed.address);
+  const [city, setCity] = useState(parsed.city);
   const [cityQuery, setCityQuery] = useState('');
   const [showCityDropdown, setShowCityDropdown] = useState(false);
   
   // System Specs
-  const [systemSize, setSystemSize] = useState('');
-  const [systemType, setSystemType] = useState('ON_GRID');
-  const [totalOrderAmount, setTotalOrderAmount] = useState('');
-  const [loanCustomer, setLoanCustomer] = useState(false);
+  const [systemSize, setSystemSize] = useState(initialOrder?.systemSize?.toString() || '');
+  const [systemType, setSystemType] = useState(initialOrder?.systemType || 'ON_GRID');
+  const [totalOrderAmount, setTotalOrderAmount] = useState(initialOrder?.totalOrderAmount?.toString() || '');
+  const [loanCustomer, setLoanCustomer] = useState(initialOrder?.loanCustomer || false);
   
   // Assignment
-  const [salesmanId, setSalesmanId] = useState('');
+  const [salesmanId, setSalesmanId] = useState(initialOrder?.salesmanId || '');
   
   // Site & Item Details
-  const [panels, setPanels] = useState<{ id: string; description: string; quantity: string }[]>([{ id: '1', description: '', quantity: '' }]);
-  const [inverters, setInverters] = useState<{ id: string; description: string; quantity: string }[]>([{ id: '1', description: '', quantity: '' }]);
-  const [floorNumber, setFloorNumber] = useState('');
-  const [siteImages, setSiteImages] = useState<{ id: string; file: File; preview: string }[]>([]);
+  const [panels, setPanels] = useState<{ id: string; description: string; quantity: string }[]>(initialOrder?.panels?.length ? initialOrder.panels.map((p: any) => ({ id: p.id, description: p.description, quantity: p.quantity.toString() })) : [{ id: '1', description: '', quantity: '' }]);
+  const [inverters, setInverters] = useState<{ id: string; description: string; quantity: string }[]>(initialOrder?.inverters?.length ? initialOrder.inverters.map((i: any) => ({ id: i.id, description: i.description, quantity: i.quantity.toString() })) : [{ id: '1', description: '', quantity: '' }]);
+  const [floorNumber, setFloorNumber] = useState(initialOrder?.floorNumber?.toString() || '');
+  const [siteImages, setSiteImages] = useState<{ id: string; file: File; preview: string }[]>(initialOrder?.files?.length ? initialOrder.files.map((f: any) => ({ id: f.id, file: null as any, preview: f.url })) : []);
 
   // Remarks
-  const [remarks, setRemarks] = useState('');
+  const [remarks, setRemarks] = useState(parsed.remarks);
 
   // Sub Vendor Search State
   const [subVendorQuery, setSubVendorQuery] = useState('');
@@ -330,17 +352,16 @@ export default function OrderCreationForm() {
 
   const handleConfirmSubmit = async () => {
     setLoading(true);
-    // Combine Address and City into remarks for backward compatibility with schema
     const combinedRemarks = [
       remarks.trim(),
       `Address: ${address.trim()}`,
       `City: ${city.trim()}`
-    ].filter(Boolean).join('\n');
+    ].filter(Boolean).join('\\n');
 
     try {
-      // 1. Upload Images
       const uploadedImages = [];
       for (const img of siteImages) {
+        if (!img.file) continue;
         const formData = new FormData();
         formData.append('file', img.file);
         
@@ -361,47 +382,65 @@ export default function OrderCreationForm() {
             throw new Error('Upload failed');
           }
         } catch (e) {
-          toast.error(`Failed to upload ${img.file.name}`);
+          toast.error(`Failed to upload image`);
           setLoading(false);
           return;
         }
       }
 
-      // 2. Submit Order
-      const res = await fetch('/api/solar-orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerName,
-          phoneNumber, 
-          whatsappEnabled: false, 
-          leadSource: leadSource === 'Other' ? otherLeadSource : leadSource,
-          referralName: leadSource === 'Referral' ? referralName : null,
-          callingExecutiveId: leadSource === 'Calling Activity' ? callingExecutiveId : null,
-          salesmanId: leadSource !== 'Sub-Vendor' ? salesmanId : null,
-          subVendorId: leadSource === 'Sub-Vendor' ? subVendorId : null,
-          loanCustomer,
-          totalOrderAmount: parseFloat(totalOrderAmount),
-          systemSize: parseFloat(systemSize),
-          systemType,
-          remarks: combinedRemarks,
-          zohoBooksCustomerId: selectedZohoCustomer?.id || null,
-          zohoBooksCustomerName: selectedZohoCustomer?.name || null,
-          floorNumber,
-          orderDate,
-          panels,
-          inverters,
-          siteImages: uploadedImages
-        }),
-      });
+      const payload: any = {
+        customerName,
+        phoneNumber, 
+        whatsappEnabled: false, 
+        leadSource: leadSource === 'Other' ? otherLeadSource : leadSource,
+        referralName: leadSource === 'Referral' ? referralName : null,
+        callingExecutiveId: leadSource === 'Calling Activity' ? callingExecutiveId : null,
+        salesmanId: leadSource !== 'Sub-Vendor' ? salesmanId : null,
+        subVendorId: leadSource === 'Sub-Vendor' ? subVendorId : null,
+        loanCustomer,
+        totalOrderAmount: parseFloat(totalOrderAmount),
+        systemSize: parseFloat(systemSize),
+        systemType,
+        remarks: combinedRemarks,
+        zohoBooksCustomerId: selectedZohoCustomer?.id || null,
+        zohoBooksCustomerName: selectedZohoCustomer?.name || null,
+        floorNumber: floorNumber ? Number(floorNumber) : null,
+        orderDate,
+        panels: panels.map(p => ({ description: p.description, quantity: Number(p.quantity) })),
+        inverters: inverters.map(i => ({ description: i.description, quantity: Number(i.quantity) })),
+        siteImages: uploadedImages
+      };
 
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(`Order ${data.order.orderNumber} created successfully`);
-        router.push(`/staff/dashboard/solar-orders/orders/${data.order.id}`);
-      } else {
-        toast.error(data.error || 'Failed to create order');
-        setShowPreview(false);
+      if (currentMode === 'CREATE') {
+        const res = await fetch('/api/solar-orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          toast.success(`Order ${data.order.orderNumber} created successfully`);
+          setTimeout(() => { router.push(`/staff/dashboard/solar-orders/orders/${data.order.id}`); }, 1500);
+        } else {
+          toast.error(data.error || 'Failed to create order');
+          setShowPreview(false);
+        }
+      } else if (currentMode === 'EDIT') {
+        payload.isMasterEdit = true;
+        const res = await fetch(`/api/solar-orders/${initialOrder.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (res.ok) {
+          toast.success('Order updated successfully');
+          setTimeout(() => { window.location.reload(); }, 1500);
+        } else {
+          toast.error('Failed to update order');
+          setShowPreview(false);
+        }
       }
     } catch (err) {
       toast.error('Network error occurred');
@@ -440,8 +479,16 @@ export default function OrderCreationForm() {
     isAssignmentValid
   ].filter(Boolean).length;
 
-  const inputClasses = "w-full bg-transparent border-b border-gray-200 px-0 py-2 text-sm focus:outline-none focus:border-blue-600 transition-colors placeholder:text-gray-300";
-  const selectClasses = "w-full bg-transparent border-b border-gray-200 px-0 py-2 text-sm focus:outline-none focus:border-blue-600 transition-colors text-gray-900";
+  
+  const isView = currentMode === 'VIEW';
+  const inputClasses = isView 
+    ? "w-full text-sm font-medium text-gray-900 bg-transparent border-transparent px-0 py-1.5 cursor-default focus:outline-none appearance-none pointer-events-none resize-none" 
+    : "w-full bg-transparent border-b border-gray-200 px-0 py-2 text-sm focus:outline-none focus:border-blue-600 transition-colors placeholder:text-gray-300";
+  const selectClasses = isView
+    ? "w-full text-sm font-medium text-gray-900 bg-transparent border-transparent px-0 py-1.5 cursor-default focus:outline-none appearance-none pointer-events-none" 
+    : "w-full bg-transparent border-b border-gray-200 px-0 py-2 text-sm focus:outline-none focus:border-blue-600 transition-colors placeholder:text-gray-300";
+
+  
   const labelClasses = "block text-xs font-semibold text-gray-400 mb-1 tracking-wider uppercase";
   const RequiredMark = () => <span className="text-red-500 ml-0.5 font-bold">*</span>;
   const sectionClasses = "bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6";
@@ -449,7 +496,23 @@ export default function OrderCreationForm() {
 
   return (
     <>
-      <form onSubmit={handlePreview} className="w-full pb-28 animate-in fade-in duration-300">
+      
+      {currentMode !== 'CREATE' && (
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center gap-3">
+            {currentMode === 'EDIT' && <span className="bg-purple-100 text-purple-700 text-xs font-bold px-2 py-1 rounded-md tracking-wider">EDIT MODE</span>}
+          </div>
+          {currentMode === 'VIEW' && canMasterEdit && (
+            <button
+              onClick={() => setCurrentMode('EDIT')}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              Edit Order
+            </button>
+          )}
+        </div>
+      )}
+<form onSubmit={handlePreview} className="w-full pb-28 animate-in fade-in duration-300">
         
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
@@ -470,7 +533,7 @@ export default function OrderCreationForm() {
                     type="text"
                     value={customerName}
                     onChange={e => setCustomerName(e.target.value)}
-                    className={inputClasses}
+                    readOnly={isView} disabled={isView} className={inputClasses}
                     placeholder="e.g. Ramesh Patel"
                   />
                 </div>
@@ -497,7 +560,7 @@ export default function OrderCreationForm() {
                     max={new Date().toISOString().split('T')[0]}
                     min={new Date(new Date().setDate(new Date().getDate() - 365)).toISOString().split('T')[0]}
                     onChange={e => setOrderDate(e.target.value)}
-                    className={inputClasses}
+                    readOnly={isView} disabled={isView} className={inputClasses}
                   />
                 </div>
 
@@ -506,7 +569,7 @@ export default function OrderCreationForm() {
                   <select
                     value={leadSource}
                     onChange={e => setLeadSource(e.target.value)}
-                    className={selectClasses}
+                    disabled={isView} className={selectClasses}
                   >
                     <option value="Walk-in">Walk-in</option>
                     <option value="WhatsApp">WhatsApp</option>
@@ -525,7 +588,7 @@ export default function OrderCreationForm() {
                       type="text"
                       value={referralName}
                       onChange={e => setReferralName(e.target.value)}
-                      className={inputClasses}
+                      readOnly={isView} disabled={isView} className={inputClasses}
                       placeholder="e.g. Suresh Kumar"
                     />
                   </div>
@@ -538,7 +601,7 @@ export default function OrderCreationForm() {
                       type="text"
                       value={otherLeadSource}
                       onChange={e => setOtherLeadSource(e.target.value)}
-                      className={inputClasses}
+                      readOnly={isView} disabled={isView} className={inputClasses}
                       placeholder="e.g. Exhibition, Newspaper Ad"
                     />
                   </div>
@@ -598,7 +661,7 @@ export default function OrderCreationForm() {
                     type="text"
                     value={address}
                     onChange={e => setAddress(e.target.value)}
-                    className={inputClasses}
+                    readOnly={isView} disabled={isView} className={inputClasses}
                     placeholder="Building name, Street address"
                   />
                 </div>
@@ -620,7 +683,7 @@ export default function OrderCreationForm() {
                     inputMode="decimal"
                     value={systemSize}
                     onChange={handleSystemSizeChange}
-                    className={inputClasses}
+                    readOnly={isView} disabled={isView} className={inputClasses}
                     placeholder="0.0"
                   />
                 </div>
@@ -630,7 +693,7 @@ export default function OrderCreationForm() {
                   <select
                     value={systemType}
                     onChange={e => setSystemType(e.target.value)}
-                    className={selectClasses}
+                    disabled={isView} className={selectClasses}
                   >
                     <option value="ON_GRID">On-Grid</option>
                     <option value="OFF_GRID">Off-Grid</option>
@@ -645,7 +708,7 @@ export default function OrderCreationForm() {
                     inputMode="numeric"
                     value={totalOrderAmount}
                     onChange={handleAmountChange}
-                    className={inputClasses}
+                    readOnly={isView} disabled={isView} className={inputClasses}
                     placeholder="0"
                   />
                 </div>
@@ -767,7 +830,7 @@ export default function OrderCreationForm() {
                       inputMode="numeric"
                       value={floorNumber}
                       onChange={(e) => setFloorNumber(e.target.value.replace(/\D/g, ''))}
-                      className={inputClasses}
+                      readOnly={isView} disabled={isView} className={inputClasses}
                       placeholder="e.g. 0 for Ground Floor, 1 for First Floor"
                     />
                   </div>
@@ -967,7 +1030,7 @@ export default function OrderCreationForm() {
                       <select
                         value={callingExecutiveId}
                         onChange={e => setCallingExecutiveId(e.target.value)}
-                        className={selectClasses}
+                        disabled={isView} className={selectClasses}
                       >
                         <option value="">-- Select --</option>
                         {staffList.map(staff => (
@@ -983,7 +1046,7 @@ export default function OrderCreationForm() {
                       <select
                         value={salesmanId}
                         onChange={e => setSalesmanId(e.target.value)}
-                        className={selectClasses}
+                        disabled={isView} className={selectClasses}
                       >
                         <option value="">-- Select --</option>
                         {staffList.map(staff => (

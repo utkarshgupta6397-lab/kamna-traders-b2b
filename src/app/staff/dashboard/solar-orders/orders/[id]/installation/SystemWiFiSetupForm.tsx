@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Loader2, CheckCircle2, X } from 'lucide-react';
+import { Loader2, CheckCircle2, X, Wifi, Upload, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getWorkflowStageName } from '@/lib/solar-workflow-config';
 import { WorkflowStep } from '../components/WorkflowEngine';
 
 interface SystemWiFiSetupFormProps {
@@ -39,7 +40,7 @@ export default function SystemWiFiSetupForm({
         password,
         remarks,
         ...updates,
-        name: step.metadata?.name || 'System WiFi Setup',
+        name: getWorkflowStageName(step.workflowType, step.stepKey),
       };
       const res = await fetch(`/api/solar-orders/${orderId}/workflow/${step.id}`, {
         method: 'PATCH',

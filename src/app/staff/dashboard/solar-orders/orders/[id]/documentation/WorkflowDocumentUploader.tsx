@@ -35,6 +35,7 @@ interface WorkflowDocumentUploaderProps {
   title?: string;
   subtitle?: string;
   submitButtonText?: string;
+  isEditMode?: boolean;
 }
 
 export default function WorkflowDocumentUploader({ 
@@ -43,9 +44,10 @@ export default function WorkflowDocumentUploader({
   requirements, 
   onComplete, 
   canProgress,
-  title = "Customer Verification Documents",
+  title = "Upload Documents",
   subtitle = "Please provide all mandatory verification documents to proceed.",
-  submitButtonText = "Submit Documents"
+  submitButtonText = "Submit Documents",
+  isEditMode = false
 }: WorkflowDocumentUploaderProps) {
   const activeOrderId = order?.id || legacyOrderId;
 
@@ -293,10 +295,13 @@ export default function WorkflowDocumentUploader({
          await fetch(`/api/solar-orders/${activeOrderId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(patchData)
+            body: JSON.stringify({ ...patchData, isEditMode })
          });
       }
 
+      // Hack: For onComplete callback in edit mode, it doesn't take args, so we can't just call onComplete(isEditMode).
+      // Wait, onComplete in DocumentationTabClient is just updateStep('COMPLETED', undefined, undefined, isEditMode)
+      // We will leave onComplete without args and the parent will capture isEditMode.
       onComplete();
 
     } catch (e) {

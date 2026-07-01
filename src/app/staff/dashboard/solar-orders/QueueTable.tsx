@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { AlertTriangle, ExternalLink, Clock, ChevronRight, Hash, User, Zap, Check } from 'lucide-react';
 import { differenceInDays } from 'date-fns';
+import { getWorkflowStageName } from '@/lib/solar-workflow-config';
 
 interface QueueItem {
   id: string; // The step ID
@@ -127,7 +128,7 @@ export default function QueueTable({
                   <td className="px-5 py-4 align-top">
                     <div className="space-y-2.5">
                       {steps.map((step) => {
-                        const stepName = step.metadata?.name || step.stepKey;
+                        const stepName = getWorkflowStageName(queueType, step.stepKey);
                         const daysAtStep = differenceInDays(new Date(), new Date(step.updatedAt));
                         const daysColorClass = getDaysColor(daysAtStep);
 

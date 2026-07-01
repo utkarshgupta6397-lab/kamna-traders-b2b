@@ -16,7 +16,9 @@ export default async function InstallationTab({ params }: { params: { id: string
   const steps = order?.workflowSteps.filter(s => s.workflowType === 'INSTALLATION').sort((a, b) => a.stepIndex - b.stepIndex) || [];
   
   // They unified the permission to solar_orders_docs_progress earlier
-  const hasPermission = session?.role === 'ADMIN' || !!session?.solar_orders_docs_progress;
+  const canEdit = session?.role === 'ADMIN' || !!session?.solar_orders_docs_progress;
+  const canMasterEdit = session?.role === 'ADMIN' || !!session?.solar_orders_master_edit;
+  const canManageWorkflowEdits = session?.role === 'ADMIN' || !!session?.workflow_edits;
 
   if (steps.length === 0) {
     return (
@@ -38,10 +40,13 @@ export default async function InstallationTab({ params }: { params: { id: string
       <InstallationTabClient 
         orderId={id} 
         steps={steps as any} 
-        canEdit={hasPermission}
+        canEdit={canEdit}
+        canApprove={false}
+        canMasterEdit={canMasterEdit}
+        canManageWorkflowEdits={canManageWorkflowEdits}
         debugInfo={{
           orderStatus: order?.status || 'UNKNOWN',
-          hasPermission
+          hasPermission: canEdit
         }}
       />
     </div>

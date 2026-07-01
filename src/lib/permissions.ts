@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval' | 'solar_orders_docs_progress';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval' | 'solar_orders_docs_progress' | 'solar_orders_master_edit' | 'workflow_edits';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -111,6 +111,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'solar_orders_docs_progress',
     label: 'Workflow Progress',
     description: 'Ability to progress orders through documentation and installation workflows'
+  },
+  {
+    key: 'solar_orders_master_edit',
+    label: 'EDIT_SOLAR_ORDER',
+    description: 'Master permission: Allows the user to edit any information inside a Solar Order after it has been completed (Order details, Documentation, Installation)'
+  },
+  {
+    key: 'workflow_edits',
+    label: 'WORKFLOW EDITS',
+    description: 'Ability to edit and rollback completed workflow stages in Documentation and Installation flows.'
   }
 ];
 
@@ -134,5 +144,7 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'solar_orders_view',
   'solar_orders_create',
   'solar_orders_approval',
-  'solar_orders_docs_progress'
+  'solar_orders_docs_progress',
+  'solar_orders_master_edit',
+  'workflow_edits'
 ];

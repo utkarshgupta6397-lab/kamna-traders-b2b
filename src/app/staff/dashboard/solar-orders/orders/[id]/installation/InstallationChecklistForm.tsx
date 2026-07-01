@@ -1,16 +1,18 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Upload, X, CheckCircle2, Loader2, ImageIcon, Check } from 'lucide-react';
+import { Loader2, UploadCloud, FileText, CheckCircle, Save, Upload, X, CheckCircle2, ImageIcon, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getWorkflowStageName } from '@/lib/solar-workflow-config';
 import { WorkflowStep } from '../components/WorkflowEngine';
 
 interface InstallationChecklistFormProps {
   orderId: string;
   step: WorkflowStep;
-  updateStep: (status: string, notes?: string, metaOverride?: any) => Promise<void>;
+  updateStep: (status: string, notes?: string, metaOverride?: any, isEditMode?: boolean) => Promise<void>;
   canEdit: boolean;
   loadingStep: string | null;
+  isEditMode?: boolean;
 }
 
 export default function InstallationChecklistForm({
@@ -18,10 +20,11 @@ export default function InstallationChecklistForm({
   step,
   updateStep,
   canEdit,
-  loadingStep
+  loadingStep,
+  isEditMode = false
 }: InstallationChecklistFormProps) {
   const meta = step.metadata || {};
-  const isCompleted = step.status === 'COMPLETED';
+  const isCompleted = step.status === 'COMPLETED' && !isEditMode;
 
   // Local state
   const [earthingCompleted, setEarthingCompleted] = useState<boolean>(meta.earthingCompleted || false);
@@ -54,13 +57,13 @@ export default function InstallationChecklistForm({
         gpsImage,
         remarks,
         ...updates,
-        name: step.metadata?.name || 'Installation Checklist'
+        name: getWorkflowStageName(step.workflowType, step.stepKey)
       };
 
       const res = await fetch(`/api/solar-orders/${orderId}/workflow/${step.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ metadata: payload })
+        body: JSON.stringify({ metadata: payload, isEditMode })
       });
       
       if (res.ok) {
@@ -142,7 +145,7 @@ export default function InstallationChecklistForm({
     }
 
     // No payload needed; data has been auto-saved via silentSave.
-    updateStep('COMPLETED', remarks);
+    updateStep('COMPLETED', remarks, undefined, isEditMode);
   };
 
   // If completed, show summary view
@@ -371,26 +374,23 @@ export default function InstallationChecklistForm({
         </div>
       </div>
 
-      <div className="mt-auto">
-        {!isFormValid() && canEdit && (
-          <div className="mb-3 text-center text-sm font-bold text-red-500 bg-red-50 p-2 rounded-lg border border-red-100">
-            All mandatory fields must be completed to proceed.
-          </div>
-        )}
-        
-        <button
-          onClick={handleSubmit}
-          disabled={loadingStep === step.id || !canEdit || !isFormValid()}
-          className={`w-full flex items-center justify-center gap-2 px-6 py-4 font-bold text-base rounded-xl transition-all shadow-md group ${
-            isFormValid() && canEdit 
-              ? 'bg-[#00C2FF] text-white hover:bg-[#0091C2] hover:shadow-lg' 
-              : 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300 shadow-none'
-          }`}
-        >
-          {loadingStep === step.id ? <Loader2 size={22} className="animate-spin" /> : (canEdit && isFormValid() && <Check size={22} className="group-hover:scale-110 transition-transform" />)}
-          Complete Installation Checklist
-        </button>
-      </div>
+      {/* Submit Action */}
+      {!isCompleted && (
+        <div className="pt-4 border-t border-gray-100">
+          <button
+            onClick={handleSubmit}
+            disabled={loadingStep === step.id || (!canEdit && !isEditMode) || !isFormValid()}
+            className={`w-full flex items-center justify-center gap-2 px-6 py-4 font-bold text-base rounded-xl transition-all shadow-md group ${
+              isFormValid() && (canEdit || isEditMode)
+                ? 'bg-[#00C2FF] text-white hover:bg-[#0091C2] hover:shadow-lg' 
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300 shadow-none'
+            }`}
+          >
+            {loadingStep === step.id ? <Loader2 size={22} className="animate-spin" /> : ((canEdit || isEditMode) && isFormValid() && <Check size={22} className="group-hover:scale-110 transition-transform" />)}
+            {isEditMode ? 'Save Changes' : 'Complete Installation Checklist'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

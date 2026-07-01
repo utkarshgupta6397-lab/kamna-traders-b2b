@@ -10,7 +10,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const { id, stepId } = await params;
     const body = await request.json();
-    const { status, notes, blockedReason, metadata } = body;
+    const { status, notes, blockedReason, metadata, isEditMode } = body;
 
     const step = await prisma.solarWorkflowStep.findUnique({ where: { id: stepId }, include: { solarOrder: true } });
     if (!step || step.solarOrderId !== id) return NextResponse.json({ error: 'Step not found' }, { status: 404 });
@@ -64,10 +64,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     });
     const firstPending = allSteps.find(s => s.status !== 'COMPLETED' && s.status !== 'SKIPPED');
     
-    // Allow updates to completed steps (e.g., adding notes) or the current active step
-    // Reject updates to steps that are in the future
-    if (firstPending && step.stepIndex > firstPending.stepIndex) {
-      return NextResponse.json({ error: 'Stage is locked. Complete previous stages first.' }, { status: 403 });
+    // Master Edit Validation
+    if (isEditMode) {
+      if (!session.workflow_edits && !isAdmin) {
+        return NextResponse.json({ error: 'Manage Workflow Edits permission required' }, { status: 403 });
+      }
+      if (step.status !== 'COMPLETED') {
+        return NextResponse.json({ error: 'Can only edit completed stages in edit mode.' }, { status: 400 });
+      }
+    } else {
+      // Regular sequential lock
+      if (firstPending && step.stepIndex > firstPending.stepIndex) {
+        return NextResponse.json({ error: 'Stage is locked. Complete previous stages first.' }, { status: 403 });
+      }
     }
 
     // Permission check based on workflow type
@@ -91,9 +100,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
 
     const result = await prisma.$transaction(async (tx) => {
-      // If marking as COMPLETED
+      // If marking as COMPLETED via normal flow
       let completedData = {};
-      if (status === 'COMPLETED' && step.status !== 'COMPLETED') {
+      if (!isEditMode && status === 'COMPLETED' && step.status !== 'COMPLETED') {
         completedData = {
           completedById: session.userId,
           completedAt: new Date(),
@@ -106,6 +115,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           completedAt: null,
         };
       }
+      
+      let editData = {};
+      if (isEditMode) {
+        editData = {
+          editCount: step.editCount + 1,
+          lastEditedAt: new Date(),
+          lastEditedBy: session.userId
+        };
+      }
 
       // Merge metadata if provided
       let newMetadata = step.metadata;
@@ -116,10 +134,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const updated = await tx.solarWorkflowStep.update({
         where: { id: stepId },
         data: {
-          ...(status && { status }),
+          ...(status && !isEditMode && { status }),
           ...(notes !== undefined && { notes }),
           ...(blockedReason !== undefined && { blockedReason }),
           ...completedData,
+          ...editData,
           metadata: newMetadata || undefined,
         }
       });
@@ -127,7 +146,39 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       // Log the activity
       const stepName = (newMetadata as any)?.name || step.stepKey;
       let logDesc = `Updated workflow step '${stepName}'`;
-      if (status === 'COMPLETED') {
+      
+      if (isEditMode) {
+        // Find changes in metadata
+        const oldMeta = (step.metadata as any) || {};
+        const newMeta = (newMetadata as any) || {};
+        const changes: string[] = [];
+        
+        for (const key of Object.keys(newMeta)) {
+          // Mask sensitive fields if necessary
+          const displayKey = key === 'password' || key === 'wifiPassword' ? 'Password' : key;
+          const oldVal = key.toLowerCase().includes('password') ? '***' : String(oldMeta[key] || 'None');
+          const newVal = key.toLowerCase().includes('password') ? '***' : String(newMeta[key] || 'None');
+          
+          if (oldVal !== newVal) {
+            changes.push(`${displayKey}: ${oldVal} -> ${newVal}`);
+          }
+        }
+        
+        logDesc = `Master Edit applied to '${stepName}'. ${changes.join(', ')}`;
+        
+        if (stepName === 'Vendor Portal Accepted' && newMeta?.applicationNumber) {
+           await tx.solarOrder.update({
+             where: { id },
+             data: { 
+               applicationNumber: newMeta.applicationNumber,
+               loanApplicationNumber: newMeta.loanApplicationNumber || null,
+               editCount: { increment: 1 },
+               lastEditedAt: new Date(),
+               lastEditedBy: session.userId
+             }
+           });
+        }
+      } else if (status === 'COMPLETED') {
         logDesc = `Completed workflow step '${stepName}'`;
         
         const meta = newMetadata as any;
@@ -158,7 +209,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       });
 
       // Special logic: Unblock dependent steps
-      if (status === 'COMPLETED') {
+      if (status === 'COMPLETED' && !isEditMode) {
         if (step.workflowType === 'DOCUMENTATION') {
           // Unblock the next documentation step
           const nextDocStep = await tx.solarWorkflowStep.findFirst({

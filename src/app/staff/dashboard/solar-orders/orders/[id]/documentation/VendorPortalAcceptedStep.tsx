@@ -9,14 +9,16 @@ export default function VendorPortalAcceptedStep({
   loading,
   isLoanOrder = false,
   initialAppNumber = '',
-  initialLoanAppNumber = ''
+  initialLoanAppNumber = '',
+  isEditMode = false
 }: {
   canProgress: boolean;
-  onComplete: (status: string, notes?: string, metaOverride?: any) => Promise<void>;
+  onComplete: (status: string, notes?: string, metaOverride?: any, isEditMode?: boolean) => Promise<void>;
   loading: boolean;
   isLoanOrder?: boolean;
   initialAppNumber?: string;
   initialLoanAppNumber?: string;
+  isEditMode?: boolean;
 }) {
   const [appNumber, setAppNumber] = useState(initialAppNumber);
   const [loanAppNumber, setLoanAppNumber] = useState(initialLoanAppNumber);
@@ -99,12 +101,12 @@ export default function VendorPortalAcceptedStep({
         onClick={() => onComplete('COMPLETED', remarks, { 
           applicationNumber: cleanedNumber,
           ...(isLoanOrder && { loanApplicationNumber: cleanedLoanNumber })
-        })}
+        }, isEditMode)}
         disabled={loading || !canProgress || !isValid}
         className={`w-full flex items-center justify-center gap-2 px-6 py-4 font-bold text-base rounded-xl transition-all shadow-md group ${canProgress && isValid ? 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-none'}`}
       >
         {loading ? <Loader2 size={22} className="animate-spin" /> : (canProgress && isValid && <ArrowRight size={22} className="group-hover:translate-x-1 transition-transform" />)}
-        Complete: Vendor Portal Accepted
+        {isEditMode ? 'Save Changes' : 'Complete: Vendor Portal Accepted'}
       </button>
     </div>
   );

@@ -4,17 +4,22 @@ import { ShieldCheck, ArrowRight, Loader2, Lock } from 'lucide-react';
 import WorkflowDocumentUploader from './WorkflowDocumentUploader';
 import WorkflowEngine, { WorkflowStep } from '../components/WorkflowEngine';
 import VendorPortalAcceptedStep from './VendorPortalAcceptedStep';
+import { getWorkflowStageName } from '@/lib/solar-workflow-config';
 
 export default function DocumentationTabClient({ 
   order, 
   steps, 
   canProgress, 
-  canApprove 
+  canApprove,
+  canMasterEdit,
+  canManageWorkflowEdits
 }: { 
   order: any, 
   steps: WorkflowStep[],
   canProgress: boolean,
   canApprove: boolean,
+  canMasterEdit?: boolean,
+  canManageWorkflowEdits?: boolean,
 }) {
   const reviewSteps = ['Review & Approval', 'Review Pending', 'File Upload Approval Pending'];
 
@@ -27,8 +32,10 @@ export default function DocumentationTabClient({
       reviewSteps={reviewSteps}
       canProgress={canProgress}
       canApprove={canApprove}
-      renderStageAction={(selectedStep, updateStep, remarks, setRemarks, loadingStep) => {
-        const stepName = selectedStep.metadata?.name || selectedStep.stepKey;
+      canMasterEdit={canMasterEdit}
+      canManageWorkflowEdits={canManageWorkflowEdits}
+      renderStageAction={(selectedStep, updateStep, remarks, setRemarks, loadingStep, isEditMode) => {
+        const stepName = getWorkflowStageName(selectedStep.workflowType, selectedStep.stepKey);
         
         if (stepName === 'Document Upload') {
           const requirements: any[] = [
@@ -114,7 +121,8 @@ export default function DocumentationTabClient({
                  order={order}
                  requirements={requirements}
                  canProgress={canProgress}
-                 onComplete={() => updateStep('COMPLETED')}
+                 onComplete={() => updateStep('COMPLETED', undefined, undefined, isEditMode)}
+                 isEditMode={isEditMode}
                />
             </div>
           );
@@ -153,6 +161,7 @@ export default function DocumentationTabClient({
               isLoanOrder={!!order.loanCustomer}
               initialAppNumber={(selectedStep.metadata as any)?.applicationNumber || order.applicationNumber || ''}
               initialLoanAppNumber={(selectedStep.metadata as any)?.loanApplicationNumber || order.loanApplicationNumber || ''}
+              isEditMode={isEditMode}
             />
           );
         }

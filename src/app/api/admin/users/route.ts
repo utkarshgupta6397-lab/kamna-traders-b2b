@@ -37,6 +37,8 @@ export async function GET() {
         solar_orders_create: true,
         solar_orders_approval: true,
         solar_orders_docs_progress: true,
+        solar_orders_master_edit: true,
+        workflow_edits: true,
       },
       orderBy: { name: 'asc' },
     });

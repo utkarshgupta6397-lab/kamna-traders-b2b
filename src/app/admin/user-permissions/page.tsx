@@ -14,6 +14,7 @@ interface User {
   canAdjustInventory: boolean;
   canManageTransfers: boolean;
   canDeleteTransfers: boolean;
+  workflow_edits: boolean;
   [key: string]: any;
 }
 

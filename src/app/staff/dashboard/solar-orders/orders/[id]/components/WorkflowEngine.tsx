@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, Loader2, Circle, AlertCircle, Lock, ArrowRight, Info, ShieldCheck, ChevronLeft, ChevronRight, MessageSquare, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import RollbackConfirmationModal from './RollbackConfirmationModal';
+import { getWorkflowStageName } from '@/lib/solar-workflow-config';
 
 export interface WorkflowStep {
   id: string;
@@ -15,6 +17,7 @@ export interface WorkflowStep {
   completedAt: Date | null;
   completedBy: { name: string } | null;
   metadata: any;
+  workflowType: string;
 }
 
 interface WorkflowEngineProps {
@@ -23,15 +26,11 @@ interface WorkflowEngineProps {
   theme: 'green' | 'neon-blue';
   title: string;
   reviewSteps?: string[];
-  canProgress: boolean;
-  canApprove: boolean;
-  renderStageAction: (
-    step: WorkflowStep, 
-    updateStep: (status: string, notes?: string, metaOverride?: any) => Promise<void>, 
-    remarks: string, 
-    setRemarks: (r: string) => void,
-    loadingStep: string | null
-  ) => React.ReactNode;
+  canProgress?: boolean;
+  canApprove?: boolean;
+  canMasterEdit?: boolean;
+  canManageWorkflowEdits?: boolean;
+  renderStageAction: (selectedStep: any, updateStep: any, remarks: string, setRemarks: (val: string) => void, loadingStep: string | null, isEditMode: boolean) => React.ReactNode;
 }
 
 export default function WorkflowEngine({
@@ -42,6 +41,8 @@ export default function WorkflowEngine({
   reviewSteps = [],
   canProgress,
   canApprove,
+  canMasterEdit = false,
+  canManageWorkflowEdits = false,
   renderStageAction
 }: WorkflowEngineProps) {
   const router = useRouter();
@@ -52,7 +53,10 @@ export default function WorkflowEngine({
   const [selectedStepId, setSelectedStepId] = useState<string>(steps[safeInitialIndex]?.id || '');
   
   const [remarks, setRemarks] = useState('');
+  const [correctionRemarks, setCorrectionRemarks] = useState('');
+  const [isEditingStage, setIsEditingStage] = useState(false);
   const [showCorrectionsModal, setShowCorrectionsModal] = useState(false);
+  const [showRollbackModal, setShowRollbackModal] = useState(false);
   const [targetStepId, setTargetStepId] = useState<string>('');
   
   const [chunkSize, setChunkSize] = useState(6);
@@ -80,7 +84,27 @@ export default function WorkflowEngine({
     };
   }, []);
 
-  const updateStep = async (newStatus: string, notes?: string, metaOverride?: any) => {
+  const handleRollback = async (reason: string, cascade: boolean) => {
+    if (!selectedStep) return;
+    try {
+      const res = await fetch(`/api/solar-orders/${orderId}/workflow/${selectedStep.id}/rollback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason, cascade })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`Rolled back ${data.rolledBackCount} stage(s) successfully`);
+        window.location.reload();
+      } else {
+        toast.error(data.error || 'Failed to rollback stage');
+      }
+    } catch (e) {
+      toast.error('Network error during rollback');
+    }
+  };
+
+  const updateStep = async (newStatus: string, notes?: string, metaOverride?: any, isEditMode?: boolean) => {
     if (newStatus === 'REJECTED' && (!notes || !notes.trim())) {
       toast.error('Remarks are mandatory for rejection');
       return;
@@ -91,12 +115,13 @@ export default function WorkflowEngine({
       const res = await fetch(`/api/solar-orders/${orderId}/workflow/${selectedStepId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus, notes, metadata: metaOverride })
+        body: JSON.stringify({ status: newStatus, notes, metadata: metaOverride, isEditMode })
       });
       const data = await res.json();
       if (res.ok) {
         toast.success(`Stage ${newStatus === 'COMPLETED' ? 'completed' : newStatus === 'IN_PROGRESS' ? 'started' : 'rejected'}`);
         setRemarks('');
+        setIsEditingStage(false);
         
         if (newStatus === 'COMPLETED') {
           const currentStepRecord = steps.find(s => s.id === selectedStepId);
@@ -154,11 +179,12 @@ export default function WorkflowEngine({
     }
   };
 
+  const selectedStep = steps.find(s => s.id === selectedStepId);
   const completedCount = steps.filter(s => s.status === 'COMPLETED').length;
+  const hasSubsequentCompletedStages = selectedStep ? steps.some(s => s.stepIndex > selectedStep.stepIndex && s.status === 'COMPLETED') : false;
   const totalCount = steps.length;
   const progressPercent = Math.round((completedCount / totalCount) * 100) || 0;
   const currentActiveStep = steps.find(s => s.status !== 'COMPLETED' && s.status !== 'SKIPPED') || steps[steps.length - 1];
-  const selectedStep = steps.find(s => s.id === selectedStepId);
   const selectedIndex = steps.findIndex(s => s.id === selectedStepId);
 
   // Theme Configs
@@ -222,7 +248,7 @@ export default function WorkflowEngine({
           <div className="flex gap-6 text-sm">
             <div>
               <p className="text-gray-500 mb-0.5">Current Stage</p>
-              <p className={`font-bold ${currentTheme.activeText}`}>{currentActiveStep?.metadata?.name || currentActiveStep?.stepKey}</p>
+              <p className={`font-bold ${currentTheme.activeText}`}>{currentActiveStep ? getWorkflowStageName(currentActiveStep.workflowType, currentActiveStep.stepKey) : ''}</p>
             </div>
             <div>
               <p className="text-gray-500 mb-0.5">Estimated Remaining</p>
@@ -252,7 +278,7 @@ export default function WorkflowEngine({
                 )}
 
                 {row.map((step) => {
-                  const stepName = step.metadata?.name || step.stepKey;
+                  const stepName = getWorkflowStageName(step.workflowType, step.stepKey);
                   const isReviewStep = reviewSteps.includes(stepName);
                   const conf = getStatusConfig(step.status, isReviewStep);
                   const isSelected = selectedStepId === step.id;
@@ -273,7 +299,7 @@ export default function WorkflowEngine({
                           ${step.status === 'IN_PROGRESS' ? currentTheme.activeGlow : ''}
                           ${isFuture ? 'opacity-40 grayscale cursor-not-allowed hover:scale-100' : ''}
                         `}
-                        title={isFuture ? 'Stage locked' : isBlocked ? `Waiting for ${steps.find(s => s.stepIndex === step.stepIndex - 1)?.metadata?.name}` : stepName}
+                        title={isFuture ? 'Stage locked' : isBlocked ? `Waiting for ${steps.find(s => s.stepIndex === step.stepIndex - 1) ? getWorkflowStageName(step.workflowType, steps.find(s => s.stepIndex === step.stepIndex - 1)!.stepKey) : 'Previous Step'}` : stepName}
                       >
                         {step.status === 'COMPLETED' ? (
                           <div className={`w-full h-full rounded-full flex items-center justify-center ${conf.bg}`} title={step.completedAt ? `Completed on ${new Date(step.completedAt).toLocaleString('en-IN')}` : 'Completed'}>
@@ -314,7 +340,7 @@ export default function WorkflowEngine({
       <div className="md:hidden bg-white rounded-xl border border-gray-200 p-4 shadow-sm relative">
         <div className="flex overflow-x-auto gap-3 pb-2 snap-x hide-scrollbar px-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
           {steps.map((step) => {
-            const stepName = step.metadata?.name || step.stepKey;
+            const stepName = getWorkflowStageName(step.workflowType, step.stepKey);
             const isReviewStep = reviewSteps.includes(stepName);
             const conf = getStatusConfig(step.status, isReviewStep);
             const isSelected = selectedStepId === step.id;
@@ -355,7 +381,7 @@ export default function WorkflowEngine({
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <span className="text-2xl font-black text-gray-300 tracking-tighter">{(selectedStep.stepIndex).toString().padStart(2, '0')}</span>
-                <h2 className="text-xl font-bold text-gray-900 tracking-tight">{selectedStep.metadata?.name || selectedStep.stepKey}</h2>
+                <h2 className="text-xl font-bold text-gray-900 tracking-tight">{getWorkflowStageName(selectedStep.workflowType, selectedStep.stepKey)}</h2>
               </div>
               <div className="flex items-center gap-1">
                 <button 
@@ -380,7 +406,7 @@ export default function WorkflowEngine({
             {selectedStep.status === 'BLOCKED' && (
               <div className="inline-flex items-center gap-2 mb-4 px-3 py-1.5 bg-gray-50 text-gray-600 rounded-lg text-sm font-bold border border-gray-200 w-fit">
                 <Lock size={16} />
-                Blocked: Waiting for {steps.find(s => s.stepIndex === selectedStep.stepIndex - 1)?.metadata?.name || 'Previous Step'}
+                Blocked: Waiting for {steps.find(s => s.stepIndex === selectedStep.stepIndex - 1) ? getWorkflowStageName(selectedStep.workflowType, steps.find(s => s.stepIndex === selectedStep.stepIndex - 1)!.stepKey) : 'Previous Step'}
               </div>
             )}
             
@@ -401,7 +427,7 @@ export default function WorkflowEngine({
               <div>
                 <span className="block text-xs font-medium text-gray-500 mb-1">Permission Requirement</span>
                 <span className="text-sm font-bold text-gray-900">
-                  {reviewSteps.includes(selectedStep.metadata?.name || selectedStep.stepKey) ? 'Order Approval' : 'Workflow Progress'}
+                  {reviewSteps.includes(getWorkflowStageName(selectedStep.workflowType, selectedStep.stepKey)) ? 'Order Approval' : 'Workflow Progress'}
                 </span>
               </div>
             </div>
@@ -428,24 +454,52 @@ export default function WorkflowEngine({
           </div>
 
           {/* Render Extensible Actions Area */}
-          {selectedStep.status === 'COMPLETED' ? (
-             <div className={`p-6 md:p-8 w-full xl:w-2/5 ${currentTheme.stageActionBg} flex flex-col items-center justify-center text-center border-t xl:border-t-0 border-gray-100`}>
+          {selectedStep.status === 'COMPLETED' && !isEditingStage ? (
+             <div className={`p-6 md:p-8 w-full xl:w-2/5 ${currentTheme.stageActionBg} flex flex-col items-center justify-center text-center border-t xl:border-t-0 border-gray-100 relative`}>
+               {canManageWorkflowEdits && (
+                 <div className="absolute top-4 right-4 flex flex-col md:flex-row gap-2">
+                   <button
+                     onClick={() => setIsEditingStage(true)}
+                     className="text-xs font-bold px-4 py-2 bg-purple-600 text-white shadow-sm rounded-lg hover:bg-purple-700 transition-colors"
+                   >
+                     Edit
+                   </button>
+                   <button
+                     onClick={() => setShowRollbackModal(true)}
+                     className="text-xs font-bold px-4 py-2 bg-white text-red-600 border-2 border-red-200 shadow-sm rounded-lg hover:bg-red-50 hover:border-red-300 transition-colors"
+                   >
+                     Rollback
+                   </button>
+                 </div>
+               )}
                <Check size={40} className={`${currentTheme.stageActionIcon} mb-3`} />
                <h3 className="text-lg font-bold text-gray-800 mb-1">Stage Completed</h3>
                <p className="text-sm text-gray-500">This stage has been finalized and requires no further action.</p>
              </div>
           ) : (
-            <div className="w-full xl:w-2/5 border-t xl:border-t-0 xl:border-l border-gray-100 flex-shrink-0 flex flex-col justify-center relative">
-              {renderStageAction(
-                selectedStep, 
-                (newStatus: string, notes?: string, metaOverride?: any) => updateStep(newStatus, notes, metaOverride),
-                remarks, 
-                setRemarks,
-                loadingStep
+            <div className="w-full xl:w-2/5 border-t xl:border-t-0 xl:border-l border-gray-100 flex-shrink-0 flex flex-col justify-center relative bg-white">
+              {isEditingStage && (
+                <div className="absolute top-0 left-0 w-full bg-purple-600 text-white text-[10px] font-bold uppercase tracking-wider text-center py-1 z-10 flex items-center justify-center gap-2">
+                  <ShieldCheck size={12} />
+                  Master Edit Mode
+                  <button onClick={() => setIsEditingStage(false)} className="absolute right-2 hover:bg-purple-700 p-0.5 rounded">
+                    <X size={12} />
+                  </button>
+                </div>
               )}
+              <div className={isEditingStage ? 'pt-6 h-full flex flex-col' : 'h-full flex flex-col'}>
+                {renderStageAction(
+                  selectedStep, 
+                  (newStatus: string, notes?: string, metaOverride?: any, isEditMode?: boolean) => updateStep(newStatus, notes, metaOverride, isEditMode),
+                  remarks, 
+                  setRemarks,
+                  loadingStep,
+                  isEditingStage
+                )}
+              </div>
 
               {/* Only show corrections button if it's a review step in documentation */}
-              {reviewSteps.includes(selectedStep.metadata?.name || selectedStep.stepKey) && canApprove && (
+              {reviewSteps.includes(getWorkflowStageName(selectedStep.workflowType, selectedStep.stepKey)) && canApprove && (
                 <div className="px-6 md:px-8 pb-6 md:pb-8 bg-slate-50">
                   <button
                     onClick={() => setShowCorrectionsModal(true)}
@@ -490,7 +544,7 @@ export default function WorkflowEngine({
                     .filter(s => s.stepIndex < selectedStep.stepIndex && s.status === 'COMPLETED')
                     .map(s => (
                       <option key={s.id} value={s.id}>
-                        {s.metadata?.name || s.stepKey}
+                        {getWorkflowStageName(s.workflowType, s.stepKey)}
                       </option>
                     ))}
                 </select>
@@ -532,6 +586,13 @@ export default function WorkflowEngine({
           </div>
         </div>
       )}
+      <RollbackConfirmationModal 
+        isOpen={showRollbackModal}
+        onClose={() => setShowRollbackModal(false)}
+        onConfirm={handleRollback}
+        stageName={selectedStep ? getWorkflowStageName(selectedStep.workflowType, selectedStep.stepKey) : ''}
+        hasSubsequentCompletedStages={hasSubsequentCompletedStages}
+      />
     </div>
   );
 }

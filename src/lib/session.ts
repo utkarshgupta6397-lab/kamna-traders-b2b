@@ -120,6 +120,8 @@ export async function validateSession(sessionToken: string): Promise<{
           solar_orders_create: true,
           solar_orders_approval: true,
           solar_orders_docs_progress: true,
+          solar_orders_master_edit: true,
+          workflow_edits: true,
         }
       }
     }
@@ -145,6 +147,9 @@ export async function validateSession(sessionToken: string): Promise<{
     session.user.solar_orders_view = true;
     session.user.solar_orders_create = true;
     session.user.solar_orders_approval = true;
+    session.user.solar_orders_docs_progress = true;
+    session.user.solar_orders_master_edit = true;
+    session.user.workflow_edits = true;
   }
 
   const result = session 

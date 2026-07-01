@@ -45,6 +45,8 @@ model User {
   solar_orders_approval       Boolean @default(false)
   solar_orders_docs_progress  Boolean @default(false)
   solar_orders_edit_order_date Boolean @default(false)
+  solar_orders_master_edit    Boolean @default(false)
+  workflow_edits              Boolean @default(false)
 
   sessions            ActiveSession[]
   carts               Cart[]
@@ -741,6 +743,10 @@ model SolarOrder {
   loanQuotationAmount   Float?
   loanApplicationNumber String?
 
+  editCount             Int      @default(0)
+  lastEditedAt          DateTime?
+  lastEditedBy          String?
+
   createdById   String
   approvedById  String?
   approvedAt    DateTime?
@@ -804,6 +810,10 @@ model SolarWorkflowStep {
   completedAt   DateTime?
   startedAt     DateTime?
   metadata      Json?
+  
+  editCount     Int       @default(0)
+  lastEditedAt  DateTime?
+  lastEditedBy  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

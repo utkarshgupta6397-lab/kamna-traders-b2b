@@ -18,6 +18,8 @@ export default async function DocumentationTab({ params }: { params: { id: strin
 
   const canProgress = session?.role === 'ADMIN' || session?.solar_orders_view;
   const canApprove = session?.role === 'ADMIN' || session?.solar_orders_approval;
+  const canMasterEdit = session?.role === 'ADMIN' || session?.solar_orders_master_edit;
+  const canManageWorkflowEdits = session?.role === 'ADMIN' || session?.workflow_edits;
 
   if (steps.length === 0 || !order) {
     return (
@@ -32,7 +34,7 @@ export default async function DocumentationTab({ params }: { params: { id: strin
 
   return (
     <div className="space-y-4">
-      <DocumentationTabClient order={order} steps={steps} canProgress={!!canProgress} canApprove={!!canApprove} />
+      <DocumentationTabClient order={order} steps={steps} canProgress={!!canProgress} canApprove={!!canApprove} canMasterEdit={!!canMasterEdit} canManageWorkflowEdits={!!canManageWorkflowEdits} />
     </div>
   );
 }

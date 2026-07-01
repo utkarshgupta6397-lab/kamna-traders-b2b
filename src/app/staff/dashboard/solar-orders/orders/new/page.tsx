@@ -1,6 +1,6 @@
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
-import OrderCreationForm from './OrderCreationForm';
+import SolarOrderForm from '../../components/SolarOrderForm';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 
@@ -23,7 +23,7 @@ export default async function NewSolarOrderPage() {
         <p className="text-sm text-gray-500">Initiate a new solar project workflow.</p>
       </div>
 
-      <OrderCreationForm />
+      <SolarOrderForm mode="CREATE" />
     </div>
   );
 }

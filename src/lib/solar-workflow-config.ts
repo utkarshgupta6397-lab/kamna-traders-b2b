@@ -52,3 +52,104 @@ export function getWorkflowStageName(workflowType: string, stepKey: string): str
   
   return name;
 }
+
+export interface WorkflowState {
+  currentStage: string;
+  completedSteps: number;
+  totalSteps: number;
+  progressPercentage: number;
+  isCompleted: boolean;
+  isOverdue: boolean;
+  nextStage?: string;
+  stepsMap: Record<string, any>;
+}
+
+export function resolveWorkflowState(steps: any[], workflowType: 'DOCUMENTATION' | 'INSTALLATION'): WorkflowState {
+  const allSteps = workflowType === 'DOCUMENTATION' ? DOCUMENTATION_STEPS : INSTALLATION_STEPS;
+  let completedSteps = 0;
+  let currentStage = allSteps[0];
+  let isOverdue = false;
+  const now = Date.now();
+  const stepsMap: Record<string, any> = {};
+
+  for (let i = 0; i < allSteps.length; i++) {
+    const stepName = allSteps[i];
+    const expectedKey = workflowType === 'DOCUMENTATION' ? `DOC_${i + 1}` : `INST_${i + 1}`;
+    
+    // Find step by expected stepKey (e.g., DOC_1, DOC_2) instead of metadata name
+    const step = steps.find(s => s.stepKey === expectedKey);
+
+    if (step) {
+      stepsMap[stepName] = {
+        status: step.status,
+        updatedAt: step.updatedAt,
+        completedAt: step.completedAt,
+        startedAt: step.startedAt,
+        completedByName: step.completedBy?.name,
+        notes: step.notes,
+        id: step.id
+      };
+
+      if (step.status === 'COMPLETED') {
+        completedSteps++;
+        currentStage = allSteps[i + 1] || 'Completed';
+      } else {
+        currentStage = stepName;
+        
+        // Overdue check
+        const referenceDate = step.startedAt || step.updatedAt;
+        if (referenceDate && (step.status === 'PENDING' || step.status === 'IN_PROGRESS')) {
+          const diffDays = (now - new Date(referenceDate).getTime()) / (1000 * 3600 * 24);
+          if (diffDays > WORKFLOW_CONFIG.OVERDUE_THRESHOLD_DAYS) {
+            isOverdue = true;
+          }
+        }
+        
+        // Populate remaining stepsMap as PENDING but don't count them
+        for (let j = i + 1; j < allSteps.length; j++) {
+          const futureStepKey = workflowType === 'DOCUMENTATION' ? `DOC_${j + 1}` : `INST_${j + 1}`;
+          const futureStep = steps.find(s => s.stepKey === futureStepKey);
+          stepsMap[allSteps[j]] = futureStep ? {
+            status: futureStep.status,
+            updatedAt: futureStep.updatedAt,
+            completedAt: futureStep.completedAt,
+            startedAt: futureStep.startedAt,
+            completedByName: futureStep.completedBy?.name,
+            notes: futureStep.notes,
+            id: futureStep.id
+          } : { status: 'PENDING' };
+        }
+        
+        break; // Stop at first non-completed step
+      }
+    } else {
+      stepsMap[stepName] = { status: 'PENDING' };
+      currentStage = stepName;
+      
+      // Populate remaining steps as pending
+      for (let j = i + 1; j < allSteps.length; j++) {
+        stepsMap[allSteps[j]] = { status: 'PENDING' };
+      }
+      
+      break;
+    }
+  }
+
+  const isCompleted = completedSteps === allSteps.length;
+  if (isCompleted) {
+    currentStage = 'Completed';
+  }
+
+  const progressPercentage = allSteps.length === 0 ? 0 : Math.round((completedSteps / allSteps.length) * 100);
+
+  return {
+    currentStage,
+    completedSteps,
+    totalSteps: allSteps.length,
+    progressPercentage,
+    isCompleted,
+    isOverdue,
+    nextStage: isCompleted ? undefined : allSteps[allSteps.indexOf(currentStage) + 1],
+    stepsMap
+  };
+}

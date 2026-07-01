@@ -101,12 +101,16 @@ export async function GET(request: Request) {
       prisma.solarOrder.count({ where }),
     ]);
 
-    const { DOCUMENTATION_STEPS, INSTALLATION_STEPS } = await import('@/lib/solar-workflow-config');
-    const totalPossibleSteps = DOCUMENTATION_STEPS.length + INSTALLATION_STEPS.length;
+    const { resolveWorkflowState } = await import('@/lib/solar-workflow-config');
 
     const orders = ordersData.map((order: any) => {
-      const completedSteps = order.workflowSteps?.filter((s: any) => s.status === 'COMPLETED').length || 0;
-      const workflowPercentage = totalPossibleSteps > 0 ? Math.round((completedSteps / totalPossibleSteps) * 100) : 0;
+      const docState = resolveWorkflowState(order.workflowSteps || [], 'DOCUMENTATION');
+      const instState = resolveWorkflowState(order.workflowSteps || [], 'INSTALLATION');
+      const totalCompleted = docState.completedSteps + instState.completedSteps;
+      const totalSteps = docState.totalSteps + instState.totalSteps;
+      
+      const workflowPercentage = totalSteps > 0 ? Math.round((totalCompleted / totalSteps) * 100) : 0;
+      
       return {
         ...order,
         workflowPercentage,

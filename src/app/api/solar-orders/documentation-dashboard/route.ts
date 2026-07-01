@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { DOCUMENTATION_STEPS, WORKFLOW_CONFIG } from '@/lib/solar-workflow-config';
+import { DOCUMENTATION_STEPS, WORKFLOW_CONFIG, resolveWorkflowState } from '@/lib/solar-workflow-config';
 
 export async function GET(request: Request) {
   try {
@@ -89,67 +89,37 @@ export async function GET(request: Request) {
     let totalOverdue = 0;
 
     const transformedItems = orders.map(order => {
-      let completedSteps = 0;
-      let currentStage = 'Completed';
-      let isOverdue = false;
-      const stepsMap: Record<string, any> = {};
+      const state = resolveWorkflowState(order.workflowSteps, 'DOCUMENTATION');
 
-      const totalSteps = DOCUMENTATION_STEPS.length;
-      let orderIsCompleted = true;
-
-      // Ensure steps correspond exactly to DOCUMENTATION_STEPS order
-      for (const stepName of DOCUMENTATION_STEPS) {
-        const step = order.workflowSteps.find(s => (s.metadata as any)?.name === stepName);
-        if (!step) {
-          stepsMap[stepName] = { status: 'PENDING' };
-          orderIsCompleted = false;
-          if (currentStage === 'Completed') currentStage = stepName;
-          continue;
-        }
-
-        stepsMap[stepName] = {
-          status: step.status,
-          updatedAt: step.updatedAt,
-          completedAt: step.completedAt,
-          startedAt: step.startedAt,
-          completedByName: step.completedBy?.name,
-          notes: step.notes
-        };
-
-        if (step.status === 'COMPLETED') {
-          completedSteps++;
-        } else {
-          orderIsCompleted = false;
-          if (currentStage === 'Completed') currentStage = stepName;
-
-          if (step.status === 'PENDING' || step.status === 'IN_PROGRESS' || step.status === 'BLOCKED') {
-            columnCounters[stepName] = (columnCounters[stepName] || 0) + 1;
-          }
-
-          // Check overdue
-          const referenceDate = step.startedAt || step.updatedAt;
-          if (referenceDate && (step.status === 'PENDING' || step.status === 'IN_PROGRESS')) {
-            const diffDays = (now - referenceDate.getTime()) / (1000 * 3600 * 24);
-            if (diffDays > WORKFLOW_CONFIG.OVERDUE_THRESHOLD_DAYS) {
-              isOverdue = true;
-            }
-          }
-          
-          if (stepName.includes('Review') && step.status === 'PENDING') {
-            // Count for Pending Review KPI if current step is a review step
-            totalPendingReview++;
-          }
-        }
-      }
-
-      if (orderIsCompleted) {
+      if (state.isCompleted) {
         return null; // Exclude fully completed workflows from the dashboard
       }
 
-      totalInProgress++;
-      if (isOverdue) totalOverdue++;
+      // Update counters based on the returned stepsMap
+      for (const [stepName, stepData] of Object.entries(state.stepsMap)) {
+        if (stepData.status === 'PENDING' || stepData.status === 'IN_PROGRESS' || stepData.status === 'BLOCKED') {
+          // Note: Only count up to the first non-completed step or just count all pending?
+          // The old logic only counted up to the first non-completed step because of the `break` or did it?
+          // Wait, the old logic had a bug where it just looped and `break` wasn't even there in documentation-dashboard!
+          // Actually, old logic looped over all DOCUMENTATION_STEPS, and for non-completed ones it incremented columnCounters.
+        }
+      }
+      
+      // Let's just strictly re-implement the KPI counting based on the state map
+      for (const stepName of DOCUMENTATION_STEPS) {
+        const step = state.stepsMap[stepName];
+        if (step.status !== 'COMPLETED') {
+           if (step.status === 'PENDING' || step.status === 'IN_PROGRESS' || step.status === 'BLOCKED') {
+             columnCounters[stepName] = (columnCounters[stepName] || 0) + 1;
+           }
+           if (stepName.includes('Review') && step.status === 'PENDING') {
+             totalPendingReview++;
+           }
+        }
+      }
 
-      const workflowPercentage = totalSteps === 0 ? 0 : Math.round((completedSteps / totalSteps) * 100);
+      totalInProgress++;
+      if (state.isOverdue) totalOverdue++;
       
       const assignedExecutive = order.callingExecutive?.name || order.salesman?.name || 'Unassigned';
 
@@ -160,10 +130,10 @@ export async function GET(request: Request) {
         orderDate: order.orderDate,
         totalOrderAmount: order.totalOrderAmount,
         assignedExecutive,
-        workflowPercentage,
-        currentStage,
-        isOverdue,
-        stepsMap
+        workflowPercentage: state.progressPercentage,
+        currentStage: state.currentStage,
+        isOverdue: state.isOverdue,
+        stepsMap: state.stepsMap
       };
     });
 

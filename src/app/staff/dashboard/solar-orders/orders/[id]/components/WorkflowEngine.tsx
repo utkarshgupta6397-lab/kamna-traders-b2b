@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Check, Loader2, Circle, AlertCircle, Lock, ArrowRight, Info, ShieldCheck, ChevronLeft, ChevronRight, MessageSquare, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import RollbackConfirmationModal from './RollbackConfirmationModal';
-import { getWorkflowStageName } from '@/lib/solar-workflow-config';
+import { getWorkflowStageName, resolveWorkflowState } from '@/lib/solar-workflow-config';
 
 export interface WorkflowStep {
   id: string;
@@ -180,11 +180,25 @@ export default function WorkflowEngine({
   };
 
   const selectedStep = steps.find(s => s.id === selectedStepId);
-  const completedCount = steps.filter(s => s.status === 'COMPLETED').length;
   const hasSubsequentCompletedStages = selectedStep ? steps.some(s => s.stepIndex > selectedStep.stepIndex && s.status === 'COMPLETED') : false;
-  const totalCount = steps.length;
-  const progressPercent = Math.round((completedCount / totalCount) * 100) || 0;
-  const currentActiveStep = steps.find(s => s.status !== 'COMPLETED' && s.status !== 'SKIPPED') || steps[steps.length - 1];
+  
+  const workflowType = steps[0]?.workflowType as 'DOCUMENTATION' | 'INSTALLATION';
+  const state = steps.length > 0 ? resolveWorkflowState(steps, workflowType) : null;
+  const completedCount = state?.completedSteps || 0;
+  const totalCount = state?.totalSteps || steps.length;
+  const progressPercent = state?.progressPercentage || 0;
+  
+  const currentActiveStepName = state?.currentStage || '';
+  let currentActiveStep = steps.find(s => getWorkflowStageName(workflowType, s.stepKey) === currentActiveStepName);
+  if (!currentActiveStep && state?.isCompleted) {
+    currentActiveStep = steps[steps.length - 1];
+  }
+  if (!currentActiveStep && steps.length > 0) {
+    currentActiveStep = steps[steps.length - 1];
+  }
+  
+  const activeStep = currentActiveStep as WorkflowStep;
+  
   const selectedIndex = steps.findIndex(s => s.id === selectedStepId);
 
   // Theme Configs
@@ -248,7 +262,7 @@ export default function WorkflowEngine({
           <div className="flex gap-6 text-sm">
             <div>
               <p className="text-gray-500 mb-0.5">Current Stage</p>
-              <p className={`font-bold ${currentTheme.activeText}`}>{currentActiveStep ? getWorkflowStageName(currentActiveStep.workflowType, currentActiveStep.stepKey) : ''}</p>
+              <p className={`font-bold ${currentTheme.activeText}`}>{activeStep ? getWorkflowStageName(activeStep.workflowType, activeStep.stepKey) : ''}</p>
             </div>
             <div>
               <p className="text-gray-500 mb-0.5">Estimated Remaining</p>
@@ -285,7 +299,7 @@ export default function WorkflowEngine({
                   const isCurrent = step.status === 'IN_PROGRESS' || step.status === 'PENDING';
                   const isBlocked = step.status === 'BLOCKED';
                   const Icon = conf.icon;
-                  const isFuture = step.stepIndex > currentActiveStep.stepIndex;
+                  const isFuture = step.stepIndex > activeStep.stepIndex;
                   const itemWidth = `${100 / chunkSize}%`;
 
                   return (
@@ -345,7 +359,7 @@ export default function WorkflowEngine({
             const conf = getStatusConfig(step.status, isReviewStep);
             const isSelected = selectedStepId === step.id;
             const Icon = conf.icon;
-            const isFuture = step.stepIndex > currentActiveStep.stepIndex;
+            const isFuture = step.stepIndex > activeStep.stepIndex;
 
             return (
               <div key={step.id} className="flex items-center flex-shrink-0 snap-start">
@@ -394,7 +408,7 @@ export default function WorkflowEngine({
                 </button>
                 <button 
                   onClick={() => setSelectedStepId(steps[selectedIndex + 1].id)} 
-                  disabled={selectedIndex === steps.length - 1 || steps[selectedIndex + 1].stepIndex > currentActiveStep.stepIndex}
+                  disabled={selectedIndex === steps.length - 1 || steps[selectedIndex + 1].stepIndex > activeStep.stepIndex}
                   className="p-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   title="Next Stage"
                 >

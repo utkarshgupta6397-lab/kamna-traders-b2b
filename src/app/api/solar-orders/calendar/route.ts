@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { INSTALLATION_STEPS } from '@/lib/solar-workflow-config';
+import { INSTALLATION_STEPS, resolveWorkflowState } from '@/lib/solar-workflow-config';
 
 // ─── GET /api/solar-orders/calendar ──────────────────────────────────────────
 // Query params: from (ISO date), to (ISO date)
@@ -93,30 +93,12 @@ export async function GET(request: Request) {
       orderBy: { orderDate: 'asc' },
     });
 
-    // Helper: derive current installation stage & completion %
-    const deriveStage = (steps: any[]) => {
-      let currentStage = 'Ready to Install';
-      let completedCount = 0;
-      for (const stepName of INSTALLATION_STEPS) {
-        const match = steps.find(
-          (s) => (s.metadata as any)?.name === stepName || s.stepKey === stepName
-        );
-        if (match?.status === 'COMPLETED') {
-          completedCount++;
-          currentStage = stepName;
-        } else {
-          currentStage = stepName;
-          break;
-        }
-      }
-      const pct = Math.round((completedCount / INSTALLATION_STEPS.length) * 100);
-      return { currentStage, pct, completedCount };
-    };
+    // (Replaced by resolveWorkflowState)
 
     const now = Date.now();
 
     const scheduled = scheduledOrders.map((o) => {
-      const { currentStage, pct } = deriveStage(o.workflowSteps);
+      const state = resolveWorkflowState(o.workflowSteps, 'INSTALLATION');
       return {
         id: o.id,
         orderNumber: o.orderNumber,
@@ -124,17 +106,17 @@ export async function GET(request: Request) {
         systemSize: o.systemSize,
         installationDate: o.installationDate,
         salesman: o.salesman?.name || o.callingExecutive?.name || null,
-        currentStage,
-        pct,
+        currentStage: state.currentStage,
+        pct: state.progressPercentage,
         status: o.status,
       };
     });
 
     const queue = queueOrders
       .map((o) => {
-        const { currentStage, pct, completedCount } = deriveStage(o.workflowSteps);
+        const state = resolveWorkflowState(o.workflowSteps, 'INSTALLATION');
         // If all steps completed, exclude from queue (already done)
-        if (completedCount === INSTALLATION_STEPS.length) return null;
+        if (state.isCompleted) return null;
         const daysSinceOrder = Math.floor((now - new Date(o.orderDate).getTime()) / 86_400_000);
         return {
           id: o.id,
@@ -145,8 +127,8 @@ export async function GET(request: Request) {
           orderDate: o.orderDate,
           daysSinceOrder,
           salesman: o.salesman?.name || o.callingExecutive?.name || null,
-          currentStage,
-          pct,
+          currentStage: state.currentStage,
+          pct: state.progressPercentage,
           status: o.status,
         };
       })

@@ -26,102 +26,114 @@ export default function DocumentationDashboardKPIs({ summary, onFilterChange, ac
   const isCardActive = (type: string, value: string) => activeFilter?.type === type && activeFilter?.value === value;
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
       {/* Total Orders Card */}
       <div 
-        className={`bg-white rounded-xl border p-4 cursor-pointer transition-all ${
-          !activeFilter ? 'ring-2 ring-[#1A2766] border-[#1A2766] shadow-md' : 'border-gray-200 hover:border-[#1A2766]/50 hover:shadow-sm'
+        className={`bg-white rounded-lg border p-2.5 cursor-pointer transition-all flex items-center gap-3 ${
+          !activeFilter ? 'ring-1 ring-[#1A2766] border-[#1A2766] shadow-sm' : 'border-gray-200 hover:border-[#1A2766]/50 hover:bg-gray-50'
         }`}
         onClick={() => onFilterChange('All', null)}
       >
-        <div className="flex items-center gap-3 mb-2">
-          <div className="p-2 bg-blue-50 text-[#1A2766] rounded-lg">
-            <ListTodo size={18} />
-          </div>
-          <h3 className="text-sm font-semibold text-gray-700">Total Orders</h3>
+        <div className="p-1.5 bg-blue-50 text-[#1A2766] rounded-md shrink-0">
+          <ListTodo size={14} />
         </div>
-        <p className="text-2xl font-bold text-gray-900">{summary.total}</p>
-        <p className="text-xs text-gray-500 mt-1">In Documentation</p>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Total Orders</h3>
+          <div className="flex items-baseline gap-1.5">
+            <p className="text-lg font-bold text-gray-900 leading-none">{summary.total}</p>
+            <p className="text-[9px] text-gray-400 truncate">In Doc Pipeline</p>
+          </div>
+        </div>
       </div>
 
       {/* Completed Card */}
       <div 
-        className={`bg-white rounded-xl border p-4 cursor-pointer transition-all ${
-          isCardActive('documentationStage', 'Completed') ? 'ring-2 ring-emerald-500 border-emerald-500 shadow-md' : 'border-gray-200 hover:border-emerald-300 hover:shadow-sm'
+        className={`bg-white rounded-lg border p-2.5 cursor-pointer transition-all flex items-center gap-3 ${
+          isCardActive('documentationStage', 'Completed') ? 'ring-1 ring-emerald-500 border-emerald-500 shadow-sm' : 'border-gray-200 hover:border-emerald-300 hover:bg-gray-50'
         }`}
         onClick={() => handleCardClick('documentationStage', 'Completed')}
       >
-        <div className="flex items-center gap-3 mb-2">
-          <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-            <CheckCircle2 size={18} />
-          </div>
-          <h3 className="text-sm font-semibold text-gray-700">Completed</h3>
+        <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-md shrink-0">
+          <CheckCircle2 size={14} />
         </div>
-        <p className="text-2xl font-bold text-emerald-600">{summary.completed}</p>
-        <p className="text-xs text-gray-500 mt-1">Ready for execution</p>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Completed</h3>
+          <div className="flex items-baseline gap-1.5">
+            <p className="text-lg font-bold text-emerald-600 leading-none">{summary.completed}</p>
+            <p className="text-[9px] text-gray-400 truncate">Ready</p>
+          </div>
+        </div>
       </div>
 
       {/* In Progress Card */}
       <div 
-        className={`bg-white rounded-xl border p-4 cursor-pointer transition-all ${
-          isCardActive('status', 'IN_PROGRESS') ? 'ring-2 ring-blue-500 border-blue-500 shadow-md' : 'border-gray-200 hover:border-blue-300 hover:shadow-sm'
+        className={`bg-white rounded-lg border p-2.5 cursor-pointer transition-all flex items-center gap-3 ${
+          isCardActive('status', 'IN_PROGRESS') ? 'ring-1 ring-blue-500 border-blue-500 shadow-sm' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
         }`}
         onClick={() => handleCardClick('status', 'IN_PROGRESS')}
       >
-        <div className="flex items-center gap-3 mb-2">
-          <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-            <Clock size={18} />
-          </div>
-          <h3 className="text-sm font-semibold text-gray-700">In Progress</h3>
+        <div className="p-1.5 bg-blue-50 text-blue-600 rounded-md shrink-0">
+          <Clock size={14} />
         </div>
-        <p className="text-2xl font-bold text-blue-600">{summary.inProgress}</p>
-        <p className="text-xs text-gray-500 mt-1">Active workflows</p>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-0.5">In Progress</h3>
+          <div className="flex items-baseline gap-1.5">
+            <p className="text-lg font-bold text-blue-600 leading-none">{summary.inProgress}</p>
+            <p className="text-[9px] text-gray-400 truncate">Active</p>
+          </div>
+        </div>
       </div>
 
       {/* Pending Review Card */}
       <div 
-        className={`bg-white rounded-xl border p-4 cursor-pointer transition-all ${
-          isCardActive('status', 'PENDING_REVIEW') ? 'ring-2 ring-orange-500 border-orange-500 shadow-md' : 'border-gray-200 hover:border-orange-300 hover:shadow-sm'
+        className={`bg-white rounded-lg border p-2.5 cursor-pointer transition-all flex items-center gap-3 ${
+          isCardActive('status', 'PENDING_REVIEW') ? 'ring-1 ring-orange-500 border-orange-500 shadow-sm' : 'border-gray-200 hover:border-orange-300 hover:bg-gray-50'
         }`}
         onClick={() => handleCardClick('status', 'PENDING_REVIEW')}
       >
-        <div className="flex items-center gap-3 mb-2">
-          <div className="p-2 bg-orange-50 text-orange-500 rounded-lg">
-            <Clock4 size={18} />
-          </div>
-          <h3 className="text-sm font-semibold text-gray-700">Pending Review</h3>
+        <div className="p-1.5 bg-orange-50 text-orange-500 rounded-md shrink-0">
+          <Clock4 size={14} />
         </div>
-        <p className="text-2xl font-bold text-orange-500">{summary.pendingReview}</p>
-        <p className="text-xs text-gray-500 mt-1">Needs attention</p>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Review</h3>
+          <div className="flex items-baseline gap-1.5">
+            <p className="text-lg font-bold text-orange-500 leading-none">{summary.pendingReview}</p>
+            <p className="text-[9px] text-gray-400 truncate">Pending</p>
+          </div>
+        </div>
       </div>
 
       {/* Overdue Card */}
       <div 
-        className={`bg-white rounded-xl border p-4 cursor-pointer transition-all ${
-          isCardActive('status', 'OVERDUE') ? 'ring-2 ring-red-500 border-red-500 shadow-md' : 'border-gray-200 hover:border-red-300 hover:shadow-sm'
+        className={`bg-white rounded-lg border p-2.5 cursor-pointer transition-all flex items-center gap-3 ${
+          isCardActive('status', 'OVERDUE') ? 'ring-1 ring-red-500 border-red-500 shadow-sm' : 'border-gray-200 hover:border-red-300 hover:bg-gray-50'
         }`}
         onClick={() => handleCardClick('status', 'OVERDUE')}
       >
-        <div className="flex items-center gap-3 mb-2">
-          <div className="p-2 bg-red-50 text-red-600 rounded-lg">
-            <AlertCircle size={18} />
-          </div>
-          <h3 className="text-sm font-semibold text-gray-700">Overdue</h3>
+        <div className="p-1.5 bg-red-50 text-red-600 rounded-md shrink-0">
+          <AlertCircle size={14} />
         </div>
-        <p className="text-2xl font-bold text-red-600">{summary.overdue}</p>
-        <p className="text-xs text-gray-500 mt-1">&gt; 3 days inactive</p>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Overdue</h3>
+          <div className="flex items-baseline gap-1.5">
+            <p className="text-lg font-bold text-red-600 leading-none">{summary.overdue}</p>
+            <p className="text-[9px] text-gray-400 truncate">&gt; 3 days inactive</p>
+          </div>
+        </div>
       </div>
 
       {/* Average Completion Time */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
-            <Timer size={18} />
-          </div>
-          <h3 className="text-sm font-semibold text-gray-700">Avg. Time</h3>
+      <div className="bg-white rounded-lg border border-gray-200 p-2.5 flex items-center gap-3">
+        <div className="p-1.5 bg-purple-50 text-purple-600 rounded-md shrink-0">
+          <Timer size={14} />
         </div>
-        <p className="text-2xl font-bold text-gray-900">{summary.averageCompletionTime}</p>
-        <p className="text-xs text-gray-500 mt-1">Across completed</p>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Avg. Time</h3>
+          <div className="flex items-baseline gap-1.5">
+            <p className="text-lg font-bold text-gray-900 leading-none">{summary.averageCompletionTime}</p>
+            <p className="text-[9px] text-gray-400 truncate">To complete</p>
+          </div>
+        </div>
       </div>
     </div>
   );

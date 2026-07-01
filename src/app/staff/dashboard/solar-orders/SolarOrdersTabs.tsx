@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { CalendarDays, LayoutDashboard, ClipboardList, FileText, Wrench } from 'lucide-react';
+import { CalendarDays, LayoutDashboard, ClipboardList, FileText, Wrench, BarChart2 } from 'lucide-react';
 
 interface SolarOrdersTabsProps {
   canViewOrders: boolean;
   canViewDocQueue: boolean;
   canViewInstallQueue: boolean;
   canViewCalendar: boolean;
+  canViewReports: boolean;
   children: React.ReactNode;
 }
 
@@ -17,6 +18,7 @@ export default function SolarOrdersTabs({
   canViewDocQueue,
   canViewInstallQueue,
   canViewCalendar,
+  canViewReports,
   children,
 }: SolarOrdersTabsProps) {
   const pathname = usePathname();
@@ -30,6 +32,8 @@ export default function SolarOrdersTabs({
     activeTab = 'installation-queue';
   } else if (pathname.includes('/solar-orders/calendar')) {
     activeTab = 'calendar';
+  } else if (pathname.includes('/solar-orders/reports')) {
+    activeTab = 'reports';
   } else if (!canViewOrders && canViewDocQueue) {
     activeTab = 'documentation-queue';
   } else if (!canViewOrders && !canViewDocQueue && canViewInstallQueue) {
@@ -86,6 +90,16 @@ export default function SolarOrdersTabs({
           >
             <CalendarDays size={14} />
             Calendar
+          </Link>
+        )}
+
+        {canViewReports && (
+          <Link
+            href="/staff/dashboard/solar-orders/reports"
+            className={tabCls('reports')}
+          >
+            <BarChart2 size={14} />
+            Reports
           </Link>
         )}
       </div>

@@ -19,6 +19,7 @@ export default async function SolarOrdersLayout({ children }: { children: React.
   const canViewDocQueue = isAdmin || isStaff || !!session.solar_documentation_view;
   const canViewInstallQueue = isAdmin || isStaff || !!session.solar_installation_view;
   const canViewCalendar = isAdmin || isStaff || !!session.solar_installation_view;
+  const canViewReports = isAdmin || !!session.solar_orders_view;
 
   return (
     <SolarOrdersTabs
@@ -26,6 +27,7 @@ export default async function SolarOrdersLayout({ children }: { children: React.
       canViewDocQueue={canViewDocQueue}
       canViewInstallQueue={canViewInstallQueue}
       canViewCalendar={canViewCalendar}
+      canViewReports={canViewReports}
     >
       {children}
     </SolarOrdersTabs>

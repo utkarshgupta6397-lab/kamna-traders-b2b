@@ -10,6 +10,27 @@ interface DocumentationTableProps {
   isLoading: boolean;
 }
 
+const getPhaseForStep = (stepName: string) => {
+  const name = stepName.toLowerCase();
+  if (name.includes('document upload') || name.includes('customer registration') || name.includes('vendor portal')) return 'Registration';
+  if (name.includes('review') || name.includes('notaris') || name.includes('signature')) return 'Approvals';
+  if (name.includes('stamp') || name.includes('dcr') || name.includes('file upload')) return 'Vendor';
+  if (name.includes('customer portal') || name.includes('electricity') || name.includes('department')) return 'Department';
+  if (name.includes('subsidy')) return 'Subsidy';
+  return 'Other';
+};
+
+const getPhaseColor = (phase: string) => {
+  switch (phase) {
+    case 'Registration': return 'bg-blue-100 text-blue-800 border-blue-200';
+    case 'Approvals': return 'bg-amber-100 text-amber-800 border-amber-200';
+    case 'Vendor': return 'bg-purple-100 text-purple-800 border-purple-200';
+    case 'Department': return 'bg-teal-100 text-teal-800 border-teal-200';
+    case 'Subsidy': return 'bg-green-100 text-green-800 border-green-200';
+    default: return 'bg-gray-100 text-gray-800 border-gray-200';
+  }
+};
+
 export default function DocumentationTable({ items, allSteps, columnCounters, isLoading }: DocumentationTableProps) {
   const router = useRouter();
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
@@ -32,6 +53,27 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
       </div>
     );
   }
+
+  // Group steps by phase
+  const groupedSteps: { phase: string; steps: string[] }[] = [];
+  if (allSteps.length > 0) {
+    let currentPhase = getPhaseForStep(allSteps[0]);
+    let currentGroup = { phase: currentPhase, steps: [] as string[] };
+    
+    allSteps.forEach(step => {
+      const phase = getPhaseForStep(step);
+      if (phase === currentPhase) {
+        currentGroup.steps.push(step);
+      } else {
+        groupedSteps.push(currentGroup);
+        currentPhase = phase;
+        currentGroup = { phase: currentPhase, steps: [step] };
+      }
+    });
+    groupedSteps.push(currentGroup);
+  }
+
+  const hoveredPhase = hoveredCol ? getPhaseForStep(hoveredCol) : null;
 
   const renderStatusCell = (stepName: string, stepData: any, isRowHovered: boolean, isColHovered: boolean) => {
     let icon = <div className="h-3 w-3 rounded-full border-2 border-gray-300" />;
@@ -87,6 +129,10 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
     return index >= 0 ? `Step ${index + 1}/${allSteps.length}` : '';
   };
 
+  const truncateLabel = (label: string) => {
+    return label.length > 25 ? label.substring(0, 25) + '...' : label;
+  };
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-4 text-[11px] font-medium text-gray-600 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm w-fit">
@@ -116,39 +162,58 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
         <div className="overflow-x-auto hide-scrollbar">
           <table className="w-full text-left whitespace-nowrap table-fixed border-collapse">
             <thead className="text-[10px] text-gray-700 bg-gray-50 border-b border-gray-200 sticky top-0 z-20 shadow-sm">
+              {/* Top Tier: Phases and Frozen Columns */}
               <tr>
                 {/* Frozen Columns Left */}
-                <th className="px-2 py-2 font-semibold sticky left-0 bg-gray-50 z-30 shadow-[1px_0_0_0_#e5e7eb] w-[40px] text-center align-bottom pb-3">
+                <th rowSpan={2} className="px-2 py-2 font-semibold sticky left-0 bg-gray-50 z-30 shadow-[1px_0_0_0_#e5e7eb] border-r border-gray-200 w-[40px] text-center align-bottom pb-3">
                   #
                 </th>
-                <th className="px-3 py-2 font-semibold sticky left-[40px] bg-gray-50 z-30 shadow-[1px_0_0_0_#e5e7eb] w-[180px] align-bottom pb-3">
+                <th rowSpan={2} className="px-3 py-2 font-semibold sticky left-[40px] bg-gray-50 z-30 shadow-[1px_0_0_0_#e5e7eb] border-r border-gray-200 w-[180px] align-bottom pb-3">
                   Customer
                 </th>
                 
                 {/* Scrollable Context Columns */}
-                <th className="px-3 py-2 font-semibold w-[140px] align-bottom pb-3 bg-gray-50">
+                <th rowSpan={2} className="px-3 py-2 font-semibold w-[140px] align-bottom pb-3 bg-gray-50 border-r border-gray-200">
                   Current Stage
                 </th>
-                <th className="px-3 py-2 font-semibold w-[90px] align-bottom pb-3 bg-gray-50">
+                <th rowSpan={2} className="px-3 py-2 font-semibold w-[90px] align-bottom pb-3 bg-gray-50 border-r border-gray-200">
                   Progress
                 </th>
                 
-                {/* Dynamic Steps Columns */}
+                {/* Dynamic Phase Columns */}
+                {groupedSteps.map(group => (
+                  <th 
+                    key={group.phase} 
+                    colSpan={group.steps.length} 
+                    className={`px-2 py-1.5 font-bold text-center border-b border-gray-200 transition-colors ${getPhaseColor(group.phase)} ${hoveredPhase === group.phase ? 'brightness-95' : ''}`}
+                  >
+                    {group.phase}
+                  </th>
+                ))}
+
+                {/* Frozen Right Action Column */}
+                <th rowSpan={2} className="px-2 py-2 font-semibold sticky right-0 bg-gray-50 z-30 shadow-[-1px_0_0_0_#e5e7eb] border-l border-gray-200 w-[60px] text-center align-bottom pb-3">
+                  Action
+                </th>
+              </tr>
+
+              {/* Bottom Tier: Individual Steps */}
+              <tr>
                 {allSteps.map(step => (
                   <th 
                     key={step} 
-                    className={`px-1 font-medium text-center w-[45px] max-w-[45px] transition-colors h-[110px] align-bottom pb-2 cursor-help relative bg-gray-50 ${hoveredCol === step ? 'bg-blue-50/50' : ''}`}
+                    className={`px-1 font-medium text-center w-[55px] max-w-[55px] transition-colors h-[120px] align-bottom pb-2 cursor-help relative bg-gray-50 ${hoveredCol === step ? 'bg-blue-50/50' : ''}`}
                     onMouseEnter={() => setHoveredCol(step)}
                     onMouseLeave={() => setHoveredCol(null)}
                     title={step}
                   >
                     <div className="flex flex-col items-center justify-end h-full gap-2 relative">
-                      <div className="flex items-end justify-start w-full h-[80px] overflow-visible pb-1 relative">
+                      <div className="flex items-end justify-start w-full h-[90px] overflow-visible pb-1 relative">
                         <span 
-                          className="text-[11px] font-medium leading-none tracking-tight text-gray-500 whitespace-nowrap absolute bottom-2 left-2 origin-bottom-left"
-                          style={{ transform: 'rotate(-55deg)' }}
+                          className="text-[11px] font-medium leading-[1.1] tracking-tight text-gray-600 whitespace-normal line-clamp-3 text-left absolute bottom-2 left-2 origin-bottom-left w-[130px]"
+                          style={{ transform: 'rotate(-45deg)' }}
                         >
-                          {step}
+                          {truncateLabel(step)}
                         </span>
                       </div>
                       <span className="bg-gray-200 text-gray-600 text-[9px] px-1.5 py-0.5 rounded-sm font-semibold w-[30px] text-center">
@@ -157,18 +222,13 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                     </div>
                   </th>
                 ))}
-
-                {/* Frozen Right Action Column */}
-                <th className="px-2 py-2 font-semibold sticky right-0 bg-gray-50 z-30 shadow-[-1px_0_0_0_#e5e7eb] w-[60px] text-center align-bottom pb-3">
-                  Action
-                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {items.map((item, idx) => {
                 const isRowHovered = hoveredRow === item.id;
                 
-                let baseRowClass = idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50';
+                let baseRowClass = idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30';
                 if (item.isOverdue) baseRowClass = 'bg-red-50/30';
                 if (isRowHovered) baseRowClass = 'bg-blue-50/40';
 
@@ -184,10 +244,10 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                     onMouseLeave={() => setHoveredRow(null)}
                   >
                     {/* Frozen Columns Left */}
-                    <td className={`px-2 py-1.5 sticky left-0 z-10 shadow-[1px_0_0_0_#f3f4f6] text-center text-[11px] font-medium text-gray-400 transition-colors ${frozenClass}`}>
+                    <td className={`px-2 py-1.5 sticky left-0 z-10 shadow-[1px_0_0_0_#f3f4f6] border-r border-gray-100 text-center text-[11px] font-medium text-gray-400 transition-colors ${frozenClass}`}>
                       {idx + 1}
                     </td>
-                    <td className={`px-3 py-1.5 sticky left-[40px] z-10 shadow-[1px_0_0_0_#f3f4f6] transition-colors ${frozenClass}`}>
+                    <td className={`px-3 py-1.5 sticky left-[40px] z-10 shadow-[1px_0_0_0_#f3f4f6] border-r border-gray-100 transition-colors ${frozenClass}`}>
                       <div className="flex flex-col justify-center">
                         <span className="text-[12px] font-bold text-gray-900 truncate w-[160px]" title={item.customerName}>{item.customerName}</span>
                         <span className="text-[11px] font-medium text-[#1A2766] truncate w-[160px]">{item.orderNumber}</span>
@@ -196,7 +256,7 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                     </td>
 
                     {/* Scrollable Context Columns */}
-                    <td className={`px-3 py-1.5 transition-colors ${baseRowClass}`}>
+                    <td className={`px-3 py-1.5 border-r border-gray-100 transition-colors ${baseRowClass}`}>
                       <div className="flex flex-col items-start max-w-[120px]">
                         <span className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium truncate w-full ${
                           item.currentStage === 'Completed' ? 'bg-emerald-100 text-emerald-700' : 
@@ -207,7 +267,7 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                         <span className="text-[9px] text-gray-500 mt-0.5 font-medium">{getStepSubtitle(item.currentStage)}</span>
                       </div>
                     </td>
-                    <td className={`px-3 py-1.5 transition-colors ${baseRowClass}`}>
+                    <td className={`px-3 py-1.5 border-r border-gray-100 transition-colors ${baseRowClass}`}>
                       <div className="flex flex-col gap-1 w-[70px]">
                         <span className="text-[11px] font-bold text-gray-700 text-right leading-none">{item.workflowPercentage}%</span>
                         <div className="w-full h-[3px] bg-gray-200 rounded-full overflow-hidden">
@@ -225,7 +285,7 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                       return (
                         <td 
                           key={step} 
-                          className={`px-1.5 py-1.5 align-middle transition-colors ${isColHovered && !isRowHovered ? 'bg-blue-50/30' : ''}`}
+                          className={`px-1.5 py-1.5 align-middle transition-colors border-r border-gray-50 ${isColHovered && !isRowHovered ? 'bg-blue-50/30' : ''}`}
                           onMouseEnter={() => setHoveredCol(step)}
                           onMouseLeave={() => setHoveredCol(null)}
                         >
@@ -235,7 +295,7 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                     })}
 
                     {/* Frozen Right Action Column */}
-                    <td className={`px-2 py-1.5 sticky right-0 z-10 shadow-[-1px_0_0_0_#f3f4f6] text-center transition-colors ${frozenClass}`}>
+                    <td className={`px-2 py-1.5 sticky right-0 z-10 shadow-[-1px_0_0_0_#f3f4f6] border-l border-gray-100 text-center transition-colors ${frozenClass}`}>
                       <Link href={`/staff/dashboard/solar-orders/orders/${item.id}/documentation`}>
                         <button className="text-gray-400 hover:text-[#1A2766] bg-white hover:bg-blue-50 border border-gray-200 rounded-md p-1.5 shadow-sm transition-all" title="View Docs">
                           <ArrowRight size={14} />

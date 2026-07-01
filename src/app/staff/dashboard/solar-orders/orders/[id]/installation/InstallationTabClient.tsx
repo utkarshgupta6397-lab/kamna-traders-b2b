@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Loader2, Check } from 'lucide-react';
 import WorkflowEngine, { WorkflowStep } from '../components/WorkflowEngine';
 import InstallationChecklistForm from './InstallationChecklistForm';
+import SystemWiFiSetupForm from './SystemWiFiSetupForm';
 
 export default function InstallationTabClient({ 
   orderId, 

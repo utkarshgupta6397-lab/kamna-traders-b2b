@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, X, CheckCircle2, Loader2, ImageIcon, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { WorkflowStep } from '../components/WorkflowEngine';
@@ -36,6 +36,48 @@ export default function InstallationChecklistForm({
   const [uploadingGps, setUploadingGps] = useState(false);
   const gpsInputRef = useRef<HTMLInputElement>(null);
 
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  const silentSave = async (updates: any) => {
+    if (!canEdit) return;
+    setIsSaving(true);
+    setSaveStatus('saving');
+    try {
+      const payload = {
+        ...meta,
+        earthingCompleted,
+        panelsInstalled,
+        inverterInstalled,
+        inverterSerialNumber,
+        wiringDone,
+        gpsImage,
+        remarks,
+        ...updates,
+        name: step.metadata?.name || 'Installation Checklist'
+      };
+
+      const res = await fetch(`/api/solar-orders/${orderId}/workflow/${step.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metadata: payload })
+      });
+      
+      if (res.ok) {
+        setSaveStatus('saved');
+        setTimeout(() => {
+          setSaveStatus(prev => prev === 'saved' ? 'idle' : prev);
+        }, 2000);
+      } else {
+        setSaveStatus('error');
+      }
+    } catch (e) {
+      setSaveStatus('error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleGpsUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -59,12 +101,14 @@ export default function InstallationChecklistForm({
 
       if (uploadRes.ok) {
         toast.success('GPS Photo uploaded successfully');
-        setGpsImage({
+        const newGpsImage = {
           fileName: uploadData.fileName,
           url: uploadData.url,
           mimeType: uploadData.mimeType,
           fileSize: uploadData.fileSize
-        });
+        };
+        setGpsImage(newGpsImage);
+        silentSave({ gpsImage: newGpsImage });
       } else {
         toast.error(uploadData.error || 'Upload failed');
       }
@@ -78,6 +122,7 @@ export default function InstallationChecklistForm({
 
   const removeGpsImage = () => {
     setGpsImage(null);
+    silentSave({ gpsImage: null });
   };
 
   const isFormValid = () => {
@@ -96,19 +141,8 @@ export default function InstallationChecklistForm({
       return;
     }
 
-    const payload = {
-      ...meta, // Preserve any existing unrelated metadata
-      earthingCompleted,
-      panelsInstalled,
-      inverterInstalled,
-      inverterSerialNumber,
-      wiringDone,
-      gpsImage,
-      remarks,
-      name: step.metadata?.name || 'Installation Checklist'
-    };
-
-    updateStep('COMPLETED', remarks, payload);
+    // No payload needed; data has been auto-saved via silentSave.
+    updateStep('COMPLETED', remarks);
   };
 
   // If completed, show summary view
@@ -171,7 +205,12 @@ export default function InstallationChecklistForm({
             <input 
               type="checkbox" 
               checked={earthingCompleted}
-              onChange={(e) => canEdit && setEarthingCompleted(e.target.checked)}
+              onChange={(e) => {
+                if (canEdit) {
+                  setEarthingCompleted(e.target.checked);
+                  silentSave({ earthingCompleted: e.target.checked });
+                }
+              }}
               disabled={!canEdit}
               className="mt-1 w-5 h-5 rounded border-gray-300 text-[#00C2FF] focus:ring-[#00C2FF] disabled:opacity-50 transition-all cursor-pointer"
             />
@@ -185,7 +224,12 @@ export default function InstallationChecklistForm({
             <input 
               type="checkbox" 
               checked={panelsInstalled}
-              onChange={(e) => canEdit && setPanelsInstalled(e.target.checked)}
+              onChange={(e) => {
+                if (canEdit) {
+                  setPanelsInstalled(e.target.checked);
+                  silentSave({ panelsInstalled: e.target.checked });
+                }
+              }}
               disabled={!canEdit}
               className="mt-1 w-5 h-5 rounded border-gray-300 text-[#00C2FF] focus:ring-[#00C2FF] disabled:opacity-50 transition-all cursor-pointer"
             />
@@ -203,7 +247,12 @@ export default function InstallationChecklistForm({
                 onChange={(e) => {
                   if (!canEdit) return;
                   setInverterInstalled(e.target.checked);
-                  if (!e.target.checked) setInverterSerialNumber('');
+                  if (!e.target.checked) {
+                    setInverterSerialNumber('');
+                    silentSave({ inverterInstalled: false, inverterSerialNumber: '' });
+                  } else {
+                    silentSave({ inverterInstalled: true });
+                  }
                 }}
                 disabled={!canEdit}
                 className="mt-1 w-5 h-5 rounded border-gray-300 text-[#00C2FF] focus:ring-[#00C2FF] disabled:opacity-50 transition-all cursor-pointer"
@@ -223,6 +272,7 @@ export default function InstallationChecklistForm({
                   type="text"
                   value={inverterSerialNumber}
                   onChange={(e) => setInverterSerialNumber(e.target.value)}
+                  onBlur={() => silentSave({ inverterSerialNumber })}
                   disabled={!canEdit}
                   placeholder="Enter serial number..."
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#00C2FF]/20 focus:border-[#00C2FF] transition-all bg-gray-50 focus:bg-white"
@@ -236,7 +286,12 @@ export default function InstallationChecklistForm({
               <input 
                 type="checkbox" 
                 checked={wiringDone}
-                onChange={(e) => canEdit && setWiringDone(e.target.checked)}
+                onChange={(e) => {
+                  if (canEdit) {
+                    setWiringDone(e.target.checked);
+                    silentSave({ wiringDone: e.target.checked });
+                  }
+                }}
                 disabled={!canEdit}
                 className="mt-1 w-5 h-5 rounded border-gray-300 text-[#00C2FF] focus:ring-[#00C2FF] disabled:opacity-50 transition-all cursor-pointer"
               />
@@ -308,6 +363,7 @@ export default function InstallationChecklistForm({
             placeholder="Any additional notes..."
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
+            onBlur={() => silentSave({ remarks })}
             disabled={!canEdit}
             className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#00C2FF]/20 focus:border-[#00C2FF] transition-all resize-none bg-gray-50 focus:bg-white"
             rows={3}

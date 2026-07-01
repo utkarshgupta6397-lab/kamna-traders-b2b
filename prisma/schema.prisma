@@ -750,6 +750,13 @@ model SolarOrder {
   cancelledAt   DateTime?
   cancelledById String?
 
+  installationDate  DateTime? // Scheduled installation date (drag-and-drop calendar)
+  // Future-ready fields (not stored yet):
+  // assignedInstallerId String?
+  // vehicleId           String?
+  // installationTeamId  String?
+  // timeSlot            String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -775,6 +782,7 @@ model SolarOrder {
   @@index([zohoBooksCustomerId])
   @@index([orderNumber])
   @@index([subVendorId])
+  @@index([installationDate])
 }
 
 model SolarWorkflowStep {

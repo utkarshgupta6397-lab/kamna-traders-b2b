@@ -6,6 +6,7 @@ import { ChevronLeft, Zap, IndianRupee, Phone, CalendarDays } from 'lucide-react
 import OrderDetailTabs from './OrderDetailTabs';
 import OrderHeaderActions from './OrderHeaderActions';
 import ApprovalReviewScreen from './ApprovalReviewScreen';
+import { OrderChatButton } from './components/chat/OrderChatButton';
 
 export default async function OrderDetailLayout({
   children,
@@ -115,7 +116,13 @@ export default async function OrderDetailLayout({
             </div>
           </div>
 
-          <div className="flex-shrink-0 mt-2 md:mt-0">
+          <div className="flex-shrink-0 mt-2 md:mt-0 flex items-center gap-2">
+            <OrderChatButton
+              orderId={id}
+              orderNumber={order.orderNumber}
+              customerName={order.customerName}
+              currentUserId={session.userId as string}
+            />
             <OrderHeaderActions 
               orderId={id} 
               status={order.status} 

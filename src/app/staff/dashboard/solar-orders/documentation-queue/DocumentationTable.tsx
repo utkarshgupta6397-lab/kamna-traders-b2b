@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Clock, XCircle, FileText, ArrowRight, Check } from 'lucide-react';
 import Link from 'next/link';
@@ -29,6 +29,22 @@ const getPhaseColor = (phase: string) => {
     case 'Subsidy': return 'bg-green-100 text-green-800 border-green-200';
     default: return 'bg-gray-100 text-gray-800 border-gray-200';
   }
+};
+
+const isValidValue = (val: any) => {
+  if (val === null || val === undefined) return false;
+  const str = String(val).trim().toLowerCase();
+  return str !== '?' && str !== 'undefined' && str !== 'null' && str !== 'n/a' && str !== '';
+};
+
+const sanitizeLabel = (label: string) => {
+  if (!isValidValue(label)) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`Unresolved workflow label detected: "${label}"`);
+    }
+    return 'Unknown Step';
+  }
+  return label;
 };
 
 export default function DocumentationTable({ items, allSteps, columnCounters, isLoading }: DocumentationTableProps) {
@@ -75,7 +91,8 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
 
   const hoveredPhase = hoveredCol ? getPhaseForStep(hoveredCol) : null;
 
-  const renderStatusCell = (stepName: string, stepData: any, isRowHovered: boolean, isColHovered: boolean) => {
+  const renderStatusCell = (rawStepName: string, stepData: any, isRowHovered: boolean, isColHovered: boolean) => {
+    const stepName = sanitizeLabel(rawStepName);
     let icon = <div className="h-3 w-3 rounded-full border-2 border-gray-300" />;
     let statusText = 'Pending';
     let completedBy = '';
@@ -85,14 +102,14 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
     
     if (stepData) {
       const { status, completedByName, completedAt, updatedAt, notes } = stepData;
-      notesText = notes || '';
-      updatedAtTime = updatedAt ? new Date(updatedAt).toLocaleString() : '';
+      notesText = isValidValue(notes) ? notes : '';
+      updatedAtTime = isValidValue(updatedAt) ? new Date(updatedAt).toLocaleString() : '';
       
       if (status === 'COMPLETED') {
         icon = <div className="h-4 w-4 bg-emerald-500 rounded-full flex items-center justify-center"><Check size={10} className="text-white" strokeWidth={3} /></div>;
         statusText = 'Completed';
-        completedBy = completedByName || 'System';
-        completedAtTime = completedAt ? new Date(completedAt).toLocaleString() : '';
+        completedBy = isValidValue(completedByName) ? completedByName : 'System';
+        completedAtTime = isValidValue(completedAt) ? new Date(completedAt).toLocaleString() : '';
       } else if (status === 'IN_PROGRESS') {
         icon = <div className="h-3.5 w-3.5 rounded-full bg-blue-500" />;
         statusText = 'In Progress';
@@ -108,14 +125,14 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
     const isCrossHovered = isRowHovered && isColHovered;
 
     return (
-      <div className={`flex justify-center group relative cursor-help w-full h-full items-center p-1.5 rounded transition-colors ${isCrossHovered ? 'bg-blue-100/50' : ''}`}>
+      <div className={`flex justify-center group relative cursor-default w-full h-full items-center p-1.5 rounded transition-colors ${isCrossHovered ? 'bg-blue-100/50' : ''}`}>
         {icon}
         <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 p-2.5 bg-gray-900 text-white text-[11px] rounded shadow-lg z-50 pointer-events-none min-w-[200px] text-left leading-relaxed">
           <div className="font-semibold text-sm mb-1 border-b border-gray-700 pb-1">{stepName}</div>
           <div className="flex justify-between gap-4"><span className="text-gray-400">Status:</span> <span>{statusText}</span></div>
-          {completedBy && <div className="flex justify-between gap-4"><span className="text-gray-400">By:</span> <span>{completedBy}</span></div>}
-          {completedAtTime && <div className="flex justify-between gap-4"><span className="text-gray-400">Time:</span> <span>{completedAtTime}</span></div>}
-          {updatedAtTime && !completedAtTime && <div className="flex justify-between gap-4"><span className="text-gray-400">Updated:</span> <span>{updatedAtTime}</span></div>}
+          {completedBy && <div className="flex justify-between gap-4"><span className="text-gray-400">Completed By:</span> <span className="text-right">{completedBy}</span></div>}
+          {completedAtTime && <div className="flex justify-between gap-4"><span className="text-gray-400">Completed:</span> <span className="text-right">{completedAtTime}</span></div>}
+          {updatedAtTime && !completedAtTime && <div className="flex justify-between gap-4"><span className="text-gray-400">Updated:</span> <span className="text-right">{updatedAtTime}</span></div>}
           {notesText && <div className="mt-1 pt-1 border-t border-gray-700 text-gray-300 italic">"{notesText}"</div>}
           <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-gray-900"></div>
         </div>
@@ -127,10 +144,6 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
     if (currentStage === 'Completed') return 'Done';
     const index = allSteps.indexOf(currentStage);
     return index >= 0 ? `Step ${index + 1}/${allSteps.length}` : '';
-  };
-
-  const truncateLabel = (label: string) => {
-    return label.length > 25 ? label.substring(0, 25) + '...' : label;
   };
 
   return (
@@ -199,29 +212,32 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
 
               {/* Bottom Tier: Individual Steps */}
               <tr>
-                {allSteps.map(step => (
-                  <th 
-                    key={step} 
-                    className={`px-1 font-medium text-center w-[55px] max-w-[55px] transition-colors h-[120px] align-bottom pb-2 cursor-help relative bg-gray-50 ${hoveredCol === step ? 'bg-blue-50/50' : ''}`}
-                    onMouseEnter={() => setHoveredCol(step)}
-                    onMouseLeave={() => setHoveredCol(null)}
-                    title={step}
-                  >
-                    <div className="flex flex-col items-center justify-end h-full gap-2 relative">
-                      <div className="flex items-end justify-start w-full h-[90px] overflow-visible pb-1 relative">
-                        <span 
-                          className="text-[11px] font-medium leading-[1.1] tracking-tight text-gray-600 whitespace-normal line-clamp-3 text-left absolute bottom-2 left-2 origin-bottom-left w-[130px]"
-                          style={{ transform: 'rotate(-45deg)' }}
-                        >
-                          {truncateLabel(step)}
+                {allSteps.map(step => {
+                  const safeStepName = sanitizeLabel(step);
+                  return (
+                    <th 
+                      key={step} 
+                      className={`px-1 font-medium text-center w-[55px] max-w-[55px] transition-colors h-[160px] align-bottom pb-2 cursor-default relative bg-gray-50 ${hoveredCol === step ? 'bg-blue-50/50' : ''}`}
+                      onMouseEnter={() => setHoveredCol(step)}
+                      onMouseLeave={() => setHoveredCol(null)}
+                      title={safeStepName}
+                    >
+                      <div className="flex flex-col items-center justify-end h-full gap-2 relative">
+                        <div className="flex items-end justify-start w-full h-[120px] overflow-visible pb-1 relative">
+                          <span 
+                            className="text-[11px] font-medium leading-[1.15] tracking-tight text-gray-600 whitespace-normal text-left absolute bottom-2 left-2 origin-bottom-left w-[140px]"
+                            style={{ transform: 'rotate(-45deg)' }}
+                          >
+                            {safeStepName}
+                          </span>
+                        </div>
+                        <span className="bg-gray-200 text-gray-600 text-[9px] px-1.5 py-0.5 rounded-sm font-semibold w-[30px] text-center">
+                          {columnCounters[step] || 0}
                         </span>
                       </div>
-                      <span className="bg-gray-200 text-gray-600 text-[9px] px-1.5 py-0.5 rounded-sm font-semibold w-[30px] text-center">
-                        {columnCounters[step] || 0}
-                      </span>
-                    </div>
-                  </th>
-                ))}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">

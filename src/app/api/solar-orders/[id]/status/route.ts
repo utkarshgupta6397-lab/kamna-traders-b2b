@@ -48,10 +48,27 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         finalStatus = 'EXECUTION';
       }
 
+      let newOrderNumber = order.orderNumber;
+      if (status === 'APPROVED' && order.orderNumber.startsWith('TEMP-')) {
+        const orderDateObj = new Date(order.orderDate);
+        const currentYear = orderDateObj.getFullYear().toString().slice(2);
+        const currentMonth = (orderDateObj.getMonth() + 1).toString().padStart(2, '0');
+        const yearMonthStr = `${currentYear}${currentMonth}`;
+        
+        const seqRecord = await tx.solarOrderSequence.upsert({
+          where: { year: yearMonthStr },
+          update: { sequence: { increment: 1 } },
+          create: { year: yearMonthStr, sequence: 1 },
+        });
+
+        newOrderNumber = `OD-${yearMonthStr}-${seqRecord.sequence.toString().padStart(3, '0')}`;
+      }
+
       const updated = await tx.solarOrder.update({
         where: { id },
         data: {
           status: finalStatus,
+          orderNumber: newOrderNumber,
           approvedById: status === 'APPROVED' ? session.userId : undefined,
           approvedAt: status === 'APPROVED' ? new Date() : undefined,
           rejectedById: status === 'REJECTED' ? session.userId : undefined,

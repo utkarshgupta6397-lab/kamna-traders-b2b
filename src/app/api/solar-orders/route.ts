@@ -166,19 +166,12 @@ export async function POST(request: Request) {
     }
 
     const newOrder = await prisma.$transaction(async (tx) => {
-      // 1. Generate new sequence based on YYMM
       const now = new Date();
       const currentYear = now.getFullYear().toString().slice(2);
       const currentMonth = (now.getMonth() + 1).toString().padStart(2, '0');
       const yearMonthStr = `${currentYear}${currentMonth}`;
-      
-      const seqRecord = await tx.solarOrderSequence.upsert({
-        where: { year: yearMonthStr },
-        update: { sequence: { increment: 1 } },
-        create: { year: yearMonthStr, sequence: 1 },
-      });
-
-      const orderNumber = `OD-${yearMonthStr}-${seqRecord.sequence.toString().padStart(3, '0')}`;
+      const tempSequence = Math.floor(1000 + Math.random() * 9000);
+      const orderNumber = `TEMP-${yearMonthStr}-${tempSequence}`;
 
       const newOrder = await tx.solarOrder.create({
         data: {

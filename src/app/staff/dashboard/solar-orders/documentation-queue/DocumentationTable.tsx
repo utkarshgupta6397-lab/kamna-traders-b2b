@@ -118,16 +118,18 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
             <thead className="text-[10px] text-gray-700 bg-gray-50 border-b border-gray-200 sticky top-0 z-20 shadow-sm">
               <tr>
                 {/* Frozen Columns Left */}
-                <th className="px-3 py-2 font-semibold sticky left-0 bg-gray-50 z-30 shadow-[1px_0_0_0_#e5e7eb] w-[150px] align-bottom pb-3">
+                <th className="px-2 py-2 font-semibold sticky left-0 bg-gray-50 z-30 shadow-[1px_0_0_0_#e5e7eb] w-[40px] text-center align-bottom pb-3">
+                  #
+                </th>
+                <th className="px-3 py-2 font-semibold sticky left-[40px] bg-gray-50 z-30 shadow-[1px_0_0_0_#e5e7eb] w-[180px] align-bottom pb-3">
                   Customer
                 </th>
-                <th className="px-3 py-2 font-semibold sticky left-[150px] bg-gray-50 z-30 shadow-[1px_0_0_0_#e5e7eb] w-[120px] align-bottom pb-3">
-                  Order
-                </th>
-                <th className="px-3 py-2 font-semibold sticky left-[270px] bg-gray-50 z-30 shadow-[1px_0_0_0_#e5e7eb] w-[140px] align-bottom pb-3">
+                
+                {/* Scrollable Context Columns */}
+                <th className="px-3 py-2 font-semibold w-[140px] align-bottom pb-3 bg-gray-50">
                   Current Stage
                 </th>
-                <th className="px-3 py-2 font-semibold sticky left-[410px] bg-gray-50 z-30 shadow-[1px_0_0_0_#e5e7eb] w-[90px] align-bottom pb-3">
+                <th className="px-3 py-2 font-semibold w-[90px] align-bottom pb-3 bg-gray-50">
                   Progress
                 </th>
                 
@@ -135,20 +137,21 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                 {allSteps.map(step => (
                   <th 
                     key={step} 
-                    className={`px-1 font-medium text-center w-[45px] max-w-[45px] transition-colors h-[140px] align-bottom pb-2 cursor-default ${hoveredCol === step ? 'bg-blue-50/50' : ''}`}
+                    className={`px-1 font-medium text-center w-[45px] max-w-[45px] transition-colors h-[110px] align-bottom pb-2 cursor-help relative bg-gray-50 ${hoveredCol === step ? 'bg-blue-50/50' : ''}`}
                     onMouseEnter={() => setHoveredCol(step)}
                     onMouseLeave={() => setHoveredCol(null)}
+                    title={step}
                   >
-                    <div className="flex flex-col items-center justify-end h-full gap-2">
-                      <div className="flex items-center justify-center w-full h-[100px]">
+                    <div className="flex flex-col items-center justify-end h-full gap-2 relative">
+                      <div className="flex items-end justify-start w-full h-[80px] overflow-visible pb-1 relative">
                         <span 
-                          className="text-[11px] font-medium leading-tight text-gray-600 whitespace-nowrap"
-                          style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                          className="text-[11px] font-medium leading-none tracking-tight text-gray-500 whitespace-nowrap absolute bottom-2 left-2 origin-bottom-left"
+                          style={{ transform: 'rotate(-55deg)' }}
                         >
                           {step}
                         </span>
                       </div>
-                      <span className="bg-gray-200 text-gray-600 text-[9px] px-1.5 py-0.5 rounded-sm font-semibold w-full text-center">
+                      <span className="bg-gray-200 text-gray-600 text-[9px] px-1.5 py-0.5 rounded-sm font-semibold w-[30px] text-center">
                         {columnCounters[step] || 0}
                       </span>
                     </div>
@@ -176,20 +179,24 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                 return (
                   <tr 
                     key={item.id} 
-                    className={`transition-colors h-[48px] ${baseRowClass}`}
+                    className={`transition-colors h-[54px] ${baseRowClass}`}
                     onMouseEnter={() => setHoveredRow(item.id)}
                     onMouseLeave={() => setHoveredRow(null)}
                   >
                     {/* Frozen Columns Left */}
-                    <td className={`px-3 py-1.5 sticky left-0 z-10 shadow-[1px_0_0_0_#f3f4f6] transition-colors ${frozenClass}`}>
-                      <div className="text-[13px] font-semibold text-gray-900 truncate w-[130px]" title={item.customerName}>{item.customerName}</div>
-                      <div className="text-[11px] text-gray-500 truncate w-[130px]">{item.assignedExecutive}</div>
+                    <td className={`px-2 py-1.5 sticky left-0 z-10 shadow-[1px_0_0_0_#f3f4f6] text-center text-[11px] font-medium text-gray-400 transition-colors ${frozenClass}`}>
+                      {idx + 1}
                     </td>
-                    <td className={`px-3 py-1.5 sticky left-[150px] z-10 shadow-[1px_0_0_0_#f3f4f6] transition-colors ${frozenClass}`}>
-                      <div className="text-[12px] font-medium text-[#1A2766]">{item.orderNumber}</div>
-                      <div className="text-[10px] text-gray-500">{new Date(item.orderDate).toLocaleDateString()}</div>
+                    <td className={`px-3 py-1.5 sticky left-[40px] z-10 shadow-[1px_0_0_0_#f3f4f6] transition-colors ${frozenClass}`}>
+                      <div className="flex flex-col justify-center">
+                        <span className="text-[12px] font-bold text-gray-900 truncate w-[160px]" title={item.customerName}>{item.customerName}</span>
+                        <span className="text-[11px] font-medium text-[#1A2766] truncate w-[160px]">{item.orderNumber}</span>
+                        <span className="text-[10px] text-gray-400 truncate w-[160px]">{item.assignedExecutive}</span>
+                      </div>
                     </td>
-                    <td className={`px-3 py-1.5 sticky left-[270px] z-10 shadow-[1px_0_0_0_#f3f4f6] transition-colors ${frozenClass}`}>
+
+                    {/* Scrollable Context Columns */}
+                    <td className={`px-3 py-1.5 transition-colors ${baseRowClass}`}>
                       <div className="flex flex-col items-start max-w-[120px]">
                         <span className={`inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium truncate w-full ${
                           item.currentStage === 'Completed' ? 'bg-emerald-100 text-emerald-700' : 
@@ -200,7 +207,7 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                         <span className="text-[9px] text-gray-500 mt-0.5 font-medium">{getStepSubtitle(item.currentStage)}</span>
                       </div>
                     </td>
-                    <td className={`px-3 py-1.5 sticky left-[410px] z-10 shadow-[1px_0_0_0_#f3f4f6] transition-colors ${frozenClass}`}>
+                    <td className={`px-3 py-1.5 transition-colors ${baseRowClass}`}>
                       <div className="flex flex-col gap-1 w-[70px]">
                         <span className="text-[11px] font-bold text-gray-700 text-right leading-none">{item.workflowPercentage}%</span>
                         <div className="w-full h-[3px] bg-gray-200 rounded-full overflow-hidden">

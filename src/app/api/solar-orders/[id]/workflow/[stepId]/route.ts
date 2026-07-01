@@ -41,6 +41,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       
       // Update metadata to cleaned value
       metadata.applicationNumber = cleaned;
+
+      // Validate loanApplicationNumber if loan order
+      if (step.solarOrder.loanCustomer) {
+        const loanAppNumber = metadata?.loanApplicationNumber;
+        if (!loanAppNumber || typeof loanAppNumber !== 'string') {
+          return NextResponse.json({ error: 'Loan Application Number is required for loan orders.' }, { status: 400 });
+        }
+        const cleanedLoan = loanAppNumber.trim();
+        if (cleanedLoan.length < 5 || cleanedLoan.length > 100) {
+          return NextResponse.json({ error: 'Loan Application Number must be between 5 and 100 characters.' }, { status: 400 });
+        }
+        metadata.loanApplicationNumber = cleanedLoan;
+      }
     }
 
     // Sequential Workflow Protection
@@ -120,9 +133,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         const meta = newMetadata as any;
         if (stepName === 'Vendor Portal Accepted' && meta?.applicationNumber) {
            logDesc = `Completed workflow step '${stepName}' with Application Number: ${meta.applicationNumber}`;
+           if (meta.loanApplicationNumber) {
+              logDesc += `, Loan Application Number: ${meta.loanApplicationNumber}`;
+           }
            await tx.solarOrder.update({
              where: { id },
-             data: { applicationNumber: meta.applicationNumber }
+             data: { 
+               applicationNumber: meta.applicationNumber,
+               loanApplicationNumber: meta.loanApplicationNumber || null
+             }
            });
         }
       }

@@ -739,6 +739,7 @@ model SolarOrder {
   customerEmail         String?
   loanAnnualIncome      Float?
   loanQuotationAmount   Float?
+  loanApplicationNumber String?
 
   createdById   String
   approvedById  String?

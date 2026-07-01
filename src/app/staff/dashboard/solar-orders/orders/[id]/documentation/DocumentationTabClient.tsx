@@ -150,6 +150,9 @@ export default function DocumentationTabClient({
               canProgress={canProgress}
               onComplete={updateStep}
               loading={loadingStep === selectedStep.id}
+              isLoanOrder={!!order.loanCustomer}
+              initialAppNumber={(selectedStep.metadata as any)?.applicationNumber || order.applicationNumber || ''}
+              initialLoanAppNumber={(selectedStep.metadata as any)?.loanApplicationNumber || order.loanApplicationNumber || ''}
             />
           );
         }

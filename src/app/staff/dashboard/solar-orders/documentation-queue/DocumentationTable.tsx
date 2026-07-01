@@ -108,7 +108,7 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
       if (status === 'COMPLETED') {
         icon = <div className="h-4 w-4 bg-emerald-500 rounded-full flex items-center justify-center"><Check size={10} className="text-white" strokeWidth={3} /></div>;
         statusText = 'Completed';
-        completedBy = isValidValue(completedByName) ? completedByName : 'System';
+        completedBy = isValidValue(completedByName) ? completedByName : '';
         completedAtTime = isValidValue(completedAt) ? new Date(completedAt).toLocaleString() : '';
       } else if (status === 'IN_PROGRESS') {
         icon = <div className="h-3.5 w-3.5 rounded-full bg-blue-500" />;
@@ -198,9 +198,12 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                   <th 
                     key={group.phase} 
                     colSpan={group.steps.length} 
-                    className={`px-2 py-1.5 font-bold text-center border-b border-gray-200 transition-colors ${getPhaseColor(group.phase)} ${hoveredPhase === group.phase ? 'brightness-95' : ''}`}
+                    className={`p-1.5 font-bold text-center border-b border-r border-gray-200 transition-colors ${getPhaseColor(group.phase)} ${hoveredPhase === group.phase ? 'brightness-95' : ''}`}
                   >
-                    {group.phase}
+                    <div className="flex flex-col items-center justify-center">
+                      <span className="text-[11px] uppercase tracking-wider">{group.phase}</span>
+                      <span className="text-[9px] font-medium opacity-80 mt-0.5">{group.steps.length} Steps</span>
+                    </div>
                   </th>
                 ))}
 
@@ -217,23 +220,25 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                   return (
                     <th 
                       key={step} 
-                      className={`px-1 font-medium text-center w-[55px] max-w-[55px] transition-colors h-[160px] align-bottom pb-2 cursor-default relative bg-gray-50 ${hoveredCol === step ? 'bg-blue-50/50' : ''}`}
+                      className={`font-medium text-center w-[55px] min-w-[55px] max-w-[55px] transition-colors h-[170px] cursor-default relative border-r border-gray-200 bg-gray-50 ${hoveredCol === step ? 'bg-blue-50/50' : ''}`}
                       onMouseEnter={() => setHoveredCol(step)}
                       onMouseLeave={() => setHoveredCol(null)}
                       title={safeStepName}
                     >
-                      <div className="flex flex-col items-center justify-end h-full gap-2 relative">
-                        <div className="flex items-end justify-start w-full h-[120px] overflow-visible pb-1 relative">
-                          <span 
-                            className="text-[11px] font-medium leading-[1.15] tracking-tight text-gray-600 whitespace-normal text-left absolute bottom-2 left-2 origin-bottom-left w-[140px]"
-                            style={{ transform: 'rotate(-45deg)' }}
-                          >
+                      <div className="w-full h-full relative overflow-visible">
+                        <div 
+                          className="absolute bottom-7 left-3 origin-bottom-left"
+                          style={{ transform: 'rotate(-45deg)' }}
+                        >
+                          <span className="block text-[11px] font-semibold leading-[1.2] text-gray-700 text-left w-[130px] whitespace-normal break-words">
                             {safeStepName}
                           </span>
                         </div>
-                        <span className="bg-gray-200 text-gray-600 text-[9px] px-1.5 py-0.5 rounded-sm font-semibold w-[30px] text-center">
-                          {columnCounters[step] || 0}
-                        </span>
+                        <div className="absolute bottom-1 w-full flex justify-center">
+                          <span className="bg-white border border-gray-200 text-gray-600 text-[9px] px-1.5 py-0.5 rounded-sm font-semibold min-w-[28px] text-center shadow-sm">
+                            {columnCounters[step] || 0}
+                          </span>
+                        </div>
                       </div>
                     </th>
                   );
@@ -301,7 +306,7 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                       return (
                         <td 
                           key={step} 
-                          className={`px-1.5 py-1.5 align-middle transition-colors border-r border-gray-50 ${isColHovered && !isRowHovered ? 'bg-blue-50/30' : ''}`}
+                          className={`px-1.5 py-1.5 align-middle transition-colors border-r border-gray-100 ${isColHovered && !isRowHovered ? 'bg-blue-50/30' : ''}`}
                           onMouseEnter={() => setHoveredCol(step)}
                           onMouseLeave={() => setHoveredCol(null)}
                         >

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { validateZohoCustomerUniqueness } from '@/lib/zoho-solar-validation';
 
 export async function GET(request: Request) {
   try {
@@ -163,6 +164,11 @@ export async function POST(request: Request) {
     }
     if (dateToCheck < oneYearAgo) {
       return NextResponse.json({ error: 'Order Date cannot be older than one year' }, { status: 400 });
+    }
+
+    if (body.zohoBooksCustomerId) {
+      const validationError = await validateZohoCustomerUniqueness(body.zohoBooksCustomerId);
+      if (validationError) return validationError;
     }
 
     const newOrder = await prisma.$transaction(async (tx) => {

@@ -24,8 +24,8 @@ export default function SystemWiFiSetupForm({
   const meta = step.metadata || {};
   const isCompleted = step.status === 'COMPLETED';
 
-  const [ssid, setSsid] = useState<string>(meta.ssid || '');
-  const [password, setPassword] = useState<string>(meta.password || '');
+  const [ssid, setSsid] = useState<string>(step.wifiSsid || meta.ssid || '');
+  const [password, setPassword] = useState<string>(step.wifiPassword || meta.password || '');
   const [remarks, setRemarks] = useState<string>(meta.remarks || step.notes || '');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -45,7 +45,11 @@ export default function SystemWiFiSetupForm({
       const res = await fetch(`/api/solar-orders/${orderId}/workflow/${step.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ metadata: payload }),
+        body: JSON.stringify({ 
+          metadata: payload,
+          wifiSsid: ssid,
+          wifiPassword: password
+        }),
       });
       if (res.ok) setSaveStatus('saved');
       else setSaveStatus('error');
@@ -66,7 +70,7 @@ export default function SystemWiFiSetupForm({
       return;
     }
     // No payload needed, data already saved via silentSave
-    updateStep('COMPLETED', remarks);
+    updateStep('COMPLETED', remarks, { wifiSsid: ssid, wifiPassword: password });
   };
 
   // Completed view
@@ -85,7 +89,7 @@ export default function SystemWiFiSetupForm({
           <div className="grid grid-cols-2 gap-4 text-sm mt-4 p-4 bg-white rounded-lg border border-gray-200">
             <div>
               <span className="text-gray-500 font-medium block">WiFi Network (SSID)</span>
-              <p className="font-bold text-gray-900 mt-1">{ssid || 'N/A'}</p>
+              <p className="font-bold text-gray-900 mt-1">{step.wifiSsid || meta.ssid || 'N/A'}</p>
             </div>
             <div>
               <span className="text-gray-500 font-medium block">WiFi Password</span>
@@ -113,17 +117,18 @@ export default function SystemWiFiSetupForm({
       {/* SSID */}
       <div className="mb-4">
         <label className="block font-bold text-gray-700 mb-1">
-          WiFi Network Name (SSID) <span className="text-red-500">*</span>
+          WiFi Name (SSID) <span className="text-red-500">*</span>
         </label>
         <input
           type="text"
           value={ssid}
+          placeholder="Enter customer's WiFi network name"
           onChange={e => setSsid(e.target.value)}
           onBlur={() => silentSave({ ssid })}
           disabled={!canEdit}
           className="w-full border-2 border-gray-200 rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#00C2FF]/20 focus:border-[#00C2FF] bg-gray-50 focus:bg-white"
         />
-        {!ssid.trim() && <p className="text-xs text-red-500 mt-1">SSID is required</p>}
+        {!ssid.trim() && <p className="text-xs text-red-500 mt-1">WiFi Name is required.</p>}
       </div>
 
       {/* Password */}
@@ -135,6 +140,7 @@ export default function SystemWiFiSetupForm({
           <input
             type={showPassword ? 'text' : 'password'}
             value={password}
+            placeholder="Enter customer's WiFi password"
             onChange={e => setPassword(e.target.value)}
             onBlur={() => silentSave({ password })}
             disabled={!canEdit}
@@ -144,13 +150,13 @@ export default function SystemWiFiSetupForm({
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
             >
               {showPassword ? 'Hide' : 'Show'}
             </button>
           )}
         </div>
-        {!password.trim() && <p className="text-xs text-red-500 mt-1">Password is required</p>}
+        {!password.trim() && <p className="text-xs text-red-500 mt-1">WiFi Password is required.</p>}
       </div>
 
       {/* Remarks */}

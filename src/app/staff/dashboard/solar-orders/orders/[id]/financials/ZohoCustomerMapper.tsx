@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Search, Loader2, CheckCircle2, Building2, Phone, Mail } from 'lucide-react';
+import { ZohoDuplicateAlertModal } from '@/components/ZohoDuplicateAlertModal';
 
 export default function ZohoCustomerMapper({ orderId }: { orderId: string }) {
   const [query, setQuery] = useState('');
@@ -11,6 +12,7 @@ export default function ZohoCustomerMapper({ orderId }: { orderId: string }) {
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
   const [mapping, setMapping] = useState(false);
   const [error, setError] = useState('');
+  const [duplicateError, setDuplicateError] = useState<any>(null);
 
   // Debounce search
   useEffect(() => {
@@ -61,6 +63,11 @@ export default function ZohoCustomerMapper({ orderId }: { orderId: string }) {
 
       if (!res.ok) {
         const data = await res.json();
+        if (res.status === 409 && data.code === 'ZOHO_CUSTOMER_ALREADY_LINKED') {
+          setDuplicateError({ ...data, customerName: selectedCustomer.contact_name });
+          setMapping(false);
+          return;
+        }
         throw new Error(data.error || 'Failed to map customer');
       }
 
@@ -162,6 +169,16 @@ export default function ZohoCustomerMapper({ orderId }: { orderId: string }) {
           {mapping ? 'Mapping Customer...' : 'Map Selected Customer'}
         </button>
       </div>
+
+      {duplicateError && (
+        <ZohoDuplicateAlertModal
+          customerName={duplicateError.customerName}
+          existingOrderId={duplicateError.existingOrderId}
+          existingOrderNumber={duplicateError.existingOrderNumber}
+          existingStatus={duplicateError.existingStatus}
+          onClose={() => setDuplicateError(null)}
+        />
+      )}
     </div>
   );
 }

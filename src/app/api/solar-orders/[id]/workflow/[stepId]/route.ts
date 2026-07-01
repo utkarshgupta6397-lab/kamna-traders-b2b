@@ -10,7 +10,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const { id, stepId } = await params;
     const body = await request.json();
-    const { status, notes, blockedReason, metadata, isEditMode } = body;
+    const { status, notes, blockedReason, metadata, isEditMode, wifiSsid: rootSsid, wifiPassword: rootPwd } = body;
+    const wifiSsid = rootSsid !== undefined ? rootSsid : metadata?.wifiSsid;
+    const wifiPassword = rootPwd !== undefined ? rootPwd : metadata?.wifiPassword;
 
     const step = await prisma.solarWorkflowStep.findUnique({ where: { id: stepId }, include: { solarOrder: true } });
     if (!step || step.solarOrderId !== id) return NextResponse.json({ error: 'Step not found' }, { status: 404 });
@@ -53,6 +55,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           return NextResponse.json({ error: 'Loan Application Number must be between 5 and 100 characters.' }, { status: 400 });
         }
         metadata.loanApplicationNumber = cleanedLoan;
+      }
+    }
+
+    if (stepNameForValidation === 'System WiFi Setup Done') {
+      if (status === 'COMPLETED' || isEditMode) {
+        if (!wifiSsid || typeof wifiSsid !== 'string' || wifiSsid.trim() === '') {
+          return NextResponse.json({ error: 'WiFi Name (SSID) is required.' }, { status: 400 });
+        }
+        if (!wifiPassword || typeof wifiPassword !== 'string' || wifiPassword.trim() === '') {
+          return NextResponse.json({ error: 'WiFi Password is required.' }, { status: 400 });
+        }
       }
     }
 
@@ -140,6 +153,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           ...completedData,
           ...editData,
           metadata: newMetadata || undefined,
+          ...(wifiSsid !== undefined && { wifiSsid }),
+          ...(wifiPassword !== undefined && { wifiPassword }),
         }
       });
 
@@ -166,6 +181,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         
         logDesc = `Master Edit applied to '${stepName}'. ${changes.join(', ')}`;
         
+        if (stepName === 'System WiFi Setup Done') {
+          if (wifiSsid !== undefined && wifiSsid !== step.wifiSsid) {
+            changes.push(`WiFi SSID: ${step.wifiSsid || 'None'} -> ${wifiSsid}`);
+          }
+          if (wifiPassword !== undefined && wifiPassword !== step.wifiPassword) {
+            changes.push(`WiFi Password: *** -> ***`);
+          }
+          if (changes.length > 0) {
+            logDesc = `Master Edit applied to '${stepName}'. ${changes.join(', ')}`;
+          }
+        }
+        
         if (stepName === 'Vendor Portal Accepted' && newMeta?.applicationNumber) {
            await tx.solarOrder.update({
              where: { id },
@@ -180,6 +207,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         }
       } else if (status === 'COMPLETED') {
         logDesc = `Completed workflow step '${stepName}'`;
+        
+        if (stepName === 'System WiFi Setup Done') {
+           logDesc = `Completed workflow step '${stepName}' with WiFi SSID: ${wifiSsid}`;
+           if (wifiPassword !== undefined && wifiPassword !== step.wifiPassword) {
+             // Just audit that it was provided
+           }
+        }
         
         const meta = newMetadata as any;
         if (stepName === 'Vendor Portal Accepted' && meta?.applicationNumber) {

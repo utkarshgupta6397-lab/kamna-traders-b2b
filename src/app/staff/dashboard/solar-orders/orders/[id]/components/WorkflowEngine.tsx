@@ -16,7 +16,10 @@ export interface WorkflowStep {
   notes: string | null;
   completedAt: Date | null;
   completedBy: { name: string } | null;
-  metadata: any;
+  metadata?: any;
+  wifiSsid?: string | null;
+  wifiPassword?: string | null;
+  editCount?: number;
   workflowType: string;
 }
 

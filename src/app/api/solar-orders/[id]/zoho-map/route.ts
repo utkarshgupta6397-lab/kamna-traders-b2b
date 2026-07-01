@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { validateZohoCustomerUniqueness } from '@/lib/zoho-solar-validation';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -28,6 +29,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (order.zohoBooksCustomerId) {
        return NextResponse.json({ error: 'Customer is already mapped' }, { status: 400 });
     }
+
+    const validationError = await validateZohoCustomerUniqueness(contact_id, id);
+    if (validationError) return validationError;
 
     const updated = await prisma.solarOrder.update({
       where: { id },

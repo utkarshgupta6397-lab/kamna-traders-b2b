@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { validateZohoCustomerUniqueness } from '@/lib/zoho-solar-validation';
 
 export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -15,7 +16,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
     const { 
       customerEmail, loanAnnualIncome, loanQuotationAmount, isMasterEdit, 
       customerName, phoneNumber, whatsappEnabled, leadSource, referralName, 
-      zohoBooksCustomerName, systemSize, systemType, loanCustomer, 
+      zohoBooksCustomerName, zohoBooksCustomerId, systemSize, systemType, loanCustomer, 
       totalOrderAmount, receivedAmount, pendingAmount, floorNumber, 
       remarks, salesmanId, callingExecutiveId 
     } = body;
@@ -36,6 +37,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       if (leadSource !== undefined) dataToUpdate.leadSource = leadSource;
       if (referralName !== undefined) dataToUpdate.referralName = referralName;
       if (zohoBooksCustomerName !== undefined) dataToUpdate.zohoBooksCustomerName = zohoBooksCustomerName;
+      if (zohoBooksCustomerId !== undefined) dataToUpdate.zohoBooksCustomerId = zohoBooksCustomerId;
       if (systemSize !== undefined) dataToUpdate.systemSize = Number(systemSize);
       if (systemType !== undefined) dataToUpdate.systemType = systemType;
       if (loanCustomer !== undefined) dataToUpdate.loanCustomer = loanCustomer;
@@ -54,6 +56,11 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
 
     if (Object.keys(dataToUpdate).length === 0) {
       return NextResponse.json({ message: 'No valid fields to update' }, { status: 400 });
+    }
+
+    if (dataToUpdate.zohoBooksCustomerId) {
+      const validationError = await validateZohoCustomerUniqueness(dataToUpdate.zohoBooksCustomerId, id);
+      if (validationError) return validationError;
     }
 
     const updatedOrder = await prisma.$transaction(async (tx) => {

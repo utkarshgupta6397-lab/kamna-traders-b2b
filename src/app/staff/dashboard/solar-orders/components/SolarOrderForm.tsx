@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { ZohoDuplicateAlertModal } from '@/components/ZohoDuplicateAlertModal';
 import { Search, Loader2, User, Phone, CheckCircle2, Zap, FileText, X, AlertTriangle, MapPin, ClipboardList, Check, HelpCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -111,6 +112,7 @@ export default function SolarOrderForm({ mode = 'CREATE', initialOrder, users, c
 
   // Review Modal State
   const [showPreview, setShowPreview] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<any>(null);
 
   useEffect(() => {
     // Fetch Staff
@@ -422,6 +424,9 @@ export default function SolarOrderForm({ mode = 'CREATE', initialOrder, users, c
         if (res.ok) {
           toast.success(`Order ${data.order.orderNumber} created successfully`);
           setTimeout(() => { router.push(`/staff/dashboard/solar-orders/orders/${data.order.id}`); }, 1500);
+        } else if (res.status === 409 && data.code === 'ZOHO_CUSTOMER_ALREADY_LINKED') {
+          setDuplicateError({ ...data, customerName: selectedZohoCustomer?.name || 'Unknown' });
+          setShowPreview(false);
         } else {
           toast.error(data.error || 'Failed to create order');
           setShowPreview(false);
@@ -434,11 +439,15 @@ export default function SolarOrderForm({ mode = 'CREATE', initialOrder, users, c
           body: JSON.stringify(payload),
         });
 
+        const data = await res.json();
         if (res.ok) {
           toast.success('Order updated successfully');
           setTimeout(() => { window.location.reload(); }, 1500);
+        } else if (res.status === 409 && data.code === 'ZOHO_CUSTOMER_ALREADY_LINKED') {
+          setDuplicateError({ ...data, customerName: selectedZohoCustomer?.name || 'Unknown' });
+          setShowPreview(false);
         } else {
-          toast.error('Failed to update order');
+          toast.error(data.error || 'Failed to update order');
           setShowPreview(false);
         }
       }
@@ -1423,6 +1432,15 @@ export default function SolarOrderForm({ mode = 'CREATE', initialOrder, users, c
             </div>
           </div>
         </div>
+      )}
+      {duplicateError && (
+        <ZohoDuplicateAlertModal
+          customerName={duplicateError.customerName}
+          existingOrderId={duplicateError.existingOrderId}
+          existingOrderNumber={duplicateError.existingOrderNumber}
+          existingStatus={duplicateError.existingStatus}
+          onClose={() => setDuplicateError(null)}
+        />
       )}
     </>
   );

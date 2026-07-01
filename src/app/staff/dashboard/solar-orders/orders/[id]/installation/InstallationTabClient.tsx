@@ -54,6 +54,18 @@ export default function InstallationTabClient({
           );
         }
 
+        if (stepName === 'System WiFi Setup Done') {
+          return (
+            <SystemWiFiSetupForm
+              orderId={orderId}
+              step={selectedStep}
+              updateStep={(status, notes, metaOverride) => updateStep(status, notes, metaOverride, isEditMode)}
+              canEdit={canEdit || (isEditMode && !!canManageWorkflowEdits)}
+              loadingStep={loadingStep}
+            />
+          );
+        }
+
         // Generic stage handling for all dynamic steps
         return (
           <div className="p-6 md:p-8 w-full bg-slate-50 flex flex-col justify-center">

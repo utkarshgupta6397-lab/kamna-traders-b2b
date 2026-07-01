@@ -8,17 +8,27 @@ export interface DocumentRequirement {
   type: string;
   label: string;
   required: boolean;
-  maxMb: number;
-  acceptedTypes: string[]; // e.g. ['.pdf', '.jpg', '.jpeg', '.png', '.heic']
+  inputType?: 'FILE' | 'TEXT' | 'DROPDOWN' | 'CURRENCY';
+  maxMb?: number;
+  acceptedTypes?: string[]; // e.g. ['.pdf', '.jpg', '.jpeg', '.png', '.heic']
+  options?: string[];
+  placeholder?: string;
+  min?: number;
+  max?: number;
+  maxErrorMsg?: string;
+  section?: string;
+  sectionSubtitle?: string;
   requiresPhone?: {
     label: string;
     description: string;
     validationRegex: RegExp;
   };
+  validationRegex?: RegExp;
 }
 
 interface WorkflowDocumentUploaderProps {
-  orderId: string;
+  order?: any;
+  orderId?: string; // backwards compatibility
   requirements: DocumentRequirement[];
   onComplete: () => void;
   canProgress: boolean;
@@ -28,7 +38,8 @@ interface WorkflowDocumentUploaderProps {
 }
 
 export default function WorkflowDocumentUploader({ 
-  orderId, 
+  order,
+  orderId: legacyOrderId, 
   requirements, 
   onComplete, 
   canProgress,
@@ -36,6 +47,8 @@ export default function WorkflowDocumentUploader({
   subtitle = "Please provide all mandatory verification documents to proceed.",
   submitButtonText = "Submit Documents"
 }: WorkflowDocumentUploaderProps) {
+  const activeOrderId = order?.id || legacyOrderId;
+
   const [documents, setDocuments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState<string | null>(null);
@@ -47,6 +60,7 @@ export default function WorkflowDocumentUploader({
     fileType?: string;
     fileSizeBytes?: number;
     phone?: string;
+    value?: string;
     isSavedToDb?: boolean;
   }>>({});
   
@@ -55,11 +69,11 @@ export default function WorkflowDocumentUploader({
 
   useEffect(() => {
     fetchDocuments();
-  }, [orderId]);
+  }, [activeOrderId]);
 
   const fetchDocuments = async () => {
     try {
-      const res = await fetch(`/api/solar-orders/${orderId}/files`);
+      const res = await fetch(`/api/solar-orders/${activeOrderId}/files`);
       const data = await res.json();
       if (res.ok) {
         setDocuments(data.files);
@@ -77,6 +91,22 @@ export default function WorkflowDocumentUploader({
             isSavedToDb: true
           };
         });
+
+        // Hydrate TEXT, DROPDOWN, and CURRENCY values from the order if they exist
+        requirements.forEach(req => {
+          if (req.inputType === 'TEXT' || req.inputType === 'DROPDOWN' || req.inputType === 'CURRENCY') {
+            if (req.type === 'CUSTOMER_EMAIL' && order?.customerEmail) {
+               newState[req.type] = { value: order.customerEmail, isSavedToDb: true };
+            }
+            if (req.type === 'LOAN_ANNUAL_INCOME' && order?.loanAnnualIncome) {
+               newState[req.type] = { value: order.loanAnnualIncome.toString(), isSavedToDb: true };
+            }
+            if (req.type === 'LOAN_QUOTATION_AMOUNT' && order?.loanQuotationAmount) {
+               newState[req.type] = { value: order.loanQuotationAmount.toString(), isSavedToDb: true };
+            }
+          }
+        });
+
         setLocalState(newState);
       }
     } catch (e) {
@@ -90,14 +120,16 @@ export default function WorkflowDocumentUploader({
     const req = requirements.find(r => r.type === type);
     if (!req) return;
 
-    if (file.size > req.maxMb * 1024 * 1024) {
-      toast.error(`File must be smaller than ${req.maxMb}MB`);
+    const maxMb = req.maxMb || 2;
+    if (file.size > maxMb * 1024 * 1024) {
+      toast.error(`File must be smaller than ${maxMb}MB`);
       return;
     }
 
     const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
-    if (!req.acceptedTypes.includes(fileExtension) && !req.acceptedTypes.includes(file.type)) {
-       toast.error(`Invalid file format. Accepted: ${req.acceptedTypes.join(', ')}`);
+    const acceptedTypes = req.acceptedTypes || [];
+    if (!acceptedTypes.includes(fileExtension) && !acceptedTypes.includes(file.type)) {
+       toast.error(`Invalid file format. Accepted: ${acceptedTypes.join(', ')}`);
        return;
     }
 
@@ -143,13 +175,20 @@ export default function WorkflowDocumentUploader({
     }));
   };
 
+  const handleValueChange = (type: string, val: string) => {
+    setLocalState(prev => ({
+      ...prev,
+      [type]: { ...prev[type], value: val }
+    }));
+  };
+
   const handleDelete = async (type: string) => {
     const state = localState[type];
     if (!state) return;
 
     if (state.isSavedToDb && state.id) {
       try {
-        const res = await fetch(`/api/solar-orders/${orderId}/files?fileId=${state.id}`, {
+        const res = await fetch(`/api/solar-orders/${activeOrderId}/files?fileId=${state.id}`, {
           method: 'DELETE'
         });
         if (!res.ok) throw new Error('Failed to delete');
@@ -170,10 +209,29 @@ export default function WorkflowDocumentUploader({
   const getValidationSummary = () => {
     const summary = requirements.map(req => {
       const state = localState[req.type];
+      
+      if (req.inputType === 'TEXT' || req.inputType === 'DROPDOWN' || req.inputType === 'CURRENCY') {
+        const val = state?.value || '';
+        const hasValue = val.trim().length > 0;
+        let isValid = !req.required || hasValue;
+        
+        if (hasValue && req.validationRegex) {
+           isValid = req.validationRegex.test(val);
+        }
+        if (hasValue && req.inputType === 'CURRENCY') {
+           const num = Number(val);
+           if (isNaN(num)) isValid = false;
+           if (req.min !== undefined && num < req.min) isValid = false;
+           if (req.max !== undefined && num > req.max) isValid = false;
+        }
+        return { req, hasValue, isValid, isInput: true };
+      }
+
+      // Default FILE logic
       const hasFile = !!state?.fileUrl;
       const hasValidPhone = !req.requiresPhone || (state?.phone && req.requiresPhone.validationRegex.test(state.phone));
       const isValid = (!req.required || hasFile) && hasValidPhone;
-      return { req, hasFile, hasValidPhone, isValid };
+      return { req, hasFile, hasValidPhone, isValid, isInput: false };
     });
     const allValid = summary.every(s => s.isValid);
     return { summary, allValid };
@@ -188,30 +246,30 @@ export default function WorkflowDocumentUploader({
 
     setSubmitting(true);
     try {
+      // 1. Submit Files
       for (const item of summary) {
-        if (!item.hasFile) continue;
+        if (item.isInput || !item.hasFile) continue;
         const state = localState[item.req.type];
         
-        // Let's log activity only if it's a DCR_CERTIFICATE, or we could do it in general.
-        // The API route doesn't automatically log when we upload files from here, 
-        // because this posts directly to `/api/solar-orders/[id]/files`.
-        await fetch(`/api/solar-orders/${orderId}/files`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            documentType: item.req.type,
-            fileCategory: 'DOCUMENTATION',
-            fileName: state.fileName,
-            fileUrl: state.fileUrl,
-            fileType: state.fileType,
-            fileSizeBytes: state.fileSizeBytes,
-            metadata: item.req.requiresPhone ? { phone: state.phone } : undefined
-          })
-        });
+        if (!state.isSavedToDb) {
+          await fetch(`/api/solar-orders/${activeOrderId}/files`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              documentType: item.req.type,
+              fileCategory: 'DOCUMENTATION',
+              fileName: state.fileName,
+              fileUrl: state.fileUrl,
+              fileType: state.fileType,
+              fileSizeBytes: state.fileSizeBytes,
+              metadata: item.req.requiresPhone ? { phone: state.phone } : undefined
+            })
+          });
+        }
 
         // Special Audit Log for DCR
-        if (item.req.type === 'DCR_CERTIFICATE') {
-          await fetch(`/api/solar-orders/${orderId}/activity`, {
+        if (item.req.type === 'DCR_CERTIFICATE' && !state.isSavedToDb) {
+          await fetch(`/api/solar-orders/${activeOrderId}/activity`, {
              method: 'POST',
              headers: { 'Content-Type': 'application/json' },
              body: JSON.stringify({
@@ -220,6 +278,23 @@ export default function WorkflowDocumentUploader({
              })
           });
         }
+      }
+
+      // 2. Submit Input Fields via PATCH
+      const patchData: any = {};
+      summary.filter(s => s.isInput).forEach(item => {
+         const state = localState[item.req.type];
+         if (item.req.type === 'CUSTOMER_EMAIL') patchData.customerEmail = state.value;
+         if (item.req.type === 'LOAN_ANNUAL_INCOME') patchData.loanAnnualIncome = Number(state.value);
+         if (item.req.type === 'LOAN_QUOTATION_AMOUNT') patchData.loanQuotationAmount = Number(state.value);
+      });
+
+      if (Object.keys(patchData).length > 0) {
+         await fetch(`/api/solar-orders/${activeOrderId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patchData)
+         });
       }
 
       onComplete();
@@ -248,6 +323,8 @@ export default function WorkflowDocumentUploader({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  let currentSection = '';
+
   return (
     <div className="bg-white h-full flex flex-col">
       <div className="bg-slate-50 border-b border-gray-100 p-6">
@@ -255,15 +332,123 @@ export default function WorkflowDocumentUploader({
         <p className="text-sm text-gray-500">{subtitle}</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-6 divide-y divide-gray-100 space-y-6">
+      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
         {requirements.map((req, idx) => {
           const state = localState[req.type];
+          
+          let renderSectionHeader = false;
+          if (req.section && req.section !== currentSection) {
+             currentSection = req.section;
+             renderSectionHeader = true;
+          }
+
+          if (req.inputType === 'TEXT' || req.inputType === 'DROPDOWN' || req.inputType === 'CURRENCY') {
+             let isValid = true;
+             if (req.validationRegex) {
+               isValid = req.validationRegex.test(state?.value || '');
+             }
+             if (req.inputType === 'CURRENCY' && state?.value) {
+                const num = Number(state.value);
+                if (isNaN(num)) isValid = false;
+                if (req.min !== undefined && num < req.min) isValid = false;
+                if (req.max !== undefined && num > req.max) isValid = false;
+             }
+             
+             return (
+                <div key={req.type} className="w-full">
+                  {renderSectionHeader && (
+                    <div className="pt-6 mt-6 border-t border-gray-200">
+                      <h3 className="text-lg font-bold text-gray-900 mb-1">{req.section}</h3>
+                      {req.sectionSubtitle && <p className="text-sm text-gray-500 mb-6">{req.sectionSubtitle}</p>}
+                    </div>
+                  )}
+                  
+                  <div className="mb-2 flex items-center gap-2">
+                    <h4 className="text-base font-bold text-gray-900">{req.label}</h4>
+                    {req.required && <span className="text-red-500 text-[10px] font-black uppercase tracking-wider bg-red-50 px-2 py-0.5 rounded border border-red-100">Required</span>}
+                  </div>
+                  
+                  {req.inputType === 'CURRENCY' ? (
+                     <div className="relative w-full">
+                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm">₹</span>
+                       <input 
+                         type="text"
+                         placeholder={req.placeholder || '0'}
+                         value={state?.value ? Intl.NumberFormat('en-IN').format(Number(state.value)) : ''}
+                         onChange={e => {
+                           const raw = e.target.value.replace(/,/g, '').replace(/[^0-9]/g, '');
+                           handleValueChange(req.type, raw);
+                         }}
+                         disabled={!canProgress}
+                         className={`w-full pl-8 pr-4 py-3 border-2 rounded-xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all bg-white shadow-sm ${
+                            state?.value && !isValid 
+                              ? 'border-red-300 focus:border-red-500' 
+                              : state?.value && isValid 
+                                ? 'border-emerald-300 focus:border-emerald-500' 
+                                : 'border-gray-200 focus:border-blue-500'
+                         }`}
+                       />
+                     </div>
+                  ) : req.inputType === 'TEXT' ? (
+                     <input 
+                       type="text"
+                       placeholder={req.placeholder || ''}
+                       value={state?.value || ''}
+                       onChange={e => handleValueChange(req.type, e.target.value)}
+                       disabled={!canProgress}
+                       className={`w-full px-4 py-3 border-2 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all bg-white shadow-sm ${
+                          state?.value && !isValid 
+                            ? 'border-red-300 focus:border-red-500' 
+                            : state?.value && isValid 
+                              ? 'border-emerald-300 focus:border-emerald-500' 
+                              : 'border-gray-200 focus:border-blue-500'
+                       }`}
+                     />
+                  ) : (
+                     <select
+                       value={state?.value || ''}
+                       onChange={e => handleValueChange(req.type, e.target.value)}
+                       disabled={!canProgress}
+                       className={`w-full px-4 py-3 border-2 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all bg-white shadow-sm ${
+                          state?.value ? 'border-emerald-300 focus:border-emerald-500' : 'border-gray-200 focus:border-blue-500'
+                       }`}
+                     >
+                       <option value="" disabled>Select {req.label}...</option>
+                       {req.options?.map(opt => (
+                         <option key={opt} value={opt}>{opt}</option>
+                       ))}
+                     </select>
+                  )}
+                  
+                  {state?.value && !isValid && req.inputType === 'TEXT' && (
+                     <p className="text-xs text-red-500 mt-2 font-bold flex items-center gap-1">
+                       <Circle size={12} className="fill-red-500" /> Invalid format
+                     </p>
+                  )}
+                  {state?.value && !isValid && req.inputType === 'CURRENCY' && (
+                     <p className="text-xs text-red-500 mt-2 font-bold flex items-center gap-1">
+                       <Circle size={12} className="fill-red-500" /> {req.max !== undefined && Number(state.value) > req.max ? (req.maxErrorMsg || `Amount cannot exceed ${req.max}`) : 'Invalid amount'}
+                     </p>
+                  )}
+                </div>
+             );
+          }
+
+          // FILE Uploader
           const isUploaded = !!state?.fileUrl;
           const phoneConfig = req.requiresPhone;
           const phoneValid = phoneConfig ? state?.phone && phoneConfig.validationRegex.test(state.phone) : true;
+          const acceptedTypes = req.acceptedTypes || [];
+          const maxMb = req.maxMb || 2;
 
           return (
-            <div key={req.type} className={idx > 0 ? "pt-6" : ""}>
+            <div key={req.type} className="w-full">
+              {renderSectionHeader && (
+                <div className="pt-6 mt-6 border-t border-gray-200">
+                  <h3 className="text-lg font-bold text-gray-900 mb-1">{req.section}</h3>
+                  {req.sectionSubtitle && <p className="text-sm text-gray-500 mb-6">{req.sectionSubtitle}</p>}
+                </div>
+              )}
               
               {/* Vertical Stack: Title & Meta */}
               <div className="mb-4">
@@ -272,8 +457,8 @@ export default function WorkflowDocumentUploader({
                   {req.required && <span className="text-red-500 text-[10px] font-black uppercase tracking-wider bg-red-50 px-2 py-0.5 rounded border border-red-100">Required</span>}
                 </h4>
                 <div className="flex items-center gap-3 text-xs font-medium text-gray-500">
-                  <span className="bg-gray-50 px-2 py-1 rounded border border-gray-100">Formats: {req.acceptedTypes.map(t => t.replace('.', '').toUpperCase()).join(', ')}</span>
-                  <span className="bg-gray-50 px-2 py-1 rounded border border-gray-100">Max: {req.maxMb} MB</span>
+                  <span className="bg-gray-50 px-2 py-1 rounded border border-gray-100">Formats: {acceptedTypes.map(t => t.replace('.', '').toUpperCase()).join(', ')}</span>
+                  <span className="bg-gray-50 px-2 py-1 rounded border border-gray-100">Max: {maxMb} MB</span>
                 </div>
               </div>
 
@@ -305,7 +490,7 @@ export default function WorkflowDocumentUploader({
                         type="file" 
                         ref={el => { fileInputRefs.current[req.type] = el; }}
                         className="hidden" 
-                        accept={req.acceptedTypes.join(',')} 
+                        accept={acceptedTypes.join(',')} 
                         onChange={(e) => {
                           if (e.target.files && e.target.files[0]) {
                             handleFileUpload(req.type, e.target.files[0]);
@@ -338,7 +523,7 @@ export default function WorkflowDocumentUploader({
                       type="file" 
                       ref={el => { fileInputRefs.current[req.type] = el; }}
                       className="hidden" 
-                      accept={req.acceptedTypes.join(',')} 
+                      accept={acceptedTypes.join(',')} 
                       onChange={(e) => {
                         if (e.target.files && e.target.files[0]) {
                           handleFileUpload(req.type, e.target.files[0]);
@@ -406,7 +591,12 @@ export default function WorkflowDocumentUploader({
                 <div key={s.req.type} className="flex items-center gap-2 text-sm font-medium text-gray-600">
                   {s.isValid ? <CheckCircle2 size={16} className="text-emerald-500" /> : <Circle size={16} className="text-gray-300" />}
                   <span className={s.isValid ? "text-gray-900" : "text-gray-500"}>{s.req.label}</span>
-                  {s.hasFile ? <span className="text-emerald-600 text-xs font-bold">(Uploaded)</span> : <span className="text-orange-500 text-xs font-bold">(Pending)</span>}
+                  
+                  {s.isInput ? (
+                    s.hasValue ? <span className="text-emerald-600 text-xs font-bold">(Completed)</span> : <span className="text-orange-500 text-xs font-bold">(Pending)</span>
+                  ) : (
+                    s.hasFile ? <span className="text-emerald-600 text-xs font-bold">(Uploaded)</span> : <span className="text-orange-500 text-xs font-bold">(Pending)</span>
+                  )}
                   
                   {s.req.requiresPhone && (
                     <span className="ml-1 text-xs">

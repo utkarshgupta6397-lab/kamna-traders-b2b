@@ -736,6 +736,9 @@ model SolarOrder {
   remarks               String?
   cancellationReason    String?
   floorNumber           Int?
+  customerEmail         String?
+  loanAnnualIncome      Float?
+  loanQuotationAmount   Float?
 
   createdById   String
   approvedById  String?

@@ -202,13 +202,14 @@ export default function SalesmanReportClient({ users }: SalesmanReportClientProp
         top: 'middle',
         itemWidth: 10,
         itemHeight: 10,
-        textStyle: { color: '#6b7280', fontSize: 12 },
         formatter: function(name: string) {
           const item = data.leadSourceBreakdown.find((d: any) => d.source === name);
           const pct = ((item.value / totalSales) * 100).toFixed(0);
           return `{name|${name.replace(/_/g, ' ')}} {pct|${pct}%}`;
         },
-        textStyle: {
+        textStyle: { 
+          color: '#6b7280', 
+          fontSize: 12,
           rich: {
             name: { color: '#4b5563', width: 80 },
             pct: { color: '#9ca3af', fontWeight: 'bold' }

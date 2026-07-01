@@ -6,12 +6,12 @@ import WorkflowEngine, { WorkflowStep } from '../components/WorkflowEngine';
 import VendorPortalAcceptedStep from './VendorPortalAcceptedStep';
 
 export default function DocumentationTabClient({ 
-  orderId, 
+  order, 
   steps, 
   canProgress, 
   canApprove 
 }: { 
-  orderId: string, 
+  order: any, 
   steps: WorkflowStep[],
   canProgress: boolean,
   canApprove: boolean,
@@ -20,7 +20,7 @@ export default function DocumentationTabClient({
 
   return (
     <WorkflowEngine
-      orderId={orderId}
+      orderId={order.id}
       steps={steps}
       theme="green"
       title="Documentation Progress"
@@ -31,31 +31,88 @@ export default function DocumentationTabClient({
         const stepName = selectedStep.metadata?.name || selectedStep.stepKey;
         
         if (stepName === 'Document Upload') {
+          const requirements: any[] = [
+            {
+              type: 'CANCELLED_CHEQUE',
+              label: 'Cancelled Cheque',
+              required: true,
+              maxMb: 2,
+              acceptedTypes: ['.pdf', '.jpg', '.jpeg', '.png', '.heic']
+            },
+            {
+              type: 'ELECTRICITY_BILL',
+              label: 'Electricity Bill',
+              required: true,
+              maxMb: 2,
+              acceptedTypes: ['.pdf', '.jpg', '.jpeg', '.png', '.heic'],
+              requiresPhone: {
+                label: 'Electricity Bill Phone Number',
+                description: "Enter the mobile number associated with the uploaded electricity bill. This may be the customer's existing phone number or a different registered number.",
+                validationRegex: /^[0-9]{10}$/
+              }
+            }
+          ];
+
+          if (order.loanCustomer) {
+            requirements.push(
+              {
+                type: 'EMPTY_TERRACE_PHOTO',
+                label: 'Empty Terrace Photo',
+                required: true,
+                maxMb: 2,
+                acceptedTypes: ['.pdf', '.jpg', '.jpeg', '.png', '.heic'],
+                section: '🏦 Loan Processing Documents',
+                sectionSubtitle: 'Complete the following additional documents required for bank loan processing.'
+              },
+              {
+                type: 'AADHAAR_CARD',
+                label: 'Aadhaar Card',
+                required: true,
+                maxMb: 2,
+                acceptedTypes: ['.pdf', '.jpg', '.jpeg', '.png', '.heic']
+              },
+              {
+                type: 'PAN_CARD',
+                label: 'PAN Card',
+                required: true,
+                maxMb: 2,
+                acceptedTypes: ['.pdf', '.jpg', '.jpeg', '.png', '.heic']
+              },
+              {
+                type: 'CUSTOMER_EMAIL',
+                label: 'Customer Email',
+                required: true,
+                inputType: 'TEXT',
+                placeholder: 'customer@gmail.com',
+                validationRegex: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+              },
+              {
+                type: 'LOAN_ANNUAL_INCOME',
+                label: 'Annual Income',
+                required: true,
+                inputType: 'CURRENCY',
+                placeholder: '₹7,50,000',
+                min: 1,
+                max: 100000000
+              },
+              {
+                type: 'LOAN_QUOTATION_AMOUNT',
+                label: 'Loan Quotation Amount',
+                required: true,
+                inputType: 'CURRENCY',
+                placeholder: '₹3,25,000',
+                min: 1,
+                max: order.totalOrderAmount || 0,
+                maxErrorMsg: 'Loan quotation amount cannot exceed total order value.'
+              }
+            );
+          }
+
           return (
             <div className="w-full">
                <WorkflowDocumentUploader 
-                 orderId={orderId}
-                 requirements={[
-                   {
-                     type: 'CANCELLED_CHEQUE',
-                     label: 'Cancelled Cheque',
-                     required: true,
-                     maxMb: 2,
-                     acceptedTypes: ['.pdf', '.jpg', '.jpeg', '.png', '.heic']
-                   },
-                   {
-                     type: 'ELECTRICITY_BILL',
-                     label: 'Electricity Bill',
-                     required: true,
-                     maxMb: 2,
-                     acceptedTypes: ['.pdf', '.jpg', '.jpeg', '.png', '.heic'],
-                     requiresPhone: {
-                       label: 'Electricity Bill Phone Number',
-                       description: "Enter the mobile number associated with the uploaded electricity bill. This may be the customer's existing phone number or a different registered number.",
-                       validationRegex: /^[0-9]{10}$/
-                     }
-                   }
-                 ]}
+                 order={order}
+                 requirements={requirements}
                  canProgress={canProgress}
                  onComplete={() => updateStep('COMPLETED')}
                />
@@ -67,7 +124,7 @@ export default function DocumentationTabClient({
           return (
             <div className="w-full">
                <WorkflowDocumentUploader 
-                 orderId={orderId}
+                 orderId={order.id}
                  title="DCR Certificate Upload"
                  subtitle="Please upload the official DCR Certificate from the vendor."
                  submitButtonText="Submit DCR Certificate"

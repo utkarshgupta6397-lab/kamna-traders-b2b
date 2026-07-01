@@ -111,9 +111,9 @@ export function ProjectChatDrawer({
   }, [isOpen, fetchMessages]);
 
   const handleSend = async (messageText: string) => {
+    const tempId = 'temp-' + Date.now();
     try {
       // Optimistic append
-      const tempId = 'temp-' + Date.now();
       const optimisticMsg: ChatMessageShape = {
         id: tempId,
         message: messageText,
@@ -139,6 +139,7 @@ export function ProjectChatDrawer({
         setMessages(prev => prev.map(m => m.id === tempId ? data.message : m));
       }
     } catch (e) {
+      toast.error('Failed to send message');
       setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, status: 'failed' } : m)));
     }
   };

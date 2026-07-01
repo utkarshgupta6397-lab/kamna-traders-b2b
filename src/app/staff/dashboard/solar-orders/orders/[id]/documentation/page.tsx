@@ -12,10 +12,14 @@ export default async function DocumentationTab({ params }: { params: { id: strin
     include: { completedBy: { select: { name: true } } }
   });
 
+  const order = await prisma.solarOrder.findUnique({
+    where: { id },
+  });
+
   const canProgress = session?.role === 'ADMIN' || session?.solar_orders_view;
   const canApprove = session?.role === 'ADMIN' || session?.solar_orders_approval;
 
-  if (steps.length === 0) {
+  if (steps.length === 0 || !order) {
     return (
       <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm text-center py-12">
         <h2 className="text-xl font-bold text-[#1A2766] mb-2">Workflow Not Initialized</h2>
@@ -28,7 +32,7 @@ export default async function DocumentationTab({ params }: { params: { id: strin
 
   return (
     <div className="space-y-4">
-      <DocumentationTabClient orderId={id} steps={steps} canProgress={!!canProgress} canApprove={!!canApprove} />
+      <DocumentationTabClient order={order} steps={steps} canProgress={!!canProgress} canApprove={!!canApprove} />
     </div>
   );
 }

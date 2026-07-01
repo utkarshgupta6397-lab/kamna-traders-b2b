@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { fetchOrderWithDetails } from '@/lib/fetchers';
 import { notFound } from 'next/navigation';
 import { getSession } from '@/lib/auth';
 import SolarOrderForm from '../../components/SolarOrderForm';
@@ -7,19 +8,7 @@ export default async function OrderDetailOverview({ params }: { params: Promise<
   const { id } = await params;
   const session = await getSession();
   
-  const order = await prisma.solarOrder.findUnique({
-    where: { id },
-    include: {
-      createdBy: { select: { name: true } },
-      salesman: { select: { name: true } },
-      callingExecutive: { select: { name: true } },
-      approvedBy: { select: { name: true } },
-      subVendor: { select: { name: true } },
-      panels: { orderBy: { orderIndex: 'asc' } },
-      inverters: { orderBy: { orderIndex: 'asc' } },
-      files: { where: { fileCategory: 'SITE_IMAGE', isDeleted: false } },
-    }
-  });
+  const order = await fetchOrderWithDetails(id);
 
   const canMasterEdit = session?.role === 'ADMIN' || !!session?.solar_orders_master_edit;
   let allUsers: any[] = [];

@@ -12,7 +12,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
     const status = searchParams.get('status');
     const systemType = searchParams.get('systemType');
     const search = searchParams.get('search');
@@ -41,8 +41,14 @@ export async function GET(request: Request) {
     
     if (systemSizeMin || systemSizeMax) {
       where.systemSize = {};
-      if (systemSizeMin) where.systemSize.gte = parseFloat(systemSizeMin);
-      if (systemSizeMax) where.systemSize.lte = parseFloat(systemSizeMax);
+      if (systemSizeMin) {
+        const minVal = parseFloat(systemSizeMin);
+        if (!isNaN(minVal)) where.systemSize.gte = minVal;
+      }
+      if (systemSizeMax) {
+        const maxVal = parseFloat(systemSizeMax);
+        if (!isNaN(maxVal)) where.systemSize.lte = maxVal;
+      }
     }
 
     if (search) {
@@ -166,12 +172,77 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Order Date cannot be older than one year' }, { status: 400 });
     }
 
-    if (body.zohoBooksCustomerId) {
-      const validationError = await validateZohoCustomerUniqueness(body.zohoBooksCustomerId);
-      if (validationError) return validationError;
+    if (!body.customerName || typeof body.customerName !== 'string' || body.customerName.trim() === '') {
+      return NextResponse.json({ error: 'Customer Name is required' }, { status: 400 });
+    }
+    if (body.customerName.length > 120) {
+      return NextResponse.json({ error: 'Customer Name cannot exceed 120 characters' }, { status: 400 });
+    }
+    if (!body.phoneNumber || typeof body.phoneNumber !== 'string' || !/^[0-9]{10}$/.test(body.phoneNumber)) {
+      return NextResponse.json({ error: 'Phone Number must be exactly 10 digits' }, { status: 400 });
+    }
+    if (body.remarks && typeof body.remarks === 'string' && body.remarks.length > 1000) {
+      return NextResponse.json({ error: 'Remarks cannot exceed 1000 characters' }, { status: 400 });
+    }
+    if (body.referralName && typeof body.referralName === 'string' && body.referralName.length > 150) {
+      return NextResponse.json({ error: 'Referral Name cannot exceed 150 characters' }, { status: 400 });
+    }
+
+    // Map frontend UI values to backend Enums
+    const leadSourceMap: Record<string, string> = {
+      'Walk-in': 'WALK_IN',
+      'Referral': 'REFERRAL',
+      'WhatsApp': 'ONLINE',
+      'Friends & Family': 'REFERRAL',
+      'Calling Activity': 'OTHER',
+      'Sub-Vendor': 'OTHER',
+      'Other': 'OTHER'
+    };
+    if (leadSourceMap[body.leadSource]) {
+      body.leadSource = leadSourceMap[body.leadSource];
+    }
+
+    // Enum Validations
+    const validLeadSources = ['WALK_IN', 'REFERRAL', 'ONLINE', 'EXHIBITION', 'OTHER'];
+    if (!validLeadSources.includes(body.leadSource)) {
+      return NextResponse.json({ error: `Invalid Lead Source. Must be one of ${validLeadSources.join(', ')}` }, { status: 400 });
+    }
+    const validSystemTypes = ['ON_GRID', 'OFF_GRID', 'HYBRID'];
+    if (!validSystemTypes.includes(body.systemType)) {
+      return NextResponse.json({ error: `Invalid System Type. Must be one of ${validSystemTypes.join(', ')}` }, { status: 400 });
+    }
+
+    // Number Validations
+    const totalAmount = parseFloat(body.totalOrderAmount);
+    if (isNaN(totalAmount) || !isFinite(totalAmount) || totalAmount < 0) {
+      return NextResponse.json({ error: 'Total Order Amount must be a valid positive number' }, { status: 400 });
+    }
+    const sysSize = parseFloat(body.systemSize);
+    if (isNaN(sysSize) || !isFinite(sysSize) || sysSize <= 0) {
+      return NextResponse.json({ error: 'System Size must be a valid positive number' }, { status: 400 });
+    }
+    if (body.loanCustomer) {
+      if (body.loanQuotationAmount) {
+        const loanQ = parseFloat(body.loanQuotationAmount);
+        if (isNaN(loanQ) || !isFinite(loanQ) || loanQ < 0) return NextResponse.json({ error: 'Loan Quotation Amount must be a valid number' }, { status: 400 });
+      }
+      if (body.loanAnnualIncome) {
+        const loanI = parseFloat(body.loanAnnualIncome);
+        if (isNaN(loanI) || !isFinite(loanI) || loanI < 0) return NextResponse.json({ error: 'Loan Annual Income must be a valid number' }, { status: 400 });
+      }
+    }
+    if (body.panels && body.panels.length > 50) {
+      return NextResponse.json({ error: 'Cannot add more than 50 panels' }, { status: 400 });
+    }
+    if (body.inverters && body.inverters.length > 20) {
+      return NextResponse.json({ error: 'Cannot add more than 20 inverters' }, { status: 400 });
     }
 
     const newOrder = await prisma.$transaction(async (tx) => {
+      if (body.zohoBooksCustomerId) {
+        const validationError = await validateZohoCustomerUniqueness(body.zohoBooksCustomerId, undefined, tx);
+        if (validationError) throw validationError; // We will catch this below
+      }
       const now = new Date();
       const currentYear = now.getFullYear().toString().slice(2);
       const currentMonth = (now.getMonth() + 1).toString().padStart(2, '0');
@@ -193,6 +264,8 @@ export async function POST(request: Request) {
           salesmanId: body.salesmanId || null,
           subVendorId: body.subVendorId || null,
           loanCustomer: body.loanCustomer,
+          loanQuotationAmount: body.loanQuotationAmount ? parseFloat(body.loanQuotationAmount) : null,
+          loanAnnualIncome: body.loanAnnualIncome ? parseFloat(body.loanAnnualIncome) : null,
           totalOrderAmount: parseFloat(body.totalOrderAmount),
           systemSize: parseFloat(body.systemSize),
           systemType: body.systemType,
@@ -245,7 +318,16 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ order: newOrder }, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
+    if (error && error.status && error.json) {
+      return error; // Return NextResponse thrown from zoho validation
+    }
+    if (error instanceof SyntaxError) {
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+    }
+    if (error.name === 'PrismaClientValidationError') {
+      return NextResponse.json({ error: 'Invalid data format' }, { status: 400 });
+    }
     console.error('[SolarOrders POST Error]', error);
     return NextResponse.json({ error: 'Failed to create solar order' }, { status: 500 });
   }

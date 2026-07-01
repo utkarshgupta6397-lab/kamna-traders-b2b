@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { fetchOrderWithDetails } from '@/lib/fetchers';
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
@@ -23,13 +24,7 @@ export default async function OrderDetailLayout({
 
   const { id } = await params;
 
-  const order = await prisma.solarOrder.findUnique({
-    where: { id },
-    include: {
-      salesman: { select: { name: true } },
-      callingExecutive: { select: { name: true } },
-    },
-  });
+  const order = await fetchOrderWithDetails(id);
 
   if (!order) {
     redirect('/staff/dashboard/solar-orders/orders');

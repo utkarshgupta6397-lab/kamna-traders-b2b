@@ -22,6 +22,10 @@ export async function GET(request: Request) {
     const search = searchParams.get('search');
     const assignedTo = searchParams.get('assignedTo');
     const installationStage = searchParams.get('installationStage');
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
+
+    const skip = (page - 1) * limit;
 
     const where: any = { 
       status: { notIn: ['CANCELLED', 'REJECTED'] } 
@@ -51,8 +55,78 @@ export async function GET(request: Request) {
       }
     }
 
-    const orders = await prisma.solarOrder.findMany({
+    // 1. Fetch ALL matching orders with MINIMAL fields for KPI aggregation
+    const ordersForKpis = await prisma.solarOrder.findMany({
       where,
+      select: {
+        id: true,
+        workflowSteps: {
+          where: { workflowType: 'INSTALLATION' },
+          select: {
+            stepKey: true,
+            status: true,
+            updatedAt: true,
+            startedAt: true,
+            metadata: true
+          },
+          orderBy: { stepIndex: 'asc' }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const now = new Date().getTime();
+    const columnCounters: Record<string, number> = {};
+    INSTALLATION_STEPS.forEach(step => columnCounters[step] = 0);
+
+    let totalCompleted = 0;
+    let totalInProgress = 0;
+    let totalPendingReview = 0;
+    let totalOverdue = 0;
+
+    const transformedItems = ordersForKpis.map(order => {
+      const state = resolveWorkflowState(order.workflowSteps, 'INSTALLATION');
+
+      if (state.isCompleted) {
+        return null; // Exclude fully completed workflows from the dashboard
+      }
+
+      for (const stepName of INSTALLATION_STEPS) {
+        const step = state.stepsMap[stepName];
+        if (step.status !== 'COMPLETED') {
+           if (step.status === 'PENDING' || step.status === 'IN_PROGRESS' || step.status === 'BLOCKED') {
+             columnCounters[stepName] = (columnCounters[stepName] || 0) + 1;
+           }
+           if (stepName.includes('Review') && step.status === 'PENDING') {
+             totalPendingReview++;
+           }
+        }
+      }
+
+      totalInProgress++;
+      if (state.isOverdue) totalOverdue++;
+
+      return {
+        id: order.id,
+        currentStage: state.currentStage,
+        isOverdue: state.isOverdue
+      };
+    }).filter(Boolean);
+
+    const validItems = transformedItems.filter((item): item is NonNullable<typeof item> => item !== null);
+    
+    let filteredItems = validItems;
+    if (installationStage && installationStage !== 'All') {
+      filteredItems = filteredItems.filter(item => item.currentStage === installationStage);
+    }
+
+    // Paginate the IDs
+    const totalCount = filteredItems.length;
+    const paginatedIds = filteredItems.slice(skip, skip + limit).map(item => item.id);
+
+    // 2. Fetch full data ONLY for the paginated page
+    const fullItemsQuery = await prisma.solarOrder.findMany({
+      where: { id: { in: paginatedIds } },
       select: {
         id: true,
         orderNumber: true,
@@ -80,39 +154,9 @@ export async function GET(request: Request) {
       orderBy: { createdAt: 'desc' }
     });
 
-    const now = new Date().getTime();
-    const columnCounters: Record<string, number> = {};
-    INSTALLATION_STEPS.forEach(step => columnCounters[step] = 0);
-
-    let totalCompleted = 0;
-    let totalInProgress = 0;
-    let totalPendingReview = 0;
-    let totalOverdue = 0;
-
-    const transformedItems = orders.map(order => {
+    const fullItems = fullItemsQuery.map(order => {
       const state = resolveWorkflowState(order.workflowSteps, 'INSTALLATION');
-
-      if (state.isCompleted) {
-        return null; // Exclude fully completed workflows from the dashboard
-      }
-
-      for (const stepName of INSTALLATION_STEPS) {
-        const step = state.stepsMap[stepName];
-        if (step.status !== 'COMPLETED') {
-           if (step.status === 'PENDING' || step.status === 'IN_PROGRESS' || step.status === 'BLOCKED') {
-             columnCounters[stepName] = (columnCounters[stepName] || 0) + 1;
-           }
-           if (stepName.includes('Review') && step.status === 'PENDING') {
-             totalPendingReview++;
-           }
-        }
-      }
-
-      totalInProgress++;
-      if (state.isOverdue) totalOverdue++;
-
       const assignedExecutive = order.callingExecutive?.name || order.salesman?.name || 'Unassigned';
-
       return {
         id: order.id,
         orderNumber: order.orderNumber,
@@ -127,17 +171,14 @@ export async function GET(request: Request) {
         isOverdue: state.isOverdue,
         stepsMap: state.stepsMap
       };
-    }).filter(Boolean);
+    });
 
-    const validItems = transformedItems.filter((item): item is NonNullable<typeof item> => item !== null);
-    
-    let filteredItems = validItems;
-    if (installationStage && installationStage !== 'All') {
-      filteredItems = filteredItems.filter(item => item.currentStage === installationStage);
-    }
+    // Re-sort fullItems to match original filteredItems order
+    const idToIndex = Object.fromEntries(paginatedIds.map((id, index) => [id, index]));
+    fullItems.sort((a, b) => idToIndex[a.id] - idToIndex[b.id]);
 
     const summary = {
-      total: validItems.length,
+      total: totalCount,
       completed: totalCompleted,
       inProgress: totalInProgress,
       pendingReview: totalPendingReview,
@@ -148,8 +189,14 @@ export async function GET(request: Request) {
     return NextResponse.json({
       summary,
       columnCounters,
-      items: filteredItems,
-      allSteps: INSTALLATION_STEPS
+      items: fullItems,
+      allSteps: INSTALLATION_STEPS,
+      pagination: {
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit),
+        page,
+        limit
+      }
     });
 
   } catch (error: any) {

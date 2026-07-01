@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
-export async function validateZohoCustomerUniqueness(zohoBooksCustomerId: string, currentOrderId?: string) {
+export async function validateZohoCustomerUniqueness(zohoBooksCustomerId: string, currentOrderId?: string, tx?: any) {
   const excludedStatuses = ['COMPLETED', 'CANCELLED', 'REJECTED', 'ARCHIVED'];
   
   const whereClause: any = {
@@ -13,7 +13,9 @@ export async function validateZohoCustomerUniqueness(zohoBooksCustomerId: string
     whereClause.id = { not: currentOrderId };
   }
 
-  const duplicate = await prisma.solarOrder.findFirst({
+  const db = tx || prisma;
+
+  const duplicate = await db.solarOrder.findFirst({
     where: whereClause,
     select: { id: true, orderNumber: true, status: true }
   });

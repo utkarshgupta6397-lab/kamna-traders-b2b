@@ -21,6 +21,10 @@ export async function GET(request: Request) {
     const status = searchParams.get('status');
     const assignedTo = searchParams.get('assignedTo');
     const documentationStage = searchParams.get('documentationStage');
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
+
+    const skip = (page - 1) * limit;
 
     const where: any = { 
       status: { notIn: ['CANCELLED', 'REJECTED'] } 
@@ -50,33 +54,24 @@ export async function GET(request: Request) {
       }
     }
 
-    const orders = await prisma.solarOrder.findMany({
+    // 1. Fetch ALL matching orders with MINIMAL fields for KPI aggregation
+    const ordersForKpis = await prisma.solarOrder.findMany({
       where,
       select: {
         id: true,
-        orderNumber: true,
-        customerName: true,
-        orderDate: true,
-        totalOrderAmount: true,
-        status: true,
-        salesman: { select: { name: true } },
-        callingExecutive: { select: { name: true } },
         workflowSteps: {
           where: { workflowType: 'DOCUMENTATION' },
           select: {
             stepKey: true,
             status: true,
-            completedAt: true,
             updatedAt: true,
             startedAt: true,
-            notes: true,
-            completedBy: { select: { name: true } },
             metadata: true
           },
           orderBy: { stepIndex: 'asc' }
         }
       },
-      orderBy: { createdAt: 'desc' } // or whatever default sorting makes sense
+      orderBy: { createdAt: 'desc' }
     });
 
     const now = new Date().getTime();
@@ -88,7 +83,7 @@ export async function GET(request: Request) {
     let totalPendingReview = 0;
     let totalOverdue = 0;
 
-    const transformedItems = orders.map(order => {
+    const transformedItems = ordersForKpis.map(order => {
       const state = resolveWorkflowState(order.workflowSteps, 'DOCUMENTATION');
 
       if (state.isCompleted) {
@@ -121,8 +116,58 @@ export async function GET(request: Request) {
       totalInProgress++;
       if (state.isOverdue) totalOverdue++;
       
-      const assignedExecutive = order.callingExecutive?.name || order.salesman?.name || 'Unassigned';
+      return {
+        id: order.id,
+        currentStage: state.currentStage,
+        isOverdue: state.isOverdue
+      };
+    });
 
+    const validItems = transformedItems.filter((item): item is NonNullable<typeof item> => item !== null);
+
+    // Apply documentationStage filter if present (post-processing since we derived currentStage)
+    let filteredItems = validItems;
+    if (documentationStage && documentationStage !== 'All') {
+      filteredItems = filteredItems.filter(item => item.currentStage === documentationStage);
+    }
+
+    // Paginate the IDs
+    const totalCount = filteredItems.length;
+    const paginatedIds = filteredItems.slice(skip, skip + limit).map(item => item.id);
+
+    // 2. Fetch full data ONLY for the paginated page
+    const fullItemsQuery = await prisma.solarOrder.findMany({
+      where: { id: { in: paginatedIds } },
+      select: {
+        id: true,
+        orderNumber: true,
+        customerName: true,
+        orderDate: true,
+        totalOrderAmount: true,
+        status: true,
+        salesman: { select: { name: true } },
+        callingExecutive: { select: { name: true } },
+        workflowSteps: {
+          where: { workflowType: 'DOCUMENTATION' },
+          select: {
+            stepKey: true,
+            status: true,
+            completedAt: true,
+            updatedAt: true,
+            startedAt: true,
+            notes: true,
+            completedBy: { select: { name: true } },
+            metadata: true
+          },
+          orderBy: { stepIndex: 'asc' }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const fullItems = fullItemsQuery.map(order => {
+      const state = resolveWorkflowState(order.workflowSteps, 'DOCUMENTATION');
+      const assignedExecutive = order.callingExecutive?.name || order.salesman?.name || 'Unassigned';
       return {
         id: order.id,
         orderNumber: order.orderNumber,
@@ -137,28 +182,30 @@ export async function GET(request: Request) {
       };
     });
 
-    const validItems = transformedItems.filter((item): item is NonNullable<typeof item> => item !== null);
-
-    // Apply documentationStage filter if present (post-processing since we derived currentStage)
-    let filteredItems = validItems;
-    if (documentationStage && documentationStage !== 'All') {
-      filteredItems = filteredItems.filter(item => item.currentStage === documentationStage);
-    }
+    // Re-sort fullItems to match original filteredItems order
+    const idToIndex = Object.fromEntries(paginatedIds.map((id, index) => [id, index]));
+    fullItems.sort((a, b) => idToIndex[a.id] - idToIndex[b.id]);
 
     const summary = {
-      total: validItems.length,
+      total: totalCount,
       completed: totalCompleted,
       inProgress: totalInProgress,
       pendingReview: totalPendingReview,
       overdue: totalOverdue,
-      averageCompletionTime: "N/A" // Complex to calculate without a strict completion definition, stub for now
+      averageCompletionTime: "N/A"
     };
 
     return NextResponse.json({
       summary,
       columnCounters,
-      items: filteredItems,
-      allSteps: DOCUMENTATION_STEPS
+      items: fullItems,
+      allSteps: DOCUMENTATION_STEPS,
+      pagination: {
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit),
+        page,
+        limit
+      }
     });
 
   } catch (error: any) {

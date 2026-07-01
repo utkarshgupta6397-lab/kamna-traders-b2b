@@ -1,22 +1,12 @@
 import { prisma } from '@/lib/db';
+import { fetchOrderWithDetails } from '@/lib/fetchers';
 import { notFound } from 'next/navigation';
 import ApprovalImageGallery from './ApprovalImageGallery';
 import ApprovalActions from './ApprovalActions';
 import { User, ShieldAlert, Phone, Zap, IndianRupee, MapPin, Building2, ClipboardList, CheckCircle2 } from 'lucide-react';
 
 export default async function ApprovalReviewScreen({ orderId, canApprove }: { orderId: string, canApprove: boolean }) {
-  const order = await prisma.solarOrder.findUnique({
-    where: { id: orderId },
-    include: {
-      createdBy: { select: { name: true } },
-      salesman: { select: { name: true } },
-      callingExecutive: { select: { name: true } },
-      subVendor: { select: { name: true } },
-      panels: { orderBy: { orderIndex: 'asc' } },
-      inverters: { orderBy: { orderIndex: 'asc' } },
-      files: { where: { fileCategory: 'SITE_IMAGE', isDeleted: false } },
-    }
-  });
+  const order = await fetchOrderWithDetails(orderId);
 
   if (!order) {
     notFound();

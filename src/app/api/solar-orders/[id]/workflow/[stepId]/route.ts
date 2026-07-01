@@ -16,6 +16,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const wifiSsid = rootSsid !== undefined ? rootSsid : metadata?.wifiSsid;
     const wifiPassword = rootPwd !== undefined ? rootPwd : metadata?.wifiPassword;
 
+    if (notes && notes.length > 1000) return NextResponse.json({ error: 'Notes cannot exceed 1000 characters' }, { status: 400 });
+    if (blockedReason && blockedReason.length > 1000) return NextResponse.json({ error: 'Blocked reason cannot exceed 1000 characters' }, { status: 400 });
+    if (metadata && JSON.stringify(metadata).length > 10240) return NextResponse.json({ error: 'Metadata payload exceeds maximum size of 10KB' }, { status: 400 });
+
     const step = await prisma.solarWorkflowStep.findUnique({ where: { id: stepId }, include: { solarOrder: true } });
     if (!step || step.solarOrderId !== id) return NextResponse.json({ error: 'Step not found' }, { status: 404 });
 

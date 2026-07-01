@@ -795,6 +795,9 @@ model SolarOrder {
   @@index([orderNumber])
   @@index([subVendorId])
   @@index([installationDate])
+  @@index([leadSource])
+  @@index([salesmanId])
+  @@index([callingExecutiveId])
 }
 
 model SolarWorkflowStep {
@@ -928,6 +931,7 @@ model SolarOrderPayment {
   solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
 
   @@index([solarOrderId])
+  @@index([paymentDate])
 }
 
 model ProjectChatMessage {

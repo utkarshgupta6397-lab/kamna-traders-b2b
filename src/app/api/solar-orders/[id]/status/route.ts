@@ -13,7 +13,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const body = await request.json();
     const { status, remarks } = body;
 
-    const order = await prisma.solarOrder.findUnique({ where: { id } });
+    const validStatuses = ['PENDING_APPROVAL', 'APPROVED', 'EXECUTION', 'COMPLETED', 'CANCELLED', 'REJECTED', 'ARCHIVED'];
+    if (!validStatuses.includes(status)) {
+      return NextResponse.json({ error: 'Invalid status provided' }, { status: 400 });
+    }
+
+    const order = await prisma.solarOrder.findUnique({ where: { id }, select: { id: true, status: true, orderNumber: true, orderDate: true } });
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
 
     const isAdmin = session.role === 'ADMIN';
@@ -55,13 +60,30 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         const currentMonth = (orderDateObj.getMonth() + 1).toString().padStart(2, '0');
         const yearMonthStr = `${currentYear}${currentMonth}`;
         
-        const seqRecord = await tx.solarOrderSequence.upsert({
+        let seqRecord = await tx.solarOrderSequence.upsert({
           where: { year: yearMonthStr },
           update: { sequence: { increment: 1 } },
           create: { year: yearMonthStr, sequence: 1 },
         });
 
-        newOrderNumber = `OD-${yearMonthStr}-${seqRecord.sequence.toString().padStart(3, '0')}`;
+        const highestOrder = await tx.solarOrder.findFirst({
+          where: { orderNumber: { startsWith: `OD-${yearMonthStr}-` } },
+          orderBy: { orderNumber: 'desc' }
+        });
+
+        let actualSequence = seqRecord.sequence;
+        if (highestOrder) {
+          const maxSeq = parseInt(highestOrder.orderNumber.split('-')[2], 10);
+          if (!isNaN(maxSeq) && maxSeq >= actualSequence) {
+            actualSequence = maxSeq + 1;
+            await tx.solarOrderSequence.update({
+              where: { year: yearMonthStr },
+              data: { sequence: actualSequence }
+            });
+          }
+        }
+
+        newOrderNumber = `OD-${yearMonthStr}-${actualSequence.toString().padStart(3, '0')}`;
       }
 
       const updated = await tx.solarOrder.update({
@@ -126,8 +148,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     });
 
     return NextResponse.json({ success: true, order: result });
-  } catch (error) {
+  } catch (error: any) {
+    if (error instanceof SyntaxError) {
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+    }
+    if (error.name === 'PrismaClientValidationError') {
+      return NextResponse.json({ error: 'Invalid ID or data format' }, { status: 400 });
+    }
     console.error('[SolarOrders Status API Error]', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ error: error?.message || 'Internal Server Error', stack: error?.stack }, { status: 500 });
   }
 }

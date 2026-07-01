@@ -6,7 +6,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params;
     const session = await getSession();
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!session || (!session.solar_orders_view && session.role !== 'ADMIN')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    }
+
+    const orderExists = await prisma.solarOrder.findUnique({ where: { id }, select: { id: true } });
+    if (!orderExists) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
 
     const files = await prisma.solarOrderFile.findMany({
       where: { solarOrderId: id, isDeleted: false },
@@ -27,7 +32,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const { id } = await params;
     const session = await getSession();
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!session || (!session.solar_orders_view && session.role !== 'ADMIN')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    }
+
+    const orderExists = await prisma.solarOrder.findUnique({ where: { id }, select: { id: true } });
+    if (!orderExists) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     
     const body = await request.json();
     const { 
@@ -44,43 +54,54 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Upsert logic based on documentType per order
-    // If it's a DOCUMENTATION category, we might want to replace existing of the same documentType
-    if (documentType) {
-      const existing = await prisma.solarOrderFile.findFirst({
-        where: { solarOrderId: id, documentType, isDeleted: false }
-      });
-
-      if (existing) {
-        const updated = await prisma.solarOrderFile.update({
-          where: { id: existing.id },
-          data: {
-            fileUrl,
-            fileName,
-            fileType,
-            fileSizeBytes,
-            metadata: metadata || existing.metadata,
-          }
-        });
-        return NextResponse.json({ file: updated });
-      }
+    const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
+    if (fileSizeBytes && fileSizeBytes > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: 'File size exceeds 15MB limit' }, { status: 400 });
     }
 
-    const created = await prisma.solarOrderFile.create({
-      data: {
-        solarOrderId: id,
-        documentType,
-        fileCategory,
-        fileName,
-        fileUrl,
-        fileType,
-        fileSizeBytes,
-        metadata,
-        uploadedById: session.userId,
+    const allowedMimeTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/heic', 'image/webp'];
+    if (!allowedMimeTypes.includes(fileType)) {
+      return NextResponse.json({ error: `Invalid file type. Allowed: ${allowedMimeTypes.join(', ')}` }, { status: 400 });
+    }
+
+    // Upsert logic based on documentType per order
+    // If it's a DOCUMENTATION category, we might want to replace existing of the same documentType
+    const result = await prisma.$transaction(async (tx) => {
+      if (documentType) {
+        const existing = await tx.solarOrderFile.findFirst({
+          where: { solarOrderId: id, documentType, isDeleted: false }
+        });
+
+        if (existing) {
+          return await tx.solarOrderFile.update({
+            where: { id: existing.id },
+            data: {
+              fileUrl,
+              fileName,
+              fileType,
+              fileSizeBytes,
+              metadata: metadata || existing.metadata,
+            }
+          });
+        }
       }
+
+      return await tx.solarOrderFile.create({
+        data: {
+          solarOrderId: id,
+          documentType,
+          fileCategory,
+          fileName,
+          fileUrl,
+          fileType,
+          fileSizeBytes,
+          metadata,
+          uploadedById: session.userId,
+        }
+      });
     });
     
-    return NextResponse.json({ file: created });
+    return NextResponse.json({ file: result });
 
   } catch (error) {
     console.error('Failed to create/update file:', error);
@@ -92,7 +113,9 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   try {
     const { id } = await params;
     const session = await getSession();
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!session || (!session.solar_orders_view && session.role !== 'ADMIN')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    }
     
     const { searchParams } = new URL(request.url);
     const fileId = searchParams.get('fileId');

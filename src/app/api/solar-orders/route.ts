@@ -95,7 +95,7 @@ export async function GET(request: Request) {
           callingExecutive: { select: { name: true } },
           subVendor: { select: { name: true } },
           payments: { select: { amount: true } },
-          workflowSteps: { select: { status: true } }
+          workflowSteps: { select: { id: true, stepKey: true, status: true, updatedAt: true, startedAt: true, completedAt: true } }
         }
       }),
       prisma.solarOrder.count({ where }),

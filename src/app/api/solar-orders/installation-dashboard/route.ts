@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { DOCUMENTATION_STEPS, WORKFLOW_CONFIG } from '@/lib/solar-workflow-config';
+import { INSTALLATION_STEPS, WORKFLOW_CONFIG } from '@/lib/solar-workflow-config';
 
 export async function GET(request: Request) {
   try {
@@ -10,17 +10,18 @@ export async function GET(request: Request) {
 
     const isAdmin = session.role === 'ADMIN';
     const isStaff = session.role === 'STAFF';
-    const canViewDocQueue = isAdmin || isStaff || !!session.solar_documentation_view;
+    // User mentioned "Use the same permissions as Documentation."
+    // And from layout: const canViewInstallQueue = isAdmin || !!session.solar_installation_view;
+    const canViewInstallQueue = isAdmin || isStaff || !!session.solar_documentation_view || !!session.solar_installation_view;
 
-    if (!canViewDocQueue) {
+    if (!canViewInstallQueue) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
-    const status = searchParams.get('status');
     const assignedTo = searchParams.get('assignedTo');
-    const documentationStage = searchParams.get('documentationStage');
+    const installationStage = searchParams.get('installationStage');
 
     const where: any = { 
       status: { notIn: ['CANCELLED', 'REJECTED'] } 
@@ -61,7 +62,7 @@ export async function GET(request: Request) {
         salesman: { select: { name: true } },
         callingExecutive: { select: { name: true } },
         workflowSteps: {
-          where: { workflowType: 'DOCUMENTATION' },
+          where: { workflowType: 'INSTALLATION' },
           select: {
             stepKey: true,
             status: true,
@@ -75,12 +76,12 @@ export async function GET(request: Request) {
           orderBy: { stepIndex: 'asc' }
         }
       },
-      orderBy: { createdAt: 'desc' } // or whatever default sorting makes sense
+      orderBy: { createdAt: 'desc' }
     });
 
     const now = new Date().getTime();
     const columnCounters: Record<string, number> = {};
-    DOCUMENTATION_STEPS.forEach(step => columnCounters[step] = 0);
+    INSTALLATION_STEPS.forEach(step => columnCounters[step] = 0);
 
     let totalCompleted = 0;
     let totalInProgress = 0;
@@ -93,11 +94,11 @@ export async function GET(request: Request) {
       let isOverdue = false;
       const stepsMap: Record<string, any> = {};
 
-      const totalSteps = DOCUMENTATION_STEPS.length;
+      const totalSteps = INSTALLATION_STEPS.length;
       let orderIsCompleted = true;
 
-      // Ensure steps correspond exactly to DOCUMENTATION_STEPS order
-      for (const stepName of DOCUMENTATION_STEPS) {
+      // Ensure steps correspond exactly to INSTALLATION_STEPS order
+      for (const stepName of INSTALLATION_STEPS) {
         const step = order.workflowSteps.find(s => (s.metadata as any)?.name === stepName);
         if (!step) {
           stepsMap[stepName] = { status: 'PENDING' };
@@ -160,18 +161,19 @@ export async function GET(request: Request) {
         totalOrderAmount: order.totalOrderAmount,
         assignedExecutive,
         workflowPercentage,
+        completedSteps,
+        totalSteps,
         currentStage,
         isOverdue,
         stepsMap
       };
-    });
+    }).filter(Boolean);
 
-    const validItems = mapped.filter((item): item is NonNullable<typeof item> => item !== null);
-
-    // Apply documentationStage filter if present (post-processing since we derived currentStage)
+    const validItems = transformedItems.filter((item): item is NonNullable<typeof item> => item !== null);
+    
     let filteredItems = validItems;
-    if (documentationStage && documentationStage !== 'All') {
-      filteredItems = filteredItems.filter(item => item.currentStage === documentationStage);
+    if (installationStage && installationStage !== 'All') {
+      filteredItems = filteredItems.filter(item => item.currentStage === installationStage);
     }
 
     const summary = {
@@ -180,18 +182,18 @@ export async function GET(request: Request) {
       inProgress: totalInProgress,
       pendingReview: totalPendingReview,
       overdue: totalOverdue,
-      averageCompletionTime: "N/A" // Complex to calculate without a strict completion definition, stub for now
+      averageCompletionTime: "N/A"
     };
 
     return NextResponse.json({
       summary,
       columnCounters,
       items: filteredItems,
-      allSteps: DOCUMENTATION_STEPS
+      allSteps: INSTALLATION_STEPS
     });
 
   } catch (error: any) {
-    console.error('Error fetching documentation dashboard:', error);
-    return NextResponse.json({ error: error.message || 'Failed to fetch documentation data' }, { status: 500 });
+    console.error('Error fetching installation dashboard:', error);
+    return NextResponse.json({ error: error.message || 'Failed to fetch installation data' }, { status: 500 });
   }
 }

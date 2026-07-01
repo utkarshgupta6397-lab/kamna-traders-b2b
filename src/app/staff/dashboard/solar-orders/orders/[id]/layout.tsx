@@ -109,7 +109,7 @@ export default async function OrderDetailLayout({
                 </div>
                 <div className="flex items-center gap-1.5">
                   <CalendarDays size={14} className="text-gray-400" />
-                  {new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {new Date(order.orderDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </div>
               </div>
             </div>

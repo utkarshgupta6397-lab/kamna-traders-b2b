@@ -335,7 +335,7 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                     <td className={`px-2.5 py-1 sticky left-[30px] z-10 border-r border-gray-100 transition-colors ${frozen}`}>
                       <span className="block text-[11px] font-bold text-gray-900 truncate w-[180px]" title={item.customerName}>{item.customerName}</span>
                       <span className="block text-[9.5px] font-medium text-gray-500 truncate w-[180px] mt-0.5">
-                        <span className="text-[#1A2766]">{item.orderNumber}</span> · {item.assignedExecutive}
+                        <span className="text-[#1A2766]">{item.orderNumber}</span> · {item.orderDate ? new Date(item.orderDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) + ' · ' : ''}{item.assignedExecutive}
                       </span>
                     </td>
 

@@ -162,6 +162,9 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
         return { bg: 'bg-green-50', text: 'text-green-700', label: 'WHATSAPP' };
       case 'REFERRAL': 
         return { bg: 'bg-purple-50', text: 'text-purple-700', label: 'REFERRAL' };
+      case 'FRIENDS & FAMILY':
+      case 'FRIENDS_AND_FAMILY':
+        return { bg: 'bg-pink-50', text: 'text-pink-700', label: 'FRIENDS & FAMILY' };
       case 'CALLING_ACTIVITY': 
       case 'CALLING ACTIVITY': 
         return { bg: 'bg-orange-50', text: 'text-orange-700', label: 'CALLING' };
@@ -372,7 +375,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
           <div className="space-y-1.5">
             <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Lead Source</label>
             <div className="flex flex-wrap gap-1.5">
-              {['Walk-in', 'WhatsApp', 'Referral', 'Calling Activity', 'Sub-Vendor', 'Other'].map(src => (
+              {['Walk-in', 'WhatsApp', 'Referral', 'Friends & Family', 'Calling Activity', 'Sub-Vendor', 'Other'].map(src => (
                 <button
                   key={src}
                   onClick={() => toggleLeadSource(src)}
@@ -497,7 +500,9 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                           </div>
                           <div>
                             <div className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">{order.customerName}</div>
-                            <div className="text-[12px] font-medium text-gray-500 mt-0.5">{order.orderNumber}</div>
+                            <div className="text-[12px] font-medium text-gray-500 mt-0.5">
+                              {order.orderNumber} • {new Date(order.orderDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </div>
                           </div>
                         </div>
                       </td>

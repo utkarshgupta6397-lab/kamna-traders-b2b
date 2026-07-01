@@ -3,6 +3,7 @@
 import { ShieldCheck, ArrowRight, Loader2, Lock } from 'lucide-react';
 import WorkflowDocumentUploader from './WorkflowDocumentUploader';
 import WorkflowEngine, { WorkflowStep } from '../components/WorkflowEngine';
+import VendorPortalAcceptedStep from './VendorPortalAcceptedStep';
 
 export default function DocumentationTabClient({ 
   orderId, 
@@ -83,6 +84,16 @@ export default function DocumentationTabClient({
                  onComplete={() => updateStep('COMPLETED', 'DCR Certificate Uploaded')}
                />
             </div>
+          );
+        }
+
+        if (stepName === 'Vendor Portal Accepted' && selectedStep.status !== 'COMPLETED') {
+          return (
+            <VendorPortalAcceptedStep 
+              canProgress={canProgress}
+              onComplete={updateStep}
+              loading={loadingStep === selectedStep.id}
+            />
           );
         }
 

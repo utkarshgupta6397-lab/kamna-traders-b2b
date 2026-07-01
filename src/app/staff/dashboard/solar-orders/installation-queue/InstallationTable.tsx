@@ -191,9 +191,9 @@ export default function InstallationTable({ items, allSteps, isLoading }: Instal
                     </td>
 
                     <td className={`px-2.5 py-2 sticky left-[30px] z-10 border-r border-gray-100 transition-colors align-middle ${frozen}`}>
-                      <span className="block text-[11px] font-bold text-gray-900 truncate w-[180px]" title={item.customerName}>{item.customerName}</span>
-                      <span className="block text-[9.5px] font-medium text-gray-500 truncate w-[180px] mt-0.5">
-                        <span className="text-teal-700 font-bold">{item.orderNumber}</span> · {item.assignedExecutive}
+                      <span className="block text-[11.5px] font-bold text-gray-900 truncate w-[200px]" title={item.customerName}>{item.customerName}</span>
+                      <span className="block text-[10px] font-medium text-gray-500 truncate w-[200px] mt-1">
+                        <span className="text-teal-700 font-bold">{item.orderNumber}</span> · {item.orderDate ? new Date(item.orderDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) + ' · ' : ''}{item.assignedExecutive}
                       </span>
                     </td>
 

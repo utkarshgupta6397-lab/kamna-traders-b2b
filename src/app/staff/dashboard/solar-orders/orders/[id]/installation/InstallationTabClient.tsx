@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Loader2, Check } from 'lucide-react';
 import WorkflowEngine, { WorkflowStep } from '../components/WorkflowEngine';
+import InstallationChecklistForm from './InstallationChecklistForm';
 
 export default function InstallationTabClient({ 
   orderId, 
@@ -30,6 +31,18 @@ export default function InstallationTabClient({
       canApprove={false}
       renderStageAction={(selectedStep, updateStep, remarks, setRemarks, loadingStep) => {
         const stepName = selectedStep.metadata?.name || selectedStep.stepKey;
+
+        if (stepName === 'Installation Checklist') {
+          return (
+            <InstallationChecklistForm
+              orderId={orderId}
+              step={selectedStep}
+              updateStep={updateStep}
+              canEdit={canEdit}
+              loadingStep={loadingStep}
+            />
+          );
+        }
 
         // Generic stage handling for all dynamic steps
         return (

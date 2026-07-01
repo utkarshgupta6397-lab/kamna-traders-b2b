@@ -44,6 +44,7 @@ model User {
   solar_orders_create         Boolean @default(false)
   solar_orders_approval       Boolean @default(false)
   solar_orders_docs_progress  Boolean @default(false)
+  solar_orders_edit_order_date Boolean @default(false)
 
   sessions            ActiveSession[]
   carts               Cart[]
@@ -711,6 +712,7 @@ model SolarOrder {
   id                    String   @id @default(cuid())
   orderNumber           String   @unique
   orderDate             DateTime @default(now())
+  applicationNumber     String?  @unique
   status                String   @default("DRAFT") // DRAFT, PENDING_APPROVAL, APPROVED, EXECUTION, COMPLETED, CANCELLED
   customerName          String
   phoneNumber           String

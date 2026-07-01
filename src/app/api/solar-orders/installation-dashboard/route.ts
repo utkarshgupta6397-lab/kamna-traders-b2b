@@ -31,7 +31,8 @@ export async function GET(request: Request) {
       where.OR = [
         { orderNumber: { contains: search, mode: 'insensitive' } },
         { customerName: { contains: search, mode: 'insensitive' } },
-        { phoneNumber: { contains: search, mode: 'insensitive' } }
+        { phoneNumber: { contains: search, mode: 'insensitive' } },
+        { applicationNumber: { contains: search, mode: 'insensitive' } }
       ];
     }
     

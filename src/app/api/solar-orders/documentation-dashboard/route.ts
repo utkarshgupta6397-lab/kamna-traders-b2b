@@ -30,7 +30,8 @@ export async function GET(request: Request) {
       where.OR = [
         { orderNumber: { contains: search, mode: 'insensitive' } },
         { customerName: { contains: search, mode: 'insensitive' } },
-        { phoneNumber: { contains: search, mode: 'insensitive' } }
+        { phoneNumber: { contains: search, mode: 'insensitive' } },
+        { applicationNumber: { contains: search, mode: 'insensitive' } }
       ];
     }
     
@@ -166,7 +167,7 @@ export async function GET(request: Request) {
       };
     });
 
-    const validItems = mapped.filter((item): item is NonNullable<typeof item> => item !== null);
+    const validItems = transformedItems.filter((item): item is NonNullable<typeof item> => item !== null);
 
     // Apply documentationStage filter if present (post-processing since we derived currentStage)
     let filteredItems = validItems;

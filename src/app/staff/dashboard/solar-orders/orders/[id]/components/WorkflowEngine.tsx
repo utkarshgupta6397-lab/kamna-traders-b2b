@@ -418,6 +418,11 @@ export default function WorkflowEngine({
                      Serial: {selectedStep.metadata.inverterNumber}
                    </div>
                 )}
+                {selectedStep.metadata?.applicationNumber && (
+                   <div className="mt-2 text-sm text-gray-600 font-mono font-bold bg-white p-2 rounded border border-gray-200">
+                     App Number: {selectedStep.metadata.applicationNumber}
+                   </div>
+                )}
               </div>
             </div>
           </div>

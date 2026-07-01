@@ -1,9 +1,12 @@
 import { prisma } from '@/lib/db';
 import { notFound } from 'next/navigation';
 import { User, Users, Briefcase, Zap, Building2, MapPin, Hash, MessageSquare, Link as LinkIcon, BadgeIndianRupee, Phone } from 'lucide-react';
+import OrderDateEditor from './OrderDateEditor';
+import { getSession } from '@/lib/auth';
 
 export default async function OrderDetailOverview({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const session = await getSession();
   
   const order = await prisma.solarOrder.findUnique({
     where: { id },
@@ -200,6 +203,14 @@ export default async function OrderDetailOverview({ params }: { params: Promise<
               <span className="font-medium text-gray-900">{order.createdBy?.name || 'System'}</span>
             </div>
             <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-500">Order Date</span>
+              <OrderDateEditor 
+                orderId={order.id} 
+                currentDate={order.orderDate.toISOString()} 
+                canEdit={(order.status === 'DRAFT' || order.status === 'PENDING_APPROVAL') && (session?.role === 'ADMIN' || !!session?.solar_orders_edit_order_date)}
+              />
+            </div>
+            <div className="flex justify-between items-center text-sm pt-2">
               <span className="text-gray-500">Created At</span>
               <span className="font-medium text-gray-900">
                 {new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}

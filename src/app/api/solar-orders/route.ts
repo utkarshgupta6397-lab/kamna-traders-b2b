@@ -49,6 +49,7 @@ export async function GET(request: Request) {
         { orderNumber: { contains: search, mode: 'insensitive' } },
         { customerName: { contains: search, mode: 'insensitive' } },
         { phoneNumber: { contains: search, mode: 'insensitive' } },
+        { applicationNumber: { contains: search, mode: 'insensitive' } },
       ];
     }
     
@@ -137,6 +138,29 @@ export async function POST(request: Request) {
 
     const body = await request.json();
 
+    if (!body.orderDate) {
+      return NextResponse.json({ error: 'Order Date is required' }, { status: 400 });
+    }
+    const orderDateObj = new Date(body.orderDate);
+    if (isNaN(orderDateObj.getTime())) {
+      return NextResponse.json({ error: 'Invalid Order Date format' }, { status: 400 });
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const oneYearAgo = new Date(today);
+    oneYearAgo.setDate(oneYearAgo.getDate() - 365);
+    
+    // Normalize time to compare only dates
+    const dateToCheck = new Date(orderDateObj);
+    dateToCheck.setHours(0,0,0,0);
+
+    if (dateToCheck > today) {
+      return NextResponse.json({ error: 'Order Date cannot be in the future' }, { status: 400 });
+    }
+    if (dateToCheck < oneYearAgo) {
+      return NextResponse.json({ error: 'Order Date cannot be older than one year' }, { status: 400 });
+    }
+
     const newOrder = await prisma.$transaction(async (tx) => {
       // 1. Generate new sequence based on YYMM
       const now = new Date();
@@ -155,6 +179,7 @@ export async function POST(request: Request) {
       const newOrder = await tx.solarOrder.create({
         data: {
           orderNumber,
+          orderDate: orderDateObj,
           customerName: body.customerName,
           phoneNumber: body.phoneNumber,
           whatsappEnabled: body.whatsappEnabled,

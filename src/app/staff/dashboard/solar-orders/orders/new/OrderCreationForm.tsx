@@ -44,6 +44,7 @@ export default function OrderCreationForm() {
   // Form State
   const [customerName, setCustomerName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
   const [leadSource, setLeadSource] = useState('Walk-in');
   
   // Conditional Lead Source Fields
@@ -183,6 +184,22 @@ export default function OrderCreationForm() {
     }
     if (!phoneNumber || phoneNumber.length !== 10 || !/^\d{10}$/.test(phoneNumber)) {
       toast.error('Please enter a valid 10-digit mobile number');
+      return false;
+    }
+    if (!orderDate) {
+      toast.error('Order Date is required');
+      return false;
+    }
+    const today = new Date().toISOString().split('T')[0];
+    const maxPastDate = new Date();
+    maxPastDate.setDate(maxPastDate.getDate() - 365);
+    const minDateStr = maxPastDate.toISOString().split('T')[0];
+    if (orderDate > today) {
+      toast.error('Order date cannot be in the future.');
+      return false;
+    }
+    if (orderDate < minDateStr) {
+      toast.error('Order date cannot be older than one year.');
       return false;
     }
     if (!address.trim()) {
@@ -371,6 +388,7 @@ export default function OrderCreationForm() {
           zohoBooksCustomerId: selectedZohoCustomer?.id || null,
           zohoBooksCustomerName: selectedZohoCustomer?.name || null,
           floorNumber,
+          orderDate,
           panels,
           inverters,
           siteImages: uploadedImages
@@ -412,9 +430,9 @@ export default function OrderCreationForm() {
   const isAmountValid = totalOrderAmount && /^\d+$/.test(totalOrderAmount);
   const isAssignmentValid = leadSource === 'Sub-Vendor' ? !!subVendorId : !!salesmanId;
 
-  const totalSteps = 6;
+  const totalSteps = 7;
   const completedSteps = [
-    isNameValid && isPhoneValid,
+    isNameValid && isPhoneValid && !!orderDate,
     isAddressValid && isCityValid,
     isLeadSourceValid,
     isSystemValid,
@@ -472,6 +490,18 @@ export default function OrderCreationForm() {
                 </div>
 
                 <div>
+                  <label className={labelClasses}>Order Date <RequiredMark/></label>
+                  <input
+                    type="date"
+                    value={orderDate}
+                    max={new Date().toISOString().split('T')[0]}
+                    min={new Date(new Date().setDate(new Date().getDate() - 365)).toISOString().split('T')[0]}
+                    onChange={e => setOrderDate(e.target.value)}
+                    className={inputClasses}
+                  />
+                </div>
+
+                <div>
                   <label className={labelClasses}>Lead Source <RequiredMark/></label>
                   <select
                     value={leadSource}
@@ -481,6 +511,7 @@ export default function OrderCreationForm() {
                     <option value="Walk-in">Walk-in</option>
                     <option value="WhatsApp">WhatsApp</option>
                     <option value="Referral">Referral</option>
+                    <option value="Friends & Family">Friends & Family</option>
                     <option value="Calling Activity">Calling Activity</option>
                     <option value="Sub-Vendor">Sub-Vendor</option>
                     <option value="Other">Other</option>

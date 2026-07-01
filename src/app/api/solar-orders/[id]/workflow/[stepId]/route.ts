@@ -17,6 +17,32 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const isAdmin = session.role === 'ADMIN';
 
+    const stepNameForValidation = (step.metadata as any)?.name || step.stepKey;
+    if (stepNameForValidation === 'Vendor Portal Accepted' && status === 'COMPLETED') {
+      const appNumber = metadata?.applicationNumber;
+      if (!appNumber || typeof appNumber !== 'string') {
+        return NextResponse.json({ error: 'Application Number is required.' }, { status: 400 });
+      }
+      const cleaned = appNumber.trim().toUpperCase();
+      if (!/^[A-Z0-9-]{10,40}$/.test(cleaned)) {
+        return NextResponse.json({ error: 'Invalid Application Number format. Use 10-40 characters (A-Z, 0-9, Hyphens).' }, { status: 400 });
+      }
+      
+      const existing = await prisma.solarOrder.findFirst({
+        where: {
+          applicationNumber: cleaned,
+          id: { not: id }
+        },
+        select: { orderNumber: true }
+      });
+      if (existing) {
+        return NextResponse.json({ error: `This Application Number already exists for Order ${existing.orderNumber}.` }, { status: 400 });
+      }
+      
+      // Update metadata to cleaned value
+      metadata.applicationNumber = cleaned;
+    }
+
     // Sequential Workflow Protection
     // Ensure that the step being updated is not a FUTURE step.
     const allSteps = await prisma.solarWorkflowStep.findMany({
@@ -90,6 +116,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       let logDesc = `Updated workflow step '${stepName}'`;
       if (status === 'COMPLETED') {
         logDesc = `Completed workflow step '${stepName}'`;
+        
+        const meta = newMetadata as any;
+        if (stepName === 'Vendor Portal Accepted' && meta?.applicationNumber) {
+           logDesc = `Completed workflow step '${stepName}' with Application Number: ${meta.applicationNumber}`;
+           await tx.solarOrder.update({
+             where: { id },
+             data: { applicationNumber: meta.applicationNumber }
+           });
+        }
       }
       else if (status === 'BLOCKED') logDesc = `Blocked workflow step '${stepName}' - ${blockedReason}`;
 

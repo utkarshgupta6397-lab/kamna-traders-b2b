@@ -81,7 +81,7 @@ export async function PATCH(
             field: 'fileChargePaid',
             oldValue: previousValue,
             newValue: newValue,
-            fileChargeAmount: fileChargeAmount
+            fileChargeAmount: fileChargeAmount ?? null
           }
         }
       });

@@ -817,8 +817,10 @@ model SolarWorkflowStep {
   startedAt     DateTime?
   metadata      Json?
   
-  wifiSsid      String?
-  wifiPassword  String?
+  wifiSsid                 String?
+  wifiPassword             String?
+  wifiNotApplicableReason  String?
+  wifiNotApplicableNotes   String?
   
   editCount     Int       @default(0)
   lastEditedAt  DateTime?

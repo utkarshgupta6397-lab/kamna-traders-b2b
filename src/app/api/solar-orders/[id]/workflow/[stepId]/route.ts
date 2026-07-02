@@ -12,9 +12,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const { id, stepId } = await params;
     const body = await request.json();
-    const { status, notes, blockedReason, metadata, isEditMode, wifiSsid: rootSsid, wifiPassword: rootPwd } = body;
+    const { status, notes, blockedReason, metadata, isEditMode, wifiSsid: rootSsid, wifiPassword: rootPwd, wifiNotApplicableReason: rootReason, wifiNotApplicableNotes: rootNotes } = body;
     const wifiSsid = rootSsid !== undefined ? rootSsid : metadata?.wifiSsid;
     const wifiPassword = rootPwd !== undefined ? rootPwd : metadata?.wifiPassword;
+    const wifiNotApplicableReason = rootReason !== undefined ? rootReason : metadata?.wifiNotApplicableReason;
+    const wifiNotApplicableNotes = rootNotes !== undefined ? rootNotes : metadata?.wifiNotApplicableNotes;
 
     if (notes && notes.length > 1000) return NextResponse.json({ error: 'Notes cannot exceed 1000 characters' }, { status: 400 });
     if (blockedReason && blockedReason.length > 1000) return NextResponse.json({ error: 'Blocked reason cannot exceed 1000 characters' }, { status: 400 });
@@ -65,12 +67,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     if (stepNameForValidation === 'System WiFi Setup Done') {
-      if (status === 'COMPLETED' || isEditMode) {
+      if (status === 'COMPLETED' || (isEditMode && status !== 'NOT_APPLICABLE')) {
         if (!wifiSsid || typeof wifiSsid !== 'string' || wifiSsid.trim() === '') {
           return NextResponse.json({ error: 'WiFi Name (SSID) is required.' }, { status: 400 });
         }
         if (!wifiPassword || typeof wifiPassword !== 'string' || wifiPassword.trim() === '') {
           return NextResponse.json({ error: 'WiFi Password is required.' }, { status: 400 });
+        }
+      } else if (status === 'NOT_APPLICABLE') {
+        if (!wifiNotApplicableReason || typeof wifiNotApplicableReason !== 'string' || wifiNotApplicableReason.trim() === '') {
+          return NextResponse.json({ error: 'Reason for marking WiFi setup as not applicable is required.' }, { status: 400 });
+        }
+        if (wifiNotApplicableReason === 'Other' && (!wifiNotApplicableNotes || typeof wifiNotApplicableNotes !== 'string' || wifiNotApplicableNotes.trim() === '')) {
+          return NextResponse.json({ error: 'Reason description is required when selecting "Other".' }, { status: 400 });
         }
       }
     }
@@ -81,15 +90,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       where: { solarOrderId: id, workflowType: step.workflowType },
       orderBy: { stepIndex: 'asc' }
     });
-    const firstPending = allSteps.find(s => s.status !== 'COMPLETED' && s.status !== 'SKIPPED');
+    const firstPending = allSteps.find(s => s.status !== 'COMPLETED' && s.status !== 'SKIPPED' && s.status !== 'NOT_APPLICABLE');
     
     // Master Edit Validation
     if (isEditMode) {
       if (!session.workflow_edits && !isAdmin) {
         return NextResponse.json({ error: 'Manage Workflow Edits permission required' }, { status: 403 });
       }
-      if (step.status !== 'COMPLETED') {
-        return NextResponse.json({ error: 'Can only edit completed stages in edit mode.' }, { status: 400 });
+      if (step.status !== 'COMPLETED' && step.status !== 'NOT_APPLICABLE') {
+        return NextResponse.json({ error: 'Can only edit completed/not applicable stages in edit mode.' }, { status: 400 });
       }
     } else {
       // Regular sequential lock
@@ -119,15 +128,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
 
     const result = await prisma.$transaction(async (tx) => {
-      // If marking as COMPLETED via normal flow
+      // If marking as COMPLETED or NOT_APPLICABLE via normal flow
       let completedData = {};
-      if (!isEditMode && status === 'COMPLETED' && step.status !== 'COMPLETED') {
+      if (!isEditMode && (status === 'COMPLETED' || status === 'NOT_APPLICABLE') && (step.status !== 'COMPLETED' && step.status !== 'NOT_APPLICABLE')) {
         completedData = {
           completedById: session.userId,
           completedAt: new Date(),
           blockedReason: null, // Clear blocked reason if completed
         };
-      } else if (status && status !== 'COMPLETED') {
+      } else if (status && status !== 'COMPLETED' && status !== 'NOT_APPLICABLE') {
         // If changing to something else, clear completed data
         completedData = {
           completedById: null,
@@ -161,6 +170,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           metadata: newMetadata || undefined,
           ...(wifiSsid !== undefined && { wifiSsid }),
           ...(wifiPassword !== undefined && { wifiPassword }),
+          ...(wifiNotApplicableReason !== undefined && { wifiNotApplicableReason }),
+          ...(wifiNotApplicableNotes !== undefined && { wifiNotApplicableNotes }),
         }
       });
 
@@ -234,6 +245,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                loanApplicationNumber: meta.loanApplicationNumber || null
              }
            });
+        }
+      }
+      else if (status === 'NOT_APPLICABLE') {
+        logDesc = `Marked workflow step '${stepName}' as Not Applicable.`;
+        if (stepName === 'System WiFi Setup Done') {
+          logDesc = `Marked WiFi Setup as Not Applicable.\nReason: ${wifiNotApplicableReason}`;
+          if (wifiNotApplicableReason === 'Other' && wifiNotApplicableNotes) {
+            logDesc += ` - ${wifiNotApplicableNotes}`;
+          }
         }
       }
       else if (status === 'BLOCKED') logDesc = `Blocked workflow step '${stepName}' - ${blockedReason}`;

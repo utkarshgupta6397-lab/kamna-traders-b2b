@@ -90,7 +90,7 @@ export function resolveWorkflowState(steps: any[], workflowType: 'DOCUMENTATION'
         id: step.id
       };
 
-      if (step.status === 'COMPLETED') {
+      if (step.status === 'COMPLETED' || step.status === 'NOT_APPLICABLE') {
         completedSteps++;
         currentStage = allSteps[i + 1] || 'Completed';
       } else {

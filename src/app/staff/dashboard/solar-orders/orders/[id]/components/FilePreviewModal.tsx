@@ -1,16 +1,17 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, ZoomIn, ZoomOut, RotateCw, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, RotateCw, Download, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
 
 interface FilePreviewModalProps {
   files: any[];
   initialIndex: number;
   onClose: () => void;
   canDownload: boolean;
+  onReplace?: () => void;
 }
 
-export default function FilePreviewModal({ files, initialIndex, onClose, canDownload }: FilePreviewModalProps) {
+export default function FilePreviewModal({ files, initialIndex, onClose, canDownload, onReplace }: FilePreviewModalProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
@@ -82,6 +83,18 @@ export default function FilePreviewModal({ files, initialIndex, onClose, canDown
             <a href={file.fileUrl} download className="p-2 hover:bg-white/10 rounded-full transition-colors" title="Download">
               <Download size={20} />
             </a>
+          )}
+          {onReplace && (
+            <button 
+              onClick={() => {
+                onClose();
+                onReplace();
+              }} 
+              className="p-2 hover:bg-white/10 rounded-full transition-colors text-blue-400" 
+              title="Replace File"
+            >
+              <Upload size={20} />
+            </button>
           )}
           <button onClick={onClose} className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-500 rounded-full transition-colors ml-4" title="Close">
             <X size={20} />

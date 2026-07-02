@@ -67,13 +67,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // Upsert logic based on documentType per order
     // If it's a DOCUMENTATION category, we might want to replace existing of the same documentType
     const result = await prisma.$transaction(async (tx) => {
+      let savedFile;
+      let isReplace = false;
+
       if (documentType) {
         const existing = await tx.solarOrderFile.findFirst({
           where: { solarOrderId: id, documentType, isDeleted: false }
         });
 
         if (existing) {
-          return await tx.solarOrderFile.update({
+          isReplace = true;
+          savedFile = await tx.solarOrderFile.update({
             where: { id: existing.id },
             data: {
               fileUrl,
@@ -81,24 +85,43 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               fileType,
               fileSizeBytes,
               metadata: metadata || existing.metadata,
-            }
+            },
+            include: { uploadedBy: { select: { name: true } } }
           });
         }
       }
 
-      return await tx.solarOrderFile.create({
+      if (!savedFile) {
+        savedFile = await tx.solarOrderFile.create({
+          data: {
+            solarOrderId: id,
+            documentType,
+            fileCategory,
+            fileName,
+            fileUrl,
+            fileType,
+            fileSizeBytes,
+            metadata,
+            uploadedById: session.userId,
+          },
+          include: { uploadedBy: { select: { name: true } } }
+        });
+      }
+
+      const docName = documentType ? documentType.replace(/_/g, ' ') : fileName;
+      await tx.solarActivityLog.create({
         data: {
           solarOrderId: id,
-          documentType,
-          fileCategory,
-          fileName,
-          fileUrl,
-          fileType,
-          fileSizeBytes,
-          metadata,
-          uploadedById: session.userId,
+          actorId: session.userId,
+          actorName: session.name || 'Unknown User',
+          eventType: 'FILES_UPLOADED',
+          description: isReplace 
+            ? `${session.name || 'Unknown User'} replaced ${docName}.` 
+            : `${session.name || 'Unknown User'} uploaded ${docName}.`,
         }
       });
+
+      return savedFile;
     });
     
     return NextResponse.json({ file: result });

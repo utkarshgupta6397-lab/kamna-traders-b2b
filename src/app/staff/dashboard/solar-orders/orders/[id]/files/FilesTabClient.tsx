@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { FileText, Download, Trash2, Search, Filter, Maximize2, Image as ImageIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
-import FilePreviewModal from './FilePreviewModal';
+import FilePreviewModal from '../components/FilePreviewModal';
 
 interface SolarFile {
   id: string;

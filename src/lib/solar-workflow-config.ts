@@ -247,3 +247,25 @@ export function getNextStepConfig(currentStepId: string): WorkflowStepConfig | u
   }
   return undefined;
 }
+
+/**
+ * Returns an array of statuses that represent an "approved" order for reporting purposes.
+ * Unapproved (Draft, Pending Approval, Rejected, Cancelled, Archived) orders are excluded.
+ */
+export function getApprovedOrderStatuses(): string[] {
+  return [
+    ...SOLAR_ORDER_STATUS_GROUPS.EXECUTION,
+    ...SOLAR_ORDER_STATUS_GROUPS.COMPLETED
+  ];
+}
+
+/**
+ * Shared Prisma condition filter for reporting queries to strictly include only approved orders.
+ */
+export function getApprovedOrderCondition() {
+  return {
+    status: {
+      in: getApprovedOrderStatuses()
+    }
+  };
+}

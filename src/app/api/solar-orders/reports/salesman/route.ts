@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import { formatIndianCurrency, formatPercentage } from '@/lib/formatters';
+import { getApprovedOrderCondition } from '@/lib/solar-workflow-config';
 
 export async function GET(req: NextRequest) {
   try {
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
 
     // Build base where clause
     const where: Prisma.SolarOrderWhereInput = {
-      status: { notIn: ['DRAFT', 'CANCELLED'] },
+      ...getApprovedOrderCondition(),
     };
 
     if (salesmanIds.length > 0) where.salesmanId = { in: salesmanIds };

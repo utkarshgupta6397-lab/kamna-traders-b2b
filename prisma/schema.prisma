@@ -742,6 +742,7 @@ model SolarOrder {
   loanAnnualIncome      Float?
   loanQuotationAmount   Float?
   loanApplicationNumber String?
+  fileChargePaid        Boolean  @default(false)
 
   editCount             Int      @default(0)
   lastEditedAt          DateTime?

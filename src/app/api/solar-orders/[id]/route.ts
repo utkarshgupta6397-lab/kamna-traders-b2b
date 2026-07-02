@@ -24,7 +24,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       customerName, phoneNumber, whatsappEnabled, leadSource, referralName, 
       zohoBooksCustomerName, zohoBooksCustomerId, systemSize, systemType, loanCustomer, 
       totalOrderAmount, receivedAmount, pendingAmount, floorNumber, 
-      remarks, salesmanId, callingExecutiveId 
+      remarks, salesmanId, callingExecutiveId, orderDate
     } = body;
 
     const dataToUpdate: any = {};
@@ -100,6 +100,13 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       if (remarks !== undefined) {
         if (typeof remarks === 'string' && remarks.length > 1000) return NextResponse.json({ error: 'Remarks too long' }, { status: 400 });
         dataToUpdate.remarks = remarks;
+      }
+      if (orderDate !== undefined) {
+        if (typeof orderDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(orderDate)) {
+          return NextResponse.json({ error: 'Order Date must be in YYYY-MM-DD format' }, { status: 400 });
+        }
+        // Save as UTC midnight to avoid timezone shifting
+        dataToUpdate.orderDate = new Date(`${orderDate}T00:00:00.000Z`);
       }
       if (salesmanId !== undefined) dataToUpdate.salesmanId = salesmanId;
       if (callingExecutiveId !== undefined) dataToUpdate.callingExecutiveId = callingExecutiveId;

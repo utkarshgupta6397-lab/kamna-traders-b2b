@@ -521,7 +521,7 @@ export default function SolarOrderForm({ mode = 'CREATE', initialOrder, users, c
           )}
         </div>
       )}
-<form onSubmit={handlePreview} className="w-full pb-28 animate-in fade-in duration-300">
+<form onSubmit={handlePreview} className={`w-full animate-in fade-in duration-300 ${currentMode !== 'VIEW' ? 'pb-28' : ''}`}>
         
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
@@ -1217,29 +1217,31 @@ export default function SolarOrderForm({ mode = 'CREATE', initialOrder, users, c
         </div>
 
         {/* Sticky Action Footer */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-gray-200 p-4 z-10">
-          <div className="w-full px-6 2xl:px-12 mx-auto flex items-center justify-between font-medium">
-            <p className="text-xs text-gray-500 hidden sm:flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-              Double check parameters in preview before confirmation.
-            </p>
-            <div className="flex justify-end gap-3 w-full sm:w-auto">
-              <button
-                type="button"
-                onClick={() => router.back()}
-                className="px-5 py-2 text-xs font-bold text-gray-700 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-2 text-xs font-bold text-white bg-[#1A2766] rounded-lg shadow-sm hover:bg-[#152054] transition-all"
-              >
-                Review & Confirm
-              </button>
+        {currentMode !== 'VIEW' && (
+          <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-gray-200 p-4 z-10">
+            <div className="w-full px-6 2xl:px-12 mx-auto flex items-center justify-between font-medium">
+              <p className="text-xs text-gray-500 hidden sm:flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                Double check parameters in preview before confirmation.
+              </p>
+              <div className="flex justify-end gap-3 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => router.back()}
+                  className="px-5 py-2 text-xs font-bold text-gray-700 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2 text-xs font-bold text-white bg-[#1A2766] rounded-lg shadow-sm hover:bg-[#152054] transition-all"
+                >
+                  Review & Confirm
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </form>
 
       {/* Review Modal */}

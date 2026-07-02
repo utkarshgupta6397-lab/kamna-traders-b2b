@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@prisma/client';
+import { DOCUMENTATION_STEPS_CONFIG } from '@/lib/solar-workflow-config';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string, stepId: string }> }) {
   try {
@@ -94,9 +95,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
       } else if (targetStep.workflowType === 'DOCUMENTATION') {
         // Also if we roll back review, the order might go back to PENDING_APPROVAL
-        const reviewSteps = ['Review & Approval', 'Review Pending', 'File Upload Approval Pending'];
-        const stepName = (targetStep.metadata as any)?.name || targetStep.stepKey;
-        if (reviewSteps.includes(stepName)) {
+        const config = DOCUMENTATION_STEPS_CONFIG.find(c => c.id === targetStep.stepKey || c.legacyKey === targetStep.stepKey);
+        const isApprovalStep = config ? config.permission === 'solar_orders_approval' : false;
+        
+        if (isApprovalStep) {
            await tx.solarOrder.update({
              where: { id },
              data: { status: 'PENDING_APPROVAL' }

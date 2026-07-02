@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 
-import { DOCUMENTATION_STEPS, INSTALLATION_STEPS } from '@/lib/solar-workflow-config';
+import { DOCUMENTATION_STEPS_CONFIG, INSTALLATION_STEPS } from '@/lib/solar-workflow-config';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -118,13 +118,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         const existingDocs = await tx.solarWorkflowStep.count({ where: { solarOrderId: id, workflowType: 'DOCUMENTATION' } });
         if (existingDocs === 0) {
           await tx.solarWorkflowStep.createMany({
-            data: DOCUMENTATION_STEPS.map((step, index) => ({
+            data: DOCUMENTATION_STEPS_CONFIG.map((config, index) => ({
               solarOrderId: id,
               workflowType: 'DOCUMENTATION',
-              stepKey: `DOC_${index + 1}`,
+              stepKey: config.id, // Use config.id instead of legacy DOC_X
               stepIndex: index + 1,
               status: index === 0 ? 'PENDING' : 'BLOCKED',
-              metadata: { name: step }
+              metadata: { name: config.title }
             }))
           });
         }

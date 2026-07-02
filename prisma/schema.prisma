@@ -727,9 +727,12 @@ model SolarOrder {
   salesmanId            String?
   subVendorId           String?
   subVendor             SubVendor? @relation("SolarOrderSubVendor", fields: [subVendorId], references: [id])
+  otherLeadSource       String?
   loanCustomer          Boolean  @default(false)
   totalOrderAmount      Float
   receivedAmount        Float    @default(0)
+  fileChargePaid        Boolean   @default(false)
+  fileChargeAmount      Float?
   pendingAmount         Float    @default(0)
   systemSize            Float
   systemType            String // ON_GRID, OFF_GRID, HYBRID
@@ -814,8 +817,10 @@ model SolarWorkflowStep {
   startedAt     DateTime?
   metadata      Json?
   
-  wifiSsid      String?
-  wifiPassword  String?
+  wifiSsid                 String?
+  wifiPassword             String?
+  wifiNotApplicableReason  String?
+  wifiNotApplicableNotes   String?
   
   editCount     Int       @default(0)
   lastEditedAt  DateTime?

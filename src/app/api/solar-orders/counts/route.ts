@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { SOLAR_ORDER_STATUS_GROUPS } from '@/lib/solar-workflow-config';
 
 export async function GET() {
   try {
@@ -23,12 +24,16 @@ export async function GET() {
 
     const total = counts.reduce((sum, curr) => sum + curr._count.id, 0);
 
+    const getGroupSum = (groupStatuses: string[]) => {
+      return groupStatuses.reduce((sum, status) => sum + (formattedCounts[status] || 0), 0);
+    };
+
     return NextResponse.json({
       all: total,
-      pendingApproval: formattedCounts['PENDING_APPROVAL'] || 0,
-      execution: formattedCounts['EXECUTION'] || 0,
-      completed: formattedCounts['COMPLETED'] || 0,
-      rejected: formattedCounts['REJECTED'] || 0,
+      pendingApproval: getGroupSum(SOLAR_ORDER_STATUS_GROUPS.PENDING_APPROVAL),
+      execution: getGroupSum(SOLAR_ORDER_STATUS_GROUPS.EXECUTION),
+      completed: getGroupSum(SOLAR_ORDER_STATUS_GROUPS.COMPLETED),
+      rejected: getGroupSum(SOLAR_ORDER_STATUS_GROUPS.REJECTED),
     });
   } catch (error) {
     console.error('[SolarOrders Counts Error]', error);

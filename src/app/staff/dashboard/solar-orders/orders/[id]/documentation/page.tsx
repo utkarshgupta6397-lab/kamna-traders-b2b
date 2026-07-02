@@ -14,6 +14,16 @@ export default async function DocumentationTab({ params }: { params: { id: strin
 
   const order = await prisma.solarOrder.findUnique({
     where: { id },
+    include: {
+      createdBy: { select: { id: true, name: true } },
+      approvedBy: { select: { id: true, name: true } },
+      submittedBy: { select: { id: true, name: true } },
+      rejectedBy: { select: { id: true, name: true } },
+      cancelledBy: { select: { id: true, name: true } },
+      callingExecutive: { select: { id: true, name: true } },
+      salesman: { select: { id: true, name: true } },
+      subVendor: { select: { id: true, name: true } }
+    }
   });
 
   const canProgress = session?.role === 'ADMIN' || session?.solar_orders_view;

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Loader2, Circle, AlertCircle, Lock, ArrowRight, Info, ShieldCheck, ChevronLeft, ChevronRight, MessageSquare, X } from 'lucide-react';
+import { Check, Loader2, Circle, AlertCircle, Lock, ArrowRight, Info, ShieldCheck, ChevronLeft, ChevronRight, MessageSquare, X, Ban } from 'lucide-react';
 import toast from 'react-hot-toast';
 import RollbackConfirmationModal from './RollbackConfirmationModal';
 import { getWorkflowStageName, resolveWorkflowState } from '@/lib/solar-workflow-config';
@@ -126,7 +126,7 @@ export default function WorkflowEngine({
         setRemarks('');
         setIsEditingStage(false);
         
-        if (newStatus === 'COMPLETED') {
+        if (newStatus === 'COMPLETED' || newStatus === 'NOT_APPLICABLE') {
           const currentStepRecord = steps.find(s => s.id === selectedStepId);
           if (currentStepRecord) {
              const nextStep = steps.find(s => s.stepIndex === currentStepRecord.stepIndex + 1);
@@ -183,7 +183,7 @@ export default function WorkflowEngine({
   };
 
   const selectedStep = steps.find(s => s.id === selectedStepId);
-  const hasSubsequentCompletedStages = selectedStep ? steps.some(s => s.stepIndex > selectedStep.stepIndex && s.status === 'COMPLETED') : false;
+  const hasSubsequentCompletedStages = selectedStep ? steps.some(s => s.stepIndex > selectedStep.stepIndex && (s.status === 'COMPLETED' || s.status === 'NOT_APPLICABLE')) : false;
   
   const workflowType = steps[0]?.workflowType as 'DOCUMENTATION' | 'INSTALLATION';
   const state = steps.length > 0 ? resolveWorkflowState(steps, workflowType) : null;
@@ -237,9 +237,9 @@ export default function WorkflowEngine({
   const currentTheme = themeColors[theme];
 
   const getStatusConfig = (status: string, isReview: boolean) => {
+    if (status === 'IN_PROGRESS') return { color: currentTheme.activeText, bg: 'bg-white', border: currentTheme.activeBorder, icon: Loader2, label: 'In Progress' };
     if (status === 'COMPLETED') return { color: currentTheme.completedText, bg: currentTheme.completedBg, border: currentTheme.completedBorder, icon: Check, label: 'Completed' };
-    if (status === 'IN_PROGRESS') return { color: currentTheme.activeText, bg: 'bg-white', border: currentTheme.activeBorder, icon: Loader2, label: 'Current' };
-    if (status === 'PENDING') return { color: 'text-gray-400', bg: 'bg-white', border: 'border-gray-300', icon: Circle, label: isReview ? 'Approval Required' : 'Waiting' };
+    if (status === 'NOT_APPLICABLE') return { color: 'text-slate-600', bg: 'bg-slate-100', border: 'border-slate-300', icon: Ban, label: 'Not Applicable' };
     if (status === 'BLOCKED') return { color: 'text-gray-400', bg: 'bg-gray-100', border: 'border-gray-200', icon: Lock, label: 'Blocked' };
     if (status === 'REJECTED') return { color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-400', icon: AlertCircle, label: 'Rejected' };
     return { color: 'text-gray-400', bg: 'bg-white', border: 'border-gray-300', icon: Circle, label: 'Unknown' };
@@ -289,12 +289,9 @@ export default function WorkflowEngine({
             
             return (
               <div key={rowIndex} className={`flex relative min-h-[120px] w-full ${isEven ? 'flex-row' : 'flex-row-reverse'}`}>
-                <div className="absolute top-[28px] left-0 right-0 h-[2px] bg-gray-200 z-0" style={{ left: offsetPercentage, right: offsetPercentage }} />
-                {!isLastRow && (
-                  <div className={`absolute top-[28px] w-[2px] h-[120px] bg-gray-200 z-0`} style={{ [isEven ? 'right' : 'left']: offsetPercentage }} />
-                )}
 
-                {row.map((step) => {
+
+                {row.map((step, stepIndexInRow) => {
                   const stepName = getWorkflowStageName(step.workflowType, step.stepKey);
                   const isReviewStep = reviewSteps.includes(stepName);
                   const conf = getStatusConfig(step.status, isReviewStep);
@@ -303,26 +300,46 @@ export default function WorkflowEngine({
                   const isBlocked = step.status === 'BLOCKED';
                   const Icon = conf.icon;
                   const isFuture = step.stepIndex > activeStep.stepIndex;
+                  const isNextActiveOrCompleted = activeStep.stepIndex > step.stepIndex;
                   const itemWidth = `${100 / chunkSize}%`;
 
                   return (
                     <div key={step.id} className="relative z-10 flex flex-col items-center" style={{ width: itemWidth }}>
+                      {/* Horizontal Line to next step */}
+                      {stepIndexInRow < row.length - 1 && (
+                         <div 
+                           className={`absolute top-[28px] h-[2px] z-[-1] ${isNextActiveOrCompleted ? currentTheme.progress : 'bg-gray-200'}`}
+                           style={{ 
+                             width: '100%', 
+                             [isEven ? 'left' : 'right']: '50%'
+                           }} 
+                         />
+                      )}
+                      {/* Vertical Line to next row */}
+                      {stepIndexInRow === row.length - 1 && !isLastRow && (
+                         <div 
+                           className={`absolute top-[28px] w-[2px] h-[120px] z-[-1] ${isNextActiveOrCompleted ? currentTheme.progress : 'bg-gray-200'}`}
+                           style={{ 
+                             [isEven ? 'right' : 'left']: '50%'
+                           }} 
+                         />
+                      )}
+
                       <button
                         onClick={() => setSelectedStepId(step.id)}
                         disabled={isFuture}
-                        className={`w-14 h-14 rounded-full flex items-center justify-center border-[3px] bg-white transition-all group outline-none
+                        className={`w-14 h-14 rounded-full flex items-center justify-center border-[3px] transition-all group outline-none
                           ${conf.border} 
+                          ${(step.status === 'COMPLETED' || step.status === 'NOT_APPLICABLE') ? conf.bg : 'bg-white'}
                           ${isSelected ? `ring-4 ${currentTheme.activeRing} scale-110 shadow-lg` : 'hover:scale-105 shadow-sm'}
                           ${step.status === 'IN_PROGRESS' ? currentTheme.activeGlow : ''}
                           ${isFuture ? 'opacity-40 grayscale cursor-not-allowed hover:scale-100' : ''}
                         `}
                         title={isFuture ? 'Stage locked' : isBlocked ? `Waiting for ${steps.find(s => s.stepIndex === step.stepIndex - 1) ? getWorkflowStageName(step.workflowType, steps.find(s => s.stepIndex === step.stepIndex - 1)!.stepKey) : 'Previous Step'}` : stepName}
                       >
-                        {step.status === 'COMPLETED' ? (
-                          <div className={`w-full h-full rounded-full flex items-center justify-center ${conf.bg}`} title={step.completedAt ? `Completed on ${new Date(step.completedAt).toLocaleString('en-IN')}` : 'Completed'}>
-                            <Icon size={20} className="text-white" strokeWidth={3} />
-                          </div>
-                        ) : step.status === 'BLOCKED' ? (
+                        {(step.status === 'COMPLETED' || step.status === 'NOT_APPLICABLE') ? (
+                          step.status === 'COMPLETED' ? <Check size={28} strokeWidth={3} className="text-white" /> : <Ban size={28} strokeWidth={3} className="text-slate-500" />
+                        ) : step.status === 'IN_PROGRESS' ? (
                           <div className={`w-full h-full rounded-full flex items-center justify-center ${conf.bg}`}>
                             <Icon size={20} className={conf.color} strokeWidth={2.5} />
                           </div>
@@ -336,7 +353,7 @@ export default function WorkflowEngine({
                       <div className={`mt-3 text-center px-1 w-full ${isSelected ? 'opacity-100' : 'opacity-80'}`}>
                         <div className="flex items-center justify-center gap-1 mb-1">
                           <span className="text-[10px] font-black text-gray-400">{(step.stepIndex).toString().padStart(2, '0')}</span>
-                          {isReviewStep && step.status !== 'COMPLETED' && (
+                          {isReviewStep && step.status !== 'COMPLETED' && step.status !== 'NOT_APPLICABLE' && (
                             <span className="px-1 py-[1px] text-[8px] font-bold uppercase bg-orange-100 text-orange-700 rounded-sm leading-none">Review</span>
                           )}
                         </div>
@@ -427,7 +444,7 @@ export default function WorkflowEngine({
               </div>
             )}
             
-            {selectedStep.status === 'COMPLETED' && (
+            {(selectedStep.status === 'COMPLETED' || selectedStep.status === 'NOT_APPLICABLE') && (
               <div className={`inline-flex items-center gap-2 mb-4 px-3 py-1.5 rounded-lg text-sm font-bold border w-fit ${currentTheme.historyBg}`}>
                 <Check size={16} />
                 Completed by {selectedStep.completedBy?.name || 'System'} on {new Date(selectedStep.completedAt!).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -471,7 +488,7 @@ export default function WorkflowEngine({
           </div>
 
           {/* Render Extensible Actions Area */}
-          {selectedStep.status === 'COMPLETED' && !isEditingStage ? (
+          {(selectedStep.status === 'COMPLETED' || selectedStep.status === 'NOT_APPLICABLE') && !isEditingStage ? (
              <div className={`p-6 md:p-8 w-full xl:w-2/5 ${currentTheme.stageActionBg} flex flex-col items-center justify-center text-center border-t xl:border-t-0 border-gray-100 relative`}>
                {canManageWorkflowEdits && (
                  <div className="absolute top-4 right-4 flex flex-col md:flex-row gap-2">
@@ -547,7 +564,7 @@ export default function WorkflowEngine({
                 >
                   <option value="">-- Select Stage --</option>
                   {steps
-                    .filter(s => s.stepIndex < selectedStep.stepIndex && s.status === 'COMPLETED')
+                    .filter(s => s.stepIndex < selectedStep.stepIndex && (s.status === 'COMPLETED' || s.status === 'NOT_APPLICABLE'))
                     .map(s => (
                       <option key={s.id} value={s.id}>
                         {getWorkflowStageName(s.workflowType, s.stepKey)}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { DOCUMENTATION_STEPS_CONFIG } from '@/lib/solar-workflow-config';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string, stepId: string }> }) {
   try {
@@ -25,10 +26,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     // Permissions check
     if (!isAdmin && !session.solar_manage_workflow) {
-      const reviewSteps = ['Review & Approval', 'Review Pending', 'File Upload Approval Pending'];
-      const stepName = (currentStep.metadata as any)?.name;
-      if (reviewSteps.includes(stepName) && !session.solar_orders_approval) {
-        return NextResponse.json({ error: 'Order approval permission required' }, { status: 403 });
+      if (currentStep.workflowType === 'DOCUMENTATION') {
+        const config = DOCUMENTATION_STEPS_CONFIG.find(c => c.id === currentStep.stepKey || c.legacyKey === currentStep.stepKey);
+        const requiresApproval = config ? config.permission === 'solar_orders_approval' : false;
+        if (requiresApproval && !session.solar_orders_approval) {
+          return NextResponse.json({ error: 'Order approval permission required' }, { status: 403 });
+        }
       }
     }
 

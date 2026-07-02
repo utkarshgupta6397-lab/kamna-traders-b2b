@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { SOLAR_ORDER_STATUS_GROUPS } from '@/lib/solar-workflow-config';
 
 export async function GET() {
   try {
@@ -11,9 +12,9 @@ export async function GET() {
 
     const [totalOrders, pendingApproval, activeInstallations, completedOrders] = await Promise.all([
       prisma.solarOrder.count({ where: { status: { not: 'CANCELLED' } } }),
-      prisma.solarOrder.count({ where: { status: 'PENDING_APPROVAL' } }),
-      prisma.solarOrder.count({ where: { status: 'EXECUTION' } }),
-      prisma.solarOrder.count({ where: { status: 'COMPLETED' } }),
+      prisma.solarOrder.count({ where: { status: { in: SOLAR_ORDER_STATUS_GROUPS.PENDING_APPROVAL } } }),
+      prisma.solarOrder.count({ where: { status: { in: SOLAR_ORDER_STATUS_GROUPS.EXECUTION } } }),
+      prisma.solarOrder.count({ where: { status: { in: SOLAR_ORDER_STATUS_GROUPS.COMPLETED } } }),
     ]);
 
     const recentActivity = await prisma.solarActivityLog.findMany({

@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 
     // ── Scheduled orders (have installationDate within range) ──────────────
     const scheduledWhere: any = {
-      status: { notIn: ['CANCELLED', 'REJECTED'] },
+      status: { in: ['APPROVED', 'EXECUTION', 'COMPLETED'] },
       installationDate: { not: null },
     };
     if (from && to) {
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
 
     // ── Queue orders (no installationDate, installation not 100% complete) ──
     const queueWhere: any = {
-      status: { notIn: ['CANCELLED', 'REJECTED', 'COMPLETED'] },
+      status: { in: ['APPROVED', 'EXECUTION'] },
       installationDate: null,
     };
 

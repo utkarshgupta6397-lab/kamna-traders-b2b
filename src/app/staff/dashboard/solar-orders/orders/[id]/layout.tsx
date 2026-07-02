@@ -8,6 +8,7 @@ import OrderDetailTabs from './OrderDetailTabs';
 import OrderHeaderActions from './OrderHeaderActions';
 import ApprovalReviewScreen from './ApprovalReviewScreen';
 import { OrderChatButton } from './components/chat/OrderChatButton';
+import FileChargeToggle from './components/FileChargeToggle';
 
 export default async function OrderDetailLayout({
   children,
@@ -112,6 +113,14 @@ export default async function OrderDetailLayout({
           </div>
 
           <div className="flex-shrink-0 mt-2 md:mt-0 flex items-center gap-2">
+            {!!order.subVendorId && (
+              <FileChargeToggle
+                orderId={id}
+                isPaid={order.fileChargePaid || false}
+                amount={order.fileChargeAmount}
+                canApprove={isAdmin || !!session?.solar_orders_approval}
+              />
+            )}
             <OrderChatButton
               orderId={id}
               orderNumber={order.orderNumber}

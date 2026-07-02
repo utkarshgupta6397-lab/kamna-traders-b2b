@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Search, Filter, Plus, ChevronLeft, ChevronRight, ArrowRight, Lock, X, RefreshCw, Check } from 'lucide-react';
+import { SOLAR_ORDER_STATUS_UI } from '@/lib/solar-workflow-config';
 
 interface SolarOrder {
   id: string;
@@ -141,17 +142,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
     updateParams({ leadSource: newSources.join(','), page: '1' });
   };
 
-  const getStatusConfig = (status: string) => {
-    const configs: Record<string, { bg: string, text: string, dot: string, progress: number }> = {
-      PENDING_APPROVAL: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500', progress: 15 },
-      APPROVED: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500', progress: 25 },
-      EXECUTION: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500', progress: 65 },
-      COMPLETED: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500', progress: 100 },
-      REJECTED: { bg: 'bg-red-100', text: 'text-red-700', dot: 'bg-red-500', progress: 100 },
-      CANCELLED: { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500', progress: 0 },
-    };
-    return configs[status] || configs.PENDING_APPROVAL;
-  };
+  // Using centralized SOLAR_ORDER_STATUS_UI instead of local getStatusConfig
 
   const getLeadSourceBadge = (source: string) => {
     switch(source?.toUpperCase()) {
@@ -480,7 +471,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                 </tr>
               ) : (
                 orders.map((order, index) => {
-                  const config = getStatusConfig(order.status);
+                  const config = SOLAR_ORDER_STATUS_UI[order.status] || SOLAR_ORDER_STATUS_UI.PENDING_APPROVAL;
                   const leadConfig = getLeadSourceBadge(order.leadSource);
                   const initials = order.customerName.substring(0, 2).toUpperCase();
                   const isLocked = (order.status === 'PENDING_APPROVAL' || order.status === 'REJECTED') && order.createdById !== currentUserId && !canApprove;
@@ -488,8 +479,10 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                   const pendingAmt = order.pendingAmount ?? (order.totalOrderAmount - (order.payments ? order.payments.reduce((acc: any, p: any) => acc + p.amount, 0) : 0));
                   const pendingPct = order.totalOrderAmount > 0 ? (pendingAmt / order.totalOrderAmount) * 100 : 0;
                   
+                  const rowBg = order.status === 'PENDING_APPROVAL' ? 'bg-[#FFFBEA] hover:bg-[#FFF4D0]' : 'hover:bg-gray-50/80';
+                  
                   return (
-                    <tr key={order.id} className="group hover:bg-gray-50/80 transition-colors cursor-pointer" onClick={() => handleRowClick(order)}>
+                    <tr key={order.id} className={`group ${rowBg} transition-colors cursor-pointer`} onClick={() => handleRowClick(order)}>
                       <td className="px-4 py-2 pl-6 text-center font-medium text-gray-400">
                         {(page - 1) * limit + index + 1}
                       </td>
@@ -588,9 +581,9 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                         </div>
                       </td>
                       <td className="px-4 py-2">
-                        <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium ${config.bg} ${config.text}`}>
-                          <span className={`w-1 h-1 rounded-full ${config.dot}`}></span>
-                          {order.status.replace('_', ' ')}
+                        <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${config.bg} ${config.text}`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${config.dot}`} />
+                          {config.label || order.status.replace(/_/g, ' ')}
                         </div>
                       </td>
                       <td className="px-4 py-2 pr-6 text-right">

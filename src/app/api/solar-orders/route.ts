@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { validateZohoCustomerUniqueness, parseLeadSource } from '@/lib/zoho-solar-validation';
+import { SOLAR_ORDER_STATUS_GROUPS } from '@/lib/solar-workflow-config';
 
 export async function GET(request: Request) {
   try {
@@ -28,7 +29,7 @@ export async function GET(request: Request) {
     const where: any = {};
 
     if (status && status !== 'All') {
-      where.status = status;
+      where.status = { in: SOLAR_ORDER_STATUS_GROUPS[status] || [status] };
     }
 
     if (systemType && systemType !== 'All') {

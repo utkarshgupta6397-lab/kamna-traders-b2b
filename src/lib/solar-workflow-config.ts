@@ -153,3 +153,36 @@ export function resolveWorkflowState(steps: any[], workflowType: 'DOCUMENTATION'
     stepsMap
   };
 }
+
+export const SOLAR_ORDER_STATUS_GROUPS: Record<string, string[]> = {
+  PENDING_APPROVAL: ['PENDING_APPROVAL'],
+  EXECUTION: ['APPROVED', 'EXECUTION', 'INSTALLATION_IN_PROGRESS'],
+  COMPLETED: ['COMPLETED'],
+  REJECTED: ['REJECTED'],
+  CANCELLED: ['CANCELLED'],
+  DRAFT: ['DRAFT'],
+  ARCHIVED: ['ARCHIVED']
+};
+
+export const SOLAR_ORDER_STATUS_UI: Record<string, { bg: string, text: string, dot: string, progress: number, label: string }> = {
+  PENDING_APPROVAL: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500', progress: 15, label: 'APPROVAL PENDING' },
+  APPROVED: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500', progress: 25, label: 'APPROVED' },
+  EXECUTION: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500', progress: 65, label: 'EXECUTION' },
+  DOCUMENTATION_IN_PROGRESS: { bg: 'bg-indigo-100', text: 'text-indigo-700', dot: 'bg-indigo-500', progress: 40, label: 'DOCUMENTATION' },
+  INSTALLATION_READY: { bg: 'bg-cyan-100', text: 'text-cyan-700', dot: 'bg-cyan-500', progress: 60, label: 'INSTALLATION READY' },
+  INSTALLATION_IN_PROGRESS: { bg: 'bg-teal-100', text: 'text-teal-700', dot: 'bg-teal-500', progress: 75, label: 'INSTALLATION IN PROGRESS' },
+  COMPLETED: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500', progress: 100, label: 'COMPLETED' },
+  REJECTED: { bg: 'bg-red-100', text: 'text-red-700', dot: 'bg-red-500', progress: 100, label: 'REJECTED' },
+  CANCELLED: { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500', progress: 0, label: 'CANCELLED' },
+  DRAFT: { bg: 'bg-slate-100', text: 'text-slate-700', dot: 'bg-slate-500', progress: 0, label: 'DRAFT' },
+  ARCHIVED: { bg: 'bg-slate-200', text: 'text-slate-800', dot: 'bg-slate-600', progress: 0, label: 'ARCHIVED' }
+};
+
+export function getLogicalStatusGroup(status: string): string {
+  for (const [group, statuses] of Object.entries(SOLAR_ORDER_STATUS_GROUPS)) {
+    if (statuses.includes(status)) {
+      return group;
+    }
+  }
+  return status;
+}

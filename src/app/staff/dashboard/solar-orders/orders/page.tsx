@@ -21,7 +21,7 @@ export default async function SolarOrdersList() {
 
       <SolarOrdersTable 
         currentUserId={session.userId} 
-        canApprove={isAdmin || !!session.solar_orders_approve} 
+        canApprove={isAdmin || !!session.solar_orders_approval} 
         canCreate={!!session.solar_orders_create}
       />
     </div>

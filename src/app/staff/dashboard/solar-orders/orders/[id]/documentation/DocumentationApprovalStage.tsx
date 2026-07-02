@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { ShieldCheck, Loader2, Download, Eye, AlertCircle, X } from 'lucide-react';
-import { getWorkflowStageName } from '@/lib/solar-workflow-config';
+import { getWorkflowStageName, DOCUMENTATION_STEPS_CONFIG } from '@/lib/solar-workflow-config';
 
 interface DocumentationApprovalStageProps {
   order: any;
@@ -37,8 +37,40 @@ export default function DocumentationApprovalStage({
   };
 
   const getDynamicFields = (orderObj: any) => {
-    const ignoreKeys = ['id', 'createdAt', 'updatedAt', 'zohoSalesOrderId', 'vendorId', 'salesmanId', 'callingExecutiveId', 'subVendorId'];
+    const ignoreKeys = [
+      'id', 'createdAt', 'updatedAt', 'zohoSalesOrderId', 'vendorId', 
+      'salesmanId', 'callingExecutiveId', 'subVendorId',
+      'createdById', 'approvedById', 'submittedById', 'rejectedById', 
+      'cancelledById', 'lastEditedBy'
+    ];
+    
+    const userRelations = [
+      { idKey: 'createdById', objKey: 'createdBy', label: 'Created By' },
+      { idKey: 'approvedById', objKey: 'approvedBy', label: 'Approved By' },
+      { idKey: 'submittedById', objKey: 'submittedBy', label: 'Submitted By' },
+      { idKey: 'rejectedById', objKey: 'rejectedBy', label: 'Rejected By' },
+      { idKey: 'cancelledById', objKey: 'cancelledBy', label: 'Cancelled By' },
+      { idKey: 'callingExecutiveId', objKey: 'callingExecutive', label: 'Calling Executive' },
+      { idKey: 'salesmanId', objKey: 'salesman', label: 'Salesman' },
+    ];
+    
     const fields: { label: string, value: any }[] = [];
+    
+    for (const rel of userRelations) {
+      if (orderObj[rel.idKey]) {
+        fields.push({
+          label: rel.label,
+          value: orderObj[rel.objKey]?.name || 'Unknown User'
+        });
+      }
+    }
+
+    if (orderObj.subVendorId) {
+      fields.push({
+        label: 'Sub Vendor',
+        value: orderObj.subVendor?.name || 'Unknown Vendor'
+      });
+    }
     
     for (const [key, value] of Object.entries(orderObj)) {
       if (ignoreKeys.includes(key) || value === null || value === undefined || value === '') continue;
@@ -81,31 +113,39 @@ export default function DocumentationApprovalStage({
     fetchFiles();
   }, [order.id]);
 
-  // Determine which previous steps to show based on the current approval stage
-  const getReviewableStepKeys = () => {
-    if (stepName === 'Review & Approval') return ['DOC_1', 'DOC_2', 'DOC_3'];
-    if (stepName === 'Review Pending') return ['DOC_5', 'DOC_6'];
-    if (stepName === 'File Upload Approval Pending') return ['DOC_8', 'DOC_9', 'DOC_10'];
-    return [];
-  };
+  // Determine which previous steps to show based on the current approval stage config
+  const currentConfig = DOCUMENTATION_STEPS_CONFIG.find(c => c.id === selectedStep.stepKey || c.legacyKey === selectedStep.stepKey);
+  const reviewableKeys = currentConfig?.reviewSteps || [];
+  const reviewableConfigs = DOCUMENTATION_STEPS_CONFIG.filter(c => reviewableKeys.includes(c.id));
+  const reviewableLegacyKeys = reviewableConfigs.map(c => c.legacyKey).filter(Boolean);
 
-  const reviewableKeys = getReviewableStepKeys();
-  const reviewableSteps = steps.filter(s => reviewableKeys.includes(s.stepKey)).sort((a, b) => a.stepIndex - b.stepIndex);
+  const reviewableSteps = steps.filter(s => 
+    reviewableKeys.includes(s.stepKey) || reviewableLegacyKeys.includes(s.stepKey)
+  ).sort((a, b) => a.stepIndex - b.stepIndex);
 
   const getFilesForStep = (stepKey: string) => {
-    // Map step to file categories
+    // Determine the step config for the current stepKey
+    const config = DOCUMENTATION_STEPS_CONFIG.find(c => c.id === stepKey || c.legacyKey === stepKey);
+    const key = config?.id || stepKey;
+    
+    // Map step to file categories based on ID
     const categoryMap: Record<string, string[]> = {
+      'document_upload': ['DOCUMENTATION'],
       'DOC_1': ['DOCUMENTATION'],
+      'notarised_pending': ['DOCUMENTATION_NOTARISED'],
       'DOC_5': ['DOCUMENTATION_NOTARISED'],
+      'customer_signature': ['DOCUMENTATION_CUSTOMER_SIGNATURE'],
       'DOC_6': ['DOCUMENTATION_CUSTOMER_SIGNATURE'],
+      'authority_signature': ['DOCUMENTATION_AUTHORITY_SIGNATURE'],
       'DOC_8': ['DOCUMENTATION_AUTHORITY_SIGNATURE'],
+      'company_stamp': ['DOCUMENTATION_COMPANY_STAMP'],
       'DOC_9': ['DOCUMENTATION_COMPANY_STAMP'],
-      'DOC_10': ['DCR_CERTIFICATE']
+      'dcr_certificate': ['DCR_CERTIFICATE'],
+      'DOC_10': ['DCR_CERTIFICATE'],
     };
-    const categories = categoryMap[stepKey];
+    const categories = categoryMap[key];
     if (!categories) return [];
     
-    // For DOC_1, it contains many types. The uploader saves with fileCategory='DOCUMENTATION'
     return files.filter(f => categories.includes(f.fileCategory));
   };
 

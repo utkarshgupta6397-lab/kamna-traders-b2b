@@ -5,7 +5,7 @@ import WorkflowDocumentUploader from './WorkflowDocumentUploader';
 import WorkflowEngine, { WorkflowStep } from '../components/WorkflowEngine';
 import VendorPortalAcceptedStep from './VendorPortalAcceptedStep';
 import DocumentationApprovalStage from './DocumentationApprovalStage';
-import { getWorkflowStageName } from '@/lib/solar-workflow-config';
+import { getWorkflowStageName, DOCUMENTATION_STEPS_CONFIG } from '@/lib/solar-workflow-config';
 
 export default function DocumentationTabClient({ 
   order, 
@@ -22,12 +22,22 @@ export default function DocumentationTabClient({
   canMasterEdit?: boolean,
   canManageWorkflowEdits?: boolean,
 }) {
-  const reviewSteps = ['Review & Approval', 'Review Pending', 'File Upload Approval Pending'];
+  const reviewSteps = DOCUMENTATION_STEPS_CONFIG.filter(c => c.type === 'REVIEW').map(c => c.title);
+
+  // Filter out any steps that no longer exist in the config (e.g. legacy DOC_4) and sort by config order
+  const validSteps = steps.filter(step => 
+    DOCUMENTATION_STEPS_CONFIG.some(c => c.id === step.stepKey || c.legacyKey === step.stepKey)
+  ).sort((a, b) => {
+    const indexA = DOCUMENTATION_STEPS_CONFIG.findIndex(c => c.id === a.stepKey || c.legacyKey === a.stepKey);
+    const indexB = DOCUMENTATION_STEPS_CONFIG.findIndex(c => c.id === b.stepKey || c.legacyKey === b.stepKey);
+    return indexA - indexB;
+  });
+
 
   return (
     <WorkflowEngine
       orderId={order.id}
-      steps={steps}
+      steps={validSteps}
       theme="green"
       title="Documentation Progress"
       reviewSteps={reviewSteps}
@@ -42,7 +52,7 @@ export default function DocumentationTabClient({
           return (
             <DocumentationApprovalStage
               order={order}
-              steps={steps}
+              steps={validSteps}
               selectedStep={selectedStep}
               onApprove={() => updateStep('COMPLETED', undefined, undefined, isEditMode)}
               onRequestCorrections={async (targetStepId, correctionRemarks) => {

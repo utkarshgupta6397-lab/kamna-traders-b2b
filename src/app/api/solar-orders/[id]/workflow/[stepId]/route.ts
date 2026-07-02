@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { DOCUMENTATION_STEPS, INSTALLATION_STEPS } from '@/lib/solar-workflow-config';
+import { DOCUMENTATION_STEPS, INSTALLATION_STEPS, DOCUMENTATION_STEPS_CONFIG, getNextStepConfig } from '@/lib/solar-workflow-config';
 
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string, stepId: string }> }) {
@@ -90,7 +90,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       where: { solarOrderId: id, workflowType: step.workflowType },
       orderBy: { stepIndex: 'asc' }
     });
-    const firstPending = allSteps.find(s => s.status !== 'COMPLETED' && s.status !== 'SKIPPED' && s.status !== 'NOT_APPLICABLE');
+    
+    let validSteps = allSteps;
+    if (step.workflowType === 'DOCUMENTATION') {
+      validSteps = allSteps.filter(s => 
+        DOCUMENTATION_STEPS_CONFIG.some(c => c.id === s.stepKey || c.legacyKey === s.stepKey)
+      ).sort((a, b) => {
+        const indexA = DOCUMENTATION_STEPS_CONFIG.findIndex(c => c.id === a.stepKey || c.legacyKey === a.stepKey);
+        const indexB = DOCUMENTATION_STEPS_CONFIG.findIndex(c => c.id === b.stepKey || c.legacyKey === b.stepKey);
+        return indexA - indexB;
+      });
+    }
+
+    const currentValidIndex = validSteps.findIndex(s => s.id === stepId);
+    const firstPendingIndex = validSteps.findIndex(s => s.status !== 'COMPLETED' && s.status !== 'SKIPPED' && s.status !== 'NOT_APPLICABLE');
     
     // Master Edit Validation
     if (isEditMode) {
@@ -102,7 +115,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       }
     } else {
       // Regular sequential lock
-      if (firstPending && step.stepIndex > firstPending.stepIndex) {
+      if (firstPendingIndex !== -1 && currentValidIndex > firstPendingIndex) {
         return NextResponse.json({ error: 'Stage is locked. Complete previous stages first.' }, { status: 403 });
       }
     }
@@ -110,10 +123,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     // Permission check based on workflow type
     if (!isAdmin && !session.solar_manage_workflow) {
       if (step.workflowType === 'DOCUMENTATION') {
-        // Some steps require approve permission
-        const reviewSteps = ['Review & Approval', 'Review Pending', 'File Upload Approval Pending'];
-        const stepName = (step.metadata as any)?.name;
-        if (reviewSteps.includes(stepName) && !session.solar_orders_approval) {
+        const config = DOCUMENTATION_STEPS_CONFIG.find(c => c.id === step.stepKey || c.legacyKey === step.stepKey);
+        const requiresApproval = config ? config.permission === 'solar_orders_approval' : false;
+        
+        if (requiresApproval && !session.solar_orders_approval) {
           return NextResponse.json({ error: 'Order approval permission required' }, { status: 403 });
         } else if (!session.solar_orders_docs_progress) {
           return NextResponse.json({ error: 'Workflow Progress permission required to update documentation' }, { status: 403 });
@@ -271,43 +284,51 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       // Special logic: Unblock dependent steps
       if (status === 'COMPLETED' && !isEditMode) {
         if (step.workflowType === 'DOCUMENTATION') {
-          // Unblock the next documentation step
-          const nextDocStep = await tx.solarWorkflowStep.findFirst({
-            where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepIndex: step.stepIndex + 1 }
-          });
-          if (nextDocStep && nextDocStep.status === 'BLOCKED') {
-             const stepName = (nextDocStep.metadata as any)?.name;
-             let shouldUnblock = true;
-
-              if (stepName === 'DCR Certificate Pending') {
-               // Check if Installation Checklist is completed
-               const installChecklistIndex = INSTALLATION_STEPS.indexOf('Installation Checklist') + 1;
-               const installChecklistKey = `INST_${installChecklistIndex}`;
-               const installStepChecklist = await tx.solarWorkflowStep.findFirst({
-                 where: { solarOrderId: id, workflowType: 'INSTALLATION', stepKey: installChecklistKey }
-               });
-               if (!installStepChecklist || installStepChecklist.status !== 'COMPLETED') {
-                 shouldUnblock = false;
-               }
+          // Dynamic unblock for Documentation
+          const nextConfig = getNextStepConfig(step.stepKey);
+          if (nextConfig) {
+            // First check if a step exists with the new ID, otherwise try legacy
+            let nextDocStep = await tx.solarWorkflowStep.findFirst({
+              where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: nextConfig.id }
+            });
+            if (!nextDocStep && nextConfig.legacyKey) {
+              nextDocStep = await tx.solarWorkflowStep.findFirst({
+                where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: nextConfig.legacyKey }
+              });
+            }
+            
+            if (nextDocStep && nextDocStep.status === 'BLOCKED') {
+              let shouldUnblock = true;
+              
+              if (nextConfig.id === 'dcr_certificate') {
+                // Check if Installation Checklist is completed
+                const installChecklistIndex = INSTALLATION_STEPS.indexOf('Installation Checklist') + 1;
+                const installChecklistKey = `INST_${installChecklistIndex}`;
+                const installStepChecklist = await tx.solarWorkflowStep.findFirst({
+                  where: { solarOrderId: id, workflowType: 'INSTALLATION', stepKey: installChecklistKey }
+                });
+                if (!installStepChecklist || installStepChecklist.status !== 'COMPLETED') {
+                  shouldUnblock = false;
+                }
               }
-
-             if (stepName === 'File Upload Approval Pending') {
-               // Check if all install steps are completed
-               const uncompletedInstalls = await tx.solarWorkflowStep.findMany({
-                 where: { solarOrderId: id, workflowType: 'INSTALLATION', status: { not: 'COMPLETED' } }
-               });
-               const allRequiredDone = uncompletedInstalls.length === 0;
-               if (!allRequiredDone) {
-                 shouldUnblock = false;
-               }
-             }
-
-             if (shouldUnblock) {
+              
+              if (nextConfig.id === 'file_upload_approval') {
+                // Check if all install steps are completed
+                const uncompletedInstalls = await tx.solarWorkflowStep.findMany({
+                  where: { solarOrderId: id, workflowType: 'INSTALLATION', status: { not: 'COMPLETED' } }
+                });
+                if (uncompletedInstalls.length > 0) {
+                  shouldUnblock = false;
+                }
+              }
+              
+              if (shouldUnblock) {
                 await tx.solarWorkflowStep.update({
                   where: { id: nextDocStep.id },
                   data: { status: 'PENDING', blockedReason: null }
                 });
-             }
+              }
+            }
           }
         }
 
@@ -327,20 +348,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           const installChecklistIndex = INSTALLATION_STEPS.indexOf('Installation Checklist') + 1;
           const installChecklistKey = `INST_${installChecklistIndex}`;
           if (step.stepKey === installChecklistKey) {
-             const dcrPendingIndex = DOCUMENTATION_STEPS.indexOf('DCR Certificate Pending') + 1;
-             const dcrPendingKey = `DOC_${dcrPendingIndex}`;
+             const dcrConfig = DOCUMENTATION_STEPS_CONFIG.find(c => c.id === 'dcr_certificate')!;
              
-             const dcrStep = await tx.solarWorkflowStep.findFirst({
-               where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: dcrPendingKey }
+             let dcrStep = await tx.solarWorkflowStep.findFirst({
+               where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: dcrConfig.id }
              });
+             if (!dcrStep && dcrConfig.legacyKey) dcrStep = await tx.solarWorkflowStep.findFirst({ where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: dcrConfig.legacyKey }});
              
              if (dcrStep && dcrStep.status === 'BLOCKED') {
                // Check if the previous step (Company Stamp Pending) is completed
-               const companyStampIndex = DOCUMENTATION_STEPS.indexOf('Company Stamp Pending') + 1;
-               const companyStampKey = `DOC_${companyStampIndex}`;
-               const companyStampStep = await tx.solarWorkflowStep.findFirst({
-                 where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: companyStampKey }
+               const companyStampConfig = DOCUMENTATION_STEPS_CONFIG.find(c => c.id === 'company_stamp')!;
+               let companyStampStep = await tx.solarWorkflowStep.findFirst({
+                 where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: companyStampConfig.id }
                });
+               if (!companyStampStep && companyStampConfig.legacyKey) companyStampStep = await tx.solarWorkflowStep.findFirst({ where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: companyStampConfig.legacyKey }});
                
                if (companyStampStep && companyStampStep.status === 'COMPLETED') {
                  await tx.solarWorkflowStep.update({
@@ -375,17 +396,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           const allInstallsCompleted = allInstalls.every(s => s.status === 'COMPLETED');
           
           if (allInstallsCompleted) {
-             const docStep11Index = DOCUMENTATION_STEPS.indexOf('File Upload Approval Pending') + 1;
-             const docStep11Key = `DOC_${docStep11Index}`;
-             const docStep11 = await tx.solarWorkflowStep.findFirst({
-               where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: docStep11Key }
+             const docStep11Config = DOCUMENTATION_STEPS_CONFIG.find(c => c.id === 'file_upload_approval')!;
+             let docStep11 = await tx.solarWorkflowStep.findFirst({
+               where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: docStep11Config.id }
              });
+             if (!docStep11 && docStep11Config.legacyKey) docStep11 = await tx.solarWorkflowStep.findFirst({ where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: docStep11Config.legacyKey } });
+             
              if (docStep11 && docStep11.status === 'BLOCKED') {
-               const docStep10Index = DOCUMENTATION_STEPS.indexOf('DCR Certificate Pending') + 1;
-               const docStep10Key = `DOC_${docStep10Index}`;
-               const docStep10 = await tx.solarWorkflowStep.findFirst({
-                 where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: docStep10Key }
+               const docStep10Config = DOCUMENTATION_STEPS_CONFIG.find(c => c.id === 'dcr_certificate')!;
+               let docStep10 = await tx.solarWorkflowStep.findFirst({
+                 where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: docStep10Config.id }
                });
+               if (!docStep10 && docStep10Config.legacyKey) docStep10 = await tx.solarWorkflowStep.findFirst({ where: { solarOrderId: id, workflowType: 'DOCUMENTATION', stepKey: docStep10Config.legacyKey } });
+               
                if (docStep10 && docStep10.status === 'COMPLETED') {
                  await tx.solarWorkflowStep.update({ where: { id: docStep11.id }, data: { status: 'PENDING', blockedReason: null } });
                }

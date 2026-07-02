@@ -289,12 +289,9 @@ export default function WorkflowEngine({
             
             return (
               <div key={rowIndex} className={`flex relative min-h-[120px] w-full ${isEven ? 'flex-row' : 'flex-row-reverse'}`}>
-                <div className="absolute top-[28px] left-0 right-0 h-[2px] bg-gray-200 z-0" style={{ left: offsetPercentage, right: offsetPercentage }} />
-                {!isLastRow && (
-                  <div className={`absolute top-[28px] w-[2px] h-[120px] bg-gray-200 z-0`} style={{ [isEven ? 'right' : 'left']: offsetPercentage }} />
-                )}
 
-                {row.map((step) => {
+
+                {row.map((step, stepIndexInRow) => {
                   const stepName = getWorkflowStageName(step.workflowType, step.stepKey);
                   const isReviewStep = reviewSteps.includes(stepName);
                   const conf = getStatusConfig(step.status, isReviewStep);
@@ -303,15 +300,37 @@ export default function WorkflowEngine({
                   const isBlocked = step.status === 'BLOCKED';
                   const Icon = conf.icon;
                   const isFuture = step.stepIndex > activeStep.stepIndex;
+                  const isNextActiveOrCompleted = activeStep.stepIndex > step.stepIndex;
                   const itemWidth = `${100 / chunkSize}%`;
 
                   return (
                     <div key={step.id} className="relative z-10 flex flex-col items-center" style={{ width: itemWidth }}>
+                      {/* Horizontal Line to next step */}
+                      {stepIndexInRow < row.length - 1 && (
+                         <div 
+                           className={`absolute top-[28px] h-[2px] z-[-1] ${isNextActiveOrCompleted ? currentTheme.progress : 'bg-gray-200'}`}
+                           style={{ 
+                             width: '100%', 
+                             [isEven ? 'left' : 'right']: '50%'
+                           }} 
+                         />
+                      )}
+                      {/* Vertical Line to next row */}
+                      {stepIndexInRow === row.length - 1 && !isLastRow && (
+                         <div 
+                           className={`absolute top-[28px] w-[2px] h-[120px] z-[-1] ${isNextActiveOrCompleted ? currentTheme.progress : 'bg-gray-200'}`}
+                           style={{ 
+                             [isEven ? 'right' : 'left']: '50%'
+                           }} 
+                         />
+                      )}
+
                       <button
                         onClick={() => setSelectedStepId(step.id)}
                         disabled={isFuture}
-                        className={`w-14 h-14 rounded-full flex items-center justify-center border-[3px] bg-white transition-all group outline-none
+                        className={`w-14 h-14 rounded-full flex items-center justify-center border-[3px] transition-all group outline-none
                           ${conf.border} 
+                          ${(step.status === 'COMPLETED' || step.status === 'NOT_APPLICABLE') ? conf.bg : 'bg-white'}
                           ${isSelected ? `ring-4 ${currentTheme.activeRing} scale-110 shadow-lg` : 'hover:scale-105 shadow-sm'}
                           ${step.status === 'IN_PROGRESS' ? currentTheme.activeGlow : ''}
                           ${isFuture ? 'opacity-40 grayscale cursor-not-allowed hover:scale-100' : ''}
@@ -319,9 +338,7 @@ export default function WorkflowEngine({
                         title={isFuture ? 'Stage locked' : isBlocked ? `Waiting for ${steps.find(s => s.stepIndex === step.stepIndex - 1) ? getWorkflowStageName(step.workflowType, steps.find(s => s.stepIndex === step.stepIndex - 1)!.stepKey) : 'Previous Step'}` : stepName}
                       >
                         {(step.status === 'COMPLETED' || step.status === 'NOT_APPLICABLE') ? (
-                          <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center bg-white ${isCurrent ? 'ring-4 ring-opacity-30' : ''} ${step.status === 'COMPLETED' ? currentTheme.completedBorder + ' ' + currentTheme.completedText : 'border-slate-300 text-slate-500'}`}>
-                            {step.status === 'COMPLETED' ? <Check size={16} strokeWidth={3} /> : <Ban size={16} strokeWidth={2.5} />}
-                          </div>
+                          step.status === 'COMPLETED' ? <Check size={28} strokeWidth={3} className="text-white" /> : <Ban size={28} strokeWidth={3} className="text-slate-500" />
                         ) : step.status === 'IN_PROGRESS' ? (
                           <div className={`w-full h-full rounded-full flex items-center justify-center ${conf.bg}`}>
                             <Icon size={20} className={conf.color} strokeWidth={2.5} />

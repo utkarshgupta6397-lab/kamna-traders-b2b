@@ -1,23 +1,61 @@
-export const DOCUMENTATION_STEPS = [
-  'Document Upload',
-  'Customer Registration',
-  'Vendor Portal Accepted',
-  'Review & Approval',
-  'Notarised Pending',
-  'Customer Signature Pending',
-  'Review Pending',
-  'Authority Signature Pending',
-  'Company Stamp Pending',
-  'DCR Certificate Pending',
-  'File Upload Approval Pending',
-  'File Upload Pending',
-  'Customer Portal Final Submission',
-  'Electricity Department Submission',
-  'Central Subsidy Request',
-  'Central Subsidy Claimed',
-  'Central Subsidy Received',
-  'State Subsidy Received'
+export interface WorkflowStepConfig {
+  id: string;
+  title: string;
+  type: 'WORKFLOW' | 'REVIEW';
+  legacyKey?: string;
+  sequence: number;
+  permission?: string;
+  reviewSteps?: string[];
+}
+
+export const DOCUMENTATION_STEPS_CONFIG: WorkflowStepConfig[] = [
+  { id: 'document_upload', legacyKey: 'DOC_1', title: 'Document Upload', type: 'WORKFLOW', sequence: 1 },
+  { id: 'customer_registration', legacyKey: 'DOC_2', title: 'Customer Registration', type: 'WORKFLOW', sequence: 2 },
+  { id: 'vendor_portal', legacyKey: 'DOC_3', title: 'Vendor Portal Accepted', type: 'WORKFLOW', sequence: 3 },
+  // Step 4 "Review & Approval" (legacyKey: DOC_4) is removed
+  { id: 'notarised_pending', legacyKey: 'DOC_5', title: 'Notarised Pending', type: 'WORKFLOW', sequence: 4 },
+  { id: 'customer_signature', legacyKey: 'DOC_6', title: 'Customer Signature Pending', type: 'WORKFLOW', sequence: 5 },
+  { 
+    id: 'documentation_review', 
+    legacyKey: 'DOC_7', 
+    title: 'Review Pending', 
+    type: 'REVIEW', 
+    sequence: 6,
+    permission: 'solar_orders_approval',
+    reviewSteps: [
+      'document_upload',
+      'customer_registration',
+      'vendor_portal',
+      'notarised_pending',
+      'customer_signature'
+    ]
+  },
+  { id: 'authority_signature', legacyKey: 'DOC_8', title: 'Authority Signature Pending', type: 'WORKFLOW', sequence: 7 },
+  { id: 'company_stamp', legacyKey: 'DOC_9', title: 'Company Stamp Pending', type: 'WORKFLOW', sequence: 8 },
+  { id: 'dcr_certificate', legacyKey: 'DOC_10', title: 'DCR Certificate Pending', type: 'WORKFLOW', sequence: 9 },
+  { 
+    id: 'file_upload_approval', 
+    legacyKey: 'DOC_11', 
+    title: 'File Upload Approval Pending', 
+    type: 'REVIEW', 
+    sequence: 10,
+    permission: 'solar_orders_approval',
+    reviewSteps: [
+      'authority_signature',
+      'company_stamp',
+      'dcr_certificate'
+    ]
+  },
+  { id: 'file_upload', legacyKey: 'DOC_12', title: 'File Upload Pending', type: 'WORKFLOW', sequence: 11 },
+  { id: 'customer_portal_final', legacyKey: 'DOC_13', title: 'Customer Portal Final Submission', type: 'WORKFLOW', sequence: 12 },
+  { id: 'electricity_dept', legacyKey: 'DOC_14', title: 'Electricity Department Submission', type: 'WORKFLOW', sequence: 13 },
+  { id: 'central_subsidy_req', legacyKey: 'DOC_15', title: 'Central Subsidy Request', type: 'WORKFLOW', sequence: 14 },
+  { id: 'central_subsidy_claimed', legacyKey: 'DOC_16', title: 'Central Subsidy Claimed', type: 'WORKFLOW', sequence: 15 },
+  { id: 'central_subsidy_received', legacyKey: 'DOC_17', title: 'Central Subsidy Received', type: 'WORKFLOW', sequence: 16 },
+  { id: 'state_subsidy_received', legacyKey: 'DOC_18', title: 'State Subsidy Received', type: 'WORKFLOW', sequence: 17 }
 ];
+
+export const DOCUMENTATION_STEPS = DOCUMENTATION_STEPS_CONFIG.map(s => s.title);
 
 export const INSTALLATION_STEPS = [
   'Ready to Install',
@@ -35,22 +73,24 @@ export const WORKFLOW_CONFIG = {
 };
 
 export function getWorkflowStageName(workflowType: string, stepKey: string): string {
-  const parts = stepKey.split('_');
-  if (parts.length !== 2) throw new Error(`Invalid stepKey format: ${stepKey}`);
-  
-  const index = parseInt(parts[1], 10) - 1;
-  if (isNaN(index) || index < 0) throw new Error(`Invalid stepKey index: ${stepKey}`);
-  
-  let name: string | undefined;
-  if (workflowType === 'DOCUMENTATION' || stepKey.startsWith('DOC_')) {
-    name = DOCUMENTATION_STEPS[index];
-  } else if (workflowType === 'INSTALLATION' || stepKey.startsWith('INST_')) {
-    name = INSTALLATION_STEPS[index];
+  if (workflowType === 'DOCUMENTATION' || stepKey.startsWith('DOC_') || stepKey.match(/^[a-z_]+$/)) {
+    const config = DOCUMENTATION_STEPS_CONFIG.find(c => c.id === stepKey || c.legacyKey === stepKey);
+    if (config) return config.title;
+    // Fallback for archived steps like DOC_4
+    if (stepKey === 'DOC_4') return 'Review & Approval';
   }
   
-  if (!name) throw new Error(`Workflow definition missing for ${stepKey} in ${workflowType}`);
+  if (workflowType === 'INSTALLATION' || stepKey.startsWith('INST_')) {
+    const parts = stepKey.split('_');
+    if (parts.length === 2) {
+      const index = parseInt(parts[1], 10) - 1;
+      if (!isNaN(index) && index >= 0 && index < INSTALLATION_STEPS.length) {
+         return INSTALLATION_STEPS[index];
+      }
+    }
+  }
   
-  return name;
+  throw new Error(`Workflow definition missing for ${stepKey} in ${workflowType}`);
 }
 
 export interface WorkflowState {
@@ -65,19 +105,27 @@ export interface WorkflowState {
 }
 
 export function resolveWorkflowState(steps: any[], workflowType: 'DOCUMENTATION' | 'INSTALLATION'): WorkflowState {
-  const allSteps = workflowType === 'DOCUMENTATION' ? DOCUMENTATION_STEPS : INSTALLATION_STEPS;
+  const isDoc = workflowType === 'DOCUMENTATION';
+  const allStepTitles = isDoc ? DOCUMENTATION_STEPS : INSTALLATION_STEPS;
+  const configList = isDoc ? DOCUMENTATION_STEPS_CONFIG : null;
+  
   let completedSteps = 0;
-  let currentStage = allSteps[0];
+  let currentStage = allStepTitles[0];
   let isOverdue = false;
   const now = Date.now();
   const stepsMap: Record<string, any> = {};
 
-  for (let i = 0; i < allSteps.length; i++) {
-    const stepName = allSteps[i];
-    const expectedKey = workflowType === 'DOCUMENTATION' ? `DOC_${i + 1}` : `INST_${i + 1}`;
+  for (let i = 0; i < allStepTitles.length; i++) {
+    const stepName = allStepTitles[i];
+    let step = undefined;
     
-    // Find step by expected stepKey (e.g., DOC_1, DOC_2) instead of metadata name
-    const step = steps.find(s => s.stepKey === expectedKey);
+    if (isDoc && configList) {
+       const config = configList[i];
+       step = steps.find(s => s.stepKey === config.id || s.stepKey === config.legacyKey);
+    } else {
+       const expectedKey = `INST_${i + 1}`;
+       step = steps.find(s => s.stepKey === expectedKey);
+    }
 
     if (step) {
       stepsMap[stepName] = {
@@ -92,7 +140,7 @@ export function resolveWorkflowState(steps: any[], workflowType: 'DOCUMENTATION'
 
       if (step.status === 'COMPLETED' || step.status === 'NOT_APPLICABLE') {
         completedSteps++;
-        currentStage = allSteps[i + 1] || 'Completed';
+        currentStage = allStepTitles[i + 1] || 'Completed';
       } else {
         currentStage = stepName;
         
@@ -106,10 +154,15 @@ export function resolveWorkflowState(steps: any[], workflowType: 'DOCUMENTATION'
         }
         
         // Populate remaining stepsMap as PENDING but don't count them
-        for (let j = i + 1; j < allSteps.length; j++) {
-          const futureStepKey = workflowType === 'DOCUMENTATION' ? `DOC_${j + 1}` : `INST_${j + 1}`;
-          const futureStep = steps.find(s => s.stepKey === futureStepKey);
-          stepsMap[allSteps[j]] = futureStep ? {
+        for (let j = i + 1; j < allStepTitles.length; j++) {
+           let futureStep = undefined;
+           if (isDoc && configList) {
+             const futureConfig = configList[j];
+             futureStep = steps.find(s => s.stepKey === futureConfig.id || s.stepKey === futureConfig.legacyKey);
+           } else {
+             futureStep = steps.find(s => s.stepKey === `INST_${j + 1}`);
+           }
+          stepsMap[allStepTitles[j]] = futureStep ? {
             status: futureStep.status,
             updatedAt: futureStep.updatedAt,
             completedAt: futureStep.completedAt,
@@ -127,29 +180,29 @@ export function resolveWorkflowState(steps: any[], workflowType: 'DOCUMENTATION'
       currentStage = stepName;
       
       // Populate remaining steps as pending
-      for (let j = i + 1; j < allSteps.length; j++) {
-        stepsMap[allSteps[j]] = { status: 'PENDING' };
+      for (let j = i + 1; j < allStepTitles.length; j++) {
+        stepsMap[allStepTitles[j]] = { status: 'PENDING' };
       }
       
       break;
     }
   }
 
-  const isCompleted = completedSteps === allSteps.length;
+  const isCompleted = completedSteps === allStepTitles.length;
   if (isCompleted) {
     currentStage = 'Completed';
   }
 
-  const progressPercentage = allSteps.length === 0 ? 0 : Math.round((completedSteps / allSteps.length) * 100);
+  const progressPercentage = allStepTitles.length === 0 ? 0 : Math.round((completedSteps / allStepTitles.length) * 100);
 
   return {
     currentStage,
     completedSteps,
-    totalSteps: allSteps.length,
+    totalSteps: allStepTitles.length,
     progressPercentage,
     isCompleted,
     isOverdue,
-    nextStage: isCompleted ? undefined : allSteps[allSteps.indexOf(currentStage) + 1],
+    nextStage: isCompleted ? undefined : allStepTitles[allStepTitles.indexOf(currentStage) + 1],
     stepsMap
   };
 }
@@ -185,4 +238,12 @@ export function getLogicalStatusGroup(status: string): string {
     }
   }
   return status;
+}
+
+export function getNextStepConfig(currentStepId: string): WorkflowStepConfig | undefined {
+  const currentIndex = DOCUMENTATION_STEPS_CONFIG.findIndex(c => c.id === currentStepId || c.legacyKey === currentStepId);
+  if (currentIndex >= 0 && currentIndex < DOCUMENTATION_STEPS_CONFIG.length - 1) {
+    return DOCUMENTATION_STEPS_CONFIG[currentIndex + 1];
+  }
+  return undefined;
 }

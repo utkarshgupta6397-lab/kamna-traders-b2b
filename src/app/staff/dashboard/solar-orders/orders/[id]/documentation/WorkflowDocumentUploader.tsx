@@ -183,7 +183,6 @@ export default function WorkflowDocumentUploader({
             }
           }));
           toast.success(`${req.label} saved successfully`);
-          setTimeout(checkAndCompleteStep, 500); // Check completion
         } else {
           toast.error('File uploaded but failed to save to database');
         }
@@ -243,7 +242,6 @@ export default function WorkflowDocumentUploader({
              ...prev,
              [type]: { ...prev[type], isSavedToDb: true }
            }));
-           setTimeout(checkAndCompleteStep, 500);
          }
        } catch(e) {
          console.error(e);
@@ -273,7 +271,6 @@ export default function WorkflowDocumentUploader({
       });
       if (dbRes.ok) {
         toast.success(`${req.requiresPhone?.label || 'Phone number'} saved`);
-        setTimeout(checkAndCompleteStep, 500);
       }
     } catch(e) {}
   };
@@ -333,36 +330,7 @@ export default function WorkflowDocumentUploader({
     return { summary, allValid };
   };
 
-  const checkAndCompleteStep = () => {
-    setLocalState(currentState => {
-      const summary = requirements.map(req => {
-        const state = currentState[req.type];
-        if (req.inputType === 'TEXT' || req.inputType === 'DROPDOWN' || req.inputType === 'CURRENCY') {
-          const val = state?.value || '';
-          const hasValue = val.trim().length > 0;
-          let isValid = !req.required || hasValue;
-          if (hasValue && req.validationRegex) isValid = req.validationRegex.test(val);
-          if (hasValue && req.inputType === 'CURRENCY') {
-             const num = Number(val);
-             if (isNaN(num)) isValid = false;
-             if (req.min !== undefined && num < req.min) isValid = false;
-             if (req.max !== undefined && num > req.max) isValid = false;
-          }
-          return { isValid };
-        }
-        const hasFile = !!state?.fileUrl;
-        const hasValidPhone = !req.requiresPhone || (state?.phone && req.requiresPhone.validationRegex.test(state.phone));
-        const isValid = (!req.required || hasFile) && hasValidPhone;
-        return { isValid };
-      });
 
-      const allValid = summary.every(s => s.isValid);
-      if (allValid) {
-        onComplete();
-      }
-      return currentState;
-    });
-  };
 
   if (loading) {
     return (
@@ -704,8 +672,28 @@ export default function WorkflowDocumentUploader({
             </div>
           </div>
           {allValid && (
-            <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 text-emerald-700 font-bold rounded-lg border border-emerald-100">
+            <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 text-emerald-700 font-bold rounded-lg border border-emerald-100 mb-4">
               <CheckCircle2 size={18} className="text-emerald-500" /> All mandatory requirements fulfilled.
+            </div>
+          )}
+          
+          {allValid && !isEditMode && canProgress && (
+            <div className="pt-2 border-t border-gray-100 flex justify-center">
+              <button
+                onClick={() => {
+                  setSubmitting(true);
+                  // Ensure state is fully synced before completing
+                  setTimeout(() => {
+                    onComplete();
+                    setSubmitting(false);
+                  }, 300);
+                }}
+                disabled={submitting}
+                className="w-full md:w-auto px-8 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 shadow-sm shadow-blue-500/20 active:bg-blue-800 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              >
+                {submitting ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+                {submitButtonText}
+              </button>
             </div>
           )}
         </div>

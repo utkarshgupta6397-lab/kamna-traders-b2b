@@ -27,7 +27,7 @@ export async function GET(request: Request) {
     const skip = (page - 1) * limit;
 
     const where: any = { 
-      status: { notIn: ['CANCELLED', 'REJECTED'] } 
+      status: { in: ['APPROVED', 'EXECUTION', 'COMPLETED'] } 
     };
 
     if (search) {

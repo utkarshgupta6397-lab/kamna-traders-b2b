@@ -8,28 +8,47 @@ import toast from 'react-hot-toast';
 interface FileChargeToggleProps {
   orderId: string;
   isPaid: boolean;
+  amount?: number | null;
   canApprove: boolean;
 }
 
-export default function FileChargeToggle({ orderId, isPaid, canApprove }: FileChargeToggleProps) {
+export default function FileChargeToggle({ orderId, isPaid, amount, canApprove }: FileChargeToggleProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [fileChargeAmount, setFileChargeAmount] = useState<string>('');
+  const [amountError, setAmountError] = useState<string>('');
 
   const handleToggleClick = () => {
     if (!canApprove) return;
+    setFileChargeAmount(amount ? amount.toString() : '');
+    setAmountError('');
     setShowModal(true);
   };
 
   const handleConfirm = async () => {
-    setLoading(true);
     const newValue = !isPaid;
+    let finalAmount = null;
+
+    if (newValue === true) {
+      if (!fileChargeAmount.trim()) {
+        setAmountError('Please enter the File Charge Amount.');
+        return;
+      }
+      finalAmount = parseFloat(fileChargeAmount);
+      if (isNaN(finalAmount) || finalAmount <= 0) {
+        setAmountError('Amount must be a valid positive number.');
+        return;
+      }
+    }
+
+    setLoading(true);
     
     try {
       const res = await fetch(`/api/solar-orders/${orderId}/file-charge-paid`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileChargePaid: newValue })
+        body: JSON.stringify({ fileChargePaid: newValue, fileChargeAmount: finalAmount })
       });
       
       if (res.ok) {
@@ -51,7 +70,7 @@ export default function FileChargeToggle({ orderId, isPaid, canApprove }: FileCh
     <>
       <div 
         onClick={handleToggleClick}
-        title={canApprove ? (isPaid ? 'File Charge marked as paid.' : 'File Charge has not been marked as paid.') : 'Only Solar Order Approvers can modify this field.'}
+        title={canApprove ? (isPaid ? 'File Charge marked as paid.' : 'File Charge has not been marked as paid.') : 'Only Solar Order Approvers can modify this status.'}
         className={`
           flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border shadow-sm transition-all
           ${canApprove ? 'cursor-pointer hover:shadow-md' : 'cursor-default'}
@@ -67,7 +86,7 @@ export default function FileChargeToggle({ orderId, isPaid, canApprove }: FileCh
         ) : (
           <XCircle size={14} className="text-red-500" />
         )}
-        <span>{isPaid ? 'Paid' : 'Not Paid'}</span>
+        <span>{isPaid ? `Paid${amount ? ` ₹${amount.toLocaleString('en-IN')}` : ''}` : 'Not Paid'}</span>
       </div>
 
       {showModal && (
@@ -100,6 +119,28 @@ export default function FileChargeToggle({ orderId, isPaid, canApprove }: FileCh
                   </span>
                 </div>
               </div>
+
+              {!isPaid && (
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">File Charge Amount *</label>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">₹</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={fileChargeAmount}
+                      onChange={(e) => {
+                        setFileChargeAmount(e.target.value);
+                        if (amountError) setAmountError('');
+                      }}
+                      className={`block w-full pl-8 pr-3 py-2 border rounded-md shadow-sm focus:ring-[#1A2766] focus:border-[#1A2766] sm:text-sm ${amountError ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : 'border-gray-300'}`}
+                      placeholder="Enter amount"
+                    />
+                  </div>
+                  {amountError && <p className="mt-1 text-xs text-red-600">{amountError}</p>}
+                </div>
+              )}
             </div>
             
             <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">

@@ -731,6 +731,8 @@ model SolarOrder {
   loanCustomer          Boolean  @default(false)
   totalOrderAmount      Float
   receivedAmount        Float    @default(0)
+  fileChargePaid        Boolean   @default(false)
+  fileChargeAmount      Float?
   pendingAmount         Float    @default(0)
   systemSize            Float
   systemType            String // ON_GRID, OFF_GRID, HYBRID
@@ -743,7 +745,6 @@ model SolarOrder {
   loanAnnualIncome      Float?
   loanQuotationAmount   Float?
   loanApplicationNumber String?
-  fileChargePaid        Boolean  @default(false)
 
   editCount             Int      @default(0)
   lastEditedAt          DateTime?

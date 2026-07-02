@@ -32,17 +32,26 @@ export async function PATCH(
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
 
-    // Variations of Sub-Vendor matching existing UI constraints
-    const isSubVendor = ['SUB_VENDOR', 'SUB-VENDOR'].includes(order.leadSource?.toUpperCase());
+    // Use subVendorId as the definitive check for a Sub-Vendor order
+    const isSubVendor = !!order.subVendorId;
     if (!isSubVendor) {
       return NextResponse.json({ error: 'File charge tracking is only applicable for Sub-Vendor orders.' }, { status: 400 });
     }
 
     const previousValue = order.fileChargePaid;
     const newValue = body.fileChargePaid;
+    let fileChargeAmount = order.fileChargeAmount;
 
-    if (previousValue === newValue) {
-      return NextResponse.json({ success: true, order });
+    // Validate amount if marking as paid
+    if (newValue === true) {
+      if (body.fileChargeAmount === undefined || body.fileChargeAmount === null || isNaN(Number(body.fileChargeAmount))) {
+        return NextResponse.json({ error: 'File charge amount is required when marking as paid.' }, { status: 400 });
+      }
+      const amount = Number(body.fileChargeAmount);
+      if (amount <= 0) {
+        return NextResponse.json({ error: 'File charge amount must be greater than zero.' }, { status: 400 });
+      }
+      fileChargeAmount = amount;
     }
 
     // Execute in transaction to ensure audit log consistency
@@ -51,10 +60,15 @@ export async function PATCH(
         where: { id },
         data: {
           fileChargePaid: newValue,
+          fileChargeAmount: newValue ? fileChargeAmount : order.fileChargeAmount, // Retain amount if marked unpaid
           lastEditedAt: new Date(),
           editCount: { increment: 1 }
         }
       });
+
+      let logDescription = newValue 
+        ? `Marked File Charge as Paid. Amount: ₹${fileChargeAmount?.toLocaleString('en-IN')}` 
+        : `Marked File Charge as Not Paid.`;
 
       await tx.solarActivityLog.create({
         data: {
@@ -62,11 +76,12 @@ export async function PATCH(
           eventType: 'FILE_CHARGE_UPDATED',
           actorId: session.userId,
           actorName: session.name || 'Unknown',
-          description: `changed File Charge Paid\n\n${previousValue ? 'True' : 'False'} → ${newValue ? 'True' : 'False'}`,
+          description: logDescription,
           metadata: {
             field: 'fileChargePaid',
             oldValue: previousValue,
-            newValue: newValue
+            newValue: newValue,
+            fileChargeAmount: fileChargeAmount
           }
         }
       });

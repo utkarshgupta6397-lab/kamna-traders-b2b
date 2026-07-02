@@ -65,15 +65,29 @@ export default function SolarOrderForm({ mode = 'CREATE', initialOrder, users, c
   const parsed = initialOrder ? parseRemarks(initialOrder.remarks) : { remarks: '', address: '', city: '' };
 
   // Form State
+  const getInitialLeadSource = (order: any) => {
+    if (!order || !order.leadSource) return 'Walk-in';
+    if (order.leadSource === 'OTHER') {
+      if (order.subVendorId) return 'Sub-Vendor';
+      if (order.callingExecutiveId) return 'Calling Activity';
+      return 'Other';
+    }
+    if (order.leadSource === 'WALK_IN') return 'Walk-in';
+    if (order.leadSource === 'REFERRAL') return 'Referral';
+    if (order.leadSource === 'FRIENDS_AND_FAMILY') return 'Friends & Family';
+    if (order.leadSource === 'ONLINE') return 'WhatsApp';
+    return 'Walk-in';
+  };
+
   const [customerName, setCustomerName] = useState(initialOrder?.customerName || '');
   const [phoneNumber, setPhoneNumber] = useState(initialOrder?.phoneNumber || '');
   const [orderDate, setOrderDate] = useState(initialOrder ? new Date(initialOrder.orderDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
-  const [leadSource, setLeadSource] = useState(initialOrder?.leadSource?.replace('_', ' ') || 'Walk-in');
+  const [leadSource, setLeadSource] = useState(getInitialLeadSource(initialOrder));
   
   // Conditional Lead Source Fields
   const [referralName, setReferralName] = useState(initialOrder?.referralName || '');
   const [callingExecutiveId, setCallingExecutiveId] = useState(initialOrder?.callingExecutiveId || '');
-  const [otherLeadSource, setOtherLeadSource] = useState('');
+  const [otherLeadSource, setOtherLeadSource] = useState(initialOrder?.otherLeadSource || '');
   const [subVendorId, setSubVendorId] = useState(initialOrder?.subVendorId || '');
   
   // Mandatory Address Fields
@@ -394,7 +408,8 @@ export default function SolarOrderForm({ mode = 'CREATE', initialOrder, users, c
         customerName,
         phoneNumber, 
         whatsappEnabled: false, 
-        leadSource: leadSource === 'Other' ? otherLeadSource : leadSource,
+        leadSource: leadSource,
+        otherLeadSource: leadSource === 'Other' ? otherLeadSource : null,
         referralName: leadSource === 'Referral' ? referralName : null,
         callingExecutiveId: leadSource === 'Calling Activity' ? callingExecutiveId : null,
         salesmanId: leadSource !== 'Sub-Vendor' ? salesmanId : null,

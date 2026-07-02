@@ -727,6 +727,7 @@ model SolarOrder {
   salesmanId            String?
   subVendorId           String?
   subVendor             SubVendor? @relation("SolarOrderSubVendor", fields: [subVendorId], references: [id])
+  otherLeadSource       String?
   loanCustomer          Boolean  @default(false)
   totalOrderAmount      Float
   receivedAmount        Float    @default(0)

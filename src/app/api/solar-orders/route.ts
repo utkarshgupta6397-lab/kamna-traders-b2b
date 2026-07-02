@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { validateZohoCustomerUniqueness } from '@/lib/zoho-solar-validation';
+import { validateZohoCustomerUniqueness, parseLeadSource } from '@/lib/zoho-solar-validation';
 
 export async function GET(request: Request) {
   try {
@@ -188,25 +188,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Referral Name cannot exceed 150 characters' }, { status: 400 });
     }
 
-    // Map frontend UI values to backend Enums
-    const leadSourceMap: Record<string, string> = {
-      'Walk-in': 'WALK_IN',
-      'Referral': 'REFERRAL',
-      'WhatsApp': 'ONLINE',
-      'Friends & Family': 'REFERRAL',
-      'Calling Activity': 'OTHER',
-      'Sub-Vendor': 'OTHER',
-      'Other': 'OTHER'
-    };
-    if (leadSourceMap[body.leadSource]) {
-      body.leadSource = leadSourceMap[body.leadSource];
+    const parsedLeadSource = parseLeadSource(body.leadSource);
+    if (!parsedLeadSource) {
+      return NextResponse.json({ error: `Invalid Lead Source` }, { status: 400 });
     }
-
-    // Enum Validations
-    const validLeadSources = ['WALK_IN', 'REFERRAL', 'ONLINE', 'EXHIBITION', 'OTHER'];
-    if (!validLeadSources.includes(body.leadSource)) {
-      return NextResponse.json({ error: `Invalid Lead Source. Must be one of ${validLeadSources.join(', ')}` }, { status: 400 });
-    }
+    body.leadSource = parsedLeadSource;
     const validSystemTypes = ['ON_GRID', 'OFF_GRID', 'HYBRID'];
     if (!validSystemTypes.includes(body.systemType)) {
       return NextResponse.json({ error: `Invalid System Type. Must be one of ${validSystemTypes.join(', ')}` }, { status: 400 });
@@ -258,11 +244,12 @@ export async function POST(request: Request) {
           phoneNumber: body.phoneNumber,
           whatsappEnabled: body.whatsappEnabled,
           leadSource: body.leadSource,
-          referralCustomerId: body.referralCustomerId,
+          referralCustomerId: body.referralCustomerId || null,
           referralName: body.referralName || null,
           callingExecutiveId: body.callingExecutiveId || null,
           salesmanId: body.salesmanId || null,
           subVendorId: body.subVendorId || null,
+          otherLeadSource: body.otherLeadSource || null,
           loanCustomer: body.loanCustomer,
           loanQuotationAmount: body.loanQuotationAmount ? parseFloat(body.loanQuotationAmount) : null,
           loanAnnualIncome: body.loanAnnualIncome ? parseFloat(body.loanAnnualIncome) : null,

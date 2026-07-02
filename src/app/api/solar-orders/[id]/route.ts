@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { validateZohoCustomerUniqueness } from '@/lib/zoho-solar-validation';
+import { validateZohoCustomerUniqueness, parseLeadSource } from '@/lib/zoho-solar-validation';
 
 export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -24,7 +24,8 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       customerName, phoneNumber, whatsappEnabled, leadSource, referralName, 
       zohoBooksCustomerName, zohoBooksCustomerId, systemSize, systemType, loanCustomer, 
       totalOrderAmount, receivedAmount, pendingAmount, floorNumber, 
-      remarks, salesmanId, callingExecutiveId, orderDate
+      remarks, salesmanId, callingExecutiveId, orderDate,
+      subVendorId, referralCustomerId, otherLeadSource
     } = body;
 
     const dataToUpdate: any = {};
@@ -56,9 +57,11 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       }
       if (whatsappEnabled !== undefined) dataToUpdate.whatsappEnabled = whatsappEnabled;
       if (leadSource !== undefined) {
-        const validLeadSources = ['WALK_IN', 'REFERRAL', 'ONLINE', 'EXHIBITION', 'OTHER'];
-        if (!validLeadSources.includes(leadSource)) return NextResponse.json({ error: `Invalid Lead Source` }, { status: 400 });
-        dataToUpdate.leadSource = leadSource;
+        const parsedLeadSource = parseLeadSource(leadSource);
+        if (!parsedLeadSource) {
+          return NextResponse.json({ error: `Invalid Lead Source` }, { status: 400 });
+        }
+        dataToUpdate.leadSource = parsedLeadSource;
       }
       if (referralName !== undefined) {
         if (typeof referralName === 'string' && referralName.length > 150) return NextResponse.json({ error: 'Referral Name too long' }, { status: 400 });
@@ -108,8 +111,17 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
         // Save as UTC midnight to avoid timezone shifting
         dataToUpdate.orderDate = new Date(`${orderDate}T00:00:00.000Z`);
       }
-      if (salesmanId !== undefined) dataToUpdate.salesmanId = salesmanId;
-      if (callingExecutiveId !== undefined) dataToUpdate.callingExecutiveId = callingExecutiveId;
+      if (salesmanId !== undefined) {
+        dataToUpdate.salesman = salesmanId ? { connect: { id: salesmanId } } : { disconnect: true };
+      }
+      if (callingExecutiveId !== undefined) {
+        dataToUpdate.callingExecutive = callingExecutiveId ? { connect: { id: callingExecutiveId } } : { disconnect: true };
+      }
+      if (subVendorId !== undefined) {
+        dataToUpdate.subVendor = subVendorId ? { connect: { id: subVendorId } } : { disconnect: true };
+      }
+      if (referralCustomerId !== undefined) dataToUpdate.referralCustomerId = referralCustomerId;
+      if (otherLeadSource !== undefined) dataToUpdate.otherLeadSource = otherLeadSource;
       
       dataToUpdate.editCount = { increment: 1 };
       dataToUpdate.lastEditedAt = new Date();
@@ -159,6 +171,6 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       return error;
     }
     console.error('Error updating order:', error);
-    return NextResponse.json({ error: 'Failed to update order' }, { status: 500 });
+    return NextResponse.json({ error: String(error), details: error?.message || 'Failed to update order' }, { status: 500 });
   }
 }

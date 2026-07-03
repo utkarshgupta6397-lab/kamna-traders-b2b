@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Upload, X, CheckCircle2, FileText, Loader2, Circle, Download, RefreshCw } from 'lucide-react';
+import { Upload, X, CheckCircle2, FileText, Loader2, Circle, Download, RefreshCw, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import FilePreviewModal from '../components/FilePreviewModal';
 
@@ -38,6 +38,7 @@ interface WorkflowDocumentUploaderProps {
   subtitle?: string;
   submitButtonText?: string;
   isEditMode?: boolean;
+  disabledMessage?: string;
 }
 
 export default function WorkflowDocumentUploader({ 
@@ -49,7 +50,8 @@ export default function WorkflowDocumentUploader({
   title = "Upload Documents",
   subtitle = "Please provide all mandatory verification documents to proceed.",
   submitButtonText = "Submit Documents",
-  isEditMode = false
+  isEditMode = false,
+  disabledMessage
 }: WorkflowDocumentUploaderProps) {
   const activeOrderId = order?.id || legacyOrderId;
 
@@ -685,6 +687,11 @@ export default function WorkflowDocumentUploader({
           {allValid && (
             <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 text-emerald-700 font-bold rounded-lg border border-emerald-100 mb-4">
               <CheckCircle2 size={18} className="text-emerald-500" /> All mandatory requirements fulfilled.
+            </div>
+          )}
+          {disabledMessage && !allValid && (
+            <div className="flex items-center gap-2 px-4 py-3 bg-red-50 text-red-700 font-bold rounded-lg border border-red-100 mb-4">
+              <AlertTriangle size={18} className="text-red-500" /> {disabledMessage}
             </div>
           )}
           

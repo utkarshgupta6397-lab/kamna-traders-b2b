@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ShieldCheck, Loader2, Download, Eye, AlertCircle, X } from 'lucide-react';
 import { getWorkflowStageName, DOCUMENTATION_STEPS_CONFIG } from '@/lib/solar-workflow-config';
+import FilePreviewModal from '../components/FilePreviewModal';
 
 interface DocumentationApprovalStageProps {
   order: any;
@@ -408,58 +409,12 @@ export default function DocumentationApprovalStage({
 
       {/* File Preview Modal */}
       {previewFile && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4 md:p-8 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full h-full max-w-6xl flex flex-col overflow-hidden">
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-slate-50">
-              <h3 className="text-lg font-bold text-slate-800 truncate pr-4">
-                {previewFile.documentType || previewFile.fileName}
-              </h3>
-              <div className="flex items-center gap-3">
-                <a 
-                  href={previewFile.fileUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-sm font-bold transition-colors"
-                >
-                  <Download size={16} />
-                  Download
-                </a>
-                <button 
-                  onClick={() => setPreviewFile(null)} 
-                  className="text-gray-500 hover:text-gray-800 bg-gray-200 hover:bg-gray-300 rounded-full p-2 transition-colors"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 bg-gray-100 relative overflow-hidden flex items-center justify-center p-4">
-              {previewFile.fileUrl.toLowerCase().endsWith('.pdf') ? (
-                <iframe 
-                  src={previewFile.fileUrl} 
-                  className="w-full h-full rounded-lg shadow-sm border border-gray-300 bg-white"
-                  title="PDF Preview"
-                />
-              ) : previewFile.fileUrl.toLowerCase().endsWith('.heic') ? (
-                <div className="flex flex-col items-center justify-center text-gray-500 gap-4">
-                  <AlertCircle size={48} className="text-gray-400" />
-                  <div className="text-center">
-                    <p className="font-bold text-gray-700">HEIC preview not supported in browser</p>
-                    <p className="text-sm">Please download the file to view it.</p>
-                  </div>
-                  <a href={previewFile.fileUrl} target="_blank" rel="noopener noreferrer" className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold shadow-sm">
-                    Download File
-                  </a>
-                </div>
-              ) : (
-                <img 
-                  src={previewFile.fileUrl} 
-                  alt="Preview" 
-                  className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
-                />
-              )}
-            </div>
-          </div>
-        </div>
+        <FilePreviewModal
+          files={[previewFile]}
+          initialIndex={0}
+          onClose={() => setPreviewFile(null)}
+          canDownload={true}
+        />
       )}
     </div>
   );

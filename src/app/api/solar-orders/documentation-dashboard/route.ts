@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { DOCUMENTATION_STEPS, WORKFLOW_CONFIG, resolveWorkflowState } from '@/lib/solar-workflow-config';
+import { DOCUMENTATION_STEPS, WORKFLOW_CONFIG, resolveWorkflowState, ACTIVE_WORKFLOW_ORDER_STATUSES } from '@/lib/solar-workflow-config';
 
 export async function GET(request: Request) {
   try {
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
     const skip = (page - 1) * limit;
 
     const where: any = { 
-      status: { in: ['APPROVED', 'EXECUTION', 'COMPLETED'] } 
+      status: { in: ACTIVE_WORKFLOW_ORDER_STATUSES } 
     };
 
     if (search) {

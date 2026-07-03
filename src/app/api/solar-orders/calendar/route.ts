@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { INSTALLATION_STEPS, resolveWorkflowState } from '@/lib/solar-workflow-config';
+import { INSTALLATION_STEPS, resolveWorkflowState, ACTIVE_WORKFLOW_ORDER_STATUSES } from '@/lib/solar-workflow-config';
 
 // ─── GET /api/solar-orders/calendar ──────────────────────────────────────────
 // Query params: from (ISO date), to (ISO date)
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 
     // ── Scheduled orders (have installationDate within range) ──────────────
     const scheduledWhere: any = {
-      status: { in: ['APPROVED', 'EXECUTION', 'COMPLETED'] },
+      status: { in: ACTIVE_WORKFLOW_ORDER_STATUSES },
       installationDate: { not: null },
     };
     if (from && to) {
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
 
     // ── Queue orders (no installationDate, installation not 100% complete) ──
     const queueWhere: any = {
-      status: { in: ['APPROVED', 'EXECUTION'] },
+      status: { in: ACTIVE_WORKFLOW_ORDER_STATUSES },
       installationDate: null,
     };
 

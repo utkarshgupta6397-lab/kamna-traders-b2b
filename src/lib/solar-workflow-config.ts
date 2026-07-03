@@ -271,3 +271,14 @@ export function getApprovedOrderCondition() {
     }
   };
 }
+
+/**
+ * Shared constant for all workflow queue APIs to ensure consistent filtering of active orders.
+ * This includes orders that have been approved and are actively being worked on.
+ */
+export const ACTIVE_WORKFLOW_ORDER_STATUSES = [
+  'APPROVED',
+  'EXECUTION',
+  'INSTALLATION_IN_PROGRESS',
+  'COMPLETED'
+];

@@ -13,7 +13,8 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
+    const limitParam = searchParams.get('limit');
+    const limit = limitParam === 'all' ? undefined : Math.min(parseInt(limitParam || '20'), 100);
     const status = searchParams.get('status');
     const systemType = searchParams.get('systemType');
     const search = searchParams.get('search');
@@ -24,7 +25,7 @@ export async function GET(request: Request) {
     const sortField = searchParams.get('sortField');
     const sortDirection = searchParams.get('sortDirection') === 'asc' ? 'asc' : 'desc';
 
-    const skip = (page - 1) * limit;
+    const skip = limit === undefined ? undefined : (page - 1) * limit;
 
     const where: any = {};
 
@@ -136,9 +137,9 @@ export async function GET(request: Request) {
       orders,
       pagination: {
         total: totalCount,
-        pages: Math.ceil(totalCount / limit),
-        page,
-        limit,
+        pages: limit === undefined ? 1 : Math.ceil(totalCount / limit),
+        page: limit === undefined ? 1 : page,
+        limit: limit === undefined ? totalCount : limit,
       },
     });
   } catch (error) {

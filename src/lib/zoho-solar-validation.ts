@@ -37,7 +37,7 @@ export async function validateZohoCustomerUniqueness(zohoBooksCustomerId: string
 export function parseLeadSource(rawSource: string): string | null {
   if (!rawSource) return null;
   
-  const validLeadSources = ['WALK_IN', 'REFERRAL', 'ONLINE', 'EXHIBITION', 'OTHER', 'FRIENDS_AND_FAMILY'];
+  const validLeadSources = ['WALK_IN', 'REFERRAL', 'ONLINE', 'EXHIBITION', 'OTHER', 'FRIENDS_AND_FAMILY', 'CALLING_ACTIVITY', 'SUB_VENDOR'];
   if (validLeadSources.includes(rawSource)) return rawSource;
 
   const leadSourceMap: Record<string, string> = {
@@ -45,8 +45,8 @@ export function parseLeadSource(rawSource: string): string | null {
     'Referral': 'REFERRAL',
     'WhatsApp': 'ONLINE',
     'Friends & Family': 'FRIENDS_AND_FAMILY',
-    'Calling Activity': 'OTHER',
-    'Sub-Vendor': 'OTHER',
+    'Calling Activity': 'CALLING_ACTIVITY',
+    'Sub-Vendor': 'SUB_VENDOR',
     'Other': 'OTHER'
   };
   

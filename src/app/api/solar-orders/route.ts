@@ -119,8 +119,14 @@ export async function GET(request: Request) {
       
       const workflowPercentage = totalSteps > 0 ? Math.round((totalCompleted / totalSteps) * 100) : 0;
       
+      const isZohoLinked = !!order.zohoBooksCustomerId;
+      const actualPendingAmount = isZohoLinked ? order.pendingAmount : order.totalOrderAmount;
+      
       return {
         ...order,
+        pendingAmount: actualPendingAmount, // Assumed if unlinked
+        zohoCustomerLinked: isZohoLinked,
+        pendingPaymentReason: isZohoLinked ? null : 'ZOHO_NOT_LINKED',
         workflowPercentage,
         workflowSteps: undefined // Avoid sending unnecessary data
       };

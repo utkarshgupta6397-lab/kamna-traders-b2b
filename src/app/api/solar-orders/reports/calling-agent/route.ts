@@ -77,8 +77,11 @@ export async function GET(req: NextRequest) {
     let approvedOrdersCount = 0;
 
     orders.forEach(o => {
+      const isLinked = !!o.zohoBooksCustomerId;
+      const actualPendingAmount = isLinked ? o.pendingAmount : o.totalOrderAmount;
+
       salesGenerated += o.totalOrderAmount;
-      pendingCollection += o.pendingAmount;
+      pendingCollection += actualPendingAmount;
       if (o.status !== 'PENDING_APPROVAL') {
         approvedOrdersCount++;
       }
@@ -101,6 +104,9 @@ export async function GET(req: NextRequest) {
     orders.forEach(o => {
       // Group strictly by calling executive
       const executiveId = o.callingExecutiveId || 'unassigned';
+      const isLinked = !!o.zohoBooksCustomerId;
+      const actualPendingAmount = isLinked ? o.pendingAmount : o.totalOrderAmount;
+
       const ag = agentMap.get(executiveId) || {
         id: executiveId,
         name: o.callingExecutive?.name || 'Unknown Executive',
@@ -111,7 +117,7 @@ export async function GET(req: NextRequest) {
       };
       ag.orders++;
       ag.totalSales += o.totalOrderAmount;
-      ag.pendingPayment += o.pendingAmount;
+      ag.pendingPayment += actualPendingAmount;
       if (o.status !== 'PENDING_APPROVAL') ag.approvedCount++;
       agentMap.set(executiveId, ag);
     });

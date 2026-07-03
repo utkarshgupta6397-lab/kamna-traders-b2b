@@ -24,6 +24,8 @@ interface SolarOrder {
   subVendor: { name: string } | null;
   createdById: string;
   zohoBooksCustomerId?: string | null;
+  zohoCustomerLinked?: boolean;
+  pendingPaymentReason?: string | null;
   lastPaymentSyncAt?: string | null;
   workflowPercentage?: number;
   payments?: { amount: number }[];
@@ -537,10 +539,10 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-3">
                           <div className="flex-1">
-                            {!order.zohoBooksCustomerId ? (
+                            {order.pendingPaymentReason === 'ZOHO_NOT_LINKED' || !order.zohoBooksCustomerId ? (
                               <>
-                                <div className="font-semibold text-gray-400 text-[13px]">--</div>
-                                <div className="text-[10px] text-gray-400 font-medium">Zoho customer not linked</div>
+                                <div className="font-semibold text-orange-600 text-[13px]">₹{pendingAmt.toLocaleString('en-IN')}</div>
+                                <div className="text-[10px] text-gray-400 font-medium">Not Linked to Zoho</div>
                               </>
                             ) : pendingAmt <= 0 ? (
                               <>

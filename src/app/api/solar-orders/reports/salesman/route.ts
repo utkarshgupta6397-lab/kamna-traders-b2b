@@ -82,8 +82,11 @@ export async function GET(req: NextRequest) {
     let approvedOrdersCount = 0;
 
     orders.forEach(o => {
+      const isLinked = !!o.zohoBooksCustomerId;
+      const actualPendingAmount = isLinked ? o.pendingAmount : o.totalOrderAmount;
+
       totalSales += o.totalOrderAmount;
-      totalPendingPayments += o.pendingAmount;
+      totalPendingPayments += actualPendingAmount;
       if (o.status === 'EXECUTION' || o.status === 'COMPLETED') {
         activeCustomersSet.add(o.customerName);
       }
@@ -127,6 +130,9 @@ export async function GET(req: NextRequest) {
     const salesmanMap = new Map<string, any>();
     orders.forEach(o => {
       if (!o.salesmanId) return;
+      const isLinked = !!o.zohoBooksCustomerId;
+      const actualPendingAmount = isLinked ? o.pendingAmount : o.totalOrderAmount;
+      
       const sm = salesmanMap.get(o.salesmanId) || {
         id: o.salesmanId,
         name: o.salesman?.name || 'Unknown',
@@ -137,7 +143,7 @@ export async function GET(req: NextRequest) {
       };
       sm.orders++;
       sm.totalSales += o.totalOrderAmount;
-      sm.pendingPayment += o.pendingAmount;
+      sm.pendingPayment += actualPendingAmount;
       if (o.status !== 'PENDING_APPROVAL') sm.approvedCount++;
       salesmanMap.set(o.salesmanId, sm);
     });

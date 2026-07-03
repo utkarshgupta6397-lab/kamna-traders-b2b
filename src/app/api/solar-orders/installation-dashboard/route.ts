@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     const assignedTo = searchParams.get('assignedTo');
     const installationStage = searchParams.get('installationStage');
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
+    const limit = Math.min(parseInt(searchParams.get('limit') || '1000'), 1000);
 
     const skip = (page - 1) * limit;
 
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
           orderBy: { stepIndex: 'asc' }
         }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { orderDate: 'asc' }
     });
 
     const now = new Date().getTime();
@@ -151,7 +151,7 @@ export async function GET(request: Request) {
           orderBy: { stepIndex: 'asc' }
         }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { orderDate: 'asc' }
     });
 
     const fullItems = fullItemsQuery.map(order => {

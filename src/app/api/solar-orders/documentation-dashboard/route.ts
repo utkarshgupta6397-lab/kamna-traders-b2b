@@ -82,6 +82,7 @@ export async function GET(request: Request) {
     let totalInProgress = 0;
     let totalPendingReview = 0;
     let totalOverdue = 0;
+    let eligibleForAuthoritySignature = 0;
 
     const transformedItems = ordersForKpis.map(order => {
       const state = resolveWorkflowState(order.workflowSteps, 'DOCUMENTATION');
@@ -93,10 +94,7 @@ export async function GET(request: Request) {
       // Update counters based on the returned stepsMap
       for (const [stepName, stepData] of Object.entries(state.stepsMap)) {
         if (stepData.status === 'PENDING' || stepData.status === 'IN_PROGRESS' || stepData.status === 'BLOCKED') {
-          // Note: Only count up to the first non-completed step or just count all pending?
-          // The old logic only counted up to the first non-completed step because of the `break` or did it?
-          // Wait, the old logic had a bug where it just looped and `break` wasn't even there in documentation-dashboard!
-          // Actually, old logic looped over all DOCUMENTATION_STEPS, and for non-completed ones it incremented columnCounters.
+          // Legacy check logic is ignored for counting here
         }
       }
       
@@ -115,6 +113,7 @@ export async function GET(request: Request) {
 
       totalInProgress++;
       if (state.isOverdue) totalOverdue++;
+      if (state.currentStage === 'Authority Signature Pending') eligibleForAuthoritySignature++;
       
       return {
         id: order.id,
@@ -192,6 +191,7 @@ export async function GET(request: Request) {
       inProgress: totalInProgress,
       pendingReview: totalPendingReview,
       overdue: totalOverdue,
+      eligibleForAuthoritySignature,
       averageCompletionTime: "N/A"
     };
 

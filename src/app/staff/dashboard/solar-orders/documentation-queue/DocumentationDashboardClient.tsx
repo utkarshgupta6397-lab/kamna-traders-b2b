@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Search, Filter, RefreshCw, Download } from 'lucide-react';
 import DocumentationDashboardKPIs from './DocumentationDashboardKPIs';
 import DocumentationTable from './DocumentationTable';
+import AuthorityBatchButton from './AuthorityBatchButton';
 
 export default function DocumentationDashboardClient() {
   const [data, setData] = useState<any>(null);
@@ -116,11 +117,13 @@ export default function DocumentationDashboardClient() {
           <button
             onClick={handleExportCSV}
             disabled={isLoading || !data?.items?.length}
-            className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#1A2766] text-white rounded-md text-[13px] font-medium hover:bg-[#1A2766]/90 transition-colors disabled:opacity-50 w-full sm:w-auto shadow-sm"
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-md text-[13px] font-medium hover:bg-gray-50 hover:text-[#1A2766] transition-colors disabled:opacity-50 w-full sm:w-auto"
           >
             <Download size={14} />
             Export
           </button>
+
+          <AuthorityBatchButton eligibleCount={data?.summary?.eligibleForAuthoritySignature || 0} />
         </div>
       </div>
 

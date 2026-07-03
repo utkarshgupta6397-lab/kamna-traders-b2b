@@ -25,7 +25,8 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       zohoBooksCustomerName, zohoBooksCustomerId, systemSize, systemType, loanCustomer, 
       totalOrderAmount, receivedAmount, pendingAmount, floorNumber, 
       remarks, salesmanId, callingExecutiveId, orderDate,
-      subVendorId, referralCustomerId, otherLeadSource
+      subVendorId, referralCustomerId, otherLeadSource,
+      panels, inverters
     } = body;
 
     const dataToUpdate: any = {};
@@ -122,6 +123,29 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
       }
       if (referralCustomerId !== undefined) dataToUpdate.referralCustomerId = referralCustomerId;
       if (otherLeadSource !== undefined) dataToUpdate.otherLeadSource = otherLeadSource;
+      
+      if (panels !== undefined && Array.isArray(panels)) {
+        if (panels.length > 50) return NextResponse.json({ error: 'Cannot add more than 50 panels' }, { status: 400 });
+        dataToUpdate.panels = {
+          deleteMany: {},
+          create: panels.map((p: any, idx: number) => ({
+            description: p.description,
+            quantity: Number(p.quantity),
+            orderIndex: idx
+          }))
+        };
+      }
+      if (inverters !== undefined && Array.isArray(inverters)) {
+        if (inverters.length > 20) return NextResponse.json({ error: 'Cannot add more than 20 inverters' }, { status: 400 });
+        dataToUpdate.inverters = {
+          deleteMany: {},
+          create: inverters.map((i: any, idx: number) => ({
+            description: i.description,
+            quantity: Number(i.quantity),
+            orderIndex: idx
+          }))
+        };
+      }
       
       dataToUpdate.editCount = { increment: 1 };
       dataToUpdate.lastEditedAt = new Date();

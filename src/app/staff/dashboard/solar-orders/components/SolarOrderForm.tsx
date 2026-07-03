@@ -76,6 +76,8 @@ export default function SolarOrderForm({ mode = 'CREATE', initialOrder, users, c
     if (order.leadSource === 'REFERRAL') return 'Referral';
     if (order.leadSource === 'FRIENDS_AND_FAMILY') return 'Friends & Family';
     if (order.leadSource === 'ONLINE') return 'WhatsApp';
+    if (order.leadSource === 'CALLING_ACTIVITY') return 'Calling Activity';
+    if (order.leadSource === 'SUB_VENDOR') return 'Sub-Vendor';
     return 'Walk-in';
   };
 

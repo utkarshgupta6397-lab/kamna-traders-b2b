@@ -41,10 +41,11 @@ interface SolarOrdersTableProps {
 const getQuarter = (dateString: string): string => {
   const d = new Date(dateString);
   const m = d.getMonth();
-  if (m < 3) return 'Q1';
-  if (m < 6) return 'Q2';
-  if (m < 9) return 'Q3';
-  return 'Q4';
+  const y = d.getFullYear();
+  if (m < 3) return `Q1 ${y}`;
+  if (m < 6) return `Q2 ${y}`;
+  if (m < 9) return `Q3 ${y}`;
+  return `Q4 ${y}`;
 };
 
 // UI helpers
@@ -57,23 +58,23 @@ const getLeadSourceBadge = (source: string) => {
   switch(source?.toUpperCase()) {
     case 'WALK_IN': 
     case 'WALK-IN': 
-      return { bg: 'bg-blue-50', text: 'text-blue-700', label: 'WALK-IN' };
+      return { bg: 'bg-blue-50', text: 'text-blue-700', label: 'Walk-in' };
     case 'WHATSAPP': 
     case 'ONLINE':
-      return { bg: 'bg-green-50', text: 'text-green-700', label: 'ONLINE' };
+      return { bg: 'bg-green-50', text: 'text-green-700', label: 'Online' };
     case 'REFERRAL': 
-      return { bg: 'bg-purple-50', text: 'text-purple-700', label: 'REFERRAL' };
+      return { bg: 'bg-purple-50', text: 'text-purple-700', label: 'Referral' };
     case 'FRIENDS & FAMILY':
     case 'FRIENDS_AND_FAMILY':
-      return { bg: 'bg-pink-50', text: 'text-pink-700', label: 'FRIENDS & FAMILY' };
+      return { bg: 'bg-pink-50', text: 'text-pink-700', label: 'Friends & Family' };
     case 'CALLING_ACTIVITY': 
     case 'CALLING ACTIVITY': 
-      return { bg: 'bg-orange-50', text: 'text-orange-700', label: 'CALLING' };
+      return { bg: 'bg-orange-50', text: 'text-orange-700', label: 'Calling Activity' };
     case 'SUB_VENDOR': 
     case 'SUB-VENDOR': 
-      return { bg: 'bg-indigo-50', text: 'text-indigo-700', label: 'SUB-VENDOR' };
+      return { bg: 'bg-indigo-50', text: 'text-indigo-700', label: 'Sub-Vendor' };
     default: 
-      return { bg: 'bg-gray-100', text: 'text-gray-700', label: 'OTHER' };
+      return { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Other' };
   }
 };
 
@@ -255,7 +256,12 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
 
     return {
       systemTypes: Object.entries(opts.systemTypes).map(([k, v]) => ({ label: k, value: k.toUpperCase().replace('-', '_'), count: v })).sort((a,b) => b.count - a.count),
-      quarters: Object.entries(opts.quarters).map(([k, v]) => ({ label: k, value: k, count: v })).sort((a,b) => a.label.localeCompare(b.label)),
+      quarters: Object.entries(opts.quarters).map(([k, v]) => ({ label: k, value: k, count: v })).sort((a,b) => {
+        const [qA, yA] = a.label.split(' ');
+        const [qB, yB] = b.label.split(' ');
+        if (yA !== yB) return parseInt(yB) - parseInt(yA);
+        return qA.localeCompare(qB);
+      }),
       leadSources: Object.entries(opts.leadSources).map(([k, v]) => ({ label: getLeadSourceBadge(k).label, value: k, count: v })).sort((a,b) => b.count - a.count),
       assignees: Object.entries(opts.assignees).map(([k, v]) => ({ label: k, value: k, count: v })).sort((a,b) => b.count - a.count)
     };
@@ -652,17 +658,14 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                         <div className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider ${leadConfig.bg} ${leadConfig.text}`}>
                           {leadConfig.label}
                         </div>
+                        {order.leadSource === 'CALLING_ACTIVITY' && order.callingExecutive && (
+                          <div className="text-[11px] text-gray-500 mt-1 truncate" title={order.callingExecutive.name}>
+                            {order.callingExecutive.name}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-2 truncate max-w-[144px]">
                         {(() => {
-                          if (order.leadSource === 'CALLING_ACTIVITY') {
-                            return order.callingExecutive ? (
-                              <div className="truncate">
-                                <div className="font-medium text-gray-900 truncate" title={order.callingExecutive.name}>{order.callingExecutive.name}</div>
-                                <div className="text-[11px] text-gray-500 truncate">Calling Executive</div>
-                              </div>
-                            ) : '—';
-                          }
                           if (order.leadSource === 'SUB_VENDOR') {
                             return order.subVendor ? (
                               <div className="truncate">
@@ -672,7 +675,12 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                             ) : '—';
                           }
                           return order.salesman ? (
-                            <div className="font-medium text-gray-900 truncate" title={order.salesman.name}>{order.salesman.name}</div>
+                            <div className="truncate">
+                              <div className="font-medium text-gray-900 truncate" title={order.salesman.name}>{order.salesman.name}</div>
+                              {order.leadSource === 'CALLING_ACTIVITY' && (
+                                <div className="text-[11px] text-gray-500 truncate">Salesman</div>
+                              )}
+                            </div>
                           ) : '—';
                         })()}
                       </td>

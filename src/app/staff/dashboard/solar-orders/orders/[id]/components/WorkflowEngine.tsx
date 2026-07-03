@@ -33,6 +33,7 @@ interface WorkflowEngineProps {
   canApprove?: boolean;
   canMasterEdit?: boolean;
   canManageWorkflowEdits?: boolean;
+  onErrorInterceptor?: (errorMsg: string) => boolean; // return true if handled
   renderStageAction: (selectedStep: any, updateStep: any, remarks: string, setRemarks: (val: string) => void, loadingStep: string | null, isEditMode: boolean) => React.ReactNode;
 }
 
@@ -46,6 +47,7 @@ export default function WorkflowEngine({
   canApprove,
   canMasterEdit = false,
   canManageWorkflowEdits = false,
+  onErrorInterceptor,
   renderStageAction
 }: WorkflowEngineProps) {
   const router = useRouter();
@@ -138,7 +140,11 @@ export default function WorkflowEngine({
 
         router.refresh();
       } else {
-        toast.error(data.error || 'Failed to update stage');
+        const errorMsg = data.error || 'Failed to update stage';
+        const isHandled = onErrorInterceptor ? onErrorInterceptor(errorMsg) : false;
+        if (!isHandled) {
+          toast.error(errorMsg);
+        }
       }
     } catch (e) {
       toast.error('Network error');

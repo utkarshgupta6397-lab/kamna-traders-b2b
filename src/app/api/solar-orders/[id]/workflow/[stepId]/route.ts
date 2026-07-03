@@ -138,6 +138,32 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       }
     }
 
+    if (step.workflowType === 'DOCUMENTATION' && status) {
+      const configIndex = DOCUMENTATION_STEPS_CONFIG.findIndex(c => c.id === step.stepKey || c.legacyKey === step.stepKey);
+      if (configIndex !== -1) {
+        const config = DOCUMENTATION_STEPS_CONFIG[configIndex];
+        const nextConfig = DOCUMENTATION_STEPS_CONFIG[configIndex + 1];
+        
+        const isApprovalStage = config?.requiresCancelledCheque;
+        const isEnteringNextApproval = nextConfig?.requiresCancelledCheque && status === 'COMPLETED';
+        const isStartingReview = config?.requiresCancelledCheque && (status === 'IN_PROGRESS' || status === 'COMPLETED');
+        
+        if (isEnteringNextApproval || isStartingReview || isApprovalStage) {
+          const hasCheque = await prisma.solarOrderFile.findFirst({
+            where: { 
+              solarOrderId: id, 
+              fileCategory: 'DOCUMENTATION', 
+              documentType: 'CANCELLED_CHEQUE',
+              isDeleted: false
+            }
+          });
+          
+          if (!hasCheque) {
+            return NextResponse.json({ error: 'Cancelled Cheque / Passbook must be uploaded before Final File Approval.' }, { status: 400 });
+          }
+        }
+      }
+    }
 
 
     const result = await prisma.$transaction(async (tx) => {

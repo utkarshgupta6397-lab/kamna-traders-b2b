@@ -124,7 +124,13 @@ export default function SolarOrderForm({ mode = 'CREATE', initialOrder, users, c
   const [zohoSearchQuery, setZohoSearchQuery] = useState('');
   const [zohoSearching, setZohoSearching] = useState(false);
   const [zohoResults, setZohoResults] = useState<ZohoCustomer[]>([]);
-  const [selectedZohoCustomer, setSelectedZohoCustomer] = useState<ZohoCustomer | null>(null);
+  const [selectedZohoCustomer, setSelectedZohoCustomer] = useState<ZohoCustomer | null>(
+    initialOrder?.zohoBooksCustomerId ? {
+      id: initialOrder.zohoBooksCustomerId,
+      name: initialOrder.zohoBooksCustomerName || '',
+      gstNumber: ''
+    } : null
+  );
 
   // Review Modal State
   const [showPreview, setShowPreview] = useState(false);

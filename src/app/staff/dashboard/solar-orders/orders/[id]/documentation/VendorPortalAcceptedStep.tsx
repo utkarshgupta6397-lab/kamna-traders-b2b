@@ -10,7 +10,8 @@ export default function VendorPortalAcceptedStep({
   isLoanOrder = false,
   initialAppNumber = '',
   initialLoanAppNumber = '',
-  isEditMode = false
+  isEditMode = false,
+  disabledMessage
 }: {
   canProgress: boolean;
   onComplete: (status: string, notes?: string, metaOverride?: any, isEditMode?: boolean) => Promise<void>;
@@ -19,6 +20,7 @@ export default function VendorPortalAcceptedStep({
   initialAppNumber?: string;
   initialLoanAppNumber?: string;
   isEditMode?: boolean;
+  disabledMessage?: string;
 }) {
   const [appNumber, setAppNumber] = useState(initialAppNumber);
   const [loanAppNumber, setLoanAppNumber] = useState(initialLoanAppNumber);
@@ -82,19 +84,26 @@ export default function VendorPortalAcceptedStep({
           </div>
         )}
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Remarks (Optional)
-          </label>
-          <textarea
-            placeholder="Optional remarks before progressing..."
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none shadow-sm bg-white"
-            rows={2}
-            disabled={loading || !canProgress}
-          />
-        </div>
+        {canProgress && (
+          <div className="mb-4">
+            {disabledMessage && (
+              <div className="mb-3 flex items-center gap-2 p-3 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm">
+                <span className="font-medium text-red-500">⚠</span>
+                <span className="font-medium">{disabledMessage}</span>
+              </div>
+            )}
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Remarks (Optional)
+            </label>
+            <textarea
+              placeholder="Optional remarks before progressing..."
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all resize-none shadow-sm bg-white"
+              rows={2}
+            />
+          </div>
+        )}
       </div>
 
       <button
@@ -102,10 +111,11 @@ export default function VendorPortalAcceptedStep({
           applicationNumber: cleanedNumber,
           ...(isLoanOrder && { loanApplicationNumber: cleanedLoanNumber })
         }, isEditMode)}
-        disabled={loading || !canProgress || !isValid}
-        className={`w-full flex items-center justify-center gap-2 px-6 py-4 font-bold text-base rounded-xl transition-all shadow-md group ${canProgress && isValid ? 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-none'}`}
+        disabled={loading || !canProgress || !isValid || !!disabledMessage}
+        className={`w-full flex items-center justify-center gap-2 px-6 py-4 font-bold text-base rounded-xl transition-all shadow-md group ${isValid && canProgress && !disabledMessage ? 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-none'}`}
+        title={!canProgress ? "You don't have permission to progress this workflow." : disabledMessage ? disabledMessage : undefined}
       >
-        {loading ? <Loader2 size={22} className="animate-spin" /> : (canProgress && isValid && <ArrowRight size={22} className="group-hover:translate-x-1 transition-transform" />)}
+        {loading ? <Loader2 size={22} className="animate-spin" /> : (isValid && canProgress && !disabledMessage && <ArrowRight size={22} className="group-hover:translate-x-1 transition-transform" />)}
         {isEditMode ? 'Save Changes' : 'Complete: Vendor Portal Accepted'}
       </button>
     </div>

@@ -6,6 +6,7 @@ export interface WorkflowStepConfig {
   sequence: number;
   permission?: string;
   reviewSteps?: string[];
+  requiresCancelledCheque?: boolean;
 }
 
 export const DOCUMENTATION_STEPS_CONFIG: WorkflowStepConfig[] = [
@@ -44,7 +45,8 @@ export const DOCUMENTATION_STEPS_CONFIG: WorkflowStepConfig[] = [
       'authority_signature',
       'company_stamp',
       'dcr_certificate'
-    ]
+    ],
+    requiresCancelledCheque: true
   },
   { id: 'file_upload', legacyKey: 'DOC_12', title: 'File Upload Pending', type: 'WORKFLOW', sequence: 11 },
   { id: 'customer_portal_final', legacyKey: 'DOC_13', title: 'Customer Portal Final Submission', type: 'WORKFLOW', sequence: 12 },

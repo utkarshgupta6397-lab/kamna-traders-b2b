@@ -42,9 +42,27 @@ export default async function DocumentationTab({ params }: { params: { id: strin
     );
   }
 
+  const hasCancelledCheque = await prisma.solarOrderFile.findFirst({
+    where: { 
+      solarOrderId: id, 
+      fileCategory: 'DOCUMENTATION', 
+      documentType: 'CANCELLED_CHEQUE',
+      isDeleted: false 
+    },
+    select: { id: true }
+  });
+
   return (
     <div className="space-y-4">
-      <DocumentationTabClient order={order} steps={steps} canProgress={!!canProgress} canApprove={!!canApprove} canMasterEdit={!!canMasterEdit} canManageWorkflowEdits={!!canManageWorkflowEdits} />
+      <DocumentationTabClient 
+        order={order} 
+        steps={steps} 
+        canProgress={!!canProgress} 
+        canApprove={!!canApprove} 
+        canMasterEdit={!!canMasterEdit} 
+        canManageWorkflowEdits={!!canManageWorkflowEdits}
+        hasCancelledCheque={!!hasCancelledCheque} 
+      />
     </div>
   );
 }

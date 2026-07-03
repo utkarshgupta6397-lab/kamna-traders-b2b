@@ -67,8 +67,8 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ id: s
         if (typeof referralName === 'string' && referralName.length > 150) return NextResponse.json({ error: 'Referral Name too long' }, { status: 400 });
         dataToUpdate.referralName = referralName;
       }
-      if (zohoBooksCustomerName !== undefined) dataToUpdate.zohoBooksCustomerName = zohoBooksCustomerName;
-      if (zohoBooksCustomerId !== undefined) dataToUpdate.zohoBooksCustomerId = zohoBooksCustomerId;
+      if (zohoBooksCustomerName !== undefined && zohoBooksCustomerName !== null) dataToUpdate.zohoBooksCustomerName = zohoBooksCustomerName;
+      if (zohoBooksCustomerId !== undefined && zohoBooksCustomerId !== null) dataToUpdate.zohoBooksCustomerId = zohoBooksCustomerId;
       if (systemSize !== undefined) {
         const parsed = Number(systemSize);
         if (isNaN(parsed) || !isFinite(parsed) || parsed <= 0) return NextResponse.json({ error: 'Invalid System Size' }, { status: 400 });

@@ -196,7 +196,7 @@ export default function DocumentationApprovalStage({
                 
                 <div className="p-4 space-y-4 text-sm text-gray-700">
                   {/* Step 1 specifics */}
-                  {step.stepKey === 'DOC_1' && (
+                  {(step.stepKey === 'DOC_1' || step.stepKey === 'document_upload') && (
                     <div className="grid grid-cols-2 gap-y-2 gap-x-4">
                       {order.loanCustomer && (
                         <>
@@ -212,6 +212,14 @@ export default function DocumentationApprovalStage({
                           <div>{order.customerEmail}</div>
                         </>
                       )}
+                    </div>
+                  )}
+                  {(step.stepKey === 'DOC_1' || step.stepKey === 'document_upload') && !stepFiles.find(f => f.documentType === 'CANCELLED_CHEQUE') && (
+                    <div className="flex items-center gap-2 p-3 mt-2 bg-gray-50 text-gray-600 rounded-lg border border-gray-200">
+                      <AlertCircle size={16} className="text-gray-500" />
+                      <span className="text-sm">
+                        <span className="font-bold">Cancelled Cheque / Passbook:</span> ⚠ Missing (Required before Final Approval)
+                      </span>
                     </div>
                   )}
                   

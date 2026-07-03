@@ -9,6 +9,7 @@ export interface DocumentRequirement {
   type: string;
   label: string;
   required: boolean;
+  optionalText?: string;
   inputType?: 'FILE' | 'TEXT' | 'DROPDOWN' | 'CURRENCY';
   maxMb?: number;
   acceptedTypes?: string[]; // e.g. ['.pdf', '.jpg', '.jpeg', '.png', '.heic']
@@ -392,7 +393,11 @@ export default function WorkflowDocumentUploader({
                   
                   <div className="mb-2 flex items-center gap-2">
                     <h4 className="text-base font-bold text-gray-900">{req.label}</h4>
-                    {req.required && <span className="text-red-500 text-[10px] font-black uppercase tracking-wider bg-red-50 px-2 py-0.5 rounded border border-red-100">Required</span>}
+                    {req.required ? (
+                      <span className="text-red-500 text-[10px] font-black uppercase tracking-wider bg-red-50 px-2 py-0.5 rounded border border-red-100">Required</span>
+                    ) : req.optionalText ? (
+                      <span className="text-gray-500 text-[10px] font-bold tracking-wider bg-gray-50 px-2 py-0.5 rounded border border-gray-200">{req.optionalText}</span>
+                    ) : null}
                   </div>
                   
                   {req.inputType === 'CURRENCY' ? (
@@ -487,7 +492,11 @@ export default function WorkflowDocumentUploader({
                 <div>
                   <h4 className="text-base font-bold text-gray-900 flex items-center gap-2 mb-1.5">
                     {req.label}
-                    {req.required && <span className="text-red-500 text-[10px] font-black uppercase tracking-wider bg-red-50 px-2 py-0.5 rounded border border-red-100">Required</span>}
+                    {req.required ? (
+                      <span className="text-red-500 text-[10px] font-black uppercase tracking-wider bg-red-50 px-2 py-0.5 rounded border border-red-100">Required</span>
+                    ) : req.optionalText ? (
+                      <span className="text-gray-500 text-[10px] font-bold tracking-wider bg-gray-50 px-2 py-0.5 rounded border border-gray-200">{req.optionalText}</span>
+                    ) : null}
                   </h4>
                   <div className="flex items-center gap-3 text-xs font-medium text-gray-500">
                     <span className="bg-gray-50 px-2 py-1 rounded border border-gray-100">Formats: {acceptedTypes.map(t => t.replace('.', '').toUpperCase()).join(', ')}</span>
@@ -657,9 +666,11 @@ export default function WorkflowDocumentUploader({
                   <span className={s.isValid ? "text-gray-900" : "text-gray-500"}>{s.req.label}</span>
                   
                   {s.isInput ? (
-                    s.hasValue ? <span className="text-emerald-600 text-xs font-bold">(Completed)</span> : <span className="text-orange-500 text-xs font-bold">(Pending)</span>
+                    s.hasValue ? <span className="text-emerald-600 text-xs font-bold">(Completed)</span> : 
+                      (!s.req.required ? <span className="text-gray-500 text-xs font-bold">(Optional - Not Uploaded)</span> : <span className="text-orange-500 text-xs font-bold">(Pending)</span>)
                   ) : (
-                    s.hasFile ? <span className="text-emerald-600 text-xs font-bold">(Uploaded)</span> : <span className="text-orange-500 text-xs font-bold">(Pending)</span>
+                    s.hasFile ? <span className="text-emerald-600 text-xs font-bold">(Uploaded)</span> : 
+                      (!s.req.required ? <span className="text-gray-500 text-xs font-bold">(Optional - Not Uploaded)</span> : <span className="text-orange-500 text-xs font-bold">(Pending)</span>)
                   )}
                   
                   {s.req.requiresPhone && (

@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, ChevronLeft, ChevronRight, ArrowRight, Lock, X, RefreshCw, Check } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, ArrowRight, Lock, X, RefreshCw, Check, Filter } from 'lucide-react';
 import { SOLAR_ORDER_STATUS_UI } from '@/lib/solar-workflow-config';
 import SortableTableHeader from '../components/SortableTableHeader';
 import SolarQuickFilters from '../components/SolarQuickFilters';

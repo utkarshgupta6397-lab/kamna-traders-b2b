@@ -22,7 +22,12 @@ export async function GET(request: Request) {
     const assignedTo = searchParams.get('assignedTo');
     const documentationStage = searchParams.get('documentationStage');
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = Math.min(parseInt(searchParams.get('limit') || '1000'), 1000);
+    const limitParam = searchParams.get('limit');
+    const limit = limitParam === 'all' ? 10000 : Math.min(parseInt(limitParam || '1000'), 1000);
+
+    const sortField = searchParams.get('sortField');
+    const sortDirection = searchParams.get('sortDirection') === 'asc' ? 'asc' : 'desc';
+    const hasOutstandingPayment = searchParams.get('hasOutstandingPayment') === 'true';
 
     const skip = (page - 1) * limit;
 
@@ -45,12 +50,39 @@ export async function GET(request: Request) {
         where.callingExecutiveId = null;
         where.subVendorId = null;
       } else {
-        where.OR = [
-          ...(where.OR || []),
+        const assigneeOR = [
           { salesmanId: assignedTo },
           { callingExecutiveId: assignedTo },
           { subVendorId: assignedTo }
         ];
+        if (where.OR) {
+          where.AND = [ { OR: where.OR }, { OR: assigneeOR } ];
+          delete where.OR;
+        } else {
+          where.OR = assigneeOR;
+        }
+      }
+    }
+
+    if (hasOutstandingPayment) {
+      const paymentCondition = {
+        OR: [
+          { zohoBooksCustomerId: { not: null }, pendingAmount: { gt: 0 } },
+          { zohoBooksCustomerId: null, totalOrderAmount: { gt: 0 } }
+        ]
+      };
+      if (!where.AND) where.AND = [];
+      where.AND.push(paymentCondition);
+    }
+    
+    let orderBy: any = { updatedAt: 'desc' };
+    if (sortField) {
+      switch(sortField) {
+        case 'orderAmount': orderBy = { totalOrderAmount: sortDirection }; break;
+        case 'pendingAmount': orderBy = { pendingAmount: sortDirection }; break;
+        case 'orderDate': orderBy = { orderDate: sortDirection }; break;
+        case 'customerName': orderBy = { customerName: sortDirection }; break;
+        case 'systemSize': orderBy = { systemSize: sortDirection }; break;
       }
     }
 
@@ -71,7 +103,7 @@ export async function GET(request: Request) {
           orderBy: { stepIndex: 'asc' }
         }
       },
-      orderBy: { orderDate: 'asc' }
+      orderBy
     });
 
     const now = new Date().getTime();
@@ -144,8 +176,13 @@ export async function GET(request: Request) {
         orderDate: true,
         totalOrderAmount: true,
         status: true,
+        systemType: true,
+        leadSource: true,
+        phoneNumber: true,
+        zohoBooksCustomerId: true,
         salesman: { select: { name: true } },
         callingExecutive: { select: { name: true } },
+        subVendor: { select: { name: true } },
         workflowSteps: {
           where: { workflowType: 'DOCUMENTATION' },
           select: {
@@ -161,7 +198,8 @@ export async function GET(request: Request) {
           orderBy: { stepIndex: 'asc' }
         }
       },
-      orderBy: { orderDate: 'asc' }
+      orderBy
+
     });
 
     const fullItems = fullItemsQuery.map(order => {
@@ -173,6 +211,14 @@ export async function GET(request: Request) {
         customerName: order.customerName,
         orderDate: order.orderDate,
         totalOrderAmount: order.totalOrderAmount,
+        status: order.status,
+        systemType: order.systemType,
+        leadSource: order.leadSource,
+        phoneNumber: order.phoneNumber,
+        zohoBooksCustomerId: order.zohoBooksCustomerId,
+        salesman: order.salesman,
+        callingExecutive: order.callingExecutive,
+        subVendor: order.subVendor,
         assignedExecutive,
         workflowPercentage: state.progressPercentage,
         currentStage: state.currentStage,

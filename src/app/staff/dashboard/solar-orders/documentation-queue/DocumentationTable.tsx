@@ -4,11 +4,16 @@ import { createPortal } from 'react-dom';
 import { Clock, XCircle, FileText, ArrowRight, Check, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 
+import SortableTableHeader from '../components/SortableTableHeader';
+
 interface DocumentationTableProps {
   items: any[];
   allSteps: string[];
   columnCounters: Record<string, number>;
   isLoading: boolean;
+  sortField?: string;
+  sortDirection?: 'asc' | 'desc';
+  onSort?: (field: string) => void;
 }
 
 // ─── Phase Definitions ────────────────────────────────────────────────────────
@@ -140,7 +145,7 @@ function TooltipPortal({ activeTooltip }: { activeTooltip: any }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function DocumentationTable({ items, allSteps, columnCounters, isLoading }: DocumentationTableProps) {
+export default function DocumentationTable({ items, allSteps, columnCounters, isLoading, sortField, sortDirection, onSort }: DocumentationTableProps) {
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredStep, setHoveredStep] = useState<string | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -252,9 +257,20 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                 <th className="px-1.5 py-1.5 font-semibold sticky left-0 z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[30px] text-center">
                   #
                 </th>
-                <th className="px-2.5 py-1.5 font-semibold sticky left-[30px] z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[190px]">
-                  Customer
-                </th>
+                {onSort ? (
+                  <SortableTableHeader 
+                    label="Customer" 
+                    field="customerName" 
+                    currentSortField={sortField || ''} 
+                    currentSortDirection={sortDirection || 'desc'} 
+                    onSort={onSort} 
+                    className="sticky left-[30px] z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[190px]"
+                  />
+                ) : (
+                  <th className="px-2.5 py-1.5 font-semibold sticky left-[30px] z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[190px]">
+                    Customer
+                  </th>
+                )}
                 <th className="px-2.5 py-1.5 font-semibold bg-gray-50 border-r border-gray-200 w-[140px]">
                   Current Stage
                 </th>

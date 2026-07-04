@@ -24,6 +24,7 @@ export async function GET(request: Request) {
     const assignedTo = searchParams.get('assignedTo');
     const sortField = searchParams.get('sortField');
     const sortDirection = searchParams.get('sortDirection') === 'asc' ? 'asc' : 'desc';
+    const hasOutstandingPayment = searchParams.get('hasOutstandingPayment') === 'true';
 
     const skip = limit === undefined ? undefined : (page - 1) * limit;
 
@@ -80,6 +81,26 @@ export async function GET(request: Request) {
           where.OR = assigneeOR;
         }
       }
+    }
+    
+    if (hasOutstandingPayment) {
+      const paymentCondition = {
+        OR: [
+          {
+            zohoBooksCustomerId: { not: null },
+            pendingAmount: { gt: 0 }
+          },
+          {
+            zohoBooksCustomerId: null,
+            totalOrderAmount: { gt: 0 }
+          }
+        ]
+      };
+      
+      if (!where.AND) {
+        where.AND = [];
+      }
+      where.AND.push(paymentCondition);
     }
     
     let orderBy: any = { createdAt: 'desc' };

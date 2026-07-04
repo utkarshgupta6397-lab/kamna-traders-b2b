@@ -4,11 +4,16 @@ import { createPortal } from 'react-dom';
 import { Clock, XCircle, FileText, ArrowRight, Check, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 
+import SortableTableHeader from '../components/SortableTableHeader';
+
 interface InstallationTableProps {
   items: any[];
   allSteps: string[];
   columnCounters: Record<string, number>;
   isLoading: boolean;
+  sortField?: string;
+  sortDirection?: 'asc' | 'desc';
+  onSort?: (field: string) => void;
 }
 
 const isValidValue = (val: any) => {
@@ -107,7 +112,8 @@ function TooltipPortal({ activeTooltip }: { activeTooltip: any }) {
   return createPortal(content, document.body);
 }
 
-export default function InstallationTable({ items, allSteps, isLoading }: InstallationTableProps) {
+export default function InstallationTable({ items, allSteps, columnCounters, isLoading, sortField, sortDirection, onSort }: InstallationTableProps) {
+  const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredStep, setHoveredStep] = useState<string | null>(null);
   const [activeTooltip, setActiveTooltip] = useState<any>(null);
@@ -139,13 +145,24 @@ export default function InstallationTable({ items, allSteps, isLoading }: Instal
           <table className="w-full text-left border-collapse" style={{ minWidth: '1000px' }}>
             <thead className="text-[11px] text-gray-700 bg-gray-50 border-b border-gray-200 sticky top-0 z-20">
               <tr>
-                <th className="px-1.5 py-2 font-semibold sticky left-0 z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[30px] text-center align-middle">
+                <th className="px-1.5 py-1.5 font-semibold sticky left-0 z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[30px] text-center">
                   #
                 </th>
-                <th className="px-2.5 py-2 font-semibold sticky left-[30px] z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[190px] align-middle">
-                  Customer
-                </th>
-                <th className="px-2.5 py-2 font-semibold bg-gray-50 border-r border-gray-200 w-[140px] align-middle">
+                {onSort ? (
+                  <SortableTableHeader 
+                    label="Customer" 
+                    field="customerName" 
+                    currentSortField={sortField || ''} 
+                    currentSortDirection={sortDirection || 'desc'} 
+                    onSort={onSort} 
+                    className="sticky left-[30px] z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[190px]"
+                  />
+                ) : (
+                  <th className="px-2.5 py-1.5 font-semibold sticky left-[30px] z-30 bg-gray-50 shadow-[1px_0_0_#e5e7eb] border-r border-gray-200 w-[190px]">
+                    Customer
+                  </th>
+                )}
+                <th className="px-2.5 py-1.5 font-semibold bg-gray-50 border-r border-gray-200 w-[140px]">
                   Current Stage
                 </th>
                 <th className="px-2.5 py-2 font-semibold bg-gray-50 border-r border-gray-200 w-[100px] align-middle">

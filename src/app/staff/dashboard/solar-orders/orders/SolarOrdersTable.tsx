@@ -45,6 +45,7 @@ interface SolarOrdersTableProps {
 // Extracted to useSolarFilters hook
 
 export default function SolarOrdersTable({ currentUserId, canApprove, canCreate }: SolarOrdersTableProps) {
+  console.log("Rendering SolarOrdersTable");
   const router = useRouter();
 
   // Data State
@@ -182,7 +183,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
       )}
       
       {/* Filters and Actions Bar */}
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white p-3 rounded-xl border border-gray-200 shadow-sm sticky top-0 z-10">
+      <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm sticky top-0 z-10 w-full overflow-hidden">
         <SolarQuickFilters 
           search={filters.search}
           setSearch={filters.setSearch}
@@ -195,33 +196,31 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
           statusCounts={statusCounts}
           hasOutstandingPayment={filters.hasOutstandingPayment}
           setHasOutstandingPayment={filters.setHasOutstandingPayment}
-        />
-
-        <div className="flex items-center gap-3 w-full xl:w-auto overflow-x-auto hide-scrollbar mt-2 xl:mt-0">
+        >
           {bulkSyncProgress ? (
-            <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-medium border border-blue-100 flex-shrink-0">
+            <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-medium border border-blue-100 flex-shrink-0 h-8">
               <RefreshCw className="h-3 w-3 animate-spin" />
               {bulkSyncProgress}
             </div>
           ) : (
             <button
               onClick={handleBulkSync}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-blue-600 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shadow-sm flex-shrink-0"
+              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-blue-600 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shadow-sm flex-shrink-0 h-8"
             >
               <RefreshCw size={12} />
-              Refresh Payments
+              Refresh
             </button>
           )}
 
           {canCreate && (
             <Link href="/staff/dashboard/solar-orders/orders/new" className="flex-shrink-0">
-              <button className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg font-medium text-xs transition-colors shadow-sm justify-center whitespace-nowrap">
+              <button className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg font-medium text-xs transition-colors shadow-sm justify-center whitespace-nowrap h-8">
                 <Plus size={14} />
                 <span>New Order</span>
               </button>
             </Link>
           )}
-        </div>
+        </SolarQuickFilters>
       </div>
 
       {filters.showFilters && (
@@ -235,10 +234,6 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
           setLeadSources={filters.setLeadSources}
           assignedTo={filters.assignedTo}
           setAssignedTo={filters.setAssignedTo}
-          leadSourceSearch={filters.leadSourceSearch}
-          setLeadSourceSearch={filters.setLeadSourceSearch}
-          assigneeSearch={filters.assigneeSearch}
-          setAssigneeSearch={filters.setAssigneeSearch}
           activeFilterCount={filters.activeFilterCount}
           resetFilters={filters.resetFilters}
           toggleArrayItem={filters.toggleArrayItem}

@@ -38,12 +38,35 @@ export function buildSolarOrdersWhereClause(searchParams: URLSearchParams) {
   }
 
   if (search) {
-    where.OR = [
+    const searchNum = parseFloat(search);
+    const searchIsNum = !isNaN(searchNum);
+
+    const searchORs: any[] = [
       { orderNumber: { contains: search, mode: 'insensitive' } },
       { customerName: { contains: search, mode: 'insensitive' } },
       { phoneNumber: { contains: search, mode: 'insensitive' } },
       { applicationNumber: { contains: search, mode: 'insensitive' } },
+      { leadSource: { contains: search, mode: 'insensitive' } },
+      { systemType: { contains: search, mode: 'insensitive' } },
+      { zohoBooksCustomerName: { contains: search, mode: 'insensitive' } },
+      { salesman: { name: { contains: search, mode: 'insensitive' } } },
+      { callingExecutive: { name: { contains: search, mode: 'insensitive' } } },
+      { subVendor: { name: { contains: search, mode: 'insensitive' } } },
     ];
+
+    if (searchIsNum) {
+      searchORs.push({ systemSize: { equals: searchNum } });
+      searchORs.push({ pendingAmount: { equals: searchNum } });
+      searchORs.push({ totalOrderAmount: { equals: searchNum } });
+    }
+
+    if (where.OR) {
+      if (!where.AND) where.AND = [];
+      where.AND.push({ OR: where.OR }, { OR: searchORs });
+      delete where.OR;
+    } else {
+      where.OR = searchORs;
+    }
   }
   
   if (quarters) {

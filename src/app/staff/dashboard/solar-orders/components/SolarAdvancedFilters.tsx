@@ -1,3 +1,4 @@
+import React, { useState, useMemo } from 'react';
 import { Filter, X } from 'lucide-react';
 
 interface SolarAdvancedFiltersProps {
@@ -15,16 +16,12 @@ interface SolarAdvancedFiltersProps {
   setLeadSources: React.Dispatch<React.SetStateAction<string[]>>;
   assignedTo: string[];
   setAssignedTo: React.Dispatch<React.SetStateAction<string[]>>;
-  leadSourceSearch: string;
-  setLeadSourceSearch: (val: string) => void;
-  assigneeSearch: string;
-  setAssigneeSearch: (val: string) => void;
   activeFilterCount: number;
   resetFilters: () => void;
   toggleArrayItem: (setter: React.Dispatch<React.SetStateAction<string[]>>, value: string) => void;
 }
 
-export default function SolarAdvancedFilters({
+const SolarAdvancedFilters = React.memo(function SolarAdvancedFilters({
   filterOptions,
   systemTypes,
   setSystemTypes,
@@ -34,14 +31,25 @@ export default function SolarAdvancedFilters({
   setLeadSources,
   assignedTo,
   setAssignedTo,
-  leadSourceSearch,
-  setLeadSourceSearch,
-  assigneeSearch,
-  setAssigneeSearch,
   activeFilterCount,
   resetFilters,
   toggleArrayItem
 }: SolarAdvancedFiltersProps) {
+  const [leadSourceSearch, setLeadSourceSearch] = useState('');
+  const [assigneeSearch, setAssigneeSearch] = useState('');
+
+  const filteredLeadSources = useMemo(() => {
+    if (!leadSourceSearch) return filterOptions.leadSources;
+    const lowerSearch = leadSourceSearch.toLowerCase();
+    return filterOptions.leadSources.filter(o => o.label.toLowerCase().includes(lowerSearch));
+  }, [filterOptions.leadSources, leadSourceSearch]);
+
+  const filteredAssignees = useMemo(() => {
+    if (!assigneeSearch) return filterOptions.assignees;
+    const lowerSearch = assigneeSearch.toLowerCase();
+    return filterOptions.assignees.filter(o => o.label.toLowerCase().includes(lowerSearch));
+  }, [filterOptions.assignees, assigneeSearch]);
+
   return (
     <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm animate-in slide-in-from-top-2">
       <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-100">
@@ -51,7 +59,7 @@ export default function SolarAdvancedFilters({
         </h3>
         {activeFilterCount > 0 && (
           <button onClick={resetFilters} className="text-xs font-bold text-orange-600 hover:text-orange-700 hover:bg-orange-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 border border-orange-200">
-            <X size={12} /> Reset Filters
+            <X size={12} /> Clear All Filters
           </button>
         )}
       </div>
@@ -105,7 +113,7 @@ export default function SolarAdvancedFilters({
               className="w-full text-[10px] p-1.5 border border-gray-200 rounded mb-2 bg-gray-50 focus:bg-white focus:outline-none focus:border-blue-400"
             />
             <div className="space-y-1 max-h-32 overflow-y-auto pr-2 custom-scrollbar flex-1">
-              {filterOptions.leadSources.filter(o => o.label.toLowerCase().includes(leadSourceSearch.toLowerCase())).map(opt => (
+              {filteredLeadSources.map(opt => (
                 <label key={opt.value} className="flex items-center justify-between p-1.5 hover:bg-gray-50 rounded cursor-pointer group">
                   <div className="flex items-center gap-2">
                     <input type="checkbox" checked={leadSources.includes(opt.value)} onChange={() => toggleArrayItem(setLeadSources, opt.value)} className="w-3.5 h-3.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
@@ -130,7 +138,7 @@ export default function SolarAdvancedFilters({
               className="w-full text-[10px] p-1.5 border border-gray-200 rounded mb-2 bg-gray-50 focus:bg-white focus:outline-none focus:border-blue-400"
             />
             <div className="space-y-1 max-h-32 overflow-y-auto pr-2 custom-scrollbar flex-1">
-              {filterOptions.assignees.filter(o => o.label.toLowerCase().includes(assigneeSearch.toLowerCase())).map(opt => (
+              {filteredAssignees.map(opt => (
                 <label key={opt.value} className="flex items-center justify-between p-1.5 hover:bg-gray-50 rounded cursor-pointer group">
                   <div className="flex items-center gap-2">
                     <input type="checkbox" checked={assignedTo.includes(opt.value)} onChange={() => toggleArrayItem(setAssignedTo, opt.value)} className="w-3.5 h-3.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
@@ -145,4 +153,6 @@ export default function SolarAdvancedFilters({
       </div>
     </div>
   );
-}
+});
+
+export default SolarAdvancedFilters;

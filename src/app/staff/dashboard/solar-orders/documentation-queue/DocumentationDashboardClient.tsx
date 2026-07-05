@@ -120,29 +120,25 @@ export default function DocumentationDashboardClient() {
   return (
     <div className="space-y-3">
       {/* Top Action Bar */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-white p-2 rounded-lg border border-gray-200 shadow-sm">
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <SolarQuickFilters 
-            search={filters.search}
-            setSearch={filters.setSearch}
-            setPage={filters.setPage}
-            showFilters={filters.showFilters}
-            setShowFilters={filters.setShowFilters}
-            activeFilterCount={filters.activeFilterCount}
-            statusFilter={filters.statusFilter}
-            setStatusFilter={filters.setStatusFilter}
-            statusCounts={statusCounts}
-            hasOutstandingPayment={filters.hasOutstandingPayment}
-            setHasOutstandingPayment={filters.setHasOutstandingPayment}
-            showStatusTabs={false}
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+      <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm sticky top-0 z-10 w-full overflow-hidden">
+        <SolarQuickFilters 
+          search={filters.search}
+          setSearch={filters.setSearch}
+          setPage={filters.setPage}
+          showFilters={filters.showFilters}
+          setShowFilters={filters.setShowFilters}
+          activeFilterCount={filters.activeFilterCount}
+          statusFilter={filters.statusFilter}
+          setStatusFilter={filters.setStatusFilter}
+          statusCounts={statusCounts}
+          hasOutstandingPayment={filters.hasOutstandingPayment}
+          setHasOutstandingPayment={filters.setHasOutstandingPayment}
+          showStatusTabs={false}
+        >
           <button
             onClick={() => fetchDashboardData(true)}
             disabled={isRefreshing || isLoading}
-            className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-md text-[13px] font-medium hover:bg-gray-50 hover:text-[#1A2766] transition-colors disabled:opacity-50 w-full sm:w-auto"
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-md text-[13px] font-medium hover:bg-gray-50 hover:text-[#1A2766] transition-colors disabled:opacity-50 w-full sm:w-auto h-8"
           >
             <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
             Refresh
@@ -151,14 +147,14 @@ export default function DocumentationDashboardClient() {
           <button
             onClick={handleExportCSV}
             disabled={isLoading || !data?.items?.length}
-            className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-md text-[13px] font-medium hover:bg-gray-50 hover:text-[#1A2766] transition-colors disabled:opacity-50 w-full sm:w-auto"
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-md text-[13px] font-medium hover:bg-gray-50 hover:text-[#1A2766] transition-colors disabled:opacity-50 w-full sm:w-auto h-8"
           >
             <Download size={14} />
             Export
           </button>
 
           <AuthorityBatchButton eligibleCount={data?.summary?.eligibleForAuthoritySignature || 0} />
-        </div>
+        </SolarQuickFilters>
       </div>
 
       {/* KPIs */}
@@ -181,10 +177,6 @@ export default function DocumentationDashboardClient() {
           setLeadSources={filters.setLeadSources}
           assignedTo={filters.assignedTo}
           setAssignedTo={filters.setAssignedTo}
-          leadSourceSearch={filters.leadSourceSearch}
-          setLeadSourceSearch={filters.setLeadSourceSearch}
-          assigneeSearch={filters.assigneeSearch}
-          setAssigneeSearch={filters.setAssigneeSearch}
           activeFilterCount={filters.activeFilterCount}
           resetFilters={filters.resetFilters}
           toggleArrayItem={filters.toggleArrayItem}

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 
 // Utility to determine Quarter
 export const getQuarter = (dateString: string): string => {
@@ -50,17 +50,13 @@ export function useSolarFilters() {
   const [quarters, setQuarters] = useState<string[]>([]);
   const [leadSources, setLeadSources] = useState<string[]>([]);
   const [assignedTo, setAssignedTo] = useState<string[]>([]);
-  
-  // Search within filters
-  const [assigneeSearch, setAssigneeSearch] = useState('');
-  const [leadSourceSearch, setLeadSourceSearch] = useState('');
 
   // Pagination & outstanding payment
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(25);
   const [hasOutstandingPayment, setHasOutstandingPayment] = useState(false);
 
-  const resetFilters = () => {
+  const resetFilters = useCallback(() => {
     setSystemTypes([]);
     setQuarters([]);
     setLeadSources([]);
@@ -69,28 +65,26 @@ export function useSolarFilters() {
     setStatusFilter('All');
     setHasOutstandingPayment(false);
     setPage(1);
-    setAssigneeSearch('');
-    setLeadSourceSearch('');
-  };
+  }, []);
 
-  const toggleArrayItem = (setter: React.Dispatch<React.SetStateAction<string[]>>, value: string) => {
+  const toggleArrayItem = useCallback((setter: React.Dispatch<React.SetStateAction<string[]>>, value: string) => {
     setter(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
     setPage(1);
-  };
+  }, []);
 
   const activeFilterCount = systemTypes.length + quarters.length + leadSources.length + assignedTo.length;
 
-  const onSearchChange = (val: string) => {
+  const onSearchChange = useCallback((val: string) => {
     setSearch(val);
     setPage(1);
-  };
+  }, []);
 
-  const onStatusChange = (val: string) => {
+  const onStatusChange = useCallback((val: string) => {
     setStatusFilter(val);
     setPage(1);
-  };
+  }, []);
 
-  return {
+  return useMemo(() => ({
     showFilters, setShowFilters,
     search, setSearch: onSearchChange,
     statusFilter, setStatusFilter: onStatusChange,
@@ -98,13 +92,15 @@ export function useSolarFilters() {
     quarters, setQuarters,
     leadSources, setLeadSources,
     assignedTo, setAssignedTo,
-    assigneeSearch, setAssigneeSearch,
-    leadSourceSearch, setLeadSourceSearch,
     hasOutstandingPayment, setHasOutstandingPayment,
     page, setPage,
     limit, setLimit,
     activeFilterCount,
     resetFilters,
     toggleArrayItem,
-  };
+  }), [
+    showFilters, search, statusFilter, systemTypes, quarters, 
+    leadSources, assignedTo, hasOutstandingPayment, page, limit, 
+    activeFilterCount, onSearchChange, onStatusChange, resetFilters, toggleArrayItem
+  ]);
 }

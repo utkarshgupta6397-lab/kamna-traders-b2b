@@ -19,9 +19,14 @@ export default function DocumentationDashboardClient() {
   
   const [activeFilter, setActiveFilter] = useState<{ type: string; value: string } | null>(null);
   
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalOrders, setTotalOrders] = useState(0);
+  const [filterOptions, setFilterOptions] = useState<any>({ systemTypes: [], quarters: [], leadSources: [], assignees: [] });
+  const [statusCounts, setStatusCounts] = useState<any>({ all: 0, pendingApproval: 0, execution: 0, completed: 0, rejected: 0 });
+
   // Sorting
   const { sortField, sortDirection, handleSort, setSortField, setSortDirection } = useTableSorting(WORKFLOW_QUEUE_DEFAULT_SORT_FIELD, WORKFLOW_QUEUE_DEFAULT_SORT_DIR);
-  const filters = useSolarFilters(allOrders);
+  const filters = useSolarFilters();
 
   const fetchDashboardData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setIsRefreshing(true);
@@ -29,26 +34,48 @@ export default function DocumentationDashboardClient() {
 
     try {
       const params = new URLSearchParams();
-      params.set('limit', 'all');
+      params.set('page', filters.page.toString());
+      params.set('limit', filters.limit.toString());
+      
       if (activeFilter && activeFilter.type !== 'All') {
         params.set(activeFilter.type, activeFilter.value);
       }
+      
       if (sortField) params.set('sortField', sortField);
       if (sortDirection) params.set('sortDirection', sortDirection);
+      if (filters.search) params.set('search', filters.search);
+      if (filters.statusFilter && filters.statusFilter !== 'All') params.set('status', filters.statusFilter);
       if (filters.hasOutstandingPayment) params.set('hasOutstandingPayment', 'true');
+      
+      if (filters.systemTypes.length > 0) params.set('systemType', filters.systemTypes.join(','));
+      if (filters.quarters.length > 0) params.set('quarters', filters.quarters.join(','));
+      if (filters.leadSources.length > 0) params.set('leadSource', filters.leadSources.join(','));
+      if (filters.assignedTo.length > 0) params.set('assignedTo', filters.assignedTo.join(','));
 
       const res = await fetch(`/api/solar-orders/documentation-dashboard?${params.toString()}`);
       if (!res.ok) throw new Error('Failed to fetch data');
       const json = await res.json();
       setData(json);
       setAllOrders(json.items || []);
+      
+      if (json.pagination) {
+        setTotalPages(json.pagination.pages || 1);
+        setTotalOrders(json.pagination.total || 0);
+      }
+      if (json.filterOptions) setFilterOptions(json.filterOptions);
+      if (json.statusCounts) setStatusCounts(json.statusCounts);
     } catch (error) {
       console.error(error);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [activeFilter, filters.hasOutstandingPayment, sortField, sortDirection]);
+  }, [
+    activeFilter, sortField, sortDirection, 
+    filters.page, filters.limit, filters.search, filters.statusFilter, 
+    filters.hasOutstandingPayment, filters.systemTypes, filters.quarters, 
+    filters.leadSources, filters.assignedTo
+  ]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -104,7 +131,7 @@ export default function DocumentationDashboardClient() {
             activeFilterCount={filters.activeFilterCount}
             statusFilter={filters.statusFilter}
             setStatusFilter={filters.setStatusFilter}
-            statusCounts={filters.statusCounts}
+            statusCounts={statusCounts}
             hasOutstandingPayment={filters.hasOutstandingPayment}
             setHasOutstandingPayment={filters.setHasOutstandingPayment}
             showStatusTabs={false}
@@ -145,7 +172,7 @@ export default function DocumentationDashboardClient() {
 
       {filters.showFilters && (
         <SolarAdvancedFilters 
-          filterOptions={filters.filterOptions}
+          filterOptions={filterOptions}
           systemTypes={filters.systemTypes}
           setSystemTypes={filters.setSystemTypes}
           quarters={filters.quarters}
@@ -166,7 +193,7 @@ export default function DocumentationDashboardClient() {
 
       {/* Main Table */}
       <DocumentationTable 
-        items={filters.paginatedOrders} 
+        items={allOrders} 
         allSteps={data?.allSteps || []} 
         columnCounters={data?.columnCounters || {}} 
         isLoading={isLoading && !isRefreshing} 
@@ -176,44 +203,47 @@ export default function DocumentationDashboardClient() {
       />
 
       {/* Pagination Footer */}
-      {!isLoading && filters.totalPages > 0 && (
-        <div className="px-6 py-2.5 border border-gray-200 bg-white rounded-xl shadow-sm flex items-center justify-between mt-4">
-          <div className="flex items-center gap-3 text-[11px] text-gray-500 font-medium">
-            <span>Showing {(filters.page - 1) * filters.limit + 1} to {Math.min(filters.page * filters.limit, filters.filteredOrders.length)} of {filters.filteredOrders.length}</span>
-            <div className="h-3 w-px bg-gray-300"></div>
+        {!isLoading && totalPages > 0 && (
+          <div className="px-6 py-2.5 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
+            <div className="flex items-center gap-3 text-[11px] text-gray-500 font-medium">
+              <span>Showing {(filters.page - 1) * filters.limit + 1} to {Math.min(filters.page * filters.limit, totalOrders)} of {totalOrders}</span>
+              <div className="h-3 w-px bg-gray-300"></div>
+              <div className="flex items-center gap-1.5">
+                <span>Rows per page:</span>
+                <select 
+                  value={filters.limit} 
+                  onChange={(e) => { filters.setLimit(parseInt(e.target.value)); filters.setPage(1); }}
+                  className="bg-transparent border-none text-gray-700 font-semibold focus:ring-0 cursor-pointer text-[11px] py-0 pr-6"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+            </div>
+            
             <div className="flex items-center gap-1.5">
-              <span>Rows per page:</span>
-              <select 
-                value={filters.limit} 
-                onChange={(e) => { filters.setLimit(parseInt(e.target.value)); filters.setPage(1); }}
-                className="bg-transparent border-none text-gray-700 font-semibold focus:ring-0 cursor-pointer text-[11px] py-0 pr-6"
+              <button
+                disabled={filters.page === 1}
+                onClick={() => filters.setPage(filters.page - 1)}
+                className="inline-flex items-center justify-center w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 disabled:opacity-50 disabled:bg-transparent hover:bg-gray-50 transition-colors shadow-sm"
               >
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
+                <RefreshCw size={14} className="hidden" /> {/* just for spacing match */}
+                <span className="sr-only">Previous</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+              </button>
+              <span className="text-xs font-bold px-3 text-gray-700">{filters.page} <span className="text-gray-400 font-normal">/ {totalPages}</span></span>
+              <button
+                disabled={filters.page === totalPages}
+                onClick={() => filters.setPage(filters.page + 1)}
+                className="inline-flex items-center justify-center w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 disabled:opacity-50 disabled:bg-transparent hover:bg-gray-50 transition-colors shadow-sm"
+              >
+                <span className="sr-only">Next</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
             </div>
           </div>
-          
-          <div className="flex items-center gap-1.5">
-            <button
-              disabled={filters.page === 1}
-              onClick={() => filters.setPage(filters.page - 1)}
-              className="inline-flex items-center justify-center w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 disabled:opacity-50 disabled:bg-transparent hover:bg-gray-50 transition-colors shadow-sm"
-            >
-              {'<'}
-            </button>
-            <span className="text-xs font-bold px-3 text-gray-700">{filters.page} <span className="text-gray-400 font-normal">/ {filters.totalPages}</span></span>
-            <button
-              disabled={filters.page === filters.totalPages}
-              onClick={() => filters.setPage(filters.page + 1)}
-              className="inline-flex items-center justify-center w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 disabled:opacity-50 disabled:bg-transparent hover:bg-gray-50 transition-colors shadow-sm"
-            >
-              {'>'}
-            </button>
-          </div>
-        </div>
-      )}
+        )}
     </div>
   );
 }

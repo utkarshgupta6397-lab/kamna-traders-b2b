@@ -54,24 +54,42 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
   const [bulkSyncProgress, setBulkSyncProgress] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<{text: string, type: 'success'|'error'} | null>(null);
 
-  // Fetch all orders once
-  const { sortField, sortDirection, handleSort, setSortField, setSortDirection } = useTableSorting('orderDate', 'desc');
-  const filters = useSolarFilters(allOrders);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalOrders, setTotalOrders] = useState(0);
+  const [filterOptions, setFilterOptions] = useState<any>({ systemTypes: [], quarters: [], leadSources: [], assignees: [] });
+  const [statusCounts, setStatusCounts] = useState<any>({ all: 0, pendingApproval: 0, execution: 0, completed: 0, rejected: 0 });
 
-  // Fetch all orders once
-  const fetchAllOrders = async () => {
+  const { sortField, sortDirection, handleSort, setSortField, setSortDirection } = useTableSorting('orderDate', 'desc');
+  const filters = useSolarFilters();
+
+  const fetchOrders = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set('limit', 'all');
+      params.set('page', filters.page.toString());
+      params.set('limit', filters.limit.toString());
+      
       if (sortField) params.set('sortField', sortField);
       if (sortDirection) params.set('sortDirection', sortDirection);
+      if (filters.search) params.set('search', filters.search);
+      if (filters.statusFilter && filters.statusFilter !== 'All') params.set('status', filters.statusFilter);
       if (filters.hasOutstandingPayment) params.set('hasOutstandingPayment', 'true');
+      
+      if (filters.systemTypes.length > 0) params.set('systemType', filters.systemTypes.join(','));
+      if (filters.quarters.length > 0) params.set('quarters', filters.quarters.join(','));
+      if (filters.leadSources.length > 0) params.set('leadSource', filters.leadSources.join(','));
+      if (filters.assignedTo.length > 0) params.set('assignedTo', filters.assignedTo.join(','));
       
       const res = await fetch(`/api/solar-orders?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setAllOrders(data.orders || []);
+        if (data.pagination) {
+          setTotalPages(data.pagination.pages || 1);
+          setTotalOrders(data.pagination.total || 0);
+        }
+        if (data.filterOptions) setFilterOptions(data.filterOptions);
+        if (data.statusCounts) setStatusCounts(data.statusCounts);
       }
     } catch (err) {
       console.error('Failed to fetch orders:', err);
@@ -82,8 +100,12 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
   };
 
   useEffect(() => {
-    fetchAllOrders();
-  }, [sortField, sortDirection, filters.hasOutstandingPayment]);
+    fetchOrders();
+  }, [
+    sortField, sortDirection, filters.page, filters.limit, 
+    filters.search, filters.statusFilter, filters.hasOutstandingPayment,
+    filters.systemTypes, filters.quarters, filters.leadSources, filters.assignedTo
+  ]);
 
 
 
@@ -110,7 +132,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
     try {
       const res = await fetch(`/api/solar-orders/${order.id}/sync-payments`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to sync');
-      await fetchAllOrders();
+      await fetchOrders();
       setToastMsg({ text: 'Payments updated.', type: 'success' });
     } catch (err) {
       console.error(err);
@@ -140,7 +162,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
       setBulkSyncProgress("Pending payments updated successfully.");
       setTimeout(() => {
         setBulkSyncProgress(null);
-        fetchAllOrders();
+        fetchOrders();
       }, 2000);
     } catch (err) {
       console.error(err);
@@ -170,7 +192,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
           activeFilterCount={filters.activeFilterCount}
           statusFilter={filters.statusFilter}
           setStatusFilter={filters.setStatusFilter}
-          statusCounts={filters.statusCounts}
+          statusCounts={statusCounts}
           hasOutstandingPayment={filters.hasOutstandingPayment}
           setHasOutstandingPayment={filters.setHasOutstandingPayment}
         />
@@ -204,7 +226,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
 
       {filters.showFilters && (
         <SolarAdvancedFilters 
-          filterOptions={filters.filterOptions}
+          filterOptions={filterOptions}
           systemTypes={filters.systemTypes}
           setSystemTypes={filters.setSystemTypes}
           quarters={filters.quarters}
@@ -253,7 +275,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                     </div>
                   </td>
                 </tr>
-              ) : filters.paginatedOrders.length === 0 ? (
+              ) : allOrders.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="px-6 py-16 text-center">
                     <div className="flex flex-col items-center justify-center gap-2 text-gray-500">
@@ -271,7 +293,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                   </td>
                 </tr>
               ) : (
-                filters.paginatedOrders.map((order, index) => {
+                allOrders.map((order, index) => {
                   const config = SOLAR_ORDER_STATUS_UI[order.status] || SOLAR_ORDER_STATUS_UI.PENDING_APPROVAL;
                   const leadConfig = getLeadSourceBadge(order.leadSource);
                   const initials = order.customerName.substring(0, 2).toUpperCase();
@@ -411,10 +433,10 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
         </div>
         
         {/* Pagination Footer */}
-        {!loading && filters.totalPages > 0 && (
+        {!loading && totalPages > 0 && (
           <div className="px-6 py-2.5 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
             <div className="flex items-center gap-3 text-[11px] text-gray-500 font-medium">
-              <span>Showing {(filters.page - 1) * filters.limit + 1} to {Math.min(filters.page * filters.limit, filters.filteredOrders.length)} of {filters.filteredOrders.length}</span>
+              <span>Showing {(filters.page - 1) * filters.limit + 1} to {Math.min(filters.page * filters.limit, totalOrders)} of {totalOrders}</span>
               <div className="h-3 w-px bg-gray-300"></div>
               <div className="flex items-center gap-1.5">
                 <span>Rows per page:</span>
@@ -438,9 +460,9 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
               >
                 <ChevronLeft size={14} />
               </button>
-              <span className="text-xs font-bold px-3 text-gray-700">{filters.page} <span className="text-gray-400 font-normal">/ {filters.totalPages}</span></span>
+              <span className="text-xs font-bold px-3 text-gray-700">{filters.page} <span className="text-gray-400 font-normal">/ {totalPages}</span></span>
               <button
-                disabled={filters.page === filters.totalPages}
+                disabled={filters.page === totalPages}
                 onClick={() => filters.setPage(filters.page + 1)}
                 className="inline-flex items-center justify-center w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 disabled:opacity-50 disabled:bg-transparent hover:bg-gray-50 transition-colors shadow-sm"
               >

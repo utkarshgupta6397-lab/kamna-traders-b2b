@@ -28,81 +28,9 @@ export async function GET(request: Request) {
 
     const skip = limit === undefined ? undefined : (page - 1) * limit;
 
-    const where: any = {};
+    const { buildSolarOrdersWhereClause } = await import('@/lib/solar-filters');
+    const where = buildSolarOrdersWhereClause(searchParams);
 
-    if (status && status !== 'All') {
-      where.status = { in: SOLAR_ORDER_STATUS_GROUPS[status] || [status] };
-    }
-
-    if (systemType && systemType !== 'All') {
-      where.systemType = systemType;
-    }
-    
-    if (leadSource) {
-      where.leadSource = { in: leadSource.split(',') };
-    }
-    
-    if (systemSizeMin || systemSizeMax) {
-      where.systemSize = {};
-      if (systemSizeMin) {
-        const minVal = parseFloat(systemSizeMin);
-        if (!isNaN(minVal)) where.systemSize.gte = minVal;
-      }
-      if (systemSizeMax) {
-        const maxVal = parseFloat(systemSizeMax);
-        if (!isNaN(maxVal)) where.systemSize.lte = maxVal;
-      }
-    }
-
-    if (search) {
-      where.OR = [
-        { orderNumber: { contains: search, mode: 'insensitive' } },
-        { customerName: { contains: search, mode: 'insensitive' } },
-        { phoneNumber: { contains: search, mode: 'insensitive' } },
-        { applicationNumber: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    
-    if (assignedTo && assignedTo !== 'All') {
-      if (assignedTo === 'Unassigned') {
-        where.salesmanId = null;
-        where.callingExecutiveId = null;
-        where.subVendorId = null;
-      } else {
-        const assigneeOR = [
-          { salesmanId: assignedTo },
-          { callingExecutiveId: assignedTo },
-          { subVendorId: assignedTo }
-        ];
-        if (where.OR) {
-          where.AND = [ { OR: where.OR }, { OR: assigneeOR } ];
-          delete where.OR;
-        } else {
-          where.OR = assigneeOR;
-        }
-      }
-    }
-    
-    if (hasOutstandingPayment) {
-      const paymentCondition = {
-        OR: [
-          {
-            zohoBooksCustomerId: { not: null },
-            pendingAmount: { gt: 0 }
-          },
-          {
-            zohoBooksCustomerId: null,
-            totalOrderAmount: { gt: 0 }
-          }
-        ]
-      };
-      
-      if (!where.AND) {
-        where.AND = [];
-      }
-      where.AND.push(paymentCondition);
-    }
-    
     let orderBy: any = { createdAt: 'desc' };
     if (sortField) {
       switch(sortField) {
@@ -132,6 +60,7 @@ export async function GET(request: Request) {
     ]);
 
     const { resolveWorkflowState } = await import('@/lib/solar-workflow-config');
+    const { computeFacets, computeStatusCounts } = await import('@/lib/solar-facets');
 
     const orders = ordersData.map((order: any) => {
       const docState = resolveWorkflowState(order.workflowSteps || [], 'DOCUMENTATION');
@@ -154,8 +83,15 @@ export async function GET(request: Request) {
       };
     });
 
+    const [filterOptions, statusCounts] = await Promise.all([
+      computeFacets(where),
+      computeStatusCounts(search)
+    ]);
+
     return NextResponse.json({
       orders,
+      filterOptions,
+      statusCounts,
       pagination: {
         total: totalCount,
         pages: limit === undefined ? 1 : Math.ceil(totalCount / limit),

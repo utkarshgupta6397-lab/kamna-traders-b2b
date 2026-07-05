@@ -40,7 +40,7 @@ export const getLeadSourceBadge = (source: string) => {
   }
 };
 
-export function useSolarFilters(allOrders: any[]) {
+export function useSolarFilters() {
   const [showFilters, setShowFilters] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -60,122 +60,6 @@ export function useSolarFilters(allOrders: any[]) {
   const [limit, setLimit] = useState(25);
   const [hasOutstandingPayment, setHasOutstandingPayment] = useState(false);
 
-  const filteredOrders = useMemo(() => {
-    let result = allOrders;
-
-    // Apply Search
-    if (search.trim()) {
-      const s = search.toLowerCase();
-      result = result.filter(o => 
-        o.orderNumber?.toLowerCase().includes(s) ||
-        o.customerName?.toLowerCase().includes(s) ||
-        o.phoneNumber?.includes(s) ||
-        (o.zohoBooksCustomerId && o.zohoBooksCustomerId.toLowerCase().includes(s))
-      );
-    }
-
-    // Apply Status Filter
-    if (statusFilter !== 'All') {
-      result = result.filter(o => {
-        if (statusFilter === 'PENDING_APPROVAL') return o.status === 'PENDING_APPROVAL';
-        if (statusFilter === 'EXECUTION') return ['APPROVED', 'EXECUTION', 'INSTALLATION_IN_PROGRESS'].includes(o.status);
-        if (statusFilter === 'COMPLETED') return o.status === 'COMPLETED';
-        if (statusFilter === 'REJECTED') return ['REJECTED', 'CANCELLED'].includes(o.status);
-        return true;
-      });
-    }
-
-    // Apply Multi-select Filters
-    if (systemTypes.length > 0) {
-      result = result.filter(o => systemTypes.includes(o.systemType));
-    }
-    if (quarters.length > 0) {
-      result = result.filter(o => quarters.includes(getQuarter(o.orderDate)));
-    }
-    if (leadSources.length > 0) {
-      result = result.filter(o => leadSources.includes(o.leadSource));
-    }
-    if (assignedTo.length > 0) {
-      result = result.filter(o => {
-        const assignee = o.salesman?.name || o.callingExecutive?.name || o.subVendor?.name || 'Unassigned';
-        return assignedTo.includes(assignee);
-      });
-    }
-
-    return result;
-  }, [allOrders, search, statusFilter, systemTypes, quarters, leadSources, assignedTo]);
-
-  // Compute status counts based ONLY on search
-  const statusCounts = useMemo(() => {
-    let base = allOrders;
-    if (search.trim()) {
-      const s = search.toLowerCase();
-      base = base.filter(o => 
-        o.orderNumber?.toLowerCase().includes(s) ||
-        o.customerName?.toLowerCase().includes(s) ||
-        o.phoneNumber?.includes(s)
-      );
-    }
-    
-    return {
-      all: base.length,
-      pendingApproval: base.filter(o => o.status === 'PENDING_APPROVAL').length,
-      execution: base.filter(o => ['APPROVED', 'EXECUTION', 'INSTALLATION_IN_PROGRESS'].includes(o.status)).length,
-      completed: base.filter(o => o.status === 'COMPLETED').length,
-      rejected: base.filter(o => ['REJECTED', 'CANCELLED'].includes(o.status)).length,
-    };
-  }, [allOrders, search]);
-
-  const filterOptions = useMemo(() => {
-    const opts = {
-      systemTypes: {} as Record<string, number>,
-      quarters: {} as Record<string, number>,
-      leadSources: {} as Record<string, number>,
-      assignees: {} as Record<string, number>
-    };
-
-    filteredOrders.forEach(o => {
-      const st = formatSystemType(o.systemType);
-      opts.systemTypes[st] = (opts.systemTypes[st] || 0) + 1;
-      
-      const q = getQuarter(o.orderDate);
-      opts.quarters[q] = (opts.quarters[q] || 0) + 1;
-      
-      const ls = o.leadSource || 'OTHER';
-      opts.leadSources[ls] = (opts.leadSources[ls] || 0) + 1;
-      
-      const assignee = o.salesman?.name || o.callingExecutive?.name || o.subVendor?.name || 'Unassigned';
-      opts.assignees[assignee] = (opts.assignees[assignee] || 0) + 1;
-    });
-
-    // Ensure selected options remain visible
-    systemTypes.forEach(t => { if (opts.systemTypes[formatSystemType(t)] === undefined) opts.systemTypes[formatSystemType(t)] = 0; });
-    quarters.forEach(q => { if (opts.quarters[q] === undefined) opts.quarters[q] = 0; });
-    leadSources.forEach(ls => { if (opts.leadSources[ls] === undefined) opts.leadSources[ls] = 0; });
-    assignedTo.forEach(a => { if (opts.assignees[a] === undefined) opts.assignees[a] = 0; });
-
-    return {
-      systemTypes: Object.entries(opts.systemTypes).map(([k, v]) => ({ label: k, value: k.toUpperCase().replace('-', '_'), count: v })).sort((a,b) => b.count - a.count),
-      quarters: Object.entries(opts.quarters).map(([k, v]) => ({ label: k, value: k, count: v })).sort((a,b) => {
-        const [qA, yA] = a.label.split(' ');
-        const [qB, yB] = b.label.split(' ');
-        if (yA !== yB) return parseInt(yB) - parseInt(yA);
-        return qA.localeCompare(qB);
-      }),
-      leadSources: Object.entries(opts.leadSources).map(([k, v]) => ({ label: getLeadSourceBadge(k).label, value: k, count: v })).sort((a,b) => b.count - a.count),
-      assignees: Object.entries(opts.assignees).map(([k, v]) => ({ label: k, value: k, count: v })).sort((a,b) => b.count - a.count)
-    };
-  }, [filteredOrders, systemTypes, quarters, leadSources, assignedTo]);
-
-  const activeFilterCount = systemTypes.length + quarters.length + leadSources.length + assignedTo.length;
-
-  const totalPages = Math.ceil(filteredOrders.length / limit);
-  useEffect(() => {
-    if (page > totalPages && totalPages > 0) setPage(1);
-  }, [totalPages, page]);
-
-  const paginatedOrders = filteredOrders.slice((page - 1) * limit, page * limit);
-
   const resetFilters = () => {
     setSystemTypes([]);
     setQuarters([]);
@@ -194,10 +78,22 @@ export function useSolarFilters(allOrders: any[]) {
     setPage(1);
   };
 
+  const activeFilterCount = systemTypes.length + quarters.length + leadSources.length + assignedTo.length;
+
+  const onSearchChange = (val: string) => {
+    setSearch(val);
+    setPage(1);
+  };
+
+  const onStatusChange = (val: string) => {
+    setStatusFilter(val);
+    setPage(1);
+  };
+
   return {
     showFilters, setShowFilters,
-    search, setSearch,
-    statusFilter, setStatusFilter,
+    search, setSearch: onSearchChange,
+    statusFilter, setStatusFilter: onStatusChange,
     systemTypes, setSystemTypes,
     quarters, setQuarters,
     leadSources, setLeadSources,
@@ -208,11 +104,6 @@ export function useSolarFilters(allOrders: any[]) {
     page, setPage,
     limit, setLimit,
     activeFilterCount,
-    filterOptions,
-    statusCounts,
-    paginatedOrders,
-    filteredOrders,
-    totalPages,
     resetFilters,
     toggleArrayItem,
   };

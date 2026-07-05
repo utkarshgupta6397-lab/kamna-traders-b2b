@@ -19,8 +19,17 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
+    const { buildSolarOrdersWhereClause } = await import('@/lib/solar-filters');
+    const where = buildSolarOrdersWhereClause(searchParams);
+
+    // Default to active workflows unless a specific status is provided
+    const statusParam = searchParams.get('status');
     const search = searchParams.get('search');
-    const assignedTo = searchParams.get('assignedTo');
+    
+    if (!statusParam || statusParam === 'All') {
+      where.status = { in: ACTIVE_WORKFLOW_ORDER_STATUSES };
+    }
+
     const installationStage = searchParams.get('installationStage');
     const page = parseInt(searchParams.get('page') || '1');
     const limitParam = searchParams.get('limit');
@@ -28,54 +37,9 @@ export async function GET(request: Request) {
 
     const sortField = searchParams.get('sortField');
     const sortDirection = searchParams.get('sortDirection') === 'asc' ? 'asc' : 'desc';
-    const hasOutstandingPayment = searchParams.get('hasOutstandingPayment') === 'true';
 
     const skip = (page - 1) * limit;
 
-    const where: any = { 
-      status: { in: ACTIVE_WORKFLOW_ORDER_STATUSES } 
-    };
-
-    if (search) {
-      where.OR = [
-        { orderNumber: { contains: search, mode: 'insensitive' } },
-        { customerName: { contains: search, mode: 'insensitive' } },
-        { phoneNumber: { contains: search, mode: 'insensitive' } },
-        { applicationNumber: { contains: search, mode: 'insensitive' } }
-      ];
-    }
-    
-    if (assignedTo && assignedTo !== 'All') {
-      if (assignedTo === 'Unassigned') {
-        where.salesmanId = null;
-        where.callingExecutiveId = null;
-        where.subVendorId = null;
-      } else {
-        const assigneeOR = [
-          { salesmanId: assignedTo },
-          { callingExecutiveId: assignedTo },
-          { subVendorId: assignedTo }
-        ];
-        if (where.OR) {
-          where.AND = [ { OR: where.OR }, { OR: assigneeOR } ];
-          delete where.OR;
-        } else {
-          where.OR = assigneeOR;
-        }
-      }
-    }
-
-    if (hasOutstandingPayment) {
-      const paymentCondition = {
-        OR: [
-          { zohoBooksCustomerId: { not: null }, pendingAmount: { gt: 0 } },
-          { zohoBooksCustomerId: null, totalOrderAmount: { gt: 0 } }
-        ]
-      };
-      if (!where.AND) where.AND = [];
-      where.AND.push(paymentCondition);
-    }
-    
     let orderBy: any = { orderDate: 'asc' };
     if (sortField) {
       switch(sortField) {
@@ -231,11 +195,19 @@ export async function GET(request: Request) {
       averageCompletionTime: "N/A"
     };
 
+    const { computeFacets, computeStatusCounts } = await import('@/lib/solar-facets');
+    const [filterOptions, statusCounts] = await Promise.all([
+      computeFacets(where),
+      computeStatusCounts(search, ACTIVE_WORKFLOW_ORDER_STATUSES)
+    ]);
+
     return NextResponse.json({
       summary,
       columnCounters,
       items: fullItems,
       allSteps: INSTALLATION_STEPS,
+      filterOptions,
+      statusCounts,
       pagination: {
         total: totalCount,
         pages: Math.ceil(totalCount / limit),

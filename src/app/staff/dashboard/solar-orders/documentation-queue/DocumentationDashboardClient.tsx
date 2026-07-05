@@ -9,6 +9,7 @@ import SolarQuickFilters from '../components/SolarQuickFilters';
 import SolarAdvancedFilters from '../components/SolarAdvancedFilters';
 import { useTableSorting } from '../hooks/useTableSorting';
 import { useSolarFilters } from '../hooks/useSolarFilters';
+import { WORKFLOW_QUEUE_DEFAULT_SORT_FIELD, WORKFLOW_QUEUE_DEFAULT_SORT_DIR } from '@/lib/solar-workflow-config';
 
 export default function DocumentationDashboardClient() {
   const [data, setData] = useState<any>(null);
@@ -19,7 +20,7 @@ export default function DocumentationDashboardClient() {
   const [activeFilter, setActiveFilter] = useState<{ type: string; value: string } | null>(null);
   
   // Sorting
-  const { sortField, sortDirection, handleSort, setSortField, setSortDirection } = useTableSorting('orderDate', 'desc');
+  const { sortField, sortDirection, handleSort, setSortField, setSortDirection } = useTableSorting(WORKFLOW_QUEUE_DEFAULT_SORT_FIELD, WORKFLOW_QUEUE_DEFAULT_SORT_DIR);
   const filters = useSolarFilters(allOrders);
 
   const fetchDashboardData = useCallback(async (isRefresh = false) => {

@@ -76,7 +76,7 @@ export async function GET(request: Request) {
       where.AND.push(paymentCondition);
     }
     
-    let orderBy: any = { updatedAt: 'desc' };
+    let orderBy: any = { orderDate: 'asc' };
     if (sortField) {
       switch(sortField) {
         case 'orderAmount': orderBy = { totalOrderAmount: sortDirection }; break;

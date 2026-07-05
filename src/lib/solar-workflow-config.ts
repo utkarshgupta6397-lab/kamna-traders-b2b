@@ -1,3 +1,6 @@
+export const WORKFLOW_QUEUE_DEFAULT_SORT_FIELD = 'orderDate';
+export const WORKFLOW_QUEUE_DEFAULT_SORT_DIR = 'asc';
+
 export interface WorkflowStepConfig {
   id: string;
   title: string;

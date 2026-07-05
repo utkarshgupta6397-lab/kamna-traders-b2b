@@ -46,12 +46,7 @@ export function buildSolarOrdersWhereClause(searchParams: URLSearchParams) {
       { customerName: { contains: search, mode: 'insensitive' } },
       { phoneNumber: { contains: search, mode: 'insensitive' } },
       { applicationNumber: { contains: search, mode: 'insensitive' } },
-      { leadSource: { contains: search, mode: 'insensitive' } },
-      { systemType: { contains: search, mode: 'insensitive' } },
       { zohoBooksCustomerName: { contains: search, mode: 'insensitive' } },
-      { salesman: { name: { contains: search, mode: 'insensitive' } } },
-      { callingExecutive: { name: { contains: search, mode: 'insensitive' } } },
-      { subVendor: { name: { contains: search, mode: 'insensitive' } } },
     ];
 
     if (searchIsNum) {

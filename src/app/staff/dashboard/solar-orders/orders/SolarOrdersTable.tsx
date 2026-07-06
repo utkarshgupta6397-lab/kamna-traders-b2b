@@ -294,10 +294,15 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                   const initials = order.customerName.substring(0, 2).toUpperCase();
                   const isLocked = (order.status === 'PENDING_APPROVAL' || order.status === 'REJECTED') && order.createdById !== currentUserId && !canApprove;
                   
-                  const pendingAmt = order.pendingAmount ?? (order.totalOrderAmount - (order.payments ? order.payments.reduce((acc: any, p: any) => acc + p.amount, 0) : 0));
-                  
-                  const rowBg = order.status === 'PENDING_APPROVAL' ? 'bg-[#FFFBEA] hover:bg-[#FFF4D0]' : 'hover:bg-gray-50/80';
                   const isUnlinked = order.pendingPaymentReason === 'ZOHO_NOT_LINKED' || !order.zohoBooksCustomerId;
+                  const rowBg = order.status === 'PENDING_APPROVAL' ? 'bg-[#FFFBEA] hover:bg-[#FFF4D0]' : 'hover:bg-gray-50/80';
+                  
+                  // ONE Source of Truth for Pending Payment
+                  // If not linked to Zoho -> 100% pending (Total Order Amount)
+                  // Never fallback to cached legacy payments (order.payments)
+                  const pendingAmt = isUnlinked 
+                    ? order.totalOrderAmount 
+                    : (order.pendingAmount ?? order.totalOrderAmount);
                   
                   return (
                     <tr key={order.id} className={`group ${rowBg} transition-colors cursor-pointer`} onClick={() => handleRowClick(order)}>

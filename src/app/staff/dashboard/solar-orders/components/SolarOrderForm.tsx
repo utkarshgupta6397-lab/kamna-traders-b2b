@@ -1005,54 +1005,52 @@ export default function SolarOrderForm({ mode = 'CREATE', initialOrder, users, c
                 
                 <div className="space-y-5">
                   {leadSource === 'Sub-Vendor' && (
-                    <div className="animate-in fade-in slide-in-from-top-2 relative">
+                    <div className="animate-in fade-in slide-in-from-top-2 relative z-50">
                       <label className={labelClasses}>Sub-Vendor <RequiredMark/></label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={subVendorQuery}
-                          onFocus={() => setShowSubVendorDropdown(true)}
-                          onBlur={() => setTimeout(() => setShowSubVendorDropdown(false), 200)}
-                          onChange={e => {
-                            setSubVendorQuery(e.target.value);
-                            setShowSubVendorDropdown(true);
-                          }}
-                          className={`${inputClasses} pr-8`}
-                          placeholder={selectedSubVendor?.name || "Search active vendors..."}
-                        />
-                        {showSubVendorDropdown && (
-                          <div className="absolute z-20 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-xl max-h-48 overflow-y-auto py-1">
-                            {vendorsLoading ? (
-                              <div className="px-4 py-2 text-sm text-gray-400">Loading vendors...</div>
-                            ) : vendorsError ? (
-                              <div className="px-4 py-2 text-sm text-red-500 flex justify-between items-center">
-                                Unable to load vendors.
-                                <button type="button" onClick={() => window.location.reload()} className="text-xs underline text-red-600 hover:text-red-800">Retry</button>
-                              </div>
-                            ) : filteredSubVendors.length > 0 ? filteredSubVendors.map(vendor => (
-                              <div
-                                key={vendor.id}
-                                onClick={() => {
-                                  setSubVendorId(vendor.id);
-                                  setSubVendorQuery('');
-                                  setShowSubVendorDropdown(false);
-                                }}
-                                className="px-4 py-2 hover:bg-blue-50 hover:text-blue-700 cursor-pointer text-sm text-gray-700 transition-colors"
-                              >
-                                {vendor.name}
-                              </div>
-                            )) : (
-                              <div className="px-4 py-2 text-sm text-gray-400">No vendors found</div>
-                            )}
-                          </div>
-                        )}
-                        {selectedSubVendor && !showSubVendorDropdown && (
-                          <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center">
-                            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-medium truncate max-w-[120px]">{selectedSubVendor.name}</span>
-                            <button type="button" onClick={() => setSubVendorId('')} className="ml-1 text-gray-400 hover:text-red-500"><X size={14}/></button>
-                          </div>
-                        )}
-                      </div>
+                      <input
+                        type="text"
+                        value={subVendorQuery}
+                        onFocus={() => setShowSubVendorDropdown(true)}
+                        onBlur={() => setTimeout(() => setShowSubVendorDropdown(false), 200)}
+                        onChange={e => {
+                          setSubVendorQuery(e.target.value);
+                          setShowSubVendorDropdown(true);
+                        }}
+                        className={`${inputClasses} pr-8`}
+                        placeholder={selectedSubVendor?.name || "Search active vendors..."}
+                      />
+                      {showSubVendorDropdown && (
+                        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-xl max-h-48 overflow-y-auto py-1">
+                          {vendorsLoading ? (
+                            <div className="px-4 py-2 text-sm text-gray-400">Loading vendors...</div>
+                          ) : vendorsError ? (
+                            <div className="px-4 py-2 text-sm text-red-500 flex justify-between items-center">
+                              Unable to load vendors.
+                              <button type="button" onClick={() => window.location.reload()} className="text-xs underline text-red-600 hover:text-red-800">Retry</button>
+                            </div>
+                          ) : filteredSubVendors.length > 0 ? filteredSubVendors.map(vendor => (
+                            <div
+                              key={vendor.id}
+                              onMouseDown={() => {
+                                setSubVendorId(vendor.id);
+                                setSubVendorQuery('');
+                                setShowSubVendorDropdown(false);
+                              }}
+                              className="px-4 py-2 hover:bg-blue-50 hover:text-blue-700 cursor-pointer text-sm text-gray-700 transition-colors"
+                            >
+                              {vendor.name}
+                            </div>
+                          )) : (
+                            <div className="px-4 py-2 text-sm text-gray-400">No vendors found</div>
+                          )}
+                        </div>
+                      )}
+                      {selectedSubVendor && !showSubVendorDropdown && (
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center pt-5">
+                          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-medium truncate max-w-[120px]">{selectedSubVendor.name}</span>
+                          <button type="button" onMouseDown={() => setSubVendorId('')} className="ml-1 text-gray-400 hover:text-red-500"><X size={14}/></button>
+                        </div>
+                      )}
                     </div>
                   )}
                   

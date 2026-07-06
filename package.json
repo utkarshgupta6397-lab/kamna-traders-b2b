@@ -11,6 +11,7 @@
     "lint": "eslint",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "node prisma/seed.js",
+    "seed:solar": "npx tsx prisma/seed_solar_orders.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -45,6 +46,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@faker-js/faker": "^10.5.0",
     "@tailwindcss/postcss": "^4",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",

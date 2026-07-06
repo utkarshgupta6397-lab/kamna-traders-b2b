@@ -5,6 +5,7 @@ import { Search, Filter, RefreshCw, Download } from 'lucide-react';
 import DocumentationDashboardKPIs from './DocumentationDashboardKPIs';
 import DocumentationTable from './DocumentationTable';
 import AuthorityBatchButton from './AuthorityBatchButton';
+import InstallationJourneyModal from './InstallationJourneyModal';
 import SolarQuickFilters from '../components/SolarQuickFilters';
 import SolarAdvancedFilters from '../components/SolarAdvancedFilters';
 import { useTableSorting } from '../hooks/useTableSorting';
@@ -23,6 +24,7 @@ export default function DocumentationDashboardClient() {
   const [totalOrders, setTotalOrders] = useState(0);
   const [filterOptions, setFilterOptions] = useState<any>({ systemTypes: [], quarters: [], leadSources: [], assignees: [] });
   const [statusCounts, setStatusCounts] = useState<any>({ all: 0, pendingApproval: 0, execution: 0, completed: 0, rejected: 0 });
+  const [selectedInstallationOrderId, setSelectedInstallationOrderId] = useState<string | null>(null);
 
   // Sorting
   const { sortField, sortDirection, handleSort, setSortField, setSortDirection } = useTableSorting(WORKFLOW_QUEUE_DEFAULT_SORT_FIELD, WORKFLOW_QUEUE_DEFAULT_SORT_DIR);
@@ -192,7 +194,15 @@ export default function DocumentationDashboardClient() {
         sortField={sortField}
         sortDirection={sortDirection}
         onSort={handleSort}
+        onOpenInstallationJourney={(id) => setSelectedInstallationOrderId(id)}
       />
+
+      {selectedInstallationOrderId && (
+        <InstallationJourneyModal 
+          orderId={selectedInstallationOrderId}
+          onClose={() => setSelectedInstallationOrderId(null)}
+        />
+      )}
 
       {/* Pagination Footer */}
         {!isLoading && totalPages > 0 && (

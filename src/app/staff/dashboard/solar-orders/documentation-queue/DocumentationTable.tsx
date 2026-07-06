@@ -14,6 +14,7 @@ interface DocumentationTableProps {
   sortField?: string;
   sortDirection?: 'asc' | 'desc';
   onSort?: (field: string) => void;
+  onOpenInstallationJourney?: (orderId: string) => void;
 }
 
 // ─── Phase Definitions ────────────────────────────────────────────────────────
@@ -145,7 +146,7 @@ function TooltipPortal({ activeTooltip }: { activeTooltip: any }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function DocumentationTable({ items, allSteps, columnCounters, isLoading, sortField, sortDirection, onSort }: DocumentationTableProps) {
+export default function DocumentationTable({ items, allSteps, columnCounters, isLoading, sortField, sortDirection, onSort, onOpenInstallationJourney }: DocumentationTableProps) {
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredStep, setHoveredStep] = useState<string | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -271,12 +272,35 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                     Customer
                   </th>
                 )}
-                <th className="px-2.5 py-1.5 font-semibold bg-gray-50 border-r border-gray-200 w-[140px]">
-                  Current Stage
-                </th>
-                <th className="px-2.5 py-1.5 font-semibold bg-gray-50 border-r border-gray-200 w-[100px]">
-                  Progress
-                </th>
+                {onSort ? (
+                  <SortableTableHeader
+                    label="Payment"
+                    field="paymentPercentage"
+                    currentSortField={sortField || ''}
+                    currentSortDirection={sortDirection || 'desc'}
+                    onSort={onSort}
+                    className="bg-gray-50 border-r border-gray-200 w-[140px]"
+                  />
+                ) : (
+                  <th className="px-2.5 py-1.5 font-semibold bg-gray-50 border-r border-gray-200 w-[140px]">
+                    Payment
+                  </th>
+                )}
+                
+                {onSort ? (
+                  <SortableTableHeader
+                    label="Progress"
+                    field="workflowPercentage"
+                    currentSortField={sortField || ''}
+                    currentSortDirection={sortDirection || 'desc'}
+                    onSort={onSort}
+                    className="bg-gray-50 border-r border-gray-200 w-[100px]"
+                  />
+                ) : (
+                  <th className="px-2.5 py-1.5 font-semibold bg-gray-50 border-r border-gray-200 w-[100px]">
+                    Progress
+                  </th>
+                )}
 
                 {/* ── Phase group headers ── */}
                 {groupedSteps.map(group => {
@@ -355,15 +379,22 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                       </span>
                     </td>
 
-                    {/* Current Stage */}
+                    {/* Payment Progress */}
                     <td className={`px-2.5 py-1 border-r border-gray-100 transition-colors ${base}`}>
-                      <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-[4px] text-[9.5px] font-bold max-w-[130px] shadow-sm border ${
-                        item.currentStage === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        item.isOverdue ? 'bg-red-50 text-red-700 border-red-200' : 'bg-blue-50 text-blue-700 border-blue-200'
-                      }`} title={item.currentStage}>
-                        {item.currentStage === 'Completed' ? <CheckCircle2 size={11} className="shrink-0" /> : <Clock size={11} className="shrink-0" />}
-                        <span className="truncate">{item.currentStage}</span>
-                      </span>
+                      <div className="flex flex-col justify-center gap-0.5 w-full min-w-[120px]">
+                        <div className={`text-[10.5px] font-bold ${item.paymentPercentage >= 100 ? 'text-emerald-600' : item.paymentPercentage >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
+                          ₹{(item.paidAmount || 0).toLocaleString('en-IN')} / ₹{(item.totalOrderAmount || 0).toLocaleString('en-IN')}
+                        </div>
+                        <div className="flex items-center gap-1.5 w-full">
+                          <div className="w-full h-[4px] bg-gray-200 rounded-full overflow-hidden shadow-inner flex-grow">
+                            <div 
+                              className={`h-full rounded-full transition-all duration-500 ${item.paymentPercentage >= 100 ? 'bg-emerald-500' : item.paymentPercentage >= 50 ? 'bg-orange-400' : 'bg-red-500'}`} 
+                              style={{ width: `${Math.min(item.paymentPercentage || 0, 100)}%` }} 
+                            />
+                          </div>
+                          <span className="text-[9px] font-bold text-gray-800 shrink-0 w-[24px] text-right">{Math.round(item.paymentPercentage || 0)}%</span>
+                        </div>
+                      </div>
                     </td>
 
                     {/* Progress */}
@@ -436,12 +467,21 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
 
                     {/* Action */}
                     <td className={`px-1.5 py-1 sticky right-0 z-10 border-l border-gray-100 text-center transition-colors ${frozen}`}>
-                      <div className="flex justify-center items-center h-full">
+                      <div className="flex justify-center items-center h-full gap-1">
                         <Link href={`/staff/dashboard/solar-orders/orders/${item.id}/documentation`}>
                           <button className="text-gray-400 hover:text-[#1A2766] bg-white hover:bg-blue-50 border border-gray-200 rounded p-1 shadow-sm transition-all" title="View Documentation">
                             <ArrowRight size={12} />
                           </button>
                         </Link>
+                        {onOpenInstallationJourney && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); onOpenInstallationJourney(item.id); }}
+                            className="text-gray-400 hover:text-emerald-600 bg-white hover:bg-emerald-50 border border-gray-200 rounded p-1 shadow-sm transition-all" 
+                            title="View Installation Journey"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

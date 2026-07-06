@@ -1,0 +1,46 @@
+{
+  "totalOrders": 450,
+  "averageOrderValue": 350000,
+  "minOrderAmount": 75000,
+  "maxOrderAmount": 1200000,
+  "zohoLinkage": {
+    "linkedToZoho": 380,
+    "notLinkedToZoho": 70
+  },
+  "payments": {
+    "fullyPaid": 120,
+    "zeroPaid": 80,
+    "partiallyPaid": 250,
+    "outstandingCount": 330
+  },
+  "statuses": {
+    "DRAFT": 20,
+    "PENDING_APPROVAL": 30,
+    "APPROVED": 50,
+    "EXECUTION": 200,
+    "COMPLETED": 120,
+    "CANCELLED": 30
+  },
+  "leadSources": {
+    "Walk-in": 40,
+    "Referral": 80,
+    "Friends & Family": 30,
+    "Calling Activity": 150,
+    "Online": 70,
+    "Sub-Vendor": 60,
+    "Other": 20
+  },
+  "systemTypes": {
+    "ON_GRID": 300,
+    "OFF_GRID": 50,
+    "HYBRID": 100
+  },
+  "systemSizes": {
+    "3": 150,
+    "5": 100,
+    "10": 50,
+    "2": 80,
+    "1": 20,
+    "15": 50
+  }
+}

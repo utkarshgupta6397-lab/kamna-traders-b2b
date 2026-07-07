@@ -124,6 +124,7 @@ export default function CalendarPageClient({ canEdit }: { canEdit: boolean }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'pending' | 'partial'>('all');
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [drawer, setDrawer] = useState<DayDrawer | null>(null);
   const [dragSource, setDragSource] = useState<
@@ -381,6 +382,16 @@ export default function CalendarPageClient({ canEdit }: { canEdit: boolean }) {
   const goNext = () => setViewDate(new Date(year, month + 1, 1));
   const goToday = () => setViewDate(new Date(today.getFullYear(), today.getMonth(), 1));
 
+  // ─── Filters & Counts ──────────────────────────────────────────────────────
+  const pendingCount = queue.filter(o => o.paymentPercentage === 0).length;
+  const partialCount = queue.filter(o => (o.paymentPercentage || 0) > 0).length;
+  
+  const displayQueue = queue.filter(o => {
+    if (paymentFilter === 'pending') return o.paymentPercentage === 0;
+    if (paymentFilter === 'partial') return (o.paymentPercentage || 0) > 0;
+    return true;
+  });
+
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div
@@ -547,7 +558,7 @@ export default function CalendarPageClient({ canEdit }: { canEdit: boolean }) {
               <p className="text-[11px] text-gray-500">Unscheduled orders</p>
             </div>
             <span className="ml-auto text-xs font-bold text-teal-700 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full">
-              {queue.length}
+              {displayQueue.length}
             </span>
           </div>
 
@@ -561,6 +572,28 @@ export default function CalendarPageClient({ canEdit }: { canEdit: boolean }) {
               onChange={(e) => handleSearch(e.target.value)}
               className="w-full pl-8 pr-3 py-1.5 text-[12px] bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-400 focus:border-teal-400 transition-all"
             />
+          </div>
+
+          {/* Payment Quick Filters */}
+          <div className="flex items-center gap-1.5 mt-3 overflow-x-auto pb-1 scrollbar-hide">
+            <button
+              onClick={() => setPaymentFilter('all')}
+              className={`px-2.5 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition-colors ${paymentFilter === 'all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+              All ({queue.length})
+            </button>
+            <button
+              onClick={() => setPaymentFilter('pending')}
+              className={`px-2.5 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition-colors ${paymentFilter === 'pending' ? 'bg-red-100 text-red-700 ring-1 ring-red-400' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+            >
+              100% Pending ({pendingCount})
+            </button>
+            <button
+              onClick={() => setPaymentFilter('partial')}
+              className={`px-2.5 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap transition-colors ${paymentFilter === 'partial' ? 'bg-orange-100 text-orange-700 ring-1 ring-orange-400' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}
+            >
+              Partially Paid ({partialCount})
+            </button>
           </div>
         </div>
 
@@ -590,13 +623,13 @@ export default function CalendarPageClient({ canEdit }: { canEdit: boolean }) {
               Loading...
             </div>
           )}
-          {!isLoading && queue.length === 0 && (
+          {!isLoading && displayQueue.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-gray-400 gap-2">
               <CheckCircle2 size={32} className="text-teal-400" />
               <p className="text-sm font-semibold text-gray-500">All orders scheduled!</p>
             </div>
           )}
-          {queue.map((order) => (
+          {displayQueue.map((order) => (
             <div
               key={order.id}
               draggable={canEdit}
@@ -646,18 +679,24 @@ export default function CalendarPageClient({ canEdit }: { canEdit: boolean }) {
 
                 {/* Address */}
                 {order.address && (
-                  <div className="text-[10px] text-gray-500 leading-tight line-clamp-2 mt-1 border-t border-gray-100 pt-1.5">
+                  <div className="text-[10px] text-gray-500 leading-tight truncate mt-1 border-t border-gray-100 pt-1.5">
                     {order.address}
                   </div>
                 )}
 
-                {/* Payment */}
-                <div className="mt-1.5 pt-1.5 border-t border-gray-100">
-                  <div className={`text-[10.5px] font-bold ${order.paymentPercentage && order.paymentPercentage >= 100 ? 'text-emerald-600' : order.paymentPercentage && order.paymentPercentage >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
-                    {formatStrictLakhs(order.paidAmount || 0).replace(' L', 'L')} / {formatStrictLakhs(order.totalOrderAmount || 0).replace(' L', 'L')}
+                {/* Footer */}
+                <div className="mt-1.5 pt-1.5 border-t border-gray-100 flex items-end justify-between">
+                  <div>
+                    <div className={`text-[10.5px] font-bold ${order.paymentPercentage && order.paymentPercentage >= 100 ? 'text-emerald-600' : order.paymentPercentage && order.paymentPercentage >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
+                      {formatStrictLakhs(order.paidAmount || 0).replace(' L', 'L')} / {formatStrictLakhs(order.totalOrderAmount || 0).replace(' L', 'L')}
+                    </div>
+                    <div className={`text-[10px] font-bold mt-0.5 ${order.paymentPercentage && order.paymentPercentage >= 100 ? 'text-emerald-600/80' : order.paymentPercentage && order.paymentPercentage >= 50 ? 'text-orange-500/80' : 'text-red-600/80'}`}>
+                      {Math.round(order.paymentPercentage || 0)}% Paid
+                    </div>
                   </div>
-                  <div className={`text-[10px] font-bold mt-0.5 ${order.paymentPercentage && order.paymentPercentage >= 100 ? 'text-emerald-600/80' : order.paymentPercentage && order.paymentPercentage >= 50 ? 'text-orange-500/80' : 'text-red-600/80'}`}>
-                    {Math.round(order.paymentPercentage || 0)}% Paid
+                  <div className="flex items-center gap-1 text-[10px] text-gray-400 font-medium">
+                    <Clock size={10} />
+                    {order.daysSinceOrder} Days
                   </div>
                 </div>
               </div>
@@ -761,18 +800,20 @@ export default function CalendarPageClient({ canEdit }: { canEdit: boolean }) {
 
                     {/* Address */}
                     {o.address && (
-                      <div className="text-[10px] text-gray-500 leading-tight line-clamp-2 mt-1 border-t border-gray-100 pt-1.5">
+                      <div className="text-[10px] text-gray-500 leading-tight truncate mt-1 border-t border-gray-100 pt-1.5">
                         {o.address}
                       </div>
                     )}
 
-                    {/* Payment */}
-                    <div className="mt-1.5 pt-1.5 border-t border-gray-100">
-                      <div className={`text-[10.5px] font-bold ${o.paymentPercentage && o.paymentPercentage >= 100 ? 'text-emerald-600' : o.paymentPercentage && o.paymentPercentage >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
-                        {formatStrictLakhs(o.paidAmount || 0).replace(' L', 'L')} / {formatStrictLakhs(o.totalOrderAmount || 0).replace(' L', 'L')}
-                      </div>
-                      <div className={`text-[10px] font-bold mt-0.5 ${o.paymentPercentage && o.paymentPercentage >= 100 ? 'text-emerald-600/80' : o.paymentPercentage && o.paymentPercentage >= 50 ? 'text-orange-500/80' : 'text-red-600/80'}`}>
-                        {Math.round(o.paymentPercentage || 0)}% Paid
+                    {/* Footer */}
+                    <div className="mt-1.5 pt-1.5 border-t border-gray-100 flex items-end justify-between">
+                      <div>
+                        <div className={`text-[10.5px] font-bold ${o.paymentPercentage && o.paymentPercentage >= 100 ? 'text-emerald-600' : o.paymentPercentage && o.paymentPercentage >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
+                          {formatStrictLakhs(o.paidAmount || 0).replace(' L', 'L')} / {formatStrictLakhs(o.totalOrderAmount || 0).replace(' L', 'L')}
+                        </div>
+                        <div className={`text-[10px] font-bold mt-0.5 ${o.paymentPercentage && o.paymentPercentage >= 100 ? 'text-emerald-600/80' : o.paymentPercentage && o.paymentPercentage >= 50 ? 'text-orange-500/80' : 'text-red-600/80'}`}>
+                          {Math.round(o.paymentPercentage || 0)}% Paid
+                        </div>
                       </div>
                     </div>
                   </div>

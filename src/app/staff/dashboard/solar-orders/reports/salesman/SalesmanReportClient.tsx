@@ -13,7 +13,7 @@ import {
   type FilterState,
   type FilterOptions,
   type SalesmanSummary,
-  DEFAULT_FILTER_STATE,
+  getDefaultFilterState,
   applyFilters,
   buildReportData,
   buildFilterOptions,
@@ -79,7 +79,7 @@ export default function SalesmanReportClient() {
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   // === Filter state (client-side only) ===
-  const [filterState, setFilterState] = useState<FilterState>(DEFAULT_FILTER_STATE);
+  const [filterState, setFilterState] = useState<FilterState>(getDefaultFilterState);
 
   // === Drill-down state ===
   const [selectedSalesman, setSelectedSalesman] = useState<SalesmanSummary | null>(null);

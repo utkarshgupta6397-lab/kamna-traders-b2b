@@ -156,18 +156,20 @@ export interface FilterState {
   paymentStatus: 'all' | 'pending' | 'partial' | 'paid';
 }
 
-export const DEFAULT_FILTER_STATE: FilterState = {
-  financialYears: [],
-  quarters: [],
-  months: [],
-  salesmanIds: [],
-  callingExecIds: [],
-  leadSources: [],
-  subVendorIds: [],
-  orderStatuses: [],
-  systemTypes: [],
-  paymentStatus: 'all',
-};
+export function getDefaultFilterState(): FilterState {
+  return {
+    financialYears: [getFYInfo(new Date()).fy],
+    quarters: [],
+    months: [],
+    salesmanIds: [],
+    callingExecIds: [],
+    leadSources: [],
+    subVendorIds: [],
+    orderStatuses: [],
+    systemTypes: [],
+    paymentStatus: 'all',
+  };
+}
 
 export function isFilterEmpty(f: FilterState): boolean {
   return (
@@ -339,6 +341,10 @@ export interface CallingExecSummary {
   paidAmount: number;
   collectionPct: number;
   avgOrderValue: number;
+  totalKW: number;
+  leadSources: Record<string, number>;
+  monthly: Record<string, { sales: number; orders: number }>;
+  quarterly: Record<string, { sales: number; orders: number }>;
 }
 
 export interface MonthlyData {
@@ -358,6 +364,7 @@ export interface QuarterlyData {
   sales: number;
   orders: number;
   bySalesman: Record<string, number>; // salesmanId → sales
+  byCallingExec: Record<string, number>; // callingExecId → sales
 }
 
 export interface StatusData {
@@ -491,13 +498,16 @@ export function buildReportData(orders: NormalizedOrder[]): ReportData {
     // --- Quarterly ---
     let qEntry = quarterlyMap.get(quarterKey);
     if (!qEntry) {
-      qEntry = { quarterKey, label: quarterLabel, fy, quarter, sales: 0, orders: 0, bySalesman: {} };
+      qEntry = { quarterKey, label: quarterLabel, fy, quarter, sales: 0, orders: 0, bySalesman: {}, byCallingExec: {} };
       quarterlyMap.set(quarterKey, qEntry);
     }
     qEntry.sales += o.totalOrderAmount;
     qEntry.orders += 1;
     if (o.salesmanId) {
       qEntry.bySalesman[o.salesmanId] = (qEntry.bySalesman[o.salesmanId] ?? 0) + o.totalOrderAmount;
+    }
+    if (o.callingExecutiveId) {
+      qEntry.byCallingExec[o.callingExecutiveId] = (qEntry.byCallingExec[o.callingExecutiveId] ?? 0) + o.totalOrderAmount;
     }
 
     // --- Salesman ---
@@ -539,7 +549,8 @@ export function buildReportData(orders: NormalizedOrder[]): ReportData {
           id: o.callingExecutiveId,
           name: o.callingExecutiveName ?? 'Unknown',
           orders: 0, totalSales: 0, pendingAmount: 0, paidAmount: 0,
-          collectionPct: 0, avgOrderValue: 0,
+          collectionPct: 0, avgOrderValue: 0, totalKW: 0,
+          leadSources: {}, monthly: {}, quarterly: {},
         };
         callingExecMap.set(o.callingExecutiveId, ce);
       }
@@ -547,6 +558,18 @@ export function buildReportData(orders: NormalizedOrder[]): ReportData {
       ce.totalSales += o.totalOrderAmount;
       ce.pendingAmount += o.effectivePendingAmount;
       ce.paidAmount += o.paidAmount;
+      ce.totalKW += o.systemSize;
+      ce.leadSources[o.leadSource] = (ce.leadSources[o.leadSource] ?? 0) + 1;
+
+      const ceMonth = ce.monthly[monthKey] ?? { sales: 0, orders: 0 };
+      ceMonth.sales += o.totalOrderAmount;
+      ceMonth.orders += 1;
+      ce.monthly[monthKey] = ceMonth;
+
+      const ceQtr = ce.quarterly[quarterKey] ?? { sales: 0, orders: 0 };
+      ceQtr.sales += o.totalOrderAmount;
+      ceQtr.orders += 1;
+      ce.quarterly[quarterKey] = ceQtr;
     }
 
     // --- Lead Source ---

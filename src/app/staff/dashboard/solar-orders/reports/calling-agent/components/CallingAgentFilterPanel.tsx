@@ -4,7 +4,7 @@ import { Filter, X, Check, Download, ChevronDown } from 'lucide-react';
 import type { FilterState, FilterOptions, FilterOption } from '@/lib/report-salesman';
 import { countActiveFilters, getDefaultFilterState } from '@/lib/report-salesman';
 
-interface SalesmanFilterPanelProps {
+interface CallingAgentFilterPanelProps {
   filterState: FilterState;
   filterOptions: FilterOptions;
   onFilterChange: (state: FilterState) => void;
@@ -89,13 +89,13 @@ const MultiSelect = memo(function MultiSelect({
 // ------------------------------------
 // Main Panel
 // ------------------------------------
-function SalesmanFilterPanelComponent({
+function CallingAgentFilterPanelComponent({
   filterState,
   filterOptions,
   onFilterChange,
   onExportCSV,
   loading,
-}: SalesmanFilterPanelProps) {
+}: CallingAgentFilterPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [staged, setStaged] = useState<FilterState>(filterState);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -321,4 +321,4 @@ function SalesmanFilterPanelComponent({
   );
 }
 
-export default memo(SalesmanFilterPanelComponent);
+export default memo(CallingAgentFilterPanelComponent);

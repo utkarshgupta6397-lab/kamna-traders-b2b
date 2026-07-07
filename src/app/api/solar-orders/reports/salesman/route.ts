@@ -1,230 +1,117 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { Prisma } from '@prisma/client';
-import { formatIndianCurrency, formatPercentage } from '@/lib/formatters';
 import { getApprovedOrderCondition } from '@/lib/solar-workflow-config';
+import type { NormalizedOrder } from '@/lib/report-salesman';
 
-export async function GET(req: NextRequest) {
+/**
+ * GET /api/solar-orders/reports/salesman
+ *
+ * Returns raw normalized orders for the Salesman analytics module.
+ * All filtering and aggregation happens client-side.
+ *
+ * DESIGN:
+ * - Single DB query with eager loads (salesman, callingExecutive, subVendor, payments)
+ * - Normalized payment fields computed server-side (effectivePendingAmount, paidAmount, paymentPercentage)
+ * - No server-side aggregation — reduces payload and keeps logic in one place (lib/report-salesman.ts)
+ * - Only approved orders are returned (APPROVED, EXECUTION, INSTALLATION_IN_PROGRESS, COMPLETED)
+ */
+export async function GET() {
   try {
     const session = await getSession();
     if (!session || (!session.solar_orders_view && session.role !== 'ADMIN')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    const { searchParams } = new URL(req.url);
-    const format = searchParams.get('format');
-    
-    // Multi-select filters come as comma-separated strings
-    const quarterParam = searchParams.get('quarter');
-    const monthParam = searchParams.get('month');
-    const salesmanIdParam = searchParams.get('userId');
-    const leadSourceParam = searchParams.get('leadSource');
-    const systemTypeParam = searchParams.get('systemType');
-
-    const quarters = quarterParam ? quarterParam.split(',') : [];
-    const months = monthParam ? monthParam.split(',') : [];
-    const salesmanIds = salesmanIdParam ? salesmanIdParam.split(',') : [];
-    const leadSources = leadSourceParam ? leadSourceParam.split(',') : [];
-    const systemTypes = systemTypeParam ? systemTypeParam.split(',') : [];
-
-    // Build base where clause
-    const where: Prisma.SolarOrderWhereInput = {
-      ...getApprovedOrderCondition(),
-    };
-
-    if (salesmanIds.length > 0) where.salesmanId = { in: salesmanIds };
-    if (leadSources.length > 0) where.leadSource = { in: leadSources };
-    if (systemTypes.length > 0) where.systemType = { in: systemTypes };
-
-    // Date logic - complex when multiple quarters and months are selected
-    // For MVP we will union the date ranges if provided
-    if (months.length > 0 || quarters.length > 0) {
-      const OR: Prisma.SolarOrderWhereInput[] = [];
-      
-      months.forEach(m => {
-        const startDate = new Date(`${m}-01T00:00:00.000Z`);
-        const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 1);
-        OR.push({ orderDate: { gte: startDate, lt: endDate } });
-      });
-
-      quarters.forEach(qtr => {
-        const [q, y] = qtr.split('-');
-        const year = parseInt(y);
-        let startMonth = 0;
-        if (q === 'Q2') startMonth = 3;
-        if (q === 'Q3') startMonth = 6;
-        if (q === 'Q4') startMonth = 9;
-        
-        const startDate = new Date(Date.UTC(year, startMonth, 1));
-        const endDate = new Date(Date.UTC(year, startMonth + 3, 1));
-        OR.push({ orderDate: { gte: startDate, lt: endDate } });
-      });
-
-      if (OR.length > 0) {
-        where.OR = OR;
-      }
-    }
-
-    const orders = await prisma.solarOrder.findMany({
-      where,
-      include: {
-        salesman: true,
+    const rawOrders = await prisma.solarOrder.findMany({
+      where: {
+        ...getApprovedOrderCondition(),
+      },
+      select: {
+        id: true,
+        orderNumber: true,
+        orderDate: true,
+        status: true,
+        customerName: true,
+        leadSource: true,
+        salesmanId: true,
+        callingExecutiveId: true,
+        subVendorId: true,
+        totalOrderAmount: true,
+        pendingAmount: true,
+        systemSize: true,
+        systemType: true,
+        zohoBooksCustomerId: true,
+        loanCustomer: true,
+        approvedAt: true,
+        completedAt: true,
+        cancelledAt: true,
+        salesman: {
+          select: { name: true },
+        },
+        callingExecutive: {
+          select: { name: true },
+        },
+        subVendor: {
+          select: { name: true },
+        },
+        payments: {
+          select: {
+            amount: true,
+            paymentDate: true,
+            paymentMode: true,
+          },
+          orderBy: { paymentDate: 'asc' },
+        },
       },
       orderBy: { orderDate: 'asc' },
     });
 
-    // 1. Aggregations
-    let totalSales = 0;
-    let totalOrders = orders.length;
-    let totalPendingPayments = 0;
-    let activeCustomersSet = new Set();
-    let approvedOrdersCount = 0;
+    // Normalize each order — compute derived payment fields once server-side
+    const orders: NormalizedOrder[] = rawOrders.map(o => {
+      const zohoLinked = !!o.zohoBooksCustomerId;
+      // Business rule: unlinked orders have full amount outstanding regardless of pendingAmount field
+      const effectivePendingAmount = zohoLinked ? o.pendingAmount : o.totalOrderAmount;
+      const paidAmount = o.totalOrderAmount - effectivePendingAmount;
+      const paymentPercentage = o.totalOrderAmount > 0
+        ? Math.max(0, Math.min(100, (paidAmount / o.totalOrderAmount) * 100))
+        : 0;
 
-    orders.forEach(o => {
-      const isLinked = !!o.zohoBooksCustomerId;
-      const actualPendingAmount = isLinked ? o.pendingAmount : o.totalOrderAmount;
-
-      totalSales += o.totalOrderAmount;
-      totalPendingPayments += actualPendingAmount;
-      if (o.status === 'EXECUTION' || o.status === 'COMPLETED') {
-        activeCustomersSet.add(o.customerName);
-      }
-      if (o.status !== 'PENDING_APPROVAL') {
-        approvedOrdersCount++;
-      }
-    });
-
-    const averageOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
-    const conversionRate = totalOrders > 0 ? (approvedOrdersCount / totalOrders) * 100 : 0;
-    const collectionPct = totalSales > 0 ? ((totalSales - totalPendingPayments) / totalSales) * 100 : 0;
-
-    // Dynamic KPIs using Google Material Colors
-    const kpis = [
-      { id: 'total_sales', title: 'Total Sales', value: totalSales, format: 'currency', colorVariant: 'blue', icon: 'IndianRupee' },
-      { id: 'total_orders', title: 'Total Orders', value: totalOrders, format: 'number', colorVariant: 'green', icon: 'Hash' },
-      { id: 'aov', title: 'Avg Order Value', value: averageOrderValue, format: 'currency', colorVariant: 'purple', icon: 'TrendingUp' },
-      { id: 'active_customers', title: 'Active Customers', value: activeCustomersSet.size, format: 'number', colorVariant: 'teal', icon: 'Users' },
-      { id: 'pending_payments', title: 'Pending Payments', value: totalPendingPayments, format: 'currency', colorVariant: 'amber', icon: 'CreditCard' },
-      { id: 'conversion_rate', title: 'Conversion Rate', value: conversionRate, format: 'percentage', colorVariant: 'teal', icon: 'Zap', subtitle: 'Approved / Total Orders' },
-      { id: 'collection_pct', title: 'Collection %', value: collectionPct, format: 'percentage', colorVariant: 'green', icon: 'CheckCircle' },
-    ];
-
-    // 2. Lead Source Breakdown
-    const sourceMap = new Map<string, { count: number; value: number }>();
-    orders.forEach(o => {
-      const current = sourceMap.get(o.leadSource) || { count: 0, value: 0 };
-      sourceMap.set(o.leadSource, {
-        count: current.count + 1,
-        value: current.value + o.totalOrderAmount,
-      });
-    });
-
-    const leadSourceBreakdown = Array.from(sourceMap.entries()).map(([source, data]) => ({
-      source,
-      value: data.value,
-      count: data.count,
-    }));
-
-    // 3. Salesman Ranking
-    const salesmanMap = new Map<string, any>();
-    orders.forEach(o => {
-      if (!o.salesmanId) return;
-      const isLinked = !!o.zohoBooksCustomerId;
-      const actualPendingAmount = isLinked ? o.pendingAmount : o.totalOrderAmount;
-      
-      const sm = salesmanMap.get(o.salesmanId) || {
-        id: o.salesmanId,
-        name: o.salesman?.name || 'Unknown',
-        orders: 0,
-        totalSales: 0,
-        pendingPayment: 0,
-        approvedCount: 0,
+      return {
+        id: o.id,
+        orderNumber: o.orderNumber,
+        orderDate: o.orderDate.toISOString(),
+        status: o.status,
+        customerName: o.customerName,
+        leadSource: o.leadSource,
+        salesmanId: o.salesmanId,
+        salesmanName: o.salesman?.name ?? null,
+        callingExecutiveId: o.callingExecutiveId,
+        callingExecutiveName: o.callingExecutive?.name ?? null,
+        subVendorId: o.subVendorId,
+        subVendorName: o.subVendor?.name ?? null,
+        totalOrderAmount: o.totalOrderAmount,
+        systemSize: o.systemSize,
+        systemType: o.systemType,
+        zohoLinked,
+        loanCustomer: o.loanCustomer,
+        approvedAt: o.approvedAt?.toISOString() ?? null,
+        completedAt: o.completedAt?.toISOString() ?? null,
+        cancelledAt: o.cancelledAt?.toISOString() ?? null,
+        effectivePendingAmount,
+        paidAmount,
+        paymentPercentage,
+        payments: o.payments.map(p => ({
+          amount: p.amount,
+          paymentDate: p.paymentDate.toISOString(),
+          paymentMode: p.paymentMode,
+        })),
       };
-      sm.orders++;
-      sm.totalSales += o.totalOrderAmount;
-      sm.pendingPayment += actualPendingAmount;
-      if (o.status !== 'PENDING_APPROVAL') sm.approvedCount++;
-      salesmanMap.set(o.salesmanId, sm);
     });
 
-    const salesmanRanking = Array.from(salesmanMap.values()).map(sm => ({
-      ...sm,
-      avgOrderValue: sm.orders > 0 ? sm.totalSales / sm.orders : 0,
-      conversionPct: sm.orders > 0 ? (sm.approvedCount / sm.orders) * 100 : 0,
-    })).sort((a, b) => b.totalSales - a.totalSales);
-
-    // 4. Time Trends (Aggregating actual data instead of mock)
-    const quarterlySalesMap = new Map<string, { sales: number, orders: number }>();
-    const monthlySalesMap = new Map<string, { sales: number, orders: number }>();
-    
-    orders.forEach(o => {
-      const d = new Date(o.orderDate);
-      const year = d.getUTCFullYear();
-      const month = d.getUTCMonth();
-      const q = Math.floor(month / 3) + 1;
-      
-      const qKey = `Q${q}-${year}`;
-      const mKey = `${year}-${String(month + 1).padStart(2, '0')}`; // YYYY-MM
-      
-      const qData = quarterlySalesMap.get(qKey) || { sales: 0, orders: 0 };
-      qData.sales += o.totalOrderAmount;
-      qData.orders++;
-      quarterlySalesMap.set(qKey, qData);
-      
-      const mData = monthlySalesMap.get(mKey) || { sales: 0, orders: 0 };
-      mData.sales += o.totalOrderAmount;
-      mData.orders++;
-      monthlySalesMap.set(mKey, mData);
-    });
-
-    const quarterTrend = Array.from(quarterlySalesMap.entries())
-      .map(([quarter, data]) => ({ quarter, sales: data.sales, orders: data.orders }))
-      .sort((a, b) => a.quarter.localeCompare(b.quarter));
-      
-    const monthTrend = Array.from(monthlySalesMap.entries())
-      .map(([month, data]) => ({ month, sales: data.sales, orders: data.orders }))
-      .sort((a, b) => a.month.localeCompare(b.month));
-
-    const responseData = {
-      kpis,
-      leadSourceBreakdown,
-      salesmanRanking,
-      quarterTrend,
-      monthTrend,
-      rawStats: {
-        totalOrders,
-      }
-    };
-
-    if (format === 'csv') {
-      const headers = ['Salesman', 'Orders', 'Total Sales', 'Avg Order Value', 'Pending Payment', 'Conversion %'];
-      const rows = salesmanRanking.map(s => [
-        s.name,
-        s.orders,
-        formatIndianCurrency(s.totalSales, false).replace(/,/g, ''), // Strip commas for CSV if raw value is preferred, but user said format exactly.
-        // Actually, wrap in quotes to preserve Indian commas
-        `"${formatIndianCurrency(s.totalSales, false)}"`,
-        `"${formatIndianCurrency(s.avgOrderValue, false)}"`,
-        `"${formatIndianCurrency(s.pendingPayment, false)}"`,
-        `"${formatPercentage(s.conversionPct)}"`,
-      ]);
-      const csvContent = [
-        headers.join(','),
-        ...rows.map(r => r.join(','))
-      ].join('\n');
-      
-      return new NextResponse(csvContent, {
-        headers: {
-          'Content-Type': 'text/csv',
-          'Content-Disposition': 'attachment; filename="salesman_report.csv"',
-        },
-      });
-    }
-
-    return NextResponse.json(responseData);
+    return NextResponse.json({ orders });
   } catch (error) {
-    console.error('Error fetching salesman report:', error);
+    console.error('[SalesmanReport API Error]', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

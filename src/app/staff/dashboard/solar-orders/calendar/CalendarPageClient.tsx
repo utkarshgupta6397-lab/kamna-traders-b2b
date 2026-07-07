@@ -9,7 +9,7 @@ import {
   X,
   ExternalLink,
   Clock,
-  Zap,
+  Zap, MapPin,
   User,
   AlertTriangle,
   CheckCircle2,

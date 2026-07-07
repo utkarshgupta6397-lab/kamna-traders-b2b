@@ -39,9 +39,9 @@ function LeadSection({ leadSource, primaryRanking , primaryDimension }: LeadSect
         formatter: (params: { dataIndex: number }[]) => {
           const idx = params[0].dataIndex;
           return [
-            `<b>\${sources[idx]}</b>`,
-            `Revenue: <b>\${formatIndianCurrency(revenues[idx], true)}</b>`,
-            `Orders: <b>\${formatIndianNumber(orders[idx])}</b>`,
+            `<b>${sources[idx]}</b>`,
+            `Revenue: <b>${formatIndianCurrency(revenues[idx], true)}</b>`,
+            `Orders: <b>${formatIndianNumber(orders[idx])}</b>`,
           ].join('<br/>');
         },
       },
@@ -82,7 +82,7 @@ function LeadSection({ leadSource, primaryRanking , primaryDimension }: LeadSect
             show: true,
             position: 'right',
             formatter: (params: { dataIndex: number }) =>
-              `\${formatIndianNumber(orders[params.dataIndex])} orders`,
+              `${formatIndianNumber(orders[params.dataIndex])} orders`,
             fontSize: 10,
             color: '#6B7280',
           },

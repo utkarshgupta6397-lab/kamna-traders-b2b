@@ -328,7 +328,7 @@ export interface AgentSummary {
   avgOrderValue: number;
   totalKW: number;
   leadSources: Record<string, number>;    // leadSource → count
-  monthly: Record<string, { sales: number; orders: number }>; // monthKey → data
+  monthly: Record<string, { sales: number; orders: number; totalKW: number }>; // monthKey → data
   quarterly: Record<string, { sales: number; orders: number }>; // quarterKey → data
 }
 
@@ -339,6 +339,7 @@ export interface MonthlyData {
   orders: number;
   pending: number;
   collected: number;
+  totalKW: number;
 }
 
 export interface QuarterlyData {
@@ -463,13 +464,14 @@ export function buildReportData(orders: NormalizedOrder[], primaryDimension: 'sa
     // --- Monthly ---
     let mEntry = monthlyMap.get(monthKey);
     if (!mEntry) {
-      mEntry = { monthKey, label: monthLabel, sales: 0, orders: 0, pending: 0, collected: 0 };
+      mEntry = { monthKey, label: monthLabel, sales: 0, orders: 0, pending: 0, collected: 0, totalKW: 0 };
       monthlyMap.set(monthKey, mEntry);
     }
     mEntry.sales += o.totalOrderAmount;
     mEntry.orders += 1;
     mEntry.pending += o.effectivePendingAmount;
     mEntry.collected += o.paidAmount;
+    mEntry.totalKW += o.systemSize;
 
     let entityId: string | null = null;
     let entityName: string | null = null;
@@ -518,9 +520,10 @@ export function buildReportData(orders: NormalizedOrder[], primaryDimension: 'sa
       ent.totalKW += o.systemSize;
       ent.leadSources[o.leadSource] = (ent.leadSources[o.leadSource] ?? 0) + 1;
 
-      const entMonth = ent.monthly[monthKey] ?? { sales: 0, orders: 0 };
+      const entMonth = ent.monthly[monthKey] ?? { sales: 0, orders: 0, totalKW: 0 };
       entMonth.sales += o.totalOrderAmount;
       entMonth.orders += 1;
+      entMonth.totalKW += o.systemSize;
       ent.monthly[monthKey] = entMonth;
 
       const entQtr = ent.quarterly[quarterKey] ?? { sales: 0, orders: 0 };

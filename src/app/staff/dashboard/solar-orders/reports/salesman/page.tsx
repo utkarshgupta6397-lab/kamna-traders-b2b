@@ -19,8 +19,9 @@ export default function SalesmanReportPage() {
       })
       .then(data => {
         if (!cancelled) {
-          // Salesman page operates on all approved orders
-          setOrders(data.orders ?? []);
+          // Salesman page operates on all approved orders EXCEPT sub-vendors
+          const filtered = (data.orders ?? []).filter((o: NormalizedOrder) => o.leadSource !== 'SUB_VENDOR');
+          setOrders(filtered);
           setLoading(false);
         }
       })

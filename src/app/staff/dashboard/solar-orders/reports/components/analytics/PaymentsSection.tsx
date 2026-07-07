@@ -1,7 +1,7 @@
 'use client';
 import { memo, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { formatIndianCurrency } from '@/lib/formatters';
+import { formatIndianCurrency, formatIndianNumber } from '@/lib/formatters';
 import type { ReportData } from '@/lib/report-analytics';
 import { formatMonth } from '@/lib/report-analytics';
 
@@ -132,8 +132,8 @@ function PaymentsSectionComponent({ monthly, primaryRanking, ageBuckets, payment
         formatter: (params: any) => {
           const b = ageBuckets[params[0].dataIndex];
           return `<div class="font-semibold text-gray-900 border-b border-gray-100 pb-1 mb-1">Aging: ${b.label}</div>
-                  <div class="flex justify-between gap-4 text-sm"><span class="text-gray-500">Pending Amount</span><span class="font-medium text-red-600">${formatIndianCurrency(b.pendingAmount, false)}</span></div>
-                  <div class="flex justify-between gap-4 text-sm"><span class="text-gray-500">Orders</span><span class="font-medium text-gray-900">${b.count}</span></div>`;
+                  <div class="flex justify-between gap-4 text-sm"><span class="text-gray-500">Pending Amount</span><span class="font-medium text-red-600">${formatIndianCurrency(b.pendingAmount, true)}</span></div>
+                  <div class="flex justify-between gap-4 text-sm"><span class="text-gray-500">Orders</span><span class="font-medium text-gray-900">${formatIndianNumber(b.count)}</span></div>`;
         }
       },
       grid: { top: 20, right: 20, bottom: 20, left: 60 },

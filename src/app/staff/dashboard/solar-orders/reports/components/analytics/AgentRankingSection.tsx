@@ -102,7 +102,7 @@ function AgentRankingSectionComponent({ primaryRanking, onAgentClick, primaryDim
                           {row.collectionPct.toFixed(0)}%
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-600">{row.totalKW.toFixed(1)}</td>
+                      <td className="px-4 py-3 text-right text-gray-600">{row.totalKW.toFixed(1)} kW</td>
                     </tr>
                   );
                 })

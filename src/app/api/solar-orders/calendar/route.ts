@@ -46,11 +46,15 @@ export async function GET(request: Request) {
         systemSize: true,
         installationDate: true,
         status: true,
+        leadSource: true,
+        remarks: true,
+        totalOrderAmount: true,
+        pendingAmount: true,
+        zohoBooksCustomerId: true,
         salesman: { select: { id: true, name: true } },
         callingExecutive: { select: { id: true, name: true } },
         workflowSteps: {
-          where: { workflowType: 'INSTALLATION' },
-          select: { stepKey: true, status: true, stepIndex: true, metadata: true },
+          select: { workflowType: true, stepKey: true, status: true, stepIndex: true, metadata: true },
           orderBy: { stepIndex: 'asc' },
         },
       },
@@ -82,11 +86,15 @@ export async function GET(request: Request) {
         systemSize: true,
         orderDate: true,
         status: true,
+        leadSource: true,
+        remarks: true,
+        totalOrderAmount: true,
+        pendingAmount: true,
+        zohoBooksCustomerId: true,
         salesman: { select: { id: true, name: true } },
         callingExecutive: { select: { id: true, name: true } },
         workflowSteps: {
-          where: { workflowType: 'INSTALLATION' },
-          select: { stepKey: true, status: true, stepIndex: true, metadata: true },
+          select: { workflowType: true, stepKey: true, status: true, stepIndex: true, metadata: true },
           orderBy: { stepIndex: 'asc' },
         },
       },
@@ -99,6 +107,20 @@ export async function GET(request: Request) {
 
     const scheduled = scheduledOrders.map((o) => {
       const state = resolveWorkflowState(o.workflowSteps, 'INSTALLATION');
+      const docState = resolveWorkflowState(o.workflowSteps, 'DOCUMENTATION');
+      
+      let address = '';
+      if (o.remarks && o.remarks.includes('Address: ')) {
+        const parts = o.remarks.split('Address: ');
+        const afterAddress = parts[1].split('\nCity: ');
+        address = afterAddress[0].trim();
+      }
+
+      const isZohoLinked = !!o.zohoBooksCustomerId;
+      const actualPendingAmount = isZohoLinked ? o.pendingAmount : o.totalOrderAmount;
+      const paidAmount = o.totalOrderAmount - actualPendingAmount;
+      const paymentPercentage = o.totalOrderAmount > 0 ? (paidAmount / o.totalOrderAmount) * 100 : 0;
+
       return {
         id: o.id,
         orderNumber: o.orderNumber,
@@ -109,15 +131,36 @@ export async function GET(request: Request) {
         currentStage: state.currentStage,
         pct: state.progressPercentage,
         status: o.status,
+        leadSource: o.leadSource,
+        address,
+        docStage: docState.currentStage,
+        totalOrderAmount: o.totalOrderAmount,
+        paidAmount,
+        paymentPercentage
       };
     });
 
     const queue = queueOrders
       .map((o) => {
         const state = resolveWorkflowState(o.workflowSteps, 'INSTALLATION');
+        const docState = resolveWorkflowState(o.workflowSteps, 'DOCUMENTATION');
+        
         // If all steps completed, exclude from queue (already done)
         if (state.isCompleted) return null;
         const daysSinceOrder = Math.floor((now - new Date(o.orderDate).getTime()) / 86_400_000);
+        
+        let address = '';
+        if (o.remarks && o.remarks.includes('Address: ')) {
+          const parts = o.remarks.split('Address: ');
+          const afterAddress = parts[1].split('\nCity: ');
+          address = afterAddress[0].trim();
+        }
+
+        const isZohoLinked = !!o.zohoBooksCustomerId;
+        const actualPendingAmount = isZohoLinked ? o.pendingAmount : o.totalOrderAmount;
+        const paidAmount = o.totalOrderAmount - actualPendingAmount;
+        const paymentPercentage = o.totalOrderAmount > 0 ? (paidAmount / o.totalOrderAmount) * 100 : 0;
+
         return {
           id: o.id,
           orderNumber: o.orderNumber,
@@ -130,6 +173,12 @@ export async function GET(request: Request) {
           currentStage: state.currentStage,
           pct: state.progressPercentage,
           status: o.status,
+          leadSource: o.leadSource,
+          address,
+          docStage: docState.currentStage,
+          totalOrderAmount: o.totalOrderAmount,
+          paidAmount,
+          paymentPercentage
         };
       })
       .filter(Boolean);

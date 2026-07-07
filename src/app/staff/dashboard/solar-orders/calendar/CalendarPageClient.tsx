@@ -16,6 +16,7 @@ import {
   GripVertical,
   RefreshCw,
 } from 'lucide-react';
+import { formatStrictLakhs } from '@/lib/formatters';
 import Link from 'next/link';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -29,6 +30,12 @@ interface ScheduledOrder {
   currentStage: string;
   pct: number;
   status: string;
+  leadSource?: string;
+  address?: string;
+  docStage?: string;
+  totalOrderAmount?: number;
+  paidAmount?: number;
+  paymentPercentage?: number;
 }
 
 interface QueueOrder {
@@ -43,6 +50,12 @@ interface QueueOrder {
   currentStage: string;
   pct: number;
   status: string;
+  leadSource?: string;
+  address?: string;
+  docStage?: string;
+  totalOrderAmount?: number;
+  paidAmount?: number;
+  paymentPercentage?: number;
 }
 
 interface Toast {
@@ -592,56 +605,59 @@ export default function CalendarPageClient({ canEdit }: { canEdit: boolean }) {
               }
               className={`rounded-xl border p-3 cursor-grab active:cursor-grabbing select-none transition-all hover:shadow-md ${priorityClass(order.daysSinceOrder)}`}
             >
-              <div className="flex items-start gap-2">
-                <GripVertical size={14} className="text-gray-400 mt-0.5 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  {/* Name + priority dot */}
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${priorityDot(order.daysSinceOrder)}`} />
-                    <span className="text-sm font-bold text-gray-900 truncate">
-                      {order.customerName}
-                    </span>
-                  </div>
+              <div className="flex flex-col gap-2 relative">
+                {/* Priority Indicator */}
+                <div className={`absolute top-0 right-0 w-2 h-2 rounded-full ${priorityDot(order.daysSinceOrder)}`} title={`${order.daysSinceOrder} days in queue`} />
 
-                  <div className="flex items-center gap-1.5 text-[11px] text-gray-500 mb-1">
-                    <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-[10px]">
-                      {order.orderNumber}
-                    </span>
-                    <span>·</span>
-                    <Zap size={10} className="text-amber-500" />
-                    <span className="font-semibold text-gray-700">{order.systemSize} kW</span>
+                {/* Primary */}
+                <div>
+                  <div className="text-sm font-bold text-gray-900 leading-tight pr-4">{order.customerName}</div>
+                  <div className="text-[10px] text-gray-500 font-mono mt-0.5">{order.orderNumber}</div>
+                </div>
+
+                {/* Secondary */}
+                <div className="flex flex-col gap-1.5 mt-1 text-[11px]">
+                  <div className="flex items-center gap-2">
+                    {order.leadSource && (
+                      <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[9px] font-bold tracking-wide uppercase border border-indigo-100">
+                        {order.leadSource}
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1 font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 text-[9px]">
+                      <Zap size={10} /> {order.systemSize} kW
+                    </div>
                   </div>
 
                   {order.salesman && (
-                    <div className="flex items-center gap-1 text-[11px] text-gray-500 mb-1">
-                      <User size={10} />
+                    <div className="flex items-center gap-1.5 text-gray-600">
+                      <User size={12} className="text-gray-400" />
                       <span className="truncate">{order.salesman}</span>
                     </div>
                   )}
 
-                  <div className="flex items-center gap-1 text-[11px] text-teal-700 font-medium truncate mb-1">
-                    <span className="truncate">{order.currentStage}</span>
+                  {order.docStage && (
+                    <div className="flex items-center gap-1.5 text-gray-600 mt-0.5">
+                      <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[9px] font-bold tracking-wide border border-blue-100">
+                        Doc: {order.docStage}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Address */}
+                {order.address && (
+                  <div className="text-[10px] text-gray-500 leading-tight line-clamp-2 mt-1 border-t border-gray-100 pt-1.5">
+                    {order.address}
                   </div>
+                )}
 
-                  <div className="flex items-center justify-between">
-                    {/* Progress bar */}
-                    <div className="flex items-center gap-1.5 flex-1">
-                      <div className="flex-1 h-1 bg-gray-200 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-teal-500 rounded-full transition-all"
-                          style={{ width: `${order.pct}%` }}
-                        />
-                      </div>
-                      <span className="text-[10px] text-gray-400 shrink-0">{order.pct}%</span>
-                    </div>
-
-                    <div className="flex items-center gap-1 ml-2 text-[10px] text-gray-400">
-                      <Clock size={9} />
-                      <span>{order.daysSinceOrder}d</span>
-                      {order.daysSinceOrder > 30 && (
-                        <AlertTriangle size={10} className="text-red-500 ml-0.5" />
-                      )}
-                    </div>
+                {/* Payment */}
+                <div className="mt-1.5 pt-1.5 border-t border-gray-100">
+                  <div className={`text-[10.5px] font-bold ${order.paymentPercentage && order.paymentPercentage >= 100 ? 'text-emerald-600' : order.paymentPercentage && order.paymentPercentage >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
+                    {formatStrictLakhs(order.paidAmount || 0).replace(' L', 'L')} / {formatStrictLakhs(order.totalOrderAmount || 0).replace(' L', 'L')}
+                  </div>
+                  <div className={`text-[10px] font-bold mt-0.5 ${order.paymentPercentage && order.paymentPercentage >= 100 ? 'text-emerald-600/80' : order.paymentPercentage && order.paymentPercentage >= 50 ? 'text-orange-500/80' : 'text-red-600/80'}`}>
+                    {Math.round(order.paymentPercentage || 0)}% Paid
                   </div>
                 </div>
               </div>
@@ -694,56 +710,71 @@ export default function CalendarPageClient({ canEdit }: { canEdit: boolean }) {
                   key={o.id}
                   className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm hover:shadow-md transition-shadow"
                 >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className={`w-2 h-2 rounded-full ${chipColor(o.id)}`} />
-                        <span className="font-bold text-gray-900 text-sm">{o.customerName}</span>
+                  <div className="flex flex-col gap-2 relative">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className={`w-2 h-2 rounded-full ${chipColor(o.id)}`} />
+                          <span className="font-bold text-gray-900 text-sm leading-tight pr-4">{o.customerName}</span>
+                        </div>
+                        <span className="text-[10px] font-mono mt-0.5 text-gray-500">
+                          {o.orderNumber}
+                        </span>
                       </div>
-                      <span className="text-[11px] font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">
-                        {o.orderNumber}
-                      </span>
+                      <Link
+                        href={`/staff/dashboard/solar-orders/orders/${o.id}`}
+                        target="_blank"
+                        className="flex items-center gap-1 text-[11px] text-teal-600 hover:text-teal-800 font-semibold shrink-0 mt-1"
+                      >
+                        Open <ExternalLink size={10} />
+                      </Link>
                     </div>
-                    <Link
-                      href={`/staff/dashboard/solar-orders/orders/${o.id}`}
-                      target="_blank"
-                      className="flex items-center gap-1 text-[11px] text-teal-600 hover:text-teal-800 font-semibold shrink-0"
-                    >
-                      Open <ExternalLink size={10} />
-                    </Link>
-                  </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-[12px]">
-                    <div className="flex items-center gap-1.5 text-gray-600">
-                      <Zap size={12} className="text-amber-500" />
-                      <span className="font-semibold">{o.systemSize} kW</span>
+                    {/* Secondary */}
+                    <div className="flex flex-col gap-1.5 mt-1 text-[11px]">
+                      <div className="flex items-center gap-2">
+                        {o.leadSource && (
+                          <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[9px] font-bold tracking-wide uppercase border border-indigo-100">
+                            {o.leadSource}
+                          </span>
+                        )}
+                        <div className="flex items-center gap-1 font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 text-[9px]">
+                          <Zap size={10} /> {o.systemSize} kW
+                        </div>
+                      </div>
+
+                      {o.salesman && (
+                        <div className="flex items-center gap-1.5 text-gray-600">
+                          <User size={12} className="text-gray-400" />
+                          <span className="truncate">{o.salesman}</span>
+                        </div>
+                      )}
+
+                      {o.docStage && (
+                        <div className="flex items-center gap-1.5 text-gray-600 mt-0.5">
+                          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[9px] font-bold tracking-wide border border-blue-100">
+                            Doc: {o.docStage}
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    {o.salesman && (
-                      <div className="flex items-center gap-1.5 text-gray-600">
-                        <User size={12} className="text-gray-400" />
-                        <span className="truncate">{o.salesman}</span>
+
+                    {/* Address */}
+                    {o.address && (
+                      <div className="text-[10px] text-gray-500 leading-tight line-clamp-2 mt-1 border-t border-gray-100 pt-1.5">
+                        {o.address}
                       </div>
                     )}
-                  </div>
 
-                  <div className="mt-2 pt-2 border-t border-gray-100">
-                    <p className="text-[11px] font-semibold text-teal-700 truncate">
-                      {o.currentStage}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-teal-500 rounded-full"
-                          style={{ width: `${o.pct}%` }}
-                        />
+                    {/* Payment */}
+                    <div className="mt-1.5 pt-1.5 border-t border-gray-100">
+                      <div className={`text-[10.5px] font-bold ${o.paymentPercentage && o.paymentPercentage >= 100 ? 'text-emerald-600' : o.paymentPercentage && o.paymentPercentage >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
+                        {formatStrictLakhs(o.paidAmount || 0).replace(' L', 'L')} / {formatStrictLakhs(o.totalOrderAmount || 0).replace(' L', 'L')}
                       </div>
-                      <span className="text-[10px] text-gray-400">{o.pct}%</span>
+                      <div className={`text-[10px] font-bold mt-0.5 ${o.paymentPercentage && o.paymentPercentage >= 100 ? 'text-emerald-600/80' : o.paymentPercentage && o.paymentPercentage >= 50 ? 'text-orange-500/80' : 'text-red-600/80'}`}>
+                        {Math.round(o.paymentPercentage || 0)}% Paid
+                      </div>
                     </div>
-                  </div>
-
-                  {/* Placeholder for assigned installer */}
-                  <div className="mt-2 text-[11px] text-gray-400 italic">
-                    Assigned Installer: —
                   </div>
 
                   {canEdit && (

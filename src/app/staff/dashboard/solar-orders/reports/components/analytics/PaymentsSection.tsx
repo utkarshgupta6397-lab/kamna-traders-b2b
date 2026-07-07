@@ -2,19 +2,20 @@
 import { memo, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { formatIndianCurrency } from '@/lib/formatters';
-import type { ReportData, CallingExecSummary } from '@/lib/report-salesman';
-import { CHART_COLORS, formatMonth } from '@/lib/report-salesman';
+import type { ReportData } from '@/lib/report-analytics';
+import { formatMonth } from '@/lib/report-analytics';
 
 interface PaymentsSectionProps {
+  primaryDimension: string;
   monthly: ReportData['monthly'];
-  callingExecRanking: ReportData['callingExecRanking'];
+  primaryRanking: ReportData['primaryRanking'];
   ageBuckets: ReportData['ageBuckets'];
   paymentMode: ReportData['paymentMode'];
 }
 
-function PaymentsSectionComponent({ monthly, callingExecRanking, ageBuckets, paymentMode }: PaymentsSectionProps) {
+function PaymentsSectionComponent({ monthly, primaryRanking, ageBuckets, paymentMode , primaryDimension }: PaymentsSectionProps) {
   const stackedBarChart = useMemo(() => {
-    const topCallingExecs = callingExecRanking.slice(0, 10).reverse();
+    const topSalesmen = primaryRanking.slice(0, 10).reverse();
     return {
       tooltip: {
         trigger: 'axis',
@@ -37,13 +38,13 @@ function PaymentsSectionComponent({ monthly, callingExecRanking, ageBuckets, pay
       legend: { bottom: 0, icon: 'circle', textStyle: { color: '#6b7280', fontSize: 11 } },
       grid: { top: 20, right: 20, bottom: 40, left: 100 },
       xAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed', color: '#f3f4f6' } }, axisLabel: { color: '#6b7280', fontSize: 11, formatter: (v: number) => formatIndianCurrency(v, true) } },
-      yAxis: { type: 'category', data: topCallingExecs.map(ce => ce.name), axisLine: { lineStyle: { color: '#e5e7eb' } }, axisLabel: { color: '#6b7280', fontSize: 11, width: 90, overflow: 'truncate' }, axisTick: { show: false } },
+      yAxis: { type: 'category', data: topSalesmen.map(agent => agent.name), axisLine: { lineStyle: { color: '#e5e7eb' } }, axisLabel: { color: '#6b7280', fontSize: 11, width: 90, overflow: 'truncate' }, axisTick: { show: false } },
       series: [
-        { name: 'Paid', type: 'bar', stack: 'total', barWidth: '60%', itemStyle: { color: '#388E3C' }, data: topCallingExecs.map(ce => ce.paidAmount) },
-        { name: 'Pending', type: 'bar', stack: 'total', barWidth: '60%', itemStyle: { color: '#F57C00' }, data: topCallingExecs.map(ce => ce.pendingAmount) }
+        { name: 'Paid', type: 'bar', stack: 'total', barWidth: '60%', itemStyle: { color: '#388E3C' }, data: topSalesmen.map(agent => agent.paidAmount) },
+        { name: 'Pending', type: 'bar', stack: 'total', barWidth: '60%', itemStyle: { color: '#F57C00' }, data: topSalesmen.map(agent => agent.pendingAmount) }
       ]
     };
-  }, [callingExecRanking]);
+  }, [primaryRanking]);
 
   const paymentModeChart = useMemo(() => {
     const colors: Record<string, string> = {
@@ -160,9 +161,9 @@ function PaymentsSectionComponent({ monthly, callingExecRanking, ageBuckets, pay
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">Pending Collections by Calling Exec</h2>
+        <h2 className="text-sm font-semibold text-gray-700 mb-4">Paid vs Pending per Salesman</h2>
         <div className="h-[280px] w-full">
-          {callingExecRanking.length > 0 ? (
+          {primaryRanking.length > 0 ? (
             <ReactECharts option={stackedBarChart} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'svg' }} notMerge={true} />
           ) : (
             <div className="h-full flex items-center justify-center text-gray-400 text-sm">No data available</div>

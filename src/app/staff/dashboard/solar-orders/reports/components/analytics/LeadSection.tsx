@@ -2,13 +2,14 @@
 import { memo, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { formatIndianCurrency, formatIndianNumber } from '@/lib/formatters';
-import type { ReportData } from '@/lib/report-salesman';
-import { CHART_COLORS } from '@/lib/report-salesman';
+import type { ReportData } from '@/lib/report-analytics';
+import { CHART_COLORS } from '@/lib/report-analytics';
 import { User } from 'lucide-react';
 
 interface LeadSectionProps {
+  primaryDimension: string;
   leadSource: ReportData['leadSource'];
-  salesmanRanking: ReportData['salesmanRanking'];
+  primaryRanking: ReportData['primaryRanking'];
 }
 
 function collectionColor(pct: number): string {
@@ -17,11 +18,11 @@ function collectionColor(pct: number): string {
   return '#D32F2F';
 }
 
-function LeadSection({ leadSource, salesmanRanking }: LeadSectionProps) {
-  // Sort salesmen by totalSales desc, limit to top 10
-  const sortedSalesmen = useMemo(
-    () => [...(salesmanRanking ?? [])].sort((a, b) => b.totalSales - a.totalSales).slice(0, 10),
-    [salesmanRanking],
+function LeadSection({ leadSource, primaryRanking , primaryDimension }: LeadSectionProps) {
+  // Sort agents by totalSales desc
+  const sortedExecs = useMemo(
+    () => [...(primaryRanking ?? [])].sort((a, b) => b.totalSales - a.totalSales),
+    [primaryRanking],
   );
 
   const chartOption = useMemo(() => {
@@ -38,9 +39,9 @@ function LeadSection({ leadSource, salesmanRanking }: LeadSectionProps) {
         formatter: (params: { dataIndex: number }[]) => {
           const idx = params[0].dataIndex;
           return [
-            `<b>${sources[idx]}</b>`,
-            `Revenue: <b>${formatIndianCurrency(revenues[idx], true)}</b>`,
-            `Orders: <b>${formatIndianNumber(orders[idx])}</b>`,
+            `<b>\${sources[idx]}</b>`,
+            `Revenue: <b>\${formatIndianCurrency(revenues[idx], true)}</b>`,
+            `Orders: <b>\${formatIndianNumber(orders[idx])}</b>`,
           ].join('<br/>');
         },
       },
@@ -81,7 +82,7 @@ function LeadSection({ leadSource, salesmanRanking }: LeadSectionProps) {
             show: true,
             position: 'right',
             formatter: (params: { dataIndex: number }) =>
-              `${formatIndianNumber(orders[params.dataIndex])} orders`,
+              `\${formatIndianNumber(orders[params.dataIndex])} orders`,
             fontSize: 10,
             color: '#6B7280',
           },
@@ -116,16 +117,16 @@ function LeadSection({ leadSource, salesmanRanking }: LeadSectionProps) {
           )}
         </div>
 
-        {/* ── Right: Salesman Performance (1/3) ── */}
+        {/* ── Right: Agent Performance (1/3) ── */}
         <div className="flex flex-col">
           <p className="mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            Salesman Performance
+            {primaryDimension === 'salesman' ? 'Salesman Performance' : (primaryDimension === 'callingExecutive' ? 'Calling Exec Performance' : 'Sub Vendor Performance')}
           </p>
 
-          {sortedSalesmen.length === 0 ? (
+          {sortedExecs.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-200 bg-gray-50 py-10">
               <User className="h-8 w-8 text-gray-300" />
-              <p className="text-center text-xs text-gray-400">No salesman data</p>
+              <p className="text-center text-xs text-gray-400">No data available</p>
             </div>
           ) : (
             <div className="overflow-hidden rounded-lg border border-gray-100">
@@ -133,7 +134,7 @@ function LeadSection({ leadSource, salesmanRanking }: LeadSectionProps) {
                 <thead>
                   <tr className="bg-gray-50">
                     <th className="px-3 py-2 text-left font-bold uppercase tracking-wider text-gray-500">
-                      Salesman
+                      {primaryDimension === 'salesman' ? 'Salesman' : (primaryDimension === 'callingExecutive' ? 'Calling Exec' : 'Sub Vendor')}
                     </th>
                     <th className="px-3 py-2 text-right font-bold uppercase tracking-wider text-gray-500">
                       Orders
@@ -147,22 +148,22 @@ function LeadSection({ leadSource, salesmanRanking }: LeadSectionProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {sortedSalesmen.map((salesman) => (
-                    <tr key={salesman.name} className="hover:bg-gray-50">
+                  {sortedExecs.map((exec) => (
+                    <tr key={exec.name} className="hover:bg-gray-50">
                       <td className="max-w-[100px] truncate px-3 py-2 font-medium text-gray-700">
-                        {salesman.name}
+                        {exec.name}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                        {formatIndianNumber(salesman.orders)}
+                        {formatIndianNumber(exec.orders)}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                        {formatIndianCurrency(salesman.totalSales, true)}
+                        {formatIndianCurrency(exec.totalSales, true)}
                       </td>
                       <td
                         className="px-3 py-2 text-right tabular-nums font-semibold"
-                        style={{ color: collectionColor(salesman.collectionPct) }}
+                        style={{ color: collectionColor(exec.collectionPct) }}
                       >
-                        {salesman.collectionPct.toFixed(1)}%
+                        {exec.collectionPct.toFixed(1)}%
                       </td>
                     </tr>
                   ))}

@@ -2,17 +2,18 @@
 import { memo, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { formatIndianCurrency } from '@/lib/formatters';
-import type { ReportData } from '@/lib/report-salesman';
-import { CHART_COLORS, formatMonth, formatFYQuarter } from '@/lib/report-salesman';
+import type { ReportData } from '@/lib/report-analytics';
+import { CHART_COLORS, formatMonth, formatFYQuarter } from '@/lib/report-analytics';
 
 interface RevenueSectionProps {
+  primaryDimension: string;
   monthly: ReportData['monthly'];
   quarterly: ReportData['quarterly'];
   systemType: ReportData['systemType'];
-  salesmanRanking: ReportData['salesmanRanking'];
+  primaryRanking: ReportData['primaryRanking'];
 }
 
-function RevenueSectionComponent({ monthly, quarterly, systemType, salesmanRanking }: RevenueSectionProps) {
+function RevenueSectionComponent({ monthly, quarterly, systemType, primaryRanking , primaryDimension }: RevenueSectionProps) {
   const monthlyChart = useMemo(() => {
     return {
       tooltip: {
@@ -111,14 +112,14 @@ function RevenueSectionComponent({ monthly, quarterly, systemType, salesmanRanki
   }, [quarterly]);
 
   const stackedBarChart = useMemo(() => {
-    const topSalesmen = salesmanRanking.slice(0, 6);
+    const topSalesmen = primaryRanking.slice(0, 6);
     const series = topSalesmen.map((sm, i) => ({
       name: sm.name,
       type: 'bar',
       stack: 'total',
       barWidth: '40%',
       itemStyle: { color: CHART_COLORS[i % CHART_COLORS.length] },
-      data: quarterly.map(q => q.bySalesman[sm.id] || 0)
+      data: quarterly.map(q => q.byPrimaryEntity[sm.id] || 0)
     }));
 
     return {
@@ -129,7 +130,7 @@ function RevenueSectionComponent({ monthly, quarterly, systemType, salesmanRanki
       yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed', color: '#f3f4f6' } }, axisLabel: { color: '#6b7280', fontSize: 11, formatter: (v: number) => formatIndianCurrency(v, true) } },
       series
     };
-  }, [quarterly, salesmanRanking]);
+  }, [quarterly, primaryRanking]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -158,7 +159,7 @@ function RevenueSectionComponent({ monthly, quarterly, systemType, salesmanRanki
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 lg:col-span-2">
          <h2 className="text-sm font-semibold text-gray-700 mb-4">Sales by Salesman per Quarter</h2>
          <div className="h-[260px] w-full">
-           {salesmanRanking.length > 0 && quarterly.length > 0 ? (
+           {primaryRanking.length > 0 && quarterly.length > 0 ? (
              <ReactECharts option={stackedBarChart} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'svg' }} notMerge={true} />
            ) : (
              <div className="h-full flex items-center justify-center text-gray-400 text-sm">No data available</div>

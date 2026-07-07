@@ -2,8 +2,8 @@
 import { memo, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { formatIndianCurrency, formatIndianNumber } from '@/lib/formatters';
-import type { ReportData } from '@/lib/report-salesman';
-import { STATUS_COLORS } from '@/lib/report-salesman';
+import type { ReportData } from '@/lib/report-analytics';
+import { STATUS_COLORS } from '@/lib/report-analytics';
 
 interface WorkflowSectionProps {
   statusDistribution: ReportData['statusDistribution'];

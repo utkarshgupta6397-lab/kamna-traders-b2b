@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { getApprovedOrderCondition } from '@/lib/solar-workflow-config';
-import type { NormalizedOrder } from '@/lib/report-salesman';
+import type { NormalizedOrder } from '@/lib/report-analytics';
 
 /**
  * GET /api/solar-orders/reports/salesman
@@ -13,7 +13,7 @@ import type { NormalizedOrder } from '@/lib/report-salesman';
  * DESIGN:
  * - Single DB query with eager loads (salesman, callingExecutive, subVendor, payments)
  * - Normalized payment fields computed server-side (effectivePendingAmount, paidAmount, paymentPercentage)
- * - No server-side aggregation — reduces payload and keeps logic in one place (lib/report-salesman.ts)
+ * - No server-side aggregation — reduces payload and keeps logic in one place (lib/report-analytics.ts)
  * - Only approved orders are returned (APPROVED, EXECUTION, INSTALLATION_IN_PROGRESS, COMPLETED)
  */
 export async function GET() {

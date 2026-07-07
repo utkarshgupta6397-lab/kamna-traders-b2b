@@ -2,7 +2,7 @@
 import { memo } from 'react';
 import { IndianRupee, Hash, TrendingUp, Users, CreditCard, Zap, Battery } from 'lucide-react';
 import { formatIndianCurrency, formatIndianNumber } from '@/lib/formatters';
-import type { ReportData } from '@/lib/report-salesman';
+import type { ReportData } from '@/lib/report-analytics';
 
 interface KPISectionProps {
   kpis: ReportData['kpis'];

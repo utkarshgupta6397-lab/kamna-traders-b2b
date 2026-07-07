@@ -1,8 +1,8 @@
 'use client';
 import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { Filter, X, Check, Download, ChevronDown } from 'lucide-react';
-import type { FilterState, FilterOptions, FilterOption } from '@/lib/report-salesman';
-import { countActiveFilters, getDefaultFilterState } from '@/lib/report-salesman';
+import type { FilterState, FilterOptions, FilterOption } from '@/lib/report-analytics';
+import { countActiveFilters, getDefaultFilterState } from '@/lib/report-analytics';
 
 interface SalesmanFilterPanelProps {
   filterState: FilterState;

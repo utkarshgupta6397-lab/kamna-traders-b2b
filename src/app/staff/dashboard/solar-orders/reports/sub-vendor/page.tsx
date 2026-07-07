@@ -5,7 +5,7 @@ import type { NormalizedOrder } from '@/lib/report-analytics';
 import AnalyticsDashboardClient from '../components/analytics/AnalyticsDashboardClient';
 import { BarChart2 } from 'lucide-react';
 
-export default function SalesmanReportPage() {
+export default function SubVendorReportPage() {
   const [orders, setOrders] = useState<NormalizedOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -19,8 +19,10 @@ export default function SalesmanReportPage() {
       })
       .then(data => {
         if (!cancelled) {
-          // Salesman page operates on all approved orders
-          setOrders(data.orders ?? []);
+          // Sub Vendor page operates strictly on Sub Vendor orders
+          const allOrders: NormalizedOrder[] = data.orders ?? [];
+          const svOrders = allOrders.filter(o => o.leadSource === 'SUB_VENDOR');
+          setOrders(svOrders);
           setLoading(false);
         }
       })
@@ -52,9 +54,9 @@ export default function SalesmanReportPage() {
   return (
     <AnalyticsDashboardClient
       baseDataset={orders}
-      title="Sales by Salesman"
-      subtitle="Sales analytics across all external salesmen"
-      primaryDimension="salesman"
+      title="Sales by Sub Vendor"
+      subtitle="Sales analytics across all external sub vendors"
+      primaryDimension="subVendor"
     />
   );
 }

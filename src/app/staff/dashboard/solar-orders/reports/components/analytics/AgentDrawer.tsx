@@ -4,21 +4,22 @@ import Link from 'next/link';
 import { X } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { formatIndianCurrency, formatIndianNumber } from '@/lib/formatters';
-import type { CallingExecSummary, NormalizedOrder } from '@/lib/report-salesman';
-import { formatMonth, STATUS_COLORS, STATUS_LABELS, LEAD_SOURCE_LABELS } from '@/lib/report-salesman';
+import type { AgentSummary, NormalizedOrder } from '@/lib/report-analytics';
+import { formatMonth, STATUS_COLORS, STATUS_LABELS, LEAD_SOURCE_LABELS } from '@/lib/report-analytics';
 
-interface CallingAgentDrawerProps {
-  callingExec: CallingExecSummary | null;
+interface AgentDrawerProps {
+  primaryDimension: string;
+  agent: AgentSummary | null;
   allFilteredOrders: NormalizedOrder[];
   onClose: () => void;
 }
 
-export default function CallingAgentDrawer({ callingExec, allFilteredOrders, onClose }: CallingAgentDrawerProps) {
+export default function AgentDrawer({ agent, allFilteredOrders, onClose , primaryDimension }: AgentDrawerProps) {
   const [activeTab, setActiveTab] = useState<'monthly' | 'lead' | 'orders'>('monthly');
 
   // Close on Escape, block body scroll
   useEffect(() => {
-    if (!callingExec) return;
+    if (!agent) return;
     
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -31,22 +32,22 @@ export default function CallingAgentDrawer({ callingExec, allFilteredOrders, onC
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
     };
-  }, [callingExec, onClose]);
+  }, [agent, onClose]);
 
-  // Reset tab when callingExec changes
+  // Reset tab when agent changes
   useEffect(() => {
-    if (callingExec) setActiveTab('monthly');
-  }, [callingExec]);
+    if (agent) setActiveTab('monthly');
+  }, [agent]);
 
-  const callingExecOrders = useMemo(() => {
-    if (!callingExec) return [];
-    return allFilteredOrders.filter(o => o.callingExecutiveId === callingExec.id);
-  }, [allFilteredOrders, callingExec]);
+  const agentOrders = useMemo(() => {
+    if (!agent) return [];
+    return allFilteredOrders.filter(o => ((primaryDimension === 'salesman' && o.salesmanId === agent.id) || (primaryDimension === 'callingExecutive' && o.callingExecutiveId === agent.id) || (primaryDimension === 'subVendor' && o.subVendorId === agent.id)));
+  }, [allFilteredOrders, agent]);
 
   const monthlyChart = useMemo(() => {
-    if (!callingExec) return {};
-    const months = Object.keys(callingExec.monthly).sort();
-    const data = months.map(m => callingExec.monthly[m].sales);
+    if (!agent) return {};
+    const months = Object.keys(agent.monthly).sort();
+    const data = months.map(m => agent.monthly[m].sales);
     const labels = months.map(m => formatMonth(m));
     
     return {
@@ -55,7 +56,7 @@ export default function CallingAgentDrawer({ callingExec, allFilteredOrders, onC
         formatter: (params: any) => {
           const idx = params[0].dataIndex;
           const monthKey = months[idx];
-          const mData = callingExec.monthly[monthKey];
+          const mData = agent.monthly[monthKey];
           return `<div class="font-semibold text-gray-900 border-b border-gray-100 pb-1 mb-1">${labels[idx]}</div>
                   <div class="flex justify-between gap-4 text-sm"><span class="text-gray-500">Sales</span><span class="font-medium text-[#388E3C]">${formatIndianCurrency(mData.sales, false)}</span></div>
                   <div class="flex justify-between gap-4 text-sm"><span class="text-gray-500">Orders</span><span class="font-medium text-gray-900">${mData.orders}</span></div>`;
@@ -72,11 +73,11 @@ export default function CallingAgentDrawer({ callingExec, allFilteredOrders, onC
         }
       }]
     };
-  }, [callingExec]);
+  }, [agent]);
 
   const leadChart = useMemo(() => {
-    if (!callingExec) return {};
-    const sources = Object.entries(callingExec.leadSources).sort((a, b) => b[1] - a[1]);
+    if (!agent) return {};
+    const sources = Object.entries(agent.leadSources).sort((a, b) => b[1] - a[1]);
     
     return {
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
@@ -92,9 +93,9 @@ export default function CallingAgentDrawer({ callingExec, allFilteredOrders, onC
         label: { show: true, position: 'right', color: '#6b7280', fontSize: 11 }
       }]
     };
-  }, [callingExec]);
+  }, [agent]);
 
-  if (!callingExec) return null;
+  if (!agent) return null;
 
   return (
     <>
@@ -106,12 +107,12 @@ export default function CallingAgentDrawer({ callingExec, allFilteredOrders, onC
       />
       
       {/* Drawer */}
-      <div className={`fixed inset-y-0 right-0 w-full max-w-[640px] bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out ${callingExec ? 'translate-x-0' : 'translate-x-full'} flex flex-col`}>
+      <div className={`fixed inset-y-0 right-0 w-full max-w-[640px] bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out ${agent ? 'translate-x-0' : 'translate-x-full'} flex flex-col`}>
         {/* Header */}
         <div className="px-6 py-5 border-b border-gray-100 flex items-start justify-between bg-gray-50">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">{callingExec.name}</h2>
-            <p className="text-sm text-gray-500 mt-1">Calling Executive Performance Summary</p>
+            <h2 className="text-xl font-bold text-gray-900">{agent.name}</h2>
+            <p className="text-sm text-gray-500 mt-1">Agent Performance Summary</p>
           </div>
           <button onClick={onClose} className="p-2 -mr-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-full transition-colors">
             <X size={20} />
@@ -123,19 +124,19 @@ export default function CallingAgentDrawer({ callingExec, allFilteredOrders, onC
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
               <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-1">Total Sales</p>
-              <p className="text-lg font-bold text-blue-900">{formatIndianCurrency(callingExec.totalSales, true)}</p>
+              <p className="text-lg font-bold text-blue-900">{formatIndianCurrency(agent.totalSales, true)}</p>
             </div>
             <div className="p-3 bg-green-50 border border-green-100 rounded-lg">
               <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Orders</p>
-              <p className="text-lg font-bold text-green-900">{formatIndianNumber(callingExec.orders)}</p>
+              <p className="text-lg font-bold text-green-900">{formatIndianNumber(agent.orders)}</p>
             </div>
-            <div className={`p-3 border rounded-lg ${callingExec.collectionPct >= 80 ? 'bg-green-50 border-green-100 text-green-900' : callingExec.collectionPct >= 50 ? 'bg-amber-50 border-amber-100 text-amber-900' : 'bg-red-50 border-red-100 text-red-900'}`}>
+            <div className={`p-3 border rounded-lg ${agent.collectionPct >= 80 ? 'bg-green-50 border-green-100 text-green-900' : agent.collectionPct >= 50 ? 'bg-amber-50 border-amber-100 text-amber-900' : 'bg-red-50 border-red-100 text-red-900'}`}>
               <p className="text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">Collection</p>
-              <p className="text-lg font-bold">{callingExec.collectionPct.toFixed(1)}%</p>
+              <p className="text-lg font-bold">{agent.collectionPct.toFixed(1)}%</p>
             </div>
             <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
               <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">kW Sold</p>
-              <p className="text-lg font-bold text-gray-900">{callingExec.totalKW.toFixed(1)} <span className="text-sm font-medium text-gray-500">kW</span></p>
+              <p className="text-lg font-bold text-gray-900">{agent.totalKW.toFixed(1)} <span className="text-sm font-medium text-gray-500">kW</span></p>
             </div>
           </div>
         </div>
@@ -158,7 +159,7 @@ export default function CallingAgentDrawer({ callingExec, allFilteredOrders, onC
             onClick={() => setActiveTab('orders')}
             className={`py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'orders' ? 'border-[#1976D2] text-[#1976D2]' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
           >
-            Orders ({callingExecOrders.length})
+            Orders ({agentOrders.length})
           </button>
         </div>
 
@@ -189,10 +190,10 @@ export default function CallingAgentDrawer({ callingExec, allFilteredOrders, onC
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {callingExecOrders.length === 0 ? (
+                  {agentOrders.length === 0 ? (
                     <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No orders found.</td></tr>
                   ) : (
-                    callingExecOrders.map(o => (
+                    agentOrders.map(o => (
                       <tr key={o.id} className="hover:bg-blue-50/20">
                         <td className="px-4 py-3">
                           <Link href={`/staff/dashboard/solar-orders/orders/${o.id}`} className="text-[#1976D2] hover:underline font-medium" target="_blank" rel="noopener noreferrer">

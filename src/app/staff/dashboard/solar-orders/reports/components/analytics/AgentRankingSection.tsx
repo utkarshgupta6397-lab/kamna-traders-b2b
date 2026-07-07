@@ -2,26 +2,27 @@
 import { memo, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { formatIndianCurrency, formatIndianNumber } from '@/lib/formatters';
-import type { ReportData, CallingExecSummary } from '@/lib/report-salesman';
-import { CHART_COLORS } from '@/lib/report-salesman';
+import type { ReportData, AgentSummary } from '@/lib/report-analytics';
+import { CHART_COLORS } from '@/lib/report-analytics';
 
-interface CallingAgentSectionProps {
-  callingExecRanking: ReportData['callingExecRanking'];
-  onCallingExecClick: (ce: CallingExecSummary) => void;
+interface AgentRankingSectionProps {
+  primaryDimension: string;
+  primaryRanking: ReportData['primaryRanking'];
+  onAgentClick: (agent: AgentSummary) => void;
 }
 
-function CallingAgentSectionComponent({ callingExecRanking, onCallingExecClick }: CallingAgentSectionProps) {
+function AgentRankingSectionComponent({ primaryRanking, onAgentClick, primaryDimension }: AgentRankingSectionProps) {
   const pieChart = useMemo(() => {
-    let top8 = callingExecRanking.slice(0, 8);
-    let others = callingExecRanking.slice(8);
-    let data = top8.map((ce, i) => ({
-      name: ce.name,
-      value: ce.totalSales,
+    let top8 = primaryRanking.slice(0, 8);
+    let others = primaryRanking.slice(8);
+    let data = top8.map((agent, i) => ({
+      name: agent.name,
+      value: agent.totalSales,
       itemStyle: { color: CHART_COLORS[i % CHART_COLORS.length] }
     }));
     
     if (others.length > 0) {
-      const othersTotal = others.reduce((sum, ce) => sum + ce.totalSales, 0);
+      const othersTotal = others.reduce((sum, agent) => sum + agent.totalSales, 0);
       data.push({
         name: 'Others',
         value: othersTotal,
@@ -46,34 +47,39 @@ function CallingAgentSectionComponent({ callingExecRanking, onCallingExecClick }
         label: { show: false },
         data
       }],
-      graphic: { type: 'text', left: 'center', top: '40%', style: { text: 'Revenue\nShare', textAlign: 'center', fill: '#9ca3af', fontSize: 12, fontWeight: 'bold' } }
+      graphic: { type: 'text', left: 'center', top: '40%', style: { text: 'Revenue\\nShare', textAlign: 'center', fill: '#9ca3af', fontSize: 12, fontWeight: 'bold' } }
     };
-  }, [callingExecRanking]);
+  }, [primaryRanking]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden lg:col-span-2 flex flex-col">
         <div className="px-5 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-800">Calling Executive Performance</h2>
+          <h2 className="text-sm font-semibold text-gray-800">
+            {primaryDimension === 'salesman' ? 'Salesman Performance' : (primaryDimension === 'callingExecutive' ? 'Calling Executive Performance' : 'Sub Vendor Performance')}
+          </h2>
         </div>
         <div className="overflow-x-auto flex-1">
           <table className="w-full text-sm text-left">
             <thead className="bg-gray-50 text-gray-500 text-[11px] uppercase tracking-wider sticky top-0 z-10 border-b border-gray-100">
               <tr>
                 <th className="px-4 py-3 font-semibold">Rank</th>
-                <th className="px-4 py-3 font-semibold">Calling Executive</th>
+                <th className="px-4 py-3 font-semibold">
+                  {primaryDimension === 'salesman' ? 'Salesman' : (primaryDimension === 'callingExecutive' ? 'Calling Exec' : 'Sub Vendor')}
+                </th>
                 <th className="px-4 py-3 font-semibold text-right">Orders</th>
-                <th className="px-4 py-3 font-semibold text-right">Revenue</th>
-                <th className="px-4 py-3 font-semibold text-right">Paid</th>
+                <th className="px-4 py-3 font-semibold text-right">Total Sales</th>
+                <th className="px-4 py-3 font-semibold text-right">Avg Order</th>
                 <th className="px-4 py-3 font-semibold text-right">Pending</th>
                 <th className="px-4 py-3 font-semibold text-center">Collection %</th>
+                <th className="px-4 py-3 font-semibold text-right">kW Sold</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 bg-white">
-              {callingExecRanking.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No data available</td></tr>
+              {primaryRanking.length === 0 ? (
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">No data available</td></tr>
               ) : (
-                callingExecRanking.map((row, i) => {
+                primaryRanking.map((row, i) => {
                   let rank = (i + 1).toString();
                   if (i === 0) rank = '🥇';
                   else if (i === 1) rank = '🥈';
@@ -84,18 +90,19 @@ function CallingAgentSectionComponent({ callingExecRanking, onCallingExecClick }
                   else if (row.collectionPct >= 50) badgeColor = 'bg-amber-50 text-amber-700 border-amber-100';
 
                   return (
-                    <tr key={row.id} onClick={() => onCallingExecClick(row)} className="hover:bg-blue-50/40 cursor-pointer transition-colors">
+                    <tr key={row.id} onClick={() => onAgentClick(row)} className="hover:bg-blue-50/40 cursor-pointer transition-colors">
                       <td className="px-4 py-3 text-gray-500 font-medium">{rank}</td>
                       <td className="px-4 py-3 font-medium text-gray-900">{row.name}</td>
                       <td className="px-4 py-3 text-right">{formatIndianNumber(row.orders)}</td>
                       <td className="px-4 py-3 text-right font-semibold text-[#1976D2]">{formatIndianCurrency(row.totalSales, true)}</td>
-                      <td className="px-4 py-3 text-right text-[#388E3C]">{formatIndianCurrency(row.paidAmount || 0, true)}</td>
+                      <td className="px-4 py-3 text-right text-gray-600">{formatIndianCurrency(row.avgOrderValue, true)}</td>
                       <td className="px-4 py-3 text-right text-[#F57C00]">{row.pendingAmount > 0 ? formatIndianCurrency(row.pendingAmount, true) : '-'}</td>
                       <td className="px-4 py-3 text-center">
                         <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded border text-[11px] font-semibold w-14 ${badgeColor}`}>
                           {row.collectionPct.toFixed(0)}%
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-right text-gray-600">{row.totalKW.toFixed(1)}</td>
                     </tr>
                   );
                 })
@@ -108,7 +115,7 @@ function CallingAgentSectionComponent({ callingExecRanking, onCallingExecClick }
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 lg:col-span-1">
         <h2 className="text-sm font-semibold text-gray-700 mb-4">Revenue Share</h2>
         <div className="h-[340px] w-full">
-          {callingExecRanking.length > 0 ? (
+          {primaryRanking.length > 0 ? (
             <ReactECharts option={pieChart} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'svg' }} notMerge={true} />
           ) : (
             <div className="h-full flex items-center justify-center text-gray-400 text-sm">No data available</div>
@@ -119,4 +126,4 @@ function CallingAgentSectionComponent({ callingExecRanking, onCallingExecClick }
   );
 }
 
-export default memo(CallingAgentSectionComponent);
+export default memo(AgentRankingSectionComponent);

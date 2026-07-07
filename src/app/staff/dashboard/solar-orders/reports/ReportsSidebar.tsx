@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, PhoneCall, PenTool, FileText, IndianRupee, Package } from 'lucide-react';
+import { BarChart3, PhoneCall, PenTool, FileText, IndianRupee, Package, Users } from 'lucide-react';
 
 export default function ReportsSidebar() {
   const pathname = usePathname();
@@ -13,6 +13,7 @@ export default function ReportsSidebar() {
       items: [
         { name: 'Sales by Salesman', href: '/staff/dashboard/solar-orders/reports/salesman', icon: BarChart3 },
         { name: 'Sales by Calling Agent', href: '/staff/dashboard/solar-orders/reports/calling-agent', icon: PhoneCall },
+        { name: 'Sales by Sub Vendor', href: '/staff/dashboard/solar-orders/reports/sub-vendor', icon: Users },
       ],
     },
   ];

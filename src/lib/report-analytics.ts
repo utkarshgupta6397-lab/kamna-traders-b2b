@@ -317,7 +317,7 @@ export function buildFilterOptions(orders: NormalizedOrder[]): FilterOptions {
 // Report Data Types
 // ------------------------------------
 
-export interface SalesmanSummary {
+export interface AgentSummary {
   id: string;
   name: string;
   orders: number;
@@ -330,21 +330,6 @@ export interface SalesmanSummary {
   leadSources: Record<string, number>;    // leadSource → count
   monthly: Record<string, { sales: number; orders: number }>; // monthKey → data
   quarterly: Record<string, { sales: number; orders: number }>; // quarterKey → data
-}
-
-export interface CallingExecSummary {
-  id: string;
-  name: string;
-  orders: number;
-  totalSales: number;
-  pendingAmount: number;
-  paidAmount: number;
-  collectionPct: number;
-  avgOrderValue: number;
-  totalKW: number;
-  leadSources: Record<string, number>;
-  monthly: Record<string, { sales: number; orders: number }>;
-  quarterly: Record<string, { sales: number; orders: number }>;
 }
 
 export interface MonthlyData {
@@ -363,8 +348,7 @@ export interface QuarterlyData {
   quarter: string;
   sales: number;
   orders: number;
-  bySalesman: Record<string, number>; // salesmanId → sales
-  byCallingExec: Record<string, number>; // callingExecId → sales
+  byPrimaryEntity: Record<string, number>; // entityId → sales
 }
 
 export interface StatusData {
@@ -393,8 +377,7 @@ export interface ReportData {
   };
   monthly: MonthlyData[];
   quarterly: QuarterlyData[];
-  salesmanRanking: SalesmanSummary[];
-  callingExecRanking: CallingExecSummary[];
+  primaryRanking: AgentSummary[];
   leadSource: { source: string; label: string; sales: number; orders: number }[];
   systemType: { type: string; label: string; sales: number; orders: number }[];
   statusDistribution: StatusData[];
@@ -417,11 +400,11 @@ const PAYMENT_MODE_LABELS: Record<string, string> = {
 
 const ACTIVE_STATUSES = new Set(['APPROVED', 'EXECUTION', 'INSTALLATION_IN_PROGRESS', 'COMPLETED']);
 
-export function buildReportData(orders: NormalizedOrder[]): ReportData {
+export function buildReportData(orders: NormalizedOrder[], primaryDimension: 'salesman' | 'callingExecutive' | 'subVendor'): ReportData {
   if (orders.length === 0) {
     return {
       kpis: { totalSales: 0, totalOrders: 0, avgOrderValue: 0, activeCustomers: 0, totalPending: 0, collectionPct: 0, totalKW: 0 },
-      monthly: [], quarterly: [], salesmanRanking: [], callingExecRanking: [],
+      monthly: [], quarterly: [], primaryRanking: [],
       leadSource: [], systemType: [], statusDistribution: [], paymentMode: [],
       ageBuckets: [
         { label: '< 30 Days', count: 0, pendingAmount: 0 },
@@ -446,8 +429,7 @@ export function buildReportData(orders: NormalizedOrder[]): ReportData {
   const quarterlyMap = new Map<string, QuarterlyData>();
 
   // --- Dimension maps ---
-  const salesmanMap = new Map<string, SalesmanSummary>();
-  const callingExecMap = new Map<string, CallingExecSummary>();
+  const primaryEntityMap = new Map<string, AgentSummary>();
   const leadSourceMap = new Map<string, { sales: number; orders: number }>();
   const systemTypeMap = new Map<string, { sales: number; orders: number }>();
   const statusMap = new Map<string, StatusData>();
@@ -456,12 +438,6 @@ export function buildReportData(orders: NormalizedOrder[]): ReportData {
   // --- Age buckets ---
   const bucketKeys = ['<30', '30-60', '60-90', '90+'] as const;
   type BucketKey = typeof bucketKeys[number];
-  const ageBucketLabels: Record<BucketKey, string> = {
-    '<30': '< 30 Days',
-    '30-60': '30–60 Days',
-    '60-90': '60–90 Days',
-    '90+': '90+ Days',
-  };
   const ageBucketsAcc: Record<BucketKey, AgeBucket> = {
     '<30':  { label: '< 30 Days',  count: 0, pendingAmount: 0 },
     '30-60': { label: '30–60 Days', count: 0, pendingAmount: 0 },
@@ -495,81 +471,62 @@ export function buildReportData(orders: NormalizedOrder[]): ReportData {
     mEntry.pending += o.effectivePendingAmount;
     mEntry.collected += o.paidAmount;
 
+    let entityId: string | null = null;
+    let entityName: string | null = null;
+    if (primaryDimension === 'salesman') { 
+      entityId = o.salesmanId; 
+      entityName = o.salesmanName; 
+    }
+    else if (primaryDimension === 'callingExecutive') { 
+      entityId = o.callingExecutiveId; 
+      entityName = o.callingExecutiveName; 
+    }
+    else if (primaryDimension === 'subVendor') { 
+      entityId = o.subVendorId; 
+      entityName = o.subVendorName; 
+    }
+
     // --- Quarterly ---
     let qEntry = quarterlyMap.get(quarterKey);
     if (!qEntry) {
-      qEntry = { quarterKey, label: quarterLabel, fy, quarter, sales: 0, orders: 0, bySalesman: {}, byCallingExec: {} };
+      qEntry = { quarterKey, label: quarterLabel, fy, quarter, sales: 0, orders: 0, byPrimaryEntity: {} };
       quarterlyMap.set(quarterKey, qEntry);
     }
     qEntry.sales += o.totalOrderAmount;
     qEntry.orders += 1;
-    if (o.salesmanId) {
-      qEntry.bySalesman[o.salesmanId] = (qEntry.bySalesman[o.salesmanId] ?? 0) + o.totalOrderAmount;
-    }
-    if (o.callingExecutiveId) {
-      qEntry.byCallingExec[o.callingExecutiveId] = (qEntry.byCallingExec[o.callingExecutiveId] ?? 0) + o.totalOrderAmount;
+    if (entityId) {
+      qEntry.byPrimaryEntity[entityId] = (qEntry.byPrimaryEntity[entityId] ?? 0) + o.totalOrderAmount;
     }
 
-    // --- Salesman ---
-    if (o.salesmanId) {
-      let sm = salesmanMap.get(o.salesmanId);
-      if (!sm) {
-        sm = {
-          id: o.salesmanId,
-          name: o.salesmanName ?? 'Unknown',
+    // --- Primary Entity ---
+    if (entityId) {
+      let ent = primaryEntityMap.get(entityId);
+      if (!ent) {
+        ent = {
+          id: entityId,
+          name: entityName ?? 'Unknown',
           orders: 0, totalSales: 0, pendingAmount: 0, paidAmount: 0,
           collectionPct: 0, avgOrderValue: 0, totalKW: 0,
           leadSources: {}, monthly: {}, quarterly: {},
         };
-        salesmanMap.set(o.salesmanId, sm);
+        primaryEntityMap.set(entityId, ent);
       }
-      sm.orders += 1;
-      sm.totalSales += o.totalOrderAmount;
-      sm.pendingAmount += o.effectivePendingAmount;
-      sm.paidAmount += o.paidAmount;
-      sm.totalKW += o.systemSize;
-      sm.leadSources[o.leadSource] = (sm.leadSources[o.leadSource] ?? 0) + 1;
+      ent.orders += 1;
+      ent.totalSales += o.totalOrderAmount;
+      ent.pendingAmount += o.effectivePendingAmount;
+      ent.paidAmount += o.paidAmount;
+      ent.totalKW += o.systemSize;
+      ent.leadSources[o.leadSource] = (ent.leadSources[o.leadSource] ?? 0) + 1;
 
-      const smMonth = sm.monthly[monthKey] ?? { sales: 0, orders: 0 };
-      smMonth.sales += o.totalOrderAmount;
-      smMonth.orders += 1;
-      sm.monthly[monthKey] = smMonth;
+      const entMonth = ent.monthly[monthKey] ?? { sales: 0, orders: 0 };
+      entMonth.sales += o.totalOrderAmount;
+      entMonth.orders += 1;
+      ent.monthly[monthKey] = entMonth;
 
-      const smQtr = sm.quarterly[quarterKey] ?? { sales: 0, orders: 0 };
-      smQtr.sales += o.totalOrderAmount;
-      smQtr.orders += 1;
-      sm.quarterly[quarterKey] = smQtr;
-    }
-
-    // --- Calling Executive ---
-    if (o.callingExecutiveId) {
-      let ce = callingExecMap.get(o.callingExecutiveId);
-      if (!ce) {
-        ce = {
-          id: o.callingExecutiveId,
-          name: o.callingExecutiveName ?? 'Unknown',
-          orders: 0, totalSales: 0, pendingAmount: 0, paidAmount: 0,
-          collectionPct: 0, avgOrderValue: 0, totalKW: 0,
-          leadSources: {}, monthly: {}, quarterly: {},
-        };
-        callingExecMap.set(o.callingExecutiveId, ce);
-      }
-      ce.orders += 1;
-      ce.totalSales += o.totalOrderAmount;
-      ce.pendingAmount += o.effectivePendingAmount;
-      ce.paidAmount += o.paidAmount;
-      ce.totalKW += o.systemSize;
-      ce.leadSources[o.leadSource] = (ce.leadSources[o.leadSource] ?? 0) + 1;
-
-      const ceMonth = ce.monthly[monthKey] ?? { sales: 0, orders: 0 };
-      ceMonth.sales += o.totalOrderAmount;
-      ceMonth.orders += 1;
-      ce.monthly[monthKey] = ceMonth;
-
-      const ceQtr = ce.quarterly[quarterKey] ?? { sales: 0, orders: 0 };
-      ceQtr.sales += o.totalOrderAmount;
-      ceQtr.orders += 1;
-      ce.quarterly[quarterKey] = ceQtr;
+      const entQtr = ent.quarterly[quarterKey] ?? { sales: 0, orders: 0 };
+      entQtr.sales += o.totalOrderAmount;
+      entQtr.orders += 1;
+      ent.quarterly[quarterKey] = entQtr;
     }
 
     // --- Lead Source ---
@@ -632,19 +589,11 @@ export function buildReportData(orders: NormalizedOrder[]): ReportData {
   const totalOrders = orders.length;
   const collectionPct = totalSales > 0 ? ((totalSales - totalPending) / totalSales) * 100 : 0;
 
-  const salesmanRanking = Array.from(salesmanMap.values())
-    .map(sm => ({
-      ...sm,
-      collectionPct: sm.totalSales > 0 ? (sm.paidAmount / sm.totalSales) * 100 : 0,
-      avgOrderValue: sm.orders > 0 ? sm.totalSales / sm.orders : 0,
-    }))
-    .sort((a, b) => b.totalSales - a.totalSales);
-
-  const callingExecRanking = Array.from(callingExecMap.values())
-    .map(ce => ({
-      ...ce,
-      collectionPct: ce.totalSales > 0 ? (ce.paidAmount / ce.totalSales) * 100 : 0,
-      avgOrderValue: ce.orders > 0 ? ce.totalSales / ce.orders : 0,
+  const primaryRanking = Array.from(primaryEntityMap.values())
+    .map(ent => ({
+      ...ent,
+      collectionPct: ent.totalSales > 0 ? (ent.paidAmount / ent.totalSales) * 100 : 0,
+      avgOrderValue: ent.orders > 0 ? ent.totalSales / ent.orders : 0,
     }))
     .sort((a, b) => b.totalSales - a.totalSales);
 
@@ -660,8 +609,7 @@ export function buildReportData(orders: NormalizedOrder[]): ReportData {
     },
     monthly: Array.from(monthlyMap.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey)),
     quarterly: Array.from(quarterlyMap.values()).sort((a, b) => a.quarterKey.localeCompare(b.quarterKey)),
-    salesmanRanking,
-    callingExecRanking,
+    primaryRanking,
     leadSource: Array.from(leadSourceMap.entries())
       .map(([source, data]) => ({ source, label: LEAD_SOURCE_LABELS[source] ?? source, ...data }))
       .sort((a, b) => b.sales - a.sales),

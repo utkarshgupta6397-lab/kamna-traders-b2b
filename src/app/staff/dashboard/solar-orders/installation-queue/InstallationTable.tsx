@@ -14,7 +14,10 @@ interface InstallationTableProps {
   sortField?: string;
   sortDirection?: 'asc' | 'desc';
   onSort?: (field: string) => void;
+  onOpenInstallationJourney?: (orderId: string) => void;
 }
+
+import { formatStrictLakhs } from '@/lib/formatters';
 
 const isValidValue = (val: any) => {
   if (val === null || val === undefined) return false;
@@ -112,7 +115,7 @@ function TooltipPortal({ activeTooltip }: { activeTooltip: any }) {
   return createPortal(content, document.body);
 }
 
-export default function InstallationTable({ items, allSteps, columnCounters, isLoading, sortField, sortDirection, onSort }: InstallationTableProps) {
+export default function InstallationTable({ items, allSteps, columnCounters, isLoading, sortField, sortDirection, onSort, onOpenInstallationJourney }: InstallationTableProps) {
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredStep, setHoveredStep] = useState<string | null>(null);
@@ -162,12 +165,20 @@ export default function InstallationTable({ items, allSteps, columnCounters, isL
                     Customer
                   </th>
                 )}
-                <th className="px-2.5 py-1.5 font-semibold bg-gray-50 border-r border-gray-200 w-[140px]">
-                  Current Stage
-                </th>
-                <th className="px-2.5 py-2 font-semibold bg-gray-50 border-r border-gray-200 w-[100px] align-middle">
-                  Progress
-                </th>
+                {onSort ? (
+                  <SortableTableHeader 
+                    label="Payment" 
+                    field="paymentPercentage" 
+                    currentSortField={sortField || ''} 
+                    currentSortDirection={sortDirection || 'desc'} 
+                    onSort={onSort} 
+                    className="bg-gray-50 border-r border-gray-200 w-[140px]"
+                  />
+                ) : (
+                  <th className="px-2.5 py-1.5 font-semibold bg-gray-50 border-r border-gray-200 w-[140px]">
+                    Payment
+                  </th>
+                )}
 
                 {allSteps.map((step) => {
                   const isColHov = hoveredStep === step;
@@ -215,26 +226,13 @@ export default function InstallationTable({ items, allSteps, columnCounters, isL
                     </td>
 
                     <td className={`px-2.5 py-2 border-r border-gray-100 transition-colors align-middle ${base}`}>
-                      <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-[4px] text-[9.5px] font-bold max-w-[130px] shadow-sm border ${
-                        item.currentStage === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                        item.isOverdue ? 'bg-red-50 text-red-700 border-red-200' : 'bg-teal-50 text-teal-700 border-teal-200'
-                      }`} title={item.currentStage}>
-                        {item.currentStage === 'Completed' ? <CheckCircle2 size={11} className="shrink-0" /> : <Clock size={11} className="shrink-0" />}
-                        <span className="truncate">{item.currentStage}</span>
-                      </span>
-                    </td>
-
-                    <td className={`px-2.5 py-2 border-r border-gray-100 transition-colors align-middle ${base}`}>
-                      <div className="flex flex-col justify-center gap-0.5 w-full min-w-[80px]">
-                        <div className="flex items-center gap-1.5 w-full">
-                          <div className="w-full h-[4px] bg-gray-200 rounded-full overflow-hidden shadow-inner flex-grow">
-                            <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${item.workflowPercentage}%` }} />
-                          </div>
-                          <span className="text-[10px] font-bold text-gray-800 shrink-0 w-[24px] text-right">{item.workflowPercentage}%</span>
+                      <div className="flex flex-col justify-center gap-0.5 w-full min-w-[120px]">
+                        <div className={`text-[10.5px] font-bold ${item.paymentPercentage >= 100 ? 'text-emerald-600' : item.paymentPercentage >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
+                          {formatStrictLakhs(item.paidAmount).replace(' L', 'L')} / {formatStrictLakhs(item.totalOrderAmount).replace(' L', 'L')}
                         </div>
-                        <span className="text-[8.5px] font-medium text-gray-400 text-left">
-                          {item.completedSteps !== undefined && item.totalSteps !== undefined ? `${item.completedSteps} / ${item.totalSteps} Tasks` : ''}
-                        </span>
+                        <div className={`text-[10px] font-bold ${item.paymentPercentage >= 100 ? 'text-emerald-600/80' : item.paymentPercentage >= 50 ? 'text-orange-500/80' : 'text-red-600/80'}`}>
+                          {Math.round(item.paymentPercentage || 0)}% Paid
+                        </div>
                       </div>
                     </td>
 
@@ -289,11 +287,16 @@ export default function InstallationTable({ items, allSteps, columnCounters, isL
 
                     <td className={`px-1.5 py-2 sticky right-0 z-10 border-l border-gray-100 text-center transition-colors align-middle ${frozen}`}>
                       <div className="flex justify-center items-center h-full">
-                        <Link href={`/staff/dashboard/solar-orders/orders/${item.id}/installation`}>
-                          <button className="text-gray-400 hover:text-teal-700 bg-white hover:bg-teal-50 border border-gray-200 rounded p-1 shadow-sm transition-all" title="View Installation">
-                            <ArrowRight size={12} />
-                          </button>
-                        </Link>
+                        <button 
+                          onClick={() => {
+                            onOpenInstallationJourney?.(item.id);
+                          }}
+                          className="flex items-center gap-1.5 px-2.5 py-1 text-white bg-teal-600 hover:bg-teal-700 rounded text-[10px] font-medium shadow-[0_1px_2px_rgba(0,0,0,0.1)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.1)] transition-all active:scale-95 whitespace-nowrap"
+                          title="View Journey"
+                        >
+                          <FileText size={11} className="opacity-90" />
+                          <span>Journey</span>
+                        </button>
                       </div>
                     </td>
                   </tr>

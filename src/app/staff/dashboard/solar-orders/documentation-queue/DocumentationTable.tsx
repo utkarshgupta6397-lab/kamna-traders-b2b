@@ -5,6 +5,7 @@ import { Clock, XCircle, FileText, ArrowRight, Check, ChevronDown, ChevronUp, Ch
 import Link from 'next/link';
 
 import SortableTableHeader from '../components/SortableTableHeader';
+import { formatStrictLakhs } from '@/lib/formatters';
 
 interface DocumentationTableProps {
   items: any[];
@@ -383,7 +384,7 @@ export default function DocumentationTable({ items, allSteps, columnCounters, is
                     <td className={`px-2.5 py-1 border-r border-gray-100 transition-colors ${base}`}>
                       <div className="flex flex-col justify-center gap-0.5 w-full min-w-[120px]">
                         <div className={`text-[10.5px] font-bold ${item.paymentPercentage >= 100 ? 'text-emerald-600' : item.paymentPercentage >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
-                          ₹{(item.paidAmount || 0).toLocaleString('en-IN')} / ₹{(item.totalOrderAmount || 0).toLocaleString('en-IN')}
+                          {formatStrictLakhs(item.paidAmount)} / {formatStrictLakhs(item.totalOrderAmount)}
                         </div>
                         <div className="flex items-center gap-1.5 w-full">
                           <div className="w-full h-[4px] bg-gray-200 rounded-full overflow-hidden shadow-inner flex-grow">

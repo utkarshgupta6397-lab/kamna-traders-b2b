@@ -5,7 +5,7 @@ import { Search, Filter, RefreshCw, Download } from 'lucide-react';
 import DocumentationDashboardKPIs from './DocumentationDashboardKPIs';
 import DocumentationTable from './DocumentationTable';
 import AuthorityBatchButton from './AuthorityBatchButton';
-import InstallationJourneyModal from './InstallationJourneyModal';
+import InstallationJourneyModal from '../components/InstallationJourneyModal';
 import SolarQuickFilters from '../components/SolarQuickFilters';
 import SolarAdvancedFilters from '../components/SolarAdvancedFilters';
 import { useTableSorting } from '../hooks/useTableSorting';

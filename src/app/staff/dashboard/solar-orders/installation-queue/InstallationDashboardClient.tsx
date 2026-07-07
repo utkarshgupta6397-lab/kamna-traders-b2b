@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Search, Filter, RefreshCw, Download } from 'lucide-react';
 import InstallationDashboardKPIs from './InstallationDashboardKPIs';
 import InstallationTable from './InstallationTable';
+import InstallationJourneyModal from '../components/InstallationJourneyModal';
 import SolarQuickFilters from '../components/SolarQuickFilters';
 import SolarAdvancedFilters from '../components/SolarAdvancedFilters';
 import { useTableSorting } from '../hooks/useTableSorting';
@@ -22,6 +23,14 @@ export default function InstallationDashboardClient() {
   const [totalOrders, setTotalOrders] = useState(0);
   const [filterOptions, setFilterOptions] = useState<any>({ systemTypes: [], quarters: [], leadSources: [], assignees: [] });
   const [statusCounts, setStatusCounts] = useState<any>({ all: 0, pendingApproval: 0, execution: 0, completed: 0, rejected: 0 });
+
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const handleOpenJourney = (id: string) => {
+    setSelectedOrderId(id);
+    setIsModalOpen(true);
+  };
 
   // Sorting
   const { sortField, sortDirection, handleSort, setSortField, setSortDirection } = useTableSorting(WORKFLOW_QUEUE_DEFAULT_SORT_FIELD, WORKFLOW_QUEUE_DEFAULT_SORT_DIR);
@@ -181,6 +190,7 @@ export default function InstallationDashboardClient() {
         sortField={sortField}
         sortDirection={sortDirection}
         onSort={handleSort}
+        onOpenInstallationJourney={handleOpenJourney}
       />
 
       {/* Pagination Footer */}
@@ -224,6 +234,19 @@ export default function InstallationDashboardClient() {
             </button>
           </div>
         </div>
+      )}
+
+      {selectedOrderId && (
+        <InstallationJourneyModal
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setTimeout(() => setSelectedOrderId(null), 300);
+          }}
+          orderId={selectedOrderId}
+          workflowType="INSTALLATION"
+          initialData={{ state: allOrders.find(o => o.id === selectedOrderId) }}
+        />
       )}
     </div>
   );

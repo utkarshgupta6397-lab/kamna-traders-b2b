@@ -56,6 +56,11 @@ export async function GET(request: Request) {
       where,
       select: {
         id: true,
+        customerName: true,
+        orderDate: true,
+        totalOrderAmount: true,
+        pendingAmount: true,
+        zohoBooksCustomerId: true,
         workflowSteps: {
           where: { workflowType: 'INSTALLATION' },
           select: {
@@ -102,10 +107,21 @@ export async function GET(request: Request) {
       totalInProgress++;
       if (state.isOverdue) totalOverdue++;
 
+      const isZohoLinked = !!order.zohoBooksCustomerId;
+      const actualPendingAmount = isZohoLinked ? order.pendingAmount : order.totalOrderAmount;
+      const paidAmount = order.totalOrderAmount - actualPendingAmount;
+      const paymentPercentage = order.totalOrderAmount > 0 ? (paidAmount / order.totalOrderAmount) * 100 : 0;
+
       return {
         id: order.id,
         currentStage: state.currentStage,
-        isOverdue: state.isOverdue
+        isOverdue: state.isOverdue,
+        workflowPercentage: state.progressPercentage,
+        customerName: order.customerName,
+        orderDate: order.orderDate ? new Date(order.orderDate).getTime() : 0,
+        paidAmount,
+        paymentPercentage,
+        totalOrderAmount: order.totalOrderAmount
       };
     }).filter(Boolean);
 
@@ -114,6 +130,41 @@ export async function GET(request: Request) {
     let filteredItems = validItems;
     if (installationStage && installationStage !== 'All') {
       filteredItems = filteredItems.filter(item => item.currentStage === installationStage);
+    }
+
+    // In-memory sorting for computed fields or specific columns
+    if (sortField) {
+      filteredItems.sort((a, b) => {
+        let valA: any = 0;
+        let valB: any = 0;
+        
+        switch (sortField) {
+          case 'customerName':
+            valA = a.customerName.toLowerCase();
+            valB = b.customerName.toLowerCase();
+            break;
+          case 'orderDate':
+            valA = a.orderDate;
+            valB = b.orderDate;
+            break;
+          case 'paymentPercentage':
+            valA = a.paymentPercentage;
+            valB = b.paymentPercentage;
+            break;
+          case 'totalOrderAmount':
+            valA = a.totalOrderAmount;
+            valB = b.totalOrderAmount;
+            break;
+          case 'workflowPercentage':
+            valA = a.workflowPercentage;
+            valB = b.workflowPercentage;
+            break;
+        }
+
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
     }
 
     // Paginate the IDs
@@ -129,6 +180,7 @@ export async function GET(request: Request) {
         customerName: true,
         orderDate: true,
         totalOrderAmount: true,
+        pendingAmount: true,
         status: true,
         systemType: true,
         leadSource: true,
@@ -158,6 +210,11 @@ export async function GET(request: Request) {
     const fullItems = fullItemsQuery.map(order => {
       const state = resolveWorkflowState(order.workflowSteps, 'INSTALLATION');
       const assignedExecutive = order.callingExecutive?.name || order.salesman?.name || 'Unassigned';
+      const isZohoLinked = !!order.zohoBooksCustomerId;
+      const actualPendingAmount = isZohoLinked ? order.pendingAmount : order.totalOrderAmount;
+      const paidAmount = order.totalOrderAmount - actualPendingAmount;
+      const paymentPercentage = order.totalOrderAmount > 0 ? (paidAmount / order.totalOrderAmount) * 100 : 0;
+
       return {
         id: order.id,
         orderNumber: order.orderNumber,
@@ -178,7 +235,9 @@ export async function GET(request: Request) {
         totalSteps: state.totalSteps,
         currentStage: state.currentStage,
         isOverdue: state.isOverdue,
-        stepsMap: state.stepsMap
+        stepsMap: state.stepsMap,
+        paidAmount,
+        paymentPercentage
       };
     });
 

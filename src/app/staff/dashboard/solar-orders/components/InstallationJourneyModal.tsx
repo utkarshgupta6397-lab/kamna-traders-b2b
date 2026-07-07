@@ -7,14 +7,23 @@ import { INSTALLATION_STEPS } from '@/lib/solar-workflow-config';
 interface InstallationJourneyModalProps {
   orderId: string;
   onClose: () => void;
+  isOpen?: boolean;
+  workflowType?: string;
+  initialData?: any;
 }
 
-export default function InstallationJourneyModal({ orderId, onClose }: InstallationJourneyModalProps) {
+export default function InstallationJourneyModal({ orderId, onClose, isOpen, workflowType, initialData }: InstallationJourneyModalProps) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (initialData && initialData.state) {
+      setData(initialData);
+      setLoading(false);
+      return;
+    }
+
     const fetchData = async () => {
       try {
         const res = await fetch(`/api/solar-orders/${orderId}/installation-state`);
@@ -28,8 +37,9 @@ export default function InstallationJourneyModal({ orderId, onClose }: Installat
       }
     };
     fetchData();
-  }, [orderId]);
+  }, [orderId, initialData]);
 
+  if (isOpen === false) return null;
   if (!loading && !data) return null;
 
   const content = (

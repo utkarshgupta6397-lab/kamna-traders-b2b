@@ -26,3 +26,8 @@ export function formatPercentage(value: number): string {
   if (value === null || value === undefined) return '0.00%';
   return `${value.toFixed(2)}%`;
 }
+
+export function formatStrictLakhs(value: number): string {
+  if (value === null || value === undefined) return '₹0.00 L';
+  return `₹${(value / 100000).toFixed(2)} L`;
+}

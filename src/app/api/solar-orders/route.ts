@@ -31,7 +31,7 @@ export async function GET(request: Request) {
     const { buildSolarOrdersWhereClause } = await import('@/lib/solar-filters');
     const where = buildSolarOrdersWhereClause(searchParams);
 
-    let orderBy: any = { createdAt: 'desc' };
+    let orderBy: any = { orderDate: 'desc' };
     if (sortField) {
       switch(sortField) {
         case 'orderAmount': orderBy = { totalOrderAmount: sortDirection }; break;

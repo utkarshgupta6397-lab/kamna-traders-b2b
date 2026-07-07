@@ -636,44 +636,40 @@ export default function CalendarPageClient({ canEdit }: { canEdit: boolean }) {
               onDragStart={(e) =>
                 handleDragStart(e, { type: 'queue', orderId: order.id })
               }
-              className={`rounded-xl border p-3 cursor-grab active:cursor-grabbing select-none transition-all hover:shadow-md ${priorityClass(order.daysSinceOrder)}`}
+              className={`rounded-xl border p-2.5 cursor-grab active:cursor-grabbing select-none transition-all hover:shadow-md ${priorityClass(order.daysSinceOrder)}`}
             >
-              <div className="flex flex-col gap-2 relative">
-                {/* Priority Indicator */}
-                <div className={`absolute top-0 right-0 w-2 h-2 rounded-full ${priorityDot(order.daysSinceOrder)}`} title={`${order.daysSinceOrder} days in queue`} />
-
-                {/* Primary */}
-                <div>
-                  <div className="text-sm font-bold text-gray-900 leading-tight pr-4">{order.customerName}</div>
-                  <div className="text-[10px] text-gray-500 font-mono mt-0.5">{order.orderNumber}</div>
+              <div className="flex flex-col gap-1.5">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-sm text-gray-900 leading-tight truncate">{order.customerName}</div>
+                    <div className="text-[10px] text-gray-500 font-mono">{order.orderNumber}</div>
+                  </div>
+                  <div className={`w-2 h-2 rounded-full ${priorityDot(order.daysSinceOrder)}`} title={`${order.daysSinceOrder} days in queue`} />
                 </div>
 
-                {/* Secondary */}
-                <div className="flex flex-col gap-1.5 mt-1 text-[11px]">
-                  <div className="flex items-center gap-2">
-                    {order.leadSource && (
-                      <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[9px] font-bold tracking-wide uppercase border border-indigo-100">
-                        {order.leadSource}
-                      </span>
-                    )}
-                    <div className="flex items-center gap-1 font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 text-[9px]">
-                      <Zap size={10} /> {order.systemSize} kW
-                    </div>
-                  </div>
-
-                  {order.salesman && (
-                    <div className="flex items-center gap-1.5 text-gray-600">
-                      <User size={12} className="text-gray-400" />
-                      <span className="truncate">{order.salesman}</span>
-                    </div>
+                {/* Row 1: Lead Source & System Size */}
+                <div className="flex items-center gap-2">
+                  {order.leadSource && (
+                    <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[9px] font-bold uppercase border border-indigo-100">
+                      {order.leadSource}
+                    </span>
                   )}
+                  <div className="flex items-center gap-1 font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 text-[9px]">
+                    <Zap size={10} /> {order.systemSize} kW
+                  </div>
+                </div>
 
+                {/* Row 2: Salesman & Documentation */}
+                <div className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center gap-1.5 text-gray-600 truncate">
+                    <User size={12} className="text-gray-400 shrink-0" />
+                    <span className="truncate">{order.salesman || '—'}</span>
+                  </div>
                   {order.docStage && (
-                    <div className="flex items-center gap-1.5 text-gray-600 mt-0.5">
-                      <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[9px] font-bold tracking-wide border border-blue-100">
-                        Doc: {order.docStage}
-                      </span>
-                    </div>
+                    <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[9px] font-bold border border-blue-100 shrink-0">
+                      Doc: {order.docStage}
+                    </span>
                   )}
                 </div>
 
@@ -747,71 +743,71 @@ export default function CalendarPageClient({ canEdit }: { canEdit: boolean }) {
               {drawer.orders.map((o) => (
                 <div
                   key={o.id}
-                  className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm hover:shadow-md transition-shadow"
+                  className="rounded-xl border border-gray-200 bg-white p-2.5 shadow-sm hover:shadow-md transition-shadow"
                 >
-                  <div className="flex flex-col gap-2 relative">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
+                  <div className="flex flex-col gap-1.5 relative">
+                    <div className="flex items-start justify-between gap-2 pr-4">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 mb-0.5">
-                          <span className={`w-2 h-2 rounded-full ${chipColor(o.id)}`} />
-                          <span className="font-bold text-gray-900 text-sm leading-tight pr-4">{o.customerName}</span>
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${chipColor(o.id)}`} />
+                          <span className="text-[13px] font-bold text-gray-900 leading-tight truncate">{o.customerName}</span>
                         </div>
-                        <span className="text-[10px] font-mono mt-0.5 text-gray-500">
+                        <span className="text-[10px] font-mono mt-0.5 text-gray-500 ml-3.5">
                           {o.orderNumber}
                         </span>
                       </div>
                       <Link
                         href={`/staff/dashboard/solar-orders/orders/${o.id}`}
                         target="_blank"
-                        className="flex items-center gap-1 text-[11px] text-teal-600 hover:text-teal-800 font-semibold shrink-0 mt-1"
+                        className="flex items-center gap-1 text-[11px] text-teal-600 hover:text-teal-800 font-semibold shrink-0 mt-0.5"
                       >
                         Open <ExternalLink size={10} />
                       </Link>
                     </div>
 
-                    {/* Secondary */}
-                    <div className="flex flex-col gap-1.5 mt-1 text-[11px]">
-                      <div className="flex items-center gap-2">
+                    {/* Rows Grid */}
+                    <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 mt-0.5 text-[11px] items-center">
+                      {/* Row 1 */}
+                      <div className="truncate pl-3.5">
                         {o.leadSource && (
                           <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[9px] font-bold tracking-wide uppercase border border-indigo-100">
                             {o.leadSource}
                           </span>
                         )}
-                        <div className="flex items-center gap-1 font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 text-[9px]">
-                          <Zap size={10} /> {o.systemSize} kW
-                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 font-semibold text-amber-600 whitespace-nowrap">
+                        <Zap size={10} className="shrink-0" /> {o.systemSize} kW
                       </div>
 
-                      {o.salesman && (
-                        <div className="flex items-center gap-1.5 text-gray-600">
-                          <User size={12} className="text-gray-400" />
-                          <span className="truncate">{o.salesman}</span>
-                        </div>
-                      )}
-
-                      {o.docStage && (
-                        <div className="flex items-center gap-1.5 text-gray-600 mt-0.5">
-                          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[9px] font-bold tracking-wide border border-blue-100">
+                      {/* Row 2 */}
+                      <div className="flex items-center gap-1.5 text-gray-600 truncate pl-3.5">
+                        <User size={10} className="text-gray-400 shrink-0" />
+                        <span className="truncate">{o.salesman || '—'}</span>
+                      </div>
+                      <div className="whitespace-nowrap">
+                        {o.docStage && (
+                          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[9px] font-bold tracking-wide border border-blue-100 inline-block">
                             Doc: {o.docStage}
                           </span>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
 
                     {/* Address */}
                     {o.address && (
-                      <div className="text-[10px] text-gray-500 leading-tight truncate mt-1 border-t border-gray-100 pt-1.5">
-                        {o.address}
+                      <div className="text-[10px] text-gray-500 leading-tight truncate mt-0.5 border-t border-gray-100 pt-1.5 flex items-center gap-1 ml-3.5">
+                        <MapPin size={10} className="shrink-0 text-gray-400" />
+                        <span className="truncate">{o.address}</span>
                       </div>
                     )}
 
                     {/* Footer */}
-                    <div className="mt-1.5 pt-1.5 border-t border-gray-100 flex items-end justify-between">
-                      <div>
-                        <div className={`text-[10.5px] font-bold ${o.paymentPercentage && o.paymentPercentage >= 100 ? 'text-emerald-600' : o.paymentPercentage && o.paymentPercentage >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
+                    <div className="mt-0.5 pt-1.5 border-t border-gray-100 flex items-end justify-between ml-3.5">
+                      <div className="flex flex-col gap-0.5">
+                        <div className={`text-[10.5px] font-bold leading-none ${o.paymentPercentage && o.paymentPercentage >= 100 ? 'text-emerald-600' : o.paymentPercentage && o.paymentPercentage >= 50 ? 'text-orange-500' : 'text-red-600'}`}>
                           {formatStrictLakhs(o.paidAmount || 0).replace(' L', 'L')} / {formatStrictLakhs(o.totalOrderAmount || 0).replace(' L', 'L')}
                         </div>
-                        <div className={`text-[10px] font-bold mt-0.5 ${o.paymentPercentage && o.paymentPercentage >= 100 ? 'text-emerald-600/80' : o.paymentPercentage && o.paymentPercentage >= 50 ? 'text-orange-500/80' : 'text-red-600/80'}`}>
+                        <div className={`text-[9px] font-bold leading-none ${o.paymentPercentage && o.paymentPercentage >= 100 ? 'text-emerald-600/80' : o.paymentPercentage && o.paymentPercentage >= 50 ? 'text-orange-500/80' : 'text-red-600/80'}`}>
                           {Math.round(o.paymentPercentage || 0)}% Paid
                         </div>
                       </div>

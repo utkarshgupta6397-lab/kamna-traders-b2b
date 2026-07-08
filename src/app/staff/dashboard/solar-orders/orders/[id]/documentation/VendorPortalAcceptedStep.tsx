@@ -30,7 +30,7 @@ export default function VendorPortalAcceptedStep({
   const isValidAppNumber = /^[A-Z0-9-]{10,40}$/.test(cleanedNumber);
 
   const cleanedLoanNumber = loanAppNumber.trim();
-  const isValidLoanNumber = !isLoanOrder || (cleanedLoanNumber.length >= 5 && cleanedLoanNumber.length <= 100);
+  const isValidLoanNumber = !isLoanOrder || cleanedLoanNumber.length === 0 || (cleanedLoanNumber.length >= 5 && cleanedLoanNumber.length <= 100);
 
   const isValid = isValidAppNumber && isValidLoanNumber;
 
@@ -66,7 +66,7 @@ export default function VendorPortalAcceptedStep({
         {isLoanOrder && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Loan Application Number <span className="text-red-500">*</span>
+              Loan Application Number (Optional)
             </label>
             <input
               type="text"
@@ -109,7 +109,7 @@ export default function VendorPortalAcceptedStep({
       <button
         onClick={() => onComplete('COMPLETED', remarks, { 
           applicationNumber: cleanedNumber,
-          ...(isLoanOrder && { loanApplicationNumber: cleanedLoanNumber })
+          ...(isLoanOrder && { loanApplicationNumber: cleanedLoanNumber || null })
         }, isEditMode)}
         disabled={loading || !canProgress || !isValid || !!disabledMessage}
         className={`w-full flex items-center justify-center gap-2 px-6 py-4 font-bold text-base rounded-xl transition-all shadow-md group ${isValid && canProgress && !disabledMessage ? 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 shadow-none'}`}

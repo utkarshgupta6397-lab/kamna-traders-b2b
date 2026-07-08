@@ -52,17 +52,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       // Update metadata to cleaned value
       metadata.applicationNumber = cleaned;
 
-      // Validate loanApplicationNumber if loan order
+      // Validate loanApplicationNumber if loan order (Optional)
       if (step.solarOrder.loanCustomer) {
         const loanAppNumber = metadata?.loanApplicationNumber;
-        if (!loanAppNumber || typeof loanAppNumber !== 'string') {
-          return NextResponse.json({ error: 'Loan Application Number is required for loan orders.' }, { status: 400 });
+        if (loanAppNumber && typeof loanAppNumber === 'string') {
+          const cleanedLoan = loanAppNumber.trim();
+          if (cleanedLoan.length > 0) {
+            if (cleanedLoan.length < 5 || cleanedLoan.length > 100) {
+              return NextResponse.json({ error: 'Loan Application Number must be between 5 and 100 characters.' }, { status: 400 });
+            }
+            metadata.loanApplicationNumber = cleanedLoan;
+          } else {
+            metadata.loanApplicationNumber = null;
+          }
+        } else {
+          metadata.loanApplicationNumber = null;
         }
-        const cleanedLoan = loanAppNumber.trim();
-        if (cleanedLoan.length < 5 || cleanedLoan.length > 100) {
-          return NextResponse.json({ error: 'Loan Application Number must be between 5 and 100 characters.' }, { status: 400 });
-        }
-        metadata.loanApplicationNumber = cleanedLoan;
       }
     }
 

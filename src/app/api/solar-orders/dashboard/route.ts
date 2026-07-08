@@ -11,10 +11,10 @@ export async function GET() {
     }
 
     const [totalOrders, pendingApproval, activeInstallations, completedOrders] = await Promise.all([
-      prisma.solarOrder.count({ where: { status: { not: 'CANCELLED' } } }),
-      prisma.solarOrder.count({ where: { status: { in: SOLAR_ORDER_STATUS_GROUPS.PENDING_APPROVAL } } }),
-      prisma.solarOrder.count({ where: { status: { in: SOLAR_ORDER_STATUS_GROUPS.EXECUTION } } }),
-      prisma.solarOrder.count({ where: { status: { in: SOLAR_ORDER_STATUS_GROUPS.COMPLETED } } }),
+      prisma.solarOrder.count({ where: { isCancelled: false } }),
+      prisma.solarOrder.count({ where: { isCancelled: false, status: { in: SOLAR_ORDER_STATUS_GROUPS.PENDING_APPROVAL } } }),
+      prisma.solarOrder.count({ where: { isCancelled: false, status: { in: SOLAR_ORDER_STATUS_GROUPS.EXECUTION } } }),
+      prisma.solarOrder.count({ where: { isCancelled: false, status: { in: SOLAR_ORDER_STATUS_GROUPS.COMPLETED } } }),
     ]);
 
     const recentActivity = await prisma.solarActivityLog.findMany({

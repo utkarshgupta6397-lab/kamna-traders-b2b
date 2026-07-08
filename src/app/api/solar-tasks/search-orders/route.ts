@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
 
     const orders = await prisma.solarOrder.findMany({
       where: {
+        isCancelled: false,
         OR: [
           { customerName: { contains: q, mode: 'insensitive' } },
           { orderNumber: { contains: q, mode: 'insensitive' } }

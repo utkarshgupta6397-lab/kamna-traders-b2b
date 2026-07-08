@@ -745,7 +745,13 @@ model SolarOrder {
   zohoBooksCustomerId   String?
   zohoBooksCustomerName String?
   remarks               String?
+  
+  // Cancellation Fields
+  isCancelled           Boolean   @default(false)
+  cancelledAt           DateTime?
+  cancelledById         String?
   cancellationReason    String?
+  cancellationRemarks   String?
   floorNumber           Int?
   customerEmail         String?
   loanAnnualIncome      Float?
@@ -767,9 +773,6 @@ model SolarOrder {
   rejectedAt    DateTime?
   rejectionRemarks String?
   completedAt   DateTime?
-  cancelledAt   DateTime?
-  cancelledById String?
-
   installationDate  DateTime? // Scheduled installation date (drag-and-drop calendar)
   // Future-ready fields (not stored yet):
   // assignedInstallerId String?

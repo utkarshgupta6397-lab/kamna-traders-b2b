@@ -12,6 +12,9 @@ export async function GET() {
 
     const counts = await prisma.solarOrder.groupBy({
       by: ['status'],
+      where: {
+        isCancelled: false,
+      },
       _count: {
         id: true,
       },

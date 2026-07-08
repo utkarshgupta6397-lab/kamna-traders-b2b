@@ -133,6 +133,7 @@ export default async function OrderDetailLayout({
               orderId={id} 
               status={order.status} 
               canApprove={isAdmin || !!session?.solar_orders_approval} 
+              isCancelled={order.isCancelled}
             />
           </div>
         </div>

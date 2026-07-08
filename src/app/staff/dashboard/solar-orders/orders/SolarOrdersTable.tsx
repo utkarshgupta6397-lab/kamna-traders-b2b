@@ -37,6 +37,7 @@ interface SolarOrder {
   payments?: { amount: number }[];
   openTaskCount?: number;
   overdueTaskCount?: number;
+  isCancelled?: boolean;
 }
 
 interface SolarOrdersTableProps {
@@ -57,12 +58,12 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
   const [syncingRows, setSyncingRows] = useState<Record<string, boolean>>({});
   const [bulkSyncProgress, setBulkSyncProgress] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<{text: string, type: 'success'|'error'} | null>(null);
+  const [filterOptions, setFilterOptions] = useState<any>({ systemTypes: [], quarters: [], leadSources: [], assignees: [] });
   const { openNewTaskModal } = useGlobalTaskDrawer();
 
   const [totalPages, setTotalPages] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
-  const [filterOptions, setFilterOptions] = useState<any>({ systemTypes: [], quarters: [], leadSources: [], assignees: [] });
-  const [statusCounts, setStatusCounts] = useState<any>({ all: 0, pendingApproval: 0, execution: 0, completed: 0, rejected: 0 });
+  const [statusCounts, setStatusCounts] = useState<any>({ all: 0, pendingApproval: 0, execution: 0, completed: 0, rejected: 0, cancelled: 0 });
 
   const { sortField, sortDirection, handleSort, setSortField, setSortDirection } = useTableSorting('orderDate', 'desc');
   const filters = useSolarFilters();
@@ -299,7 +300,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                   const isLocked = (order.status === 'PENDING_APPROVAL' || order.status === 'REJECTED') && order.createdById !== currentUserId && !canApprove;
                   
                   const isUnlinked = order.pendingPaymentReason === 'ZOHO_NOT_LINKED' || !order.zohoBooksCustomerId;
-                  const rowBg = order.status === 'PENDING_APPROVAL' ? 'bg-[#FFFBEA] hover:bg-[#FFF4D0]' : 'hover:bg-gray-50/80';
+                  const rowBg = order.isCancelled ? 'bg-gray-50 opacity-60 hover:opacity-100 grayscale-[0.5]' : order.status === 'PENDING_APPROVAL' ? 'bg-[#FFFBEA] hover:bg-[#FFF4D0]' : 'hover:bg-gray-50/80';
                   
                   // ONE Source of Truth for Pending Payment
                   // If not linked to Zoho -> 100% pending (Total Order Amount)

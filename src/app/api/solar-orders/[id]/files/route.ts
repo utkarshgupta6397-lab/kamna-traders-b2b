@@ -36,8 +36,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    const orderExists = await prisma.solarOrder.findUnique({ where: { id }, select: { id: true } });
+    const orderExists = await prisma.solarOrder.findUnique({ where: { id }, select: { id: true, isCancelled: true } });
     if (!orderExists) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    if (orderExists.isCancelled) return NextResponse.json({ error: 'Order is cancelled. No further files can be uploaded.' }, { status: 400 });
     
     const body = await request.json();
     const { 
@@ -148,11 +149,16 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     }
 
     const existing = await prisma.solarOrderFile.findUnique({
-      where: { id: fileId }
+      where: { id: fileId },
+      include: { solarOrder: { select: { isCancelled: true } } }
     });
 
     if (!existing || existing.solarOrderId !== id) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 });
+    }
+
+    if (existing.solarOrder?.isCancelled) {
+      return NextResponse.json({ error: 'Order is cancelled. Files cannot be deleted.' }, { status: 400 });
     }
 
     await prisma.solarOrderFile.update({

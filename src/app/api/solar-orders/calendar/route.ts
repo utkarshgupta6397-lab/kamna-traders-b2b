@@ -28,6 +28,7 @@ export async function GET(request: Request) {
     const scheduledWhere: any = {
       status: { in: ACTIVE_WORKFLOW_ORDER_STATUSES },
       installationDate: { not: null },
+      isCancelled: false,
     };
     if (from && to) {
       scheduledWhere.installationDate = {
@@ -65,6 +66,7 @@ export async function GET(request: Request) {
     const queueWhere: any = {
       status: { in: ACTIVE_WORKFLOW_ORDER_STATUSES },
       installationDate: null,
+      isCancelled: false,
     };
 
     if (search) {

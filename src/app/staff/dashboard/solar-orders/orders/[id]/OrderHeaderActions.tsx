@@ -4,17 +4,20 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import CancelOrderModal from './components/CancelOrderModal';
 
 interface OrderHeaderActionsProps {
   orderId: string;
   status: string;
   canApprove: boolean;
+  isCancelled?: boolean;
 }
 
-export default function OrderHeaderActions({ orderId, status, canApprove }: OrderHeaderActionsProps) {
+export default function OrderHeaderActions({ orderId, status, canApprove, isCancelled }: OrderHeaderActionsProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
   const [remarks, setRemarks] = useState('');
 
   const updateStatus = async (newStatus: string) => {
@@ -69,6 +72,21 @@ export default function OrderHeaderActions({ orderId, status, canApprove }: Orde
             </button>
           </>
         )}
+
+        {isCancelled ? (
+          <div className="bg-gray-100 border border-gray-200 text-gray-500 px-4 py-2 text-sm font-bold rounded shadow-sm flex items-center gap-2 cursor-not-allowed">
+            Cancelled
+          </div>
+        ) : (
+          canApprove && (
+            <button
+              onClick={() => setShowCancelModal(true)}
+              className="bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 px-4 py-2 text-sm font-medium rounded transition-colors shadow-sm flex items-center gap-2"
+            >
+              Cancel Order
+            </button>
+          )
+        )}
       </div>
 
       {showRejectModal && (
@@ -111,6 +129,18 @@ export default function OrderHeaderActions({ orderId, status, canApprove }: Orde
             </div>
           </div>
         </div>
+      )}
+      {showCancelModal && (
+        <CancelOrderModal
+          isOpen={showCancelModal}
+          onClose={() => setShowCancelModal(false)}
+          orderId={orderId}
+          onSuccess={() => {
+            setShowCancelModal(false);
+            toast.success('Order cancelled successfully.');
+            router.refresh();
+          }}
+        />
       )}
     </>
   );

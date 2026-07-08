@@ -10,7 +10,8 @@ export async function GET() {
     const ordersToSync = await prisma.solarOrder.findMany({
       where: {
         zohoBooksCustomerId: { not: null },
-        pendingAmount: { gt: 0 }
+        pendingAmount: { gt: 0 },
+        isCancelled: false,
       },
       select: { id: true },
       orderBy: { orderDate: 'desc' }

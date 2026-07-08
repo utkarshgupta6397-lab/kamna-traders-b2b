@@ -13,8 +13,13 @@ export function buildSolarOrdersWhereClause(searchParams: URLSearchParams) {
 
   const where: any = {};
 
-  if (status && status !== 'All') {
-    where.status = { in: SOLAR_ORDER_STATUS_GROUPS[status] || [status] };
+  if (status === 'CANCELLED') {
+    where.isCancelled = true;
+  } else {
+    where.isCancelled = false;
+    if (status && status !== 'All') {
+      where.status = { in: SOLAR_ORDER_STATUS_GROUPS[status] || [status] };
+    }
   }
 
   if (systemType && systemType !== 'All') {

@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
     // Build base where clause
     // STRICT BUSINESS RULE: Only include CALLING_ACTIVITY leads
     const where: Prisma.SolarOrderWhereInput = {
+      isCancelled: false,
       ...getApprovedOrderCondition(),
       leadSource: 'CALLING_ACTIVITY',
     };

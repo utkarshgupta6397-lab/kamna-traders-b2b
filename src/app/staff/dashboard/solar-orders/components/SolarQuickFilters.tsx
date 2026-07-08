@@ -16,6 +16,7 @@ interface SolarQuickFiltersProps {
     execution: number;
     completed: number;
     rejected: number;
+    cancelled: number;
   };
   hasOutstandingPayment: boolean;
   setHasOutstandingPayment: (val: boolean) => void;
@@ -103,7 +104,8 @@ const SolarQuickFilters = React.memo(function SolarQuickFilters({
               { label: 'Pending Approval', value: 'PENDING_APPROVAL', count: statusCounts.pendingApproval },
               { label: 'Execution', value: 'EXECUTION', count: statusCounts.execution },
               { label: 'Completed', value: 'COMPLETED', count: statusCounts.completed },
-              { label: 'Rejected', value: 'REJECTED', count: statusCounts.rejected }
+              { label: 'Rejected', value: 'REJECTED', count: statusCounts.rejected },
+              { label: 'Cancelled', value: 'CANCELLED', count: statusCounts.cancelled }
             ].map(tab => (
               <button
                 key={tab.value}

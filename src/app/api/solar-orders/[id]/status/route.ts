@@ -18,8 +18,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ error: 'Invalid status provided' }, { status: 400 });
     }
 
-    const order = await prisma.solarOrder.findUnique({ where: { id }, select: { id: true, status: true, orderNumber: true, orderDate: true } });
+    const order = await prisma.solarOrder.findUnique({ where: { id }, select: { id: true, status: true, orderNumber: true, orderDate: true, isCancelled: true } });
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    if (order.isCancelled) return NextResponse.json({ error: 'Order is cancelled. No further status modifications are allowed.' }, { status: 400 });
 
     const isAdmin = session.role === 'ADMIN';
 

@@ -25,6 +25,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const step = await prisma.solarWorkflowStep.findUnique({ where: { id: stepId }, include: { solarOrder: true } });
     if (!step || step.solarOrderId !== id) return NextResponse.json({ error: 'Step not found' }, { status: 404 });
 
+    if (step.solarOrder.isCancelled) {
+      return NextResponse.json({ error: 'Order is cancelled. No further workflow modifications are allowed.' }, { status: 400 });
+    }
+
     const isAdmin = session.role === 'ADMIN';
 
     const stepNameForValidation = (step.metadata as any)?.name || step.stepKey;

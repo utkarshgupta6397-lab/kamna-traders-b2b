@@ -96,7 +96,7 @@ export async function computeStatusCounts(search: string | null, activeWorkflowS
   }
 
   const grouped = await prisma.solarOrder.groupBy({
-    by: ['status'],
+    by: ['status', 'isCancelled'],
     where: searchWhere,
     _count: true
   });
@@ -107,15 +107,20 @@ export async function computeStatusCounts(search: string | null, activeWorkflowS
     execution: 0,
     completed: 0,
     rejected: 0,
+    cancelled: 0,
   };
 
   for (const g of grouped) {
-    counts.all += g._count;
-    const s = g.status;
-    if (s === 'PENDING_APPROVAL') counts.pendingApproval += g._count;
-    else if (['APPROVED', 'EXECUTION', 'INSTALLATION_IN_PROGRESS'].includes(s)) counts.execution += g._count;
-    else if (s === 'COMPLETED') counts.completed += g._count;
-    else if (['REJECTED', 'CANCELLED'].includes(s)) counts.rejected += g._count;
+    if (g.isCancelled) {
+      counts.cancelled += g._count;
+    } else {
+      counts.all += g._count; // Only non-cancelled orders count towards "All Orders" tab unless requested
+      const s = g.status;
+      if (s === 'PENDING_APPROVAL') counts.pendingApproval += g._count;
+      else if (['APPROVED', 'EXECUTION', 'INSTALLATION_IN_PROGRESS'].includes(s)) counts.execution += g._count;
+      else if (s === 'COMPLETED') counts.completed += g._count;
+      else if (s === 'REJECTED') counts.rejected += g._count;
+    }
   }
 
   return counts;

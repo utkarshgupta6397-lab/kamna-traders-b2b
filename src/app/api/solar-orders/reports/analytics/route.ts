@@ -25,6 +25,7 @@ export async function GET() {
 
     const rawOrders = await prisma.solarOrder.findMany({
       where: {
+        isCancelled: false,
         ...getApprovedOrderCondition(),
       },
       select: {

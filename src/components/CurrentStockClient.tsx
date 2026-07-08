@@ -495,7 +495,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                 setSearchQuery(e.target.value);
                 setShowSearchSuggestions(true);
               }}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
+              className="w-full pl-9 pr-8 py-1.5 bg-gray-50 border border-gray-200 rounded-md text-[13px] text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-white transition-colors h-8"
             />
             {showSearchSuggestions && suggestions.length > 0 && (
               <div className="absolute z-[100] w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
@@ -515,7 +515,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
 
           {/* Multi-select Category */}
           <div className="relative group">
-            <button className="flex items-center gap-2 text-sm border border-gray-300 rounded-md py-2 px-3 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20">
+            <button className="flex items-center gap-1.5 text-[13px] font-medium border border-gray-200 text-gray-700 rounded-md h-8 px-3 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400/20 transition-colors">
               <Filter size={14} className="text-gray-400" />
               <span>{selectedCategories.length > 0 ? `${selectedCategories.length} Categories` : 'All Categories'}</span>
               <ChevronDown size={14} className="text-gray-400" />
@@ -540,7 +540,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
 
           {/* Multi-select Brand */}
           <div className="relative group">
-            <button className="flex items-center gap-2 text-sm border border-gray-300 rounded-md py-2 px-3 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20">
+            <button className="flex items-center gap-1.5 text-[13px] font-medium border border-gray-200 text-gray-700 rounded-md h-8 px-3 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400/20 transition-colors">
               <span className="text-gray-400 font-bold text-xs">B</span>
               <span>{selectedBrands.length > 0 ? `${selectedBrands.length} Brands` : 'All Brands'}</span>
               <ChevronDown size={14} className="text-gray-400" />
@@ -565,7 +565,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
 
           {/* Multi-select Case Size */}
           <div className="relative group">
-            <button className="flex items-center gap-2 text-sm border border-gray-300 rounded-md py-2 px-3 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20">
+            <button className="flex items-center gap-1.5 text-[13px] font-medium border border-gray-200 text-gray-700 rounded-md h-8 px-3 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400/20 transition-colors">
               <span className="text-gray-400 font-bold text-xs">CS</span>
               <span>{selectedCaseSizes.length > 0 ? `${selectedCaseSizes.length} Case Sizes` : 'Case Size'}</span>
               <ChevronDown size={14} className="text-gray-400" />
@@ -590,7 +590,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
 
           {/* Multi-select Warehouse */}
           <div className="relative group">
-            <button className="flex items-center gap-2 text-sm border border-gray-300 rounded-md py-2 px-3 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20">
+            <button className="flex items-center gap-1.5 text-[13px] font-medium border border-gray-200 text-gray-700 rounded-md h-8 px-3 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400/20 transition-colors">
               <Box size={14} className="text-gray-400" />
               <span>{selectedWarehouses.length > 0 ? `${selectedWarehouses.length} WH` : 'All Warehouses'}</span>
               <ChevronDown size={14} className="text-gray-400" />
@@ -634,7 +634,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer bg-white border border-gray-300 px-3 py-2 rounded-md hover:bg-gray-50 shrink-0">
+          <label className="flex items-center gap-2 text-[13px] font-medium text-gray-700 cursor-pointer bg-white border border-gray-200 px-3 h-8 rounded-md hover:bg-gray-50 shrink-0 transition-colors">
             <input 
               type="checkbox" 
               checked={hideOos} 
@@ -647,7 +647,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
           <button 
             onClick={handleDownloadPDF}
             disabled={isExporting}
-            className={`flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-bold shadow-sm shrink-0 ml-auto ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`flex items-center gap-2 px-3 h-8 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-[13px] font-bold shadow-sm shrink-0 ml-auto ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {isExporting ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
             {isExporting ? 'Generating PDF...' : 'Download PDF'}

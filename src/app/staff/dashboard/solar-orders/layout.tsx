@@ -28,6 +28,7 @@ export default async function SolarOrdersLayout({ children }: { children: React.
       canViewInstallQueue={canViewInstallQueue}
       canViewCalendar={canViewCalendar}
       canViewReports={canViewReports}
+      currentUserId={session.userId}
     >
       {children}
     </SolarOrdersTabs>

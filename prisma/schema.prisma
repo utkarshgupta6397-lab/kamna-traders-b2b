@@ -77,6 +77,12 @@ model User {
   solarFilesDeleted    SolarOrderFile[]    @relation("SolarFileDeletedBy")
   solarActivityLogs    SolarActivityLog[]  @relation("SolarActivityActor")
   projectChatMessages  ProjectChatMessage[] @relation("ProjectChatCreatedBy")
+
+  tasksAssigned       SolarTask[]          @relation("TaskAssignedTo")
+  tasksCreated        SolarTask[]          @relation("TaskCreatedBy")
+  tasksCompleted      SolarTask[]          @relation("TaskCompletedBy")
+  taskFollowUps       SolarTaskFollowUp[]
+  solarDiscussions    SolarDiscussion[]
 }
 
 model Warehouse {
@@ -790,6 +796,8 @@ model SolarOrder {
   panels        SolarOrderPanel[]
   inverters     SolarOrderInverter[]
   chatMessages  ProjectChatMessage[]
+  tasks         SolarTask[]
+  discussions   SolarDiscussion[]
 
   @@index([status])
   @@index([createdById])
@@ -953,4 +961,64 @@ model ProjectChatMessage {
 
   @@index([solarOrderId])
   @@index([createdAt])
+}
+
+// ─── Solar Tasks & Follow-up Module ──────────────────────────────────────────
+
+model SolarTask {
+  id              String   @id @default(cuid())
+  solarOrderId    String
+  title           String
+  description     String?
+  assignedToId    String
+  dueDate         DateTime
+  dueTime         String?  // Optional "14:30"
+  status          String   @default("PENDING") // PENDING, COMPLETED
+  createdById     String
+  completedById   String?
+  completedAt     DateTime?
+  latestUpdate    String?  // Quick denormalized cache of last follow-up text
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  solarOrder      SolarOrder        @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  assignedTo      User              @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+  createdBy       User              @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  completedBy     User?             @relation("TaskCompletedBy", fields: [completedById], references: [id])
+  
+  followUps       SolarTaskFollowUp[]
+
+  @@index([solarOrderId])
+  @@index([assignedToId])
+  @@index([status])
+}
+
+model SolarTaskFollowUp {
+  id              String   @id @default(cuid())
+  taskId          String
+  userId          String
+  comment         String   @db.Text
+  nextFollowUpDate DateTime?
+
+  createdAt       DateTime @default(now())
+
+  task            SolarTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@index([taskId])
+}
+
+model SolarDiscussion {
+  id              String   @id @default(cuid())
+  solarOrderId    String
+  userId          String
+  comment         String   @db.Text
+
+  createdAt       DateTime @default(now())
+
+  solarOrder      SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  user            User       @relation(fields: [userId], references: [id])
+
+  @@index([solarOrderId])
 }

@@ -9,6 +9,7 @@ import OrderHeaderActions from './OrderHeaderActions';
 import ApprovalReviewScreen from './ApprovalReviewScreen';
 import { OrderChatButton } from './components/chat/OrderChatButton';
 import FileChargeToggle from './components/FileChargeToggle';
+import OrderTaskButton from './components/OrderTaskButton';
 
 export default async function OrderDetailLayout({
   children,
@@ -121,6 +122,7 @@ export default async function OrderDetailLayout({
                 canApprove={isAdmin || !!session?.solar_orders_approval}
               />
             )}
+            <OrderTaskButton order={order} />
             <OrderChatButton
               orderId={id}
               orderNumber={order.orderNumber}

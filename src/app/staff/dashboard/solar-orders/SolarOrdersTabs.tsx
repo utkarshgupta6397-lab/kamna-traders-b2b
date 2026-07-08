@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { CalendarDays, LayoutDashboard, ClipboardList, FileText, Wrench, BarChart2 } from 'lucide-react';
+import { GlobalTaskDrawerProvider } from './components/global-tasks/GlobalTaskDrawerProvider';
 
 interface SolarOrdersTabsProps {
   canViewOrders: boolean;
@@ -10,6 +11,7 @@ interface SolarOrdersTabsProps {
   canViewInstallQueue: boolean;
   canViewCalendar: boolean;
   canViewReports: boolean;
+  currentUserId: string;
   children: React.ReactNode;
 }
 
@@ -19,6 +21,7 @@ export default function SolarOrdersTabs({
   canViewInstallQueue,
   canViewCalendar,
   canViewReports,
+  currentUserId,
   children,
 }: SolarOrdersTabsProps) {
   const pathname = usePathname();
@@ -48,8 +51,9 @@ export default function SolarOrdersTabs({
     }`;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-6 border-b border-gray-200">
+    <GlobalTaskDrawerProvider currentUserId={currentUserId}>
+      <div className="space-y-6">
+        <div className="flex items-center gap-6 border-b border-gray-200">
         {canViewOrders && (
           <>
             <Link href="/staff/dashboard/solar-orders" className={tabCls('dashboard')}>
@@ -106,5 +110,6 @@ export default function SolarOrdersTabs({
 
       <div>{children}</div>
     </div>
+    </GlobalTaskDrawerProvider>
   );
 }

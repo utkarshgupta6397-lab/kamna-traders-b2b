@@ -53,7 +53,11 @@ export async function GET(request: Request) {
           callingExecutive: { select: { name: true } },
           subVendor: { select: { name: true } },
           payments: { select: { amount: true } },
-          workflowSteps: { select: { id: true, stepKey: true, status: true, updatedAt: true, startedAt: true, completedAt: true } }
+          workflowSteps: { select: { id: true, stepKey: true, status: true, updatedAt: true, startedAt: true, completedAt: true } },
+          tasks: {
+            where: { status: 'PENDING' },
+            select: { id: true, dueDate: true }
+          }
         }
       }),
       prisma.solarOrder.count({ where }),
@@ -73,13 +77,24 @@ export async function GET(request: Request) {
       const isZohoLinked = !!order.zohoBooksCustomerId;
       const actualPendingAmount = isZohoLinked ? order.pendingAmount : order.totalOrderAmount;
       
+      const now = new Date();
+      let openTaskCount = 0;
+      let overdueTaskCount = 0;
+      if (order.tasks) {
+        openTaskCount = order.tasks.length;
+        overdueTaskCount = order.tasks.filter((t: any) => new Date(t.dueDate) < now).length;
+      }
+      
       return {
         ...order,
         pendingAmount: actualPendingAmount, // Assumed if unlinked
         zohoCustomerLinked: isZohoLinked,
         pendingPaymentReason: isZohoLinked ? null : 'ZOHO_NOT_LINKED',
         workflowPercentage,
-        workflowSteps: undefined // Avoid sending unnecessary data
+        workflowSteps: undefined, // Avoid sending unnecessary data
+        tasks: undefined,
+        openTaskCount,
+        overdueTaskCount
       };
     });
 

@@ -3,13 +3,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, ChevronLeft, ChevronRight, ArrowRight, Lock, X, RefreshCw, Check, Filter } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, ArrowRight, Lock, X, RefreshCw, Check, Filter, ClipboardList } from 'lucide-react';
 import { SOLAR_ORDER_STATUS_UI } from '@/lib/solar-workflow-config';
 import SortableTableHeader from '../components/SortableTableHeader';
 import SolarQuickFilters from '../components/SolarQuickFilters';
 import SolarAdvancedFilters from '../components/SolarAdvancedFilters';
 import { useTableSorting } from '../hooks/useTableSorting';
 import { useSolarFilters, formatSystemType, getLeadSourceBadge } from '../hooks/useSolarFilters';
+import { useGlobalTaskDrawer } from '../components/global-tasks/GlobalTaskDrawerProvider';
 
 interface SolarOrder {
   id: string;
@@ -34,6 +35,8 @@ interface SolarOrder {
   lastPaymentSyncAt?: string | null;
   workflowPercentage?: number;
   payments?: { amount: number }[];
+  openTaskCount?: number;
+  overdueTaskCount?: number;
 }
 
 interface SolarOrdersTableProps {
@@ -54,6 +57,7 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
   const [syncingRows, setSyncingRows] = useState<Record<string, boolean>>({});
   const [bulkSyncProgress, setBulkSyncProgress] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<{text: string, type: 'success'|'error'} | null>(null);
+  const { openNewTaskModal } = useGlobalTaskDrawer();
 
   const [totalPages, setTotalPages] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
@@ -414,15 +418,36 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                         </div>
                       </td>
                       <td className="px-4 py-2 pr-6 text-right">
-                        {isLocked ? (
-                          <div className="inline-flex items-center justify-center w-6 h-6 rounded text-gray-300">
-                            <Lock size={12} />
-                          </div>
-                        ) : (
-                          <div className="inline-flex items-center justify-center w-6 h-6 rounded text-gray-400 hover:bg-white hover:text-blue-600 hover:shadow-sm border border-transparent hover:border-gray-200 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100">
-                            <ArrowRight size={14} />
-                          </div>
-                        )}
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (['DRAFT', 'REJECTED', 'COMPLETED', 'CANCELLED'].includes(order.status)) {
+                                alert('Tasks can only be created for active orders.');
+                                return;
+                              }
+                              openNewTaskModal(order);
+                            }}
+                            className={`inline-flex items-center justify-center h-6 px-2 rounded text-[11px] font-bold transition-all ${
+                              ['DRAFT', 'REJECTED', 'COMPLETED', 'CANCELLED'].includes(order.status)
+                                ? 'text-gray-300 cursor-not-allowed opacity-0 group-hover:opacity-100'
+                                : 'text-gray-500 hover:bg-blue-50 hover:text-blue-600 opacity-0 group-hover:opacity-100 focus:opacity-100'
+                            }`}
+                            title={['DRAFT', 'REJECTED', 'COMPLETED', 'CANCELLED'].includes(order.status) ? "Tasks can only be created for active orders." : "Add Task"}
+                            disabled={['DRAFT', 'REJECTED', 'COMPLETED', 'CANCELLED'].includes(order.status)}
+                          >
+                            + Task
+                          </button>
+                          {isLocked ? (
+                            <div className="inline-flex items-center justify-center w-6 h-6 rounded text-gray-300">
+                              <Lock size={12} />
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center justify-center w-6 h-6 rounded text-gray-400 hover:bg-white hover:text-blue-600 hover:shadow-sm border border-transparent hover:border-gray-200 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100">
+                              <ArrowRight size={14} />
+                            </div>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

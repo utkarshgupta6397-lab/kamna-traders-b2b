@@ -22,7 +22,8 @@ export async function GET(req: Request) {
     const whereClause: any = { invoiceStatus: { not: 'void' } };
 
     if (view === 'active') {
-      whereClause.dcrStatus = { in: ['PENDING_SERIALS', 'PARTIALLY_ALLOCATED'] };
+      // Don't filter by dcrStatus or archived. Get all non-void invoices and filter mathematically in memory.
+      // Active queue is completely dynamic based on remaining serials.
     } else {
       // Completed queue includes READY_FOR_DCR and beyond
       whereClause.dcrStatus = { in: ['READY_FOR_DCR', 'READY_TO_ISSUE', 'ISSUED'] };
@@ -126,7 +127,10 @@ export async function GET(req: Request) {
         }
       });
 
-      formattedInvoices = allInvoices.map(formatInvoice);
+      formattedInvoices = allInvoices
+        .filter(inv => inv.items && inv.items.length > 0)
+        .map(formatInvoice)
+        .filter(inv => inv.remainingSerials > 0); // Mathematically enforce it has pending serials
 
       // Apply Chip Filters
       if (chip === 'partially_allocated') {
@@ -178,14 +182,10 @@ export async function GET(req: Request) {
     }
 
     // --- Calculate KPIs ---
-    // 1. Invoices Waiting: invoices currently in PENDING_SERIALS or PARTIALLY_ALLOCATED status
-    const invoicesWaiting = await prisma.dcrInvoice.count({
-      where: { dcrStatus: { in: ['PENDING_SERIALS', 'PARTIALLY_ALLOCATED'] }, invoiceStatus: { not: 'void' } }
-    });
-
-    // 2. Total Serials Pending: sum of remaining quantities for all active invoices
-    const pendingInvoicesWithItems = await prisma.dcrInvoice.findMany({
-      where: { dcrStatus: { in: ['PENDING_SERIALS', 'PARTIALLY_ALLOCATED'] }, invoiceStatus: { not: 'void' } },
+    const allActivePotentialInvoices = await prisma.dcrInvoice.findMany({
+      where: { 
+        invoiceStatus: { not: 'void' }
+      },
       include: {
         items: {
           where: { selectedForDCR: true },
@@ -196,18 +196,28 @@ export async function GET(req: Request) {
       }
     });
 
+    let invoicesWaiting = 0;
     let totalSerialsPending = 0;
-    pendingInvoicesWithItems.forEach(inv => {
-      inv.items.forEach(item => {
-        const required = item.quantity;
-        const allocated = item.serialAllocations.length;
-        totalSerialsPending += Math.max(0, required - allocated);
-      });
-    });
+    let partiallyAllocated = 0;
 
-    // 3. Partially Allocated: Count of invoices in PARTIALLY_ALLOCATED status
-    const partiallyAllocated = await prisma.dcrInvoice.count({
-      where: { dcrStatus: 'PARTIALLY_ALLOCATED', invoiceStatus: { not: 'void' } }
+    allActivePotentialInvoices.forEach(inv => {
+      if (!inv.items || inv.items.length === 0) return;
+      
+      let req = 0;
+      let alloc = 0;
+      
+      inv.items.forEach(item => {
+        req += item.quantity;
+        alloc += item.serialAllocations.length;
+      });
+      
+      const remaining = Math.max(0, req - alloc);
+      
+      if (remaining > 0) {
+        invoicesWaiting++;
+        totalSerialsPending += remaining;
+        if (alloc > 0) partiallyAllocated++;
+      }
     });
 
     // 4. Completed Today: Count of invoices that transitioned to READY_FOR_DCR today

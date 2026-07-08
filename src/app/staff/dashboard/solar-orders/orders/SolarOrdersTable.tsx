@@ -443,9 +443,15 @@ export default function SolarOrdersTable({ currentUserId, canApprove, canCreate 
                               <Lock size={12} />
                             </div>
                           ) : (
-                            <div className="inline-flex items-center justify-center w-6 h-6 rounded text-gray-400 hover:bg-white hover:text-blue-600 hover:shadow-sm border border-transparent hover:border-gray-200 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRowClick(order);
+                              }}
+                              className="inline-flex items-center justify-center w-6 h-6 rounded text-gray-400 hover:bg-white hover:text-blue-600 hover:shadow-sm border border-transparent hover:border-gray-200 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer"
+                            >
                               <ArrowRight size={14} />
-                            </div>
+                            </button>
                           )}
                         </div>
                       </td>

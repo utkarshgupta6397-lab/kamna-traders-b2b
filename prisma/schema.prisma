@@ -550,6 +550,11 @@ model Customer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  netOutstandingBalance Float?
+  balanceUpdatedAt      DateTime?
+  balanceSyncStatus     String?
+  balanceSyncError      String?
+
   dcrInvoices DcrInvoice[]
 }
 

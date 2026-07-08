@@ -48,6 +48,7 @@ interface CustomerHoldRecord {
   customerName: string;
   customerGstNo: string | null;
   outstandingBalance: number;
+  balanceUpdatedAt?: string | null;
   totalInvoices: number;
   totalSerials: number;
   serialsOnHold: number;
@@ -217,6 +218,17 @@ export default function HoldQueueClient() {
       setRefreshingCustomerId(null);
     }
   };
+
+  const latestUpdateMs = useMemo(() => {
+    let max = 0;
+    for (const c of customers) {
+      if (c.balanceUpdatedAt) {
+        const time = new Date(c.balanceUpdatedAt).getTime();
+        if (time > max) max = time;
+      }
+    }
+    return max;
+  }, [customers]);
 
   const toggleSort = (col: 'outstanding' | 'age' | 'date') => {
     if (col === 'outstanding') setSort(prev => prev === 'outstanding_desc' ? 'outstanding_asc' : 'outstanding_desc');
@@ -420,14 +432,21 @@ export default function HoldQueueClient() {
               className="w-full pl-9 pr-3 py-1.5 border border-gray-200 rounded text-sm focus:ring-2 focus:ring-[#1A2766] outline-none"
             />
           </div>
-          <button
-            onClick={handleRefreshOutstanding}
-            disabled={isRefreshing}
-            className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded border border-gray-200 disabled:opacity-50"
-          >
-            {isRefreshing ? <Loader2 size={14} className="animate-spin" /> : <Activity size={14} />}
-            Refresh Outstanding
-          </button>
+          <div className="flex items-center gap-3">
+            {latestUpdateMs > 0 && (
+              <span className="text-[10px] font-medium text-gray-500 whitespace-nowrap">
+                Last Updated:<br/>{new Date(latestUpdateMs).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+              </span>
+            )}
+            <button
+              onClick={handleRefreshOutstanding}
+              disabled={isRefreshing}
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded border border-gray-200 disabled:opacity-50"
+            >
+              {isRefreshing ? <Loader2 size={14} className="animate-spin" /> : <Activity size={14} />}
+              Refresh Outstanding
+            </button>
+          </div>
         </div>
 
         {/* Compact Customer Table */}

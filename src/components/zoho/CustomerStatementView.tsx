@@ -136,6 +136,9 @@ export default function CustomerStatementView() {
 
   const [customerId, setCustomerId] = useState(initialCustomerId);
   const [loading, setLoading] = useState(false);
+  const [cachedBalance, setCachedBalance] = useState<{netOutstandingBalance: number, balanceUpdatedAt: string | null, balanceSyncStatus: string | null} | null>(null);
+  const [cachedBalanceLoading, setCachedBalanceLoading] = useState(false);
+
   const [statement, setStatement] = useState<{
     success: boolean;
     data?: Statement;
@@ -463,9 +466,26 @@ export default function CustomerStatementView() {
     }
   };
 
+  const handleFetchBalance = async (cid: string) => {
+    setCachedBalanceLoading(true);
+    setStatement(null); // Clear full statement
+    setCachedBalance(null);
+    try {
+      const res = await fetch(`/api/admin/customer-statement/balance?customerId=${cid}`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setCachedBalance(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch cached balance', err);
+    } finally {
+      setCachedBalanceLoading(false);
+    }
+  };
+
   // ── Fetch ──────────────────────────────────────────────────────────────────
-  const handleFetch = async (id?: string, force = false) => {
-    const cid = id || customerId;
+  const handleFetch = async (overrideCustomerId?: string, force = false) => {
+    const cid = overrideCustomerId || customerId;
     if (!cid) return;
     
     // Check session cache if not forced
@@ -1018,7 +1038,7 @@ export default function CustomerStatementView() {
                               setSearchQuery(c.name);
                               setCustomerId(c.id);
                               setShowSuggestions(false);
-                              handleFetch(c.id, true);
+                              handleFetchBalance(c.id);
                             }
                           }}
                         >
@@ -1079,6 +1099,8 @@ export default function CustomerStatementView() {
             )}
           </button>
           
+
+
           {s && (
             <>
               {/* Secondary: Print */}
@@ -1132,6 +1154,42 @@ export default function CustomerStatementView() {
           )}
         </div>
       </div>
+
+      {/* Render Full Ledger or Cached Balance */}
+      {!s && !loading && !cachedBalanceLoading && cachedBalance && statementMode === 'single' && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center max-w-2xl mx-auto my-8">
+          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Users className="w-8 h-8 text-[#1A2766]" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">{searchQuery || 'Customer'} Summary</h2>
+          
+          <div className="flex flex-col gap-2 mt-6 max-w-sm mx-auto">
+            <div className="flex justify-between items-center py-3 border-b border-gray-100">
+              <span className="text-gray-500 font-medium">Cached Outstanding</span>
+              <span className="text-2xl font-black text-gray-900">{fmtBalance(cachedBalance.netOutstandingBalance)}</span>
+            </div>
+            <div className="flex justify-between items-center py-2 text-xs">
+              <span className="text-gray-400">Last Synced</span>
+              <span className={cachedBalance.balanceUpdatedAt ? 'text-gray-600' : 'text-amber-600'}>
+                {cachedBalance.balanceUpdatedAt ? new Date(cachedBalance.balanceUpdatedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Never Synced'}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-8 text-sm text-gray-500">
+            To view the complete transaction ledger and invoices, load the full statement.
+          </div>
+          
+          <button
+            onClick={() => handleFetch(customerId, true)}
+            disabled={loading}
+            className="mt-6 px-6 py-2.5 bg-[#1A2766] text-white rounded-md font-medium shadow-sm hover:bg-[#25368a] transition-colors inline-flex items-center gap-2"
+          >
+            {loading ? <RefreshCw className="animate-spin w-4 h-4" /> : <RefreshCw className="w-4 h-4" />}
+            Load Full Statement Ledger
+          </button>
+        </div>
+      )}
 
       {/* ── Error state ────────────────────────────────────────────────── */}
       {statementMode === 'single' && statement && !statement.success && (

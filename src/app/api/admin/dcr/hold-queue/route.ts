@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { CustomerBalanceService } from '@/lib/services/customer-balance.service';
 
 export async function GET(req: Request) {
   try {
@@ -177,11 +178,14 @@ export async function GET(req: Request) {
     });
     const customerDbMap = new Map(localCustomers.map(c => [c.id, c]));
     
-    // We get the accurate customer-wide outstanding balance from the DB balance if preferred, 
-    // but the spec specifically says: "Outstanding Balance: Sum of pending balances across all held invoices."
+    const customerIds = customers.map(c => c.customerId);
+    const customerBalances = await CustomerBalanceService.getCustomerBalances(customerIds);
+    
+    // We get the accurate customer-wide outstanding balance from the DB balance
     for (const c of customers) {
       c.customerGstNo = customerDbMap.get(c.customerId)?.gstNumber || null;
-      c.outstandingBalance = c.invoices.reduce((sum: number, inv: any) => sum + inv.outstandingBalance, 0);
+      c.outstandingBalance = customerBalances[c.customerId]?.netOutstandingBalance || 0;
+      c.balanceUpdatedAt = customerBalances[c.customerId]?.balanceUpdatedAt || null;
       c.oldestInvoiceDate = new Date(Math.min(...c.invoices.map((i: any) => new Date(i.invoiceDate).getTime()))).toISOString();
     }
 
@@ -264,7 +268,7 @@ export async function GET(req: Request) {
       }
     });
   } catch (error: any) {
-    console.error('[DCR Hold Queue GET] Error:', error);
-    return NextResponse.json({ error: 'Failed to fetch hold queue' }, { status: 500 });
+    console.error('[HOLD_QUEUE_ERROR]', error);
+    return NextResponse.json({ error: 'Failed to fetch hold queue', details: error?.message || String(error), stack: error?.stack }, { status: 500 });
   }
 }

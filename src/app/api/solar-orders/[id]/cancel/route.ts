@@ -102,6 +102,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ success: true, message: 'Order cancelled successfully.' });
   } catch (error) {
     console.error('Error cancelling order:', error);
-    return NextResponse.json({ error: error.message || 'Internal Server Error', stack: error.stack }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { FileText, ArrowLeftRight, ChartColumn, ShieldCheck } from 'lucide-react';
 
 interface AccountsTabsProps {
   canViewStatement: boolean;
@@ -32,54 +33,37 @@ export default function AccountsTabs({
     activeTab = 'transactions';
   }
 
+  const tabCls = (tab: string) =>
+    `flex items-center gap-1.5 pb-3 text-sm font-semibold transition-colors border-b-2 ${
+      activeTab === tab
+        ? 'border-[#1A2766] text-[#1A2766]'
+        : 'border-transparent text-gray-500 hover:text-gray-700'
+    }`;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-6 border-b border-gray-200">
+      <div className="flex items-center gap-6 border-b border-gray-200 overflow-x-auto whitespace-nowrap" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
         {canViewStatement && (
-          <Link
-            href="/staff/dashboard/accounts?tab=statement"
-            className={`pb-3 text-sm font-semibold transition-colors border-b-2 ${
-              activeTab === 'statement'
-                ? 'border-[#1A2766] text-[#1A2766]'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
+          <Link href="/staff/dashboard/accounts?tab=statement" className={tabCls('statement')}>
+            <FileText size={16} strokeWidth={1.8} />
             Customer Statement
           </Link>
         )}
         {canViewTransactions && (
-          <Link
-            href="/staff/dashboard/accounts?tab=transactions"
-            className={`pb-3 text-sm font-semibold transition-colors border-b-2 ${
-              activeTab === 'transactions'
-                ? 'border-[#1A2766] text-[#1A2766]'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
+          <Link href="/staff/dashboard/accounts?tab=transactions" className={tabCls('transactions')}>
+            <ArrowLeftRight size={16} strokeWidth={1.8} />
             Transactions
           </Link>
         )}
         {canViewSummary && (
-          <Link
-            href="/staff/dashboard/accounts/summary"
-            className={`pb-3 text-sm font-semibold transition-colors border-b-2 ${
-              activeTab === 'summary'
-                ? 'border-[#1A2766] text-[#1A2766]'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
+          <Link href="/staff/dashboard/accounts/summary" className={tabCls('summary')}>
+            <ChartColumn size={16} strokeWidth={1.8} />
             Summary
           </Link>
         )}
         {canManageDcr && (
-          <Link
-            href="/staff/dashboard/accounts/dcr"
-            className={`pb-3 text-sm font-semibold transition-colors border-b-2 ${
-              activeTab === 'dcr'
-                ? 'border-[#1A2766] text-[#1A2766]'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
+          <Link href="/staff/dashboard/accounts/dcr" className={tabCls('dcr')}>
+            <ShieldCheck size={16} strokeWidth={1.8} />
             Manage DCR
           </Link>
         )}

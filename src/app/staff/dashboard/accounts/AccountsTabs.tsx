@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { FileText, ArrowLeftRight, ChartColumn, ShieldCheck } from 'lucide-react';
+import { FileText, ArrowLeftRight, ChartColumn, ShieldCheck, FileSpreadsheet } from 'lucide-react';
 
 interface AccountsTabsProps {
   canViewStatement: boolean;
   canViewTransactions: boolean;
   canViewSummary: boolean;
   canManageDcr?: boolean;
+  canProcessInvoices?: boolean;
   children: React.ReactNode;
 }
 
@@ -17,6 +18,7 @@ export default function AccountsTabs({
   canViewTransactions,
   canViewSummary,
   canManageDcr,
+  canProcessInvoices,
   children,
 }: AccountsTabsProps) {
   const pathname = usePathname();
@@ -25,6 +27,8 @@ export default function AccountsTabs({
   let activeTab = 'statement';
   if (pathname.includes('/accounts/dcr')) {
     activeTab = 'dcr';
+  } else if (pathname.includes('/accounts/invoice-processor')) {
+    activeTab = 'invoice-processor';
   } else if (pathname.includes('/accounts/summary')) {
     activeTab = 'summary';
   } else if (searchParams.get('tab') === 'transactions') {
@@ -65,6 +69,12 @@ export default function AccountsTabs({
           <Link href="/staff/dashboard/accounts/dcr" className={tabCls('dcr')}>
             <ShieldCheck size={16} strokeWidth={1.8} />
             Manage DCR
+          </Link>
+        )}
+        {canProcessInvoices && (
+          <Link href="/staff/dashboard/accounts/invoice-processor" className={tabCls('invoice-processor')}>
+            <FileSpreadsheet size={16} strokeWidth={1.8} />
+            Invoice Processor
           </Link>
         )}
       </div>

@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval' | 'solar_orders_docs_progress' | 'solar_orders_master_edit' | 'workflow_edits';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_invoice_processor' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval' | 'solar_orders_docs_progress' | 'solar_orders_master_edit' | 'workflow_edits';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -51,6 +51,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'accounts_customer_statement',
     label: 'Customer Statement',
     description: 'Ability to view and print customer account statements'
+  },
+  {
+    key: 'accounts_invoice_processor',
+    label: 'Invoice Processor',
+    description: 'Ability to convert Zoho invoices to Kamna Traders format'
   },
   {
     key: 'accounts_transactions',
@@ -133,6 +138,7 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'canManageTransfers',
   'canDeleteTransfers',
   'accounts_customer_statement',
+  'accounts_invoice_processor',
   'accounts_transactions',
   'accounts_summary_view',
   'stock_alerts_manage',

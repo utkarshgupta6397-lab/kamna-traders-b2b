@@ -28,6 +28,7 @@ model User {
   canDeleteTransfers          Boolean @default(false)
   accountsAccess              Boolean @default(false) // Deprecated
   accounts_customer_statement Boolean @default(false)
+  accounts_invoice_processor  Boolean @default(false)
   accounts_transactions       Boolean @default(false)
   accounts_summary_view       Boolean @default(false)
   stock_alerts_manage         Boolean @default(false)

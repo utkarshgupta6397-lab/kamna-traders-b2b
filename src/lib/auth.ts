@@ -82,6 +82,7 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.canManageTransfers = true;
       merged.canDeleteTransfers = true;
       merged.accounts_customer_statement = true;
+      merged.accounts_invoice_processor = true;
       merged.accounts_transactions = true;
       merged.accounts_summary_view = true;
       merged.stock_alerts_manage = true;

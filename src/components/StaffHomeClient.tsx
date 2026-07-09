@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ProductCard, { ProductData } from '@/components/ProductCard';
 import CartPanel from '@/components/CartPanel';
+import DashboardSearchInput from '@/components/DashboardSearchInput';
 import { useCartStore } from '@/store/cartStore';
 import { useSkuStore } from '@/store/skuStore';
 import { Printer, Scan, Loader2, RefreshCw, AlertTriangle, Eye, EyeOff, ChevronDown, Check, Pause } from 'lucide-react';
@@ -663,6 +664,11 @@ export default function StaffHomeClient({ staffId, warehouses, categories }: Pro
 
         {/* ── CENTER: INDUSTRIAL TERMINAL (Fluid) ───────────────────────── */}
         <main className="flex-1 min-w-0">
+          {/* Global Search Relocated */}
+          <div className="mb-4">
+            <DashboardSearchInput />
+          </div>
+
           <div className="bg-white rounded-xl border border-[#E7EAF0] shadow-sm h-[56px] flex items-center px-4 gap-4 mb-5">
             <div className="flex-shrink-0">
               <select

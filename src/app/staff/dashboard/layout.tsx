@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { LogOut, Home, ClipboardList, History, Box, Settings, MapPin, Truck, FileText, Sun } from 'lucide-react';
-import DashboardSearchInput from '@/components/DashboardSearchInput';
 import { Toaster } from 'react-hot-toast';
 
 export default async function StaffDashboardLayout({ children }: { children: React.ReactNode }) {
@@ -26,11 +25,6 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
             <Image src="/logo.svg" alt="Kamna Traders" width={100} height={40} className="object-contain brightness-0 invert h-9 w-auto" priority />
             <span className="text-white/40 text-xs border-l border-white/20 pl-2">Staff</span>
           </Link>
-
-          {/* Search — local filtering via Zustand store */}
-          <div className="flex-1 max-w-lg">
-            <DashboardSearchInput />
-          </div>
 
           {/* Nav */}
           <nav className="flex items-center gap-4 text-sm text-white/80 flex-shrink-0">

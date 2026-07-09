@@ -4,6 +4,17 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { fetchWithCache } from '@/lib/client-cache';
+import {
+  PackagePlus,
+  FileCheck2,
+  ReceiptText,
+  Clock3,
+  PauseCircle,
+  Send,
+  PencilRuler,
+  LibraryBig,
+  SearchCheck,
+} from "lucide-react";
 
 interface DcrStats {
   reviewPending: number;
@@ -67,25 +78,25 @@ export default function DcrLayout({ children }: { children: React.ReactNode }) {
     {
       heading: 'PURCHASE',
       items: [
-        { id: 'purchase_receive', label: 'Purchase Receive',       path: '/staff/dashboard/accounts/dcr/purchase-receive',                  exact: false, placeholder: false },
-        { id: 'purchase_dcr',     label: 'Purchase DCR Received',  path: '/staff/dashboard/accounts/dcr/purchase-dcr-received',             exact: false, placeholder: false },
+        { id: 'purchase_receive', label: 'Purchase Receive',       path: '/staff/dashboard/accounts/dcr/purchase-receive',                  exact: false, placeholder: false, icon: PackagePlus },
+        { id: 'purchase_dcr',     label: 'Purchase DCR Received',  path: '/staff/dashboard/accounts/dcr/purchase-dcr-received',             exact: false, placeholder: false, icon: FileCheck2 },
       ]
     },
     {
       heading: 'SALES',
       items: [
-        { id: 'process',          label: 'Process Invoices',      path: '/staff/dashboard/accounts/dcr',                                   exact: true,  placeholder: false },
-        { id: 'pending',          label: 'Pending Serials',        path: '/staff/dashboard/accounts/dcr/pending-serials',                   exact: false, placeholder: false },
-        { id: 'hold',             label: 'Hold Queue',             path: '/staff/dashboard/accounts/dcr/hold-queue',                       exact: false, placeholder: false },
-        { id: 'ready',            label: 'Ready To Issue',         path: '/staff/dashboard/accounts/dcr/ready-to-issue',                   exact: false, placeholder: false },
+        { id: 'process',          label: 'Process Invoices',      path: '/staff/dashboard/accounts/dcr',                                   exact: true,  placeholder: false, icon: ReceiptText },
+        { id: 'pending',          label: 'Pending Serials',        path: '/staff/dashboard/accounts/dcr/pending-serials',                   exact: false, placeholder: false, icon: Clock3 },
+        { id: 'hold',             label: 'Hold Queue',             path: '/staff/dashboard/accounts/dcr/hold-queue',                       exact: false, placeholder: false, icon: PauseCircle },
+        { id: 'ready',            label: 'Ready To Issue',         path: '/staff/dashboard/accounts/dcr/ready-to-issue',                   exact: false, placeholder: false, icon: Send },
       ]
     },
     {
       heading: 'EXTRA',
       items: [
-        { id: 'serial_correct',   label: 'Serial Corrections',     path: '/staff/dashboard/accounts/dcr/serial-corrections',               exact: false, placeholder: false },
-        { id: 'serial_registry',  label: 'Serial Registry',        path: '/staff/dashboard/accounts/dcr/serial-registry',                  exact: false, placeholder: false },
-        { id: 'customer_lookup',  label: 'Customer DCR Lookup',    path: '/staff/dashboard/accounts/dcr/customer-lookup',                  exact: false, placeholder: false },
+        { id: 'serial_correct',   label: 'Serial Corrections',     path: '/staff/dashboard/accounts/dcr/serial-corrections',               exact: false, placeholder: false, icon: PencilRuler },
+        { id: 'serial_registry',  label: 'Serial Registry',        path: '/staff/dashboard/accounts/dcr/serial-registry',                  exact: false, placeholder: false, icon: LibraryBig },
+        { id: 'customer_lookup',  label: 'Customer DCR Lookup',    path: '/staff/dashboard/accounts/dcr/customer-lookup',                  exact: false, placeholder: false, icon: SearchCheck },
       ]
     }
   ];
@@ -142,6 +153,7 @@ export default function DcrLayout({ children }: { children: React.ReactNode }) {
                       // Exception: if we are on a review page, "Process Invoices" should stay highlighted since it's the parent.
                       const trulyActive = active || (item.id === 'process' && isReviewPath);
                       const badgeValue = getBadgeValue(item.id);
+                      const Icon = item.icon;
 
                       return (
                         <Link
@@ -155,7 +167,10 @@ export default function DcrLayout({ children }: { children: React.ReactNode }) {
                                 : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 border border-transparent'
                           }`}
                         >
-                          <span>{item.label}</span>
+                          <div className="flex items-center gap-2.5">
+                            {Icon && <Icon size={16} />}
+                            <span>{item.label}</span>
+                          </div>
                           <div className="flex items-center gap-1.5">
                             {badgeValue > 0 && (
                               <span 

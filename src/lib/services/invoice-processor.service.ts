@@ -17,7 +17,7 @@ export interface ProcessingResult {
   }>;
 }
 
-function parseExcelDate(value: any): { formattedDate: string; monthName: string } | null {
+function parseExcelDate(value: any): { formattedDate: string; monthName: string; dateObj: Date } | null {
   if (typeof value === 'number') {
     // Excel serial number
     const d = new Date(Date.UTC(1899, 11, 30));
@@ -31,7 +31,8 @@ function parseExcelDate(value: any): { formattedDate: string; monthName: string 
     
     return {
       formattedDate: `${year}-${month}-${day}`,
-      monthName: months[d.getUTCMonth()]
+      monthName: months[d.getUTCMonth()],
+      dateObj: d
     };
   } else if (typeof value === 'string') {
     // Assume DD/MM/YYYY
@@ -48,13 +49,43 @@ function parseExcelDate(value: any): { formattedDate: string; monthName: string 
         if (m >= 1 && m <= 12) {
           return {
             formattedDate: `${year}-${monthStr}-${dayStr}`,
-            monthName: months[m - 1]
+            monthName: months[m - 1],
+            dateObj: new Date(Date.UTC(year, m - 1, d))
           };
         }
       }
     }
   }
   return null;
+}
+
+function formatSheetDates(sheet: XLSX.WorkSheet, format = 'dd-mmm-yyyy') {
+  for (const key of Object.keys(sheet)) {
+    if (key.startsWith('!')) continue;
+    const cell = sheet[key];
+    if (cell.t === 'd') {
+      cell.z = format;
+    }
+  }
+}
+
+function mapInvoiceAuditRow(row: any) {
+  let issuedDate = row['Issued Date'];
+  if (issuedDate && !(issuedDate instanceof Date)) {
+    const parsed = parseExcelDate(issuedDate);
+    if (parsed) issuedDate = parsed.dateObj;
+  }
+  return {
+    'Invoice Date': row['Invoice Date'],
+    'Invoice ID': row['Invoice ID'] || '',
+    'Invoice Number': row['Invoice Number'] || '',
+    'Issued Date': issuedDate || '',
+    'Invoice Status': row['Invoice Status'] || '',
+    'Accounts Receivable': row['Accounts Receivable'] || '',
+    'Customer ID': row['Customer ID'] || '',
+    'Customer Name': row['Customer Name'] || '',
+    'Customer Number': row['Customer Number'] || ''
+  };
 }
 
 const REQUIRED_COLUMNS_INPUT = [
@@ -116,6 +147,35 @@ export class InvoiceProcessorService {
           errors: [{ row: 0, error: `Missing mandatory columns: ${missingColumns.join(', ')}` }]
         };
       }
+
+      // Fix dates in the original sheet
+      let invoiceDateCol = -1;
+      for (const key of Object.keys(sheet)) {
+        if (key.startsWith('!')) continue;
+        if (sheet[key].v === 'Invoice Date') {
+          invoiceDateCol = XLSX.utils.decode_cell(key).c;
+          break;
+        }
+      }
+      if (invoiceDateCol !== -1) {
+        const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1:A1');
+        for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+          const cellAddr = XLSX.utils.encode_cell({ c: invoiceDateCol, r: R });
+          const cell = sheet[cellAddr];
+          if (cell) {
+            if (cell.t === 'n') {
+              cell.z = 'dd-mmm-yyyy';
+            } else if (cell.t === 's') {
+              const p = parseExcelDate(cell.v);
+              if (p) {
+                cell.t = 'd';
+                cell.v = p.dateObj;
+                cell.z = 'dd-mmm-yyyy';
+              }
+            }
+          }
+        }
+      }
       
       const errors: Array<{ row: number; error: string }> = [];
       const invoiceMonths = new Set<string>();
@@ -125,18 +185,18 @@ export class InvoiceProcessorService {
       rawData.forEach((row, index) => {
         const rowNum = index + 2; // +1 for 0-index, +1 for header
         
-        // Skip Void invoices completely
-        if (String(row['Invoice Status']).trim().toLowerCase() === 'void') {
-          return;
-        }
-
         const invoiceNumber = row['Invoice Number'];
         if (!invoiceNumber || String(invoiceNumber).trim() === '') {
           errors.push({ row: rowNum, error: 'Invoice Number is missing' });
           return;
         }
 
+        if (String(invoiceNumber).trim().toUpperCase().startsWith('BOS')) {
+          return; // Ignore BOS Documents Completely
+        }
+
         let invoiceDate = row['Invoice Date'];
+        let parsedDateObj: Date;
         let formattedDate = '';
         if (!invoiceDate || String(invoiceDate).trim() === '') {
           errors.push({ row: rowNum, error: 'Invoice Date is missing' });
@@ -145,11 +205,18 @@ export class InvoiceProcessorService {
           const parsedDate = parseExcelDate(invoiceDate);
           if (parsedDate) {
             formattedDate = parsedDate.formattedDate;
+            parsedDateObj = parsedDate.dateObj;
             invoiceMonths.add(parsedDate.monthName);
+            row['Invoice Date'] = parsedDateObj; // Mutate for subsequent use
           } else {
             errors.push({ row: rowNum, error: 'Invalid Invoice Date format' });
             return;
           }
+        }
+
+        // Skip Void invoices completely from Final calculations
+        if (String(row['Invoice Status']).trim().toLowerCase() === 'void') {
+          return;
         }
 
         rowsProcessedCount++;
@@ -157,7 +224,7 @@ export class InvoiceProcessorService {
         // Initialize invoice group if not exists
         if (!invoicesMap.has(invoiceNumber)) {
           invoicesMap.set(invoiceNumber, {
-            'Invoice Date': formattedDate,
+            'Invoice Date': parsedDateObj,
             'Invoice Number': invoiceNumber,
             'Customer Name': row['Customer Name'] || '',
             'GST Identification Number (GSTIN)': row['GST Identification Number (GSTIN)'] || '',
@@ -225,6 +292,7 @@ export class InvoiceProcessorService {
       const outSheet = XLSX.utils.json_to_sheet(validRows, { header: FINAL_SHEET_COLUMNS });
       
       // Formatting Final Sheet
+      formatSheetDates(outSheet);
       outSheet['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
       if (outSheet['!ref']) {
         outSheet['!autofilter'] = { ref: outSheet['!ref'] };
@@ -251,9 +319,9 @@ export class InvoiceProcessorService {
       const vUniqueInvoices = new Set<string>();
       
       rawData.forEach((row) => {
+        const invoiceNumber = String(row['Invoice Number'] || '').trim();
+        if (!invoiceNumber || invoiceNumber.toUpperCase().startsWith('BOS')) return;
         if (String(row['Invoice Status']).trim().toLowerCase() === 'void') return;
-        const invoiceNumber = row['Invoice Number'];
-        if (!invoiceNumber || String(invoiceNumber).trim() === '') return;
         
         vUniqueInvoices.add(String(invoiceNumber));
         verification.lineItems++;
@@ -351,6 +419,146 @@ export class InvoiceProcessorService {
       });
       
       XLSX.utils.book_append_sheet(outWorkbook, verSheet, "Verification");
+
+      // 4, 5, 6, 7: Audit Sheets Generation
+      const prefixesAndNumbers: { prefix: string, num: number, original: string, date: any }[] = [];
+      const invoiceNumbersSet = new Set<string>();
+      
+      const pendingEInvoicesMap = new Map<string, any>();
+      const pendingEWayBillsMap = new Map<string, any>();
+      const draftInvoicesMap = new Map<string, any>();
+
+      rawData.forEach(row => {
+        const invStr = String(row['Invoice Number'] || '').trim();
+        if (!invStr || invStr.toUpperCase().startsWith('BOS')) {
+          return;
+        }
+
+        const invId = String(row['Invoice ID'] || '').trim();
+        const uniqueKey = invId || invStr;
+
+        const invStatus = String(row['Invoice Status']).trim().toLowerCase();
+
+        // Missing Invoices Logic (Includes Void)
+        if (!invoiceNumbersSet.has(invStr)) {
+          invoiceNumbersSet.add(invStr);
+          const match = invStr.match(/^(.*?)(\d+)$/);
+          if (match) {
+            prefixesAndNumbers.push({ 
+              prefix: match[1], 
+              num: parseInt(match[2], 10), 
+              original: invStr,
+              date: row['Invoice Date']
+            });
+          }
+        }
+
+        if (invStatus === 'void') {
+          return; // Exclude Void from other audit sheets
+        }
+
+        if (invStatus === 'draft') {
+          if (!draftInvoicesMap.has(uniqueKey)) draftInvoicesMap.set(uniqueKey, mapInvoiceAuditRow(row));
+        }
+
+        // Pending e-Invoices Logic
+        const gst = String(row['GST Identification Number (GSTIN)'] || '').trim();
+        const eInvStatus = String(row['e-Invoice Status'] || '').trim();
+        if (gst !== '' && eInvStatus === 'Yet To Be Pushed') {
+          if (!pendingEInvoicesMap.has(uniqueKey)) pendingEInvoicesMap.set(uniqueKey, mapInvoiceAuditRow(row));
+        }
+
+        // Pending E-Way Bills Logic
+        const total = Number(row['Total (Invoice Amount Including Tax)'] || row['Total'] || row['Invoice Total'] || row['Total Amount'] || 0);
+        const ewayStatus = String(row['E-WayBill Status'] || '').trim();
+        const isPendingEway = ewayStatus === '' || ewayStatus.toUpperCase() === 'NULL' || ewayStatus !== 'Generated';
+        if (total > 50000 && isPendingEway) {
+          if (!pendingEWayBillsMap.has(uniqueKey)) pendingEWayBillsMap.set(uniqueKey, mapInvoiceAuditRow(row));
+        }
+      });
+
+      const prefixGroups = new Map<string, typeof prefixesAndNumbers>();
+      prefixesAndNumbers.forEach(item => {
+        if (!prefixGroups.has(item.prefix)) {
+          prefixGroups.set(item.prefix, []);
+        }
+        prefixGroups.get(item.prefix)!.push(item);
+      });
+      
+      const missingInvoicesData: any[] = [];
+      for (const [prefix, items] of prefixGroups.entries()) {
+        if (items.length < 2) continue;
+        items.sort((a, b) => a.num - b.num);
+        
+        for (let idx = 0; idx < items.length - 1; idx++) {
+          const current = items[idx];
+          const next = items[idx + 1];
+          const diff = next.num - current.num;
+          
+          if (diff > 1) {
+            const padLen = current.original.substring(prefix.length).length;
+            for (let i = current.num + 1; i < next.num; i++) {
+              const reconstructed = `${prefix}${String(i).padStart(padLen, '0')}`;
+              missingInvoicesData.push({ 
+                "Previous Invoice": current.original,
+                "Previous Date": current.date,
+                "Missing Invoice": reconstructed,
+                "Next Invoice": next.original,
+                "Next Date": next.date
+              });
+            }
+          }
+        }
+      }
+
+      const sortRows = (a: any, b: any) => {
+        const dateA = a['Invoice Date'] instanceof Date ? a['Invoice Date'].getTime() : 0;
+        const dateB = b['Invoice Date'] instanceof Date ? b['Invoice Date'].getTime() : 0;
+        if (dateA !== dateB) {
+          return dateA - dateB;
+        }
+        const numA = String(a['Invoice Number'] || '');
+        const numB = String(b['Invoice Number'] || '');
+        return numA.localeCompare(numB);
+      };
+
+      const pendingEInvoicesData = Array.from(pendingEInvoicesMap.values());
+      const pendingEWayBillsData = Array.from(pendingEWayBillsMap.values());
+      const draftInvoicesData = Array.from(draftInvoicesMap.values());
+
+      pendingEInvoicesData.sort(sortRows);
+      pendingEWayBillsData.sort(sortRows);
+      draftInvoicesData.sort(sortRows);
+
+      const missingSheet = XLSX.utils.json_to_sheet(missingInvoicesData, { 
+        header: ["Previous Invoice", "Previous Date", "Missing Invoice", "Next Invoice", "Next Date"] 
+      });
+      formatSheetDates(missingSheet);
+      XLSX.utils.book_append_sheet(outWorkbook, missingSheet, "Missing Invoice Numbers");
+
+      const AUDIT_COLUMNS = [
+        'Invoice Date',
+        'Invoice ID',
+        'Invoice Number',
+        'Issued Date',
+        'Invoice Status',
+        'Accounts Receivable',
+        'Customer ID',
+        'Customer Name',
+        'Customer Number'
+      ];
+
+      const pendingEInvoicesSheet = XLSX.utils.json_to_sheet(pendingEInvoicesData, { header: AUDIT_COLUMNS });
+      formatSheetDates(pendingEInvoicesSheet);
+      XLSX.utils.book_append_sheet(outWorkbook, pendingEInvoicesSheet, "Pending e-Invoices");
+
+      const pendingEWayBillsSheet = XLSX.utils.json_to_sheet(pendingEWayBillsData, { header: AUDIT_COLUMNS });
+      formatSheetDates(pendingEWayBillsSheet);
+      XLSX.utils.book_append_sheet(outWorkbook, pendingEWayBillsSheet, "Pending E-Way Bills");
+
+      const draftInvoicesSheet = XLSX.utils.json_to_sheet(draftInvoicesData, { header: AUDIT_COLUMNS });
+      formatSheetDates(draftInvoicesSheet);
+      XLSX.utils.book_append_sheet(outWorkbook, draftInvoicesSheet, "Draft Invoices");
 
       // Generate file buffer
       const outBuffer = XLSX.write(outWorkbook, { type: 'buffer', bookType: 'xlsx' });

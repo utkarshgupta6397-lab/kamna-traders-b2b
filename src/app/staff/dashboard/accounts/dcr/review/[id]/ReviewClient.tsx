@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { ArrowLeft, Plus, Trash2, Search, AlertCircle, ChevronRight } from 'lucide-react';
 import { isRecommendedForDcr } from '@/lib/dcr-config';
 import { useDcrStats } from '../../layout';
+import { CommunicationWidget } from '@/components/communications/CommunicationWidget';
 
 export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
   const router = useRouter();
@@ -467,16 +468,23 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
     <div className="space-y-4 max-w-6xl mx-auto pb-32">
       
       {/* Header Actions */}
-      <div className="flex items-center gap-3">
-        <button 
-          onClick={() => {
-            router.push(`/staff/dashboard/accounts/dcr?${currentParamsString}`);
-          }}
-          className="p-1.5 hover:bg-gray-200 rounded-full transition-colors text-gray-600"
-        >
-          <ArrowLeft size={18} />
-        </button>
-        <h2 className="text-lg font-bold text-gray-900">DCR Processing</h2>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => {
+              router.push(`/staff/dashboard/accounts/dcr?${currentParamsString}`);
+            }}
+            className="p-1.5 hover:bg-gray-200 rounded-full transition-colors text-gray-600"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <h2 className="text-lg font-bold text-gray-900">DCR Processing</h2>
+        </div>
+        <CommunicationWidget invoiceId={invoiceId} className="hidden sm:flex max-w-sm" />
+      </div>
+
+      <div className="sm:hidden mb-4">
+        <CommunicationWidget invoiceId={invoiceId} />
       </div>
 
       {/* Header Summary Card (ERP Style) */}

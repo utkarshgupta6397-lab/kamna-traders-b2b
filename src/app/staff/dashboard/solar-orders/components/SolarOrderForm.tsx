@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ZohoDuplicateAlertModal } from '@/components/ZohoDuplicateAlertModal';
-import { Search, Loader2, User, Phone, CheckCircle2, Zap, FileText, X, AlertTriangle, MapPin, ClipboardList, Check, HelpCircle } from 'lucide-react';
+import { Save, User, MapPin, Zap, Banknote, Calendar, Plus, Trash2, ShieldCheck, Check, Camera, RefreshCw, Paperclip, Truck, IndianRupee, Hammer, Upload, ExternalLink } from 'lucide-react';
+import { CommunicationWidget } from '@/components/communications/CommunicationWidget';
+import { Search, Loader2, Phone, CheckCircle2, FileText, X, AlertTriangle, ClipboardList, HelpCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface StaffUser {
@@ -551,6 +553,10 @@ export default function SolarOrderForm({ mode = 'CREATE', initialOrder, users, c
           {/* Left Column (Core Details) */}
           <div className="lg:col-span-8 space-y-6">
             
+            {initialOrder?.id && (
+              <CommunicationWidget orderId={initialOrder.id} />
+            )}
+
             {/* Customer & Lead Information */}
             <div className={sectionClasses}>
               <h2 className={sectionTitleClasses}>

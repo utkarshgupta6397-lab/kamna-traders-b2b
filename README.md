@@ -2,6 +2,20 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+## Local WhatsApp Development
+
+To test the WhatsApp integration locally with Meta Webhooks, we use Cloudflare Tunnels. 
+
+1. Start ERP (`npm run dev`)
+2. Start Cloudflare Tunnel (`npm run cloudflare`)
+3. Copy generated URL
+4. Update Meta Callback URL in Meta App Dashboard
+5. Verify webhook in Admin Panel
+6. Send test template
+7. Confirm webhook received
+
+See [WHATSAPP_LOCAL_DEVELOPMENT.md](docs/WHATSAPP_LOCAL_DEVELOPMENT.md) for full detailed setup instructions.
+
 ## Local Development (Print Service Architecture)
 
 Due to browser mixed-content security policies, when working with the thermal printer agent on localhost, you MUST run the Next.js frontend on HTTPS. We have provided a dedicated script for this:

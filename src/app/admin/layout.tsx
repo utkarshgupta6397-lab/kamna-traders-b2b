@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { Package, Users, Warehouse, Tags, Database, LayoutDashboard, LogOut, Bookmark, RefreshCw, Terminal, Printer, Shield, Lock, FileText, Briefcase } from 'lucide-react';
+import { Package, Users, Warehouse, Tags, Database, LayoutDashboard, LogOut, Bookmark, RefreshCw, Terminal, Printer, Shield, Lock, FileText, Briefcase, MessageCircle } from 'lucide-react';
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { Toaster } from 'react-hot-toast';
@@ -24,6 +24,7 @@ const navItems = [
   { href: '/admin/customer-statement', label: 'Customer Statement', icon: FileText },
   { href: '/admin/transactions', label: 'Transactions', icon: Database },
   { href: '/admin/sessions', label: 'Sessions', icon: Shield },
+  { href: '/admin/dev-tools/test-communication', label: 'Test Communication', icon: Terminal },
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -60,6 +61,16 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               <span>{label}</span>
             </Link>
           ))}
+          {session?.whatsapp_integration && (
+            <Link
+              href="/admin/whatsapp-integration"
+              prefetch={false}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/70 text-sm font-medium hover:bg-white/10 hover:text-white transition-all duration-150"
+            >
+              <MessageCircle size={17} />
+              <span>WhatsApp Integration</span>
+            </Link>
+          )}
         </nav>
 
         {/* Footer */}

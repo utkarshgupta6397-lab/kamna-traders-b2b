@@ -2,7 +2,7 @@ import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { LogOut, Home, ClipboardList, History, Box, Settings, MapPin, Truck, FileText, Sun } from 'lucide-react';
+import { LogOut, Home, ClipboardList, History, Box, Settings, MapPin, Truck, FileText, Sun, MessageSquare } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 
 export default async function StaffDashboardLayout({ children }: { children: React.ReactNode }) {
@@ -42,6 +42,11 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
             {session.solar_orders_view && (
               <Link href="/staff/dashboard/solar-orders" className="flex items-center gap-1.5 hover:text-white transition-colors">
                 <Sun size={16} /><span className="hidden md:inline text-xs">Solar Orders</span>
+              </Link>
+            )}
+            {session.communications_view && (
+              <Link href="/staff/dashboard/communications" className="flex items-center gap-1.5 hover:text-white transition-colors">
+                <MessageSquare size={16} /><span className="hidden md:inline text-xs">Communications</span>
               </Link>
             )}
 

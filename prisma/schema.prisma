@@ -48,6 +48,9 @@ model User {
   solar_orders_edit_order_date Boolean @default(false)
   solar_orders_master_edit    Boolean @default(false)
   workflow_edits              Boolean @default(false)
+  communications_view         Boolean @default(false)
+  communications_templates    Boolean @default(false)
+  whatsapp_integration        Boolean @default(false)
 
   sessions            ActiveSession[]
   carts               Cart[]
@@ -84,6 +87,11 @@ model User {
   tasksCompleted      SolarTask[]          @relation("TaskCompletedBy")
   taskFollowUps       SolarTaskFollowUp[]
   solarDiscussions    SolarDiscussion[]
+
+  // Communications Module
+  communicationsCreated Communication[] @relation("CommunicationCreatedBy")
+  communicationsAssigned Communication[] @relation("CommunicationAssignedTo")
+  whatsappTests       WhatsAppTestLog[]
 }
 
 model Warehouse {
@@ -1030,4 +1038,218 @@ model SolarDiscussion {
   user            User       @relation(fields: [userId], references: [id])
 
   @@index([solarOrderId])
+}
+
+// ─── Communications Module Phase 1 ───────────────────────────────────────────
+
+enum CommunicationChannel {
+  WHATSAPP
+  SMS
+  EMAIL
+  SYSTEM
+}
+
+enum CommunicationDirection {
+  OUTGOING
+  INCOMING
+}
+
+enum CommunicationType {
+  INVOICE
+  DCR
+  PAYMENT
+  ORDER
+  GENERAL
+  CUSTOM
+}
+
+enum CommunicationStatus {
+  DRAFT
+  QUEUED
+  API_ACCEPTED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model Communication {
+  id                String                 @id @default(cuid())
+  customerId        String
+  customerName      String?
+  solarOrderId      String?
+  invoiceId         String?
+  dcrInvoiceId      String?
+  relatedRecord     String?
+  channel           CommunicationChannel
+  direction         CommunicationDirection
+  type              CommunicationType
+  status            CommunicationStatus
+  subject           String?
+  body              String                 @db.Text
+  fromAddress       String?
+  fromName          String?
+  toAddress         String?
+  templateId        String?
+  templateName      String?
+  templateLanguage  String?
+  templateCategory  String?
+  variablesJson     Json?
+  headerType        String?
+  headerMediaUrl    String?
+  footer            String?
+  buttonsJson       Json?
+  providerName      String?
+  providerMessageId String?
+  conversationId    String?
+  pricingCategory   String?
+  pricingCost       Float?
+  errorCode         String?
+  providerResponse  Json?
+  retryCount        Int                    @default(0)
+  metadata          Json?
+  
+  createdById       String
+  assignedToUserId  String?
+  relatedRecordType String?
+  relatedRecordId   String?
+  
+  apiAcceptedAt     DateTime?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  failedAt          DateTime?
+  errorMessage      String?                @db.Text
+  
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  createdBy         User                   @relation("CommunicationCreatedBy", fields: [createdById], references: [id])
+  assignedTo        User?                  @relation("CommunicationAssignedTo", fields: [assignedToUserId], references: [id])
+  attachments       CommunicationAttachment[]
+  timeline          CommunicationTimeline[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([type])
+  @@index([channel])
+  @@index([createdById])
+}
+
+model CommunicationAttachment {
+  id              String        @id @default(cuid())
+  communicationId String
+  fileName        String
+  mimeType        String
+  url             String
+  size            Int?
+  
+  createdAt       DateTime      @default(now())
+
+  communication   Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
+
+  @@index([communicationId])
+}
+
+model IncomingWebhook {
+  id               String    @id @default(cuid())
+  provider         String
+  headers          Json
+  body             Json
+  signature        String?
+  ipAddress        String?
+  receivedAt       DateTime  @default(now())
+  processed        Boolean   @default(false)
+  processingResult String?
+  matchedMessageId String?
+
+  @@index([receivedAt])
+  @@index([matchedMessageId])
+}
+
+model CommunicationTimeline {
+  id               String    @id @default(cuid())
+  communicationId  String
+  status           String
+  timestamp        DateTime
+  providerResponse Json?
+  createdAt        DateTime  @default(now())
+
+  communication    Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
+
+  @@index([communicationId])
+}
+
+// ─── WhatsApp Integration Module ─────────────────────────────────────────────
+
+model WhatsAppConfiguration {
+  id                    String    @id @default("singleton")
+  appId                 String
+  encryptedAccessToken  String
+  phoneNumberId         String
+  businessAccountId     String
+  apiVersion            String
+  webhookVerifyToken    String
+  integrationEnabled    Boolean   @default(false)
+  
+  // Connection Test Data
+  businessName          String?
+  displayPhoneNumber    String?
+  verifiedName          String?
+  connectionStatus      String    @default("NOT_TESTED") // NOT_TESTED, CONNECTED, FAILED
+  lastConnectionTest    DateTime?
+  testPhoneNumber       String?
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+model WhatsAppMessageLog {
+  id            String   @id @default(cuid())
+  recipient     String
+  templateName  String
+  language      String
+  messageId     String?
+  status        String   @default("PENDING") // PENDING, SENT, FAILED
+  responseJson  Json?
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model WhatsAppTemplate {
+  id             String   @id @default(cuid())
+  metaTemplateId String   @unique
+  name           String
+  category       String
+  status         String
+  language       String
+  headerType     String?
+  header         String?
+  body           String
+  footer         String?
+  buttons        Json?
+  variables      Json?
+  qualityRating  String?
+  lastSyncedAt   DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model WhatsAppTestLog {
+  id              String   @id @default(cuid())
+  adminUserId     String
+  templateId      String
+  recipient       String
+  variablesUsed   Json?
+  mediaGenerated  Boolean  @default(false)
+  metaMessageId   String?
+  status          String   // SUCCESS, FAILED
+  response        Json?
+  sentAt          DateTime @default(now())
+
+  adminUser       User     @relation(fields: [adminUserId], references: [id])
+
+  @@index([templateId])
+  @@index([adminUserId])
 }

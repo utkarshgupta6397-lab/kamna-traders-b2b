@@ -12,7 +12,10 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "node prisma/seed.js",
     "seed:solar": "npx tsx prisma/seed_solar_orders.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "cloudflare": "cloudflared tunnel --url http://localhost:3002",
+    "whatsapp:health": "curl http://localhost:3002/api/webhooks/whatsapp/health",
+    "whatsapp:webhook:test": "node scripts/whatsapp-webhook-test.js"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",

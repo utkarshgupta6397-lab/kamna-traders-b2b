@@ -88,6 +88,15 @@ function mapInvoiceAuditRow(row: any) {
   };
 }
 
+function mapEwayBillAuditRow(row: any) {
+  const base = mapInvoiceAuditRow(row);
+  return {
+    ...base,
+    'Total Amount (Incl. Tax)': Number(row['Total'] || row['Total (Invoice Amount Including Tax)'] || row['Invoice Total'] || row['Total Amount'] || 0),
+    'Shipping Address': String(row['Shipping Address'] || '').trim()
+  };
+}
+
 const REQUIRED_COLUMNS_INPUT = [
   'Invoice Date',
   'Invoice Number',
@@ -473,7 +482,7 @@ export class InvoiceProcessorService {
         const ewayStatus = String(row['E-WayBill Status'] || '').trim();
         const isPendingEway = ewayStatus === '' || ewayStatus.toUpperCase() === 'NULL' || ewayStatus !== 'Generated';
         if (total > 50000 && isPendingEway) {
-          if (!pendingEWayBillsMap.has(uniqueKey)) pendingEWayBillsMap.set(uniqueKey, mapInvoiceAuditRow(row));
+          if (!pendingEWayBillsMap.has(uniqueKey)) pendingEWayBillsMap.set(uniqueKey, mapEwayBillAuditRow(row));
         }
       });
 
@@ -548,11 +557,30 @@ export class InvoiceProcessorService {
         'Customer Number'
       ];
 
+      const EWAY_BILLS_COLUMNS = [
+        ...AUDIT_COLUMNS,
+        'Total Amount (Incl. Tax)',
+        'Shipping Address'
+      ];
+
       const pendingEInvoicesSheet = XLSX.utils.json_to_sheet(pendingEInvoicesData, { header: AUDIT_COLUMNS });
       formatSheetDates(pendingEInvoicesSheet);
       XLSX.utils.book_append_sheet(outWorkbook, pendingEInvoicesSheet, "Pending e-Invoices");
 
-      const pendingEWayBillsSheet = XLSX.utils.json_to_sheet(pendingEWayBillsData, { header: AUDIT_COLUMNS });
+      const pendingEWayBillsSheet = XLSX.utils.json_to_sheet(pendingEWayBillsData, { header: EWAY_BILLS_COLUMNS });
+      
+      const ewayRange = XLSX.utils.decode_range(pendingEWayBillsSheet['!ref'] || 'A1:A1');
+      let shipAddrCol = EWAY_BILLS_COLUMNS.indexOf('Shipping Address');
+      if (shipAddrCol !== -1) {
+        for (let R = ewayRange.s.r + 1; R <= ewayRange.e.r; ++R) {
+          const cellAddr = XLSX.utils.encode_cell({ c: shipAddrCol, r: R });
+          if (pendingEWayBillsSheet[cellAddr]) {
+            if (!pendingEWayBillsSheet[cellAddr].s) pendingEWayBillsSheet[cellAddr].s = {};
+            pendingEWayBillsSheet[cellAddr].s.alignment = { wrapText: true };
+          }
+        }
+      }
+
       formatSheetDates(pendingEWayBillsSheet);
       XLSX.utils.book_append_sheet(outWorkbook, pendingEWayBillsSheet, "Pending E-Way Bills");
 

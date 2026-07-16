@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Search, ChevronDown, ChevronUp, ExternalLink, Copy, AlertCircle, RefreshCw, X, Activity, ChevronRight } from 'lucide-react';
 import { fetchWithCache } from '@/lib/client-cache';
+import { CommunicationWidget } from '@/components/communications/CommunicationWidget';
 
 const ZOHO_ORG_ID = process.env.NEXT_PUBLIC_ZOHO_ORG_ID || '';
 
@@ -493,6 +494,9 @@ export default function CustomerLookupClient() {
                 <div className="flex items-center gap-3 text-xs text-gray-500">
                   <span>ID: <span className="font-mono text-gray-800">{customer.id}</span></span>
                   <span>GST: <span className="text-gray-800 font-semibold">{customer.gstNumber || 'N/A'}</span></span>
+                </div>
+                <div className="mt-2">
+                  <CommunicationWidget customerId={customer.id} />
                 </div>
               </div>
 

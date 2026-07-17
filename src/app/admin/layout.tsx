@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { Package, Users, Warehouse, Tags, Database, LayoutDashboard, LogOut, Bookmark, RefreshCw, Terminal, Printer, Shield, Lock, FileText, Briefcase, MessageCircle } from 'lucide-react';
+import { Package, Users, Warehouse, Tags, Database, LayoutDashboard, LogOut, Bookmark, RefreshCw, Terminal, Printer, Shield, Lock, FileText, Briefcase, MessageCircle, Server } from 'lucide-react';
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { Toaster } from 'react-hot-toast';
@@ -24,6 +24,8 @@ const navItems = [
   { href: '/admin/customer-statement', label: 'Customer Statement', icon: FileText },
   { href: '/admin/transactions', label: 'Transactions', icon: Database },
   { href: '/admin/sessions', label: 'Sessions', icon: Shield },
+  { href: '/admin/gateway-settings', label: 'Gateway Settings', icon: Server },
+  { href: '/admin/dev-tools/gateway-test', label: 'Gateway Test', icon: Terminal },
   { href: '/admin/dev-tools/test-communication', label: 'Test Communication', icon: Terminal },
 ];
 

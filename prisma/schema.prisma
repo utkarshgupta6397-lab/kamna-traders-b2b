@@ -1253,3 +1253,23 @@ model WhatsAppTestLog {
   @@index([templateId])
   @@index([adminUserId])
 }
+
+// ─── Gateway Integration Module ─────────────────────────────────────────────
+
+model GatewayConfiguration {
+  id               String    @id @default("singleton")
+  gatewayUrl       String
+  apiToken         String
+  connectionStatus String    @default("NOT_TESTED") // NOT_TESTED, CONNECTED, FAILED
+  lastConnectionTest DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model GatewayMessageLog {
+  id                String   @id @default(cuid())
+  gatewayMessageId  String
+  providerMessageId String?
+  providerStatus    String
+  createdAt         DateTime @default(now())
+}

@@ -1,3 +1,5 @@
+import { prisma } from '@/lib/db';
+
 export interface GatewayCommunicationPayload {
   channel: 'whatsapp' | 'sms' | 'email';
   recipient: string;
@@ -6,6 +8,7 @@ export interface GatewayCommunicationPayload {
   metadata: Record<string, any>;
   requestedBy: string;
   source: string;
+  language?: string;
 }
 
 export interface GatewayCommunicationResponse {
@@ -17,16 +20,68 @@ export interface GatewayCommunicationResponse {
 }
 
 export class GatewayClient {
-  private static get baseUrl(): string {
-    const url = process.env.GATEWAY_BASE_URL;
-    if (!url) throw new Error('GATEWAY_BASE_URL is not configured');
-    return url;
+  private static configCache: { url: string; token: string; expiresAt: number } | null = null;
+
+  private static async getConfig() {
+    if (this.configCache && this.configCache.expiresAt > Date.now()) {
+      return this.configCache;
+    }
+
+    const config = await prisma.gatewayConfiguration.findUnique({
+      where: { id: 'singleton' }
+    });
+
+    if (!config || !config.gatewayUrl || !config.apiToken) {
+      throw new Error('Gateway is not configured');
+    }
+
+    this.configCache = {
+      url: config.gatewayUrl,
+      token: config.apiToken,
+      expiresAt: Date.now() + 60000, // cache for 1 minute
+    };
+
+    return this.configCache;
   }
 
-  private static get token(): string {
-    const token = process.env.GATEWAY_TOKEN;
-    if (!token) throw new Error('GATEWAY_TOKEN is not configured');
-    return token;
+  static async health() {
+    try {
+      const config = await this.getConfig();
+      // Using generic health endpoint if it exists, otherwise list providers
+      const url = `${config.url}/api/v1/health`; // Assuming gateway has this
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${config.token}`,
+        },
+      });
+      return { success: response.ok, status: response.status };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  static async listTemplates() {
+    try {
+      const config = await this.getConfig();
+      const url = `${config.url}/api/v1/providers/whatsapp/templates`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${config.token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Gateway returned HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      return { success: true, templates: data.templates || data.data || [] };
+    } catch (error: any) {
+      console.error('[GatewayClient] Failed to list templates:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   /**
@@ -34,7 +89,14 @@ export class GatewayClient {
    * Includes timeout and basic retry logic.
    */
   static async sendCommunication(payload: GatewayCommunicationPayload, retries = 2): Promise<GatewayCommunicationResponse> {
-    const url = `${this.baseUrl}/api/v1/messages/send`;
+    let config;
+    try {
+      config = await this.getConfig();
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+
+    const url = `${config.url}/api/v1/messages/send`;
     
     let attempt = 0;
     while (attempt <= retries) {
@@ -46,7 +108,7 @@ export class GatewayClient {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.token}`,
+            'Authorization': `Bearer ${config.token}`,
           },
           body: JSON.stringify(payload),
           signal: controller.signal,
@@ -105,11 +167,12 @@ export class GatewayClient {
    */
   static async getLatestCommunication(filters: { customerId?: string; orderId?: string; invoiceId?: string }) {
     try {
-      const url = `${this.baseUrl}/api/v1/messages`;
+      const config = await this.getConfig();
+      const url = `${config.url}/api/v1/messages`;
       const response = await fetch(url, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${this.token}`,
+          'Authorization': `Bearer ${config.token}`,
         },
         cache: 'no-store'
       });
@@ -149,11 +212,12 @@ export class GatewayClient {
    */
   static async getCommunicationStatus(messageId: string) {
     try {
-      const url = `${this.baseUrl}/api/v1/messages/${messageId}`;
+      const config = await this.getConfig();
+      const url = `${config.url}/api/v1/messages/${messageId}`;
       const response = await fetch(url, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${this.token}`,
+          'Authorization': `Bearer ${config.token}`,
         },
         cache: 'no-store'
       });

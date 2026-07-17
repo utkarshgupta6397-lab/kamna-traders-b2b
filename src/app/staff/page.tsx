@@ -25,14 +25,37 @@ function StaffLoginContent() {
     }
   }, [searchParams]);
 
-  const handleMobileSubmit = (e: React.FormEvent) => {
+  const handleMobileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (mobile.replace(/\D/g, '').length < 10) {
+    
+    const cleanMobile = mobile.trim();
+    if (!/^\d{10}$/.test(cleanMobile)) {
       setError('Enter a valid 10-digit mobile number');
       return;
     }
+    
     setError('');
-    setStep('pin');
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/auth/check-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile: cleanMobile }),
+      });
+
+      const data = await res.json();
+      setLoading(false);
+
+      if (res.ok) {
+        setStep('pin');
+      } else {
+        setError(data.error || 'No active account found with this phone number.');
+      }
+    } catch (err) {
+      setLoading(false);
+      setError('Connection error. Please try again.');
+    }
   };
 
   const handlePinSubmit = async (e: React.FormEvent) => {
@@ -133,8 +156,8 @@ function StaffLoginContent() {
                   />
                 </div>
               </div>
-              <button type="submit" className="w-full bg-[#1A2766] text-white py-2.5 rounded-lg font-semibold text-sm hover:bg-[#003347] transition-colors">
-                Continue →
+              <button type="submit" disabled={loading} className="w-full bg-[#1A2766] text-white py-2.5 rounded-lg font-semibold text-sm hover:bg-[#003347] transition-colors flex items-center justify-center gap-2">
+                {loading ? <RefreshCw size={16} className="animate-spin" /> : 'Continue →'}
               </button>
             </form>
           )}

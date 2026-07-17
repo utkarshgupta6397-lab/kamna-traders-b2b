@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Save, AlertTriangle, CheckCircle, RefreshCw, Server } from 'lucide-react';
+import { Save, AlertTriangle, CheckCircle, RefreshCw, Server, KeyRound, Clock, Activity, Box } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function GatewayConfigurationClient() {
@@ -10,6 +10,8 @@ export default function GatewayConfigurationClient() {
   const [connectionStatus, setConnectionStatus] = useState('NOT_TESTED');
   const [lastConnectionTest, setLastConnectionTest] = useState<string | null>(null);
   
+  const [healthData, setHealthData] = useState<{ latency?: number, version?: string, environment?: string } | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -50,6 +52,7 @@ export default function GatewayConfigurationClient() {
       if (res.ok) {
         toast.success('Gateway Settings Saved');
         setConnectionStatus(data.config.connectionStatus);
+        setApiToken(data.config.apiToken); // Update with newly masked token from server
       } else {
         toast.error(data.error || 'Failed to save settings');
       }
@@ -62,12 +65,18 @@ export default function GatewayConfigurationClient() {
 
   const handleTestConnection = async () => {
     setTesting(true);
+    setHealthData(null);
     try {
       const res = await fetch('/api/admin/gateway-settings/test', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         toast.success('Connection Successful!');
         setConnectionStatus('CONNECTED');
+        setHealthData({
+          latency: data.latency,
+          version: data.version,
+          environment: data.environment
+        });
       } else {
         toast.error(`Connection Failed: ${data.error}`);
         setConnectionStatus('FAILED');
@@ -80,6 +89,8 @@ export default function GatewayConfigurationClient() {
       setTesting(false);
     }
   };
+
+  const isMasked = Boolean(apiToken && apiToken.includes('*'));
 
   if (loading) {
     return (
@@ -114,17 +125,64 @@ export default function GatewayConfigurationClient() {
               />
             </div>
             <div className="space-y-2">
-              <label className="block text-sm font-bold text-gray-700">API Token</label>
-              <input
-                type="password"
-                value={apiToken}
-                onChange={(e) => setApiToken(e.target.value)}
-                required
-                className="w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter Gateway JWT or Secret"
-              />
+              <label className="block text-sm font-bold text-gray-700">Gateway API Key</label>
+              <div className="flex gap-2">
+                <input
+                  type="text" // text instead of password to show kgw_ prefix
+                  value={apiToken}
+                  onChange={(e) => setApiToken(e.target.value)}
+                  required
+                  disabled={isMasked}
+                  className={`w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${isMasked ? 'text-gray-500 cursor-not-allowed opacity-80 font-mono tracking-widest' : 'text-gray-900'}`}
+                  placeholder="kgw_xxxxxxxxxxxxxxxxxxxxx"
+                />
+                {isMasked && (
+                  <button
+                    type="button"
+                    onClick={() => setApiToken('')}
+                    className="shrink-0 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg border border-gray-300 transition-colors"
+                  >
+                    Replace Key
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-1 flex items-center gap-1.5">
+                <KeyRound size={12} />
+                Paste the API Key generated from Kamna Event Gateway. Example: kgw_xxxxxxxxxxxxxxxxxxxxx
+              </p>
             </div>
           </div>
+
+          {healthData && connectionStatus === 'CONNECTED' && (
+            <div className="mt-6 p-5 bg-green-50 border border-green-200 rounded-xl">
+              <h3 className="text-sm font-bold text-green-900 mb-3 flex items-center gap-2">
+                <CheckCircle size={16} /> Gateway Connected Successfully
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-white rounded-lg p-3 border border-green-100 flex items-center gap-3">
+                  <div className="p-2 bg-green-100 text-green-700 rounded-lg"><Clock size={16} /></div>
+                  <div>
+                    <p className="text-[10px] uppercase font-bold text-gray-500">Latency</p>
+                    <p className="text-sm font-bold text-gray-900">{healthData.latency} ms</p>
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-green-100 flex items-center gap-3">
+                  <div className="p-2 bg-green-100 text-green-700 rounded-lg"><Box size={16} /></div>
+                  <div>
+                    <p className="text-[10px] uppercase font-bold text-gray-500">Version</p>
+                    <p className="text-sm font-bold text-gray-900">{healthData.version}</p>
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-green-100 flex items-center gap-3">
+                  <div className="p-2 bg-green-100 text-green-700 rounded-lg"><Activity size={16} /></div>
+                  <div>
+                    <p className="text-[10px] uppercase font-bold text-gray-500">Environment</p>
+                    <p className="text-sm font-bold text-gray-900 capitalize">{healthData.environment}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center justify-between pt-6 border-t border-gray-100">
             <div className="flex items-center gap-4">

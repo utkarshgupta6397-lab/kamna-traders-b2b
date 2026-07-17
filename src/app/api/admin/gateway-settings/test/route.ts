@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
 
     const health = await GatewayClient.health();
 
-    await prisma.gatewayConfiguration.update({
+    await prisma.gatewayConfiguration.updateMany({
       where: { id: 'singleton' },
       data: {
         connectionStatus: health.success ? 'CONNECTED' : 'FAILED',
@@ -24,7 +24,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: health.error || 'Connection failed' });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ 
+      success: true, 
+      latency: health.latency,
+      version: health.version,
+      environment: health.environment
+    });
   } catch (error: any) {
     console.error('[Gateway Test Error]', error);
     return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 });

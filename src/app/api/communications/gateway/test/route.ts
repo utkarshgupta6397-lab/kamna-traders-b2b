@@ -23,10 +23,9 @@ export async function POST(request: NextRequest) {
       template,
       language: language || 'en',
       variables: variables || {},
-      metadata: {
-        source: 'erp',
-        requestedBy: session.name || session.userId,
-      }
+      source: 'erp',
+      requestedBy: session.name || session.userId || 'Unknown',
+      metadata: {}
     };
 
     const response = await GatewayClient.sendCommunication(payload);

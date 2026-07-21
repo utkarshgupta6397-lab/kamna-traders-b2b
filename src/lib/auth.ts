@@ -100,6 +100,8 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.communications_view = true;
       merged.communications_templates = true;
       merged.whatsapp_integration = true;
+      merged.holdQueueReviewEnabled = true;
+      merged.holdQueueReviewLimit = null;
     }
 
     console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);

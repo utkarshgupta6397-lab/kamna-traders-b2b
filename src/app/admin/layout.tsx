@@ -8,6 +8,7 @@ import { Toaster } from 'react-hot-toast';
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/user-permissions', label: 'User Permissions', icon: Lock },
+  { href: '/admin/hold-queue-config', label: 'Hold Queue Configuration', icon: Shield },
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/warehouses', label: 'Warehouses', icon: Warehouse },
   { href: '/admin/sub-vendors', label: 'Sub-Vendors', icon: Briefcase },

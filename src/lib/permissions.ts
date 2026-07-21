@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_invoice_processor' | 'accounts_transactions' | 'accounts_summary_view' | 'accounts_reports_salesman' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval' | 'solar_orders_docs_progress' | 'solar_orders_master_edit' | 'workflow_edits' | 'communications_view' | 'communications_templates' | 'whatsapp_integration';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_invoice_processor' | 'accounts_transactions' | 'accounts_summary_view' | 'accounts_reports_salesman' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval' | 'solar_orders_docs_progress' | 'solar_orders_master_edit' | 'workflow_edits' | 'communications_view' | 'communications_templates' | 'whatsapp_integration' | 'holdQueueReviewEnabled' | 'holdQueueReviewLimit';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -177,4 +177,6 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'communications_view',
   'communications_templates',
   'whatsapp_integration',
+  'holdQueueReviewEnabled',
+  'holdQueueReviewLimit',
 ];

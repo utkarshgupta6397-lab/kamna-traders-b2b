@@ -114,6 +114,7 @@ export default function HoldQueueClient() {
   // Validation States
   const [unlockedCustomers, setUnlockedCustomers] = useState<Set<string>>(new Set());
   const [globalRefreshCompleted, setGlobalRefreshCompleted] = useState(false);
+  const [userPermissions, setUserPermissions] = useState<{holdQueueReviewEnabled: boolean, holdQueueReviewLimit: number | null}>({ holdQueueReviewEnabled: false, holdQueueReviewLimit: null });
   
   // Modal states
   const [reviewCustomer, setReviewCustomer] = useState<CustomerHoldRecord | null>(null);
@@ -152,6 +153,9 @@ export default function HoldQueueClient() {
       
       setCustomers(data.customers || []);
       setKpis(data.kpis || {});
+      if (data.userPermissions) {
+        setUserPermissions(data.userPermissions);
+      }
       
       setReviewCustomer(prev => {
         if (!prev) return null;
@@ -439,6 +443,16 @@ export default function HoldQueueClient() {
             />
           </div>
           <div className="flex items-center gap-3">
+            {userPermissions.holdQueueReviewEnabled && (
+              <div className="text-[10px] text-gray-400 text-right border-r border-gray-100 pr-3 mr-1 leading-tight hidden sm:block">
+                Your Review Limit:<br/>
+                <span className="font-medium text-gray-500">
+                  {userPermissions.holdQueueReviewLimit !== null 
+                    ? `Up to ${fmtCurrency(userPermissions.holdQueueReviewLimit)}` 
+                    : 'Unlimited'}
+                </span>
+              </div>
+            )}
             {latestUpdateMs > 0 && (
               <span className="text-[10px] font-medium text-gray-500 whitespace-nowrap">
                 Last Updated:<br/>{new Date(latestUpdateMs).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
@@ -507,7 +521,20 @@ export default function HoldQueueClient() {
                 <tbody className="divide-y divide-gray-100">
                   {customers.map((customer, index) => {
                     const hasOutstanding = customer.outstandingBalance > 0;
+                    
+                    // Review Authorization Logic
+                    let isAuthorized = false;
+                    if (userPermissions.holdQueueReviewEnabled) {
+                      if (userPermissions.holdQueueReviewLimit === null) {
+                        isAuthorized = true; // Unlimited
+                      } else {
+                        isAuthorized = customer.outstandingBalance <= userPermissions.holdQueueReviewLimit;
+                      }
+                    }
+
                     const isUnlocked = globalRefreshCompleted || unlockedCustomers.has(customer.customerId);
+                    const canReview = isAuthorized && isUnlocked;
+
                     return (
                       <tr key={customer.customerId} className="hover:bg-blue-50/40 transition-colors group">
                         <td className="px-3 py-2.5 text-center text-gray-500 font-medium">{index + 1}</td>
@@ -547,16 +574,20 @@ export default function HoldQueueClient() {
                               <RefreshCw size={14} className={refreshingCustomerId === customer.customerId ? "animate-spin" : ""} />
                             </button>
                             <button
-                              onClick={() => isUnlocked ? openReview(customer) : null}
-                              disabled={!isUnlocked}
-                              title={!isUnlocked ? "Refresh the customer's outstanding balance before reviewing." : ""}
+                              onClick={() => canReview ? openReview(customer) : null}
+                              disabled={!canReview}
+                              title={
+                                !isAuthorized 
+                                  ? "Outstanding amount exceeds your review limit." 
+                                  : (!isUnlocked ? "Refresh the customer's outstanding balance before reviewing." : "")
+                              }
                               className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded transition-colors shadow-sm ${
-                                isUnlocked 
+                                canReview 
                                   ? 'bg-[#1A2766] hover:bg-[#1A2766]/90 text-white' 
                                   : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
                               }`}
                             >
-                              {!isUnlocked && <Lock size={12} />}
+                              {!canReview && <Lock size={12} />}
                               Review Customer
                             </button>
                           </div>

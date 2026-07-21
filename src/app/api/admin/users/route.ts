@@ -43,6 +43,8 @@ export async function GET() {
         communications_view: true,
         communications_templates: true,
         whatsapp_integration: true,
+        holdQueueReviewEnabled: true,
+        holdQueueReviewLimit: true,
       },
       orderBy: { name: 'asc' },
     });

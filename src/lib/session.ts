@@ -127,6 +127,8 @@ export async function validateSession(sessionToken: string): Promise<{
           communications_view: true,
           communications_templates: true,
           whatsapp_integration: true,
+          holdQueueReviewEnabled: true,
+          holdQueueReviewLimit: true,
         }
       }
     }
@@ -160,6 +162,8 @@ export async function validateSession(sessionToken: string): Promise<{
     session.user.communications_view = true;
     session.user.communications_templates = true;
     session.user.whatsapp_integration = true;
+    session.user.holdQueueReviewEnabled = true;
+    session.user.holdQueueReviewLimit = null;
   }
 
   const result = session 

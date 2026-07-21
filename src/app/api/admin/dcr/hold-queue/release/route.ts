@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { CustomerBalanceService } from '@/lib/services/customer-balance.service';
 
 // PATCH /api/admin/dcr/hold-queue/release
 // Body: { invoiceId, serialNumbers?: string[], releaseAll?: boolean }
@@ -38,6 +39,21 @@ export async function PATCH(req: Request) {
     if (!invoice) {
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
+
+    // ── HOLD QUEUE REVIEW LIMIT AUTHORIZATION ──
+    if (!session.holdQueueReviewEnabled) {
+      return NextResponse.json({ error: 'Unauthorized: Hold Queue review is disabled for your account' }, { status: 403 });
+    }
+    
+    if (session.holdQueueReviewLimit !== null) {
+      const balances = await CustomerBalanceService.getCustomerBalances([invoice.customerId]);
+      const currentOutstanding = balances[invoice.customerId]?.netOutstandingBalance || 0;
+      
+      if (currentOutstanding > session.holdQueueReviewLimit) {
+        return NextResponse.json({ error: 'Unauthorized: Customer outstanding exceeds your review limit' }, { status: 403 });
+      }
+    }
+    // ──────────────────────────────────────────
 
     // Strict invoice status check removed to allow release of eligible serials regardless of invoice status
 

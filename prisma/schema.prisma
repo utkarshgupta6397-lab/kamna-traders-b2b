@@ -52,6 +52,8 @@ model User {
   communications_view         Boolean @default(false)
   communications_templates    Boolean @default(false)
   whatsapp_integration        Boolean @default(false)
+  holdQueueReviewEnabled      Boolean @default(false)
+  holdQueueReviewLimit        Float?
 
   sessions            ActiveSession[]
   carts               Cart[]

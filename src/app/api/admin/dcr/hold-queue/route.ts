@@ -265,6 +265,10 @@ export async function GET(req: Request) {
         readyToIssue: readyToIssueCount,
         outstandingValueOnHold,
         zohoApiCallsToday,
+      },
+      userPermissions: {
+        holdQueueReviewEnabled: !!session.holdQueueReviewEnabled,
+        holdQueueReviewLimit: session.holdQueueReviewLimit !== undefined ? session.holdQueueReviewLimit : null,
       }
     });
   } catch (error: any) {

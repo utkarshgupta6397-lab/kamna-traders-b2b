@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Search, ChevronDown, ChevronUp, Clock, Users, CheckCircle, Loader2, Package, ArrowRightCircle, IndianRupee, FileText, X, ExternalLink, Activity, RefreshCw } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Clock, Users, CheckCircle, Loader2, Package, ArrowRightCircle, IndianRupee, FileText, X, ExternalLink, Activity, RefreshCw, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { useDcrStats } from '../layout';
@@ -111,6 +111,10 @@ export default function HoldQueueClient() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshingCustomerId, setRefreshingCustomerId] = useState<string | null>(null);
   
+  // Validation States
+  const [unlockedCustomers, setUnlockedCustomers] = useState<Set<string>>(new Set());
+  const [globalRefreshCompleted, setGlobalRefreshCompleted] = useState(false);
+  
   // Modal states
   const [reviewCustomer, setReviewCustomer] = useState<CustomerHoldRecord | null>(null);
   const [statementData, setStatementData] = useState<any>(null);
@@ -170,7 +174,8 @@ export default function HoldQueueClient() {
       const res = await fetch('/api/admin/dcr/hold-queue/refresh', { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.success) {
-        toast.success(data.message || 'Successfully updated outstanding balances.', { id: toastId });
+        setGlobalRefreshCompleted(true);
+        toast.success(data.message || 'Outstanding balances refreshed successfully.', { id: toastId });
         await fetchData();
       } else {
         throw new Error(data.error || 'Failed to refresh');
@@ -211,7 +216,8 @@ export default function HoldQueueClient() {
         });
       }
       
-      toast.success('Outstanding refreshed successfully.');
+      setUnlockedCustomers(prev => new Set(prev).add(customerId));
+      toast.success('Customer balance refreshed successfully.');
     } catch (err: any) {
       toast.error('Unable to refresh customer outstanding.');
     } finally {
@@ -501,6 +507,7 @@ export default function HoldQueueClient() {
                 <tbody className="divide-y divide-gray-100">
                   {customers.map((customer, index) => {
                     const hasOutstanding = customer.outstandingBalance > 0;
+                    const isUnlocked = globalRefreshCompleted || unlockedCustomers.has(customer.customerId);
                     return (
                       <tr key={customer.customerId} className="hover:bg-blue-50/40 transition-colors group">
                         <td className="px-3 py-2.5 text-center text-gray-500 font-medium">{index + 1}</td>
@@ -540,9 +547,16 @@ export default function HoldQueueClient() {
                               <RefreshCw size={14} className={refreshingCustomerId === customer.customerId ? "animate-spin" : ""} />
                             </button>
                             <button
-                              onClick={() => openReview(customer)}
-                              className="bg-[#1A2766] hover:bg-[#1A2766]/90 text-white text-[11px] font-semibold px-3 py-1.5 rounded transition-colors shadow-sm"
+                              onClick={() => isUnlocked ? openReview(customer) : null}
+                              disabled={!isUnlocked}
+                              title={!isUnlocked ? "Refresh the customer's outstanding balance before reviewing." : ""}
+                              className={`flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded transition-colors shadow-sm ${
+                                isUnlocked 
+                                  ? 'bg-[#1A2766] hover:bg-[#1A2766]/90 text-white' 
+                                  : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+                              }`}
                             >
+                              {!isUnlocked && <Lock size={12} />}
                               Review Customer
                             </button>
                           </div>

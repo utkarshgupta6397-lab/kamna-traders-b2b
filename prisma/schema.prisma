@@ -31,6 +31,7 @@ model User {
   accounts_invoice_processor  Boolean @default(false)
   accounts_transactions       Boolean @default(false)
   accounts_summary_view       Boolean @default(false)
+  accounts_reports_salesman   Boolean @default(false)
   stock_alerts_manage         Boolean @default(false)
   accounts_recovery_manage    Boolean @default(false)
   release_statement_queue     Boolean @default(false)

@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_invoice_processor' | 'accounts_transactions' | 'accounts_summary_view' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval' | 'solar_orders_docs_progress' | 'solar_orders_master_edit' | 'workflow_edits' | 'communications_view' | 'communications_templates' | 'whatsapp_integration';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_invoice_processor' | 'accounts_transactions' | 'accounts_summary_view' | 'accounts_reports_salesman' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval' | 'solar_orders_docs_progress' | 'solar_orders_master_edit' | 'workflow_edits' | 'communications_view' | 'communications_templates' | 'whatsapp_integration';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -66,6 +66,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'accounts_summary_view',
     label: 'Accounts Summary View',
     description: 'Ability to view operational invoice summaries and billing dashboard'
+  },
+  {
+    key: 'accounts_reports_salesman',
+    label: 'Accounts Reports - Sales by Salesman',
+    description: 'Allows the user to access the Sales by Salesman report inside the Accounts module.'
   },
   {
     key: 'stock_alerts_manage',
@@ -156,6 +161,7 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'accounts_invoice_processor',
   'accounts_transactions',
   'accounts_summary_view',
+  'accounts_reports_salesman',
   'stock_alerts_manage',
   'accounts_recovery_manage',
   'release_statement_queue',

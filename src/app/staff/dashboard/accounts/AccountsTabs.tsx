@@ -8,6 +8,7 @@ interface AccountsTabsProps {
   canViewStatement: boolean;
   canViewTransactions: boolean;
   canViewSummary: boolean;
+  canViewReports?: boolean;
   canManageDcr?: boolean;
   canProcessInvoices?: boolean;
   children: React.ReactNode;
@@ -17,6 +18,7 @@ export default function AccountsTabs({
   canViewStatement,
   canViewTransactions,
   canViewSummary,
+  canViewReports,
   canManageDcr,
   canProcessInvoices,
   children,
@@ -79,10 +81,12 @@ export default function AccountsTabs({
             Invoice Processor
           </Link>
         )}
-        <Link href="/staff/dashboard/accounts/reports" className={tabCls('reports')}>
-          <BarChart3 size={16} strokeWidth={1.8} />
-          Reports
-        </Link>
+        {canViewReports && (
+          <Link href="/staff/dashboard/accounts/reports" className={tabCls('reports')}>
+            <BarChart3 size={16} strokeWidth={1.8} />
+            Reports
+          </Link>
+        )}
       </div>
 
       <div>{children}</div>

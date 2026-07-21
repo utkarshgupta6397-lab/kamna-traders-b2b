@@ -111,6 +111,7 @@ export async function validateSession(sessionToken: string): Promise<{
           accounts_invoice_processor: true,
           accounts_transactions: true,
           accounts_summary_view: true,
+          accounts_reports_salesman: true,
           stock_alerts_manage: true,
           accounts_recovery_manage: true,
           release_statement_queue: true,
@@ -143,6 +144,7 @@ export async function validateSession(sessionToken: string): Promise<{
     session.user.accounts_invoice_processor = true;
     session.user.accounts_transactions = true;
     session.user.accounts_summary_view = true;
+    session.user.accounts_reports_salesman = true;
     session.user.stock_alerts_manage = true;
     session.user.accounts_recovery_manage = true;
     session.user.release_statement_queue = true;

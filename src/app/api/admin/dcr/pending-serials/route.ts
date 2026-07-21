@@ -22,8 +22,7 @@ export async function GET(req: Request) {
     const whereClause: any = { invoiceStatus: { not: 'void' } };
 
     if (view === 'active') {
-      // Don't filter by dcrStatus or archived. Get all non-void invoices and filter mathematically in memory.
-      // Active queue is completely dynamic based on remaining serials.
+      whereClause.dcrStatus = { notIn: ['PROCESSED_NO_DCR', 'NO_DCR_REQUIRED', 'CANCELLED', 'COMPLETED'] };
     } else {
       // Completed queue includes READY_FOR_DCR and beyond
       whereClause.dcrStatus = { in: ['READY_FOR_DCR', 'READY_TO_ISSUE', 'ISSUED'] };
@@ -184,7 +183,8 @@ export async function GET(req: Request) {
     // --- Calculate KPIs ---
     const allActivePotentialInvoices = await prisma.dcrInvoice.findMany({
       where: { 
-        invoiceStatus: { not: 'void' }
+        invoiceStatus: { not: 'void' },
+        dcrStatus: { notIn: ['PROCESSED_NO_DCR', 'NO_DCR_REQUIRED', 'CANCELLED', 'COMPLETED'] }
       },
       include: {
         items: {

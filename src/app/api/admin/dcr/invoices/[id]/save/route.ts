@@ -45,7 +45,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           throw new Error("This invoice already has allocated serial numbers. Remove or unallocate all serials before marking the invoice as 'No DCR Required' or modifying serial-managed items.");
         }
 
-        // Just mark as no DCR required
+        // Update items to maintain data integrity (mathematically 0 serials required)
+        await tx.dcrInvoiceItem.updateMany({
+          where: { dcrInvoiceId: id },
+          data: { selectedForDCR: false }
+        });
+
         await tx.dcrInvoice.update({
           where: { id },
           data: { 
@@ -202,6 +207,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             }
           },
         });
+      }
+
+      // Final State Validation: Ensure PROCESSED_NO_DCR invoices never have pending items
+      const validationInvoice = await tx.dcrInvoice.findUnique({
+        where: { id },
+        include: { items: { where: { selectedForDCR: true } } }
+      });
+      if (validationInvoice?.dcrStatus === 'PROCESSED_NO_DCR' && validationInvoice.items.length > 0) {
+        throw new Error('State inconsistency detected: PROCESSED_NO_DCR invoice still has selectedForDCR items.');
       }
     });
 

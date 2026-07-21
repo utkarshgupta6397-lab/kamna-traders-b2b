@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { FileText, ArrowLeftRight, ChartColumn, ShieldCheck, FileSpreadsheet } from 'lucide-react';
+import { FileText, ArrowLeftRight, ChartColumn, ShieldCheck, FileSpreadsheet, BarChart3 } from 'lucide-react';
 
 interface AccountsTabsProps {
   canViewStatement: boolean;
@@ -31,6 +31,8 @@ export default function AccountsTabs({
     activeTab = 'invoice-processor';
   } else if (pathname.includes('/accounts/summary')) {
     activeTab = 'summary';
+  } else if (pathname.includes('/accounts/reports')) {
+    activeTab = 'reports';
   } else if (searchParams.get('tab') === 'transactions') {
     activeTab = 'transactions';
   } else if (!canViewStatement && canViewTransactions) {
@@ -77,6 +79,10 @@ export default function AccountsTabs({
             Invoice Processor
           </Link>
         )}
+        <Link href="/staff/dashboard/accounts/reports" className={tabCls('reports')}>
+          <BarChart3 size={16} strokeWidth={1.8} />
+          Reports
+        </Link>
       </div>
 
       <div>{children}</div>

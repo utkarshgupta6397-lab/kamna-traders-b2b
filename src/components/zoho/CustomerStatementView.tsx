@@ -1123,15 +1123,7 @@ export default function CustomerStatementView() {
                 {pdfGenerating ? 'Generating…' : 'Download PDF'}
               </button>
 
-              {/* Printable PDF Dialog */}
-              <button
-                onClick={() => handlePrint(visibleStatementData)}
-                disabled={printing}
-                className="flex items-center justify-center gap-1.5 px-4 h-[36px] bg-white text-gray-700 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50 w-full sm:w-auto print:hidden"
-              >
-                {printing ? <RefreshCw size={14} className="animate-spin" /> : <Printer size={14} />}
-                {printing ? 'Preparing…' : 'Print PDF'}
-              </button>
+
 
               {/* Accent: Calculator */}
               <button

@@ -27,7 +27,7 @@ export function CommunicationWidget({ customerId, orderId, invoiceId, className 
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchLatest = async () => {
     try {
@@ -61,19 +61,24 @@ export function CommunicationWidget({ customerId, orderId, invoiceId, className 
   };
 
   const startPolling = (messageId: string) => {
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
     
-    pollIntervalRef.current = setInterval(async () => {
+    const poll = async () => {
       const updatedMessage = await fetchStatus(messageId);
       if (updatedMessage) {
         setMessage(updatedMessage);
         setLastUpdated(new Date());
         
         if (FINAL_STATUSES.includes(updatedMessage.status)) {
-          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          return; // Stop polling
         }
       }
-    }, 5000);
+      
+      // Schedule next poll only after current request completes
+      pollTimeoutRef.current = setTimeout(poll, 5000);
+    };
+
+    pollTimeoutRef.current = setTimeout(poll, 5000);
   };
 
   useEffect(() => {
@@ -103,7 +108,7 @@ export function CommunicationWidget({ customerId, orderId, invoiceId, className 
 
     return () => {
       mounted = false;
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
     };
   }, [customerId, orderId, invoiceId]);
 

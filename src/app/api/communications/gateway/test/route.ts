@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { GatewayClient } from '@/lib/services/GatewayClient';
+import { CommunicationService } from '@/lib/services/CommunicationService';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,13 +23,34 @@ export async function POST(request: NextRequest) {
       recipient,
       template,
       language: language || 'en',
-      variables: variables || {},
+      variables: variables || [],
       source: 'erp',
       requestedBy: session.name || session.userId || 'Unknown',
       metadata: {}
     };
 
     const response = await GatewayClient.sendCommunication(payload);
+
+    // Ensure we create an ERP communication log regardless of success/failure
+    try {
+      await CommunicationService.createCommunication({
+        customerId: 'SYSTEM_TEST',
+        customerName: 'System Tester',
+        channel: 'WHATSAPP',
+        direction: 'OUTBOUND',
+        type: 'SYSTEM_ALERT',
+        body: `Test Template: ${template}`,
+        toAddress: recipient,
+        templateName: template,
+        variablesJson: variables,
+        providerName: 'KamnaGateway',
+        providerMessageId: response.messageId || response.eventId,
+        providerResponse: response,
+        createdById: session.userId,
+      }, response.success ? 'API_ACCEPTED' : 'FAILED');
+    } catch (logErr) {
+      console.error('[Gateway Test Route] Failed to create communication log:', logErr);
+    }
 
     if (response.success && response.messageId) {
       // Store in DB as requested in Phase 26A: gatewayMessageId, providerMessageId, providerStatus, createdAt

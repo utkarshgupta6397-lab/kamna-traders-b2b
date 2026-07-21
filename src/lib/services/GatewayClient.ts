@@ -4,7 +4,7 @@ export interface GatewayCommunicationPayload {
   channel: 'whatsapp' | 'sms' | 'email';
   recipient: string;
   template: string;
-  variables: Record<string, any>;
+  variables: Record<string, any> | any[];
   metadata: Record<string, any>;
   requestedBy: string;
   source: string;
@@ -42,6 +42,10 @@ export class GatewayClient {
     };
 
     return this.configCache;
+  }
+
+  static clearCache() {
+    this.configCache = null;
   }
 
   private static buildUrl(baseUrl: string, endpoint: string): string {
@@ -147,6 +151,34 @@ export class GatewayClient {
    * Includes timeout and basic retry logic.
    */
   static async sendCommunication(payload: GatewayCommunicationPayload, retries = 2): Promise<GatewayCommunicationResponse> {
+    console.log(`[GatewayClient] Communication Started. Template: ${payload.template}, Recipient: ${payload.recipient}`);
+    
+    // 1. Validation
+    if (!payload.recipient || !payload.template) {
+      console.error(`[GatewayClient] Validation Failed: Missing recipient or template`);
+      return { success: false, error: 'Validation error: Missing recipient or template' };
+    }
+    
+    // Ensure variables is an array
+    if (payload.variables && !Array.isArray(payload.variables)) {
+      if (Object.keys(payload.variables).length === 0) {
+        payload.variables = [];
+      } else {
+        console.warn(`[GatewayClient] WARNING: Variables should be an array. Converting from object...`);
+        payload.variables = Object.values(payload.variables);
+      }
+    }
+
+    // 2. Size Measurement
+    const mediaSize = payload.metadata?.mediaBase64 ? payload.metadata.mediaBase64.length : 0;
+    const variablesCount = Array.isArray(payload.variables) ? payload.variables.length : 0;
+    
+    console.log(`[GatewayClient] Payload Built. Variables Count: ${variablesCount}, Media Base64 Size: ${mediaSize} chars`);
+    
+    if (mediaSize > 5 * 1024 * 1024) {
+      console.warn(`[GatewayClient] CRITICAL WARNING: Media Base64 size is exceptionally large (${(mediaSize / 1024 / 1024).toFixed(2)} MB). This may cause the Gateway to timeout or Meta to reject the payload.`);
+    }
+
     let config;
     try {
       config = await this.getConfig();
@@ -162,7 +194,7 @@ export class GatewayClient {
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
       try {
-        console.log(`[Gateway Diagnostics] Request (Attempt ${attempt+1}):`, { method: 'POST', url: finalUrl, headers: { 'Authorization': `Bearer ***` }, body: payload });
+        console.log(`[Gateway Diagnostics] Gateway Request Sent (Attempt ${attempt+1}) to ${finalUrl}`);
         
         const response = await fetch(finalUrl, {
           method: 'POST',
@@ -177,7 +209,7 @@ export class GatewayClient {
         clearTimeout(timeoutId);
         
         const responseText = await response.text();
-        console.log(`[Gateway Diagnostics] Response (Attempt ${attempt+1}):`, { status: response.status, body: responseText });
+        console.log(`[Gateway Diagnostics] Gateway Response Received (Attempt ${attempt+1}): HTTP ${response.status}`);
 
         if (!response.ok) {
           // Handle specific HTTP errors
@@ -197,6 +229,7 @@ export class GatewayClient {
         }
 
         const data = JSON.parse(responseText);
+        console.log(`[GatewayClient] Communication Finished: SUCCESS. Message ID: ${data.messageId || data.providerMessageId || data.id}`);
         return {
           success: true,
           eventId: data.eventId || data.id,
@@ -210,7 +243,7 @@ export class GatewayClient {
 
         // If it's the last attempt or it's a fatal error (401/403/400), don't retry
         if (attempt === retries || errorMessage === 'Invalid API Key' || errorMessage === 'API Key Disabled' || errorMessage.includes('Validation error')) {
-          console.error('[GatewayClient] Final attempt failed:', errorMessage);
+          console.error(`[GatewayClient] Communication Finished: FAILED. Final attempt failed:`, errorMessage);
           return {
             success: false,
             error: errorMessage,

@@ -21,3 +21,57 @@ body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   color-scheme: light !important;
 }
+
+/* Hardware Accelerated CSS Animations */
+
+@keyframes blob-float-1 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  25% { transform: translate3d(50px, -30px, 0) scale(1.1); }
+  75% { transform: translate3d(-20px, 40px, 0) scale(0.95); }
+}
+
+@keyframes blob-float-2 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  25% { transform: translate3d(-40px, 50px, 0) scale(1.05); }
+  75% { transform: translate3d(20px, -10px, 0) scale(0.9); }
+}
+
+@keyframes blob-float-3 {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  25% { transform: translate3d(30px, -20px, 0) scale(0.95); }
+  75% { transform: translate3d(-40px, 30px, 0) scale(1.1); }
+}
+
+@keyframes svg-stroke-1 {
+  0% { stroke-dashoffset: 2000; }
+  100% { stroke-dashoffset: 0; }
+}
+
+@keyframes svg-stroke-2 {
+  0% { stroke-dashoffset: 1600; }
+  100% { stroke-dashoffset: 0; }
+}
+
+@keyframes particle-float {
+  0% { transform: translate3d(0, 0, 0); opacity: 0.1; }
+  50% { transform: translate3d(var(--px, 15px), -40px, 0); opacity: 0.4; }
+  100% { transform: translate3d(0, 0, 0); opacity: 0.1; }
+}
+
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 0.05; }
+  50% { opacity: 0.15; }
+}
+
+@keyframes float-badge {
+  0%, 100% { transform: translate3d(0, 0, 0); opacity: 1; }
+  50% { transform: translate3d(0, var(--float-y, -15px), 0); opacity: 1; }
+}
+
+/* Accessibility: Disable all decorative animations if reduced motion is preferred */
+@media (prefers-reduced-motion: reduce) {
+  .ambient-blob, .ambient-svg, .ambient-particle, .ambient-ring, .floating-badge {
+    animation: none !important;
+    transform: none !important;
+  }
+}

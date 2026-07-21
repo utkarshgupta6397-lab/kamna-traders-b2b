@@ -47,8 +47,8 @@ export default function TemplateTestModal({ template, isOpen, onClose, testPhone
   const generateVariables = () => {
     if (!template?.body) return;
     
-    // Extract variables like {{1}}, {{2}} or {{invoice_number}}
-    const regex = /\{\{([^}]+)\}\}/g;
+    // Extract only numeric variables like {{1}}, {{2}} (Meta standard)
+    const regex = /\{\{(\d+)\}\}/g;
     const matches = [...template.body.matchAll(regex)];
     const orderedVars: string[] = [];
     matches.forEach(m => {
@@ -59,38 +59,9 @@ export default function TemplateTestModal({ template, isOpen, onClose, testPhone
     
     const newVars: Record<string, string> = {};
     orderedVars.forEach((varName, index) => {
-      if (!isNaN(parseInt(varName))) {
-        // Numeric variables (positional)
-        const sampleIndex = parseInt(varName) - 1;
-        newVars[varName] = sampleVariables[sampleIndex % sampleVariables.length];
-      } else {
-        // Named variables
-        const lowerName = varName.toLowerCase();
-        if (lowerName.includes('invoice_number') || lowerName.includes('invoice')) {
-          newVars[varName] = 'KT/26-27/1234';
-        } else if (lowerName.includes('customer_name') || lowerName.includes('name')) {
-          newVars[varName] = 'Utkarsh Gupta';
-        } else if (lowerName.includes('customer_mobile') || lowerName.includes('mobile') || lowerName.includes('phone')) {
-          newVars[varName] = '8744832318';
-        } else if (lowerName.includes('solar_order') || lowerName.includes('order')) {
-          newVars[varName] = 'SO-2607-0042';
-        } else if (lowerName.includes('amount') || lowerName.includes('price')) {
-          newVars[varName] = '₹87,450';
-        } else if (lowerName.includes('system_size') || lowerName.includes('size')) {
-          newVars[varName] = '5.32 kW';
-        } else if (lowerName.includes('dcr_number') || lowerName.includes('dcr')) {
-          newVars[varName] = 'DCR-2607-018';
-        } else if (lowerName.includes('serial_number') || lowerName.includes('serial')) {
-          newVars[varName] = 'SPX7281937';
-        } else if (lowerName.includes('installation_date') || lowerName.includes('date')) {
-          newVars[varName] = '12 Jul 2026';
-        } else if (lowerName.includes('otp')) {
-          newVars[varName] = '483921';
-        } else {
-          // Fallback for unknown named variables
-          newVars[varName] = sampleVariables[index % sampleVariables.length];
-        }
-      }
+      // All extracted variables are now guaranteed to be numeric (positional)
+      const sampleIndex = parseInt(varName) - 1;
+      newVars[varName] = sampleVariables[sampleIndex % sampleVariables.length];
     });
     setVariables(newVars);
   };
@@ -116,18 +87,34 @@ export default function TemplateTestModal({ template, isOpen, onClose, testPhone
         console.error('PDF generation error', e);
       }
     } else if (type === 'IMAGE') {
-      // Image will be generated in the render cycle using html-to-image
-      // we'll trigger it shortly after render using setTimeout
-      setTimeout(async () => {
-        if (imageRef.current) {
-          try {
-            const dataUrl = await toPng(imageRef.current, { cacheBust: true, width: 1200, height: 628 });
-            setMediaBase64(dataUrl);
-          } catch (e) {
-            console.error('Image generation error', e);
-          }
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1200;
+        canvas.height = 628;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, 1200, 628);
+          
+          ctx.fillStyle = '#1A2766';
+          ctx.font = '900 72px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('KAMNA TRADERS', 600, 250);
+          
+          ctx.fillStyle = '#ff6600';
+          ctx.font = '700 48px sans-serif';
+          ctx.fillText('TEST IMAGE', 600, 350);
+          
+          ctx.fillStyle = '#666666';
+          ctx.font = '32px sans-serif';
+          ctx.fillText('Generated automatically by ERP', 600, 450);
+          
+          const dataUrl = canvas.toDataURL('image/png');
+          setMediaBase64(dataUrl);
         }
-      }, 500);
+      } catch (e) {
+        console.error('Canvas image generation error', e);
+      }
     }
   };
 
@@ -174,18 +161,6 @@ export default function TemplateTestModal({ template, isOpen, onClose, testPhone
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6 animate-in fade-in duration-200">
       
-      {/* Hidden Div for Image Generation */}
-      {headerType === 'IMAGE' && !mediaBase64 && (
-        <div className="fixed top-[-9999px] left-[-9999px]">
-          <div ref={imageRef} style={{ width: '1200px', height: '628px', backgroundColor: '#ffffff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '10px solid #1A2766' }}>
-            <h1 style={{ fontSize: '72px', fontWeight: '900', color: '#1A2766', margin: 0 }}>KAMNA TRADERS</h1>
-            <h2 style={{ fontSize: '48px', fontWeight: '700', color: '#ff6600', marginTop: '20px' }}>TEST DOCUMENT</h2>
-            <p style={{ fontSize: '32px', color: '#666', marginTop: '40px' }}>Generated automatically by ERP</p>
-            <p style={{ fontSize: '24px', color: '#999', marginTop: 'auto', marginBottom: '40px' }}>{new Date().toLocaleString()}</p>
-          </div>
-        </div>
-      )}
-
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <div>

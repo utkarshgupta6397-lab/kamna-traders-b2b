@@ -7,9 +7,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Phone, RotateCcw, ArrowLeft, ArrowRight, ShieldCheck, Leaf } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
-// Load scene + HUD lazily (client-only)
-const EnergyScene = dynamic(() => import('@/components/login/EnergyScene'), { ssr: false });
-const DigitalHUD  = dynamic(() => import('@/components/login/DigitalHUD'),  { ssr: false });
+// Load background + badges lazily (client-only)
+const AmbientBackground = dynamic(() => import('@/components/login/AmbientBackground'), { ssr: false });
+const FloatingBadges  = dynamic(() => import('@/components/login/FloatingBadges'),  { ssr: false });
 
 type Step = 'mobile' | 'pin' | 'reset';
 
@@ -100,8 +100,6 @@ function StaffLoginContent() {
   const [resetMsg,      setResetMsg]      = useState('');
   const [loading,       setLoading]       = useState(false);
   const [isTransition,  setIsTransition]  = useState(false);
-  const [mouseX,        setMouseX]        = useState(0.5);
-  const [mouseY,        setMouseY]        = useState(0.5);
   const router       = useRouter();
   const searchParams = useSearchParams();
 
@@ -110,11 +108,6 @@ function StaffLoginContent() {
       setError('Your session was signed in on another device.');
     }
   }, [searchParams]);
-
-  const onMouseMove = useCallback((e: React.MouseEvent) => {
-    setMouseX(e.clientX / window.innerWidth);
-    setMouseY(e.clientY / window.innerHeight);
-  }, []);
 
   /* ── Auth handlers (UNCHANGED) ─────────────────────────────────────────── */
   const handleMobileSubmit = async (e: React.FormEvent) => {
@@ -175,36 +168,34 @@ function StaffLoginContent() {
     <div
       className="relative w-screen h-screen overflow-hidden bg-slate-50"
       style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
-      onMouseMove={onMouseMove}
     >
-      {/* ── Full-bleed energy landscape ─────────────────────────────────── */}
+      {/* ── Ambient Background Layer ────────────────────────────────────────── */}
       <div className="absolute inset-0">
-        <EnergyScene mouseX={mouseX} mouseY={mouseY} />
+        <AmbientBackground />
       </div>
 
-      {/* ── HUD overlay (left portion, hidden on mobile) ─────────────────── */}
-      <div className="absolute inset-0 hidden lg:block pointer-events-none z-10">
-        <DigitalHUD />
-      </div>
+      {/* ── Floating Badges (hidden on mobile) ────────────────────────────── */}
+      <FloatingBadges />
 
-      {/* ── Floating login card (right side, over landscape) ─────────────── */}
-      <div className="absolute inset-0 flex items-center justify-end pr-6 md:pr-12 lg:pr-20 z-20 pointer-events-none">
+      {/* ── Centered login card ────────────────────────────────────────────── */}
+      <div className="absolute inset-0 flex items-center justify-center p-6 z-20 pointer-events-none">
         
         {/* Make card itself pointer-events-auto so it receives clicks */}
         <motion.div
-          className="w-full max-w-[420px] pointer-events-auto"
-          initial={{ opacity: 0, x: 40 }}
-          animate={{ opacity: 1, x: 0 }}
+          className="w-full max-w-[440px] pointer-events-auto"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          whileHover={{ scale: 1.003 }}
         >
           {/* Card shell */}
           <div
             className="relative rounded-[32px] overflow-hidden flex flex-col"
             style={{
-              background: 'rgba(255, 255, 255, 0.95)',
-              backdropFilter: 'blur(30px)',
-              WebkitBackdropFilter: 'blur(30px)',
-              boxShadow: '0 24px 60px rgba(0,0,0,0.1), 0 8px 24px rgba(0,0,0,0.06), inset 0 2px 4px rgba(255,255,255,1)',
+              background: 'rgba(255, 255, 255, 0.92)',
+              backdropFilter: 'blur(24px)',
+              WebkitBackdropFilter: 'blur(24px)',
+              boxShadow: '0 24px 60px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.04), inset 0 2px 4px rgba(255,255,255,1)',
             }}
           >
             {/* Logo header */}
@@ -212,9 +203,9 @@ function StaffLoginContent() {
               <Image
                 src="/logo.svg"
                 alt="Kamna Traders"
-                width={180}
-                height={75}
-                className="object-contain h-20 w-auto"
+                width={200}
+                height={85}
+                className="object-contain h-24 w-auto"
                 priority
               />
               <div className="flex items-center gap-3 w-full mt-6">
@@ -422,7 +413,7 @@ function StaffLoginContent() {
       <div
         className="absolute inset-0 lg:hidden pointer-events-none"
         style={{
-          background: 'linear-gradient(180deg, #93c5fd 0%, #f0fdf4 100%)',
+          background: 'linear-gradient(180deg, rgba(255,255,255,0) 0%, #FAF7F5 100%)',
         }}
       />
     </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { GatewayClient } from '@/lib/services/GatewayClient';
+import { CommunicationService } from '@/lib/services/CommunicationService';
 
 export async function POST(
   request: NextRequest,
@@ -34,20 +35,48 @@ export async function POST(
     const testRecipient = config?.testPhoneNumber || '+918744832318';
 
     // 3. Delegate to Kamna Event Gateway
+    // Clean recipient string (digits only)
+    const normalizedRecipient = testRecipient.replace(/\D/g, '');
+    
+    // Convert numeric dictionary to positional array for Gateway
+    const variablesArray = variables ? Object.values(variables) : [];
+
     const response = await GatewayClient.sendCommunication({
       channel: 'whatsapp',
-      recipient: testRecipient,
+      recipient: normalizedRecipient,
       template: template.name,
-      variables: variables || {},
+      language: template.language || 'en',
+      variables: variablesArray,
       metadata: {
         templateId: template.id,
-        // Include mediaBase64 in metadata if needed, though Gateway might not support direct base64 media yet.
-        // We'll pass it for forwards compatibility.
         mediaBase64: mediaBase64
       },
       requestedBy: session.userId,
       source: 'kamna-erp-template-test'
     });
+
+    // Ensure we create an ERP communication log regardless of success/failure
+    try {
+      await CommunicationService.createCommunication({
+        customerId: 'SYSTEM_TEST',
+        customerName: 'System Tester',
+        channel: 'WHATSAPP',
+        direction: 'OUTBOUND',
+        type: 'SYSTEM_ALERT',
+        body: `Template Test: ${template.name}`,
+        toAddress: normalizedRecipient,
+        templateId: template.id,
+        templateName: template.name,
+        templateLanguage: template.language || 'en',
+        variablesJson: variablesArray,
+        providerName: 'KamnaGateway',
+        providerMessageId: response.messageId || response.eventId,
+        providerResponse: response,
+        createdById: session.userId,
+      }, response.success ? 'API_ACCEPTED' : 'FAILED');
+    } catch (logErr) {
+      console.error('[Template Test Route] Failed to create communication log:', logErr);
+    }
 
     if (!response.success) {
       return NextResponse.json({ success: false, error: response.error }, { status: 400 });

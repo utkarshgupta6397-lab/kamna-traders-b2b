@@ -85,6 +85,8 @@ export async function POST(request: NextRequest) {
       }
     });
     
+    GatewayClient.clearCache();
+
     // Mask before returning
     config.apiToken = maskApiKey(config.apiToken);
 

@@ -78,7 +78,9 @@ export default function ReportDetailPage({ params }: { params: Promise<{ reportI
           <div className="w-full h-[calc(100vh-240px)] min-h-[900px] rounded-xl overflow-hidden bg-white shadow-sm border border-gray-200">
             <iframe
               frameBorder="0"
-              src="https://analytics.zoho.in/open-view/460822000003969175"
+              width="800"
+              height="600"
+              src="https://analytics.zoho.in/open-view/460822000003969175/161ff99b1af52e5ebb66a5cb3fe894402ece09c24727712d31059928448cea5c"
               style={{ width: '100%', height: '100%', border: 'none' }}
               title="Sales by Salesman"
             />

@@ -27,6 +27,7 @@ export interface CreateCommunicationParams {
   footer?: string;
   buttonsJson?: any;
   providerName?: string;
+  providerMessageId?: string;
   providerResponse?: any;
   createdById: string;
   assignedToUserId?: string;

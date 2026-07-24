@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Search, ChevronDown, ChevronUp, ExternalLink, Copy, AlertCircle, RefreshCw, X, Activity, ChevronRight } from 'lucide-react';
-import { fetchWithCache } from '@/lib/client-cache';
 import { CommunicationWidget } from '@/components/communications/CommunicationWidget';
 
 const ZOHO_ORG_ID = process.env.NEXT_PUBLIC_ZOHO_ORG_ID || '';
@@ -48,19 +47,6 @@ export default function CustomerLookupClient() {
   const [isNavigatingStatement, setIsNavigatingStatement] = useState(false);
   const limit = 25;
 
-  const getSessionCache = (key: string) => {
-    try {
-      const data = sessionStorage.getItem(key);
-      if (data) return JSON.parse(data);
-    } catch (e) {}
-    return null;
-  };
-  
-  const setSessionCache = (key: string, data: any) => {
-    try {
-      sessionStorage.setItem(key, JSON.stringify(data));
-    } catch (e) {}
-  };
 
   const incrementPageApiMeter = () => {
     setZohoMeter(prev => ({ ...prev, page: prev.page + 1 }));
@@ -68,7 +54,8 @@ export default function CustomerLookupClient() {
 
   const fetchApiMeter = async () => {
     try {
-      const data = await fetchWithCache('/api/admin/debug/zoho-api-usage', { ttl: 0 });
+      const res = await fetch('/api/admin/debug/zoho-api-usage');
+      const data = await res.json();
       if (data && data.data) {
         setZohoMeter(prev => ({ ...prev, today: data.data.today }));
       }
@@ -80,17 +67,8 @@ export default function CustomerLookupClient() {
   const fetchSummary = async (customerId: string) => {
     setIsFetchingSummary(true);
     try {
-      const cachedSummary = getSessionCache(`dcr_summary_v4_${customerId}`);
-      if (cachedSummary) {
-        setSummary(cachedSummary);
-        if (cachedSummary.customer) {
-          setCustomer(cachedSummary.customer);
-        }
-        setIsFetchingSummary(false);
-        return;
-      }
-      
-      const data = await fetchWithCache(`/api/admin/dcr/customer/${customerId}`, { ttl: 5 * 60 * 1000 });
+      const res = await fetch(`/api/admin/dcr/customer/${customerId}`);
+      const data = await res.json();
       if (data && !data.error) {
         setSummary(data.data);
         if (data.data.customer) {
@@ -98,9 +76,7 @@ export default function CustomerLookupClient() {
         }
         if (data.data.summary?.kpis?.closingBalance !== undefined) {
           setBalance(data.data.summary.kpis.closingBalance);
-          setSessionCache(`dcr_balance_${customerId}`, data.data.summary.kpis.closingBalance);
         }
-        setSessionCache(`dcr_summary_v4_${customerId}`, data.data);
       }
     } catch (err) {
       toast.error('Failed to fetch summary');
@@ -128,15 +104,10 @@ export default function CustomerLookupClient() {
       if (!res.ok) throw new Error(data.error || 'Failed to find customer');
 
       setCustomer(data.customer);
-      setSessionCache(`dcr_customer_${data.customer.id}`, data.customer);
+      setCustomer(data.customer);
       
       fetchSummary(data.customer.id);
       
-      const cachedBal = getSessionCache(`dcr_balance_${data.customer.id}`);
-      if (cachedBal !== null) {
-        setBalance(cachedBal);
-      }
-
       fetchApiMeter();
 
     } catch (err: any) {
@@ -160,16 +131,8 @@ export default function CustomerLookupClient() {
 
     if (cid) {
       setSearchQuery(cid);
-      const cachedCustomer = getSessionCache(`dcr_customer_${cid}`);
-      if (cachedCustomer && cachedCustomer.id === cid) {
-        setCustomer(cachedCustomer);
-        fetchSummary(cid);
-        const cachedBal = getSessionCache(`dcr_balance_${cid}`);
-        if (cachedBal !== null) setBalance(cachedBal);
-        fetchApiMeter();
-      } else {
-        handleSearch(cid);
-      }
+      setSearchQuery(cid);
+      handleSearch(cid);
     } else {
       fetchApiMeter();
     }
@@ -201,11 +164,6 @@ export default function CustomerLookupClient() {
 
   const loadStatement = async () => {
     if (!customer) return;
-    const cached = getSessionCache(`dcr_statement_${customer.id}`);
-    if (cached) {
-      setStatementData(cached);
-      return;
-    }
     setIsFetchingStatement(true);
     try {
       const res = await fetch(`/api/admin/customer-statement/quick?customerId=${customer.id}`);
@@ -214,7 +172,6 @@ export default function CustomerLookupClient() {
       if (!res.ok) throw new Error(data.error);
       
       setStatementData(data.data);
-      setSessionCache(`dcr_statement_${customer.id}`, data.data);
       fetchApiMeter();
     } catch (err: any) {
       toast.error(err.message || 'Failed to fetch statement');
@@ -252,19 +209,6 @@ export default function CustomerLookupClient() {
     setShowNonDcrSection(false);
     setIsFetchingInvoiceDetails(true);
 
-    const cached = getSessionCache(`dcr_invoice_${invoiceId}_v2`);
-    if (cached) {
-      setModalInvoiceDetails(cached);
-      const dcrItemIds = new Set<string>();
-      cached.forEach((item: any) => {
-        if (item.selectedForDCR) dcrItemIds.add(item.itemId);
-      });
-      setExpandedItems(dcrItemIds);
-      setShowNonDcrSection(true);
-      setIsFetchingInvoiceDetails(false);
-      return;
-    }
-
     try {
       const res = await fetch(`/api/admin/dcr/customer/${customer.id}/invoice/${invoiceId}`);
       const data = await res.json();
@@ -277,7 +221,6 @@ export default function CustomerLookupClient() {
       });
       setExpandedItems(dcrItemIds);
       setShowNonDcrSection(true);
-      setSessionCache(`dcr_invoice_${invoiceId}_v2`, data.data);
     } catch (err: any) {
       toast.error(err.message || 'Failed to fetch invoice details');
       setModalInvoiceId(null);

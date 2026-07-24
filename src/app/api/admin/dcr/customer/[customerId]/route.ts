@@ -83,14 +83,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
       return NextResponse.json({ error: 'Customer ID is required' }, { status: 400 });
     }
 
-    // 1. Check Invoice Cache
-    const cachedSummary = getCache('customerLookupInvoiceCache', customerId);
-    if (cachedSummary) {
-      return NextResponse.json({
-        success: true,
-        data: cachedSummary
-      });
-    }
+    // 1. Check Invoice Cache (Removed to ensure live data)
 
     // 2. Fetch Zoho Invoices (Last 60 days) and Contact Balance concurrently
     const [zohoInvoices, closingBalance] = await Promise.all([
@@ -377,8 +370,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
       totals
     };
 
-    // Store in our new 15-min cache
-    setCache('customerLookupInvoiceCache', customerId, summaryData, 15 * 60 * 1000);
+    // Store in our new 15-min cache (Removed to ensure live data)
 
     return NextResponse.json({
       success: true,

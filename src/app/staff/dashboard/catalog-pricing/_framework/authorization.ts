@@ -25,6 +25,7 @@ export function getRecordAuthorization(record: MasterRecord | null, perms: Workf
     case 'Draft':
       canEdit = perms.canCreate || perms.canModify;
       canSubmit = perms.canCreate || perms.canModify;
+      canArchive = perms.canModify;
       break;
     case 'Approval Pending':
       canApproveAction = perms.canApprove;

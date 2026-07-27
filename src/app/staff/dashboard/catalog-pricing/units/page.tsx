@@ -8,7 +8,7 @@ const UNITS_CONFIG: MasterConfig = {
   description: 'Define standard units of measure (UOM) like PCS, Meters, and Boxes for inventory.',
   permissionPrefix: 'catalog_units',
   customFields: [
-    { name: 'abbreviation', label: 'Unit Abbreviation', type: 'text', required: true },
+    { name: 'abbreviation', label: 'Display Abbreviation', type: 'text', required: true, helperText: 'Used on invoices, inventory and reports.' },
   ],
 };
 

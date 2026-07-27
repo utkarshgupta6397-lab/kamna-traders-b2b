@@ -26,7 +26,7 @@ function getFieldName(key: string): string {
     active: 'Active Status',
     percentage: 'Tax Percentage',
     taxType: 'Tax Type',
-    abbreviation: 'Abbreviation',
+    abbreviation: 'Display Abbreviation',
     gstRate: 'GST Rate',
     chapterCode: 'Chapter Code',
   };

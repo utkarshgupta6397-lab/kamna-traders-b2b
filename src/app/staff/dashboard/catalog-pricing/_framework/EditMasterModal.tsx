@@ -105,6 +105,15 @@ export default function EditMasterModal({
       return;
     }
 
+    if (config.customFields) {
+      for (const field of config.customFields) {
+        if (field.required && !customValues[field.name]) {
+          toast.error(`${field.label} is required`);
+          return;
+        }
+      }
+    }
+
     setSubmitting(true);
     try {
       const payload: any = {
@@ -219,8 +228,9 @@ export default function EditMasterModal({
           {config.customFields?.map((f) => (
             <div key={f.name}>
               <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-                {f.label}
+                {f.label} {f.required && <span className="text-red-500">*</span>}
               </label>
+              {f.helperText && <p className="text-[10px] text-gray-500 mb-1.5">{f.helperText}</p>}
               {f.type === 'select' ? (
                 <select
                   disabled={isReadOnly}

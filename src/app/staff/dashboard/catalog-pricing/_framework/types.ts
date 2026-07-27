@@ -51,6 +51,7 @@ export interface MasterConfig {
     type: 'text' | 'number' | 'select';
     options?: { label: string; value: string }[];
     required?: boolean;
+    helperText?: string;
   }[];
 }
 

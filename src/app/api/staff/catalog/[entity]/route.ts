@@ -182,6 +182,10 @@ export async function POST(
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }
 
+    if (entity === 'units' && (!customProps.abbreviation || !customProps.abbreviation.trim())) {
+      return NextResponse.json({ error: 'Display Abbreviation is required' }, { status: 400 });
+    }
+
     const delegate = getPrismaDelegate(entity as MasterEntityKey);
 
     // Check unique name

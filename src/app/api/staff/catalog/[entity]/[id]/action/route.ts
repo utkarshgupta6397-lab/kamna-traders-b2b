@@ -81,8 +81,8 @@ export async function POST(
       auditAction = 'RESTORED';
     } else if (action === 'archive') {
       if (!hasModify) return NextResponse.json({ error: `Permission Denied: ${modifyPerm} required` }, { status: 403 });
-      if (existing.status !== 'Inactive') {
-        return NextResponse.json({ error: 'Only Inactive records can be archived. Please deactivate the record first.' }, { status: 400 });
+      if (existing.status !== 'Inactive' && existing.status !== 'Draft') {
+        return NextResponse.json({ error: 'Only Draft and Inactive records can be archived.' }, { status: 400 });
       }
       targetStatus = 'Archived';
       updateData.active = false;

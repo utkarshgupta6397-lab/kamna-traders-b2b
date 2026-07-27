@@ -127,7 +127,12 @@ export async function PATCH(
       if (customProps.percentage !== undefined) updateData.percentage = parseFloat(customProps.percentage);
       if (customProps.taxType !== undefined) updateData.taxType = customProps.taxType;
     } else if (entity === 'units') {
-      if (customProps.abbreviation !== undefined) updateData.abbreviation = customProps.abbreviation ? customProps.abbreviation.trim() : null;
+      if (customProps.abbreviation !== undefined) {
+        if (!customProps.abbreviation || !customProps.abbreviation.trim()) {
+          return NextResponse.json({ error: 'Display Abbreviation is required' }, { status: 400 });
+        }
+        updateData.abbreviation = customProps.abbreviation.trim();
+      }
     } else if (entity === 'hsn-codes') {
       if (customProps.gstRate !== undefined) updateData.gstRate = customProps.gstRate ? parseFloat(customProps.gstRate) : null;
       if (customProps.chapterCode !== undefined) updateData.chapterCode = customProps.chapterCode ? customProps.chapterCode.trim() : null;

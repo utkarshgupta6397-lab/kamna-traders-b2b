@@ -129,77 +129,59 @@ export async function validateSession(sessionToken: string): Promise<{
           whatsapp_integration: true,
           holdQueueReviewEnabled: true,
           holdQueueReviewLimit: true,
-          catalog_brands_create: true,
-          catalog_brands_modify: true,
-          catalog_brands_approve: true,
-          catalog_manufacturers_create: true,
-          catalog_manufacturers_modify: true,
-          catalog_manufacturers_approve: true,
-          catalog_categories_create: true,
-          catalog_categories_modify: true,
-          catalog_categories_approve: true,
-          catalog_taxrates_create: true,
-          catalog_taxrates_modify: true,
-          catalog_taxrates_approve: true,
-          catalog_units_create: true,
-          catalog_units_modify: true,
-          catalog_units_approve: true,
-          catalog_hsncodes_create: true,
-          catalog_hsncodes_modify: true,
-          catalog_hsncodes_approve: true,
         }
       }
     }
   });
 
-  if (session?.user?.role === 'ADMIN') {
-    session.user.canManageCarts = true;
-    session.user.canAdjustInventory = true;
-    session.user.canRunSkuSync = true;
-    session.user.canManageZoneMappings = true;
-    session.user.canManageUnlimitedSkus = true;
-    session.user.canManageTransfers = true;
-    session.user.canDeleteTransfers = true;
-    session.user.accounts_customer_statement = true;
-    session.user.accounts_invoice_processor = true;
-    session.user.accounts_transactions = true;
-    session.user.accounts_summary_view = true;
-    session.user.accounts_reports_salesman = true;
-    session.user.stock_alerts_manage = true;
-    session.user.accounts_recovery_manage = true;
-    session.user.release_statement_queue = true;
-    session.user.dcr_management = true;
-    session.user.dcr_serial_mapping_override = true;
-    session.user.dcr_hold_release = true;
-    session.user.solar_orders_view = true;
-    session.user.solar_orders_create = true;
-    session.user.solar_orders_approval = true;
-    session.user.solar_orders_docs_progress = true;
-    session.user.solar_orders_master_edit = true;
-    session.user.workflow_edits = true;
-    session.user.communications_view = true;
-    session.user.communications_templates = true;
-    session.user.whatsapp_integration = true;
-    session.user.holdQueueReviewEnabled = true;
-    session.user.holdQueueReviewLimit = null;
-    session.user.catalog_brands_create = true;
-    session.user.catalog_brands_modify = true;
-    session.user.catalog_brands_approve = true;
-    session.user.catalog_manufacturers_create = true;
-    session.user.catalog_manufacturers_modify = true;
-    session.user.catalog_manufacturers_approve = true;
-    session.user.catalog_categories_create = true;
-    session.user.catalog_categories_modify = true;
-    session.user.catalog_categories_approve = true;
-    session.user.catalog_taxrates_create = true;
-    session.user.catalog_taxrates_modify = true;
-    session.user.catalog_taxrates_approve = true;
-    session.user.catalog_units_create = true;
-    session.user.catalog_units_modify = true;
-    session.user.catalog_units_approve = true;
-    session.user.catalog_hsncodes_create = true;
-    session.user.catalog_hsncodes_modify = true;
-    session.user.catalog_hsncodes_approve = true;
+  if (session?.user) {
+    const isUserAdmin = session.user.role === 'ADMIN';
+    const userObj = session.user as any;
+
+    if (isUserAdmin) {
+      userObj.canManageCarts = true;
+      userObj.canAdjustInventory = true;
+      userObj.canRunSkuSync = true;
+      userObj.canManageZoneMappings = true;
+      userObj.canManageUnlimitedSkus = true;
+      userObj.canManageTransfers = true;
+      userObj.canDeleteTransfers = true;
+      userObj.accounts_customer_statement = true;
+      userObj.accounts_invoice_processor = true;
+      userObj.accounts_transactions = true;
+      userObj.accounts_summary_view = true;
+      userObj.accounts_reports_salesman = true;
+      userObj.stock_alerts_manage = true;
+      userObj.accounts_recovery_manage = true;
+      userObj.release_statement_queue = true;
+      userObj.dcr_management = true;
+      userObj.dcr_serial_mapping_override = true;
+      userObj.dcr_hold_release = true;
+      userObj.solar_orders_view = true;
+      userObj.solar_orders_create = true;
+      userObj.solar_orders_approval = true;
+      userObj.solar_orders_docs_progress = true;
+      userObj.solar_orders_master_edit = true;
+      userObj.workflow_edits = true;
+      userObj.communications_view = true;
+      userObj.communications_templates = true;
+      userObj.whatsapp_integration = true;
+      userObj.holdQueueReviewEnabled = true;
+      userObj.holdQueueReviewLimit = null;
+    }
+
+    const masterPerms = [
+      'catalog_brands_create', 'catalog_brands_modify', 'catalog_brands_approve',
+      'catalog_manufacturers_create', 'catalog_manufacturers_modify', 'catalog_manufacturers_approve',
+      'catalog_categories_create', 'catalog_categories_modify', 'catalog_categories_approve',
+      'catalog_taxrates_create', 'catalog_taxrates_modify', 'catalog_taxrates_approve',
+      'catalog_units_create', 'catalog_units_modify', 'catalog_units_approve',
+      'catalog_hsncodes_create', 'catalog_hsncodes_modify', 'catalog_hsncodes_approve',
+    ];
+
+    for (const p of masterPerms) {
+      userObj[p] = isUserAdmin ? true : Boolean(userObj[p]);
+    }
   }
 
   const result = session 

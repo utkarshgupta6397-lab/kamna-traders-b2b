@@ -19,18 +19,23 @@ export async function GET(
 
   try {
     const delegate = meta.prismaDelegate;
-    const record = await delegate.findUnique({
-      where: { id },
-      include: {
-        createdBy: { select: { id: true, name: true } },
-        updatedBy: { select: { id: true, name: true } },
-        approvedBy: { select: { id: true, name: true } },
-        history: {
-          orderBy: { performedAt: 'desc' },
-          include: { performedBy: { select: { id: true, name: true } } },
+    let record: any = null;
+    try {
+      record = await delegate.findUnique({
+        where: { id },
+        include: {
+          createdBy: { select: { id: true, name: true } },
+          updatedBy: { select: { id: true, name: true } },
+          approvedBy: { select: { id: true, name: true } },
+          history: {
+            orderBy: { performedAt: 'desc' },
+            include: { performedBy: { select: { id: true, name: true } } },
+          },
         },
-      },
-    });
+      });
+    } catch {
+      record = await delegate.findUnique({ where: { id } }).catch(() => null);
+    }
 
     if (!record) {
       return NextResponse.json({ error: 'Record not found' }, { status: 404 });

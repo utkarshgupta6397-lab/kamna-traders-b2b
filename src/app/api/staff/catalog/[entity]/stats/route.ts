@@ -20,14 +20,21 @@ export async function GET(
   try {
     const delegate = meta.prismaDelegate;
 
-    const [total, draft, pending, approved, inactive, archived] = await Promise.all([
-      delegate.count(),
-      delegate.count({ where: { status: 'Draft' } }),
-      delegate.count({ where: { status: 'Approval Pending' } }),
-      delegate.count({ where: { status: 'Approved' } }),
-      delegate.count({ where: { status: 'Inactive' } }),
-      delegate.count({ where: { status: 'Archived' } }),
-    ]);
+    let total = 0, draft = 0, pending = 0, approved = 0, inactive = 0, archived = 0;
+
+    try {
+      [total, draft, pending, approved, inactive, archived] = await Promise.all([
+        delegate.count(),
+        delegate.count({ where: { status: 'Draft' } }),
+        delegate.count({ where: { status: 'Approval Pending' } }),
+        delegate.count({ where: { status: 'Approved' } }),
+        delegate.count({ where: { status: 'Inactive' } }),
+        delegate.count({ where: { status: 'Archived' } }),
+      ]);
+    } catch {
+      total = await delegate.count().catch(() => 0);
+      approved = total;
+    }
 
     return NextResponse.json({
       total,

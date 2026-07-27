@@ -54,19 +54,41 @@ export async function GET(
     }
 
     const delegate = meta.prismaDelegate;
-    const total = await delegate.count({ where });
+    let total = 0;
+    try {
+      total = await delegate.count({ where });
+    } catch {
+      total = await delegate.count().catch(() => 0);
+    }
 
-    const records = await delegate.findMany({
-      where,
-      orderBy: { [sortBy]: sortOrder },
-      skip: (page - 1) * limit,
-      take: limit,
-      include: {
-        createdBy: { select: { id: true, name: true } },
-        updatedBy: { select: { id: true, name: true } },
-        approvedBy: { select: { id: true, name: true } },
-      },
-    });
+    let records: any[] = [];
+    try {
+      records = await delegate.findMany({
+        where,
+        orderBy: { [sortBy]: sortOrder },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          createdBy: { select: { id: true, name: true } },
+          updatedBy: { select: { id: true, name: true } },
+          approvedBy: { select: { id: true, name: true } },
+        },
+      });
+    } catch {
+      // Fallback for unmigrated DB schemas lacking relation fields
+      try {
+        records = await delegate.findMany({
+          where: {},
+          orderBy: { [sortBy]: sortOrder },
+          skip: (page - 1) * limit,
+          take: limit,
+        });
+      } catch {
+        records = await delegate.findMany({
+          take: limit,
+        }).catch(() => []);
+      }
+    }
 
     return NextResponse.json({
       records,

@@ -102,6 +102,24 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.whatsapp_integration = true;
       merged.holdQueueReviewEnabled = true;
       merged.holdQueueReviewLimit = null;
+      merged.catalog_brands_create = true;
+      merged.catalog_brands_modify = true;
+      merged.catalog_brands_approve = true;
+      merged.catalog_manufacturers_create = true;
+      merged.catalog_manufacturers_modify = true;
+      merged.catalog_manufacturers_approve = true;
+      merged.catalog_categories_create = true;
+      merged.catalog_categories_modify = true;
+      merged.catalog_categories_approve = true;
+      merged.catalog_taxrates_create = true;
+      merged.catalog_taxrates_modify = true;
+      merged.catalog_taxrates_approve = true;
+      merged.catalog_units_create = true;
+      merged.catalog_units_modify = true;
+      merged.catalog_units_approve = true;
+      merged.catalog_hsncodes_create = true;
+      merged.catalog_hsncodes_modify = true;
+      merged.catalog_hsncodes_approve = true;
     }
 
     console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);

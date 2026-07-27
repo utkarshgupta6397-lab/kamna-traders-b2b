@@ -3,7 +3,13 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_invoice_processor' | 'accounts_transactions' | 'accounts_summary_view' | 'accounts_reports_salesman' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval' | 'solar_orders_docs_progress' | 'solar_orders_master_edit' | 'workflow_edits' | 'communications_view' | 'communications_templates' | 'whatsapp_integration' | 'holdQueueReviewEnabled' | 'holdQueueReviewLimit';
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_invoice_processor' | 'accounts_transactions' | 'accounts_summary_view' | 'accounts_reports_salesman' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval' | 'solar_orders_docs_progress' | 'solar_orders_master_edit' | 'workflow_edits' | 'communications_view' | 'communications_templates' | 'whatsapp_integration' | 'holdQueueReviewEnabled' | 'holdQueueReviewLimit'
+  | 'catalog_brands_create' | 'catalog_brands_modify' | 'catalog_brands_approve'
+  | 'catalog_manufacturers_create' | 'catalog_manufacturers_modify' | 'catalog_manufacturers_approve'
+  | 'catalog_categories_create' | 'catalog_categories_modify' | 'catalog_categories_approve'
+  | 'catalog_taxrates_create' | 'catalog_taxrates_modify' | 'catalog_taxrates_approve'
+  | 'catalog_units_create' | 'catalog_units_modify' | 'catalog_units_approve'
+  | 'catalog_hsncodes_create' | 'catalog_hsncodes_modify' | 'catalog_hsncodes_approve';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -151,7 +157,26 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'whatsapp_integration',
     label: 'WHATSAPP INT',
     description: 'Access to the Admin WhatsApp Integration settings'
-  }
+  },
+  // Master Data Permissions
+  { key: 'catalog_brands_create', label: 'Create Brands', description: 'Ability to create brand master records' },
+  { key: 'catalog_brands_modify', label: 'Modify Brands', description: 'Ability to edit brand master records' },
+  { key: 'catalog_brands_approve', label: 'Approve Brands', description: 'Ability to approve or decline brand records' },
+  { key: 'catalog_manufacturers_create', label: 'Create Manufacturers', description: 'Ability to create manufacturer master records' },
+  { key: 'catalog_manufacturers_modify', label: 'Modify Manufacturers', description: 'Ability to edit manufacturer master records' },
+  { key: 'catalog_manufacturers_approve', label: 'Approve Manufacturers', description: 'Ability to approve or decline manufacturer records' },
+  { key: 'catalog_categories_create', label: 'Create Categories', description: 'Ability to create category master records' },
+  { key: 'catalog_categories_modify', label: 'Modify Categories', description: 'Ability to edit category master records' },
+  { key: 'catalog_categories_approve', label: 'Approve Categories', description: 'Ability to approve or decline category records' },
+  { key: 'catalog_taxrates_create', label: 'Create Tax Rates', description: 'Ability to create tax rate master records' },
+  { key: 'catalog_taxrates_modify', label: 'Modify Tax Rates', description: 'Ability to edit tax rate master records' },
+  { key: 'catalog_taxrates_approve', label: 'Approve Tax Rates', description: 'Ability to approve or decline tax rate records' },
+  { key: 'catalog_units_create', label: 'Create Units', description: 'Ability to create unit of measurement master records' },
+  { key: 'catalog_units_modify', label: 'Modify Units', description: 'Ability to edit unit of measurement master records' },
+  { key: 'catalog_units_approve', label: 'Approve Units', description: 'Ability to approve or decline unit of measurement records' },
+  { key: 'catalog_hsncodes_create', label: 'Create HSN Codes', description: 'Ability to create HSN code master records' },
+  { key: 'catalog_hsncodes_modify', label: 'Modify HSN Codes', description: 'Ability to edit HSN code master records' },
+  { key: 'catalog_hsncodes_approve', label: 'Approve HSN Codes', description: 'Ability to approve or decline HSN code records' }
 ];
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = [
@@ -185,4 +210,22 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'whatsapp_integration',
   'holdQueueReviewEnabled',
   'holdQueueReviewLimit',
+  'catalog_brands_create',
+  'catalog_brands_modify',
+  'catalog_brands_approve',
+  'catalog_manufacturers_create',
+  'catalog_manufacturers_modify',
+  'catalog_manufacturers_approve',
+  'catalog_categories_create',
+  'catalog_categories_modify',
+  'catalog_categories_approve',
+  'catalog_taxrates_create',
+  'catalog_taxrates_modify',
+  'catalog_taxrates_approve',
+  'catalog_units_create',
+  'catalog_units_modify',
+  'catalog_units_approve',
+  'catalog_hsncodes_create',
+  'catalog_hsncodes_modify',
+  'catalog_hsncodes_approve',
 ];

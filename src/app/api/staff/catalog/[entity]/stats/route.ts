@@ -1,0 +1,44 @@
+import { NextResponse } from 'next/server';
+import { getSession } from '@/lib/auth';
+import { ENTITY_REGISTRY, MasterEntityKey } from '@/lib/master-data-service';
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ entity: string }> }
+) {
+  const session = await getSession();
+  if (!session || (!session.accountsAccess && session.role !== 'ADMIN')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { entity } = await params;
+  const meta = ENTITY_REGISTRY[entity as MasterEntityKey];
+  if (!meta) {
+    return NextResponse.json({ error: 'Invalid entity' }, { status: 400 });
+  }
+
+  try {
+    const delegate = meta.prismaDelegate;
+
+    const [total, draft, pending, approved, inactive, archived] = await Promise.all([
+      delegate.count(),
+      delegate.count({ where: { status: 'Draft' } }),
+      delegate.count({ where: { status: 'Approval Pending' } }),
+      delegate.count({ where: { status: 'Approved' } }),
+      delegate.count({ where: { status: 'Inactive' } }),
+      delegate.count({ where: { status: 'Archived' } }),
+    ]);
+
+    return NextResponse.json({
+      total,
+      draft,
+      pending,
+      approved,
+      inactive,
+      archived,
+    });
+  } catch (error: any) {
+    console.error(`[API] GET /api/staff/catalog/${entity}/stats error:`, error);
+    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
+  }
+}

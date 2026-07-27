@@ -129,6 +129,24 @@ export async function validateSession(sessionToken: string): Promise<{
           whatsapp_integration: true,
           holdQueueReviewEnabled: true,
           holdQueueReviewLimit: true,
+          catalog_brands_create: true,
+          catalog_brands_modify: true,
+          catalog_brands_approve: true,
+          catalog_manufacturers_create: true,
+          catalog_manufacturers_modify: true,
+          catalog_manufacturers_approve: true,
+          catalog_categories_create: true,
+          catalog_categories_modify: true,
+          catalog_categories_approve: true,
+          catalog_taxrates_create: true,
+          catalog_taxrates_modify: true,
+          catalog_taxrates_approve: true,
+          catalog_units_create: true,
+          catalog_units_modify: true,
+          catalog_units_approve: true,
+          catalog_hsncodes_create: true,
+          catalog_hsncodes_modify: true,
+          catalog_hsncodes_approve: true,
         }
       }
     }
@@ -164,6 +182,24 @@ export async function validateSession(sessionToken: string): Promise<{
     session.user.whatsapp_integration = true;
     session.user.holdQueueReviewEnabled = true;
     session.user.holdQueueReviewLimit = null;
+    session.user.catalog_brands_create = true;
+    session.user.catalog_brands_modify = true;
+    session.user.catalog_brands_approve = true;
+    session.user.catalog_manufacturers_create = true;
+    session.user.catalog_manufacturers_modify = true;
+    session.user.catalog_manufacturers_approve = true;
+    session.user.catalog_categories_create = true;
+    session.user.catalog_categories_modify = true;
+    session.user.catalog_categories_approve = true;
+    session.user.catalog_taxrates_create = true;
+    session.user.catalog_taxrates_modify = true;
+    session.user.catalog_taxrates_approve = true;
+    session.user.catalog_units_create = true;
+    session.user.catalog_units_modify = true;
+    session.user.catalog_units_approve = true;
+    session.user.catalog_hsncodes_create = true;
+    session.user.catalog_hsncodes_modify = true;
+    session.user.catalog_hsncodes_approve = true;
   }
 
   const result = session 

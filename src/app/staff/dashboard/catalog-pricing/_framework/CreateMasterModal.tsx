@@ -1,0 +1,220 @@
+import React, { useState, useEffect } from 'react';
+import { MasterConfig } from './types';
+import { X, Save, Send, Loader2 } from 'lucide-react';
+import toast from 'react-hot-toast';
+
+interface CreateMasterModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  config: MasterConfig;
+  onSuccess: () => void;
+}
+
+export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }: CreateMasterModalProps) {
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [description, setDescription] = useState('');
+  const [remarks, setRemarks] = useState('');
+  const [customValues, setCustomValues] = useState<Record<string, any>>({});
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setName('');
+      setCode('');
+      setDescription('');
+      setRemarks('');
+      setCustomValues({});
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen && !submitting) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, submitting, onClose]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (submitForApproval: boolean) => {
+    if (!name.trim()) {
+      toast.error('Name is required');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const payload: any = {
+        name: name.trim(),
+        code: code.trim() || undefined,
+        description: description.trim() || undefined,
+        remarks: remarks.trim() || undefined,
+        submitForApproval,
+        ...customValues,
+      };
+
+      const res = await fetch(`/api/staff/catalog/${config.entityKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create record');
+
+      toast.success(`${config.singularTitle} ${submitForApproval ? 'submitted for approval' : 'saved as Draft'}`);
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message || 'Error creating record');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Create New {config.singularTitle}</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Add a new record to the master catalog registry.</p>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Form Content */}
+        <div className="p-6 space-y-4 overflow-y-auto flex-1">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+              Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={`e.g. ${config.singularTitle} Name`}
+              className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+              Code <span className="text-gray-400 font-normal">(Optional - Auto-generated if left blank)</span>
+            </label>
+            <input
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder={`e.g. ${config.entityKey.slice(0, 3).toUpperCase()}-10001`}
+              className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
+            />
+          </div>
+
+          {/* Custom Entity Fields */}
+          {config.customFields?.map((f) => (
+            <div key={f.name}>
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                {f.label} {f.required && <span className="text-red-500">*</span>}
+              </label>
+              {f.type === 'select' ? (
+                <select
+                  value={customValues[f.name] || ''}
+                  onChange={(e) => setCustomValues({ ...customValues, [f.name]: e.target.value })}
+                  className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none"
+                >
+                  <option value="">Select {f.label}</option>
+                  {f.options?.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type={f.type}
+                  step={f.type === 'number' ? 'any' : undefined}
+                  value={customValues[f.name] || ''}
+                  onChange={(e) => setCustomValues({ ...customValues, [f.name]: e.target.value })}
+                  placeholder={`Enter ${f.label}`}
+                  className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
+                />
+              )}
+            </div>
+          ))}
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+              Description
+            </label>
+            <textarea
+              rows={2}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Additional specifications or notes..."
+              className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+              Remarks
+            </label>
+            <input
+              type="text"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Creation remarks..."
+              className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="px-4 py-2 border border-gray-200 hover:bg-white text-gray-700 rounded-lg text-xs font-medium transition-colors"
+          >
+            Cancel
+          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleSubmit(false)}
+              disabled={submitting}
+              className="flex items-center gap-1.5 px-4 py-2 border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-semibold shadow-sm transition-colors"
+            >
+              {submitting ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Save as Draft
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSubmit(true)}
+              disabled={submitting}
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#1A2766] hover:bg-[#152052] text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
+            >
+              {submitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              Submit for Approval
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

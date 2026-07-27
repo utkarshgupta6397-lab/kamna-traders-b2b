@@ -7,6 +7,7 @@ export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSku
   | 'catalog_brands_create' | 'catalog_brands_modify' | 'catalog_brands_approve'
   | 'catalog_manufacturers_create' | 'catalog_manufacturers_modify' | 'catalog_manufacturers_approve'
   | 'catalog_categories_create' | 'catalog_categories_modify' | 'catalog_categories_approve'
+  | 'catalog_attributes_create' | 'catalog_attributes_modify' | 'catalog_attributes_approve'
   | 'catalog_taxrates_create' | 'catalog_taxrates_modify' | 'catalog_taxrates_approve'
   | 'catalog_units_create' | 'catalog_units_modify' | 'catalog_units_approve'
   | 'catalog_hsncodes_create' | 'catalog_hsncodes_modify' | 'catalog_hsncodes_approve';
@@ -168,6 +169,9 @@ export const PERMISSIONS: PermissionDefinition[] = [
   { key: 'catalog_categories_create', label: 'Create Categories', description: 'Ability to create category master records' },
   { key: 'catalog_categories_modify', label: 'Modify Categories', description: 'Ability to edit category master records' },
   { key: 'catalog_categories_approve', label: 'Approve Categories', description: 'Ability to approve or decline category records' },
+  { key: 'catalog_attributes_create', label: 'Create Attributes', description: 'Ability to create product attribute master records' },
+  { key: 'catalog_attributes_modify', label: 'Modify Attributes', description: 'Ability to edit product attribute master records' },
+  { key: 'catalog_attributes_approve', label: 'Approve Attributes', description: 'Ability to approve or decline product attribute records' },
   { key: 'catalog_taxrates_create', label: 'Create Tax Rates', description: 'Ability to create tax rate master records' },
   { key: 'catalog_taxrates_modify', label: 'Modify Tax Rates', description: 'Ability to edit tax rate master records' },
   { key: 'catalog_taxrates_approve', label: 'Approve Tax Rates', description: 'Ability to approve or decline tax rate records' },
@@ -178,6 +182,79 @@ export const PERMISSIONS: PermissionDefinition[] = [
   { key: 'catalog_hsncodes_modify', label: 'Modify HSN Codes', description: 'Ability to edit HSN code master records' },
   { key: 'catalog_hsncodes_approve', label: 'Approve HSN Codes', description: 'Ability to approve or decline HSN code records' }
 ];
+
+export interface CatalogModulePermissionGroup {
+  moduleKey: string;
+  moduleName: string;
+  createKey: PermissionKey;
+  modifyKey: PermissionKey;
+  approveKey: PermissionKey;
+}
+
+export const CATALOG_MODULES: CatalogModulePermissionGroup[] = [
+  {
+    moduleKey: 'brands',
+    moduleName: 'Brands',
+    createKey: 'catalog_brands_create',
+    modifyKey: 'catalog_brands_modify',
+    approveKey: 'catalog_brands_approve',
+  },
+  {
+    moduleKey: 'manufacturers',
+    moduleName: 'Manufacturers',
+    createKey: 'catalog_manufacturers_create',
+    modifyKey: 'catalog_manufacturers_modify',
+    approveKey: 'catalog_manufacturers_approve',
+  },
+  {
+    moduleKey: 'categories',
+    moduleName: 'Categories',
+    createKey: 'catalog_categories_create',
+    modifyKey: 'catalog_categories_modify',
+    approveKey: 'catalog_categories_approve',
+  },
+  {
+    moduleKey: 'attributes',
+    moduleName: 'Product Attributes',
+    createKey: 'catalog_attributes_create',
+    modifyKey: 'catalog_attributes_modify',
+    approveKey: 'catalog_attributes_approve',
+  },
+  {
+    moduleKey: 'taxrates',
+    moduleName: 'Tax Rates',
+    createKey: 'catalog_taxrates_create',
+    modifyKey: 'catalog_taxrates_modify',
+    approveKey: 'catalog_taxrates_approve',
+  },
+  {
+    moduleKey: 'units',
+    moduleName: 'Units of Measurement',
+    createKey: 'catalog_units_create',
+    modifyKey: 'catalog_units_modify',
+    approveKey: 'catalog_units_approve',
+  },
+  {
+    moduleKey: 'hsncodes',
+    moduleName: 'HSN Codes',
+    createKey: 'catalog_hsncodes_create',
+    modifyKey: 'catalog_hsncodes_modify',
+    approveKey: 'catalog_hsncodes_approve',
+  },
+];
+
+const catalogPermissionKeySet = new Set<string>([
+  'catalog_brands_create', 'catalog_brands_modify', 'catalog_brands_approve',
+  'catalog_manufacturers_create', 'catalog_manufacturers_modify', 'catalog_manufacturers_approve',
+  'catalog_categories_create', 'catalog_categories_modify', 'catalog_categories_approve',
+  'catalog_attributes_create', 'catalog_attributes_modify', 'catalog_attributes_approve',
+  'catalog_taxrates_create', 'catalog_taxrates_modify', 'catalog_taxrates_approve',
+  'catalog_units_create', 'catalog_units_modify', 'catalog_units_approve',
+  'catalog_hsncodes_create', 'catalog_hsncodes_modify', 'catalog_hsncodes_approve',
+]);
+
+// General permissions shown in Main Matrix Tab (excludes Catalog module granular permissions)
+export const GENERAL_PERMISSIONS = PERMISSIONS.filter(p => !catalogPermissionKeySet.has(p.key));
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'canManageCarts',
@@ -219,6 +296,9 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'catalog_categories_create',
   'catalog_categories_modify',
   'catalog_categories_approve',
+  'catalog_attributes_create',
+  'catalog_attributes_modify',
+  'catalog_attributes_approve',
   'catalog_taxrates_create',
   'catalog_taxrates_modify',
   'catalog_taxrates_approve',

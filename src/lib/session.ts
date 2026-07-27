@@ -174,6 +174,7 @@ export async function validateSession(sessionToken: string): Promise<{
       'catalog_brands_create', 'catalog_brands_modify', 'catalog_brands_approve',
       'catalog_manufacturers_create', 'catalog_manufacturers_modify', 'catalog_manufacturers_approve',
       'catalog_categories_create', 'catalog_categories_modify', 'catalog_categories_approve',
+      'catalog_attributes_create', 'catalog_attributes_modify', 'catalog_attributes_approve',
       'catalog_taxrates_create', 'catalog_taxrates_modify', 'catalog_taxrates_approve',
       'catalog_units_create', 'catalog_units_modify', 'catalog_units_approve',
       'catalog_hsncodes_create', 'catalog_hsncodes_modify', 'catalog_hsncodes_approve',

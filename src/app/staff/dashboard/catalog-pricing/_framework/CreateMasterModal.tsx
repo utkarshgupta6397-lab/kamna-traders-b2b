@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MasterConfig } from './types';
 import { X, Save, Send, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import HsnHierarchyPreview from '../hsn-codes/HsnHierarchyPreview';
 
 interface CreateMasterModalProps {
   isOpen: boolean;
@@ -17,6 +18,8 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
   const [remarks, setRemarks] = useState('');
   const [customValues, setCustomValues] = useState<Record<string, any>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [taxRates, setTaxRates] = useState<any[]>([]);
+  const [hsnError, setHsnError] = useState<string | null>(null);
 
   const hasUnsavedChanges = React.useMemo(() => {
     if (name.trim()) return true;
@@ -33,10 +36,8 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
   }, [name, code, description, remarks, customValues]);
 
   const handleDismiss = () => {
-    if (hasUnsavedChanges) {
-      if (window.confirm('Discard unsaved changes?')) {
-        onClose();
-      }
+    if (name || code || description || remarks || Object.values(customValues).some(Boolean)) {
+      setIsDismissConfirmOpen(true);
     } else {
       onClose();
     }
@@ -49,8 +50,18 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
       setDescription('');
       setRemarks('');
       setCustomValues({});
+      setHsnError(null);
+      
+      if (config.customFields?.some(f => f.type === 'tax-rate-select')) {
+        fetch('/api/staff/catalog/tax-rates?status=Active')
+          .then(res => res.json())
+          .then(data => {
+            setTaxRates(Array.isArray(data.records) ? data.records : (Array.isArray(data) ? data : []));
+          })
+          .catch(console.error);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, config.customFields]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -68,6 +79,19 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
     if (!name.trim()) {
       toast.error('Name is required');
       return;
+    }
+
+    setHsnError(null);
+    if (config.entityKey === 'hsn-codes') {
+      const hsnCleanCode = code.replace(/[^0-9]/g, '');
+      if (hsnCleanCode.length !== code.length) {
+        setHsnError('HSN Code must contain only numeric digits');
+        return;
+      }
+      if (hsnCleanCode.length < 6) {
+        setHsnError('HSN Code is mandatory and must contain at least 6 digits');
+        return;
+      }
     }
 
     if (config.customFields) {
@@ -141,7 +165,7 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
         <div className="p-6 space-y-4 overflow-y-auto flex-1">
           <div>
             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-              Name <span className="text-red-500">*</span>
+              {config.entityKey === 'hsn-codes' ? 'Description (Name)' : 'Name'} <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
@@ -154,15 +178,23 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
 
           <div>
             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-              Code <span className="text-gray-400 font-normal">(Optional - Auto-generated if left blank)</span>
+              {config.entityKey === 'hsn-codes' ? 'HSN Code' : 'Code'} 
+              <span className="text-gray-400 font-normal">
+                {config.entityKey === 'hsn-codes' ? ' * (Minimum 6 digits)' : ' (Optional - Auto-generated if left blank)'}
+              </span>
             </label>
             <input
               type="text"
               value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder={`e.g. ${config.entityKey.slice(0, 3).toUpperCase()}-10001`}
-              className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
+              onChange={(e) => {
+                setCode(e.target.value.toUpperCase());
+                if (hsnError) setHsnError(null);
+              }}
+              placeholder={config.entityKey === 'hsn-codes' ? 'e.g. 85411000' : `e.g. ${config.entityKey.slice(0, 3).toUpperCase()}-10001`}
+              className={`w-full px-3.5 py-2 bg-gray-50 border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] ${hsnError ? 'border-red-500' : 'border-gray-200'}`}
             />
+            {hsnError && <p className="text-xs text-red-500 mt-1.5">{hsnError}</p>}
+            {config.entityKey === 'hsn-codes' && <HsnHierarchyPreview code={code} />}
           </div>
 
           {/* Custom Entity Fields */}
@@ -172,16 +204,21 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
                 {f.label} {f.required && <span className="text-red-500">*</span>}
               </label>
               {f.helperText && <p className="text-[10px] text-gray-500 mb-1.5">{f.helperText}</p>}
-              {f.type === 'select' ? (
+              {f.type === 'select' || f.type === 'tax-rate-select' ? (
                 <select
                   value={customValues[f.name] || ''}
                   onChange={(e) => setCustomValues({ ...customValues, [f.name]: e.target.value })}
                   className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none"
                 >
                   <option value="">Select {f.label}</option>
-                  {f.options?.map((opt) => (
+                  {f.type === 'select' && f.options?.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
+                    </option>
+                  ))}
+                  {f.type === 'tax-rate-select' && taxRates.map((tr) => (
+                    <option key={tr.id} value={tr.id}>
+                      {tr.name} ({tr.percentage}%)
                     </option>
                   ))}
                 </select>

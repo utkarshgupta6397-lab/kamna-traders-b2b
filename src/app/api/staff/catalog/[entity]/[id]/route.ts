@@ -7,11 +7,13 @@ export async function GET(
   { params }: { params: Promise<{ entity: string; id: string }> }
 ) {
   const session = await getSession();
+  
+  const { entity, id } = await params;
+  console.log('[DEBUG] [entity]/[id] API hit:', { entity, id, session: session ? 'exists' : 'null' });
+
   if (!session || (!session.accountsAccess && session.role !== 'ADMIN')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-
-  const { entity, id } = await params;
   const meta = ENTITY_REGISTRY[entity as MasterEntityKey];
   if (!meta) {
     return NextResponse.json({ error: 'Invalid entity' }, { status: 400 });
@@ -143,8 +145,33 @@ export async function PATCH(
         updateData.abbreviation = parsedAbbrev;
       }
     } else if (entity === 'hsn-codes') {
-      if (customProps.gstRate !== undefined) updateData.gstRate = customProps.gstRate ? parseFloat(customProps.gstRate) : null;
+      if (customProps.defaultGstRateId !== undefined) updateData.defaultGstRateId = customProps.defaultGstRateId || null;
       if (customProps.chapterCode !== undefined) updateData.chapterCode = customProps.chapterCode ? customProps.chapterCode.trim() : null;
+
+      const finalCode = updateData.code || existing.code;
+      if (finalCode) {
+        const codeLen = finalCode.length;
+        if (codeLen === 2) updateData.level = 'Chapter';
+        else if (codeLen === 4) updateData.level = 'Heading';
+        else if (codeLen === 6) updateData.level = 'Sub-heading';
+        else if (codeLen === 8) updateData.level = 'Tariff Item';
+        
+        let parentPrefix = null;
+        if (codeLen === 8) parentPrefix = finalCode.substring(0, 6);
+        else if (codeLen === 6) parentPrefix = finalCode.substring(0, 4);
+        else if (codeLen === 4) parentPrefix = finalCode.substring(0, 2);
+        
+        if (parentPrefix) {
+          const parentHsn = await delegate.findFirst({
+            where: { code: parentPrefix },
+            select: { id: true }
+          });
+          if (parentHsn) updateData.parentHsnId = parentHsn.id;
+          else updateData.parentHsnId = null;
+        } else {
+          updateData.parentHsnId = null;
+        }
+      }
     }
 
     const updatedRecord = await delegate.update({

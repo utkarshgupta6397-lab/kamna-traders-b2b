@@ -11,7 +11,7 @@ import ApprovalEngine, { ActionType } from './ApprovalEngine';
 import HistoryDrawer from './HistoryDrawer';
 import toast from 'react-hot-toast';
 
-export default function MasterListPage({ config }: { config: MasterConfig }) {
+export default function MasterListPage({ config, extraActions }: { config: MasterConfig, extraActions?: React.ReactNode }) {
   // State
   const [records, setRecords] = useState<MasterRecord[]>([]);
   const [stats, setStats] = useState<MasterKpiStats>({
@@ -214,6 +214,7 @@ export default function MasterListPage({ config }: { config: MasterConfig }) {
         canCreate={canCreate}
         createLabel={`Create ${config.singularTitle}`}
         loading={loading}
+        extraActions={extraActions}
       />
 
       {/* Data Table */}

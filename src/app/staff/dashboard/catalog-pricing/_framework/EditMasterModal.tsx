@@ -3,6 +3,7 @@ import { MasterRecord, MasterConfig } from './types';
 import MasterStatusBadge from './MasterStatusBadge';
 import { X, Save, Send, Loader2, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
+import HsnHierarchyPreview from '../hsn-codes/HsnHierarchyPreview';
 
 import { getRecordAuthorization } from './authorization';
 
@@ -33,6 +34,8 @@ export default function EditMasterModal({
   const [remarks, setRemarks] = useState('');
   const [customValues, setCustomValues] = useState<Record<string, any>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [taxRates, setTaxRates] = useState<any[]>([]);
+  const [hsnError, setHsnError] = useState<string | null>(null);
 
   const hasUnsavedChanges = React.useMemo(() => {
     if (!record) return false;
@@ -89,11 +92,23 @@ export default function EditMasterModal({
       if (record.percentage !== undefined) custom.percentage = record.percentage;
       if (record.taxType !== undefined) custom.taxType = record.taxType;
       if (record.abbreviation !== undefined) custom.abbreviation = record.abbreviation;
-      if (record.gstRate !== undefined) custom.gstRate = record.gstRate;
+      if ((record as any).defaultGstRateId !== undefined) custom.defaultGstRateId = (record as any).defaultGstRateId;
       if (record.chapterCode !== undefined) custom.chapterCode = record.chapterCode;
       setCustomValues(custom);
+      setHsnError(null);
     }
   }, [record]);
+
+  useEffect(() => {
+    if (isOpen && config.customFields?.some(f => f.type === 'tax-rate-select')) {
+      fetch('/api/staff/catalog/tax-rates?status=Active')
+        .then(res => res.json())
+        .then(data => {
+          setTaxRates(Array.isArray(data.records) ? data.records : (Array.isArray(data) ? data : []));
+        })
+        .catch(console.error);
+    }
+  }, [isOpen, config.customFields]);
 
   if (!isOpen || !record) return null;
 
@@ -103,6 +118,19 @@ export default function EditMasterModal({
     if (!name.trim()) {
       toast.error('Name is required');
       return;
+    }
+
+    setHsnError(null);
+    if (config.entityKey === 'hsn-codes') {
+      const hsnCleanCode = code.replace(/[^0-9]/g, '');
+      if (hsnCleanCode.length !== code.length) {
+        setHsnError('HSN Code must contain only numeric digits');
+        return;
+      }
+      if (hsnCleanCode.length < 6) {
+        setHsnError('HSN Code is mandatory and must contain at least 6 digits');
+        return;
+      }
     }
 
     if (config.customFields) {
@@ -205,7 +233,7 @@ export default function EditMasterModal({
 
           <div>
             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-              Name <span className="text-red-500">*</span>
+              {config.entityKey === 'hsn-codes' ? 'Description (Name)' : 'Name'} <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
@@ -218,15 +246,22 @@ export default function EditMasterModal({
 
           <div>
             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-              Code
+              {config.entityKey === 'hsn-codes' ? 'HSN Code' : 'Code'}
+              {config.entityKey === 'hsn-codes' && <span className="text-gray-400 font-normal"> * (Minimum 6 digits)</span>}
             </label>
             <input
               type="text"
-              disabled={isReadOnly}
               value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] disabled:opacity-60"
+              onChange={(e) => {
+                setCode(e.target.value.toUpperCase());
+                if (hsnError) setHsnError(null);
+              }}
+              disabled={isReadOnly}
+              placeholder={config.entityKey === 'hsn-codes' ? 'e.g. 85411000' : `e.g. ${config.entityKey.slice(0, 3).toUpperCase()}-10001`}
+              className={`w-full px-3.5 py-2 bg-gray-50 border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] disabled:opacity-70 disabled:cursor-not-allowed ${hsnError ? 'border-red-500' : 'border-gray-200'}`}
             />
+            {hsnError && <p className="text-xs text-red-500 mt-1.5">{hsnError}</p>}
+            {config.entityKey === 'hsn-codes' && <HsnHierarchyPreview code={code} />}
           </div>
 
           {/* Custom Entity Fields */}
@@ -236,17 +271,22 @@ export default function EditMasterModal({
                 {f.label} {f.required && <span className="text-red-500">*</span>}
               </label>
               {f.helperText && <p className="text-[10px] text-gray-500 mb-1.5">{f.helperText}</p>}
-              {f.type === 'select' ? (
+              {f.type === 'select' || f.type === 'tax-rate-select' ? (
                 <select
-                  disabled={isReadOnly}
                   value={customValues[f.name] || ''}
                   onChange={(e) => setCustomValues({ ...customValues, [f.name]: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none disabled:opacity-60"
+                  disabled={isReadOnly}
+                  className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none disabled:opacity-70"
                 >
                   <option value="">Select {f.label}</option>
-                  {f.options?.map((opt) => (
+                  {f.type === 'select' && f.options?.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
+                    </option>
+                  ))}
+                  {f.type === 'tax-rate-select' && taxRates.map((tr) => (
+                    <option key={tr.id} value={tr.id}>
+                      {tr.name} ({tr.percentage}%)
                     </option>
                   ))}
                 </select>

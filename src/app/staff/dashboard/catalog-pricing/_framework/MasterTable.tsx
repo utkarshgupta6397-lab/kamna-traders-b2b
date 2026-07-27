@@ -104,7 +104,7 @@ export default function MasterTable({
                   <td className="py-3 px-4 font-medium text-gray-900">{r.name}</td>
                   {config.entityKey === 'tax-rates' && <td className="py-3 px-4 font-medium text-gray-800">{r.percentage}% ({r.taxType || 'GST'})</td>}
                   {config.entityKey === 'units' && <td className="py-3 px-4 text-gray-600">{r.abbreviation || '-'}</td>}
-                  {config.entityKey === 'hsn-codes' && <td className="py-3 px-4 text-gray-600">{r.gstRate ? `${r.gstRate}%` : '-'}</td>}
+                  {config.entityKey === 'hsn-codes' && <td className="py-3 px-4 text-gray-600">{r.defaultGstRate?.percentage ? `${r.defaultGstRate.percentage}%` : '-'}</td>}
                   <td className="py-3 px-4 text-gray-500 max-w-xs truncate">{r.description || '-'}</td>
                   <td className="py-3 px-4">
                     <MasterStatusBadge status={r.status} />

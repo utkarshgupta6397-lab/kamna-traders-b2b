@@ -20,6 +20,7 @@ interface MasterFiltersProps {
   canCreate: boolean;
   createLabel: string;
   loading: boolean;
+  extraActions?: React.ReactNode;
 }
 
 export default function MasterFilters({
@@ -41,6 +42,7 @@ export default function MasterFilters({
   canCreate,
   createLabel,
   loading,
+  extraActions,
 }: MasterFiltersProps) {
   return (
     <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-3">
@@ -128,16 +130,19 @@ export default function MasterFilters({
             Export
           </button>
 
-          {/* Create New */}
-          {canCreate && (
-            <button
-              onClick={onCreateNew}
-              className="flex items-center gap-1.5 px-4 py-2 bg-[#1A2766] hover:bg-[#152052] text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
-            >
-              <Plus size={16} />
-              {createLabel}
-            </button>
-          )}
+          {/* Create New & Extra Actions */}
+          <div className="flex items-center gap-2">
+            {extraActions}
+            {canCreate && (
+              <button
+                onClick={onCreateNew}
+                className="flex items-center gap-1.5 px-4 py-2 bg-[#1A2766] hover:bg-[#152052] text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
+              >
+                <Plus size={16} />
+                {createLabel}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

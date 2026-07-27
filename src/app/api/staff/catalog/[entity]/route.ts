@@ -90,6 +90,7 @@ export async function GET(
             createdBy: { select: { id: true, name: true } },
             updatedBy: { select: { id: true, name: true } },
             approvedBy: { select: { id: true, name: true } },
+            ...(entity === 'hsn-codes' ? { defaultGstRate: { select: { percentage: true } } } : {}),
           },
         });
 
@@ -121,6 +122,7 @@ export async function GET(
             createdBy: { select: { id: true, name: true } },
             updatedBy: { select: { id: true, name: true } },
             approvedBy: { select: { id: true, name: true } },
+            ...(entity === 'hsn-codes' ? { defaultGstRate: { select: { percentage: true } } } : {}),
           },
         });
       } catch {
@@ -203,6 +205,10 @@ export async function POST(
 
     // Check unique code
     if (finalCode) {
+      if (entity === 'hsn-codes' && finalCode.length < 6) {
+        return NextResponse.json({ error: 'Company HSN codes must contain a minimum of 6 digits.' }, { status: 400 });
+      }
+      
       const existingCode = await delegate.findFirst({
         where: { code: { equals: finalCode, mode: 'insensitive' } },
       });
@@ -248,8 +254,7 @@ export async function POST(
     } else if (entity === 'units') {
       createData.abbreviation = customProps.abbreviation ? customProps.abbreviation.trim() : null;
     } else if (entity === 'hsn-codes') {
-      createData.gstRate = customProps.gstRate ? parseFloat(customProps.gstRate) : null;
-      createData.chapterCode = customProps.chapterCode ? customProps.chapterCode.trim() : null;
+      createData.defaultGstRateId = customProps.defaultGstRateId || null;
     }
 
     const newRecord = await delegate.create({

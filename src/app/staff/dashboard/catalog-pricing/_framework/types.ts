@@ -11,7 +11,7 @@ export interface MasterRecord {
   percentage?: number;
   taxType?: string;
   abbreviation?: string | null;
-  gstRate?: number | null;
+  defaultGstRate?: { percentage: number } | null;
   chapterCode?: string | null;
   createdById?: string | null;
   updatedById?: string | null;
@@ -48,7 +48,7 @@ export interface MasterConfig {
   customFields?: {
     name: string;
     label: string;
-    type: 'text' | 'number' | 'select';
+    type: 'text' | 'number' | 'select' | 'tax-rate-select';
     options?: { label: string; value: string }[];
     required?: boolean;
     helperText?: string;

@@ -19,64 +19,64 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Permissions Matrix
-  canManageCarts              Boolean @default(false)
-  canAdjustInventory          Boolean @default(false)
-  canRunSkuSync               Boolean @default(false)
-  canManageZoneMappings       Boolean @default(false)
-  canManageUnlimitedSkus      Boolean @default(false)
-  canManageTransfers          Boolean @default(false)
-  canDeleteTransfers          Boolean @default(false)
-  accountsAccess              Boolean @default(false) // Deprecated
-  accounts_customer_statement Boolean @default(false)
-  accounts_invoice_processor  Boolean @default(false)
-  accounts_transactions       Boolean @default(false)
-  accounts_summary_view       Boolean @default(false)
-  accounts_reports_salesman   Boolean @default(false)
-  stock_alerts_manage         Boolean @default(false)
-  accounts_recovery_manage    Boolean @default(false)
-  release_statement_queue     Boolean @default(false)
-  dcr_management              Boolean @default(false)
-  dcr_purchase_receive        Boolean @default(false)
-  dcr_purchase_dcr_receive    Boolean @default(false)
-  dcr_serial_search           Boolean @default(false)
-  dcr_serial_mapping_override Boolean @default(false)
-  dcr_hold_release            Boolean @default(false)
-  dcr_issue_customer_dcr      Boolean @default(false)
-  solar_orders_view           Boolean @default(false)
-  solar_orders_create         Boolean @default(false)
-  solar_orders_approval       Boolean @default(false)
-  solar_orders_docs_progress  Boolean @default(false)
+  canManageCarts               Boolean @default(false)
+  canAdjustInventory           Boolean @default(false)
+  canRunSkuSync                Boolean @default(false)
+  canManageZoneMappings        Boolean @default(false)
+  canManageUnlimitedSkus       Boolean @default(false)
+  canManageTransfers           Boolean @default(false)
+  canDeleteTransfers           Boolean @default(false)
+  accountsAccess               Boolean @default(false) // Deprecated
+  accounts_customer_statement  Boolean @default(false)
+  accounts_invoice_processor   Boolean @default(false)
+  accounts_transactions        Boolean @default(false)
+  accounts_summary_view        Boolean @default(false)
+  accounts_reports_salesman    Boolean @default(false)
+  stock_alerts_manage          Boolean @default(false)
+  accounts_recovery_manage     Boolean @default(false)
+  release_statement_queue      Boolean @default(false)
+  dcr_management               Boolean @default(false)
+  dcr_purchase_receive         Boolean @default(false)
+  dcr_purchase_dcr_receive     Boolean @default(false)
+  dcr_serial_search            Boolean @default(false)
+  dcr_serial_mapping_override  Boolean @default(false)
+  dcr_hold_release             Boolean @default(false)
+  dcr_issue_customer_dcr       Boolean @default(false)
+  solar_orders_view            Boolean @default(false)
+  solar_orders_create          Boolean @default(false)
+  solar_orders_approval        Boolean @default(false)
+  solar_orders_docs_progress   Boolean @default(false)
   solar_orders_edit_order_date Boolean @default(false)
-  solar_orders_master_edit    Boolean @default(false)
-  workflow_edits              Boolean @default(false)
-  communications_view         Boolean @default(false)
-  communications_templates    Boolean @default(false)
-  whatsapp_integration        Boolean @default(false)
-  holdQueueReviewEnabled      Boolean @default(false)
-  holdQueueReviewLimit        Float?
+  solar_orders_master_edit     Boolean @default(false)
+  workflow_edits               Boolean @default(false)
+  communications_view          Boolean @default(false)
+  communications_templates     Boolean @default(false)
+  whatsapp_integration         Boolean @default(false)
+  holdQueueReviewEnabled       Boolean @default(false)
+  holdQueueReviewLimit         Float?
 
   // Master Data Permissions Matrix
-  catalog_brands_create          Boolean @default(false)
-  catalog_brands_modify          Boolean @default(false)
-  catalog_brands_approve         Boolean @default(false)
-  catalog_manufacturers_create   Boolean @default(false)
-  catalog_manufacturers_modify   Boolean @default(false)
-  catalog_manufacturers_approve  Boolean @default(false)
-  catalog_categories_create      Boolean @default(false)
-  catalog_categories_modify      Boolean @default(false)
-  catalog_categories_approve     Boolean @default(false)
-  catalog_attributes_create      Boolean @default(false)
-  catalog_attributes_modify      Boolean @default(false)
-  catalog_attributes_approve     Boolean @default(false)
-  catalog_taxrates_create        Boolean @default(false)
-  catalog_taxrates_modify        Boolean @default(false)
-  catalog_taxrates_approve       Boolean @default(false)
-  catalog_units_create           Boolean @default(false)
-  catalog_units_modify           Boolean @default(false)
-  catalog_units_approve          Boolean @default(false)
-  catalog_hsncodes_create        Boolean @default(false)
-  catalog_hsncodes_modify        Boolean @default(false)
-  catalog_hsncodes_approve       Boolean @default(false)
+  catalog_brands_create         Boolean @default(false)
+  catalog_brands_modify         Boolean @default(false)
+  catalog_brands_approve        Boolean @default(false)
+  catalog_manufacturers_create  Boolean @default(false)
+  catalog_manufacturers_modify  Boolean @default(false)
+  catalog_manufacturers_approve Boolean @default(false)
+  catalog_categories_create     Boolean @default(false)
+  catalog_categories_modify     Boolean @default(false)
+  catalog_categories_approve    Boolean @default(false)
+  catalog_attributes_create     Boolean @default(false)
+  catalog_attributes_modify     Boolean @default(false)
+  catalog_attributes_approve    Boolean @default(false)
+  catalog_taxrates_create       Boolean @default(false)
+  catalog_taxrates_modify       Boolean @default(false)
+  catalog_taxrates_approve      Boolean @default(false)
+  catalog_units_create          Boolean @default(false)
+  catalog_units_modify          Boolean @default(false)
+  catalog_units_approve         Boolean @default(false)
+  catalog_hsncodes_create       Boolean @default(false)
+  catalog_hsncodes_modify       Boolean @default(false)
+  catalog_hsncodes_approve      Boolean @default(false)
 
   sessions            ActiveSession[]
   carts               Cart[]
@@ -95,50 +95,50 @@ model User {
   qzCertificate QzCertificate?
 
   // Solar Orders Relations
-  solarOrdersCreated   SolarOrder[]        @relation("SolarOrderCreatedBy")
-  solarOrdersApproved  SolarOrder[]        @relation("SolarOrderApprovedBy")
-  solarOrdersCancelled SolarOrder[]        @relation("SolarOrderCancelledBy")
-  solarOrdersCalled    SolarOrder[]        @relation("SolarOrderCallingExecutive")
-  solarOrdersSold      SolarOrder[]        @relation("SolarOrderSalesman")
-  solarOrdersSubmitted SolarOrder[]        @relation("SolarOrderSubmittedBy")
-  solarOrdersRejected  SolarOrder[]        @relation("SolarOrderRejectedBy")
-  solarStepsCompleted  SolarWorkflowStep[] @relation("SolarStepCompletedBy")
-  solarFilesUploaded   SolarOrderFile[]    @relation("SolarFileUploadedBy")
-  solarFilesDeleted    SolarOrderFile[]    @relation("SolarFileDeletedBy")
-  solarActivityLogs    SolarActivityLog[]  @relation("SolarActivityActor")
+  solarOrdersCreated   SolarOrder[]         @relation("SolarOrderCreatedBy")
+  solarOrdersApproved  SolarOrder[]         @relation("SolarOrderApprovedBy")
+  solarOrdersCancelled SolarOrder[]         @relation("SolarOrderCancelledBy")
+  solarOrdersCalled    SolarOrder[]         @relation("SolarOrderCallingExecutive")
+  solarOrdersSold      SolarOrder[]         @relation("SolarOrderSalesman")
+  solarOrdersSubmitted SolarOrder[]         @relation("SolarOrderSubmittedBy")
+  solarOrdersRejected  SolarOrder[]         @relation("SolarOrderRejectedBy")
+  solarStepsCompleted  SolarWorkflowStep[]  @relation("SolarStepCompletedBy")
+  solarFilesUploaded   SolarOrderFile[]     @relation("SolarFileUploadedBy")
+  solarFilesDeleted    SolarOrderFile[]     @relation("SolarFileDeletedBy")
+  solarActivityLogs    SolarActivityLog[]   @relation("SolarActivityActor")
   projectChatMessages  ProjectChatMessage[] @relation("ProjectChatCreatedBy")
 
-  tasksAssigned       SolarTask[]          @relation("TaskAssignedTo")
-  tasksCreated        SolarTask[]          @relation("TaskCreatedBy")
-  tasksCompleted      SolarTask[]          @relation("TaskCompletedBy")
-  taskFollowUps       SolarTaskFollowUp[]
-  solarDiscussions    SolarDiscussion[]
+  tasksAssigned    SolarTask[]         @relation("TaskAssignedTo")
+  tasksCreated     SolarTask[]         @relation("TaskCreatedBy")
+  tasksCompleted   SolarTask[]         @relation("TaskCompletedBy")
+  taskFollowUps    SolarTaskFollowUp[]
+  solarDiscussions SolarDiscussion[]
 
   // Communications Module
-  communicationsCreated Communication[] @relation("CommunicationCreatedBy")
-  communicationsAssigned Communication[] @relation("CommunicationAssignedTo")
-  whatsappTests       WhatsAppTestLog[]
+  communicationsCreated  Communication[]   @relation("CommunicationCreatedBy")
+  communicationsAssigned Communication[]   @relation("CommunicationAssignedTo")
+  whatsappTests          WhatsAppTestLog[]
 
   // Master Data Relations
-  brandsCreated        Brand[]               @relation("BrandCreatedBy")
-  brandsUpdated        Brand[]               @relation("BrandUpdatedBy")
-  brandsApproved       Brand[]               @relation("BrandApprovedBy")
-  categoriesCreated    Category[]            @relation("CategoryCreatedBy")
-  categoriesUpdated    Category[]            @relation("CategoryUpdatedBy")
-  categoriesApproved   Category[]            @relation("CategoryApprovedBy")
-  manufacturersCreated Manufacturer[]        @relation("ManufacturerCreatedBy")
-  manufacturersUpdated Manufacturer[]        @relation("ManufacturerUpdatedBy")
-  manufacturersApproved Manufacturer[]       @relation("ManufacturerApprovedBy")
-  taxRatesCreated      TaxRate[]             @relation("TaxRateCreatedBy")
-  taxRatesUpdated      TaxRate[]             @relation("TaxRateUpdatedBy")
-  taxRatesApproved     TaxRate[]             @relation("TaxRateApprovedBy")
-  unitsCreated         UnitOfMeasurement[]   @relation("UnitCreatedBy")
-  unitsUpdated         UnitOfMeasurement[]   @relation("UnitUpdatedBy")
-  unitsApproved        UnitOfMeasurement[]   @relation("UnitApprovedBy")
-  hsnCodesCreated      HsnCode[]             @relation("HsnCreatedBy")
-  hsnCodesUpdated      HsnCode[]             @relation("HsnUpdatedBy")
-  hsnCodesApproved     HsnCode[]             @relation("HsnApprovedBy")
-  masterDataHistory    MasterDataHistory[]   @relation("MasterHistoryPerformedBy")
+  brandsCreated         Brand[]             @relation("BrandCreatedBy")
+  brandsUpdated         Brand[]             @relation("BrandUpdatedBy")
+  brandsApproved        Brand[]             @relation("BrandApprovedBy")
+  categoriesCreated     Category[]          @relation("CategoryCreatedBy")
+  categoriesUpdated     Category[]          @relation("CategoryUpdatedBy")
+  categoriesApproved    Category[]          @relation("CategoryApprovedBy")
+  manufacturersCreated  Manufacturer[]      @relation("ManufacturerCreatedBy")
+  manufacturersUpdated  Manufacturer[]      @relation("ManufacturerUpdatedBy")
+  manufacturersApproved Manufacturer[]      @relation("ManufacturerApprovedBy")
+  taxRatesCreated       TaxRate[]           @relation("TaxRateCreatedBy")
+  taxRatesUpdated       TaxRate[]           @relation("TaxRateUpdatedBy")
+  taxRatesApproved      TaxRate[]           @relation("TaxRateApprovedBy")
+  unitsCreated          UnitOfMeasurement[] @relation("UnitCreatedBy")
+  unitsUpdated          UnitOfMeasurement[] @relation("UnitUpdatedBy")
+  unitsApproved         UnitOfMeasurement[] @relation("UnitApprovedBy")
+  hsnCodesCreated       HsnCode[]           @relation("HsnCreatedBy")
+  hsnCodesUpdated       HsnCode[]           @relation("HsnUpdatedBy")
+  hsnCodesApproved      HsnCode[]           @relation("HsnApprovedBy")
+  masterDataHistory     MasterDataHistory[] @relation("MasterHistoryPerformedBy")
 }
 
 model Warehouse {
@@ -159,23 +159,23 @@ model Warehouse {
 }
 
 model Brand {
-  id           String    @id @default(cuid())
-  code         String?   @unique
-  name         String    @unique
+  id           String              @id @default(cuid())
+  code         String?             @unique
+  name         String              @unique
   description  String?
-  status       String    @default("Draft")
+  status       String              @default("Draft")
   remarks      String?
-  active       Boolean   @default(true)
+  active       Boolean             @default(true)
   createdById  String?
   updatedById  String?
   approvedById String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
   approvedAt   DateTime?
   skus         Sku[]
-  createdBy    User?     @relation("BrandCreatedBy", fields: [createdById], references: [id])
-  updatedBy    User?     @relation("BrandUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy   User?     @relation("BrandApprovedBy", fields: [approvedById], references: [id])
+  createdBy    User?               @relation("BrandCreatedBy", fields: [createdById], references: [id])
+  updatedBy    User?               @relation("BrandUpdatedBy", fields: [updatedById], references: [id])
+  approvedBy   User?               @relation("BrandApprovedBy", fields: [approvedById], references: [id])
   history      MasterDataHistory[] @relation("BrandHistory")
 
   @@index([status])
@@ -183,26 +183,26 @@ model Brand {
 }
 
 model Category {
-  id           String     @id @default(cuid())
-  code         String?    @unique
-  name         String     @unique
+  id           String              @id @default(cuid())
+  code         String?             @unique
+  name         String              @unique
   description  String?
-  status       String     @default("Draft")
+  status       String              @default("Draft")
   remarks      String?
-  active       Boolean    @default(true)
+  active       Boolean             @default(true)
   parentId     String?
   createdById  String?
   updatedById  String?
   approvedById String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
   approvedAt   DateTime?
-  parent       Category?  @relation("SubCategories", fields: [parentId], references: [id])
-  children     Category[] @relation("SubCategories")
+  parent       Category?           @relation("SubCategories", fields: [parentId], references: [id])
+  children     Category[]          @relation("SubCategories")
   skus         Sku[]
-  createdBy    User?      @relation("CategoryCreatedBy", fields: [createdById], references: [id])
-  updatedBy    User?      @relation("CategoryUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy   User?      @relation("CategoryApprovedBy", fields: [approvedById], references: [id])
+  createdBy    User?               @relation("CategoryCreatedBy", fields: [createdById], references: [id])
+  updatedBy    User?               @relation("CategoryUpdatedBy", fields: [updatedById], references: [id])
+  approvedBy   User?               @relation("CategoryApprovedBy", fields: [approvedById], references: [id])
   history      MasterDataHistory[] @relation("CategoryHistory")
 
   @@index([status])
@@ -210,22 +210,22 @@ model Category {
 }
 
 model Manufacturer {
-  id           String    @id
-  code         String?   @unique
-  name         String    @unique
+  id           String              @id
+  code         String?             @unique
+  name         String              @unique
   description  String?
-  status       String    @default("Draft")
+  status       String              @default("Draft")
   remarks      String?
-  isActive     Boolean   @default(true)
+  isActive     Boolean             @default(true)
   createdById  String?
   updatedById  String?
   approvedById String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
   approvedAt   DateTime?
-  createdBy    User?     @relation("ManufacturerCreatedBy", fields: [createdById], references: [id])
-  updatedBy    User?     @relation("ManufacturerUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy   User?     @relation("ManufacturerApprovedBy", fields: [approvedById], references: [id])
+  createdBy    User?               @relation("ManufacturerCreatedBy", fields: [createdById], references: [id])
+  updatedBy    User?               @relation("ManufacturerUpdatedBy", fields: [updatedById], references: [id])
+  approvedBy   User?               @relation("ManufacturerApprovedBy", fields: [approvedById], references: [id])
   history      MasterDataHistory[] @relation("ManufacturerHistory")
 
   @@index([status])
@@ -233,48 +233,49 @@ model Manufacturer {
 }
 
 model TaxRate {
-  id           String    @id
-  code         String?   @unique
-  name         String    @unique
-  description  String?
-  percentage   Float     @default(0.0)
-  taxType      String    @default("GST")
-  status       String    @default("Draft")
-  remarks      String?
-  isActive     Boolean   @default(true)
-  createdById  String?
-  updatedById  String?
-  approvedById String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  approvedAt   DateTime?
-  createdBy    User?     @relation("TaxRateCreatedBy", fields: [createdById], references: [id])
-  updatedBy    User?     @relation("TaxRateUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy   User?     @relation("TaxRateApprovedBy", fields: [approvedById], references: [id])
-  history      MasterDataHistory[] @relation("TaxRateHistory")
+  id              String              @id
+  code            String?             @unique
+  name            String              @unique
+  description     String?
+  percentage      Float               @default(0.0)
+  taxType         String              @default("GST")
+  status          String              @default("Draft")
+  remarks         String?
+  isActive        Boolean             @default(true)
+  createdById     String?
+  updatedById     String?
+  approvedById    String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  approvedAt      DateTime?
+  createdBy       User?               @relation("TaxRateCreatedBy", fields: [createdById], references: [id])
+  updatedBy       User?               @relation("TaxRateUpdatedBy", fields: [updatedById], references: [id])
+  approvedBy      User?               @relation("TaxRateApprovedBy", fields: [approvedById], references: [id])
+  history         MasterDataHistory[] @relation("TaxRateHistory")
+  defaultHsnCodes HsnCode[]           @relation("HsnDefaultGstRate")
 
   @@index([status])
   @@index([createdAt])
 }
 
 model UnitOfMeasurement {
-  id           String    @id
-  code         String?   @unique
-  name         String    @unique
+  id           String              @id
+  code         String?             @unique
+  name         String              @unique
   description  String?
   abbreviation String?
-  status       String    @default("Draft")
+  status       String              @default("Draft")
   remarks      String?
-  isActive     Boolean   @default(true)
+  isActive     Boolean             @default(true)
   createdById  String?
   updatedById  String?
   approvedById String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
   approvedAt   DateTime?
-  createdBy    User?     @relation("UnitCreatedBy", fields: [createdById], references: [id])
-  updatedBy    User?     @relation("UnitUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy   User?     @relation("UnitApprovedBy", fields: [approvedById], references: [id])
+  createdBy    User?               @relation("UnitCreatedBy", fields: [createdById], references: [id])
+  updatedBy    User?               @relation("UnitUpdatedBy", fields: [updatedById], references: [id])
+  approvedBy   User?               @relation("UnitApprovedBy", fields: [approvedById], references: [id])
   history      MasterDataHistory[] @relation("UnitHistory")
 
   @@index([status])
@@ -282,63 +283,73 @@ model UnitOfMeasurement {
 }
 
 model HsnCode {
-  id           String    @id
-  code         String    @unique
-  name         String
-  description  String?
-  gstRate      Float?
-  chapterCode  String?
-  status       String    @default("Draft")
-  remarks      String?
-  isActive     Boolean   @default(true)
-  createdById  String?
-  updatedById  String?
-  approvedById String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  approvedAt   DateTime?
-  createdBy    User?     @relation("HsnCreatedBy", fields: [createdById], references: [id])
-  updatedBy    User?     @relation("HsnUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy   User?     @relation("HsnApprovedBy", fields: [approvedById], references: [id])
-  history      MasterDataHistory[] @relation("HsnHistory")
+  id               String              @id
+  code             String              @unique
+  name             String
+  description      String?
+  defaultGstRateId String?
+  status           String              @default("Draft")
+  remarks          String?
+  isActive         Boolean             @default(true)
+  createdById      String?
+  updatedById      String?
+  approvedById     String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  approvedAt       DateTime?
+  createdBy        User?               @relation("HsnCreatedBy", fields: [createdById], references: [id])
+  updatedBy        User?               @relation("HsnUpdatedBy", fields: [updatedById], references: [id])
+  approvedBy       User?               @relation("HsnApprovedBy", fields: [approvedById], references: [id])
+  defaultGstRate   TaxRate?            @relation("HsnDefaultGstRate", fields: [defaultGstRateId], references: [id])
+  history          MasterDataHistory[] @relation("HsnHistory")
 
   @@index([status])
   @@index([createdAt])
 }
 
+model GovernmentHsnHelper {
+  id          String @id @default(cuid())
+  code        String @unique
+  description String
+  level       String // "Chapter", "Heading", "Sub-heading", "Tariff Item"
+  
+  @@index([code])
+}
+
+
 model MasterDataHistory {
-  id            String    @id @default(cuid())
-  entityType    String    // "Brand" | "Manufacturer" | "Category" | "TaxRate" | "UnitOfMeasurement" | "HsnCode"
+  id            String   @id @default(cuid())
+  entityType    String // "Brand" | "Manufacturer" | "Category" | "TaxRate" | "UnitOfMeasurement" | "HsnCode"
   entityId      String
-  action        String    // "CREATED" | "UPDATED" | "SUBMITTED" | "APPROVED" | "DECLINED" | "ARCHIVED" | "RESTORED"
+  action        String // "CREATED" | "UPDATED" | "SUBMITTED" | "APPROVED" | "DECLINED" | "ARCHIVED" | "RESTORED"
   fieldName     String?
   previousValue String?
   newValue      String?
   remarks       String?
   performedById String
-  performedAt   DateTime  @default(now())
-  performedBy   User      @relation("MasterHistoryPerformedBy", fields: [performedById], references: [id])
+  performedAt   DateTime @default(now())
+  performedBy   User     @relation("MasterHistoryPerformedBy", fields: [performedById], references: [id])
 
-  brand              Brand?              @relation("BrandHistory", fields: [brandId], references: [id], onDelete: Cascade)
-  brandId            String?
-  category           Category?           @relation("CategoryHistory", fields: [categoryId], references: [id], onDelete: Cascade)
-  categoryId         String?
-  manufacturer       Manufacturer?       @relation("ManufacturerHistory", fields: [manufacturerId], references: [id], onDelete: Cascade)
-  manufacturerId     String?
-  taxRate            TaxRate?            @relation("TaxRateHistory", fields: [taxRateId], references: [id], onDelete: Cascade)
-  taxRateId          String?
-  unitOfMeasurement  UnitOfMeasurement?  @relation("UnitHistory", fields: [unitOfMeasurementId], references: [id], onDelete: Cascade)
+  brand               Brand?             @relation("BrandHistory", fields: [brandId], references: [id], onDelete: Cascade)
+  brandId             String?
+  category            Category?          @relation("CategoryHistory", fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId          String?
+  manufacturer        Manufacturer?      @relation("ManufacturerHistory", fields: [manufacturerId], references: [id], onDelete: Cascade)
+  manufacturerId      String?
+  taxRate             TaxRate?           @relation("TaxRateHistory", fields: [taxRateId], references: [id], onDelete: Cascade)
+  taxRateId           String?
+  unitOfMeasurement   UnitOfMeasurement? @relation("UnitHistory", fields: [unitOfMeasurementId], references: [id], onDelete: Cascade)
   unitOfMeasurementId String?
-  hsnCode            HsnCode?            @relation("HsnHistory", fields: [hsnCodeId], references: [id], onDelete: Cascade)
-  hsnCodeId          String?
+  hsnCode             HsnCode?           @relation("HsnHistory", fields: [hsnCodeId], references: [id], onDelete: Cascade)
+  hsnCodeId           String?
 
   @@index([entityType, entityId])
   @@index([performedAt])
 }
 
 model MasterDataSequence {
-  entityName  String @id // "Brand" | "Manufacturer" | "Category" | "TaxRate" | "UnitOfMeasurement" | "HsnCode"
-  nextVal     Int    @default(10000)
+  entityName String @id // "Brand" | "Manufacturer" | "Category" | "TaxRate" | "UnitOfMeasurement" | "HsnCode"
+  nextVal    Int    @default(10000)
 }
 
 model Sku {
@@ -941,14 +952,14 @@ model SubVendor {
 }
 
 model SolarOrder {
-  id                    String   @id @default(cuid())
-  orderNumber           String   @unique
-  orderDate             DateTime @default(now())
-  applicationNumber     String?  @unique
-  status                String   @default("DRAFT") // DRAFT, PENDING_APPROVAL, APPROVED, EXECUTION, COMPLETED, CANCELLED
+  id                    String     @id @default(cuid())
+  orderNumber           String     @unique
+  orderDate             DateTime   @default(now())
+  applicationNumber     String?    @unique
+  status                String     @default("DRAFT") // DRAFT, PENDING_APPROVAL, APPROVED, EXECUTION, COMPLETED, CANCELLED
   customerName          String
   phoneNumber           String
-  whatsappEnabled       Boolean  @default(false)
+  whatsappEnabled       Boolean    @default(false)
   leadSource            String // WALK_IN, REFERRAL, ONLINE, EXHIBITION, OTHER
   referralCustomerId    String?
   referralName          String?
@@ -957,18 +968,18 @@ model SolarOrder {
   subVendorId           String?
   subVendor             SubVendor? @relation("SolarOrderSubVendor", fields: [subVendorId], references: [id])
   otherLeadSource       String?
-  loanCustomer          Boolean  @default(false)
+  loanCustomer          Boolean    @default(false)
   totalOrderAmount      Float
-  receivedAmount        Float    @default(0)
-  fileChargePaid        Boolean   @default(false)
+  receivedAmount        Float      @default(0)
+  fileChargePaid        Boolean    @default(false)
   fileChargeAmount      Float?
-  pendingAmount         Float    @default(0)
+  pendingAmount         Float      @default(0)
   systemSize            Float
   systemType            String // ON_GRID, OFF_GRID, HYBRID
   zohoBooksCustomerId   String?
   zohoBooksCustomerName String?
   remarks               String?
-  
+
   // Cancellation Fields
   isCancelled           Boolean   @default(false)
   cancelledAt           DateTime?
@@ -981,21 +992,21 @@ model SolarOrder {
   loanQuotationAmount   Float?
   loanApplicationNumber String?
 
-  editCount             Int      @default(0)
-  lastEditedAt          DateTime?
-  lastEditedBy          String?
+  editCount    Int       @default(0)
+  lastEditedAt DateTime?
+  lastEditedBy String?
 
   createdById   String
   approvedById  String?
   approvedAt    DateTime?
   submittedById String?
-  
+
   lastPaymentSyncAt DateTime?
-  submittedAt   DateTime?
-  rejectedById  String?
-  rejectedAt    DateTime?
-  rejectionRemarks String?
-  completedAt   DateTime?
+  submittedAt       DateTime?
+  rejectedById      String?
+  rejectedAt        DateTime?
+  rejectionRemarks  String?
+  completedAt       DateTime?
   installationDate  DateTime? // Scheduled installation date (drag-and-drop calendar)
   // Future-ready fields (not stored yet):
   // assignedInstallerId String?
@@ -1050,15 +1061,15 @@ model SolarWorkflowStep {
   completedAt   DateTime?
   startedAt     DateTime?
   metadata      Json?
-  
-  wifiSsid                 String?
-  wifiPassword             String?
-  wifiNotApplicableReason  String?
-  wifiNotApplicableNotes   String?
-  
-  editCount     Int       @default(0)
-  lastEditedAt  DateTime?
-  lastEditedBy  String?
+
+  wifiSsid                String?
+  wifiPassword            String?
+  wifiNotApplicableReason String?
+  wifiNotApplicableNotes  String?
+
+  editCount    Int       @default(0)
+  lastEditedAt DateTime?
+  lastEditedBy String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1074,7 +1085,7 @@ model SolarWorkflowStep {
 }
 
 model SolarOrderFile {
-  id            String    @id @default(cuid())
+  id            String  @id @default(cuid())
   solarOrderId  String
   fileName      String
   fileUrl       String
@@ -1083,11 +1094,11 @@ model SolarOrderFile {
   fileCategory  String // SITE_IMAGE, DOCUMENTATION, ROOFTOP_PHOTO, OTHER
   documentType  String? // e.g., 'CANCELLED_CHEQUE', 'ELECTRICITY_BILL'
   metadata      Json?
-  
-  uploadedById  String
-  isDeleted     Boolean   @default(false)
-  deletedAt     DateTime?
-  deletedById   String?
+
+  uploadedById String
+  isDeleted    Boolean   @default(false)
+  deletedAt    DateTime?
+  deletedById  String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1126,8 +1137,8 @@ model SolarOrderPanel {
   quantity     Int
   orderIndex   Int
 
-  solarOrder   SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
-  
+  solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+
   @@index([solarOrderId])
 }
 
@@ -1138,8 +1149,8 @@ model SolarOrderInverter {
   quantity     Int
   orderIndex   Int
 
-  solarOrder   SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
-  
+  solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+
   @@index([solarOrderId])
 }
 
@@ -1161,12 +1172,12 @@ model SolarOrderPayment {
   solarOrderId String
   amount       Float
   paymentDate  DateTime @default(now())
-  paymentMode  String   // CASH, BANK_TRANSFER, CHEQUE, UPI
+  paymentMode  String // CASH, BANK_TRANSFER, CHEQUE, UPI
   referenceNo  String?
   remarks      String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-  
+
   solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
 
   @@index([solarOrderId])
@@ -1192,28 +1203,28 @@ model ProjectChatMessage {
 // ─── Solar Tasks & Follow-up Module ──────────────────────────────────────────
 
 model SolarTask {
-  id              String   @id @default(cuid())
-  solarOrderId    String
-  title           String
-  description     String?
-  assignedToId    String
-  dueDate         DateTime
-  dueTime         String?  // Optional "14:30"
-  status          String   @default("PENDING") // PENDING, COMPLETED
-  createdById     String
-  completedById   String?
-  completedAt     DateTime?
-  latestUpdate    String?  // Quick denormalized cache of last follow-up text
+  id            String    @id @default(cuid())
+  solarOrderId  String
+  title         String
+  description   String?
+  assignedToId  String
+  dueDate       DateTime
+  dueTime       String? // Optional "14:30"
+  status        String    @default("PENDING") // PENDING, COMPLETED
+  createdById   String
+  completedById String?
+  completedAt   DateTime?
+  latestUpdate  String? // Quick denormalized cache of last follow-up text
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  solarOrder      SolarOrder        @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
-  assignedTo      User              @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
-  createdBy       User              @relation("TaskCreatedBy", fields: [createdById], references: [id])
-  completedBy     User?             @relation("TaskCompletedBy", fields: [completedById], references: [id])
-  
-  followUps       SolarTaskFollowUp[]
+  solarOrder  SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  assignedTo  User       @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+  createdBy   User       @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  completedBy User?      @relation("TaskCompletedBy", fields: [completedById], references: [id])
+
+  followUps SolarTaskFollowUp[]
 
   @@index([solarOrderId])
   @@index([assignedToId])
@@ -1221,30 +1232,30 @@ model SolarTask {
 }
 
 model SolarTaskFollowUp {
-  id              String   @id @default(cuid())
-  taskId          String
-  userId          String
-  comment         String   @db.Text
+  id               String    @id @default(cuid())
+  taskId           String
+  userId           String
+  comment          String    @db.Text
   nextFollowUpDate DateTime?
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
-  task            SolarTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user            User      @relation(fields: [userId], references: [id])
+  task SolarTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id])
 
   @@index([taskId])
 }
 
 model SolarDiscussion {
-  id              String   @id @default(cuid())
-  solarOrderId    String
-  userId          String
-  comment         String   @db.Text
+  id           String @id @default(cuid())
+  solarOrderId String
+  userId       String
+  comment      String @db.Text
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
-  solarOrder      SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
-  user            User       @relation(fields: [userId], references: [id])
+  solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id])
 
   @@index([solarOrderId])
 }
@@ -1317,26 +1328,26 @@ model Communication {
   providerResponse  Json?
   retryCount        Int                    @default(0)
   metadata          Json?
-  
+
   createdById       String
   assignedToUserId  String?
   relatedRecordType String?
   relatedRecordId   String?
-  
-  apiAcceptedAt     DateTime?
-  sentAt            DateTime?
-  deliveredAt       DateTime?
-  readAt            DateTime?
-  failedAt          DateTime?
-  errorMessage      String?                @db.Text
-  
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
 
-  createdBy         User                   @relation("CommunicationCreatedBy", fields: [createdById], references: [id])
-  assignedTo        User?                  @relation("CommunicationAssignedTo", fields: [assignedToUserId], references: [id])
-  attachments       CommunicationAttachment[]
-  timeline          CommunicationTimeline[]
+  apiAcceptedAt DateTime?
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  readAt        DateTime?
+  failedAt      DateTime?
+  errorMessage  String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy   User                      @relation("CommunicationCreatedBy", fields: [createdById], references: [id])
+  assignedTo  User?                     @relation("CommunicationAssignedTo", fields: [assignedToUserId], references: [id])
+  attachments CommunicationAttachment[]
+  timeline    CommunicationTimeline[]
 
   @@index([customerId])
   @@index([status])
@@ -1346,29 +1357,29 @@ model Communication {
 }
 
 model CommunicationAttachment {
-  id              String        @id @default(cuid())
+  id              String @id @default(cuid())
   communicationId String
   fileName        String
   mimeType        String
   url             String
   size            Int?
-  
-  createdAt       DateTime      @default(now())
 
-  communication   Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  communication Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
 
   @@index([communicationId])
 }
 
 model IncomingWebhook {
-  id               String    @id @default(cuid())
+  id               String   @id @default(cuid())
   provider         String
   headers          Json
   body             Json
   signature        String?
   ipAddress        String?
-  receivedAt       DateTime  @default(now())
-  processed        Boolean   @default(false)
+  receivedAt       DateTime @default(now())
+  processed        Boolean  @default(false)
   processingResult String?
   matchedMessageId String?
 
@@ -1377,14 +1388,14 @@ model IncomingWebhook {
 }
 
 model CommunicationTimeline {
-  id               String    @id @default(cuid())
+  id               String   @id @default(cuid())
   communicationId  String
   status           String
   timestamp        DateTime
   providerResponse Json?
-  createdAt        DateTime  @default(now())
+  createdAt        DateTime @default(now())
 
-  communication    Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
+  communication Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
 
   @@index([communicationId])
 }
@@ -1392,38 +1403,38 @@ model CommunicationTimeline {
 // ─── WhatsApp Integration Module ─────────────────────────────────────────────
 
 model WhatsAppConfiguration {
-  id                    String    @id @default("singleton")
-  appId                 String
-  encryptedAccessToken  String
-  phoneNumberId         String
-  businessAccountId     String
-  apiVersion            String
-  webhookVerifyToken    String
-  integrationEnabled    Boolean   @default(false)
-  
+  id                   String  @id @default("singleton")
+  appId                String
+  encryptedAccessToken String
+  phoneNumberId        String
+  businessAccountId    String
+  apiVersion           String
+  webhookVerifyToken   String
+  integrationEnabled   Boolean @default(false)
+
   // Connection Test Data
-  businessName          String?
-  displayPhoneNumber    String?
-  verifiedName          String?
-  connectionStatus      String    @default("NOT_TESTED") // NOT_TESTED, CONNECTED, FAILED
-  lastConnectionTest    DateTime?
-  testPhoneNumber       String?
-  
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  businessName       String?
+  displayPhoneNumber String?
+  verifiedName       String?
+  connectionStatus   String    @default("NOT_TESTED") // NOT_TESTED, CONNECTED, FAILED
+  lastConnectionTest DateTime?
+  testPhoneNumber    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model WhatsAppMessageLog {
-  id            String   @id @default(cuid())
-  recipient     String
-  templateName  String
-  language      String
-  messageId     String?
-  status        String   @default("PENDING") // PENDING, SENT, FAILED
-  responseJson  Json?
-  errorMessage  String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(cuid())
+  recipient    String
+  templateName String
+  language     String
+  messageId    String?
+  status       String   @default("PENDING") // PENDING, SENT, FAILED
+  responseJson Json?
+  errorMessage String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model WhatsAppTemplate {
@@ -1446,18 +1457,18 @@ model WhatsAppTemplate {
 }
 
 model WhatsAppTestLog {
-  id              String   @id @default(cuid())
-  adminUserId     String
-  templateId      String
-  recipient       String
-  variablesUsed   Json?
-  mediaGenerated  Boolean  @default(false)
-  metaMessageId   String?
-  status          String   // SUCCESS, FAILED
-  response        Json?
-  sentAt          DateTime @default(now())
+  id             String   @id @default(cuid())
+  adminUserId    String
+  templateId     String
+  recipient      String
+  variablesUsed  Json?
+  mediaGenerated Boolean  @default(false)
+  metaMessageId  String?
+  status         String // SUCCESS, FAILED
+  response       Json?
+  sentAt         DateTime @default(now())
 
-  adminUser       User     @relation(fields: [adminUserId], references: [id])
+  adminUser User @relation(fields: [adminUserId], references: [id])
 
   @@index([templateId])
   @@index([adminUserId])
@@ -1466,13 +1477,13 @@ model WhatsAppTestLog {
 // ─── Gateway Integration Module ─────────────────────────────────────────────
 
 model GatewayConfiguration {
-  id               String    @id @default("singleton")
-  gatewayUrl       String
-  apiToken         String
-  connectionStatus String    @default("NOT_TESTED") // NOT_TESTED, CONNECTED, FAILED
+  id                 String    @id @default("singleton")
+  gatewayUrl         String
+  apiToken           String
+  connectionStatus   String    @default("NOT_TESTED") // NOT_TESTED, CONNECTED, FAILED
   lastConnectionTest DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 }
 
 model GatewayMessageLog {

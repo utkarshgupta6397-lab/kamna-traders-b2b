@@ -93,10 +93,6 @@ export async function PATCH(
       updatedById: session.userId,
     };
 
-    if (existing.status === 'Active') {
-      updateData.status = 'Approval Pending';
-    }
-
     if (name && name.trim() !== existing.name) {
       // Check unique name
       const duplicate = await delegate.findFirst({

@@ -1,6 +1,7 @@
 import React from 'react';
 import { MasterRecord, MasterConfig } from './types';
 import MasterStatusBadge from './MasterStatusBadge';
+import { getRecordAuthorization } from './authorization';
 import { Eye, Edit2, Send, CheckCircle2, XCircle, History, Archive, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 
 interface MasterTableProps {
@@ -19,6 +20,8 @@ interface MasterTableProps {
   onHistory: (record: MasterRecord) => void;
   onArchive: (record: MasterRecord) => void;
   onRestore: (record: MasterRecord) => void;
+  onReactivate?: (record: MasterRecord) => void;
+  canCreate: boolean;
   canModify: boolean;
   canApprove: boolean;
 }
@@ -39,6 +42,8 @@ export default function MasterTable({
   onHistory,
   onArchive,
   onRestore,
+  onReactivate,
+  canCreate,
   canModify,
   canApprove,
 }: MasterTableProps) {
@@ -60,7 +65,7 @@ export default function MasterTable({
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-gray-50/80 border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider sticky top-0 bg-white z-10">
-              <th className="py-3 px-4">ID</th>
+              <th className="py-3 px-4">#</th>
               <th className="py-3 px-4">Code</th>
               <th className="py-3 px-4">Name</th>
               {config.entityKey === 'tax-rates' && <th className="py-3 px-4">Tax %</th>}
@@ -69,7 +74,9 @@ export default function MasterTable({
               <th className="py-3 px-4">Description</th>
               <th className="py-3 px-4">Status</th>
               <th className="py-3 px-4">Created By</th>
-              <th className="py-3 px-4">Updated On</th>
+              <th className="py-3 px-4">Created At</th>
+              <th className="py-3 px-4">Updated By</th>
+              <th className="py-3 px-4">Updated At</th>
               <th className="py-3 px-4 text-right">Actions</th>
             </tr>
           </thead>
@@ -90,9 +97,9 @@ export default function MasterTable({
                 </td>
               </tr>
             ) : (
-              records.map((r) => (
+              records.map((r, index) => (
                 <tr key={r.id} className="hover:bg-gray-50/80 transition-colors">
-                  <td className="py-3 px-4 font-mono text-xs text-gray-500 font-medium">{r.id}</td>
+                  <td className="py-3 px-4 font-mono text-xs text-gray-500 font-medium">{(page - 1) * limit + index + 1}</td>
                   <td className="py-3 px-4 font-mono text-xs font-semibold text-gray-900">{r.code || '-'}</td>
                   <td className="py-3 px-4 font-medium text-gray-900">{r.name}</td>
                   {config.entityKey === 'tax-rates' && <td className="py-3 px-4 font-medium text-gray-800">{r.percentage}% ({r.taxType || 'GST'})</td>}
@@ -106,80 +113,108 @@ export default function MasterTable({
                     {r.createdBy?.name || 'System'}
                   </td>
                   <td className="py-3 px-4 text-xs text-gray-500">
+                    {formatDate(r.createdAt)}
+                  </td>
+                  <td className="py-3 px-4 text-xs text-gray-600">
+                    {r.updatedBy?.name || '-'}
+                  </td>
+                  <td className="py-3 px-4 text-xs text-gray-500">
                     {formatDate(r.updatedAt)}
                   </td>
                   <td className="py-3 px-4 text-right whitespace-nowrap">
                     <div className="flex items-center justify-end gap-1">
-                      {/* View / Edit */}
-                      <button
-                        onClick={() => onViewEdit(r)}
-                        className="p-1.5 text-gray-500 hover:text-[#1A2766] hover:bg-gray-100 rounded-md transition-colors"
-                        title={r.status === 'Draft' && canModify ? 'Edit Record' : 'View Record'}
-                      >
-                        {r.status === 'Draft' && canModify ? <Edit2 size={15} /> : <Eye size={15} />}
-                      </button>
+                      {(() => {
+                        const { canEdit, canSubmit, canApproveAction } = getRecordAuthorization(r, { canCreate, canModify, canApprove });
+                        return (
+                          <>
+                            {/* View / Edit */}
+                            <button
+                              onClick={() => onViewEdit(r)}
+                              className="p-1.5 text-gray-500 hover:text-[#1A2766] hover:bg-gray-100 rounded-md transition-colors"
+                              title={canEdit ? 'Edit Record' : 'View Record'}
+                            >
+                              {canEdit ? (
+                                <Edit2 size={15} />
+                              ) : (
+                                <Eye size={15} />
+                              )}
+                            </button>
 
-                      {/* Submit for Approval (Draft) */}
-                      {r.status === 'Draft' && canModify && (
-                        <button
-                          onClick={() => onSubmit(r)}
-                          className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-md transition-colors"
-                          title="Submit for Approval"
-                        >
-                          <Send size={15} />
-                        </button>
-                      )}
+                            {/* Submit for Approval (Draft) */}
+                            {canSubmit && (
+                              <button
+                                onClick={() => onSubmit(r)}
+                                className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-md transition-colors"
+                                title="Submit for Approval"
+                              >
+                                <Send size={15} />
+                              </button>
+                            )}
 
-                      {/* Approve / Decline (Approval Pending) */}
-                      {r.status === 'Approval Pending' && canApprove && (
-                        <>
-                          <button
-                            onClick={() => onApprove(r)}
-                            className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-md transition-colors"
-                            title="Approve Record"
-                          >
-                            <CheckCircle2 size={15} />
-                          </button>
-                          <button
-                            onClick={() => onDecline(r)}
-                            className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-md transition-colors"
-                            title="Decline Record"
-                          >
-                            <XCircle size={15} />
-                          </button>
-                        </>
-                      )}
+                            {/* Approve / Decline (Approval Pending) */}
+                            {canApproveAction && (
+                              <>
+                                <button
+                                  onClick={() => onApprove(r)}
+                                  className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-md transition-colors"
+                                  title="Approve Record"
+                                >
+                                  <CheckCircle2 size={15} />
+                                </button>
+                                <button
+                                  onClick={() => onDecline(r)}
+                                  className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-md transition-colors"
+                                  title="Decline Record"
+                                >
+                                  <XCircle size={15} />
+                                </button>
+                              </>
+                            )}
 
-                      {/* Restore (Archived) */}
-                      {r.status === 'Archived' && canModify && (
-                        <button
-                          onClick={() => onRestore(r)}
-                          className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
-                          title="Restore Record"
-                        >
-                          <RotateCcw size={15} />
-                        </button>
-                      )}
+                            {/* Restore (Archived) */}
+                            {r.status === 'Archived' && canModify && (
+                              <button
+                                onClick={() => onRestore(r)}
+                                className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
+                                title="Restore Record"
+                              >
+                                <RotateCcw size={15} />
+                              </button>
+                            )}
 
-                      {/* Archive (Not Archived) */}
-                      {r.status !== 'Archived' && canModify && (
-                        <button
-                          onClick={() => onArchive(r)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                          title="Archive Record"
-                        >
-                          <Archive size={15} />
-                        </button>
-                      )}
+                            {/* Reactivate (Inactive) */}
+                            {r.status === 'Inactive' && canModify && onReactivate && (
+                              <button
+                                onClick={() => onReactivate(r)}
+                                className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
+                                title="Reactivate Record"
+                              >
+                                <RotateCcw size={15} />
+                              </button>
+                            )}
 
-                      {/* Audit History */}
-                      <button
-                        onClick={() => onHistory(r)}
-                        className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
-                        title="View Audit History"
-                      >
-                        <History size={15} />
-                      </button>
+                            {/* Archive (Not Archived, Not Inactive) */}
+                            {r.status !== 'Archived' && r.status !== 'Inactive' && canModify && (
+                              <button
+                                onClick={() => onArchive(r)}
+                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                title="Archive Record"
+                              >
+                                <Archive size={15} />
+                              </button>
+                            )}
+
+                            {/* Audit History */}
+                            <button
+                              onClick={() => onHistory(r)}
+                              className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                              title="View Audit History"
+                            >
+                              <History size={15} />
+                            </button>
+                          </>
+                        );
+                      })()}
                     </div>
                   </td>
                 </tr>

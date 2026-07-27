@@ -18,6 +18,30 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
   const [customValues, setCustomValues] = useState<Record<string, any>>({});
   const [submitting, setSubmitting] = useState(false);
 
+  const hasUnsavedChanges = React.useMemo(() => {
+    if (name.trim()) return true;
+    if (code.trim()) return true;
+    if (description.trim()) return true;
+    if (remarks.trim()) return true;
+
+    for (const key in customValues) {
+      if (customValues[key] !== undefined && customValues[key] !== null && String(customValues[key]).trim() !== '') {
+        return true;
+      }
+    }
+    return false;
+  }, [name, code, description, remarks, customValues]);
+
+  const handleDismiss = () => {
+    if (hasUnsavedChanges) {
+      if (window.confirm('Discard unsaved changes?')) {
+        onClose();
+      }
+    } else {
+      onClose();
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       setName('');
@@ -31,12 +55,12 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen && !submitting) {
-        onClose();
+        handleDismiss();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, submitting, onClose]);
+  }, [isOpen, submitting, handleDismiss]);
 
   if (!isOpen) return null;
 
@@ -77,7 +101,12 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) handleDismiss();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+    >
       <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
@@ -86,7 +115,7 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
             <p className="text-xs text-gray-500 mt-0.5">Add a new record to the master catalog registry.</p>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleDismiss}
             disabled={submitting}
             className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg transition-colors"
           >
@@ -185,7 +214,7 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
         <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleDismiss}
             disabled={submitting}
             className="px-4 py-2 border border-gray-200 hover:bg-white text-gray-700 rounded-lg text-xs font-medium transition-colors"
           >

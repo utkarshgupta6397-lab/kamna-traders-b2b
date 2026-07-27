@@ -4,13 +4,17 @@ import MasterStatusBadge from './MasterStatusBadge';
 import { X, Save, Send, Loader2, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+import { getRecordAuthorization } from './authorization';
+
 interface EditMasterModalProps {
   isOpen: boolean;
   onClose: () => void;
   record: MasterRecord | null;
   config: MasterConfig;
   onSuccess: () => void;
+  canCreate: boolean;
   canModify: boolean;
+  canApprove: boolean;
 }
 
 export default function EditMasterModal({
@@ -19,7 +23,9 @@ export default function EditMasterModal({
   record,
   config,
   onSuccess,
+  canCreate,
   canModify,
+  canApprove,
 }: EditMasterModalProps) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
@@ -27,6 +33,50 @@ export default function EditMasterModal({
   const [remarks, setRemarks] = useState('');
   const [customValues, setCustomValues] = useState<Record<string, any>>({});
   const [submitting, setSubmitting] = useState(false);
+
+  const hasUnsavedChanges = React.useMemo(() => {
+    if (!record) return false;
+    if (name !== (record.name || '')) return true;
+    if (code !== (record.code || '')) return true;
+    if (description !== (record.description || '')) return true;
+    if (remarks !== (record.remarks || '')) return true;
+
+    // Check custom fields
+    if (config.customFields) {
+      for (const f of config.customFields) {
+        const val = customValues[f.name];
+        const recordVal = (record as any)[f.name];
+        const valStr = val === undefined || val === null ? '' : String(val);
+        const recordValStr = recordVal === undefined || recordVal === null ? '' : String(recordVal);
+        if (valStr !== recordValStr) return true;
+      }
+    }
+    return false;
+  }, [record, name, code, description, remarks, customValues, config.customFields]);
+
+  const handleDismiss = () => {
+    if (!isReadOnly && hasUnsavedChanges) {
+      if (window.confirm('Discard unsaved changes?')) {
+        onClose();
+      }
+    } else {
+      onClose();
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleDismiss();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, handleDismiss]);
 
   useEffect(() => {
     if (record) {
@@ -47,8 +97,7 @@ export default function EditMasterModal({
 
   if (!isOpen || !record) return null;
 
-  const isReadOnly = record.status === 'Archived' || !canModify;
-  const isEditableState = record.status === 'Draft';
+  const { canEdit, canSubmit, isReadOnly } = getRecordAuthorization(record, { canCreate, canModify, canApprove });
 
   const handleSave = async (submitAfterSave = false) => {
     if (!name.trim()) {
@@ -100,7 +149,12 @@ export default function EditMasterModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) handleDismiss();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+    >
       <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
@@ -114,7 +168,7 @@ export default function EditMasterModal({
             <p className="text-xs text-gray-500 mt-0.5 font-mono">ID: {record.id}</p>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleDismiss}
             disabled={submitting}
             className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg transition-colors"
           >
@@ -243,7 +297,7 @@ export default function EditMasterModal({
         <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleDismiss}
             disabled={submitting}
             className="px-4 py-2 border border-gray-200 hover:bg-white text-gray-700 rounded-lg text-xs font-medium transition-colors"
           >
@@ -262,7 +316,7 @@ export default function EditMasterModal({
                 Save Changes
               </button>
 
-              {isEditableState && (
+              {canSubmit && (
                 <button
                   type="button"
                   onClick={() => handleSave(true)}

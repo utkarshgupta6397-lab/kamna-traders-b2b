@@ -63,17 +63,23 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid entity' }, { status: 400 });
   }
 
-  // Modify Permission check
-  const modifyPerm = `${meta.permissionPrefix}_modify`;
-  if (session.role !== 'ADMIN' && !session[modifyPerm]) {
-    return NextResponse.json({ error: `Permission Denied: ${modifyPerm}` }, { status: 403 });
-  }
-
   try {
     const delegate = getPrismaDelegate(entity as MasterEntityKey);
     const existing = await delegate.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json({ error: 'Record not found' }, { status: 404 });
+    }
+
+    // Permission check
+    const modifyPerm = `${meta.permissionPrefix}_modify`;
+    const createPerm = `${meta.permissionPrefix}_create`;
+    const hasModify = session.role === 'ADMIN' || session[modifyPerm];
+    const hasCreate = session.role === 'ADMIN' || session[createPerm];
+
+    if (!hasModify) {
+      if (!(hasCreate && existing.status === 'Draft' && existing.createdById === session.userId)) {
+        return NextResponse.json({ error: `Permission Denied: Requires ${modifyPerm} or owner Create access for Drafts` }, { status: 403 });
+      }
     }
 
     if (existing.status === 'Archived') {
@@ -87,6 +93,10 @@ export async function PATCH(
       updatedById: session.userId,
     };
 
+    if (existing.status === 'Approved') {
+      updateData.status = 'Approval Pending';
+    }
+
     if (name && name.trim() !== existing.name) {
       // Check unique name
       const duplicate = await delegate.findFirst({
@@ -98,7 +108,18 @@ export async function PATCH(
       updateData.name = name.trim();
     }
 
-    if (code !== undefined) updateData.code = code ? code.trim().toUpperCase() : null;
+    if (code !== undefined) {
+      const parsedCode = code ? code.trim().toUpperCase() : null;
+      if (parsedCode && parsedCode !== existing.code) {
+        const existingCode = await delegate.findFirst({
+          where: { code: { equals: parsedCode, mode: 'insensitive' }, id: { not: id } },
+        });
+        if (existingCode) {
+          return NextResponse.json({ error: `${meta.singularName} with code "${parsedCode}" already exists` }, { status: 400 });
+        }
+      }
+      updateData.code = parsedCode;
+    }
     if (description !== undefined) updateData.description = description ? description.trim() : null;
     if (remarks !== undefined) updateData.remarks = remarks ? remarks.trim() : null;
 

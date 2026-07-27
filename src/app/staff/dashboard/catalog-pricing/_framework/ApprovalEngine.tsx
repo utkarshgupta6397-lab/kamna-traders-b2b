@@ -3,7 +3,7 @@ import { MasterRecord, MasterConfig } from './types';
 import { CheckCircle2, XCircle, AlertTriangle, Send, RotateCcw, X, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-export type ActionType = 'submit' | 'approve' | 'decline' | 'archive' | 'restore';
+export type ActionType = 'submit' | 'approve' | 'decline' | 'archive' | 'restore' | 'reactivate';
 
 interface ApprovalEngineProps {
   isOpen: boolean;
@@ -65,6 +65,14 @@ export default function ApprovalEngine({
         return {
           title: 'Restore Record',
           description: `Restore archived record "${record.name}" back to Draft status.`,
+          btnCls: 'bg-[#1A2766] hover:bg-[#152052] text-white',
+          icon: RotateCcw,
+          requireRemarks: false,
+        };
+      case 'reactivate':
+        return {
+          title: 'Reactivate Record',
+          description: `Reactivate inactive record "${record.name}" back to Approved status.`,
           btnCls: 'bg-[#1A2766] hover:bg-[#152052] text-white',
           icon: RotateCcw,
           requireRemarks: false,

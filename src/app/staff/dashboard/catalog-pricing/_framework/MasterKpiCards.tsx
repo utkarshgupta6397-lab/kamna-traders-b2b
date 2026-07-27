@@ -26,19 +26,19 @@ export default function MasterKpiCards({ stats, selectedStatus, onSelectStatus }
           <button
             key={c.key}
             onClick={() => onSelectStatus(c.key)}
-            className={`p-3.5 rounded-xl border text-left transition-all ${
+            className={`p-2.5 rounded-xl border text-left transition-all ${
               isSelected
                 ? 'border-[#1A2766] bg-white shadow-sm ring-1 ring-[#1A2766]'
                 : 'border-gray-200 bg-white hover:border-gray-300'
             }`}
           >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-gray-500">{c.label}</span>
-              <div className={`p-1.5 rounded-lg ${c.color}`}>
-                <Icon size={15} />
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] font-medium text-gray-500">{c.label}</span>
+              <div className={`p-1 rounded-lg ${c.color}`}>
+                <Icon size={14} />
               </div>
             </div>
-            <div className="text-xl font-bold text-gray-900">{c.count}</div>
+            <div className="text-lg font-bold text-gray-900">{c.count}</div>
           </button>
         );
       })}

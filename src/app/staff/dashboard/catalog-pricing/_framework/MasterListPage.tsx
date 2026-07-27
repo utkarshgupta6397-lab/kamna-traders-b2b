@@ -30,7 +30,7 @@ export default function MasterListPage({ config }: { config: MasterConfig }) {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortBy, setSortBy] = useState('default');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
   const [limit] = useState(25);
@@ -236,6 +236,8 @@ export default function MasterListPage({ config }: { config: MasterConfig }) {
         onHistory={handleOpenHistory}
         onArchive={(record) => handleOpenWorkflowAction(record, 'archive')}
         onRestore={(record) => handleOpenWorkflowAction(record, 'restore')}
+        onReactivate={(record) => handleOpenWorkflowAction(record, 'reactivate')}
+        canCreate={canCreate}
         canModify={canModify}
         canApprove={canApprove}
       />
@@ -254,7 +256,9 @@ export default function MasterListPage({ config }: { config: MasterConfig }) {
         record={selectedRecord}
         config={config}
         onSuccess={handleRefresh}
+        canCreate={canCreate}
         canModify={canModify}
+        canApprove={canApprove}
       />
 
       <ApprovalEngine

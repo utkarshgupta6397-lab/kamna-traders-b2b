@@ -55,38 +55,86 @@ export async function GET(
 
     const delegate = getPrismaDelegate(entity as MasterEntityKey);
     let total = 0;
-    try {
-      total = await delegate.count({ where });
-    } catch {
-      total = await delegate.count().catch(() => 0);
-    }
-
     let records: any[] = [];
-    try {
-      records = await delegate.findMany({
-        where,
-        orderBy: { [sortBy]: sortOrder },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: {
-          createdBy: { select: { id: true, name: true } },
-          updatedBy: { select: { id: true, name: true } },
-          approvedBy: { select: { id: true, name: true } },
-        },
-      });
-    } catch {
-      // Fallback for unmigrated DB schemas lacking relation fields
+
+    if (sortBy === 'default') {
       try {
+        const allRecords = await delegate.findMany({
+          where,
+          select: { id: true, status: true, updatedAt: true },
+        });
+
+        const statusWeight: Record<string, number> = {
+          'Approval Pending': 1,
+          'Draft': 2,
+          'Approved': 3,
+          'Inactive': 4,
+          'Archived': 5,
+        };
+
+        allRecords.sort((a: any, b: any) => {
+          const weightA = statusWeight[a.status] || 99;
+          const weightB = statusWeight[b.status] || 99;
+          if (weightA !== weightB) return weightA - weightB;
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        });
+
+        total = allRecords.length;
+        const pagedIds = allRecords.slice((page - 1) * limit, page * limit).map((r: any) => r.id);
+
+        const rawRecords = await delegate.findMany({
+          where: { id: { in: pagedIds } },
+          include: {
+            createdBy: { select: { id: true, name: true } },
+            updatedBy: { select: { id: true, name: true } },
+            approvedBy: { select: { id: true, name: true } },
+          },
+        });
+
+        records = pagedIds.map((id: any) => rawRecords.find((r: any) => r.id === id)).filter(Boolean);
+      } catch (err) {
+        // Fallback for unmigrated DB
+        total = await delegate.count({ where }).catch(() => 0);
         records = await delegate.findMany({
           where: {},
+          orderBy: { createdAt: sortOrder },
+          skip: (page - 1) * limit,
+          take: limit,
+        }).catch(() => []);
+      }
+    } else {
+      try {
+        total = await delegate.count({ where });
+      } catch {
+        total = await delegate.count().catch(() => 0);
+      }
+
+      try {
+        records = await delegate.findMany({
+          where,
           orderBy: { [sortBy]: sortOrder },
           skip: (page - 1) * limit,
           take: limit,
+          include: {
+            createdBy: { select: { id: true, name: true } },
+            updatedBy: { select: { id: true, name: true } },
+            approvedBy: { select: { id: true, name: true } },
+          },
         });
       } catch {
-        records = await delegate.findMany({
-          take: limit,
-        }).catch(() => []);
+        // Fallback for unmigrated DB schemas lacking relation fields
+        try {
+          records = await delegate.findMany({
+            where: {},
+            orderBy: { [sortBy]: sortOrder },
+            skip: (page - 1) * limit,
+            take: limit,
+          });
+        } catch {
+          records = await delegate.findMany({
+            take: limit,
+          }).catch(() => []);
+        }
       }
     }
 
@@ -146,6 +194,16 @@ export async function POST(
     const numId = await getNextMasterId(meta.modelName);
     const finalCode = code && code.trim() ? code.trim().toUpperCase() : `${meta.codePrefix}-${numId}`;
     const initialStatus = submitForApproval ? 'Approval Pending' : 'Draft';
+
+    // Check unique code
+    if (finalCode) {
+      const existingCode = await delegate.findFirst({
+        where: { code: { equals: finalCode, mode: 'insensitive' } },
+      });
+      if (existingCode) {
+        return NextResponse.json({ error: `${meta.singularName} with code "${finalCode}" already exists` }, { status: 400 });
+      }
+    }
 
     const createData: any = {
       name: name.trim(),

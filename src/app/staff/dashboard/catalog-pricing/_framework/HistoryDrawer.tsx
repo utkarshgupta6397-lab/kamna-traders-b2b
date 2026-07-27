@@ -117,10 +117,11 @@ function HistoryEventCard({ h }: { h: any }) {
       case 'CREATED': return 'Created';
       case 'UPDATED': return 'Updated';
       case 'SUBMITTED': return 'Submitted for Approval';
-      case 'APPROVED': return 'Approved';
+      case 'APPROVED': return 'Approved (Legacy)';
+      case 'ACTIVATED': return 'Activated';
       case 'DECLINED': return 'Declined';
       case 'ARCHIVED': return 'Archived';
-      case 'RESTORED': return 'Restored';
+      case 'RESTORED': return 'Reactivated';
       default: return action;
     }
   };

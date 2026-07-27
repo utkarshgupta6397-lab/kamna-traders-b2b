@@ -1,4 +1,4 @@
-export type MasterStatus = 'Draft' | 'Approval Pending' | 'Approved' | 'Inactive' | 'Archived';
+export type MasterStatus = 'Draft' | 'Approval Pending' | 'Active' | 'Inactive' | 'Archived';
 
 export interface MasterRecord {
   id: string;
@@ -58,7 +58,7 @@ export interface MasterKpiStats {
   total: number;
   draft: number;
   pending: number;
-  approved: number;
+  active: number;
   inactive: number;
   archived: number;
 }

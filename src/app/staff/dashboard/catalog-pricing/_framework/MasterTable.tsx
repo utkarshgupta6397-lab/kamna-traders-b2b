@@ -19,8 +19,8 @@ interface MasterTableProps {
   onDecline: (record: MasterRecord) => void;
   onHistory: (record: MasterRecord) => void;
   onArchive: (record: MasterRecord) => void;
-  onRestore: (record: MasterRecord) => void;
   onReactivate?: (record: MasterRecord) => void;
+  onDeactivate?: (record: MasterRecord) => void;
   canCreate: boolean;
   canModify: boolean;
   canApprove: boolean;
@@ -41,8 +41,8 @@ export default function MasterTable({
   onDecline,
   onHistory,
   onArchive,
-  onRestore,
   onReactivate,
+  onDeactivate,
   canCreate,
   canModify,
   canApprove,
@@ -124,7 +124,7 @@ export default function MasterTable({
                   <td className="py-3 px-4 text-right whitespace-nowrap">
                     <div className="flex items-center justify-end gap-1">
                       {(() => {
-                        const { canEdit, canSubmit, canApproveAction } = getRecordAuthorization(r, { canCreate, canModify, canApprove });
+                        const { canEdit, canSubmit, canApproveAction, canArchive } = getRecordAuthorization(r, { canCreate, canModify, canApprove });
                         return (
                           <>
                             {/* View / Edit */}
@@ -171,16 +171,7 @@ export default function MasterTable({
                               </>
                             )}
 
-                            {/* Restore (Archived) */}
-                            {r.status === 'Archived' && canModify && (
-                              <button
-                                onClick={() => onRestore(r)}
-                                className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
-                                title="Restore Record"
-                              >
-                                <RotateCcw size={15} />
-                              </button>
-                            )}
+
 
                             {/* Reactivate (Inactive) */}
                             {r.status === 'Inactive' && canModify && onReactivate && (
@@ -193,8 +184,19 @@ export default function MasterTable({
                               </button>
                             )}
 
+                            {/* Deactivate (Active) */}
+                            {r.status === 'Active' && canModify && onDeactivate && (
+                              <button
+                                onClick={() => onDeactivate(r)}
+                                className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-md transition-colors"
+                                title="Mark Inactive"
+                              >
+                                <XCircle size={15} />
+                              </button>
+                            )}
+
                             {/* Archive (Not Archived, Not Inactive) */}
-                            {r.status !== 'Archived' && r.status !== 'Inactive' && canModify && (
+                            {canArchive && (
                               <button
                                 onClick={() => onArchive(r)}
                                 className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"

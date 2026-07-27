@@ -93,7 +93,7 @@ export async function PATCH(
       updatedById: session.userId,
     };
 
-    if (existing.status === 'Approved') {
+    if (existing.status === 'Active') {
       updateData.status = 'Approval Pending';
     }
 
@@ -186,11 +186,15 @@ export async function DELETE(
       return NextResponse.json({ error: 'Record not found' }, { status: 404 });
     }
 
+    if (existing.status === 'Draft' || existing.status === 'Approval Pending') {
+      return NextResponse.json({ error: `Cannot archive a record in ${existing.status} status` }, { status: 400 });
+    }
+
     const archivedRecord = await delegate.update({
       where: { id },
       data: {
         status: 'Archived',
-        isActive: false,
+        active: false,
         updatedById: session.userId,
       },
     });

@@ -68,7 +68,7 @@ export default function MasterFilters({
             <option value="ALL">All Statuses</option>
             <option value="Draft">Draft</option>
             <option value="Approval Pending">Approval Pending</option>
-            <option value="Approved">Approved</option>
+            <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
             <option value="Archived">Archived</option>
           </select>

@@ -11,7 +11,7 @@ interface MasterKpiCardsProps {
 export default function MasterKpiCards({ stats, selectedStatus, onSelectStatus }: MasterKpiCardsProps) {
   const cards = [
     { key: 'ALL', label: 'Total Records', count: stats.total, icon: Database, color: 'text-gray-600 bg-gray-100' },
-    { key: 'Approved', label: 'Approved', count: stats.approved, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+    { key: 'Active', label: 'Active', count: stats.active, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
     { key: 'Approval Pending', label: 'Approval Pending', count: stats.pending, icon: Clock, color: 'text-amber-600 bg-amber-50' },
     { key: 'Inactive', label: 'Inactive', count: stats.inactive, icon: AlertCircle, color: 'text-blue-600 bg-blue-50' },
     { key: 'Archived', label: 'Archived', count: stats.archived, icon: Archive, color: 'text-red-600 bg-red-50' },

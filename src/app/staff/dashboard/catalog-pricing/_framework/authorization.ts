@@ -19,6 +19,7 @@ export function getRecordAuthorization(record: MasterRecord | null, perms: Workf
   let canEdit = false;
   let canSubmit = false;
   let canApproveAction = false;
+  let canArchive = false;
 
   switch (record.status) {
     case 'Draft':
@@ -28,10 +29,12 @@ export function getRecordAuthorization(record: MasterRecord | null, perms: Workf
     case 'Approval Pending':
       canApproveAction = perms.canApprove;
       break;
-    case 'Approved':
+    case 'Active':
       canEdit = perms.canModify;
       break;
     case 'Inactive':
+      canArchive = perms.canModify;
+      break;
     case 'Archived':
     default:
       break;
@@ -41,6 +44,7 @@ export function getRecordAuthorization(record: MasterRecord | null, perms: Workf
     canEdit,
     canSubmit,
     canApproveAction,
+    canArchive,
     isReadOnly: !canEdit,
   };
 }

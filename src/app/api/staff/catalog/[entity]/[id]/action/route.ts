@@ -29,30 +29,38 @@ export async function POST(
 
     const approvePerm = `${meta.permissionPrefix}_approve`;
     const createPerm = `${meta.permissionPrefix}_create`;
+    const modifyPerm = `${meta.permissionPrefix}_modify`;
+    
+    const hasModify = session.role === 'ADMIN' || session[modifyPerm];
+    const hasCreate = session.role === 'ADMIN' || session[createPerm];
+    const hasApprove = session.role === 'ADMIN' || session[approvePerm];
 
     let targetStatus = existing.status;
     let auditAction: 'SUBMITTED' | 'APPROVED' | 'DECLINED' | 'ARCHIVED' | 'RESTORED' | 'UPDATED' = 'SUBMITTED';
     const updateData: any = { updatedById: session.userId };
 
     if (action === 'submit') {
+      if (!hasCreate && !hasModify) {
+        return NextResponse.json({ error: `Permission Denied: Requires create or modify permissions` }, { status: 403 });
+      }
       if (existing.status !== 'Draft') {
         return NextResponse.json({ error: 'Only Draft records can be submitted for approval' }, { status: 400 });
       }
       targetStatus = 'Approval Pending';
       auditAction = 'SUBMITTED';
     } else if (action === 'approve') {
-      if (session.role !== 'ADMIN' && !session[approvePerm]) {
+      if (!hasApprove) {
         return NextResponse.json({ error: `Permission Denied: ${approvePerm} required to approve` }, { status: 403 });
       }
       if (existing.status !== 'Approval Pending') {
         return NextResponse.json({ error: 'Only records in Approval Pending state can be approved' }, { status: 400 });
       }
-      targetStatus = 'Approved';
+      targetStatus = 'Active';
       auditAction = 'APPROVED';
       updateData.approvedById = session.userId;
       updateData.approvedAt = new Date();
     } else if (action === 'decline') {
-      if (session.role !== 'ADMIN' && !session[approvePerm]) {
+      if (!hasApprove) {
         return NextResponse.json({ error: `Permission Denied: ${approvePerm} required to decline` }, { status: 403 });
       }
       if (existing.status !== 'Approval Pending') {
@@ -63,21 +71,30 @@ export async function POST(
       }
       targetStatus = 'Draft';
       auditAction = 'DECLINED';
-    } else if (action === 'deactivate') {
-      targetStatus = 'Inactive';
-      updateData.isActive = false;
-      auditAction = 'UPDATED';
     } else if (action === 'reactivate') {
-      targetStatus = 'Approved';
-      updateData.isActive = true;
+      if (!hasModify) return NextResponse.json({ error: `Permission Denied: ${modifyPerm} required` }, { status: 403 });
+      if (existing.status !== 'Inactive') {
+        return NextResponse.json({ error: 'Only Inactive records can be reactivated' }, { status: 400 });
+      }
+      targetStatus = 'Active';
+      updateData.active = true;
       auditAction = 'RESTORED';
     } else if (action === 'archive') {
+      if (!hasModify) return NextResponse.json({ error: `Permission Denied: ${modifyPerm} required` }, { status: 403 });
+      if (existing.status !== 'Inactive') {
+        return NextResponse.json({ error: 'Only Inactive records can be archived. Please deactivate the record first.' }, { status: 400 });
+      }
       targetStatus = 'Archived';
-      updateData.isActive = false;
+      updateData.active = false;
       auditAction = 'ARCHIVED';
-    } else if (action === 'restore') {
-      targetStatus = 'Draft';
-      auditAction = 'RESTORED';
+    } else if (action === 'deactivate') {
+      if (!hasModify) return NextResponse.json({ error: `Permission Denied: ${modifyPerm} required` }, { status: 403 });
+      if (existing.status !== 'Active') {
+        return NextResponse.json({ error: 'Only Active records can be deactivated' }, { status: 400 });
+      }
+      targetStatus = 'Inactive';
+      updateData.active = false;
+      auditAction = 'UPDATED';
     } else {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }

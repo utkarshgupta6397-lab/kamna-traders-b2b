@@ -286,7 +286,7 @@ export default function EditMasterModal({
             </div>
             {record.approvedBy && (
               <div className="flex justify-between">
-                <span>Approved By:</span>
+                <span>Activated By:</span>
                 <span className="font-medium text-emerald-700">{record.approvedBy.name}</span>
               </div>
             )}

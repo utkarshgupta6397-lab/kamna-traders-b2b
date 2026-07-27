@@ -18,7 +18,7 @@ export default function MasterListPage({ config }: { config: MasterConfig }) {
     total: 0,
     draft: 0,
     pending: 0,
-    approved: 0,
+    active: 0,
     inactive: 0,
     archived: 0,
   });
@@ -235,8 +235,8 @@ export default function MasterListPage({ config }: { config: MasterConfig }) {
         onDecline={(record) => handleOpenWorkflowAction(record, 'decline')}
         onHistory={handleOpenHistory}
         onArchive={(record) => handleOpenWorkflowAction(record, 'archive')}
-        onRestore={(record) => handleOpenWorkflowAction(record, 'restore')}
         onReactivate={(record) => handleOpenWorkflowAction(record, 'reactivate')}
+        onDeactivate={(record) => handleOpenWorkflowAction(record, 'deactivate')}
         canCreate={canCreate}
         canModify={canModify}
         canApprove={canApprove}

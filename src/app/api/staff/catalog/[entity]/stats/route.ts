@@ -20,27 +20,27 @@ export async function GET(
   try {
     const delegate = getPrismaDelegate(entity as MasterEntityKey);
 
-    let total = 0, draft = 0, pending = 0, approved = 0, inactive = 0, archived = 0;
+    let total = 0, draft = 0, pending = 0, active = 0, inactive = 0, archived = 0;
 
     try {
-      [total, draft, pending, approved, inactive, archived] = await Promise.all([
+      [total, draft, pending, active, inactive, archived] = await Promise.all([
         delegate.count(),
         delegate.count({ where: { status: 'Draft' } }),
         delegate.count({ where: { status: 'Approval Pending' } }),
-        delegate.count({ where: { status: 'Approved' } }),
+        delegate.count({ where: { status: 'Active' } }),
         delegate.count({ where: { status: 'Inactive' } }),
         delegate.count({ where: { status: 'Archived' } }),
       ]);
     } catch {
       total = await delegate.count().catch(() => 0);
-      approved = total;
+      active = total;
     }
 
     return NextResponse.json({
       total,
       draft,
       pending,
-      approved,
+      active,
       inactive,
       archived,
     });

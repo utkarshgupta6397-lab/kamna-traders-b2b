@@ -67,7 +67,7 @@ export async function GET(
         const statusWeight: Record<string, number> = {
           'Approval Pending': 1,
           'Draft': 2,
-          'Approved': 3,
+          'Active': 3,
           'Inactive': 4,
           'Archived': 5,
         };

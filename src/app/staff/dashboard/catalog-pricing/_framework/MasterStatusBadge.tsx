@@ -11,7 +11,7 @@ export default function MasterStatusBadge({ status }: { status: MasterStatus }) 
     case 'Approval Pending':
       colorCls = 'bg-amber-50 text-amber-700 border-amber-200';
       break;
-    case 'Approved':
+    case 'Active':
       colorCls = 'bg-emerald-50 text-emerald-700 border-emerald-200';
       break;
     case 'Inactive':

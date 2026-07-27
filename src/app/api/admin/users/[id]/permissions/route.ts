@@ -24,11 +24,22 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid permission key' }, { status: 400 });
     }
 
-    // Update user permission in DB
-    const updatedUser = await prisma.user.update({
-      where: { id },
-      data: { [key]: value },
-    });
+    // Update user permission in DB (with raw SQL fallback for dev server cached Prisma Client instances)
+    let updatedUser: any = null;
+    try {
+      updatedUser = await prisma.user.update({
+        where: { id },
+        data: { [key]: value },
+      });
+    } catch (dbErr: any) {
+      console.warn(`[API] PATCH /api/admin/users/${id}/permissions update fallback (dev server DMMF):`, dbErr?.message || dbErr);
+      await prisma.$executeRawUnsafe(
+        `UPDATE "User" SET "${key}" = $1 WHERE "id" = $2`,
+        Boolean(value),
+        id
+      );
+      updatedUser = await prisma.user.findUnique({ where: { id } });
+    }
 
     // Invalidate user session cache so new permission applies immediately without re-login
     clearUserSessionCache(id);

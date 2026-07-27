@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { ENTITY_REGISTRY, MasterEntityKey, getNextMasterId, createMasterAuditLog } from '@/lib/master-data-service';
+import { ENTITY_REGISTRY, MasterEntityKey, getNextMasterId, createMasterAuditLog, getPrismaDelegate } from '@/lib/master-data-service';
 
 export async function GET(
   request: Request,
@@ -53,7 +53,7 @@ export async function GET(
       ];
     }
 
-    const delegate = meta.prismaDelegate;
+    const delegate = getPrismaDelegate(entity as MasterEntityKey);
     let total = 0;
     try {
       total = await delegate.count({ where });
@@ -132,7 +132,7 @@ export async function POST(
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }
 
-    const delegate = meta.prismaDelegate;
+    const delegate = getPrismaDelegate(entity as MasterEntityKey);
 
     // Check unique name
     const existingName = await delegate.findFirst({

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { ENTITY_REGISTRY, MasterEntityKey, createMasterAuditLog } from '@/lib/master-data-service';
+import { ENTITY_REGISTRY, MasterEntityKey, createMasterAuditLog, getPrismaDelegate } from '@/lib/master-data-service';
 
 export async function GET(
   request: Request,
@@ -18,7 +18,7 @@ export async function GET(
   }
 
   try {
-    const delegate = meta.prismaDelegate;
+    const delegate = getPrismaDelegate(entity as MasterEntityKey);
     let record: any = null;
     try {
       record = await delegate.findUnique({
@@ -70,7 +70,7 @@ export async function PATCH(
   }
 
   try {
-    const delegate = meta.prismaDelegate;
+    const delegate = getPrismaDelegate(entity as MasterEntityKey);
     const existing = await delegate.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json({ error: 'Record not found' }, { status: 404 });
@@ -159,7 +159,7 @@ export async function DELETE(
   }
 
   try {
-    const delegate = meta.prismaDelegate;
+    const delegate = getPrismaDelegate(entity as MasterEntityKey);
     const existing = await delegate.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json({ error: 'Record not found' }, { status: 404 });

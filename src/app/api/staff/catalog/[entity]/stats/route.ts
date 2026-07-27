@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { ENTITY_REGISTRY, MasterEntityKey } from '@/lib/master-data-service';
+import { ENTITY_REGISTRY, MasterEntityKey, getPrismaDelegate } from '@/lib/master-data-service';
 
 export async function GET(
   request: Request,
@@ -18,7 +18,7 @@ export async function GET(
   }
 
   try {
-    const delegate = meta.prismaDelegate;
+    const delegate = getPrismaDelegate(entity as MasterEntityKey);
 
     let total = 0, draft = 0, pending = 0, approved = 0, inactive = 0, archived = 0;
 

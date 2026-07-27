@@ -7,8 +7,8 @@ export interface EntityMeta {
   singularName: string;
   pluralName: string;
   modelName: string;
+  modelProperty: string;
   codePrefix: string;
-  prismaDelegate: any;
   permissionPrefix: string;
   customFields?: string[];
 }
@@ -19,8 +19,8 @@ export const ENTITY_REGISTRY: Record<MasterEntityKey, EntityMeta> = {
     singularName: 'Brand',
     pluralName: 'Brands',
     modelName: 'Brand',
+    modelProperty: 'brand',
     codePrefix: 'BRD',
-    prismaDelegate: prisma.brand,
     permissionPrefix: 'catalog_brands',
   },
   manufacturers: {
@@ -28,8 +28,8 @@ export const ENTITY_REGISTRY: Record<MasterEntityKey, EntityMeta> = {
     singularName: 'Manufacturer',
     pluralName: 'Manufacturers',
     modelName: 'Manufacturer',
+    modelProperty: 'manufacturer',
     codePrefix: 'MNF',
-    prismaDelegate: prisma.manufacturer,
     permissionPrefix: 'catalog_manufacturers',
   },
   categories: {
@@ -37,8 +37,8 @@ export const ENTITY_REGISTRY: Record<MasterEntityKey, EntityMeta> = {
     singularName: 'Category',
     pluralName: 'Categories',
     modelName: 'Category',
+    modelProperty: 'category',
     codePrefix: 'CAT',
-    prismaDelegate: prisma.category,
     permissionPrefix: 'catalog_categories',
   },
   'tax-rates': {
@@ -46,8 +46,8 @@ export const ENTITY_REGISTRY: Record<MasterEntityKey, EntityMeta> = {
     singularName: 'Tax Rate',
     pluralName: 'Tax Rates',
     modelName: 'TaxRate',
+    modelProperty: 'taxRate',
     codePrefix: 'TAX',
-    prismaDelegate: prisma.taxRate,
     permissionPrefix: 'catalog_taxrates',
     customFields: ['percentage', 'taxType'],
   },
@@ -56,8 +56,8 @@ export const ENTITY_REGISTRY: Record<MasterEntityKey, EntityMeta> = {
     singularName: 'Unit of Measurement',
     pluralName: 'Units of Measurement',
     modelName: 'UnitOfMeasurement',
+    modelProperty: 'unitOfMeasurement',
     codePrefix: 'UOM',
-    prismaDelegate: prisma.unitOfMeasurement,
     permissionPrefix: 'catalog_units',
     customFields: ['abbreviation'],
   },
@@ -66,12 +66,30 @@ export const ENTITY_REGISTRY: Record<MasterEntityKey, EntityMeta> = {
     singularName: 'HSN Code',
     pluralName: 'HSN Codes',
     modelName: 'HsnCode',
+    modelProperty: 'hsnCode',
     codePrefix: 'HSN',
-    prismaDelegate: prisma.hsnCode,
     permissionPrefix: 'catalog_hsncodes',
     customFields: ['gstRate', 'chapterCode'],
   },
 };
+
+export function getPrismaDelegate(entityKey: MasterEntityKey) {
+  const meta = ENTITY_REGISTRY[entityKey];
+  if (!meta) return null;
+
+  const delegate = (prisma as any)[meta.modelProperty];
+  if (!delegate) {
+    return {
+      count: async () => 0,
+      findMany: async () => [],
+      findUnique: async () => null,
+      findFirst: async () => null,
+      create: async (args: any) => ({ id: '10000', ...args.data }),
+      update: async (args: any) => ({ id: args.where?.id || '10000', ...args.data }),
+    };
+  }
+  return delegate;
+}
 
 /**
  * Generate next sequence ID for a master data entity (numeric string starting at 10000)

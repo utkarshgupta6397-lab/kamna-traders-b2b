@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { ENTITY_REGISTRY, MasterEntityKey, createMasterAuditLog } from '@/lib/master-data-service';
+import { ENTITY_REGISTRY, MasterEntityKey, createMasterAuditLog, getPrismaDelegate } from '@/lib/master-data-service';
 
 export async function POST(
   request: Request,
@@ -21,7 +21,7 @@ export async function POST(
     const body = await request.json();
     const { action, remarks } = body;
 
-    const delegate = meta.prismaDelegate;
+    const delegate = getPrismaDelegate(entity as MasterEntityKey);
     const existing = await delegate.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json({ error: 'Record not found' }, { status: 404 });

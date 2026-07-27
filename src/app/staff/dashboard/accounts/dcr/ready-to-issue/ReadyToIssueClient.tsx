@@ -59,6 +59,20 @@ export default function ReadyToIssueClient() {
   const [customerGsts, setCustomerGsts] = useState<Record<string, { gst: string; loading: boolean; error: boolean }>>({});
   const [drawerBalance, setDrawerBalance] = useState<number | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
+  const [notifyWhatsApp, setNotifyWhatsApp] = useState(true);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('dcr_whatsapp_notify_pref');
+    if (saved !== null) {
+      setNotifyWhatsApp(saved === 'true');
+    }
+  }, []);
+
+  const handleNotifyToggle = () => {
+    const newVal = !notifyWhatsApp;
+    setNotifyWhatsApp(newVal);
+    localStorage.setItem('dcr_whatsapp_notify_pref', newVal.toString());
+  };
 
   useEffect(() => {
     if (drawerInvoice) {
@@ -199,6 +213,36 @@ export default function ReadyToIssueClient() {
 
       if (searchParams.get('source') === 'customer_lookup') {
         setTimeout(() => window.close(), 1500);
+      }
+
+      // Trigger WhatsApp Notification
+      const issuedSerials = data.issuedSerials || [];
+      if (issuedSerials.length > 0) {
+        fetch('/api/communications/dcr/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            invoiceId,
+            serialNumbers: issuedSerials,
+            notifyUser: notifyWhatsApp
+          })
+        })
+        .then(async (notifRes) => {
+          const notifData = await notifRes.json();
+          if (notifRes.ok) {
+            if (notifData.skipped) {
+              // Optionally log skipped visually, but mostly handled silently.
+            } else {
+              toast.success('WhatsApp Notification Sent');
+            }
+          } else {
+            toast.error(`WhatsApp notification failed: ${notifData.error}`);
+          }
+        })
+        .catch(err => {
+          console.error('Notification trigger error:', err);
+          toast.error('WhatsApp notification failed.');
+        });
       }
     } catch (err: any) {
       toast.error(err.message);
@@ -589,6 +633,13 @@ export default function ReadyToIssueClient() {
                   <X size={18} />
                 </button>
                 <div className="flex flex-col gap-2 mt-2 w-full">
+                  <label className="flex items-center gap-2 px-1 py-1.5 cursor-pointer hover:bg-gray-50 rounded select-none">
+                    <div className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={notifyWhatsApp} onChange={handleNotifyToggle} />
+                      <div className="w-8 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </div>
+                    <span className="text-[11px] font-semibold text-gray-700">Notify Customer on WhatsApp</span>
+                  </label>
                   <button 
                     onClick={handleDrawerIssueEligible}
                     disabled={isIssuing || drawerInvoice.totalEligible === 0}

@@ -2,7 +2,7 @@ import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { LogOut, Home, ClipboardList, History, Box, Settings, MapPin, Truck, FileText, Sun, MessageSquare } from 'lucide-react';
+import { LogOut, Home, ClipboardList, History, Box, Settings, MapPin, Truck, FileText, Sun, MessageSquare, BookOpen } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 
 export default async function StaffDashboardLayout({ children }: { children: React.ReactNode }) {
@@ -21,16 +21,23 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
       <header className="print:hidden sticky top-0 z-50 bg-gradient-to-r from-[#1A2766] via-[#1f3180] to-[#AE1B1E] shadow-lg">
         <div className="max-w-[96%] mx-auto px-4 h-14 flex items-center justify-between gap-4">
           {/* Logo */}
-          <Link href="/staff/dashboard" className="flex items-center gap-2 flex-shrink-0">
+          <Link href="/staff/dashboard" className="flex items-center gap-2 flex-shrink-0" title={session.name || 'Staff'}>
             <Image src="/logo.svg" alt="Kamna Traders" width={100} height={40} className="object-contain brightness-0 invert h-9 w-auto" priority />
-            <span className="text-white/40 text-xs border-l border-white/20 pl-2">Staff</span>
+            <span className="text-white/80 text-xs font-medium border-l border-white/20 pl-2 max-w-[120px] sm:max-w-[160px] md:max-w-[220px] truncate inline-block" title={session.name || 'Staff'}>
+              {session.name || 'Staff'}
+            </span>
           </Link>
 
           {/* Nav */}
           <nav className="flex items-center gap-4 text-sm text-white/80 flex-shrink-0">
             <Link href="/staff/dashboard" className="flex items-center gap-1.5 hover:text-white transition-colors">
-              <Home size={16} /><span className="hidden md:inline text-xs">Catalog</span>
+              <Home size={16} /><span className="hidden md:inline text-xs">Cart</span>
             </Link>
+            {(session.accountsAccess || session.role === 'ADMIN') && (
+              <Link href="/staff/dashboard/catalog-pricing" className="flex items-center gap-1.5 hover:text-white transition-colors">
+                <BookOpen size={16} /><span className="hidden md:inline text-xs">Catalog & Pricing</span>
+              </Link>
+            )}
             <Link href="/staff/dashboard/operations" className="flex items-center gap-1.5 hover:text-white transition-colors">
               <Box size={16} /><span className="hidden md:inline text-xs">Operations</span>
             </Link>

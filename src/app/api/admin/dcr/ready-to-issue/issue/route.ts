@@ -184,7 +184,7 @@ export async function PATCH(req: Request) {
       }
     });
 
-    return NextResponse.json({ success: true, issued: targetSerialNumbers.length });
+    return NextResponse.json({ success: true, issued: targetSerialNumbers.length, issuedSerials: targetSerialNumbers });
   } catch (error: any) {
     console.error('[DCR Issue PATCH] Error:', error);
     return NextResponse.json({ error: 'Failed to issue serials' }, { status: 500 });

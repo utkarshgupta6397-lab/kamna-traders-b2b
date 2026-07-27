@@ -48,6 +48,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     description: 'Ability to delete stock transfers'
   },
   {
+    key: 'accountsAccess',
+    label: 'Catalog & Pricing',
+    description: 'Access to the Catalog & Pricing module'
+  },
+  {
     key: 'accounts_customer_statement',
     label: 'Customer Statement',
     description: 'Ability to view and print customer account statements'
@@ -157,6 +162,7 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'canManageUnlimitedSkus',
   'canManageTransfers',
   'canDeleteTransfers',
+  'accountsAccess',
   'accounts_customer_statement',
   'accounts_invoice_processor',
   'accounts_transactions',

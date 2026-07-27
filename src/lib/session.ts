@@ -9,6 +9,18 @@ export type DeviceType = 'desktop' | 'mobile';
 const validationCache = new Map<string, { result: any; expires: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+export function clearUserSessionCache(userId?: string) {
+  if (userId) {
+    for (const [token, cached] of validationCache.entries()) {
+      if (cached.result?.userId === userId) {
+        validationCache.delete(token);
+      }
+    }
+  } else {
+    validationCache.clear();
+  }
+}
+
 /**
  * Detects device type from User Agent string.
  */
@@ -129,6 +141,27 @@ export async function validateSession(sessionToken: string): Promise<{
           whatsapp_integration: true,
           holdQueueReviewEnabled: true,
           holdQueueReviewLimit: true,
+          catalog_brands_create: true,
+          catalog_brands_modify: true,
+          catalog_brands_approve: true,
+          catalog_manufacturers_create: true,
+          catalog_manufacturers_modify: true,
+          catalog_manufacturers_approve: true,
+          catalog_categories_create: true,
+          catalog_categories_modify: true,
+          catalog_categories_approve: true,
+          catalog_attributes_create: true,
+          catalog_attributes_modify: true,
+          catalog_attributes_approve: true,
+          catalog_taxrates_create: true,
+          catalog_taxrates_modify: true,
+          catalog_taxrates_approve: true,
+          catalog_units_create: true,
+          catalog_units_modify: true,
+          catalog_units_approve: true,
+          catalog_hsncodes_create: true,
+          catalog_hsncodes_modify: true,
+          catalog_hsncodes_approve: true,
         }
       }
     }

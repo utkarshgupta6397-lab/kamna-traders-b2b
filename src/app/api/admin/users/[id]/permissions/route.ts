@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { NextResponse } from 'next/server';
 import { ALL_PERMISSION_KEYS } from '@/lib/permissions';
+import { clearUserSessionCache } from '@/lib/session';
 
 export async function PATCH(
   request: Request,
@@ -18,26 +19,22 @@ export async function PATCH(
     const { key, value } = body;
 
     // Validate permission key
-    console.log('[API] Permission Key:', key);
-    console.log('[API] All Permission Keys:', ALL_PERMISSION_KEYS);
     if (!ALL_PERMISSION_KEYS.includes(key)) {
       console.error('[API] Invalid permission key:', key);
       return NextResponse.json({ error: 'Invalid permission key' }, { status: 400 });
     }
 
+    // Update user permission in DB
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: { [key]: value },
+    });
 
-    // Update user
-    try {
-      await prisma.user.update({
-        where: { id },
-        data: { [key]: value },
-      });
-    } catch (dbErr: any) {
-      console.warn(`[API] Could not persist permission "${key}" to DB (schema unmigrated):`, dbErr?.message || dbErr);
-    }
+    // Invalidate user session cache so new permission applies immediately without re-login
+    clearUserSessionCache(id);
 
-    return NextResponse.json({ success: true, userId: id, key, value });
-  } catch (error) {
+    return NextResponse.json({ success: true, userId: id, key, value, updatedUser });
+  } catch (error: any) {
     console.error('[API] PATCH /api/admin/users/[id]/permissions error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }

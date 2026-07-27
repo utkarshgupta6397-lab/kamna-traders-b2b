@@ -28,7 +28,10 @@ function getFieldName(key: string): string {
     taxType: 'Tax Type',
     abbreviation: 'Display Abbreviation',
     defaultGstRateId: 'Default GST Rate',
+    defaultGstRate: 'Default GST Rate',
     chapterCode: 'Chapter Code',
+    parent: 'Parent Category',
+    parentId: 'Parent Category',
   };
   return mapping[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
 }

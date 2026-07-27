@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, RotateCw, Download, Plus, Filter } from 'lucide-react';
 
 interface MasterFiltersProps {
@@ -44,6 +44,23 @@ export default function MasterFilters({
   loading,
   extraActions,
 }: MasterFiltersProps) {
+  const [localSearch, setLocalSearch] = useState(searchQuery);
+
+  useEffect(() => {
+    setLocalSearch(searchQuery);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (localSearch !== searchQuery) {
+        if (localSearch.trim().length >= 3 || localSearch.trim().length === 0) {
+          onSearchChange(localSearch.trim());
+        }
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [localSearch, onSearchChange, searchQuery]);
+
   return (
     <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-3">
       <div className="flex flex-col lg:flex-row items-center justify-between gap-3">
@@ -52,8 +69,8 @@ export default function MasterFilters({
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
             placeholder="Search code, name, description..."
             className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
           />

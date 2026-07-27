@@ -19,6 +19,7 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
   const [customValues, setCustomValues] = useState<Record<string, any>>({});
   const [submitting, setSubmitting] = useState(false);
   const [taxRates, setTaxRates] = useState<any[]>([]);
+  const [rootCategories, setRootCategories] = useState<any[]>([]);
   const [hsnError, setHsnError] = useState<string | null>(null);
   const [taxError, setTaxError] = useState<string | null>(null);
 
@@ -61,6 +62,15 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
           .then(res => res.json())
           .then(data => {
             setTaxRates(Array.isArray(data.records) ? data.records : (Array.isArray(data) ? data : []));
+          })
+          .catch(console.error);
+      }
+
+      if (config.customFields?.some(f => f.type === 'category-select')) {
+        fetch('/api/staff/catalog/categories?isRoot=true&status=Active')
+          .then(res => res.json())
+          .then(data => {
+            setRootCategories(Array.isArray(data.records) ? data.records : (Array.isArray(data) ? data : []));
           })
           .catch(console.error);
       }
@@ -217,13 +227,13 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
                 {f.label} {f.required && <span className="text-red-500">*</span>}
               </label>
               {f.helperText && <p className="text-[10px] text-gray-500 mb-1.5">{f.helperText}</p>}
-              {f.type === 'select' || f.type === 'tax-rate-select' ? (
+              {f.type === 'select' || f.type === 'tax-rate-select' || f.type === 'category-select' ? (
                 <select
                   value={customValues[f.name] || ''}
                   onChange={(e) => setCustomValues({ ...customValues, [f.name]: e.target.value })}
                   className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none"
                 >
-                  <option value="">Select {f.label}</option>
+                  <option value="">{f.type === 'category-select' ? 'None (Root Category)' : `Select ${f.label}`}</option>
                   {f.type === 'select' && f.options?.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
@@ -232,6 +242,11 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
                   {f.type === 'tax-rate-select' && taxRates.map((tr) => (
                     <option key={tr.id} value={tr.id}>
                       {tr.name} ({tr.percentage}%)
+                    </option>
+                  ))}
+                  {f.type === 'category-select' && rootCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
                     </option>
                   ))}
                 </select>

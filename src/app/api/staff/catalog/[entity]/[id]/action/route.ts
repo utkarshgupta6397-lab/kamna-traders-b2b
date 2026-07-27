@@ -77,7 +77,11 @@ export async function POST(
         return NextResponse.json({ error: 'Only Inactive records can be reactivated' }, { status: 400 });
       }
       targetStatus = 'Active';
-      updateData.isActive = true;
+      if (entity === 'brands' || entity === 'categories') {
+        updateData.active = true;
+      } else {
+        updateData.isActive = true;
+      }
       auditAction = 'RESTORED';
     } else if (action === 'archive') {
       if (!hasModify) return NextResponse.json({ error: `Permission Denied: ${modifyPerm} required` }, { status: 403 });
@@ -85,7 +89,11 @@ export async function POST(
         return NextResponse.json({ error: 'Only Draft and Inactive records can be archived.' }, { status: 400 });
       }
       targetStatus = 'Archived';
-      updateData.isActive = false;
+      if (entity === 'brands' || entity === 'categories') {
+        updateData.active = false;
+      } else {
+        updateData.isActive = false;
+      }
       auditAction = 'ARCHIVED';
     } else if (action === 'deactivate') {
       if (!hasModify) return NextResponse.json({ error: `Permission Denied: ${modifyPerm} required` }, { status: 403 });
@@ -93,7 +101,11 @@ export async function POST(
         return NextResponse.json({ error: 'Only Active records can be deactivated' }, { status: 400 });
       }
       targetStatus = 'Inactive';
-      updateData.isActive = false;
+      if (entity === 'brands' || entity === 'categories') {
+        updateData.active = false;
+      } else {
+        updateData.isActive = false;
+      }
       auditAction = 'UPDATED';
     } else {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });

@@ -32,8 +32,9 @@ export default function MasterListPage({ config, extraActions }: { config: Maste
   const [dateTo, setDateTo] = useState('');
   const [sortBy, setSortBy] = useState('updatedAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [categoryType, setCategoryType] = useState('ALL');
   const [page, setPage] = useState(1);
-  const [limit] = useState(25);
+  const [limit, setLimit] = useState<number | 'all'>(25);
   const [totalRecords, setTotalRecords] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
@@ -46,6 +47,19 @@ export default function MasterListPage({ config, extraActions }: { config: Maste
   const [approvalAction, setApprovalAction] = useState<ActionType | null>(null);
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    const savedLimit = localStorage.getItem('kamna_master_page_size');
+    if (savedLimit) {
+      setLimit(savedLimit === 'all' ? 'all' : parseInt(savedLimit, 10));
+    }
+  }, []);
+
+  const handleLimitChange = (newLimit: number | 'all') => {
+    setLimit(newLimit);
+    setPage(1);
+    localStorage.setItem('kamna_master_page_size', newLimit.toString());
+  };
 
   // Fetch User Permissions
   useEffect(() => {
@@ -91,6 +105,9 @@ export default function MasterListPage({ config, extraActions }: { config: Maste
       if (statusFilter !== 'ALL') params.append('status', statusFilter);
       if (dateFrom) params.append('dateFrom', dateFrom);
       if (dateTo) params.append('dateTo', dateTo);
+      if (config.entityKey === 'categories' && categoryType !== 'ALL') {
+        params.append('categoryType', categoryType);
+      }
 
       const res = await fetch(`/api/staff/catalog/${config.entityKey}?${params.toString()}`);
       const data = await res.json();
@@ -105,7 +122,7 @@ export default function MasterListPage({ config, extraActions }: { config: Maste
     } finally {
       setLoading(false);
     }
-  }, [config.entityKey, page, limit, sortBy, sortOrder, searchQuery, statusFilter, dateFrom, dateTo]);
+  }, [config.entityKey, page, limit, sortBy, sortOrder, searchQuery, statusFilter, dateFrom, dateTo, categoryType]);
 
   useEffect(() => {
     fetchStats();
@@ -179,6 +196,21 @@ export default function MasterListPage({ config, extraActions }: { config: Maste
     fetchRecords();
   };
 
+  const resolvedExtraActions = config.entityKey === 'categories' ? (
+    <select
+      value={categoryType}
+      onChange={(e) => {
+        setCategoryType(e.target.value);
+        setPage(1);
+      }}
+      className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none"
+    >
+      <option value="ALL">All Categories</option>
+      <option value="ROOT">Root Categories</option>
+      <option value="SUB">Sub Categories</option>
+    </select>
+  ) : extraActions;
+
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
       {/* Header Info */}
@@ -214,7 +246,7 @@ export default function MasterListPage({ config, extraActions }: { config: Maste
         canCreate={canCreate}
         createLabel={`Create ${config.singularTitle}`}
         loading={loading}
-        extraActions={extraActions}
+        extraActions={resolvedExtraActions}
       />
 
       {/* Data Table */}
@@ -227,6 +259,7 @@ export default function MasterListPage({ config, extraActions }: { config: Maste
         totalRecords={totalRecords}
         limit={limit}
         onPageChange={setPage}
+        onLimitChange={handleLimitChange}
         onViewEdit={(record) => {
           setSelectedRecord(record);
           setIsEditOpen(true);

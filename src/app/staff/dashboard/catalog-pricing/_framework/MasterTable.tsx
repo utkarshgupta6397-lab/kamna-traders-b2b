@@ -11,8 +11,9 @@ interface MasterTableProps {
   page: number;
   totalPages: number;
   totalRecords: number;
-  limit: number;
+  limit: number | 'all';
   onPageChange: (newPage: number) => void;
+  onLimitChange: (limit: number | 'all') => void;
   onViewEdit: (record: MasterRecord) => void;
   onSubmit: (record: MasterRecord) => void;
   onApprove: (record: MasterRecord) => void;
@@ -35,6 +36,7 @@ export default function MasterTable({
   totalRecords,
   limit,
   onPageChange,
+  onLimitChange,
   onViewEdit,
   onSubmit,
   onApprove,
@@ -68,6 +70,7 @@ export default function MasterTable({
               <th className="py-3 px-4">#</th>
               <th className="py-3 px-4">Code</th>
               <th className="py-3 px-4">Name</th>
+              {config.entityKey === 'categories' && <th className="py-3 px-4">Parent Category</th>}
               {config.entityKey === 'tax-rates' && <th className="py-3 px-4">Tax %</th>}
               {config.entityKey === 'units' && <th className="py-3 px-4">Abbr</th>}
               {config.entityKey === 'hsn-codes' && <th className="py-3 px-4">GST Rate</th>}
@@ -102,7 +105,11 @@ export default function MasterTable({
                 <tr key={r.id} className="hover:bg-gray-50/80 transition-colors">
                   <td className="py-3 px-4 font-mono text-xs text-gray-500 font-medium">{(page - 1) * limit + index + 1}</td>
                   <td className="py-3 px-4 font-mono text-xs font-semibold text-gray-900">{r.code || '-'}</td>
-                  <td className="py-3 px-4 font-medium text-gray-900">{r.name}</td>
+                  <td className={`py-3 px-4 font-medium text-gray-900 ${config.entityKey === 'categories' && r.parentId ? 'pl-8' : ''}`}>
+                    {config.entityKey === 'categories' && r.parentId ? <span className="text-gray-400 mr-1.5 font-normal">↳</span> : null}
+                    {r.name}
+                  </td>
+                  {config.entityKey === 'categories' && <td className="py-3 px-4 text-gray-600">{r.parent?.name || '-'}</td>}
                   {config.entityKey === 'tax-rates' && <td className="py-3 px-4 font-medium text-gray-800">{r.percentage}% ({r.taxType || 'GST'})</td>}
                   {config.entityKey === 'units' && <td className="py-3 px-4 text-gray-600">{r.abbreviation || '-'}</td>}
                   {config.entityKey === 'hsn-codes' && <td className="py-3 px-4 text-gray-600">{r.defaultGstRate?.percentage ? `${r.defaultGstRate.percentage}%` : '-'}</td>}
@@ -236,10 +243,24 @@ export default function MasterTable({
 
       {/* Pagination Footer */}
       <div className="px-4 py-3 bg-gray-50/80 border-t border-gray-200 flex items-center justify-between">
-        <div className="text-xs text-gray-500">
-          Showing <span className="font-semibold text-gray-700">{records.length > 0 ? (page - 1) * limit + 1 : 0}</span> to{' '}
-          <span className="font-semibold text-gray-700">{Math.min(page * limit, totalRecords)}</span> of{' '}
-          <span className="font-semibold text-gray-700">{totalRecords}</span> entries
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="text-xs text-gray-500">
+            Showing <span className="font-semibold text-gray-700">{records.length > 0 ? (limit === 'all' ? 1 : (page - 1) * limit + 1) : 0}</span> to{' '}
+            <span className="font-semibold text-gray-700">{limit === 'all' ? totalRecords : Math.min(page * limit, totalRecords)}</span> of{' '}
+            <span className="font-semibold text-gray-700">{totalRecords}</span> entries
+          </div>
+          
+          <select 
+            value={limit} 
+            onChange={(e) => onLimitChange(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+            className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-[#1A2766]"
+          >
+            <option value={10}>10 per page</option>
+            <option value={25}>25 per page</option>
+            <option value={50}>50 per page</option>
+            <option value={100}>100 per page</option>
+            <option value="all">All</option>
+          </select>
         </div>
 
         <div className="flex items-center gap-2">

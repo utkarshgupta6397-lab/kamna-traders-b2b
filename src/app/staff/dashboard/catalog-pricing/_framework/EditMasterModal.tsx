@@ -35,6 +35,7 @@ export default function EditMasterModal({
   const [customValues, setCustomValues] = useState<Record<string, any>>({});
   const [submitting, setSubmitting] = useState(false);
   const [taxRates, setTaxRates] = useState<any[]>([]);
+  const [rootCategories, setRootCategories] = useState<any[]>([]);
   const [hsnError, setHsnError] = useState<string | null>(null);
 
   const hasUnsavedChanges = React.useMemo(() => {
@@ -94,6 +95,7 @@ export default function EditMasterModal({
       if (record.abbreviation !== undefined) custom.abbreviation = record.abbreviation;
       if ((record as any).zohoBooksTaxId !== undefined) custom.zohoBooksTaxId = (record as any).zohoBooksTaxId;
       if ((record as any).defaultGstRateId !== undefined) custom.defaultGstRateId = (record as any).defaultGstRateId;
+      if (record.parentId !== undefined) custom.parentId = record.parentId;
       if (record.chapterCode !== undefined) custom.chapterCode = record.chapterCode;
       setCustomValues(custom);
       setHsnError(null);
@@ -101,13 +103,23 @@ export default function EditMasterModal({
   }, [record]);
 
   useEffect(() => {
-    if (isOpen && config.customFields?.some(f => f.type === 'tax-rate-select')) {
-      fetch('/api/staff/catalog/tax-rates?status=Active')
-        .then(res => res.json())
-        .then(data => {
-          setTaxRates(Array.isArray(data.records) ? data.records : (Array.isArray(data) ? data : []));
-        })
-        .catch(console.error);
+    if (isOpen) {
+      if (config.customFields?.some(f => f.type === 'tax-rate-select')) {
+        fetch('/api/staff/catalog/tax-rates?status=Active')
+          .then(res => res.json())
+          .then(data => {
+            setTaxRates(Array.isArray(data.records) ? data.records : (Array.isArray(data) ? data : []));
+          })
+          .catch(console.error);
+      }
+      if (config.customFields?.some(f => f.type === 'category-select')) {
+        fetch('/api/staff/catalog/categories?isRoot=true&status=Active')
+          .then(res => res.json())
+          .then(data => {
+            setRootCategories(Array.isArray(data.records) ? data.records : (Array.isArray(data) ? data : []));
+          })
+          .catch(console.error);
+      }
     }
   }, [isOpen, config.customFields]);
 
@@ -272,14 +284,17 @@ export default function EditMasterModal({
                 {f.label} {f.required && <span className="text-red-500">*</span>}
               </label>
               {f.helperText && <p className="text-[10px] text-gray-500 mb-1.5">{f.helperText}</p>}
-              {f.type === 'select' || f.type === 'tax-rate-select' ? (
+              {f.type === 'category-select' && (record._count?.children ?? 0) > 0 && (
+                <p className="text-[10px] text-amber-600 mb-1.5">Cannot be nested because it has sub-categories.</p>
+              )}
+              {f.type === 'select' || f.type === 'tax-rate-select' || f.type === 'category-select' ? (
                 <select
                   value={customValues[f.name] || ''}
                   onChange={(e) => setCustomValues({ ...customValues, [f.name]: e.target.value })}
-                  disabled={isReadOnly}
+                  disabled={isReadOnly || (f.type === 'category-select' && (record._count?.children ?? 0) > 0)}
                   className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none disabled:opacity-70"
                 >
-                  <option value="">Select {f.label}</option>
+                  <option value="">{f.type === 'category-select' ? 'None (Root Category)' : `Select ${f.label}`}</option>
                   {f.type === 'select' && f.options?.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
@@ -288,6 +303,11 @@ export default function EditMasterModal({
                   {f.type === 'tax-rate-select' && taxRates.map((tr) => (
                     <option key={tr.id} value={tr.id}>
                       {tr.name} ({tr.percentage}%)
+                    </option>
+                  ))}
+                  {f.type === 'category-select' && rootCategories.filter(c => c.id !== record.id).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
                     </option>
                   ))}
                 </select>

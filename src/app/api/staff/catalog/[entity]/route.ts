@@ -29,7 +29,10 @@ export async function GET(
     const sortBy = ALLOWED_SORT_FIELDS.includes(rawSortBy) ? rawSortBy : 'updatedAt';
     const sortOrder = (searchParams.get('sortOrder') || 'desc') as 'asc' | 'desc';
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '25', 10)));
+    const limitParam = searchParams.get('limit') || '25';
+    const limit = limitParam === 'all' ? 'all' : Math.min(100, Math.max(1, parseInt(limitParam, 10)));
+    const isRoot = searchParams.get('isRoot') === 'true';
+    const categoryType = searchParams.get('categoryType');
 
     const where: any = {};
 
@@ -47,12 +50,36 @@ export async function GET(
       if (dateTo) where.createdAt.lte = new Date(`${dateTo}T23:59:59.999Z`);
     }
 
+    if (entity === 'categories') {
+      if (isRoot || categoryType === 'ROOT') {
+        where.parentId = null;
+      } else if (categoryType === 'SUB') {
+        where.parentId = { not: null };
+      }
+    }
+
     if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { code: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-      ];
+      const tokens = search.trim().split(/\s+/).filter(t => t.length > 0);
+      if (tokens.length > 0) {
+        where.AND = tokens.map((token) => {
+          const orConditions: any[] = [
+            { name: { contains: token, mode: 'insensitive' } },
+            { code: { contains: token, mode: 'insensitive' } },
+            { description: { contains: token, mode: 'insensitive' } },
+            { remarks: { contains: token, mode: 'insensitive' } },
+            { status: { contains: token, mode: 'insensitive' } },
+          ];
+
+          if (entity === 'categories') {
+            orConditions.push({ parent: { name: { contains: token, mode: 'insensitive' } } });
+          } else if (entity === 'units') {
+            orConditions.push({ abbreviation: { contains: token, mode: 'insensitive' } });
+          } else if (entity === 'tax-rates') {
+            orConditions.push({ taxType: { contains: token, mode: 'insensitive' } });
+          }
+          return { OR: orConditions };
+        });
+      }
     }
 
     const delegate = getPrismaDelegate(entity as MasterEntityKey);
@@ -82,7 +109,9 @@ export async function GET(
         });
 
         total = allRecords.length;
-        const pagedIds = allRecords.slice((page - 1) * limit, page * limit).map((r: any) => r.id);
+        const pagedIds = limit === 'all' 
+          ? allRecords.map((r: any) => r.id) 
+          : allRecords.slice((page - 1) * (limit as number), page * (limit as number)).map((r: any) => r.id);
 
         const rawRecords = await delegate.findMany({
           where: { id: { in: pagedIds } },
@@ -105,6 +134,37 @@ export async function GET(
           take: limit,
         }).catch(() => []);
       }
+    } else if (entity === 'categories' && sortBy !== 'default' && categoryType !== 'ROOT' && categoryType !== 'SUB' && !isRoot) {
+      // Tree sorting for categories: fetch all, build tree, then paginate
+      try {
+        const allCategories = await delegate.findMany({
+          where,
+          orderBy: { [sortBy]: sortOrder },
+          include: {
+            createdBy: { select: { id: true, name: true } },
+            updatedBy: { select: { id: true, name: true } },
+            approvedBy: { select: { id: true, name: true } },
+            parent: { select: { id: true, name: true } },
+            _count: { select: { children: true } },
+          },
+        });
+        
+        total = allCategories.length;
+        
+        // Build flat tree (Root -> Subs -> Root -> Subs)
+        const roots = allCategories.filter((c: any) => !c.parentId);
+        const flatTree: any[] = [];
+        for (const root of roots) {
+          flatTree.push(root);
+          const subs = allCategories.filter((c: any) => c.parentId === root.id);
+          flatTree.push(...subs);
+        }
+        
+        records = flatTree.slice((page - 1) * limit, page * limit);
+      } catch (err) {
+        total = 0;
+        records = [];
+      }
     } else {
       try {
         total = await delegate.count({ where });
@@ -116,13 +176,14 @@ export async function GET(
         records = await delegate.findMany({
           where,
           orderBy: { [sortBy]: sortOrder },
-          skip: (page - 1) * limit,
-          take: limit,
+          skip: limit === 'all' ? undefined : (page - 1) * (limit as number),
+          take: limit === 'all' ? undefined : (limit as number),
           include: {
             createdBy: { select: { id: true, name: true } },
             updatedBy: { select: { id: true, name: true } },
             approvedBy: { select: { id: true, name: true } },
             ...(entity === 'hsn-codes' ? { defaultGstRate: { select: { percentage: true } } } : {}),
+            ...(entity === 'categories' ? { parent: { select: { id: true, name: true } }, _count: { select: { children: true } } } : {}),
           },
         });
       } catch {
@@ -262,22 +323,40 @@ export async function POST(
     } else if (entity === 'units') {
       createData.abbreviation = customProps.abbreviation ? customProps.abbreviation.trim() : null;
     } else if (entity === 'hsn-codes') {
-      createData.defaultGstRateId = customProps.defaultGstRateId || null;
+      if (customProps.defaultGstRateId) {
+        createData.defaultGstRate = { connect: { id: customProps.defaultGstRateId } };
+      }
+    } else if (entity === 'categories') {
+      if (customProps.parentId) {
+        const parentCategory = await delegate.findUnique({ where: { id: customProps.parentId } });
+        if (!parentCategory) {
+          return NextResponse.json({ error: 'Selected Parent Category does not exist' }, { status: 400 });
+        }
+        if (parentCategory.parentId) {
+          return NextResponse.json({ error: 'Cannot nest a category under a sub-category. Maximum depth is 2 levels.' }, { status: 400 });
+        }
+        createData.parent = { connect: { id: customProps.parentId } };
+      }
     }
 
     const newRecord = await delegate.create({
       data: createData,
       include: {
         createdBy: { select: { id: true, name: true } },
+        ...(entity === 'categories' ? { parent: { select: { id: true, name: true } } } : {}),
       },
     });
 
     // Write audit log
+    const auditPayload: any = { name: newRecord.name, code: newRecord.code, status: newRecord.status };
+    if (entity === 'categories' && newRecord.parent) {
+      auditPayload.parent = newRecord.parent;
+    }
     await createMasterAuditLog({
       entityType: meta.modelName,
       entityId: newRecord.id,
       action: submitForApproval ? 'SUBMITTED' : 'CREATED',
-      newValue: JSON.stringify({ name: newRecord.name, code: newRecord.code, status: newRecord.status }),
+      newValue: JSON.stringify(auditPayload),
       remarks: remarks || 'Initial creation',
       userId: session.userId,
     });

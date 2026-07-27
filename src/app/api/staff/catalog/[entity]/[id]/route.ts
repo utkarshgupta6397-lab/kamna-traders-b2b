@@ -71,7 +71,12 @@ export async function PATCH(
 
   try {
     const delegate = getPrismaDelegate(entity as MasterEntityKey);
-    const existing = await delegate.findUnique({ where: { id } });
+    const existing = await delegate.findUnique({ 
+      where: { id },
+      include: {
+        ...(entity === 'categories' ? { parent: { select: { id: true, name: true } } } : {}),
+      }
+    });
     if (!existing) {
       return NextResponse.json({ error: 'Record not found' }, { status: 404 });
     }
@@ -150,31 +155,36 @@ export async function PATCH(
         updateData.abbreviation = parsedAbbrev;
       }
     } else if (entity === 'hsn-codes') {
-      if (customProps.defaultGstRateId !== undefined) updateData.defaultGstRateId = customProps.defaultGstRateId || null;
-      if (customProps.chapterCode !== undefined) updateData.chapterCode = customProps.chapterCode ? customProps.chapterCode.trim() : null;
-
-      const finalCode = updateData.code || existing.code;
-      if (finalCode) {
-        const codeLen = finalCode.length;
-        if (codeLen === 2) updateData.level = 'Chapter';
-        else if (codeLen === 4) updateData.level = 'Heading';
-        else if (codeLen === 6) updateData.level = 'Sub-heading';
-        else if (codeLen === 8) updateData.level = 'Tariff Item';
-        
-        let parentPrefix = null;
-        if (codeLen === 8) parentPrefix = finalCode.substring(0, 6);
-        else if (codeLen === 6) parentPrefix = finalCode.substring(0, 4);
-        else if (codeLen === 4) parentPrefix = finalCode.substring(0, 2);
-        
-        if (parentPrefix) {
-          const parentHsn = await delegate.findFirst({
-            where: { code: parentPrefix },
-            select: { id: true }
-          });
-          if (parentHsn) updateData.parentHsnId = parentHsn.id;
-          else updateData.parentHsnId = null;
+      if (customProps.defaultGstRateId !== undefined) {
+        if (customProps.defaultGstRateId) {
+          updateData.defaultGstRate = { connect: { id: customProps.defaultGstRateId } };
         } else {
-          updateData.parentHsnId = null;
+          updateData.defaultGstRate = { disconnect: true };
+        }
+      }
+    } else if (entity === 'categories') {
+      if (customProps.parentId !== undefined) {
+        if (!customProps.parentId) {
+          updateData.parent = { disconnect: true };
+        } else {
+          if (customProps.parentId === id) {
+            return NextResponse.json({ error: 'A category cannot be its own parent.' }, { status: 400 });
+          }
+          
+          const childCount = await delegate.count({ where: { parentId: id } });
+          if (childCount > 0) {
+            return NextResponse.json({ error: 'Cannot nest this category because it already has sub-categories.' }, { status: 400 });
+          }
+
+          const targetParent = await delegate.findUnique({ where: { id: customProps.parentId } });
+          if (!targetParent) {
+            return NextResponse.json({ error: 'Selected Parent Category does not exist.' }, { status: 400 });
+          }
+          if (targetParent.parentId) {
+            return NextResponse.json({ error: 'Cannot nest a category under a sub-category. Maximum depth is 2 levels.' }, { status: 400 });
+          }
+
+          updateData.parent = { connect: { id: customProps.parentId } };
         }
       }
     }
@@ -184,6 +194,7 @@ export async function PATCH(
       data: updateData,
       include: {
         updatedBy: { select: { id: true, name: true } },
+        ...(entity === 'categories' ? { parent: { select: { id: true, name: true } } } : {}),
       },
     });
 

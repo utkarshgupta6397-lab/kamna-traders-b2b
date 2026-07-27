@@ -22,6 +22,9 @@ export interface MasterRecord {
   createdBy?: { id: string; name: string } | null;
   updatedBy?: { id: string; name: string } | null;
   approvedBy?: { id: string; name: string } | null;
+  parentId?: string | null;
+  parent?: { id: string; name: string } | null;
+  _count?: { children: number } | null;
   history?: MasterHistoryEntry[];
 }
 
@@ -48,7 +51,7 @@ export interface MasterConfig {
   customFields?: {
     name: string;
     label: string;
-    type: 'text' | 'number' | 'select' | 'tax-rate-select';
+    type: 'text' | 'number' | 'select' | 'tax-rate-select' | 'category-select';
     options?: { label: string; value: string }[];
     required?: boolean;
     helperText?: string;

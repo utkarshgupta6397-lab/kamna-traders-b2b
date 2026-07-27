@@ -192,8 +192,25 @@ export async function validateSession(sessionToken: string): Promise<{
       'catalog_hsncodes_create', 'catalog_hsncodes_modify', 'catalog_hsncodes_approve',
     ];
 
-    for (const p of masterPerms) {
-      userObj[p] = isUserAdmin ? true : Boolean(userObj[p]);
+    if (isUserAdmin) {
+      for (const p of masterPerms) {
+        userObj[p] = true;
+      }
+    } else {
+      try {
+        const fullUser = await prisma.user.findUnique({
+          where: { id: session.userId },
+        });
+        if (fullUser) {
+          for (const p of masterPerms) {
+            userObj[p] = Boolean((fullUser as any)[p]);
+          }
+        }
+      } catch (err) {
+        for (const p of masterPerms) {
+          userObj[p] = false;
+        }
+      }
     }
   }
 

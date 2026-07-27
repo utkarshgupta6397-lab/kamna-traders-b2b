@@ -31,7 +31,7 @@ export async function POST(
     const createPerm = `${meta.permissionPrefix}_create`;
 
     let targetStatus = existing.status;
-    let auditAction: 'SUBMITTED' | 'APPROVED' | 'DECLINED' | 'ARCHIVED' | 'RESTORED' = 'SUBMITTED';
+    let auditAction: 'SUBMITTED' | 'APPROVED' | 'DECLINED' | 'ARCHIVED' | 'RESTORED' | 'UPDATED' = 'SUBMITTED';
     const updateData: any = { updatedById: session.userId };
 
     if (action === 'submit') {

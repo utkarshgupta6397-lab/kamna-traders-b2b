@@ -23,7 +23,7 @@ export default function MasterListPage({ config }: { config: MasterConfig }) {
     archived: 0,
   });
   const [loading, setLoading] = useState(true);
-  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+  const [permissions, setPermissions] = useState<Record<string, any>>({});
 
   // Filters & Pagination
   const [searchQuery, setSearchQuery] = useState('');

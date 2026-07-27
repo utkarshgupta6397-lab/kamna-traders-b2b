@@ -92,19 +92,21 @@ export default function MasterFilters({
 
           {/* Sort */}
           <select
-            value={`${sortBy}-${sortOrder}`}
+            value={`${sortBy}|${sortOrder}`}
             onChange={(e) => {
-              const [field, order] = e.target.value.split('-');
+              const [field, order] = e.target.value.split('|');
               onSortByChange(field);
               onSortOrderChange(order as 'asc' | 'desc');
             }}
             className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none"
           >
-            <option value="createdAt-desc">Newest First</option>
-            <option value="createdAt-asc">Oldest First</option>
-            <option value="name-asc">Name (A-Z)</option>
-            <option value="name-desc">Name (Z-A)</option>
-            <option value="code-asc">Code (A-Z)</option>
+            <option value="updatedAt|desc">Newest Updated</option>
+            <option value="updatedAt|asc">Oldest Updated</option>
+            <option value="createdAt|desc">Newest Created</option>
+            <option value="createdAt|asc">Oldest Created</option>
+            <option value="name|asc">Name (A-Z)</option>
+            <option value="name|desc">Name (Z-A)</option>
+            <option value="code|asc">Code (A-Z)</option>
           </select>
 
           {/* Refresh */}

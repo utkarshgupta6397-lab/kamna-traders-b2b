@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MasterRecord, MasterConfig } from './types';
 import { CheckCircle2, XCircle, AlertTriangle, Send, RotateCcw, X, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -24,6 +24,15 @@ export default function ApprovalEngine({
 }: ApprovalEngineProps) {
   const [remarks, setRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [dependencyViolations, setDependencyViolations] = useState<any>(null);
+
+  // Reset state on open
+  useEffect(() => {
+    if (isOpen) {
+      setRemarks('');
+      setDependencyViolations(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen || !record || !actionType) return null;
 
@@ -111,7 +120,13 @@ export default function ApprovalEngine({
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Action failed');
+      if (!res.ok) {
+        if (res.status === 409 && data.dependencyViolations) {
+          setDependencyViolations(data.dependencyViolations);
+          return;
+        }
+        throw new Error(data.error || 'Action failed');
+      }
 
       toast.success(`Action "${details.title}" completed successfully`);
       setRemarks('');
@@ -139,41 +154,77 @@ export default function ApprovalEngine({
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
-          <p className="text-sm text-gray-600">{details.description}</p>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-              Remarks {details.requireRemarks && <span className="text-red-500">*</span>}
-            </label>
-            <textarea
-              rows={3}
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder={details.requireRemarks ? 'Reason for decline...' : 'Optional workflow notes...'}
-              className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20"
-            />
+        {dependencyViolations ? (
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-gray-700 font-medium">
+              This {config.singularTitle} is currently mapped to one or more active records. Please update or deactivate those records first before changing this status.
+            </p>
+            <div className="bg-red-50 border border-red-100 rounded-lg p-3">
+              <h3 className="text-xs font-semibold text-red-800 mb-2">
+                Referenced by {dependencyViolations.totalCount} active record(s):
+              </h3>
+              <ul className="space-y-1.5 max-h-40 overflow-y-auto">
+                {dependencyViolations.records.map((dep: any, i: number) => (
+                  <li key={i} className="text-xs text-red-700 flex items-center justify-between">
+                    <span><span className="font-mono font-medium">{dep.code}</span> {dep.name || dep.description}</span>
+                    <span className="opacity-75">{dep.status}</span>
+                  </li>
+                ))}
+              </ul>
+              {dependencyViolations.totalCount > 10 && (
+                <div className="text-xs text-red-600 mt-2 font-medium italic">
+                  + {dependencyViolations.totalCount - 10} more records...
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 border border-gray-200 hover:bg-gray-100 text-gray-800 font-medium rounded-lg text-xs"
+              >
+                Close
+              </button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">{details.description}</p>
 
-        <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between">
-          <button
-            onClick={onClose}
-            disabled={submitting}
-            className="px-4 py-2 border border-gray-200 hover:bg-white text-gray-700 rounded-lg text-xs font-medium"
-          >
-            Cancel
-          </button>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                  Remarks {details.requireRemarks && <span className="text-red-500">*</span>}
+                </label>
+                <textarea
+                  rows={3}
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder={details.requireRemarks ? 'Reason for decline...' : 'Optional workflow notes...'}
+                  className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20"
+                />
+              </div>
+            </div>
 
-          <button
-            onClick={handleConfirm}
-            disabled={submitting}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold shadow-sm transition-colors ${details.btnCls}`}
-          >
-            {submitting ? <Loader2 size={14} className="animate-spin" /> : <Icon size={14} />}
-            Confirm {actionType.charAt(0).toUpperCase() + actionType.slice(1)}
-          </button>
-        </div>
+            <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between">
+              <button
+                onClick={onClose}
+                disabled={submitting}
+                className="px-4 py-2 border border-gray-200 hover:bg-white text-gray-700 rounded-lg text-xs font-medium"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={handleConfirm}
+                disabled={submitting}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold shadow-sm transition-colors ${details.btnCls}`}
+              >
+                {submitting ? <Loader2 size={14} className="animate-spin" /> : <Icon size={14} />}
+                Confirm {actionType.charAt(0).toUpperCase() + actionType.slice(1)}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

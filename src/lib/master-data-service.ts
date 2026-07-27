@@ -146,3 +146,31 @@ export async function createMasterAuditLog(params: {
     data: historyData,
   });
 }
+
+export async function checkMasterDependencies(entity: string, id: string) {
+  const result = {
+    hasViolations: false,
+    totalCount: 0,
+    records: [] as { code?: string | null; description?: string | null; name?: string; status: string }[],
+  };
+
+  if (entity === 'tax-rates') {
+    const count = await prisma.hsnCode.count({
+      where: { defaultGstRateId: id, isActive: true },
+    });
+    
+    if (count > 0) {
+      result.hasViolations = true;
+      result.totalCount = count;
+      result.records = await prisma.hsnCode.findMany({
+        where: { defaultGstRateId: id, isActive: true },
+        take: 10,
+        select: { code: true, description: true, status: true },
+      });
+    }
+  }
+
+  // Extensible for Brands, Manufacturers, Categories, etc.
+
+  return result;
+}

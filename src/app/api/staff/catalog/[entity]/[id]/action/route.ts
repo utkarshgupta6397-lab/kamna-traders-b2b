@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { ENTITY_REGISTRY, MasterEntityKey, createMasterAuditLog, getPrismaDelegate } from '@/lib/master-data-service';
+import { ENTITY_REGISTRY, MasterEntityKey, createMasterAuditLog, getPrismaDelegate, checkMasterDependencies } from '@/lib/master-data-service';
 
 export async function POST(
   request: Request,
@@ -88,6 +88,15 @@ export async function POST(
       if (existing.status !== 'Inactive' && existing.status !== 'Draft') {
         return NextResponse.json({ error: 'Only Draft and Inactive records can be archived.' }, { status: 400 });
       }
+      
+      const deps = await checkMasterDependencies(entity, id);
+      if (deps.hasViolations) {
+        return NextResponse.json({ 
+          error: 'Dependency Violation', 
+          dependencyViolations: deps 
+        }, { status: 409 });
+      }
+
       targetStatus = 'Archived';
       if (entity === 'brands' || entity === 'categories') {
         updateData.active = false;
@@ -100,6 +109,15 @@ export async function POST(
       if (existing.status !== 'Active') {
         return NextResponse.json({ error: 'Only Active records can be deactivated' }, { status: 400 });
       }
+
+      const deps = await checkMasterDependencies(entity, id);
+      if (deps.hasViolations) {
+        return NextResponse.json({ 
+          error: 'Dependency Violation', 
+          dependencyViolations: deps 
+        }, { status: 409 });
+      }
+
       targetStatus = 'Inactive';
       if (entity === 'brands' || entity === 'categories') {
         updateData.active = false;

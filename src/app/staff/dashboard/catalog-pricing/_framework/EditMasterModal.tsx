@@ -107,8 +107,13 @@ export default function EditMasterModal({
 
     if (config.customFields) {
       for (const field of config.customFields) {
-        if (field.required && !customValues[field.name]) {
+        const val = customValues[field.name];
+        if (field.required && !val) {
           toast.error(`${field.label} is required`);
+          return;
+        }
+        if (val && field.pattern && !new RegExp(field.pattern).test(val)) {
+          toast.error(`Invalid ${field.label} format`);
           return;
         }
       }
@@ -251,7 +256,10 @@ export default function EditMasterModal({
                   step={f.type === 'number' ? 'any' : undefined}
                   disabled={isReadOnly}
                   value={customValues[f.name] || ''}
-                  onChange={(e) => setCustomValues({ ...customValues, [f.name]: e.target.value })}
+                  onChange={(e) => {
+                    const val = f.uppercase ? e.target.value.toUpperCase() : e.target.value;
+                    setCustomValues({ ...customValues, [f.name]: val });
+                  }}
                   className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] disabled:opacity-60"
                 />
               )}

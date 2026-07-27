@@ -56,7 +56,9 @@ export default function ApprovalEngine({
       case 'archive':
         return {
           title: 'Archive Record',
-          description: `Archive "${record.name}". Archived records become read-only and hidden from default selection dropdowns.`,
+          description: record.status === 'Draft' 
+            ? `Archive this draft? The record will be retained for audit purposes but can no longer be edited or submitted for approval.` 
+            : `Archive "${record.name}". Archived records become read-only and hidden from default selection dropdowns.`,
           btnCls: 'bg-red-600 hover:bg-red-700 text-white',
           icon: AlertTriangle,
           requireRemarks: false,

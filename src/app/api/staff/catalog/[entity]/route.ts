@@ -211,6 +211,21 @@ export async function POST(
       }
     }
 
+    // Check unique abbreviation for units
+    if (entity === 'units' && customProps.abbreviation) {
+      const parsedAbbrev = customProps.abbreviation.trim().toUpperCase();
+      const existingAbbrev = await delegate.findFirst({
+        where: { 
+          abbreviation: { equals: parsedAbbrev, mode: 'insensitive' },
+          status: { not: 'Archived' }
+        },
+      });
+      if (existingAbbrev) {
+        return NextResponse.json({ error: `Unit of Measurement with abbreviation "${parsedAbbrev}" already exists` }, { status: 400 });
+      }
+      customProps.abbreviation = parsedAbbrev;
+    }
+
     const createData: any = {
       name: name.trim(),
       code: finalCode,

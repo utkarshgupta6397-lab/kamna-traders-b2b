@@ -131,7 +131,20 @@ export async function PATCH(
         if (!customProps.abbreviation || !customProps.abbreviation.trim()) {
           return NextResponse.json({ error: 'Display Abbreviation is required' }, { status: 400 });
         }
-        updateData.abbreviation = customProps.abbreviation.trim();
+        const parsedAbbrev = customProps.abbreviation.trim().toUpperCase();
+        if (parsedAbbrev !== existing.abbreviation) {
+          const existingAbbrev = await delegate.findFirst({
+            where: { 
+              abbreviation: { equals: parsedAbbrev, mode: 'insensitive' },
+              id: { not: id },
+              status: { not: 'Archived' }
+            },
+          });
+          if (existingAbbrev) {
+            return NextResponse.json({ error: `Unit of Measurement with abbreviation "${parsedAbbrev}" already exists` }, { status: 400 });
+          }
+        }
+        updateData.abbreviation = parsedAbbrev;
       }
     } else if (entity === 'hsn-codes') {
       if (customProps.gstRate !== undefined) updateData.gstRate = customProps.gstRate ? parseFloat(customProps.gstRate) : null;

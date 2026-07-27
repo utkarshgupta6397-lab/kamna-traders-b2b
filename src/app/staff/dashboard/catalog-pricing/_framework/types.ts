@@ -52,6 +52,8 @@ export interface MasterConfig {
     options?: { label: string; value: string }[];
     required?: boolean;
     helperText?: string;
+    uppercase?: boolean;
+    pattern?: string;
   }[];
 }
 

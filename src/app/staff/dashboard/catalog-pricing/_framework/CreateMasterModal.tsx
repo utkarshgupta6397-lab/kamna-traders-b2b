@@ -20,6 +20,7 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
   const [submitting, setSubmitting] = useState(false);
   const [taxRates, setTaxRates] = useState<any[]>([]);
   const [hsnError, setHsnError] = useState<string | null>(null);
+  const [taxError, setTaxError] = useState<string | null>(null);
 
   const hasUnsavedChanges = React.useMemo(() => {
     if (name.trim()) return true;
@@ -37,7 +38,9 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
 
   const handleDismiss = () => {
     if (name || code || description || remarks || Object.values(customValues).some(Boolean)) {
-      setIsDismissConfirmOpen(true);
+      if (window.confirm('Discard unsaved changes?')) {
+        onClose();
+      }
     } else {
       onClose();
     }
@@ -51,6 +54,7 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
       setRemarks('');
       setCustomValues({});
       setHsnError(null);
+      setTaxError(null);
       
       if (config.customFields?.some(f => f.type === 'tax-rate-select')) {
         fetch('/api/staff/catalog/tax-rates?status=Active')
@@ -90,6 +94,15 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
       }
       if (hsnCleanCode.length < 6) {
         setHsnError('HSN Code is mandatory and must contain at least 6 digits');
+        return;
+      }
+    }
+
+    setTaxError(null);
+    if (config.entityKey === 'tax-rates') {
+      const pct = parseFloat(customValues.percentage);
+      if (pct < 0) {
+        setTaxError('Tax Percentage cannot be negative.');
         return;
       }
     }
@@ -223,33 +236,41 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
                   ))}
                 </select>
               ) : (
-                <input
-                  type={f.type}
-                  step={f.type === 'number' ? 'any' : undefined}
-                  value={customValues[f.name] || ''}
-                  onChange={(e) => {
-                    const val = f.uppercase ? e.target.value.toUpperCase() : e.target.value;
-                    setCustomValues({ ...customValues, [f.name]: val });
-                  }}
-                  placeholder={`Enter ${f.label}`}
-                  className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
-                />
+                <>
+                  <input
+                    type={f.type}
+                    step={f.type === 'number' ? 'any' : undefined}
+                    value={customValues[f.name] || ''}
+                    onChange={(e) => {
+                      const val = f.uppercase ? e.target.value.toUpperCase() : e.target.value;
+                      setCustomValues({ ...customValues, [f.name]: val });
+                      if (f.name === 'percentage' && taxError) setTaxError(null);
+                    }}
+                    placeholder={`Enter ${f.label}`}
+                    className={`w-full px-3.5 py-2 bg-gray-50 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] ${(f.name === 'percentage' && taxError) ? 'border-red-500' : 'border-gray-200'}`}
+                  />
+                  {f.name === 'percentage' && taxError && (
+                    <p className="text-xs text-red-500 mt-1.5">{taxError}</p>
+                  )}
+                </>
               )}
             </div>
           ))}
 
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-              Description
-            </label>
-            <textarea
-              rows={2}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Additional specifications or notes..."
-              className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
-            />
-          </div>
+          {config.entityKey !== 'tax-rates' && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                Description
+              </label>
+              <textarea
+                rows={2}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Additional specifications or notes..."
+                className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
+              />
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">

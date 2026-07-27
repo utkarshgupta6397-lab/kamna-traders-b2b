@@ -237,6 +237,7 @@ model TaxRate {
   code            String?             @unique
   name            String              @unique
   description     String?
+  zohoBooksTaxId  BigInt?
   percentage      Float               @default(0.0)
   taxType         String              @default("GST")
   status          String              @default("Draft")
@@ -312,10 +313,9 @@ model GovernmentHsnHelper {
   code        String @unique
   description String
   level       String // "Chapter", "Heading", "Sub-heading", "Tariff Item"
-  
+
   @@index([code])
 }
-
 
 model MasterDataHistory {
   id            String   @id @default(cuid())

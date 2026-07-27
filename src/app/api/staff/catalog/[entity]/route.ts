@@ -142,6 +142,13 @@ export async function GET(
       }
     }
 
+    if (entity === 'tax-rates') {
+      records = records.map(r => ({
+        ...r,
+        zohoBooksTaxId: r.zohoBooksTaxId ? r.zohoBooksTaxId.toString() : null
+      }));
+    }
+
     return NextResponse.json({
       records,
       total,
@@ -238,8 +245,8 @@ export async function POST(
       description: description ? description.trim() : null,
       status: initialStatus,
       remarks: remarks ? remarks.trim() : null,
-      createdById: session.userId,
-      updatedById: session.userId,
+      createdBy: { connect: { id: session.userId } },
+      updatedBy: { connect: { id: session.userId } },
     };
 
     // Brand and Category schema use auto-cuid or cuid for ID, others use numeric ID
@@ -251,6 +258,7 @@ export async function POST(
     if (entity === 'tax-rates') {
       createData.percentage = parseFloat(customProps.percentage) || 0.0;
       createData.taxType = customProps.taxType || 'GST';
+      createData.zohoBooksTaxId = customProps.zohoBooksTaxId ? BigInt(customProps.zohoBooksTaxId) : null;
     } else if (entity === 'units') {
       createData.abbreviation = customProps.abbreviation ? customProps.abbreviation.trim() : null;
     } else if (entity === 'hsn-codes') {
@@ -273,6 +281,10 @@ export async function POST(
       remarks: remarks || 'Initial creation',
       userId: session.userId,
     });
+
+    if (entity === 'tax-rates' && newRecord.zohoBooksTaxId) {
+      newRecord.zohoBooksTaxId = newRecord.zohoBooksTaxId.toString();
+    }
 
     return NextResponse.json(newRecord, { status: 201 });
   } catch (error: any) {

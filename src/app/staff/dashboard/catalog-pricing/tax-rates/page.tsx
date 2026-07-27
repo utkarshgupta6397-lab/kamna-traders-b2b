@@ -21,6 +21,13 @@ const TAX_RATES_CONFIG: MasterConfig = {
       ],
       required: true,
     },
+    { 
+      name: 'zohoBooksTaxId', 
+      label: 'Zoho Books Tax ID', 
+      type: 'text', 
+      required: true, 
+      pattern: '^[0-9]+$' 
+    },
   ],
 };
 

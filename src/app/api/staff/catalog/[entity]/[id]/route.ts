@@ -43,6 +43,10 @@ export async function GET(
       return NextResponse.json({ error: 'Record not found' }, { status: 404 });
     }
 
+    if (entity === 'tax-rates' && record.zohoBooksTaxId) {
+      record.zohoBooksTaxId = record.zohoBooksTaxId.toString();
+    }
+
     return NextResponse.json(record);
   } catch (error: any) {
     console.error(`[API] GET /api/staff/catalog/${entity}/${id} error:`, error);
@@ -92,7 +96,7 @@ export async function PATCH(
     const { name, code, description, remarks, ...customProps } = body;
 
     const updateData: any = {
-      updatedById: session.userId,
+      updatedBy: { connect: { id: session.userId } },
     };
 
     if (name && name.trim() !== existing.name) {
@@ -122,8 +126,9 @@ export async function PATCH(
     if (remarks !== undefined) updateData.remarks = remarks ? remarks.trim() : null;
 
     if (entity === 'tax-rates') {
-      if (customProps.percentage !== undefined) updateData.percentage = parseFloat(customProps.percentage);
+      if (customProps.percentage !== undefined) updateData.percentage = parseFloat(customProps.percentage) || 0.0;
       if (customProps.taxType !== undefined) updateData.taxType = customProps.taxType;
+      if (customProps.zohoBooksTaxId !== undefined) updateData.zohoBooksTaxId = customProps.zohoBooksTaxId ? BigInt(customProps.zohoBooksTaxId) : null;
     } else if (entity === 'units') {
       if (customProps.abbreviation !== undefined) {
         if (!customProps.abbreviation || !customProps.abbreviation.trim()) {
@@ -187,11 +192,15 @@ export async function PATCH(
       entityType: meta.modelName,
       entityId: id,
       action: 'UPDATED',
-      previousValue: JSON.stringify(existing),
-      newValue: JSON.stringify(updatedRecord),
+      previousValue: JSON.stringify(existing, (_, v) => typeof v === 'bigint' ? v.toString() : v),
+      newValue: JSON.stringify(updatedRecord, (_, v) => typeof v === 'bigint' ? v.toString() : v),
       remarks: remarks || 'Record updated',
       userId: session.userId,
     });
+
+    if (entity === 'tax-rates' && updatedRecord.zohoBooksTaxId) {
+      updatedRecord.zohoBooksTaxId = updatedRecord.zohoBooksTaxId.toString();
+    }
 
     return NextResponse.json(updatedRecord);
   } catch (error: any) {
@@ -236,7 +245,7 @@ export async function DELETE(
       data: {
         status: 'Archived',
         active: false,
-        updatedById: session.userId,
+        updatedBy: { connect: { id: session.userId } },
       },
     });
 
@@ -249,6 +258,10 @@ export async function DELETE(
       remarks: 'Record archived',
       userId: session.userId,
     });
+
+    if (entity === 'tax-rates' && archivedRecord.zohoBooksTaxId) {
+      archivedRecord.zohoBooksTaxId = archivedRecord.zohoBooksTaxId.toString();
+    }
 
     return NextResponse.json(archivedRecord);
   } catch (error: any) {

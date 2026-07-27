@@ -71,8 +71,9 @@ export default function MasterTable({
               {config.entityKey === 'tax-rates' && <th className="py-3 px-4">Tax %</th>}
               {config.entityKey === 'units' && <th className="py-3 px-4">Abbr</th>}
               {config.entityKey === 'hsn-codes' && <th className="py-3 px-4">GST Rate</th>}
-              <th className="py-3 px-4">Description</th>
+              {config.entityKey !== 'tax-rates' && <th className="py-3 px-4">Description</th>}
               <th className="py-3 px-4">Status</th>
+              {config.entityKey === 'tax-rates' && <th className="py-3 px-4 whitespace-nowrap">Zoho Books Tax ID</th>}
               <th className="py-3 px-4">Created By</th>
               <th className="py-3 px-4">Created At</th>
               <th className="py-3 px-4">Updated By</th>
@@ -105,10 +106,17 @@ export default function MasterTable({
                   {config.entityKey === 'tax-rates' && <td className="py-3 px-4 font-medium text-gray-800">{r.percentage}% ({r.taxType || 'GST'})</td>}
                   {config.entityKey === 'units' && <td className="py-3 px-4 text-gray-600">{r.abbreviation || '-'}</td>}
                   {config.entityKey === 'hsn-codes' && <td className="py-3 px-4 text-gray-600">{r.defaultGstRate?.percentage ? `${r.defaultGstRate.percentage}%` : '-'}</td>}
+                {config.entityKey !== 'tax-rates' && (
                   <td className="py-3 px-4 text-gray-500 max-w-xs truncate">{r.description || '-'}</td>
+                )}
                   <td className="py-3 px-4">
                     <MasterStatusBadge status={r.status} />
                   </td>
+                  {config.entityKey === 'tax-rates' && (
+                    <td className="py-3 px-4 font-mono text-xs text-gray-700">
+                      {r.zohoBooksTaxId || '-'}
+                    </td>
+                  )}
                   <td className="py-3 px-4 text-xs text-gray-600">
                     {r.createdBy?.name || 'System'}
                   </td>

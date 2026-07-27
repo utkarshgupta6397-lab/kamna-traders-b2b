@@ -92,6 +92,7 @@ export default function EditMasterModal({
       if (record.percentage !== undefined) custom.percentage = record.percentage;
       if (record.taxType !== undefined) custom.taxType = record.taxType;
       if (record.abbreviation !== undefined) custom.abbreviation = record.abbreviation;
+      if ((record as any).zohoBooksTaxId !== undefined) custom.zohoBooksTaxId = (record as any).zohoBooksTaxId;
       if ((record as any).defaultGstRateId !== undefined) custom.defaultGstRateId = (record as any).defaultGstRateId;
       if (record.chapterCode !== undefined) custom.chapterCode = record.chapterCode;
       setCustomValues(custom);
@@ -306,18 +307,20 @@ export default function EditMasterModal({
             </div>
           ))}
 
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
-              Description
-            </label>
-            <textarea
-              rows={2}
-              disabled={isReadOnly}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] disabled:opacity-60"
-            />
-          </div>
+          {config.entityKey !== 'tax-rates' && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                Description
+              </label>
+              <textarea
+                rows={2}
+                disabled={isReadOnly}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] disabled:opacity-60"
+              />
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">

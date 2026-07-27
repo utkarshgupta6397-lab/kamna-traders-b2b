@@ -37,7 +37,7 @@ export async function POST(
 
     let targetStatus = existing.status;
     let auditAction: 'SUBMITTED' | 'APPROVED' | 'DECLINED' | 'ARCHIVED' | 'RESTORED' | 'UPDATED' = 'SUBMITTED';
-    const updateData: any = { updatedById: session.userId };
+    const updateData: any = { updatedBy: { connect: { id: session.userId } } };
 
     if (action === 'submit') {
       if (!hasCreate && !hasModify) {
@@ -57,7 +57,7 @@ export async function POST(
       }
       targetStatus = 'Active';
       auditAction = 'APPROVED';
-      updateData.approvedById = session.userId;
+      updateData.approvedBy = { connect: { id: session.userId } };
       updateData.approvedAt = new Date();
     } else if (action === 'decline') {
       if (!hasApprove) {
@@ -120,6 +120,10 @@ export async function POST(
       remarks: remarks || `Action: ${action}`,
       userId: session.userId,
     });
+
+    if (entity === 'tax-rates' && updatedRecord.zohoBooksTaxId) {
+      updatedRecord.zohoBooksTaxId = updatedRecord.zohoBooksTaxId.toString();
+    }
 
     return NextResponse.json(updatedRecord);
   } catch (error: any) {

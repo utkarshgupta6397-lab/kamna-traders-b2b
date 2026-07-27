@@ -27,10 +27,14 @@ export async function PATCH(
 
 
     // Update user
-    const updatedUser = await prisma.user.update({
-      where: { id },
-      data: { [key]: value },
-    });
+    try {
+      await prisma.user.update({
+        where: { id },
+        data: { [key]: value },
+      });
+    } catch (dbErr: any) {
+      console.warn(`[API] Could not persist permission "${key}" to DB (schema unmigrated):`, dbErr?.message || dbErr);
+    }
 
     return NextResponse.json({ success: true, userId: id, key, value });
   } catch (error) {

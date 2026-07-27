@@ -1,7 +1,8 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     try {
-      const { prisma } = await import('@/lib/db');
+      const { prisma, initializeDatabase } = await import('@/lib/db');
+      await initializeDatabase();
       const config = await prisma.whatsAppConfiguration.findUnique({
         where: { id: 'singleton' }
       });

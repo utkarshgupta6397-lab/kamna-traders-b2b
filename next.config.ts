@@ -45,7 +45,7 @@ const nextConfig: NextConfig = {
     },
   }, 
   experimental: {
-    // Other experimental options can go here
+    optimizePackageImports: ['lucide-react', 'date-fns', 'echarts', 'recharts']
   },
   // Ensure markdown and logs don't trigger HMR/rebuild loops
   webpack: (config) => {

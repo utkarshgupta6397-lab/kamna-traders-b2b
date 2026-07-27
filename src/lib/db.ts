@@ -31,7 +31,7 @@ export async function initializeDatabase() {
   
   try {
     // --- TELEMETRY: MONKEY-PATCH GLOBAL FETCH FOR ZOHO TRACKING ---
-    if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_ENABLE_API_TELEMETRY === 'true') {
+    if ((process.env.NODE_ENV === 'development' && process.env.DEBUG_ZOHO === 'true') || process.env.NEXT_PUBLIC_ENABLE_API_TELEMETRY === 'true') {
       if (!(globalThis as any).__fetch_patched) {
         const originalFetch = globalThis.fetch;
         (globalThis as any).fetch = async (...args: any[]) => {

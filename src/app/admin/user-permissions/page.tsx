@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Shield, Users, Lock, Loader2, Info, Check, Tags, PackageCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { GENERAL_PERMISSIONS, CATALOG_MODULES, PermissionKey } from '@/lib/permissions';

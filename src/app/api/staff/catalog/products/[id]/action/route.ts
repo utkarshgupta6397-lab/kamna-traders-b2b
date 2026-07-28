@@ -108,8 +108,57 @@ export async function POST(
       include: {
         updatedBy: { select: { id: true, name: true } },
         approvedBy: { select: { id: true, name: true } },
+        variants: true
       },
     });
+
+    if (action === 'approve') {
+      // Create skeleton Sku records and WarehouseInventory records for tracked products
+      const trackedVariants = updatedRecord.variants.filter(v => v.trackInventory);
+      if (trackedVariants.length > 0) {
+        const activeWarehouses = await prisma.warehouse.findMany({ where: { active: true } });
+        
+        for (const variant of trackedVariants) {
+          // 1. Ensure a Sku record exists to satisfy FK constraint
+          const existingSku = await prisma.sku.findUnique({ where: { id: variant.sku } });
+          if (!existingSku) {
+            await prisma.sku.create({
+              data: {
+                id: variant.sku,
+                name: updatedRecord.name,
+                categoryId: updatedRecord.categoryId,
+                brandId: updatedRecord.brandId,
+                price: variant.sellingPrice,
+                unit: 'UNIT',
+                moq: 1,
+                stepQty: 1,
+                caseSize: 1,
+                isActive: true
+              }
+            });
+          }
+
+          // 2. Ensure WarehouseInventory records exist for all active warehouses
+          for (const warehouse of activeWarehouses) {
+            await prisma.warehouseInventory.upsert({
+              where: {
+                warehouseId_skuId: {
+                  warehouseId: warehouse.id,
+                  skuId: variant.sku
+                }
+              },
+              create: {
+                warehouseId: warehouse.id,
+                skuId: variant.sku,
+                qty: 0,
+                isOos: true
+              },
+              update: {} // Do nothing if it already exists
+            });
+          }
+        }
+      }
+    }
 
     await createMasterAuditLog({
       entityType: 'Product',

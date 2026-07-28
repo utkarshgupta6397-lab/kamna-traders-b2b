@@ -107,7 +107,10 @@ export default function CreateProductPage() {
             thumbnailBase64: data.thumbnailBase64 || '',
           });
         })
-        .finally(() => setIsInitializing(false));
+        .finally(() => {
+          setIsInitializing(false);
+          // currentStep stays 0, but effectiveStep will be 1
+        });
     }
   }, [editId]);
 
@@ -133,12 +136,13 @@ export default function CreateProductPage() {
   // ─── Step validation before advancing ───────────────────────────────────
   const handleNextStep = () => {
     setShowErrors(true);
+    const effectiveStep = isEditMode ? currentStep + 1 : currentStep;
     
-    if (currentStep === 0 && productType !== 'single') {
+    if (effectiveStep === 0 && productType !== 'single') {
       return;
     }
     
-    if (currentStep === 1) {
+    if (effectiveStep === 1) {
       if (!formData.name.trim() || !formData.categoryId || !formData.type || !formData.brandId || !formData.manufacturerId || !formData.code.trim()) {
         return;
       }
@@ -146,7 +150,7 @@ export default function CreateProductPage() {
       if (!/^[A-Z0-9]{4,20}$/.test(formData.code.trim())) return;
     }
     
-    if (currentStep === 2) {
+    if (effectiveStep === 2) {
       if (!formData.hsnCodeId || !formData.taxRateId || !formData.unitId || !formData.purchasePrice || !formData.sellingPrice || !formData.incentiveTag) {
         return;
       }
@@ -234,8 +238,10 @@ export default function CreateProductPage() {
 
     setIsSaving(true);
     try {
-      const res  = await fetch('/api/staff/catalog/products', {
-        method:  'POST',
+      const url = isEditMode ? `/api/staff/catalog/products/${editId}` : '/api/staff/catalog/products';
+      const method = isEditMode ? 'PUT' : 'POST';
+      const res  = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ ...formData, submitForApproval }),
       });
@@ -251,10 +257,11 @@ export default function CreateProductPage() {
     }
   };
 
-  // ─── UI ───────────────────────────────────────────────────────────────────
+  const effectiveStep = isEditMode ? currentStep + 1 : currentStep;
+
   return (
     <ProductStepForm
-      steps={STEPS}
+      steps={isEditMode ? STEPS.slice(1) : STEPS}
       currentStep={currentStep}
       onStepChange={setCurrentStep}
       onNextStep={handleNextStep}
@@ -266,7 +273,7 @@ export default function CreateProductPage() {
       {/* ══════════════════════════════════════════════════
           STEP 1 — Select Product Type
       ══════════════════════════════════════════════════ */}
-      {currentStep === 0 && (
+      {effectiveStep === 0 && !isEditMode && (
         <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
           <div className="mb-2">
             <h2 className="text-[15px] font-semibold text-gray-900">Select Product Type</h2>
@@ -332,8 +339,8 @@ export default function CreateProductPage() {
       {/* ══════════════════════════════════════════════════
           STEP 2 — Product Details
       ══════════════════════════════════════════════════ */}
-      {currentStep === 1 && (
-        <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
+      {effectiveStep === 1 && (
+        <div className="space-y-8 animate-in fade-in zoom-in-95 duration-200">
           <div className="flex items-center gap-3 pb-3 mb-2">
             <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Info size={18} /></div>
             <div>
@@ -386,8 +393,6 @@ export default function CreateProductPage() {
                     </label>
                   </div>
                 </div>
-
-                
 
                 {/* SKU / Product Code */}
                 <div className="col-span-2 sm:col-span-1">
@@ -497,8 +502,8 @@ export default function CreateProductPage() {
       {/* ══════════════════════════════════════════════════
           STEP 3 — Tax & Pricing
       ══════════════════════════════════════════════════ */}
-      {currentStep === 2 && (
-        <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
+      {effectiveStep === 2 && (
+        <div className="space-y-8 animate-in fade-in zoom-in-95 duration-200">
           <div className="flex items-center gap-3 pb-3 mb-2">
             <div className="p-2 bg-violet-50 text-violet-600 rounded-lg"><Receipt size={18} /></div>
             <div>
@@ -707,7 +712,7 @@ export default function CreateProductPage() {
       {/* ══════════════════════════════════════════════════
           STEP 4 — Inventory & Review
       ══════════════════════════════════════════════════ */}
-      {currentStep === 3 && (
+      {effectiveStep === 3 && (
         <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
           <div className="flex items-center gap-3 pb-2">
             <div className="p-2 bg-orange-50 text-orange-600 rounded-lg"><BarChart2 size={18} /></div>

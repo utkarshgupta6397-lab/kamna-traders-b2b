@@ -56,15 +56,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
     const itemIds = invoice.items.map(i => i.itemId).filter(Boolean) as string[];
     const skuNames = invoice.items.map(i => i.sku).filter(Boolean) as string[];
     
-    const skus = await prisma.sku.findMany({
-      where: {
-        OR: [
-          { zohoBookItemId: { in: itemIds } },
-          { id: { in: skuNames } }
-        ]
-      },
-      include: { brand: true }
-    });
+    const skus = await import('@/lib/services/ProductLookupService').then(m => 
+      m.ProductLookupService.search('dcr', { skuIds: skuNames }) // skuNames are the variant SKUs
+    );
 
     // Map serials and compute metrics
     const skuGroups = invoice.items.map(item => {
@@ -82,9 +76,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
 
       // Identify item vendor
       let itemVendor = '--';
-      const matchedSku = skus.find(s => s.zohoBookItemId === item.itemId || s.id === item.sku);
-      if (matchedSku?.brand?.name) {
-        itemVendor = matchedSku.brand.name;
+      const matchedSku = skus.find(s => s.zohoBooksId2 === item.itemId || s.id === item.sku);
+      if (matchedSku?.brand) {
+        itemVendor = matchedSku.brand;
       }
 
       const serials = item.serialAllocations.map(alloc => {

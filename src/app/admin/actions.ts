@@ -271,8 +271,27 @@ export async function adjustInventory(data: FormData) {
     throw new Error('Remarks are mandatory (min 3 chars)');
   }
 
-  const sku = await prisma.sku.findUnique({ where: { id: skuId } });
-  if (!sku) throw new Error('SKU not found');
+  const { ProductLookupService } = await import('@/lib/services/ProductLookupService');
+  const skus = await ProductLookupService.search('inventory', { skuIds: [skuId], includeInactive: true });
+  const sku = skus[0];
+  if (!sku) throw new Error('Product variant not found');
+
+  // Ensure Sku record exists to satisfy foreign key constraint on WarehouseInventory
+  await prisma.sku.upsert({
+    where: { id: skuId },
+    create: {
+      id: skuId,
+      name: sku.name,
+      categoryId: sku.categoryId || 'unknown',
+      price: sku.price || 0,
+      unit: sku.unit || 'UNIT',
+      moq: sku.moq || 1,
+      stepQty: sku.stepQty || 1,
+      caseSize: sku.caseSize || 1,
+      isActive: sku.isActive ?? true
+    },
+    update: {} // No-op if it exists
+  });
 
   await prisma.$transaction(async (tx) => {
     // 1. Get current stock

@@ -45,10 +45,9 @@ export async function GET(req: Request) {
     const skuIdsToFetch = Array.from(new Set(serials.map((s: any) => s.skuId).filter(Boolean))) as string[];
     
     // Fetch from Sku master
-    const skus = await prisma.sku.findMany({
-      where: { id: { in: skuIdsToFetch } },
-      select: { id: true, name: true, zohoBooksId2: true }
-    });
+    const skus = await import('@/lib/services/ProductLookupService').then(m => 
+      m.ProductLookupService.search('dcr', { skuIds: skuIdsToFetch })
+    );
     const skuMap = new Map(skus.map((s: any) => [s.id, { name: s.name, skuCode: s.zohoBooksId2 || s.id }]));
 
     const missingMappingSerials: string[] = [];

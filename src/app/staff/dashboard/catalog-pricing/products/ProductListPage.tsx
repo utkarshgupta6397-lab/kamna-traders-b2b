@@ -41,8 +41,8 @@ export default function ProductListPage() {
     const fetchPerms = async () => {
       const res = await fetch('/api/auth/session');
       if (res.ok) {
-        const session = await res.json();
-        setPermissions(session);
+        const data = await res.json();
+        setPermissions(data.session);
       }
     };
     fetchPerms();
@@ -277,7 +277,7 @@ export default function ProductListPage() {
                       <tr 
                         key={product.id} 
                         className="hover:bg-blue-50/60 transition-colors group cursor-pointer" 
-                        onClick={() => router.push(canEdit ? `/staff/dashboard/catalog-pricing/products/create?edit=${product.id}` : `/staff/dashboard/catalog-pricing/products/${product.id}`)}
+                        onClick={() => router.push(`/staff/dashboard/catalog-pricing/products/${product.id}`)}
                       >
                         <td className="px-4 py-2.5 text-center text-gray-500 text-[12px]">{rowIndex}</td>
                         <td className="px-4 py-2.5">

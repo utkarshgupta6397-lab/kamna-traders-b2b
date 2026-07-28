@@ -96,9 +96,15 @@ export function computeDiff(prev: string | null, next: string | null): AuditChan
   return diffs;
 }
 
+let hecRenderCount = 0;
+
 export function HistoryEventCard({ h }: { h: any }) {
+  hecRenderCount++;
+  if (hecRenderCount > 10) {
+    console.warn(`[PROFILER] HistoryEventCard render count: ${hecRenderCount} | ID: ${h.id}`);
+  }
   const [expanded, setExpanded] = useState(false);
-  const diffs = computeDiff(h.previousValue, h.newValue);
+  const diffs = React.useMemo(() => computeDiff(h.previousValue, h.newValue), [h.previousValue, h.newValue]);
   const isLargeChange = diffs.length > 5;
   const visibleDiffs = expanded ? diffs : diffs.slice(0, 5);
 

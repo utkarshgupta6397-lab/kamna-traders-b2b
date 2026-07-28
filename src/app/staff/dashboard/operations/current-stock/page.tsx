@@ -24,30 +24,23 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   sevenDaysAgo.setHours(0, 0, 0, 0);
 
-  const [warehouses, categories, brands, skus, inventory, recentSales, thresholds] = await Promise.all([
-    prisma.warehouse.findMany({ 
-      where: { active: true }, 
-      select: { id: true, name: true, isSystemWarehouse: true },
-      orderBy: { name: 'asc' }
-    }),
-    prisma.category.findMany({ 
-      where: { active: true }, 
-      select: { id: true, name: true },
-      orderBy: { name: 'asc' }
-    }),
-    prisma.brand.findMany({
-      where: { active: true },
-      select: { id: true, name: true },
-      orderBy: { name: 'asc' }
-    }),
-    prisma.sku.findMany({ 
-      where: { isActive: true, isUnlimited: false }, 
-      select: { id: true, name: true, zohoBooksId2: true, categoryId: true, brandId: true, caseSize: true, unit: true },
-      orderBy: { name: 'asc' }
-    }),
-    prisma.warehouseInventory.findMany({
-      select: { skuId: true, warehouseId: true, qty: true, isOos: true }
-    }),
+    const [warehouses, categories, brands, items, recentSales, thresholds] = await Promise.all([
+      prisma.warehouse.findMany({ 
+        where: { active: true }, 
+        select: { id: true, name: true, isSystemWarehouse: true },
+        orderBy: { name: 'asc' }
+      }),
+      prisma.category.findMany({ 
+        where: { active: true }, 
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' }
+      }),
+      prisma.brand.findMany({
+        where: { active: true },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' }
+      }),
+      import('@/lib/services/ProductLookupService').then(m => m.ProductLookupService.search('inventory')),
     // Fetch successful cart items from last 30 days for CPD/Age calculation
     prisma.cartItem.findMany({
       where: {
@@ -146,26 +139,6 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
       delete wh.activeDays;
     });
   });
-
-  // Transform inventory into a lookup object
-  // inventoryLookup[skuId][warehouseId] = { qty, isOos }
-  const inventoryLookup: Record<string, Record<string, { qty: number, isOos: boolean }>> = {};
-  
-  for (const inv of inventory) {
-    if (!inventoryLookup[inv.skuId]) {
-      inventoryLookup[inv.skuId] = {};
-    }
-    inventoryLookup[inv.skuId][inv.warehouseId] = {
-      qty: inv.qty,
-      isOos: inv.isOos
-    };
-  }
-
-  // Map SKUs to include their inventory
-  const items = skus.map(sku => ({
-    ...sku,
-    inventory: inventoryLookup[sku.id] || {}
-  }));
 
   // Transform thresholds into a lookup map
   const thresholdMap: Record<string, number> = {};

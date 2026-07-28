@@ -80,7 +80,7 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { name, code, description, remarks, brandId, manufacturerId, categoryId, hsnCodeId, taxRateId, unitId } = body;
+    const { name, code, description, remarks, brandId, manufacturerId, categoryId, hsnCodeId, taxRateId, unitId, thumbnailBase64 } = body;
 
     const updateData: any = {
       updatedBy: { connect: { id: session.userId } },
@@ -111,6 +111,7 @@ export async function PATCH(
 
     if (description !== undefined) updateData.description = description ? description.trim() : null;
     if (remarks !== undefined) updateData.remarks = remarks ? remarks.trim() : null;
+    if (thumbnailBase64 !== undefined) updateData.thumbnailBase64 = thumbnailBase64;
 
     if (brandId !== undefined) {
       if (brandId) updateData.brand = { connect: { id: brandId } };
@@ -195,10 +196,31 @@ export async function PUT(
       return NextResponse.json({ error: 'Product not found' }, { status: 404 });
     }
 
+    if (name && name.trim() !== existingProduct.name) {
+      const duplicate = await prisma.product.findFirst({
+        where: { name: { equals: name.trim(), mode: 'insensitive' }, id: { not: id } },
+      });
+      if (duplicate) {
+        return NextResponse.json({ error: `Product with name "${name}" already exists` }, { status: 400 });
+      }
+    }
+
+    if (code) {
+      const parsedCode = code.trim().toUpperCase();
+      if (parsedCode !== existingProduct.code) {
+        const existingCode = await prisma.product.findFirst({
+          where: { code: { equals: parsedCode, mode: 'insensitive' }, id: { not: id } },
+        });
+        if (existingCode) {
+          return NextResponse.json({ error: `Product with code "${parsedCode}" already exists` }, { status: 400 });
+        }
+      }
+    }
+
     const updatedProduct = await prisma.product.update({
       where: { id },
       data: {
-        type, name, description, remarks, incentiveTag, thumbnailBase64,
+        name, description, remarks, incentiveTag, thumbnailBase64,
         brand: brandId ? { connect: { id: brandId } } : undefined,
         manufacturer: manufacturerId ? { connect: { id: manufacturerId } } : undefined,
         category: categoryId ? { connect: { id: categoryId } } : undefined,
@@ -225,6 +247,35 @@ export async function PUT(
     if (code !== existingProduct.code) {
       await prisma.product.update({ where: { id }, data: { code } });
     }
+
+    const existingForAudit = {
+      ...existingProduct,
+      sku: existingProduct.variants[0]?.sku,
+      purchasePrice: existingProduct.variants[0]?.purchasePrice,
+      sellingPrice: existingProduct.variants[0]?.sellingPrice,
+      trackInventory: existingProduct.variants[0]?.trackInventory,
+      trackSerials: existingProduct.variants[0]?.trackSerials,
+    };
+
+    const newForAudit = {
+      ...updatedProduct,
+      sku: code,
+      purchasePrice: parseFloat(purchasePrice),
+      sellingPrice: parseFloat(sellingPrice),
+      trackInventory,
+      trackSerials,
+    };
+
+    await createMasterAuditLog({
+      entityType: 'Product',
+      entityId: id,
+      action: 'UPDATED',
+      previousValue: JSON.stringify(existingForAudit),
+      newValue: JSON.stringify(newForAudit),
+      remarks: remarks || 'Product updated',
+      userId: session.userId,
+      productId: id,
+    } as any);
 
     return NextResponse.json(updatedProduct);
   } catch (error: any) {

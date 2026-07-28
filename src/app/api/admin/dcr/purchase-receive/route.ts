@@ -28,9 +28,10 @@ export async function GET(req: Request) {
       orderBy: { createdAt: 'desc' }
     });
 
-    const skus = await prisma.sku.findMany({
-      select: { id: true, name: true }
-    });
+    const skuIds = Array.from(new Set(allPurchased.map(s => s.skuId).filter(Boolean))) as string[];
+    const skus = await import('@/lib/services/ProductLookupService').then(m => 
+      m.ProductLookupService.search('dcr', { skuIds: skuIds })
+    );
     const skuMap = new Map(skus.map(s => [s.id, s.name]));
 
     // Compute KPIs

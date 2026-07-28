@@ -22,16 +22,7 @@ export default async function TransfersPage() {
       where: { active: true, isSystemWarehouse: false },
       orderBy: { name: 'asc' }
     }),
-    prisma.sku.findMany({
-      where: { isActive: true },
-      select: {
-        id: true,
-        name: true,
-        unit: true,
-        isUnlimited: true
-      },
-      orderBy: { name: 'asc' }
-    })
+    import('@/lib/services/ProductLookupService').then(m => m.ProductLookupService.search('inventory'))
   ]);
 
   return (

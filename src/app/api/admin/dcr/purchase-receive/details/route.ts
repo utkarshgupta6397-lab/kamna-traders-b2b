@@ -84,10 +84,9 @@ export async function GET(req: Request) {
     );
 
     const skuIds = Array.from(new Set(receiptSerials.map(s => s.skuId).filter(Boolean))) as string[];
-    const skus = await prisma.sku.findMany({
-      where: { id: { in: skuIds } },
-      select: { id: true, name: true }
-    });
+    const skus = await import('@/lib/services/ProductLookupService').then(m => 
+      m.ProductLookupService.search('dcr', { skuIds: skuIds })
+    );
     const skuMap = new Map(skus.map(s => [s.id, s.name]));
 
     const linesMap = new Map<string, { skuId: string; skuName: string; eligibleSerials: string[] }>();

@@ -115,10 +115,9 @@ export async function GET(req: Request) {
     ]);
 
     const skuIdsToFetch = Array.from(new Set(serials.map((s: any) => s.skuId).filter(Boolean)));
-    const skus = await prisma.sku.findMany({
-      where: { id: { in: skuIdsToFetch as string[] } },
-      select: { id: true, name: true }
-    });
+    const skus = await import('@/lib/services/ProductLookupService').then(m => 
+      m.ProductLookupService.search('dcr', { skuIds: skuIdsToFetch as string[] })
+    );
     const skuMap = new Map(skus.map((s: any) => [s.id, s.name]));
 
     const enrichedSerials = serials.map((s: any) => {
@@ -271,10 +270,9 @@ export async function POST(req: Request) {
     ]);
 
     const skuIdsToFetch = Array.from(new Set(serials.map((s: any) => s.skuId).filter(Boolean)));
-    const skus = await prisma.sku.findMany({
-      where: { id: { in: skuIdsToFetch as string[] } },
-      select: { id: true, name: true }
-    });
+    const skus = await import('@/lib/services/ProductLookupService').then(m => 
+      m.ProductLookupService.search('dcr', { skuIds: skuIdsToFetch as string[] })
+    );
     const skuMap = new Map(skus.map((s: any) => [s.id, s.name]));
 
     const enrichedSerials = serials.map((s: any) => {

@@ -49,9 +49,9 @@ export async function POST(req: Request) {
       if (s.skuId) skuIds.add(s.skuId);
     });
 
-    const skuList = await prisma.sku.findMany({
-      where: { id: { in: Array.from(skuIds) } }
-    });
+    const skuList = await import('@/lib/services/ProductLookupService').then(m => 
+      m.ProductLookupService.search('dcr', { skuIds: Array.from(skuIds) })
+    );
     const invoiceItemList = await prisma.dcrInvoiceItem.findMany({
       where: { id: { in: Array.from(skuIds) } }
     });

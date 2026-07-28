@@ -152,7 +152,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const mismatchIds = Array.from(new Set(skuMismatchSerials.map(s => s.skuId).filter(Boolean))) as string[];
       
       const [mismatchSkus, mismatchInvoiceItems] = await Promise.all([
-        prisma.sku.findMany({ where: { id: { in: mismatchIds } } }),
+        import('@/lib/services/ProductLookupService').then(m => m.ProductLookupService.search('dcr', { skuIds: mismatchIds })),
         prisma.dcrInvoiceItem.findMany({ where: { id: { in: mismatchIds } } })
       ]);
       

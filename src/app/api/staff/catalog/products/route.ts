@@ -151,6 +151,10 @@ export async function GET(request: Request) {
         },
       });
     }
+    
+    // Normalize legacy products (e.g., default missing ProductType)
+    const { LegacyProductNormalizer } = await import('@/lib/services/LegacyProductNormalizer');
+    records = records.map((r: any) => LegacyProductNormalizer.normalizeProduct(r));
 
     return NextResponse.json({
       records,

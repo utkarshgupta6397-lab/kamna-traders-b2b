@@ -128,11 +128,12 @@ export async function GET(
       } catch (err) {
         // Fallback for unmigrated DB
         total = await delegate.count({ where }).catch(() => 0);
+        total = await delegate.count({ where }).catch(() => 0);
         records = await delegate.findMany({
           where: {},
           orderBy: { createdAt: sortOrder },
-          skip: (page - 1) * limit,
-          take: limit,
+          skip: limit === 'all' ? undefined : (page - 1) * (limit as number),
+          take: limit === 'all' ? undefined : (limit as number),
         }).catch(() => []);
       }
     } else if (entity === 'categories' && sortBy !== 'default' && categoryType !== 'ROOT' && categoryType !== 'SUB' && !isRoot) {
@@ -161,7 +162,7 @@ export async function GET(
           flatTree.push(...subs);
         }
         
-        records = flatTree.slice((page - 1) * limit, page * limit);
+        records = limit === 'all' ? flatTree : flatTree.slice((page - 1) * (limit as number), page * (limit as number));
       } catch (err) {
         total = 0;
         records = [];
@@ -193,8 +194,8 @@ export async function GET(
           records = await delegate.findMany({
             where: {},
             orderBy: { [sortBy]: sortOrder },
-            skip: (page - 1) * limit,
-            take: limit,
+            skip: limit === 'all' ? undefined : (page - 1) * (limit as number),
+            take: limit === 'all' ? undefined : (limit as number),
           });
         } catch {
           records = await delegate.findMany({
@@ -218,7 +219,7 @@ export async function GET(
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: limit === 'all' ? 1 : Math.ceil(total / (limit as number)),
     });
   } catch (error: any) {
     console.error(`[API] GET /api/staff/catalog/${entity} error:`, error);

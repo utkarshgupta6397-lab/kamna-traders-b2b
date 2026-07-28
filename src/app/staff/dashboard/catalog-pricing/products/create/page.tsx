@@ -21,6 +21,7 @@ import {
   Loader2,
   BarChart2,
   Check,
+  SlidersHorizontal
 } from 'lucide-react';
 
 const STEPS: Step[] = [
@@ -77,7 +78,10 @@ export default function CreateProductPage() {
     trackSerials:   false,
     incentiveTag:   '',
     thumbnailBase64: '',
+    productAttributes: [] as { attributeId: string; value: string }[],
   });
+
+  const [dynamicAttributes, setDynamicAttributes] = useState<any[]>([]);
 
   useEffect(() => {
     if (editId) {
@@ -105,6 +109,7 @@ export default function CreateProductPage() {
             trackSerials: variant.trackSerials ?? false,
             incentiveTag: data.incentiveTag || '',
             thumbnailBase64: data.thumbnailBase64 || '',
+            productAttributes: data.attributeValues || [],
           });
         })
         .finally(() => {
@@ -116,6 +121,25 @@ export default function CreateProductPage() {
 
   const updateForm = (key: keyof typeof formData, value: any) =>
     setFormData(prev => ({ ...prev, [key]: value }));
+
+  const updateAttribute = (attributeId: string, value: string) => {
+    setFormData(prev => {
+      const existing = prev.productAttributes.filter(a => a.attributeId !== attributeId);
+      if (!value) return { ...prev, productAttributes: existing };
+      return { ...prev, productAttributes: [...existing, { attributeId, value }] };
+    });
+  };
+
+  useEffect(() => {
+    if (formData.categoryId) {
+      fetch(`/api/staff/catalog/categories/${formData.categoryId}/attributes`)
+        .then(res => res.json())
+        .then(data => setDynamicAttributes(Array.isArray(data) ? data : []))
+        .catch(console.error);
+    } else {
+      setDynamicAttributes([]);
+    }
+  }, [formData.categoryId]);
 
   // ─── Generate SKU ────────────────────────────────────────────────────────
   const handleGenerateSku = async () => {
@@ -148,6 +172,15 @@ export default function CreateProductPage() {
       }
       if (!/^[a-zA-Z0-9\s\-/\.\(\)\&+]+$/.test(formData.name.trim())) return;
       if (!/^[A-Z0-9]{4,20}$/.test(formData.code.trim())) return;
+      
+      // Validate mandatory attributes
+      const missingMandatory = dynamicAttributes.find(attr => 
+        attr.mandatory && !formData.productAttributes.find(pa => pa.attributeId === attr.id)?.value
+      );
+      if (missingMandatory) {
+        toast.error(`Attribute "${missingMandatory.attributeName}" is required.`);
+        return;
+      }
     }
     
     if (effectiveStep === 2) {
@@ -232,6 +265,15 @@ export default function CreateProductPage() {
     }
     if (!/^[a-zA-Z0-9\s\-/\.\(\)\&+]+$/.test(formData.name.trim()) || !/^[A-Z0-9]{4,20}$/.test(formData.code.trim())) {
       toast.error('Product Name or SKU contains invalid characters');
+      setCurrentStep(1);
+      return;
+    }
+
+    const missingMandatory = dynamicAttributes.find(attr => 
+      attr.mandatory && !formData.productAttributes.find(pa => pa.attributeId === attr.id)?.value
+    );
+    if (missingMandatory) {
+      toast.error(`Attribute "${missingMandatory.attributeName}" is required.`);
       setCurrentStep(1);
       return;
     }
@@ -481,6 +523,70 @@ export default function CreateProductPage() {
                 </div>
               </div>
             </div>
+
+            {dynamicAttributes.length > 0 && (
+              <>
+                <hr className="border-gray-200/60" />
+                <div>
+                  <h3 className="text-[13px] font-semibold text-gray-900 mb-4 uppercase tracking-wider flex items-center gap-2">
+                    <SlidersHorizontal size={14} className="text-blue-500" />
+                    Product Specifications
+                  </h3>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                    {dynamicAttributes.map(attr => {
+                      const val = formData.productAttributes.find(a => a.attributeId === attr.id)?.value || '';
+                      
+                      return (
+                        <div key={attr.id} className="col-span-2 sm:col-span-1">
+                          <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">
+                            {attr.attributeName} {attr.mandatory && <span className="text-red-500">*</span>}
+                          </label>
+                          
+                          {(attr.dataType === 'Dropdown' || attr.dataType === 'Multi Select') ? (
+                            <select
+                              value={val}
+                              onChange={e => updateAttribute(attr.id, e.target.value)}
+                              className={`w-full px-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && attr.mandatory && !val ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
+                            >
+                              <option value="">Select {attr.attributeName}</option>
+                              {attr.options?.map((opt: string) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          ) : (attr.dataType === 'Boolean') ? (
+                            <select
+                              value={val}
+                              onChange={e => updateAttribute(attr.id, e.target.value)}
+                              className={`w-full px-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && attr.mandatory && !val ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
+                            >
+                              <option value="">Select</option>
+                              <option value="Yes">Yes</option>
+                              <option value="No">No</option>
+                            </select>
+                          ) : (
+                            <div className="relative">
+                              {attr.prefix && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{attr.prefix}</span>}
+                              <input
+                                type={attr.dataType === 'Number' || attr.dataType === 'Decimal' ? 'number' : attr.dataType === 'Date' ? 'date' : 'text'}
+                                className={`w-full ${attr.prefix ? 'pl-8' : 'pl-3'} ${attr.suffix ? 'pr-8' : 'pr-3'} py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && attr.mandatory && !val ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
+                                placeholder={attr.placeholder || ''}
+                                value={val}
+                                min={attr.minValue ?? undefined}
+                                max={attr.maxValue ?? undefined}
+                                step={attr.dataType === 'Decimal' ? '0.01' : '1'}
+                                onChange={e => updateAttribute(attr.id, e.target.value)}
+                              />
+                              {attr.suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{attr.suffix}</span>}
+                            </div>
+                          )}
+                          {showErrors && attr.mandatory && !val && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
 
             <hr className="border-gray-200/60" />
 

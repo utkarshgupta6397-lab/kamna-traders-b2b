@@ -405,6 +405,32 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               </div>
             </div>
 
+            {/* Specifications (Dynamic Attributes) */}
+            {product.attributeValues && product.attributeValues.length > 0 && (
+              <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/50 flex items-center gap-2">
+                  <Database size={14} className="text-gray-500" />
+                  <h3 className="text-[12px] font-bold text-gray-700 uppercase tracking-wide">Specifications</h3>
+                </div>
+                <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {product.attributeValues.map((attrVal: any, idx: number) => {
+                    const attr = attrVal.attribute;
+                    if (!attr) return null;
+                    return (
+                      <div key={idx} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">{attr.attributeName}</div>
+                        <div className="text-[13px] font-medium text-gray-900">
+                          {attr.prefix ? attr.prefix + ' ' : ''}
+                          {attrVal.value}
+                          {attr.suffix ? ' ' + attr.suffix : ''}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Pricing & Margins */}
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
               <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">

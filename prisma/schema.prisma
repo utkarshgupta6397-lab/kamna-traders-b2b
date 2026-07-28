@@ -56,32 +56,32 @@ model User {
   holdQueueReviewLimit         Float?
 
   // Master Data Permissions Matrix
-  catalog_brands_create         Boolean @default(false)
-  catalog_brands_modify         Boolean @default(false)
-  catalog_brands_approve        Boolean @default(false)
-  catalog_manufacturers_create  Boolean @default(false)
-  catalog_manufacturers_modify  Boolean @default(false)
-  catalog_manufacturers_approve Boolean @default(false)
-  catalog_categories_create     Boolean @default(false)
-  catalog_categories_modify     Boolean @default(false)
-  catalog_categories_approve    Boolean @default(false)
-  catalog_attributes_create     Boolean @default(false)
-  catalog_attributes_modify     Boolean @default(false)
-  catalog_attributes_approve    Boolean @default(false)
-  catalog_taxrates_create       Boolean @default(false)
-  catalog_taxrates_modify       Boolean @default(false)
-  catalog_taxrates_approve      Boolean @default(false)
-  catalog_units_create          Boolean @default(false)
-  catalog_units_modify          Boolean @default(false)
-  catalog_units_approve         Boolean @default(false)
-  catalog_hsncodes_create       Boolean @default(false)
-  catalog_hsncodes_modify       Boolean @default(false)
-  catalog_hsncodes_approve      Boolean @default(false)
-  catalog_products_create       Boolean @default(false)
-  catalog_products_modify       Boolean @default(false)
-  catalog_products_approve      Boolean @default(false)
-  catalog_products_archive      Boolean @default(false)
-  system_productMigration       Boolean @default(false)
+  catalog_product_attributes_create  Boolean @default(false)
+  catalog_product_attributes_modify  Boolean @default(false)
+  catalog_product_attributes_archive Boolean @default(false)
+  catalog_brands_create              Boolean @default(false)
+  catalog_brands_modify              Boolean @default(false)
+  catalog_brands_approve             Boolean @default(false)
+  catalog_manufacturers_create       Boolean @default(false)
+  catalog_manufacturers_modify       Boolean @default(false)
+  catalog_manufacturers_approve      Boolean @default(false)
+  catalog_categories_create          Boolean @default(false)
+  catalog_categories_modify          Boolean @default(false)
+  catalog_categories_approve         Boolean @default(false)
+  catalog_taxrates_create            Boolean @default(false)
+  catalog_taxrates_modify            Boolean @default(false)
+  catalog_taxrates_approve           Boolean @default(false)
+  catalog_units_create               Boolean @default(false)
+  catalog_units_modify               Boolean @default(false)
+  catalog_units_approve              Boolean @default(false)
+  catalog_hsncodes_create            Boolean @default(false)
+  catalog_hsncodes_modify            Boolean @default(false)
+  catalog_hsncodes_approve           Boolean @default(false)
+  catalog_products_create            Boolean @default(false)
+  catalog_products_modify            Boolean @default(false)
+  catalog_products_approve           Boolean @default(false)
+  catalog_products_archive           Boolean @default(false)
+  system_productMigration            Boolean @default(false)
 
   sessions            ActiveSession[]
   carts               Cart[]
@@ -125,28 +125,30 @@ model User {
   whatsappTests          WhatsAppTestLog[]
 
   // Master Data Relations
-  brandsCreated         Brand[]             @relation("BrandCreatedBy")
-  brandsUpdated         Brand[]             @relation("BrandUpdatedBy")
-  brandsApproved        Brand[]             @relation("BrandApprovedBy")
-  categoriesCreated     Category[]          @relation("CategoryCreatedBy")
-  categoriesUpdated     Category[]          @relation("CategoryUpdatedBy")
-  categoriesApproved    Category[]          @relation("CategoryApprovedBy")
-  manufacturersCreated  Manufacturer[]      @relation("ManufacturerCreatedBy")
-  manufacturersUpdated  Manufacturer[]      @relation("ManufacturerUpdatedBy")
-  manufacturersApproved Manufacturer[]      @relation("ManufacturerApprovedBy")
-  taxRatesCreated       TaxRate[]           @relation("TaxRateCreatedBy")
-  taxRatesUpdated       TaxRate[]           @relation("TaxRateUpdatedBy")
-  taxRatesApproved      TaxRate[]           @relation("TaxRateApprovedBy")
-  unitsCreated          UnitOfMeasurement[] @relation("UnitCreatedBy")
-  unitsUpdated          UnitOfMeasurement[] @relation("UnitUpdatedBy")
-  unitsApproved         UnitOfMeasurement[] @relation("UnitApprovedBy")
-  hsnCodesCreated       HsnCode[]           @relation("HsnCreatedBy")
-  hsnCodesUpdated       HsnCode[]           @relation("HsnUpdatedBy")
-  hsnCodesApproved      HsnCode[]           @relation("HsnApprovedBy")
-  productsCreated       Product[]           @relation("ProductCreatedBy")
-  productsUpdated       Product[]           @relation("ProductUpdatedBy")
-  productsApproved      Product[]           @relation("ProductApprovedBy")
-  masterDataHistory     MasterDataHistory[] @relation("MasterHistoryPerformedBy")
+  brandsCreated            Brand[]             @relation("BrandCreatedBy")
+  brandsUpdated            Brand[]             @relation("BrandUpdatedBy")
+  brandsApproved           Brand[]             @relation("BrandApprovedBy")
+  categoriesCreated        Category[]          @relation("CategoryCreatedBy")
+  categoriesUpdated        Category[]          @relation("CategoryUpdatedBy")
+  categoriesApproved       Category[]          @relation("CategoryApprovedBy")
+  manufacturersCreated     Manufacturer[]      @relation("ManufacturerCreatedBy")
+  manufacturersUpdated     Manufacturer[]      @relation("ManufacturerUpdatedBy")
+  manufacturersApproved    Manufacturer[]      @relation("ManufacturerApprovedBy")
+  taxRatesCreated          TaxRate[]           @relation("TaxRateCreatedBy")
+  taxRatesUpdated          TaxRate[]           @relation("TaxRateUpdatedBy")
+  taxRatesApproved         TaxRate[]           @relation("TaxRateApprovedBy")
+  unitsCreated             UnitOfMeasurement[] @relation("UnitCreatedBy")
+  unitsUpdated             UnitOfMeasurement[] @relation("UnitUpdatedBy")
+  unitsApproved            UnitOfMeasurement[] @relation("UnitApprovedBy")
+  hsnCodesCreated          HsnCode[]           @relation("HsnCreatedBy")
+  hsnCodesUpdated          HsnCode[]           @relation("HsnUpdatedBy")
+  hsnCodesApproved         HsnCode[]           @relation("HsnApprovedBy")
+  productsCreated          Product[]           @relation("ProductCreatedBy")
+  productsUpdated          Product[]           @relation("ProductUpdatedBy")
+  productsApproved         Product[]           @relation("ProductApprovedBy")
+  productAttributesCreated ProductAttribute[]  @relation("AttributeCreatedBy")
+  productAttributesUpdated ProductAttribute[]  @relation("AttributeUpdatedBy")
+  masterDataHistory        MasterDataHistory[] @relation("MasterHistoryPerformedBy")
 }
 
 model Warehouse {
@@ -192,28 +194,29 @@ model Brand {
 }
 
 model Category {
-  id           String              @id @default(cuid())
-  code         String?             @unique
-  name         String              @unique
-  description  String?
-  status       String              @default("Draft")
-  remarks      String?
-  active       Boolean             @default(true)
-  parentId     String?
-  createdById  String?
-  updatedById  String?
-  approvedById String?
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  approvedAt   DateTime?
-  parent       Category?           @relation("SubCategories", fields: [parentId], references: [id])
-  children     Category[]          @relation("SubCategories")
-  skus         Sku[]
-  createdBy    User?               @relation("CategoryCreatedBy", fields: [createdById], references: [id])
-  updatedBy    User?               @relation("CategoryUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy   User?               @relation("CategoryApprovedBy", fields: [approvedById], references: [id])
-  history      MasterDataHistory[] @relation("CategoryHistory")
-  products     Product[]
+  id                String                     @id @default(cuid())
+  code              String?                    @unique
+  name              String                     @unique
+  description       String?
+  status            String                     @default("Draft")
+  remarks           String?
+  active            Boolean                    @default(true)
+  parentId          String?
+  createdById       String?
+  updatedById       String?
+  approvedById      String?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  approvedAt        DateTime?
+  parent            Category?                  @relation("SubCategories", fields: [parentId], references: [id])
+  children          Category[]                 @relation("SubCategories")
+  skus              Sku[]
+  createdBy         User?                      @relation("CategoryCreatedBy", fields: [createdById], references: [id])
+  updatedBy         User?                      @relation("CategoryUpdatedBy", fields: [updatedById], references: [id])
+  approvedBy        User?                      @relation("CategoryApprovedBy", fields: [approvedById], references: [id])
+  history           MasterDataHistory[]        @relation("CategoryHistory")
+  products          Product[]
+  productAttributes ProductAttributeCategory[]
 
   @@index([status])
   @@index([createdAt])
@@ -358,6 +361,8 @@ model MasterDataHistory {
   hsnCodeId           String?
   product             Product?           @relation("ProductHistory", fields: [productId], references: [id], onDelete: Cascade)
   productId           String?
+  productAttribute    ProductAttribute?  @relation("ProductAttributeHistory", fields: [productAttributeId], references: [id], onDelete: Cascade)
+  productAttributeId  String?
 
   @@index([entityType, entityId])
   @@index([performedAt])
@@ -405,40 +410,41 @@ model Sku {
 }
 
 model Product {
-  id             String    @id @default(cuid())
-  code           String    @unique
-  name           String
-  description    String?
-  type           String    @default("Goods")
-  brandId        String?
-  manufacturerId String?
-  categoryId     String?
-  hsnCodeId      String?
-  taxRateId      String?
-  unitId         String?
-  status         String    @default("Draft")
-  remarks        String?
-  isActive       Boolean   @default(true)
-  createdById    String?
-  updatedById    String?
-  approvedById   String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  approvedAt   DateTime?
-  incentiveTag   String?
-  thumbnailBase64 String? @db.Text
+  id              String    @id @default(cuid())
+  code            String    @unique
+  name            String
+  description     String?
+  type            String    @default("Goods")
+  brandId         String?
+  manufacturerId  String?
+  categoryId      String?
+  hsnCodeId       String?
+  taxRateId       String?
+  unitId          String?
+  status          String    @default("Draft")
+  remarks         String?
+  isActive        Boolean   @default(true)
+  createdById     String?
+  updatedById     String?
+  approvedById    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  approvedAt      DateTime?
+  incentiveTag    String?
+  thumbnailBase64 String?   @db.Text
 
-  variants     ProductVariant[]
-  brand        Brand?              @relation(fields: [brandId], references: [id])
-  manufacturer Manufacturer?       @relation(fields: [manufacturerId], references: [id])
-  category     Category?           @relation(fields: [categoryId], references: [id])
-  hsnCode      HsnCode?            @relation(fields: [hsnCodeId], references: [id])
-  taxRate      TaxRate?            @relation(fields: [taxRateId], references: [id])
-  unit         UnitOfMeasurement?  @relation(fields: [unitId], references: [id])
-  createdBy    User?               @relation("ProductCreatedBy", fields: [createdById], references: [id])
-  updatedBy    User?               @relation("ProductUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy   User?               @relation("ProductApprovedBy", fields: [approvedById], references: [id])
-  history      MasterDataHistory[] @relation("ProductHistory")
+  variants        ProductVariant[]
+  brand           Brand?                  @relation(fields: [brandId], references: [id])
+  manufacturer    Manufacturer?           @relation(fields: [manufacturerId], references: [id])
+  category        Category?               @relation(fields: [categoryId], references: [id])
+  hsnCode         HsnCode?                @relation(fields: [hsnCodeId], references: [id])
+  taxRate         TaxRate?                @relation(fields: [taxRateId], references: [id])
+  unit            UnitOfMeasurement?      @relation(fields: [unitId], references: [id])
+  createdBy       User?                   @relation("ProductCreatedBy", fields: [createdById], references: [id])
+  updatedBy       User?                   @relation("ProductUpdatedBy", fields: [updatedById], references: [id])
+  approvedBy      User?                   @relation("ProductApprovedBy", fields: [approvedById], references: [id])
+  history         MasterDataHistory[]     @relation("ProductHistory")
+  attributeValues ProductAttributeValue[]
 
   @@index([status])
   @@index([brandId])
@@ -1571,4 +1577,64 @@ model GatewayMessageLog {
   providerMessageId String?
   providerStatus    String
   createdAt         DateTime @default(now())
+}
+
+// ─── Product Attributes Module ──────────────────────────────────────────────
+
+model ProductAttribute {
+  id            String  @id @default(cuid())
+  attributeCode String  @unique
+  attributeName String  @unique
+  description   String?
+  dataType      String // Text, Long Text, Number, Decimal, Dropdown, Multi Select, Boolean, Date
+  mandatory     Boolean @default(false)
+  minValue      Float?
+  maxValue      Float?
+  prefix        String?
+  suffix        String?
+  placeholder   String?
+  status        String  @default("Active")
+  options       Json? // Stores options for Dropdown/Multi Select
+
+  createdById String?
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User? @relation("AttributeCreatedBy", fields: [createdById], references: [id])
+  updatedBy User? @relation("AttributeUpdatedBy", fields: [updatedById], references: [id])
+
+  categories    ProductAttributeCategory[]
+  productValues ProductAttributeValue[]
+  history       MasterDataHistory[]        @relation("ProductAttributeHistory")
+
+  @@index([status])
+  @@index([dataType])
+}
+
+model ProductAttributeCategory {
+  id            String  @id @default(cuid())
+  attributeId   String
+  categoryId    String
+  subcategoryId String?
+
+  attribute ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  category  Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([attributeId])
+  @@index([categoryId])
+}
+
+model ProductAttributeValue {
+  id          String @id @default(cuid())
+  productId   String
+  attributeId String
+  value       String @db.Text
+
+  product   Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  attribute ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, attributeId])
+  @@index([productId])
+  @@index([attributeId])
 }

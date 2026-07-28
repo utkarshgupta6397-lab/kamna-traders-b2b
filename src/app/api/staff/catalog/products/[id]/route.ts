@@ -28,6 +28,9 @@ export async function GET(
         updatedBy: { select: { id: true, name: true } },
         approvedBy: { select: { id: true, name: true } },
         variants: true,
+        attributeValues: {
+          include: { attribute: true }
+        },
         history: {
           orderBy: { performedAt: 'desc' },
           include: { performedBy: { select: { id: true, name: true } } },
@@ -184,7 +187,7 @@ export async function PUT(
       hsnCodeId, taxRateId, unitId,
       purchasePrice, sellingPrice,
       trackInventory, trackSerials, incentiveTag,
-      thumbnailBase64,
+      thumbnailBase64, productAttributes
     } = data;
 
     const existingProduct = await prisma.product.findUnique({
@@ -239,7 +242,16 @@ export async function PUT(
               trackSerials,
             }
           }
-        }
+        },
+        ...(productAttributes ? {
+          attributeValues: {
+            deleteMany: {},
+            create: productAttributes.map((attr: any) => ({
+              attributeId: attr.attributeId,
+              value: attr.value
+            }))
+          }
+        } : {})
       }
     });
 

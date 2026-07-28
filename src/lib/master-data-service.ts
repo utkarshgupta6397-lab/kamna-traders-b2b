@@ -1,6 +1,6 @@
 import { prisma } from './db';
 
-export type MasterEntityKey = 'brands' | 'manufacturers' | 'categories' | 'tax-rates' | 'units' | 'hsn-codes' | 'products';
+export type MasterEntityKey = 'brands' | 'manufacturers' | 'categories' | 'tax-rates' | 'units' | 'hsn-codes' | 'products' | 'product-attributes';
 
 export interface EntityMeta {
   key: MasterEntityKey;
@@ -11,6 +11,7 @@ export interface EntityMeta {
   codePrefix: string;
   permissionPrefix: string;
   customFields?: string[];
+  archiveKey?: string;
 }
 
 export const ENTITY_REGISTRY: Record<MasterEntityKey, EntityMeta> = {
@@ -80,6 +81,15 @@ export const ENTITY_REGISTRY: Record<MasterEntityKey, EntityMeta> = {
     codePrefix: 'PRD',
     permissionPrefix: 'catalog_products',
   },
+  'product-attributes': {
+    key: 'product-attributes',
+    singularName: 'Product Attribute',
+    pluralName: 'Product Attributes',
+    modelName: 'ProductAttribute',
+    modelProperty: 'productAttribute',
+    codePrefix: 'ATTR',
+    permissionPrefix: 'catalog_product_attributes',
+  }
 };
 
 export function getPrismaDelegate(entityKey: MasterEntityKey) {

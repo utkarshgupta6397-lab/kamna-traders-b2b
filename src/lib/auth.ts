@@ -111,9 +111,9 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.catalog_categories_create = true;
       merged.catalog_categories_modify = true;
       merged.catalog_categories_approve = true;
-      merged.catalog_attributes_create = true;
-      merged.catalog_attributes_modify = true;
-      merged.catalog_attributes_approve = true;
+      merged.catalog_product_attributes_create = true;
+      merged.catalog_product_attributes_modify = true;
+      merged.catalog_product_attributes_archive = true;
       merged.catalog_taxrates_create = true;
       merged.catalog_taxrates_modify = true;
       merged.catalog_taxrates_approve = true;

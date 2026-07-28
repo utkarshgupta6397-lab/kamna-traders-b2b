@@ -42,15 +42,6 @@ body {
   75% { transform: translate3d(-40px, 30px, 0) scale(1.1); }
 }
 
-@keyframes svg-stroke-1 {
-  0% { stroke-dashoffset: 2000; }
-  100% { stroke-dashoffset: 0; }
-}
-
-@keyframes svg-stroke-2 {
-  0% { stroke-dashoffset: 1600; }
-  100% { stroke-dashoffset: 0; }
-}
 
 @keyframes particle-float {
   0% { transform: translate3d(0, 0, 0); opacity: 0.1; }

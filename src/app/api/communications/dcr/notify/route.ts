@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     }
 
     // 1. Fetch Invoice & Customer
-    const invoice = await prisma.invoice.findUnique({
+    const invoice = await prisma.dcrInvoice.findUnique({
       where: { id: invoiceId },
       include: { customer: true }
     });
@@ -30,6 +30,9 @@ export async function POST(req: Request) {
     }
 
     const customer = invoice.customer;
+    if (!customer) {
+      return NextResponse.json({ error: 'Customer not found for this invoice' }, { status: 404 });
+    }
     
     // Check if user skipped
     if (!notifyUser) {
@@ -52,7 +55,7 @@ export async function POST(req: Request) {
     }
 
     // 2. Phone Number Validation
-    let phone = customer.phone?.replace(/[^0-9]/g, '') || '';
+    let phone = (customer as any).phone?.replace(/[^0-9]/g, '') || '';
     
     // If it's a 10 digit number, prepend 91. If it's 12 digits starting with 91, it's fine.
     if (phone.length === 10) {

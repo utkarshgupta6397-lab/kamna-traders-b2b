@@ -38,7 +38,11 @@ export async function PATCH(
         Boolean(value),
         id
       );
-      updatedUser = await prisma.user.findUnique({ where: { id } });
+      const rows = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT * FROM "User" WHERE "id" = $1`,
+        id
+      );
+      updatedUser = rows[0] || null;
     }
 
     // Invalidate user session cache so new permission applies immediately without re-login

@@ -6,7 +6,7 @@ const AmbientBackground = React.memo(function AmbientBackground() {
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none bg-[#FAF7F5]">
       {/* We apply a single static blur layer on top of the moving elements to get the effect without forcing the browser to recalculate heavy CSS filters on every frame. */}
-      <div className="absolute inset-0 z-0">
+      <div className="absolute inset-0 z-0 overflow-hidden">
         {/* Soft animated gradient blobs - using solid soft colors instead of mix-blend/blur on the moving elements themselves */}
         <div
           className="absolute w-[800px] h-[800px] rounded-full opacity-60 ambient-blob"
@@ -33,10 +33,10 @@ const AmbientBackground = React.memo(function AmbientBackground() {
           }}
         />
       </div>
-
-      {/* Static blur overlay to blend the sharp gradients below without heavy per-frame recalculations */}
-      <div className="absolute inset-0 backdrop-blur-[60px] z-[1]" />
       
+      {/* STATIC BLUR OVERLAY - This is highly optimized for the GPU as it sits on a single composited layer over the moving blobs */}
+      <div className="absolute inset-0 z-[1] backdrop-blur-[60px]" style={{ willChange: 'backdrop-filter' }} />
+
       {/* Subtle flowing SVG curves representing energy waves - moved ABOVE the blur */}
       <div className="absolute inset-0 z-[2] opacity-[0.15]">
         <svg className="w-full h-full" preserveAspectRatio="none">
@@ -48,7 +48,8 @@ const AmbientBackground = React.memo(function AmbientBackground() {
           strokeWidth="2"
           style={{
             strokeDasharray: '1000 1000',
-            animation: 'svg-stroke-1 40s infinite linear'
+            opacity: 0.5,
+            animation: 'pulse-opacity 15s infinite alternate ease-in-out'
           }}
         />
         <path
@@ -59,7 +60,8 @@ const AmbientBackground = React.memo(function AmbientBackground() {
           strokeWidth="1.5"
           style={{
             strokeDasharray: '800 800',
-            animation: 'svg-stroke-2 35s infinite linear'
+            opacity: 0.5,
+            animation: 'pulse-opacity 18s infinite alternate ease-in-out'
           }}
         />
         

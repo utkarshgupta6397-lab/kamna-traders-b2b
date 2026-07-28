@@ -14,6 +14,7 @@ export async function GET(
   if (!session || (!session.accountsAccess && session.role !== 'ADMIN')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
   const meta = ENTITY_REGISTRY[entity as MasterEntityKey];
   if (!meta) {
     return NextResponse.json({ error: 'Invalid entity' }, { status: 400 });
@@ -235,7 +236,7 @@ export async function DELETE(
     return NextResponse.json({ error: 'Invalid entity' }, { status: 400 });
   }
 
-  const modifyPerm = `${meta.permissionPrefix}_modify`;
+  const modifyPerm = meta.archiveKey || `${meta.permissionPrefix}_modify`;
   if (session.role !== 'ADMIN' && !session[modifyPerm]) {
     return NextResponse.json({ error: `Permission Denied: ${modifyPerm}` }, { status: 403 });
   }

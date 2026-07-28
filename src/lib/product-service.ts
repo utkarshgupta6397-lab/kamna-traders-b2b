@@ -25,6 +25,7 @@ export interface CreateProductParams {
   status?: string;
   incentiveTag?: string;
   thumbnailBase64?: string;
+  productAttributes?: { attributeId: string; value: string }[];
   
   // Default variant fields
   purchasePrice?: number;
@@ -71,10 +72,19 @@ export async function createProductWithDefaultVariant(params: CreateProductParam
             trackSerials: params.trackSerials === true,
             isDefault: true,
           }
-        }
+        },
+        ...(params.productAttributes && params.productAttributes.length > 0 ? {
+          attributeValues: {
+            create: params.productAttributes.map(attr => ({
+              attributeId: attr.attributeId,
+              value: attr.value
+            }))
+          }
+        } : {})
       },
       include: {
         variants: true,
+        attributeValues: true
       }
     });
 

@@ -335,24 +335,36 @@ export default function UserPermissionsPage() {
                   <th rowSpan={2} className="py-2 px-2.5 text-left border-b border-gray-200 min-w-[200px] bg-gray-50/95 backdrop-blur-sm sticky left-0 z-20 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                     <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">User Details</span>
                   </th>
-                  {CATALOG_MODULES.map(m => (
-                    <th key={m.moduleKey} colSpan={m.archiveKey ? 4 : 3} className="py-1.5 px-1 border-b border-r border-gray-200 bg-gray-100/80 text-center">
-                      <span className="text-[11px] font-black text-[#1A2766] uppercase tracking-wider">
-                        {m.moduleName}
-                      </span>
-                    </th>
-                  ))}
+                  {CATALOG_MODULES.map(m => {
+                    const colCount = 2 + (m.approveKey ? 1 : 0) + (m.archiveKey ? 1 : 0);
+                    return (
+                      <th key={m.moduleKey} colSpan={colCount} className="py-1.5 px-1 border-b border-r border-gray-200 bg-gray-100/80 text-center">
+                        <span className="text-[11px] font-black text-[#1A2766] uppercase tracking-wider">
+                          {m.moduleName}
+                        </span>
+                      </th>
+                    );
+                  })}
                 </tr>
                 {/* Lower Action Header */}
                 <tr className="bg-gray-50/90 border-b border-gray-200">
-                  {CATALOG_MODULES.map(m => (
-                    <React.Fragment key={`${m.moduleKey}-subheaders`}>
-                      <th className="py-1 px-1 text-[9px] font-bold text-gray-500 uppercase tracking-wider border-b min-w-[65px]">Create</th>
-                      <th className="py-1 px-1 text-[9px] font-bold text-gray-500 uppercase tracking-wider border-b min-w-[65px]">Modify</th>
-                      <th className={`py-1 px-1 text-[9px] font-bold text-gray-500 uppercase tracking-wider border-b min-w-[65px] ${!m.archiveKey ? 'border-r' : ''}`}>Approve</th>
-                      {m.archiveKey && <th className="py-1 px-1 text-[9px] font-bold text-gray-500 uppercase tracking-wider border-b border-r min-w-[65px]">Archive</th>}
-                    </React.Fragment>
-                  ))}
+                  {CATALOG_MODULES.map(m => {
+                    const actions = [];
+                    actions.push({ key: m.createKey, label: 'Create' });
+                    actions.push({ key: m.modifyKey, label: 'Modify' });
+                    if (m.approveKey) actions.push({ key: m.approveKey, label: 'Approve' });
+                    if (m.archiveKey) actions.push({ key: m.archiveKey, label: 'Archive' });
+                    
+                    return (
+                      <React.Fragment key={`${m.moduleKey}-subheaders`}>
+                        {actions.map((act, idx) => (
+                          <th key={act.key} className={`py-1 px-1 text-[9px] font-bold text-gray-500 uppercase tracking-wider border-b min-w-[65px] ${idx === actions.length - 1 ? 'border-r' : ''}`}>
+                            {act.label}
+                          </th>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
                 </tr>
               </thead>
 
@@ -384,14 +396,11 @@ export default function UserPermissionsPage() {
 
                       {/* Module Permissions (Create / Modify / Approve per module) */}
                       {CATALOG_MODULES.map(m => {
-                        const actions = [
-                          { key: m.createKey, label: 'Create' },
-                          { key: m.modifyKey, label: 'Modify' },
-                          { key: m.approveKey, label: 'Approve' },
-                        ];
-                        if (m.archiveKey) {
-                          actions.push({ key: m.archiveKey, label: 'Archive' });
-                        }
+                        const actions = [];
+                        actions.push({ key: m.createKey, label: 'Create' });
+                        actions.push({ key: m.modifyKey, label: 'Modify' });
+                        if (m.approveKey) actions.push({ key: m.approveKey, label: 'Approve' });
+                        if (m.archiveKey) actions.push({ key: m.archiveKey, label: 'Archive' });
 
                         return (
                           <React.Fragment key={m.moduleKey}>

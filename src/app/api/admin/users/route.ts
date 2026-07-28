@@ -56,9 +56,9 @@ export async function GET() {
           catalog_categories_create: true,
           catalog_categories_modify: true,
           catalog_categories_approve: true,
-          catalog_attributes_create: true,
-          catalog_attributes_modify: true,
-          catalog_attributes_approve: true,
+          catalog_product_attributes_create: true,
+          catalog_product_attributes_modify: true,
+          catalog_product_attributes_archive: true,
           catalog_taxrates_create: true,
           catalog_taxrates_modify: true,
           catalog_taxrates_approve: true,
@@ -78,15 +78,12 @@ export async function GET() {
       });
     } catch (dbErr: any) {
       console.warn('[API] GET /api/admin/users findMany fallback:', dbErr?.message);
-      users = await prisma.user.findMany({
-        where: { active: true },
-        orderBy: { name: 'asc' },
-      });
+      users = await prisma.$queryRawUnsafe<any[]>('SELECT * FROM "User" WHERE active = true ORDER BY name ASC');
     }
 
     return NextResponse.json(users);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[API] GET /api/admin/users error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error', details: error.message, stack: error.stack }, { status: 500 });
   }
 }

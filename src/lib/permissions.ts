@@ -7,7 +7,7 @@ export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSku
   | 'catalog_brands_create' | 'catalog_brands_modify' | 'catalog_brands_approve'
   | 'catalog_manufacturers_create' | 'catalog_manufacturers_modify' | 'catalog_manufacturers_approve'
   | 'catalog_categories_create' | 'catalog_categories_modify' | 'catalog_categories_approve'
-  | 'catalog_attributes_create' | 'catalog_attributes_modify' | 'catalog_attributes_approve'
+  | 'catalog_product_attributes_create' | 'catalog_product_attributes_modify' | 'catalog_product_attributes_archive'
   | 'catalog_taxrates_create' | 'catalog_taxrates_modify' | 'catalog_taxrates_approve'
   | 'catalog_units_create' | 'catalog_units_modify' | 'catalog_units_approve'
   | 'catalog_hsncodes_create' | 'catalog_hsncodes_modify' | 'catalog_hsncodes_approve'
@@ -171,9 +171,9 @@ export const PERMISSIONS: PermissionDefinition[] = [
   { key: 'catalog_categories_create', label: 'Create Categories', description: 'Ability to create category master records' },
   { key: 'catalog_categories_modify', label: 'Modify Categories', description: 'Ability to edit category master records' },
   { key: 'catalog_categories_approve', label: 'Approve Categories', description: 'Ability to approve or decline category records' },
-  { key: 'catalog_attributes_create', label: 'Create Attributes', description: 'Ability to create product attribute master records' },
-  { key: 'catalog_attributes_modify', label: 'Modify Attributes', description: 'Ability to edit product attribute master records' },
-  { key: 'catalog_attributes_approve', label: 'Approve Attributes', description: 'Ability to approve or decline product attribute records' },
+  { key: 'catalog_product_attributes_create', label: 'Create Attributes', description: 'Ability to create product attribute master records' },
+  { key: 'catalog_product_attributes_modify', label: 'Modify Attributes', description: 'Ability to edit product attribute master records' },
+  { key: 'catalog_product_attributes_archive', label: 'Archive Attributes', description: 'Ability to archive or restore product attribute records' },
   { key: 'catalog_taxrates_create', label: 'Create Tax Rates', description: 'Ability to create tax rate master records' },
   { key: 'catalog_taxrates_modify', label: 'Modify Tax Rates', description: 'Ability to edit tax rate master records' },
   { key: 'catalog_taxrates_approve', label: 'Approve Tax Rates', description: 'Ability to approve or decline tax rate records' },
@@ -195,7 +195,7 @@ export interface CatalogModulePermissionGroup {
   moduleName: string;
   createKey: PermissionKey;
   modifyKey: PermissionKey;
-  approveKey: PermissionKey;
+  approveKey?: PermissionKey;
   archiveKey?: PermissionKey;
 }
 
@@ -232,9 +232,9 @@ export const CATALOG_MODULES: CatalogModulePermissionGroup[] = [
   {
     moduleKey: 'attributes',
     moduleName: 'Product Attributes',
-    createKey: 'catalog_attributes_create',
-    modifyKey: 'catalog_attributes_modify',
-    approveKey: 'catalog_attributes_approve',
+    createKey: 'catalog_product_attributes_create',
+    modifyKey: 'catalog_product_attributes_modify',
+    archiveKey: 'catalog_product_attributes_archive',
   },
   {
     moduleKey: 'taxrates',
@@ -263,7 +263,7 @@ const catalogPermissionKeySet = new Set<string>([
   'catalog_brands_create', 'catalog_brands_modify', 'catalog_brands_approve',
   'catalog_manufacturers_create', 'catalog_manufacturers_modify', 'catalog_manufacturers_approve',
   'catalog_categories_create', 'catalog_categories_modify', 'catalog_categories_approve',
-  'catalog_attributes_create', 'catalog_attributes_modify', 'catalog_attributes_approve',
+  'catalog_product_attributes_create', 'catalog_product_attributes_modify', 'catalog_product_attributes_archive',
   'catalog_taxrates_create', 'catalog_taxrates_modify', 'catalog_taxrates_approve',
   'catalog_units_create', 'catalog_units_modify', 'catalog_units_approve',
   'catalog_hsncodes_create', 'catalog_hsncodes_modify', 'catalog_hsncodes_approve',
@@ -313,9 +313,9 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'catalog_categories_create',
   'catalog_categories_modify',
   'catalog_categories_approve',
-  'catalog_attributes_create',
-  'catalog_attributes_modify',
-  'catalog_attributes_approve',
+  'catalog_product_attributes_create',
+  'catalog_product_attributes_modify',
+  'catalog_product_attributes_archive',
   'catalog_taxrates_create',
   'catalog_taxrates_modify',
   'catalog_taxrates_approve',

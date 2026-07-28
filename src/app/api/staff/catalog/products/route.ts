@@ -186,7 +186,7 @@ export async function POST(request: Request) {
     const { 
       name, code, description, type, remarks, submitForApproval,
       brandId, manufacturerId, categoryId, hsnCodeId, taxRateId, unitId,
-      purchasePrice, sellingPrice, trackInventory, trackSerials, incentiveTag, thumbnailBase64
+      purchasePrice, sellingPrice, trackInventory, trackSerials, incentiveTag, thumbnailBase64, productAttributes
     } = body;
 
     if (!name || !name.trim()) {
@@ -247,6 +247,7 @@ export async function POST(request: Request) {
       trackSerials: trackSerials === true,
       incentiveTag,
       thumbnailBase64,
+      productAttributes,
       userId: session.userId,
     });
 

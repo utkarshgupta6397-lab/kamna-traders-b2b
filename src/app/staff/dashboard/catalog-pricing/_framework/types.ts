@@ -11,6 +11,7 @@ export interface MasterRecord {
   percentage?: number;
   taxType?: string;
   abbreviation?: string | null;
+  zohoBooksTaxId?: string | null;
   defaultGstRate?: { percentage: number } | null;
   chapterCode?: string | null;
   createdById?: string | null;
@@ -25,6 +26,7 @@ export interface MasterRecord {
   parentId?: string | null;
   parent?: { id: string; name: string } | null;
   _count?: { children: number } | null;
+  productsMappedCount?: number;
   history?: MasterHistoryEntry[];
 }
 

@@ -122,6 +122,8 @@ export default function MasterFilters({
             <option value="updatedAt|desc">Newest Updated</option>
             <option value="updatedAt|asc">Oldest Updated</option>
             <option value="createdAt|desc">Newest Created</option>
+            <option value="productsMappedCount|desc">Most Used (Products)</option>
+            <option value="productsMappedCount|asc">Least Used (Products)</option>
             <option value="createdAt|asc">Oldest Created</option>
             <option value="name|asc">Name (A-Z)</option>
             <option value="name|desc">Name (Z-A)</option>

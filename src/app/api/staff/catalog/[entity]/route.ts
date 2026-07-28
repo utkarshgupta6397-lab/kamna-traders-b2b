@@ -24,7 +24,7 @@ export async function GET(
     const createdBy = searchParams.get('createdBy') || '';
     const dateFrom = searchParams.get('dateFrom') || '';
     const dateTo = searchParams.get('dateTo') || '';
-    const ALLOWED_SORT_FIELDS = ['updatedAt', 'createdAt', 'name', 'code', 'status'];
+    const ALLOWED_SORT_FIELDS = ['updatedAt', 'createdAt', 'name', 'code', 'status', 'productsMappedCount'];
     const rawSortBy = searchParams.get('sortBy') || 'updatedAt';
     const sortBy = ALLOWED_SORT_FIELDS.includes(rawSortBy) ? rawSortBy : 'updatedAt';
     const sortOrder = (searchParams.get('sortOrder') || 'desc') as 'asc' | 'desc';
@@ -120,6 +120,7 @@ export async function GET(
             updatedBy: { select: { id: true, name: true } },
             approvedBy: { select: { id: true, name: true } },
             ...(entity === 'hsn-codes' ? { defaultGstRate: { select: { percentage: true } } } : {}),
+            _count: { select: { products: { where: { status: { in: ['Draft', 'Active', 'Approval Pending'] } } } } },
           },
         });
 
@@ -139,13 +140,13 @@ export async function GET(
       try {
         const allCategories = await delegate.findMany({
           where,
-          orderBy: { [sortBy]: sortOrder },
+          orderBy: sortBy === 'productsMappedCount' ? { products: { _count: sortOrder } } : { [sortBy]: sortOrder },
           include: {
             createdBy: { select: { id: true, name: true } },
             updatedBy: { select: { id: true, name: true } },
             approvedBy: { select: { id: true, name: true } },
             parent: { select: { id: true, name: true } },
-            _count: { select: { children: true } },
+            _count: { select: { children: true, products: { where: { status: { in: ['Draft', 'Active', 'Approval Pending'] } } } } },
           },
         });
         
@@ -175,7 +176,7 @@ export async function GET(
       try {
         records = await delegate.findMany({
           where,
-          orderBy: { [sortBy]: sortOrder },
+          orderBy: sortBy === 'productsMappedCount' ? { products: { _count: sortOrder } } : { [sortBy]: sortOrder },
           skip: limit === 'all' ? undefined : (page - 1) * (limit as number),
           take: limit === 'all' ? undefined : (limit as number),
           include: {
@@ -183,7 +184,7 @@ export async function GET(
             updatedBy: { select: { id: true, name: true } },
             approvedBy: { select: { id: true, name: true } },
             ...(entity === 'hsn-codes' ? { defaultGstRate: { select: { percentage: true } } } : {}),
-            ...(entity === 'categories' ? { parent: { select: { id: true, name: true } }, _count: { select: { children: true } } } : {}),
+            ...(entity === 'categories' ? { parent: { select: { id: true, name: true } }, _count: { select: { children: true, products: { where: { status: { in: ['Draft', 'Active', 'Approval Pending'] } } } } } } : { _count: { select: { products: { where: { status: { in: ['Draft', 'Active', 'Approval Pending'] } } } } } }),
           },
         });
       } catch {
@@ -202,6 +203,8 @@ export async function GET(
         }
       }
     }
+
+    records = records.map(r => ({ ...r, productsMappedCount: r._count?.products || 0 }));
 
     if (entity === 'tax-rates') {
       records = records.map(r => ({

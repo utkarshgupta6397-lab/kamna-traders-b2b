@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MasterRecord, MasterConfig } from './types';
-import { X, History, User, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
+import { X, History, User, ChevronDown, ChevronUp, ArrowRight, Package } from 'lucide-react';
 
 interface HistoryDrawerProps {
   isOpen: boolean;
@@ -244,6 +244,37 @@ export default function HistoryDrawer({ isOpen, onClose, record, config }: Histo
             <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg">
               <X size={18} />
             </button>
+          </div>
+
+
+          {/* Usage KPI Card */}
+          <div className="px-6 py-4 bg-white border-b border-gray-100">
+            <div 
+              onClick={() => {
+                const map: Record<string, string> = {
+                  brands: 'brandId',
+                  manufacturers: 'manufacturerId',
+                  categories: 'categoryId',
+                  'tax-rates': 'taxRateId',
+                  units: 'unitId',
+                  'hsn-codes': 'hsnCodeId'
+                };
+                const param = map[config.entityKey] || 'id';
+                window.location.href = `/staff/dashboard/catalog-pricing/products?${param}=${record.id}`;
+              }}
+              className="flex items-center justify-between p-4 bg-gray-50/50 hover:bg-gray-50 border border-gray-200 rounded-xl cursor-pointer group transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
+                  <Package size={20} />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Products Using This {config.singularTitle}</p>
+                  <p className="text-xl font-bold text-gray-900 leading-tight">{record.productsMappedCount || 0}</p>
+                </div>
+              </div>
+              <ArrowRight size={18} className="text-gray-400 group-hover:text-blue-600 transition-colors" />
+            </div>
           </div>
 
           {/* Timeline Content */}

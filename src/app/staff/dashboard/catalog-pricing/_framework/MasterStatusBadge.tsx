@@ -23,7 +23,7 @@ export default function MasterStatusBadge({ status }: { status: MasterStatus }) 
   }
 
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${colorCls}`}>
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold border tracking-wide ${colorCls}`}>
       {status}
     </span>
   );

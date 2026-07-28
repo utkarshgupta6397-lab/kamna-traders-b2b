@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { MasterConfig, MasterRecord, MasterKpiStats } from './types';
 import MasterKpiCards from './MasterKpiCards';
 import MasterFilters from './MasterFilters';
@@ -8,11 +9,14 @@ import MasterTable from './MasterTable';
 import CreateMasterModal from './CreateMasterModal';
 import EditMasterModal from './EditMasterModal';
 import ApprovalEngine, { ActionType } from './ApprovalEngine';
+import { ShieldAlert } from 'lucide-react';
 import HistoryDrawer from './HistoryDrawer';
 import toast from 'react-hot-toast';
 
 export default function MasterListPage({ config, extraActions }: { config: MasterConfig, extraActions?: React.ReactNode }) {
   // State
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [records, setRecords] = useState<MasterRecord[]>([]);
   const [stats, setStats] = useState<MasterKpiStats>({
     total: 0,
@@ -47,6 +51,7 @@ export default function MasterListPage({ config, extraActions }: { config: Maste
   const [approvalAction, setApprovalAction] = useState<ActionType | null>(null);
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [validationRecord, setValidationRecord] = useState<MasterRecord | null>(null);
 
   useEffect(() => {
     const savedLimit = localStorage.getItem('kamna_master_page_size');
@@ -186,10 +191,42 @@ export default function MasterListPage({ config, extraActions }: { config: Maste
   };
 
   const handleOpenWorkflowAction = (record: MasterRecord, action: ActionType) => {
+    if ((action === 'deactivate' || action === 'archive') && record.productsMappedCount && record.productsMappedCount > 0) {
+      setValidationRecord(record);
+      return;
+    }
     setSelectedRecord(record);
     setApprovalAction(action);
     setIsApprovalOpen(true);
   };
+
+  
+  const getEntityParamName = (key: string) => {
+    const map: Record<string, string> = {
+      brands: 'brandId',
+      manufacturers: 'manufacturerId',
+      categories: 'categoryId',
+      'tax-rates': 'taxRateId',
+      units: 'unitId',
+      'hsn-codes': 'hsnCodeId'
+    };
+    return map[key] || 'id';
+  };
+
+  
+  useEffect(() => {
+    const viewId = searchParams.get('view');
+    if (viewId) {
+      // Find the record in the fetched records or fetch it
+      const record = records.find(r => String(r.id) === viewId);
+      if (record) {
+        handleOpenHistory(record);
+      } else {
+        // Just mock it so we can fetch history
+        handleOpenHistory({ id: viewId } as any);
+      }
+    }
+  }, [searchParams, records]);
 
   const handleRefresh = () => {
     fetchStats();
@@ -310,6 +347,37 @@ export default function MasterListPage({ config, extraActions }: { config: Maste
         record={selectedRecord}
         config={config}
       />
+
+      {validationRecord && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6">
+              <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mb-4">
+                <ShieldAlert size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Cannot Mark Inactive</h3>
+              <p className="text-gray-600 text-sm leading-relaxed mb-6">
+                This record is currently mapped to <span className="font-semibold text-gray-900">{validationRecord.productsMappedCount}</span> active product(s). Remove or reassign those products before marking this record as inactive.
+              </p>
+              <div className="flex items-center justify-end gap-3">
+                <button 
+                  onClick={() => setValidationRecord(null)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Close
+                </button>
+                <button 
+                  onClick={() => router.push(`/staff/dashboard/catalog-pricing/products?${getEntityParamName(config.entityKey)}=${validationRecord.id}`)}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                >
+                  View Products
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

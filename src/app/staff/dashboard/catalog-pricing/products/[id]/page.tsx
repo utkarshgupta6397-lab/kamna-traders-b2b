@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { ArrowLeft, Edit2, ShieldAlert, Package, Layers, Info, CheckCircle2, X, FileText, Database, Copy, ExternalLink, Activity } from 'lucide-react';
 import MasterStatusBadge from '../../_framework/MasterStatusBadge';
 import { HistoryEventCard } from '../../_framework/HistoryDrawer';
@@ -140,15 +141,33 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 grid grid-cols-2 gap-x-8 gap-y-6">
                 <div>
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Brand</label>
-                  <div className="mt-1.5 text-[14px] text-gray-900 font-medium">{product.brand?.name || '-'}</div>
+                  {product.brand ? (
+    <Link href={`/staff/dashboard/catalog-pricing/brands?view=${product.brand.id}`} className="mt-1.5 inline-block text-[14px] text-blue-600 hover:text-blue-800 font-medium hover:underline">
+      {product.brand.name}
+    </Link>
+  ) : (
+    <div className="mt-1.5 text-[14px] text-gray-900 font-medium">-</div>
+  )}
                 </div>
                 <div>
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Manufacturer</label>
-                  <div className="mt-1.5 text-[14px] text-gray-900 font-medium">{product.manufacturer?.name || '-'}</div>
+                  {product.manufacturer ? (
+    <Link href={`/staff/dashboard/catalog-pricing/manufacturers?view=${product.manufacturer.id}`} className="mt-1.5 inline-block text-[14px] text-blue-600 hover:text-blue-800 font-medium hover:underline">
+      {product.manufacturer.name}
+    </Link>
+  ) : (
+    <div className="mt-1.5 text-[14px] text-gray-900 font-medium">-</div>
+  )}
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Category</label>
-                  <div className="mt-1.5 text-[14px] text-gray-900 font-medium">{product.category?.name || '-'}</div>
+                  {product.category ? (
+    <Link href={`/staff/dashboard/catalog-pricing/categories?view=${product.category.id}`} className="mt-1.5 inline-block text-[14px] text-blue-600 hover:text-blue-800 font-medium hover:underline">
+      {product.category.name}
+    </Link>
+  ) : (
+    <div className="mt-1.5 text-[14px] text-gray-900 font-medium">-</div>
+  )}
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Description</label>
@@ -201,16 +220,34 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
                 <div>
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">HSN / SAC Code</label>
-                  <div className="mt-1.5 text-[14px] text-gray-900 font-mono font-medium">{product.hsnCode?.code || '-'}</div>
+                  {product.hsnCode ? (
+    <Link href={`/staff/dashboard/catalog-pricing/hsn-codes?view=${product.hsnCode.id}`} className="mt-1.5 inline-block text-[14px] text-blue-600 hover:text-blue-800 font-mono font-medium hover:underline">
+      {product.hsnCode.code}
+    </Link>
+  ) : (
+    <div className="mt-1.5 text-[14px] text-gray-900 font-mono font-medium">-</div>
+  )}
                   <div className="mt-1 text-xs text-gray-500">{product.hsnCode?.name}</div>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Tax Rate (GST)</label>
-                  <div className="mt-1.5 text-[14px] text-gray-900 font-medium">{product.taxRate?.percentage}%</div>
+                  {product.taxRate ? (
+    <Link href={`/staff/dashboard/catalog-pricing/tax-rates?view=${product.taxRate.id}`} className="mt-1.5 inline-block text-[14px] text-blue-600 hover:text-blue-800 font-medium hover:underline">
+      {product.taxRate.percentage}%
+    </Link>
+  ) : (
+    <div className="mt-1.5 text-[14px] text-gray-900 font-medium">-</div>
+  )}
                 </div>
                 <div>
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Unit of Measure</label>
-                  <div className="mt-1.5 text-[14px] text-gray-900 font-medium">{product.unit?.name} ({product.unit?.abbreviation})</div>
+                  {product.unit ? (
+    <Link href={`/staff/dashboard/catalog-pricing/units?view=${product.unit.id}`} className="mt-1.5 inline-block text-[14px] text-blue-600 hover:text-blue-800 font-medium hover:underline">
+      {product.unit.name} ({product.unit.abbreviation})
+    </Link>
+  ) : (
+    <div className="mt-1.5 text-[14px] text-gray-900 font-medium">-</div>
+  )}
                 </div>
               </div>
             </section>

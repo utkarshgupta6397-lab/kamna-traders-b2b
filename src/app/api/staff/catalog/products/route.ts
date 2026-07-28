@@ -21,6 +21,8 @@ export async function GET(request: Request) {
     const manufacturerId = searchParams.get('manufacturerId') || '';
     const categoryId = searchParams.get('categoryId') || '';
     const hsnCodeId = searchParams.get('hsnCodeId') || '';
+    const taxRateId = searchParams.get('taxRateId') || '';
+    const unitId = searchParams.get('unitId') || '';
     const incentiveTag = searchParams.get('incentiveTag') || '';
     const trackInventory = searchParams.get('trackInventory');
     const trackSerials = searchParams.get('trackSerials');
@@ -43,6 +45,8 @@ export async function GET(request: Request) {
     if (manufacturerId && manufacturerId !== 'ALL') where.manufacturerId = manufacturerId;
     if (categoryId && categoryId !== 'ALL') where.categoryId = categoryId;
     if (hsnCodeId && hsnCodeId !== 'ALL') where.hsnCodeId = hsnCodeId;
+    if (taxRateId && taxRateId !== 'ALL') where.taxRateId = taxRateId;
+    if (unitId && unitId !== 'ALL') where.unitId = unitId;
     if (incentiveTag && incentiveTag !== 'ALL') where.incentiveTag = incentiveTag;
     
     if (trackInventory === 'true') { where.variants = { some: { trackInventory: true } }; }

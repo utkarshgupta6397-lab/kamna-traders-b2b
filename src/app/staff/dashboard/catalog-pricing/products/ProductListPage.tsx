@@ -24,6 +24,13 @@ export default function ProductListPage() {
   const [type, setType] = useState(searchParams.get('type') || 'ALL');
   const [categoryId, setCategoryId] = useState(searchParams.get('categoryId') || 'ALL');
 
+  const [brandId, setBrandId] = useState(searchParams.get('brandId') || '');
+  const [manufacturerId, setManufacturerId] = useState(searchParams.get('manufacturerId') || '');
+  const [hsnCodeId, setHsnCodeId] = useState(searchParams.get('hsnCodeId') || '');
+  const [taxRateId, setTaxRateId] = useState(searchParams.get('taxRateId') || '');
+  const [unitId, setUnitId] = useState(searchParams.get('unitId') || '');
+
+
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1);
   const [limit, setLimit] = useState(Number(searchParams.get('limit')) || 25);
   const [total, setTotal] = useState(0);

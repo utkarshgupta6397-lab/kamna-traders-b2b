@@ -68,6 +68,11 @@ export async function GET() {
           catalog_hsncodes_create: true,
           catalog_hsncodes_modify: true,
           catalog_hsncodes_approve: true,
+          catalog_products_create: true,
+          catalog_products_modify: true,
+          catalog_products_approve: true,
+          catalog_products_archive: true,
+          system_productMigration: true,
         },
         orderBy: { name: 'asc' },
       });

@@ -77,6 +77,11 @@ model User {
   catalog_hsncodes_create       Boolean @default(false)
   catalog_hsncodes_modify       Boolean @default(false)
   catalog_hsncodes_approve      Boolean @default(false)
+  catalog_products_create       Boolean @default(false)
+  catalog_products_modify       Boolean @default(false)
+  catalog_products_approve      Boolean @default(false)
+  catalog_products_archive      Boolean @default(false)
+  system_productMigration       Boolean @default(false)
 
   sessions            ActiveSession[]
   carts               Cart[]
@@ -138,6 +143,9 @@ model User {
   hsnCodesCreated       HsnCode[]           @relation("HsnCreatedBy")
   hsnCodesUpdated       HsnCode[]           @relation("HsnUpdatedBy")
   hsnCodesApproved      HsnCode[]           @relation("HsnApprovedBy")
+  productsCreated       Product[]           @relation("ProductCreatedBy")
+  productsUpdated       Product[]           @relation("ProductUpdatedBy")
+  productsApproved      Product[]           @relation("ProductApprovedBy")
   masterDataHistory     MasterDataHistory[] @relation("MasterHistoryPerformedBy")
 }
 
@@ -177,6 +185,7 @@ model Brand {
   updatedBy    User?               @relation("BrandUpdatedBy", fields: [updatedById], references: [id])
   approvedBy   User?               @relation("BrandApprovedBy", fields: [approvedById], references: [id])
   history      MasterDataHistory[] @relation("BrandHistory")
+  products     Product[]
 
   @@index([status])
   @@index([createdAt])
@@ -204,6 +213,7 @@ model Category {
   updatedBy    User?               @relation("CategoryUpdatedBy", fields: [updatedById], references: [id])
   approvedBy   User?               @relation("CategoryApprovedBy", fields: [approvedById], references: [id])
   history      MasterDataHistory[] @relation("CategoryHistory")
+  products     Product[]
 
   @@index([status])
   @@index([createdAt])
@@ -227,6 +237,7 @@ model Manufacturer {
   updatedBy    User?               @relation("ManufacturerUpdatedBy", fields: [updatedById], references: [id])
   approvedBy   User?               @relation("ManufacturerApprovedBy", fields: [approvedById], references: [id])
   history      MasterDataHistory[] @relation("ManufacturerHistory")
+  products     Product[]
 
   @@index([status])
   @@index([createdAt])
@@ -254,6 +265,7 @@ model TaxRate {
   approvedBy      User?               @relation("TaxRateApprovedBy", fields: [approvedById], references: [id])
   history         MasterDataHistory[] @relation("TaxRateHistory")
   defaultHsnCodes HsnCode[]           @relation("HsnDefaultGstRate")
+  products        Product[]
 
   @@index([status])
   @@index([createdAt])
@@ -278,6 +290,7 @@ model UnitOfMeasurement {
   updatedBy    User?               @relation("UnitUpdatedBy", fields: [updatedById], references: [id])
   approvedBy   User?               @relation("UnitApprovedBy", fields: [approvedById], references: [id])
   history      MasterDataHistory[] @relation("UnitHistory")
+  products     Product[]
 
   @@index([status])
   @@index([createdAt])
@@ -303,6 +316,7 @@ model HsnCode {
   approvedBy       User?               @relation("HsnApprovedBy", fields: [approvedById], references: [id])
   defaultGstRate   TaxRate?            @relation("HsnDefaultGstRate", fields: [defaultGstRateId], references: [id])
   history          MasterDataHistory[] @relation("HsnHistory")
+  products         Product[]
 
   @@index([status])
   @@index([createdAt])
@@ -319,7 +333,7 @@ model GovernmentHsnHelper {
 
 model MasterDataHistory {
   id            String   @id @default(cuid())
-  entityType    String // "Brand" | "Manufacturer" | "Category" | "TaxRate" | "UnitOfMeasurement" | "HsnCode"
+  entityType    String // "Brand" | "Manufacturer" | "Category" | "TaxRate" | "UnitOfMeasurement" | "HsnCode" | "Product"
   entityId      String
   action        String // "CREATED" | "UPDATED" | "SUBMITTED" | "APPROVED" | "DECLINED" | "ARCHIVED" | "RESTORED"
   fieldName     String?
@@ -342,6 +356,8 @@ model MasterDataHistory {
   unitOfMeasurementId String?
   hsnCode             HsnCode?           @relation("HsnHistory", fields: [hsnCodeId], references: [id], onDelete: Cascade)
   hsnCodeId           String?
+  product             Product?           @relation("ProductHistory", fields: [productId], references: [id], onDelete: Cascade)
+  productId           String?
 
   @@index([entityType, entityId])
   @@index([performedAt])
@@ -386,6 +402,68 @@ model Sku {
   @@index([createdAt])
   @@index([zohoBookItemId])
   @@index([zohoBooksId2])
+}
+
+model Product {
+  id             String    @id @default(cuid())
+  code           String    @unique
+  name           String
+  description    String?
+  type           String    @default("Goods")
+  brandId        String?
+  manufacturerId String?
+  categoryId     String?
+  hsnCodeId      String?
+  taxRateId      String?
+  unitId         String?
+  status         String    @default("Draft")
+  remarks        String?
+  isActive       Boolean   @default(true)
+  createdById    String?
+  updatedById    String?
+  approvedById   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  approvedAt     DateTime?
+  incentiveTag   String?
+
+  variants     ProductVariant[]
+  brand        Brand?              @relation(fields: [brandId], references: [id])
+  manufacturer Manufacturer?       @relation(fields: [manufacturerId], references: [id])
+  category     Category?           @relation(fields: [categoryId], references: [id])
+  hsnCode      HsnCode?            @relation(fields: [hsnCodeId], references: [id])
+  taxRate      TaxRate?            @relation(fields: [taxRateId], references: [id])
+  unit         UnitOfMeasurement?  @relation(fields: [unitId], references: [id])
+  createdBy    User?               @relation("ProductCreatedBy", fields: [createdById], references: [id])
+  updatedBy    User?               @relation("ProductUpdatedBy", fields: [updatedById], references: [id])
+  approvedBy   User?               @relation("ProductApprovedBy", fields: [approvedById], references: [id])
+  history      MasterDataHistory[] @relation("ProductHistory")
+
+  @@index([status])
+  @@index([brandId])
+  @@index([categoryId])
+  @@index([createdAt])
+}
+
+model ProductVariant {
+  id             String   @id @default(cuid())
+  productId      String
+  variantName    String   @default("Default")
+  sku            String   @unique
+  purchasePrice  Float    @default(0.0)
+  sellingPrice   Float    @default(0.0)
+  trackInventory Boolean  @default(true)
+  trackSerials   Boolean  @default(false)
+  isDefault      Boolean  @default(true)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  zohoBookItemId String?  @unique
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([sku])
 }
 
 model WarehouseInventory {

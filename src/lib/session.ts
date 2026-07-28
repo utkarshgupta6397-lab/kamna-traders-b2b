@@ -141,6 +141,11 @@ export async function validateSession(sessionToken: string): Promise<{
           whatsapp_integration: true,
           holdQueueReviewEnabled: true,
           holdQueueReviewLimit: true,
+          catalog_products_create: true,
+          catalog_products_modify: true,
+          catalog_products_approve: true,
+          catalog_products_archive: true,
+          system_productMigration: true,
         }
       }
     }
@@ -180,6 +185,11 @@ export async function validateSession(sessionToken: string): Promise<{
       userObj.whatsapp_integration = true;
       userObj.holdQueueReviewEnabled = true;
       userObj.holdQueueReviewLimit = null;
+      userObj.catalog_products_create = true;
+      userObj.catalog_products_modify = true;
+      userObj.catalog_products_approve = true;
+      userObj.catalog_products_archive = true;
+      userObj.system_productMigration = true;
     }
 
     const masterPerms = [
@@ -190,6 +200,7 @@ export async function validateSession(sessionToken: string): Promise<{
       'catalog_taxrates_create', 'catalog_taxrates_modify', 'catalog_taxrates_approve',
       'catalog_units_create', 'catalog_units_modify', 'catalog_units_approve',
       'catalog_hsncodes_create', 'catalog_hsncodes_modify', 'catalog_hsncodes_approve',
+      'catalog_products_create', 'catalog_products_modify', 'catalog_products_approve', 'catalog_products_archive',
     ];
 
     if (isUserAdmin) {

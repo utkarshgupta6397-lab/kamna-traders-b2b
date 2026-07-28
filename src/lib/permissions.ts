@@ -10,7 +10,9 @@ export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSku
   | 'catalog_attributes_create' | 'catalog_attributes_modify' | 'catalog_attributes_approve'
   | 'catalog_taxrates_create' | 'catalog_taxrates_modify' | 'catalog_taxrates_approve'
   | 'catalog_units_create' | 'catalog_units_modify' | 'catalog_units_approve'
-  | 'catalog_hsncodes_create' | 'catalog_hsncodes_modify' | 'catalog_hsncodes_approve';
+  | 'catalog_hsncodes_create' | 'catalog_hsncodes_modify' | 'catalog_hsncodes_approve'
+  | 'catalog_products_create' | 'catalog_products_modify' | 'catalog_products_approve' | 'catalog_products_archive'
+  | 'system_productMigration';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -180,7 +182,12 @@ export const PERMISSIONS: PermissionDefinition[] = [
   { key: 'catalog_units_approve', label: 'Approve Units', description: 'Ability to approve or decline unit of measurement records' },
   { key: 'catalog_hsncodes_create', label: 'Create HSN Codes', description: 'Ability to create HSN code master records' },
   { key: 'catalog_hsncodes_modify', label: 'Modify HSN Codes', description: 'Ability to edit HSN code master records' },
-  { key: 'catalog_hsncodes_approve', label: 'Approve HSN Codes', description: 'Ability to approve or decline HSN code records' }
+  { key: 'catalog_hsncodes_approve', label: 'Approve HSN Codes', description: 'Ability to approve or decline HSN code records' },
+  { key: 'catalog_products_create', label: 'Create Products', description: 'Allows creating new Products.' },
+  { key: 'catalog_products_modify', label: 'Modify Products', description: 'Allows editing existing Products.' },
+  { key: 'catalog_products_approve', label: 'Approve Products', description: 'Allows approving Product records.' },
+  { key: 'catalog_products_archive', label: 'Archive Products', description: 'Allows archiving and restoring Products.' },
+  { key: 'system_productMigration', label: 'Run Product Migration', description: 'Allows execution of the one-time legacy SKU → Product migration utility.' }
 ];
 
 export interface CatalogModulePermissionGroup {
@@ -189,9 +196,18 @@ export interface CatalogModulePermissionGroup {
   createKey: PermissionKey;
   modifyKey: PermissionKey;
   approveKey: PermissionKey;
+  archiveKey?: PermissionKey;
 }
 
 export const CATALOG_MODULES: CatalogModulePermissionGroup[] = [
+  {
+    moduleKey: 'products',
+    moduleName: 'Products',
+    createKey: 'catalog_products_create',
+    modifyKey: 'catalog_products_modify',
+    approveKey: 'catalog_products_approve',
+    archiveKey: 'catalog_products_archive',
+  },
   {
     moduleKey: 'brands',
     moduleName: 'Brands',
@@ -251,6 +267,7 @@ const catalogPermissionKeySet = new Set<string>([
   'catalog_taxrates_create', 'catalog_taxrates_modify', 'catalog_taxrates_approve',
   'catalog_units_create', 'catalog_units_modify', 'catalog_units_approve',
   'catalog_hsncodes_create', 'catalog_hsncodes_modify', 'catalog_hsncodes_approve',
+  'catalog_products_create', 'catalog_products_modify', 'catalog_products_approve', 'catalog_products_archive',
 ]);
 
 // General permissions shown in Main Matrix Tab (excludes Catalog module granular permissions)
@@ -308,4 +325,9 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'catalog_hsncodes_create',
   'catalog_hsncodes_modify',
   'catalog_hsncodes_approve',
+  'catalog_products_create',
+  'catalog_products_modify',
+  'catalog_products_approve',
+  'catalog_products_archive',
+  'system_productMigration',
 ];

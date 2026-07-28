@@ -336,7 +336,7 @@ export default function UserPermissionsPage() {
                     <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">User Details</span>
                   </th>
                   {CATALOG_MODULES.map(m => (
-                    <th key={m.moduleKey} colSpan={3} className="py-1.5 px-1 border-b border-r border-gray-200 bg-gray-100/80 text-center">
+                    <th key={m.moduleKey} colSpan={m.archiveKey ? 4 : 3} className="py-1.5 px-1 border-b border-r border-gray-200 bg-gray-100/80 text-center">
                       <span className="text-[11px] font-black text-[#1A2766] uppercase tracking-wider">
                         {m.moduleName}
                       </span>
@@ -349,7 +349,8 @@ export default function UserPermissionsPage() {
                     <React.Fragment key={`${m.moduleKey}-subheaders`}>
                       <th className="py-1 px-1 text-[9px] font-bold text-gray-500 uppercase tracking-wider border-b min-w-[65px]">Create</th>
                       <th className="py-1 px-1 text-[9px] font-bold text-gray-500 uppercase tracking-wider border-b min-w-[65px]">Modify</th>
-                      <th className="py-1 px-1 text-[9px] font-bold text-gray-500 uppercase tracking-wider border-b border-r min-w-[65px]">Approve</th>
+                      <th className={`py-1 px-1 text-[9px] font-bold text-gray-500 uppercase tracking-wider border-b min-w-[65px] ${!m.archiveKey ? 'border-r' : ''}`}>Approve</th>
+                      {m.archiveKey && <th className="py-1 px-1 text-[9px] font-bold text-gray-500 uppercase tracking-wider border-b border-r min-w-[65px]">Archive</th>}
                     </React.Fragment>
                   ))}
                 </tr>
@@ -388,6 +389,9 @@ export default function UserPermissionsPage() {
                           { key: m.modifyKey, label: 'Modify' },
                           { key: m.approveKey, label: 'Approve' },
                         ];
+                        if (m.archiveKey) {
+                          actions.push({ key: m.archiveKey, label: 'Archive' });
+                        }
 
                         return (
                           <React.Fragment key={m.moduleKey}>
@@ -399,7 +403,7 @@ export default function UserPermissionsPage() {
                                 <td
                                   key={act.key}
                                   className={`py-1.5 px-1 border-b border-gray-100 text-center ${
-                                    actIdx === 2 ? 'border-r border-gray-200 bg-gray-50/30' : ''
+                                    actIdx === actions.length - 1 ? 'border-r border-gray-200 bg-gray-50/30' : ''
                                   }`}
                                 >
                                   {isAdmin ? (

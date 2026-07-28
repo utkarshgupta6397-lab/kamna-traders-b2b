@@ -1,6 +1,6 @@
 import { prisma } from './db';
 
-export type MasterEntityKey = 'brands' | 'manufacturers' | 'categories' | 'tax-rates' | 'units' | 'hsn-codes';
+export type MasterEntityKey = 'brands' | 'manufacturers' | 'categories' | 'tax-rates' | 'units' | 'hsn-codes' | 'products';
 
 export interface EntityMeta {
   key: MasterEntityKey;
@@ -70,6 +70,15 @@ export const ENTITY_REGISTRY: Record<MasterEntityKey, EntityMeta> = {
     codePrefix: 'HSN',
     permissionPrefix: 'catalog_hsncodes',
     customFields: ['gstRate', 'chapterCode'],
+  },
+  products: {
+    key: 'products',
+    singularName: 'Product',
+    pluralName: 'Products',
+    modelName: 'Product',
+    modelProperty: 'product',
+    codePrefix: 'PRD',
+    permissionPrefix: 'catalog_products',
   },
 };
 
@@ -141,6 +150,7 @@ export async function createMasterAuditLog(params: {
   else if (entityType === 'TaxRate') historyData.taxRateId = entityId;
   else if (entityType === 'UnitOfMeasurement') historyData.unitOfMeasurementId = entityId;
   else if (entityType === 'HsnCode') historyData.hsnCodeId = entityId;
+  else if (entityType === 'Product') historyData.productId = entityId;
 
   return await prisma.masterDataHistory.create({
     data: historyData,

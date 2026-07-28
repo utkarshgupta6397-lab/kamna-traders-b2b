@@ -123,6 +123,11 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.catalog_hsncodes_create = true;
       merged.catalog_hsncodes_modify = true;
       merged.catalog_hsncodes_approve = true;
+      merged.catalog_products_create = true;
+      merged.catalog_products_modify = true;
+      merged.catalog_products_approve = true;
+      merged.catalog_products_archive = true;
+      merged.system_productMigration = true;
     }
 
     console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);

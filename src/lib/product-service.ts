@@ -3,11 +3,11 @@ import { getNextMasterId, createMasterAuditLog } from './master-data-service';
 
 export async function getNextProductCode(): Promise<string> {
   const numId = await getNextMasterId('Product');
-  return `PRD-${numId}`;
+  return `PRD${numId}`;
 }
 
 export function generateVariantSku(productCode: string, variantIndex = 1): string {
-  return `${productCode}-V${variantIndex}`;
+  return `${productCode}V${variantIndex}`;
 }
 
 export interface CreateProductParams {
@@ -24,6 +24,7 @@ export interface CreateProductParams {
   remarks?: string;
   status?: string;
   incentiveTag?: string;
+  thumbnailBase64?: string;
   
   // Default variant fields
   purchasePrice?: number;
@@ -59,6 +60,7 @@ export async function createProductWithDefaultVariant(params: CreateProductParam
         approvedById: params.status === 'Active' ? params.userId : undefined,
         approvedAt: params.status === 'Active' ? new Date() : undefined,
         incentiveTag: params.incentiveTag,
+        thumbnailBase64: params.thumbnailBase64,
         variants: {
           create: {
             variantName: 'Default',

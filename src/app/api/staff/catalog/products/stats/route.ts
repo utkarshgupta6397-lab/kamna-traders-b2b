@@ -9,28 +9,27 @@ export async function GET(request: Request) {
   }
 
   try {
-    const counts = await prisma.product.groupBy({
-      by: ['status'],
-      _count: {
-        _all: true,
-      },
+    const [total, goods, services, active, pending, archived, trackInventory, trackSerials] = await Promise.all([
+      prisma.product.count(),
+      prisma.product.count({ where: { type: 'Goods' } }),
+      prisma.product.count({ where: { type: 'Service' } }),
+      prisma.product.count({ where: { status: 'Active' } }),
+      prisma.product.count({ where: { status: 'Approval Pending' } }),
+      prisma.product.count({ where: { status: 'Archived' } }),
+      prisma.product.count({ where: { variants: { some: { trackInventory: true } } } }),
+      prisma.product.count({ where: { variants: { some: { trackSerials: true } } } }),
+    ]);
+
+    return NextResponse.json({
+      total,
+      goods,
+      services,
+      active,
+      pending,
+      archived,
+      trackInventory,
+      trackSerials
     });
-
-    const stats = {
-      total: 0,
-      Draft: 0,
-      'Approval Pending': 0,
-      Active: 0,
-      Inactive: 0,
-      Archived: 0,
-    };
-
-    for (const item of counts) {
-      stats[item.status as keyof typeof stats] = item._count._all;
-      stats.total += item._count._all;
-    }
-
-    return NextResponse.json(stats);
   } catch (error: any) {
     console.error(`[API] GET /api/staff/catalog/products/stats error:`, error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });

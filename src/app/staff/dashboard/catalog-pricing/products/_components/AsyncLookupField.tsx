@@ -17,7 +17,7 @@ interface Option {
 interface AsyncLookupFieldProps {
   endpoint: string;
   value: string | undefined;
-  onChange: (val: string | undefined) => void;
+  onChange: (val: string | undefined, opt?: Option) => void;
   label: string;
   placeholder?: string;
   disabled?: boolean;
@@ -197,7 +197,7 @@ export default function AsyncLookupField({
             {clearable && value && !disabled && (
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); onChange(undefined); }}
+                onClick={(e) => { e.stopPropagation(); onChange(undefined, undefined); }}
                 className="p-0.5 text-gray-400 hover:text-gray-600 rounded"
               >
                 <X className="h-3.5 w-3.5" />
@@ -250,7 +250,7 @@ export default function AsyncLookupField({
                       `}
                       onClick={() => {
                         if (optDisabled) return;
-                        onChange(opt.id);
+                        onChange(opt.id, opt);
                         setPreloadedOption(opt);
                         setOpen(false);
                         setSearch('');

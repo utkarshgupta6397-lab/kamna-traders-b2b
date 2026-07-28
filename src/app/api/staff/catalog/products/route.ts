@@ -16,7 +16,16 @@ export async function GET(request: Request) {
     const createdBy = searchParams.get('createdBy') || '';
     const dateFrom = searchParams.get('dateFrom') || '';
     const dateTo = searchParams.get('dateTo') || '';
-    const ALLOWED_SORT_FIELDS = ['updatedAt', 'createdAt', 'name', 'code', 'status'];
+    const type = searchParams.get('type') || '';
+    const brandId = searchParams.get('brandId') || '';
+    const manufacturerId = searchParams.get('manufacturerId') || '';
+    const categoryId = searchParams.get('categoryId') || '';
+    const hsnCodeId = searchParams.get('hsnCodeId') || '';
+    const incentiveTag = searchParams.get('incentiveTag') || '';
+    const trackInventory = searchParams.get('trackInventory');
+    const trackSerials = searchParams.get('trackSerials');
+    
+    const ALLOWED_SORT_FIELDS = ['updatedAt', 'createdAt', 'name', 'code', 'status', 'purchasePrice', 'sellingPrice'];
     const rawSortBy = searchParams.get('sortBy') || 'updatedAt';
     const sortBy = ALLOWED_SORT_FIELDS.includes(rawSortBy) ? rawSortBy : 'updatedAt';
     const sortOrder = (searchParams.get('sortOrder') || 'desc') as 'asc' | 'desc';
@@ -29,6 +38,17 @@ export async function GET(request: Request) {
     if (status !== 'ALL') {
       where.status = status;
     }
+    if (type && type !== 'ALL') where.type = type;
+    if (brandId && brandId !== 'ALL') where.brandId = brandId;
+    if (manufacturerId && manufacturerId !== 'ALL') where.manufacturerId = manufacturerId;
+    if (categoryId && categoryId !== 'ALL') where.categoryId = categoryId;
+    if (hsnCodeId && hsnCodeId !== 'ALL') where.hsnCodeId = hsnCodeId;
+    if (incentiveTag && incentiveTag !== 'ALL') where.incentiveTag = incentiveTag;
+    
+    if (trackInventory === 'true') { where.variants = { some: { trackInventory: true } }; }
+    if (trackInventory === 'false') { where.variants = { some: { trackInventory: false } }; }
+    if (trackSerials === 'true') { where.variants = { ...where.variants, some: { ...where.variants?.some, trackSerials: true } }; }
+    if (trackSerials === 'false') { where.variants = { ...where.variants, some: { ...where.variants?.some, trackSerials: false } }; }
 
     if (createdBy) {
       where.createdById = createdBy;
@@ -158,12 +178,38 @@ export async function POST(request: Request) {
     const { 
       name, code, description, type, remarks, submitForApproval,
       brandId, manufacturerId, categoryId, hsnCodeId, taxRateId, unitId,
-      purchasePrice, sellingPrice, trackInventory, trackSerials, incentiveTag
+      purchasePrice, sellingPrice, trackInventory, trackSerials, incentiveTag, thumbnailBase64
     } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }
+    const nameRegex = /^[a-zA-Z0-9\s/.()&+-]+$/;
+    if (!nameRegex.test(name.trim())) {
+      return NextResponse.json({ error: 'Product Name contains unsupported characters.' }, { status: 400 });
+    }
+    
+    if (!code || !code.trim()) {
+      return NextResponse.json({ error: 'SKU is required' }, { status: 400 });
+    }
+    const skuRegex = /^[A-Z0-9]{4,20}$/;
+    if (!skuRegex.test(code.trim())) {
+      return NextResponse.json({ error: 'SKU must be 4-20 uppercase alphanumeric characters without spaces or symbols.' }, { status: 400 });
+    }
+
+    if (!brandId) return NextResponse.json({ error: 'Brand is required' }, { status: 400 });
+    if (!manufacturerId) return NextResponse.json({ error: 'Manufacturer is required' }, { status: 400 });
+
+    if (!hsnCodeId) return NextResponse.json({ error: 'HSN Code is required' }, { status: 400 });
+    if (!taxRateId) return NextResponse.json({ error: 'Tax Rate is required' }, { status: 400 });
+    if (!unitId) return NextResponse.json({ error: 'Unit of Measurement is required' }, { status: 400 });
+    if (!incentiveTag) return NextResponse.json({ error: 'Incentive Tag is required' }, { status: 400 });
+
+    const pPrice = parseFloat(purchasePrice) || 0;
+    const sPrice = parseFloat(sellingPrice) || 0;
+
+    if (pPrice <= 0) return NextResponse.json({ error: 'Purchase Price must be greater than ₹0' }, { status: 400 });
+    if (sPrice <= pPrice) return NextResponse.json({ error: 'Selling Price must be greater than Purchase Price' }, { status: 400 });
     
     if (code && code.trim()) {
       const existing = await prisma.product.findUnique({
@@ -187,11 +233,12 @@ export async function POST(request: Request) {
       unitId,
       remarks: remarks ? remarks.trim() : undefined,
       status: submitForApproval ? 'Approval Pending' : 'Draft',
-      purchasePrice: parseFloat(purchasePrice) || 0,
-      sellingPrice: parseFloat(sellingPrice) || 0,
+      purchasePrice: pPrice,
+      sellingPrice: sPrice,
       trackInventory: trackInventory !== false,
       trackSerials: trackSerials === true,
       incentiveTag,
+      thumbnailBase64,
       userId: session.userId,
     });
 

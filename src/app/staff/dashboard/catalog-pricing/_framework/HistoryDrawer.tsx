@@ -58,7 +58,7 @@ function formatValue(val: any): string {
   return String(val);
 }
 
-function computeDiff(prev: string | null, next: string | null): AuditChange[] {
+export function computeDiff(prev: string | null, next: string | null): AuditChange[] {
   if (!next) return [];
   const prevObj = prev ? parseValue(prev) : {};
   const nextObj = parseValue(next);
@@ -96,7 +96,7 @@ function computeDiff(prev: string | null, next: string | null): AuditChange[] {
   return diffs;
 }
 
-function HistoryEventCard({ h }: { h: any }) {
+export function HistoryEventCard({ h }: { h: any }) {
   const [expanded, setExpanded] = useState(false);
   const diffs = computeDiff(h.previousValue, h.newValue);
   const isLargeChange = diffs.length > 5;

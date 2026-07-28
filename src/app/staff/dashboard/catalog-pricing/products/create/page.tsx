@@ -1,11 +1,14 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import ProductStepForm, { Step } from '../_components/ProductStepForm';
 import AsyncLookupField from '../_components/AsyncLookupField';
 import {
+  Image as ImageIcon,
+  UploadCloud,
+  Trash2,
   Package,
   Layers,
   Info,
@@ -45,6 +48,11 @@ const mfrDisplay     = (opt: any): string => opt.name || opt.id;
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function CreateProductPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editId = searchParams.get('edit');
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
+  
   const [currentStep, setCurrentStep]       = useState(0);
   const [isSaving, setIsSaving]             = useState(false);
   const [isGeneratingSku, setIsGeneratingSku] = useState(false);
@@ -68,7 +76,40 @@ export default function CreateProductPage() {
     trackInventory: true,
     trackSerials:   false,
     incentiveTag:   '',
+    thumbnailBase64: '',
   });
+
+  useEffect(() => {
+    if (editId) {
+      setIsEditMode(true);
+      setIsInitializing(true);
+      fetch(`/api/staff/catalog/products/${editId}`)
+        .then(res => res.json())
+        .then(data => {
+          const variant = data.variants?.[0] || {};
+          setFormData({
+            type: data.type || 'Goods',
+            name: data.name || '',
+            code: data.code || '',
+            description: data.description || '',
+            remarks: data.remarks || '',
+            brandId: data.brandId || '',
+            manufacturerId: data.manufacturerId || '',
+            categoryId: data.categoryId || '',
+            hsnCodeId: data.hsnCodeId || '',
+            taxRateId: data.taxRateId || '',
+            unitId: data.unitId || '',
+            purchasePrice: variant.purchasePrice || 0,
+            sellingPrice: variant.sellingPrice || 0,
+            trackInventory: variant.trackInventory ?? true,
+            trackSerials: variant.trackSerials ?? false,
+            incentiveTag: data.incentiveTag || '',
+            thumbnailBase64: data.thumbnailBase64 || '',
+          });
+        })
+        .finally(() => setIsInitializing(false));
+    }
+  }, [editId]);
 
   const updateForm = (key: keyof typeof formData, value: any) =>
     setFormData(prev => ({ ...prev, [key]: value }));
@@ -98,13 +139,18 @@ export default function CreateProductPage() {
     }
     
     if (currentStep === 1) {
-      if (!formData.name.trim() || !formData.categoryId || !formData.type) {
+      if (!formData.name.trim() || !formData.categoryId || !formData.type || !formData.brandId || !formData.manufacturerId || !formData.code.trim()) {
         return;
       }
+      if (!/^[a-zA-Z0-9\s\-/\.\(\)\&+]+$/.test(formData.name.trim())) return;
+      if (!/^[A-Z0-9]{4,20}$/.test(formData.code.trim())) return;
     }
     
     if (currentStep === 2) {
-      if (!formData.incentiveTag) {
+      if (!formData.hsnCodeId || !formData.taxRateId || !formData.unitId || !formData.purchasePrice || !formData.sellingPrice || !formData.incentiveTag) {
+        return;
+      }
+      if (formData.purchasePrice <= 0 || formData.sellingPrice <= formData.purchasePrice) {
         return;
       }
     }
@@ -122,13 +168,51 @@ export default function CreateProductPage() {
   useEffect(() => {
     if (purchasePrice > 0 && sellingPrice > 0) {
       let suggested = '';
-      if (margin >= 30) suggested = 'High Margin Product';
-      else if (margin >= 15) suggested = 'Medium Margin Product';
+      if (margin > 10) suggested = 'High Margin Product';
+      else if (margin > 5) suggested = 'Medium Margin Product';
       else suggested = 'Low Margin Product';
       
       setFormData(prev => ({ ...prev, incentiveTag: suggested }));
     }
   }, [purchasePrice, sellingPrice, margin]);
+
+  // ─── Step 4 Dependencies: Inventory & Product Type ───────────────────────
+  useEffect(() => {
+    if (formData.type === 'Service') {
+      setFormData(prev => ({ ...prev, trackInventory: false, trackSerials: false }));
+    }
+  }, [formData.type]);
+
+  useEffect(() => {
+    if (!formData.trackInventory && formData.trackSerials) {
+      setFormData(prev => ({ ...prev, trackSerials: false }));
+    }
+  }, [formData.trackInventory]);
+
+  // ─── File Upload Logic ───────────────────────────────────────────────────
+  const [thumbnailError, setThumbnailError] = useState('');
+  
+  const handleThumbnailUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setThumbnailError('');
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setThumbnailError('Unsupported format. Please use JPEG, PNG, or WEBP.');
+      return;
+    }
+
+    if (file.size > 500 * 1024) {
+      setThumbnailError('File exceeds 500 KB limit.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setFormData(prev => ({ ...prev, thumbnailBase64: ev.target?.result as string }));
+    };
+    reader.readAsDataURL(file);
+  };
 
   // ─── HSN Helper Logic ──────────────────────────────────────────────────
   const [hsnHelper, setHsnHelper] = useState<any>(null);
@@ -137,8 +221,13 @@ export default function CreateProductPage() {
   // ─── Save ────────────────────────────────────────────────────────────────
   const handleSave = async (submitForApproval: boolean) => {
     setShowErrors(true);
-    if (!formData.name.trim() || !formData.categoryId || !formData.type) {
+    if (!formData.name.trim() || !formData.categoryId || !formData.type || !formData.brandId || !formData.manufacturerId || !formData.code.trim()) {
       toast.error('Please fill in all mandatory fields');
+      setCurrentStep(1);
+      return;
+    }
+    if (!/^[a-zA-Z0-9\s\-/\.\(\)\&+]+$/.test(formData.name.trim()) || !/^[A-Z0-9]{4,20}$/.test(formData.code.trim())) {
+      toast.error('Product Name or SKU contains invalid characters');
       setCurrentStep(1);
       return;
     }
@@ -266,11 +355,13 @@ export default function CreateProductPage() {
                   </label>
                   <input
                     type="text"
-                    className={`w-full px-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && !formData.name.trim() ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
+                    className={`w-full px-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && (!formData.name.trim() || !/^[a-zA-Z0-9\s\-/\.\(\)\&+]+$/.test(formData.name.trim())) ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
                     placeholder="e.g., Luminous Inverter 1000VA"
                     value={formData.name}
-                    onChange={e => updateForm('name', e.target.value)}
+                    onChange={e => updateForm('name', e.target.value.replace(/\s{2,}/g, ' '))}
                   />
+                  {showErrors && !formData.name.trim() && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
+                  {showErrors && formData.name.trim() && !/^[a-zA-Z0-9\s\-/\.\(\)\&+]+$/.test(formData.name.trim()) && <p className="text-red-500 text-xs mt-1.5">Product Name contains unsupported characters.</p>}
                 </div>
 
                 {/* Product Type (Goods/Service) */}
@@ -301,15 +392,15 @@ export default function CreateProductPage() {
                 {/* SKU / Product Code */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">
-                    SKU <span className="text-gray-400 font-normal">— auto-generates if empty</span>
+                    SKU <span className="text-red-500">*</span>
                   </label>
                   <div className="relative flex items-center">
                     <input
                       type="text"
-                      className="w-full pl-3 pr-24 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white border-gray-200 focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm uppercase font-mono tracking-wider"
+                      className={`w-full pl-3 pr-24 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm uppercase font-mono tracking-wider ${showErrors && (!formData.code.trim() || !/^[A-Z0-9]{4,20}$/.test(formData.code.trim())) ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
                       placeholder="e.g., A9K2P1"
                       value={formData.code}
-                      onChange={e => updateForm('code', e.target.value.toUpperCase())}
+                      onChange={e => updateForm('code', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
                       maxLength={20}
                     />
                     <div className="absolute right-1">
@@ -324,6 +415,8 @@ export default function CreateProductPage() {
                       </button>
                     </div>
                   </div>
+                  {showErrors && !formData.code.trim() && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
+                  {showErrors && formData.code.trim() && !/^[A-Z0-9]{4,20}$/.test(formData.code.trim()) && <p className="text-red-500 text-xs mt-1.5">SKU must be 4-20 alphanumeric characters.</p>}
                 </div>
               </div>
             </div>
@@ -365,18 +458,21 @@ export default function CreateProductPage() {
                     displayValue={brandDisplay}
                     clearable
                   />
+                  {showErrors && !formData.taxRateId && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
                 </div>
 
                 {/* Manufacturer */}
                 <div className="col-span-2 sm:col-span-1">
                   <AsyncLookupField
                     label="Manufacturer"
+                    required
                     endpoint="/api/staff/catalog/manufacturers"
                     value={formData.manufacturerId}
                     onChange={val => updateForm('manufacturerId', val || '')}
                     displayValue={mfrDisplay}
                     clearable
                   />
+                  {showErrors && !formData.manufacturerId && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
                 </div>
               </div>
             </div>
@@ -421,25 +517,26 @@ export default function CreateProductPage() {
                 <div className="col-span-2 sm:col-span-1">
                   <AsyncLookupField
                     label="HSN Code"
+                    required
                     endpoint="/api/staff/catalog/hsn-codes"
                     value={formData.hsnCodeId}
-                    onChange={val => {
+                    onChange={(val, opt) => {
                       updateForm('hsnCodeId', val || '');
                       setHsnHelper(null);
+                      
+                      if (opt && opt.code) {
+                        setLoadingHsnHelper(true);
+                        fetch(`/api/staff/catalog/hsn-helper?code=${opt.code}`)
+                          .then(r => r.json())
+                          .then(d => {
+                            if (d.found) setHsnHelper({ ...d.data, cachedCode: opt.code });
+                            else setHsnHelper({ notFound: true, cachedCode: opt.code });
+                          })
+                          .catch(() => setHsnHelper({ notFound: true, cachedCode: opt.code }))
+                          .finally(() => setLoadingHsnHelper(false));
+                      }
                     }}
-                    displayValue={opt => {
-                       if (opt && opt.code && formData.hsnCodeId === opt.id && (!hsnHelper || hsnHelper.cachedCode !== opt.code)) {
-                         setLoadingHsnHelper(true);
-                         fetch(`/api/staff/catalog/hsn-helper?code=${opt.code}`)
-                           .then(r => r.json())
-                           .then(d => {
-                             if (d.found) setHsnHelper({ ...d.data, cachedCode: opt.code });
-                             else setHsnHelper({ notFound: true, cachedCode: opt.code });
-                           })
-                           .finally(() => setLoadingHsnHelper(false));
-                       }
-                       return hsnDisplay(opt);
-                    }}
+                    displayValue={hsnDisplay}
                     renderOption={opt => (
                       <span className="flex flex-col">
                         <span className="font-medium font-mono text-gray-800">{opt.code}</span>
@@ -451,6 +548,7 @@ export default function CreateProductPage() {
                     clearable
                   />
                   
+                  {showErrors && !formData.hsnCodeId && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
                   {/* HSN Helper Card */}
                   {formData.hsnCodeId && (
                     <div className="mt-2 text-sm">
@@ -477,6 +575,7 @@ export default function CreateProductPage() {
                 <div className="col-span-2 sm:col-span-1">
                   <AsyncLookupField
                     label="Tax Rate (GST)"
+                    required
                     endpoint="/api/staff/catalog/tax-rates"
                     value={formData.taxRateId}
                     onChange={val => updateForm('taxRateId', val || '')}
@@ -491,12 +590,14 @@ export default function CreateProductPage() {
                     )}
                     clearable
                   />
+                  {showErrors && !formData.taxRateId && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
                 </div>
 
                 {/* Unit of Measurement */}
                 <div className="col-span-2 sm:col-span-1">
                   <AsyncLookupField
                     label="Unit of Measurement"
+                    required
                     endpoint="/api/staff/catalog/units"
                     value={formData.unitId}
                     onChange={val => updateForm('unitId', val || '')}
@@ -511,6 +612,7 @@ export default function CreateProductPage() {
                     )}
                     clearable
                   />
+                  {showErrors && !formData.unitId && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
                 </div>
               </div>
             </div>
@@ -523,36 +625,38 @@ export default function CreateProductPage() {
               <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                 {/* Purchase Price */}
                 <div className="col-span-2 sm:col-span-1">
-                  <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">Purchase Price</label>
+                  <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">Purchase Price <span className="text-red-500">*</span></label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm select-none">₹</span>
                     <input
                       type="number"
                       step="0.01"
                       min="0"
-                      className="w-full pl-7 pr-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white border-gray-200 focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm"
+                      className={`w-full pl-7 pr-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && (!formData.purchasePrice || formData.purchasePrice <= 0) ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
                       placeholder="0.00"
                       value={formData.purchasePrice || ''}
                       onChange={e => updateForm('purchasePrice', parseFloat(e.target.value) || 0)}
                     />
                   </div>
+                  {showErrors && (!formData.purchasePrice || formData.purchasePrice <= 0) && <p className="text-red-500 text-xs mt-1.5">Purchase Price must be greater than ₹0.</p>}
                 </div>
 
                 {/* Selling Price */}
                 <div className="col-span-2 sm:col-span-1">
-                  <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">Selling Price</label>
+                  <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">Selling Price <span className="text-red-500">*</span></label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm select-none">₹</span>
                     <input
                       type="number"
                       step="0.01"
                       min="0"
-                      className="w-full pl-7 pr-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white border-gray-200 focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm"
+                      className={`w-full pl-7 pr-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && (!formData.sellingPrice || formData.sellingPrice <= formData.purchasePrice) ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
                       placeholder="0.00"
                       value={formData.sellingPrice || ''}
                       onChange={e => updateForm('sellingPrice', parseFloat(e.target.value) || 0)}
                     />
                   </div>
+                  {showErrors && (!formData.sellingPrice || formData.sellingPrice <= formData.purchasePrice) && <p className="text-red-500 text-xs mt-1.5">Selling Price must be greater than Purchase Price.</p>}
                 </div>
               </div>
 
@@ -594,7 +698,7 @@ export default function CreateProductPage() {
                   </label>
                 ))}
               </div>
-              {showErrors && !formData.incentiveTag && <p className="text-red-500 text-xs mt-1.5">Incentive Tag is required</p>}
+              {showErrors && !formData.incentiveTag && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
             </div>
           </div>
         </div>
@@ -604,72 +708,123 @@ export default function CreateProductPage() {
           STEP 4 — Inventory & Review
       ══════════════════════════════════════════════════ */}
       {currentStep === 3 && (
-        <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
-          <div className="flex items-center gap-3 pb-3 mb-2">
+        <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
+          <div className="flex items-center gap-3 pb-2">
             <div className="p-2 bg-orange-50 text-orange-600 rounded-lg"><BarChart2 size={18} /></div>
             <div>
               <h2 className="text-[15px] font-semibold text-gray-900">Inventory & Review</h2>
-              <p className="text-[13px] text-gray-500 mt-0.5">Configure tracking behaviour and add an optional note for the approver.</p>
+              <p className="text-[13px] text-gray-500 mt-0.5">Upload a thumbnail, configure tracking, and add an optional note.</p>
             </div>
           </div>
 
-          <div className="bg-[#FAFBFC] rounded-xl border border-gray-100 p-6 space-y-6">
-            
-            {/* Section: Tracking */}
-            <div>
-              <h3 className="text-[13px] font-semibold text-gray-900 mb-4 uppercase tracking-wider">Tracking</h3>
-              <div className="space-y-3">
-                {/* Track Inventory */}
-                <label className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all duration-200 ${formData.trackInventory ? 'border-blue-200 bg-blue-50/50 shadow-sm' : 'border-gray-200 hover:bg-white hover:border-gray-300 bg-white'}`}>
+          {/* CARD 1: Product Thumbnail */}
+          <div className="bg-[#FAFBFC] rounded-xl border border-gray-100 p-6">
+            <h3 className="text-[13px] font-semibold text-gray-900 mb-4 uppercase tracking-wider">Product Thumbnail</h3>
+            <div className="max-w-sm">
+              {!formData.thumbnailBase64 ? (
+                <div className="relative group">
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    onChange={handleThumbnailUpload}
+                  />
+                  <div className={`w-full aspect-square border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors duration-200 ${thumbnailError ? 'border-red-300 bg-red-50/50' : 'border-gray-200 bg-white group-hover:border-blue-400 group-hover:bg-blue-50/30'}`}>
+                    <div className={`p-3 rounded-full mb-3 ${thumbnailError ? 'bg-red-100 text-red-500' : 'bg-gray-100 text-gray-400 group-hover:bg-blue-100 group-hover:text-blue-600'}`}>
+                      <UploadCloud size={24} />
+                    </div>
+                    <p className="text-[14px] font-medium text-gray-900 mb-1">Click or drag to upload</p>
+                    <p className="text-[12px] text-gray-500 text-center px-4">JPEG, PNG, WEBP (max 500 KB)</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="w-full aspect-square border rounded-xl overflow-hidden relative group bg-white">
+                  <img src={formData.thumbnailBase64} alt="Product Thumbnail" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-3">
+                    <div className="relative">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        onChange={handleThumbnailUpload}
+                      />
+                      <button type="button" className="bg-white text-gray-800 p-2 rounded-lg shadow-sm hover:bg-gray-50 transition-colors pointer-events-none">
+                        <ImageIcon size={18} />
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, thumbnailBase64: '' }))}
+                      className="bg-red-500 text-white p-2 rounded-lg shadow-sm hover:bg-red-600 transition-colors"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </div>
+              )}
+              {thumbnailError && <p className="text-red-500 text-xs mt-2">{thumbnailError}</p>}
+            </div>
+          </div>
+
+          {/* CARD 2: Inventory Tracking */}
+          <div className="bg-[#FAFBFC] rounded-xl border border-gray-100 p-6">
+            <h3 className="text-[13px] font-semibold text-gray-900 mb-4 uppercase tracking-wider">Inventory Tracking</h3>
+            <div className="space-y-4">
+              {/* Track Inventory */}
+              <div>
+                <label className={`flex items-center gap-4 p-4 rounded-xl border transition-all duration-200 ${formData.type === 'Service' ? 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed' : formData.trackInventory ? 'border-blue-200 bg-blue-50/50 shadow-sm cursor-pointer' : 'border-gray-200 hover:bg-white hover:border-gray-300 bg-white cursor-pointer'}`}>
                   <input
                     type="checkbox"
-                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer flex-shrink-0"
+                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 flex-shrink-0 disabled:cursor-not-allowed"
                     checked={formData.trackInventory}
                     onChange={e => updateForm('trackInventory', e.target.checked)}
+                    disabled={formData.type === 'Service'}
                   />
                   <div>
                     <p className="text-[14px] font-medium text-gray-900">Track Inventory</p>
-                    <p className="text-[13px] text-gray-500 mt-0.5">Maintain stock counts for this product. Disable for unlimited-quantity items.</p>
+                    <p className="text-[13px] text-gray-500 mt-0.5">Maintain stock counts for this product.</p>
                   </div>
                 </label>
+                {formData.type === 'Service' && <p className="text-gray-500 text-xs mt-1.5 ml-1">Services do not maintain physical inventory or serial numbers.</p>}
+              </div>
 
-                {/* Track Serials */}
-                <label className={`flex items-center gap-4 p-4 rounded-xl border transition-all duration-200 ${!formData.trackInventory ? 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed' : formData.trackSerials ? 'border-blue-200 bg-blue-50/50 shadow-sm cursor-pointer' : 'border-gray-200 cursor-pointer hover:bg-gray-50 hover:border-gray-300 bg-white'}`}>
+              {/* Track Serials */}
+              <div>
+                <label className={`flex items-center gap-4 p-4 rounded-xl border transition-all duration-200 ${(!formData.trackInventory || formData.type === 'Service') ? 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed' : formData.trackSerials ? 'border-blue-200 bg-blue-50/50 shadow-sm cursor-pointer' : 'border-gray-200 hover:bg-white hover:border-gray-300 bg-white cursor-pointer'}`}>
                   <input
                     type="checkbox"
                     className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 flex-shrink-0 disabled:cursor-not-allowed"
                     checked={formData.trackSerials}
                     onChange={e => updateForm('trackSerials', e.target.checked)}
-                    disabled={!formData.trackInventory}
+                    disabled={!formData.trackInventory || formData.type === 'Service'}
                   />
                   <div>
                     <p className="text-[14px] font-medium text-gray-900">Track Serial Numbers</p>
-                    <p className="text-[13px] text-gray-500 mt-0.5">Require serial number scanning on dispatch and inwarding. Requires inventory tracking.</p>
+                    <p className="text-[13px] text-gray-500 mt-0.5">Require serial number scanning on dispatch and inwarding.</p>
                   </div>
                 </label>
+                {!formData.trackInventory && formData.type !== 'Service' && <p className="text-gray-500 text-xs mt-1.5 ml-1">Serial tracking requires inventory tracking.</p>}
               </div>
             </div>
+          </div>
 
-            <hr className="border-gray-200/60" />
-
-            {/* Section: Review Note */}
-            <div>
-              <h3 className="text-[13px] font-semibold text-gray-900 mb-4 uppercase tracking-wider">Review</h3>
-              <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">
-                Approval Remarks <span className="font-normal text-gray-400">— optional</span>
-              </label>
-              <textarea
-                rows={2}
-                className="w-full px-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white border-gray-200 focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm resize-none"
-                placeholder="Leave a note for the approver..."
-                value={formData.remarks}
-                onChange={e => updateForm('remarks', e.target.value)}
-              />
-            </div>
+          {/* CARD 3: Approval */}
+          <div className="bg-[#FAFBFC] rounded-xl border border-gray-100 p-6">
+            <h3 className="text-[13px] font-semibold text-gray-900 mb-4 uppercase tracking-wider">Approval</h3>
+            <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">
+              Approval Remarks <span className="font-normal text-gray-400">— optional</span>
+            </label>
+            <textarea
+              rows={2}
+              className="w-full px-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white border-gray-200 focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm resize-none"
+              placeholder="Optional note for the approving manager..."
+              value={formData.remarks}
+              onChange={e => updateForm('remarks', e.target.value)}
+            />
           </div>
         </div>
       )}
 
-    </ProductStepForm>
+      </ProductStepForm>
   );
 }

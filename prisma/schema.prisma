@@ -424,8 +424,9 @@ model Product {
   approvedById   String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
-  approvedAt     DateTime?
+  approvedAt   DateTime?
   incentiveTag   String?
+  thumbnailBase64 String? @db.Text
 
   variants     ProductVariant[]
   brand        Brand?              @relation(fields: [brandId], references: [id])

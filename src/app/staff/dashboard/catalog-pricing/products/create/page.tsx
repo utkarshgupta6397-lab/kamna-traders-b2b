@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import ProductStepForm, { Step } from '../_components/ProductStepForm';
+import { ProductAttributeValidationService } from '@/lib/services/ProductAttributeValidationService';
 import AsyncLookupField from '../_components/AsyncLookupField';
 import {
   Image as ImageIcon,
@@ -173,13 +174,14 @@ export default function CreateProductPage() {
       if (!/^[a-zA-Z0-9\s\-/\.\(\)\&+]+$/.test(formData.name.trim())) return;
       if (!/^[A-Z0-9]{4,20}$/.test(formData.code.trim())) return;
       
-      // Validate mandatory attributes
-      const missingMandatory = dynamicAttributes.find(attr => 
-        attr.mandatory && !formData.productAttributes.find(pa => pa.attributeId === attr.id)?.value
-      );
-      if (missingMandatory) {
-        toast.error(`Attribute "${missingMandatory.attributeName}" is required.`);
-        return;
+      // Validate dynamic attributes
+      for (const attr of dynamicAttributes) {
+        const val = formData.productAttributes.find(pa => pa.attributeId === attr.id)?.value;
+        const errorMsg = ProductAttributeValidationService.validateAttributeValue(val, attr);
+        if (errorMsg) {
+          toast.error(`Attribute "${attr.attributeName}": ${errorMsg}`);
+          return;
+        }
       }
     }
     
@@ -269,13 +271,15 @@ export default function CreateProductPage() {
       return;
     }
 
-    const missingMandatory = dynamicAttributes.find(attr => 
-      attr.mandatory && !formData.productAttributes.find(pa => pa.attributeId === attr.id)?.value
-    );
-    if (missingMandatory) {
-      toast.error(`Attribute "${missingMandatory.attributeName}" is required.`);
-      setCurrentStep(1);
-      return;
+    // Validate dynamic attributes
+    for (const attr of dynamicAttributes) {
+      const val = formData.productAttributes.find(pa => pa.attributeId === attr.id)?.value;
+      const errorMsg = ProductAttributeValidationService.validateAttributeValue(val, attr);
+      if (errorMsg) {
+        toast.error(`Attribute "${attr.attributeName}": ${errorMsg}`);
+        setCurrentStep(1);
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -535,6 +539,7 @@ export default function CreateProductPage() {
                   <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                     {dynamicAttributes.map(attr => {
                       const val = formData.productAttributes.find(a => a.attributeId === attr.id)?.value || '';
+                      const errorMsg = ProductAttributeValidationService.validateAttributeValue(val, attr);
                       
                       return (
                         <div key={attr.id} className="col-span-2 sm:col-span-1">
@@ -546,7 +551,7 @@ export default function CreateProductPage() {
                             <select
                               value={val}
                               onChange={e => updateAttribute(attr.id, e.target.value)}
-                              className={`w-full px-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && attr.mandatory && !val ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
+                              className={`w-full px-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && errorMsg ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
                             >
                               <option value="">Select {attr.attributeName}</option>
                               {attr.options?.map((opt: string) => (
@@ -557,7 +562,7 @@ export default function CreateProductPage() {
                             <select
                               value={val}
                               onChange={e => updateAttribute(attr.id, e.target.value)}
-                              className={`w-full px-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && attr.mandatory && !val ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
+                              className={`w-full px-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && errorMsg ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
                             >
                               <option value="">Select</option>
                               <option value="Yes">Yes</option>
@@ -568,7 +573,7 @@ export default function CreateProductPage() {
                               {attr.prefix && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{attr.prefix}</span>}
                               <input
                                 type={attr.dataType === 'Number' || attr.dataType === 'Decimal' ? 'number' : attr.dataType === 'Date' ? 'date' : 'text'}
-                                className={`w-full ${attr.prefix ? 'pl-8' : 'pl-3'} ${attr.suffix ? 'pr-8' : 'pr-3'} py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && attr.mandatory && !val ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
+                                className={`w-full ${attr.prefix ? 'pl-8' : 'pl-3'} ${attr.suffix ? 'pr-8' : 'pr-3'} py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && errorMsg ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
                                 placeholder={attr.placeholder || ''}
                                 value={val}
                                 min={attr.minValue ?? undefined}
@@ -579,7 +584,7 @@ export default function CreateProductPage() {
                               {attr.suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{attr.suffix}</span>}
                             </div>
                           )}
-                          {showErrors && attr.mandatory && !val && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
+                          {showErrors && errorMsg && <p className="text-red-500 text-xs mt-1.5">{errorMsg}</p>}
                         </div>
                       );
                     })}

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { prisma } from '@/lib/db';
+import { ProductAttributeService } from '@/lib/services/ProductAttributeService';
 
 export async function GET(
   request: Request,
@@ -14,23 +14,12 @@ export async function GET(
   const { categoryId } = await params;
 
   try {
-    // We want to fetch attributes mapped to this category.
-    // In a complex hierarchy, it might inherit from parent. The prompt says:
-    // "Do not introduce inheritance in MVP."
-    // So we just fetch attributes directly mapped to this categoryId.
-    const mappedAttributes = await prisma.productAttributeCategory.findMany({
-      where: { categoryId },
-      include: {
-        attribute: true
-      }
-    });
+    const { searchParams } = new URL(request.url);
+    const subcategoryId = searchParams.get('subcategoryId');
 
-    // We only want active attributes to appear in Product Create/Edit
-    const activeAttributes = mappedAttributes
-      .map(m => m.attribute)
-      .filter(attr => attr.status === 'Active');
+    const attributes = await ProductAttributeService.getAttributesForCategory(categoryId, subcategoryId);
 
-    return NextResponse.json(activeAttributes);
+    return NextResponse.json(attributes);
   } catch (error: any) {
     console.error(`[API] GET /api/staff/catalog/categories/${categoryId}/attributes error:`, error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

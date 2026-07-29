@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { createProductWithDefaultVariant } from '@/lib/product-service';
+import { ProductAttributeService } from '@/lib/services/ProductAttributeService';
+import { ProductAttributeValidationService } from '@/lib/services/ProductAttributeValidationService';
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -225,6 +227,37 @@ export async function POST(request: Request) {
       });
       if (existing) {
         return NextResponse.json({ error: `Product with code "${code.trim().toUpperCase()}" already exists` }, { status: 400 });
+      }
+    }
+
+    // --- Dynamic Attribute Validation ---
+    if (productAttributes && productAttributes.length > 0) {
+      const activeAttributes = await ProductAttributeService.getAttributesForCategory(categoryId);
+      
+      for (const pa of productAttributes) {
+        const attrConfig = activeAttributes.find(a => a.id === pa.attributeId);
+        if (!attrConfig) {
+          return NextResponse.json({ error: `Invalid or inactive attribute ID: ${pa.attributeId}` }, { status: 400 });
+        }
+        const errorMsg = ProductAttributeValidationService.validateAttributeValue(pa.value, attrConfig);
+        if (errorMsg) {
+          return NextResponse.json({ error: `${attrConfig.attributeName}: ${errorMsg}` }, { status: 400 });
+        }
+      }
+
+      // Check for missing mandatory attributes
+      const missingMandatory = activeAttributes.find(attr => 
+        attr.mandatory && !productAttributes.find((pa: any) => pa.attributeId === attr.id)?.value
+      );
+      if (missingMandatory) {
+        return NextResponse.json({ error: `Attribute "${missingMandatory.attributeName}" is required.` }, { status: 400 });
+      }
+    } else {
+      // Check if there are mandatory attributes but none were provided
+      const activeAttributes = await ProductAttributeService.getAttributesForCategory(categoryId);
+      const missingMandatory = activeAttributes.find(attr => attr.mandatory);
+      if (missingMandatory) {
+        return NextResponse.json({ error: `Attribute "${missingMandatory.attributeName}" is required.` }, { status: 400 });
       }
     }
 

@@ -34,6 +34,7 @@ export interface CreateProductParams {
   trackSerials?: boolean;
   
   userId: string;
+  parentProductId?: string;
 }
 
 export async function createProductWithDefaultVariant(params: CreateProductParams) {
@@ -62,6 +63,8 @@ export async function createProductWithDefaultVariant(params: CreateProductParam
         approvedAt: params.status === 'Active' ? new Date() : undefined,
         incentiveTag: params.incentiveTag,
         thumbnailBase64: params.thumbnailBase64,
+        parentProductId: params.parentProductId,
+        catalogType: 'PRODUCT',
         variants: {
           create: {
             variantName: 'Default',
@@ -103,5 +106,77 @@ export async function createProductWithDefaultVariant(params: CreateProductParam
     });
 
     return product;
+  });
+}
+
+export interface CreateVariantFamilyParams extends CreateProductParams {
+  variantAttributeId?: string; // Legacy, kept for schema compatibility if needed
+  trackInventory?: boolean;
+  trackSerials?: boolean;
+  variantChildren: {
+    variantName: string;
+    sku: string;
+    purchasePrice: number;
+    sellingPrice: number;
+    attributes?: { attributeId: string; value: string }[];
+  }[];
+}
+
+export async function createVariantProductFamily(params: CreateVariantFamilyParams) {
+  const finalCode = params.code || await getNextProductCode();
+  const finalStatus = params.status || 'Draft';
+
+  return await prisma.$transaction(async (tx) => {
+    // 1. Create the Family Product (isVariantProduct = false)
+    const family = await tx.product.create({
+      data: {
+        name: params.name,
+        code: finalCode,
+        description: params.description,
+        type: params.type || 'Goods',
+        brandId: params.brandId,
+        manufacturerId: params.manufacturerId,
+        categoryId: params.categoryId,
+        hsnCodeId: params.hsnCodeId,
+        taxRateId: params.taxRateId,
+        unitId: params.unitId,
+        remarks: params.remarks,
+        status: finalStatus,
+        createdById: params.userId,
+        updatedById: params.userId,
+        approvedById: params.status === 'Active' ? params.userId : undefined,
+        approvedAt: params.status === 'Active' ? new Date() : undefined,
+        incentiveTag: params.incentiveTag,
+        thumbnailBase64: params.thumbnailBase64,
+        catalogType: 'PRODUCT_FAMILY',
+        isVariantProduct: false,
+        variantAttributeId: params.variantAttributeId,
+      }
+    });
+
+
+
+    // 3. Audit Log
+    await tx.masterDataHistory.create({
+      data: {
+        entityType: 'Product',
+        entityId: family.id,
+        action: finalStatus === 'Approval Pending' ? 'SUBMITTED' : 'CREATED',
+        newValue: JSON.stringify({ name: family.name, code: family.code, status: family.status, variantsCount: params.variantChildren.length }),
+        remarks: params.remarks || 'Initial Family creation',
+        performedById: params.userId,
+        productId: family.id,
+      }
+    });
+
+    return await tx.product.findUnique({
+      where: { id: family.id },
+      include: {
+        variantProducts: {
+          include: { variants: true }
+        },
+        attributeValues: true
+      }
+    });
   });
 }

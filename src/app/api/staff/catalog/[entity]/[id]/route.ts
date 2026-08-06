@@ -248,7 +248,25 @@ export async function DELETE(
       return NextResponse.json({ error: 'Record not found' }, { status: 404 });
     }
 
-    if (existing.status === 'Draft' || existing.status === 'Approval Pending') {
+    if (existing.status === 'Draft') {
+      // If it's a product family, variants will be deleted automatically if CASCADE is setup
+      // or we can handle it.
+      await delegate.delete({ where: { id } });
+      
+      await createMasterAuditLog({
+        entityType: meta.modelName,
+        entityId: id,
+        action: 'DELETED',
+        previousValue: existing.status,
+        newValue: 'Deleted',
+        remarks: 'Draft record deleted',
+        userId: session.userId,
+      });
+      
+      return NextResponse.json({ success: true, status: 'Deleted' });
+    }
+
+    if (existing.status === 'Approval Pending') {
       return NextResponse.json({ error: `Cannot archive a record in ${existing.status} status` }, { status: 400 });
     }
 

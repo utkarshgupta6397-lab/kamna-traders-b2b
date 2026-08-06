@@ -81,22 +81,16 @@ export default function ProductAttributesPage() {
   const toggleStatus = async (id: string, currentStatus: string) => {
     try {
       const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
-      const recordToUpdate = records.find(r => r.id === id);
-      if (!recordToUpdate) return;
-      
-      const payload = {
-        ...recordToUpdate,
-        status: newStatus,
-        categories: (recordToUpdate.categories || []).map((c: any) => c.categoryId)
-      };
-
-      const res = await fetch(`/api/staff/catalog/product-attributes/${id}`, {
-        method: 'PUT',
+      const res = await fetch(`/api/staff/catalog/product-attributes/${id}/status`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ status: newStatus })
       });
       
-      if (!res.ok) throw new Error('Failed to update status');
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to update status');
+      }
       toast.success(`Attribute marked ${newStatus}`);
       fetchRecords(true);
     } catch (e: any) {
@@ -303,13 +297,13 @@ export default function ProductAttributesPage() {
                                 <Edit2 size={14} />
                               </button>
                             )}
-                            {canArchive && (
+                            {canModify && (
                               <button 
                                 onClick={(e) => { e.stopPropagation(); toggleStatus(record.id, record.status); }}
                                 className={`w-8 h-8 flex items-center justify-center rounded border transition-colors ${record.status === 'Active' ? 'border-red-200 text-red-600 bg-red-50 hover:bg-red-100' : 'border-green-200 text-green-600 bg-green-50 hover:bg-green-100'}`}
-                                title={record.status === 'Active' ? 'Mark Inactive' : 'Mark Active'}
+                                title={record.status === 'Active' ? 'Mark Inactive' : 'Activate'}
                               >
-                                {record.status === 'Active' ? <Archive size={14} /> : <RotateCcw size={14} />}
+                                {record.status === 'Active' ? <Archive size={14} /> : <CheckCircle2 size={14} />}
                               </button>
                             )}
                           </div>

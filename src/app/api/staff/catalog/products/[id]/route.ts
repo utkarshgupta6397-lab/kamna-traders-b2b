@@ -25,7 +25,7 @@ export async function GET(
         category: { select: { id: true, name: true } },
         hsnCode: { select: { id: true, code: true, name: true } },
         taxRate: { select: { id: true, name: true, percentage: true } },
-        unit: { select: { id: true, abbreviation: true } },
+        unit: { select: { id: true, abbreviation: true, name: true } },
         createdBy: { select: { id: true, name: true } },
         updatedBy: { select: { id: true, name: true } },
         approvedBy: { select: { id: true, name: true } },
@@ -33,6 +33,15 @@ export async function GET(
         attributeValues: {
           include: { attribute: true }
         },
+        variantProducts: {
+          include: { 
+            variants: true,
+            attributeValues: {
+              include: { attribute: true }
+            }
+          }
+        },
+        parentProduct: true,
         history: {
           orderBy: { performedAt: 'desc' },
           include: { performedBy: { select: { id: true, name: true } } },
@@ -194,7 +203,7 @@ export async function PUT(
 
     const existingProduct = await prisma.product.findUnique({
       where: { id },
-      include: { variants: true }
+      include: { variants: true, variantProducts: true }
     });
 
     if (!existingProduct) {
@@ -223,70 +232,88 @@ export async function PUT(
     }
 
     // --- Dynamic Attribute Validation ---
-    if (productAttributes && productAttributes.length > 0) {
-      const activeAttributes = await ProductAttributeService.getAttributesForCategory(categoryId || existingProduct.categoryId);
-      
-      for (const pa of productAttributes) {
-        const attrConfig = activeAttributes.find(a => a.id === pa.attributeId);
-        if (!attrConfig) {
-          return NextResponse.json({ error: `Invalid or inactive attribute ID: ${pa.attributeId}` }, { status: 400 });
+    if (existingProduct.catalogType !== 'PRODUCT_FAMILY') {
+      if (productAttributes && productAttributes.length > 0) {
+        const activeAttributes = await ProductAttributeService.getAttributesForCategory(categoryId || existingProduct.categoryId);
+        
+        for (const pa of productAttributes) {
+          const attrConfig = activeAttributes.find(a => a.id === pa.attributeId);
+          if (!attrConfig) {
+            return NextResponse.json({ error: `Invalid or inactive attribute ID: ${pa.attributeId}` }, { status: 400 });
+          }
+          const errorMsg = ProductAttributeValidationService.validateAttributeValue(pa.value, attrConfig);
+          if (errorMsg) {
+            return NextResponse.json({ error: `${attrConfig.attributeName}: ${errorMsg}` }, { status: 400 });
+          }
         }
-        const errorMsg = ProductAttributeValidationService.validateAttributeValue(pa.value, attrConfig);
-        if (errorMsg) {
-          return NextResponse.json({ error: `${attrConfig.attributeName}: ${errorMsg}` }, { status: 400 });
-        }
-      }
 
-      // Check for missing mandatory attributes
-      const missingMandatory = activeAttributes.find(attr => 
-        attr.mandatory && !productAttributes.find((pa: any) => pa.attributeId === attr.id)?.value
-      );
-      if (missingMandatory) {
-        return NextResponse.json({ error: `Attribute "${missingMandatory.attributeName}" is required.` }, { status: 400 });
-      }
-    } else {
-      // Check if there are mandatory attributes but none were provided
-      const activeAttributes = await ProductAttributeService.getAttributesForCategory(categoryId || existingProduct.categoryId);
-      const missingMandatory = activeAttributes.find(attr => attr.mandatory);
-      if (missingMandatory) {
-        return NextResponse.json({ error: `Attribute "${missingMandatory.attributeName}" is required.` }, { status: 400 });
+        // Check for missing mandatory attributes
+        const missingMandatory = activeAttributes.find(attr => 
+          attr.mandatory && !productAttributes.find((pa: any) => pa.attributeId === attr.id)?.value
+        );
+        if (missingMandatory) {
+          return NextResponse.json({ error: `Attribute "${missingMandatory.attributeName}" is required.` }, { status: 400 });
+        }
+      } else {
+        // Check if there are mandatory attributes but none were provided
+        const activeAttributes = await ProductAttributeService.getAttributesForCategory(categoryId || existingProduct.categoryId);
+        const missingMandatory = activeAttributes.find(attr => attr.mandatory);
+        if (missingMandatory) {
+          return NextResponse.json({ error: `Attribute "${missingMandatory.attributeName}" is required.` }, { status: 400 });
+        }
       }
     }
 
-    const updatedProduct = await prisma.product.update({
-      where: { id },
-      data: {
-        name, description, remarks, incentiveTag, thumbnailBase64,
-        brand: brandId ? { connect: { id: brandId } } : undefined,
-        manufacturer: manufacturerId ? { connect: { id: manufacturerId } } : undefined,
-        category: categoryId ? { connect: { id: categoryId } } : undefined,
-        hsnCode: hsnCodeId ? { connect: { id: hsnCodeId } } : undefined,
-        taxRate: taxRateId ? { connect: { id: taxRateId } } : undefined,
-        unit: unitId ? { connect: { id: unitId } } : undefined,
-        updatedBy: { connect: { id: session.userId } },
-        variants: {
-          update: {
-            where: { id: existingProduct.variants[0].id },
-            data: {
-              sku: code,
-              purchasePrice: parseFloat(purchasePrice),
-              sellingPrice: parseFloat(sellingPrice),
-              trackInventory,
-              trackSerials,
-            }
+    const updateData: any = {
+      name, description, remarks, incentiveTag, thumbnailBase64,
+      brand: brandId ? { connect: { id: brandId } } : undefined,
+      manufacturer: manufacturerId ? { connect: { id: manufacturerId } } : undefined,
+      category: categoryId ? { connect: { id: categoryId } } : undefined,
+      hsnCode: hsnCodeId ? { connect: { id: hsnCodeId } } : undefined,
+      taxRate: taxRateId ? { connect: { id: taxRateId } } : undefined,
+      unit: unitId ? { connect: { id: unitId } } : undefined,
+      updatedBy: { connect: { id: session.userId } },
+      ...(productAttributes ? {
+        attributeValues: {
+          deleteMany: {},
+          create: productAttributes.map((attr: any) => ({
+            attributeId: attr.attributeId,
+            value: attr.value
+          }))
+        }
+      } : {})
+    };
+
+    if (existingProduct.catalogType !== 'PRODUCT_FAMILY' && existingProduct.variants && existingProduct.variants.length > 0) {
+      updateData.variants = {
+        update: {
+          where: { id: existingProduct.variants[0].id },
+          data: {
+            sku: code,
+            purchasePrice: purchasePrice !== undefined ? parseFloat(purchasePrice) : undefined,
+            sellingPrice: sellingPrice !== undefined ? parseFloat(sellingPrice) : undefined,
+            trackInventory,
+            trackSerials,
           }
-        },
-        ...(productAttributes ? {
-          attributeValues: {
-            deleteMany: {},
-            create: productAttributes.map((attr: any) => ({
-              attributeId: attr.attributeId,
-              value: attr.value
-            }))
-          }
-        } : {})
-      }
-    });
+        }
+      };
+    }
+
+    const txOps = [prisma.product.update({ where: { id }, data: updateData })];
+
+    if (!existingProduct.isVariantProduct && existingProduct.variantProducts && existingProduct.variantProducts.length > 0) {
+      txOps.push(prisma.product.updateMany({
+        where: { parentProductId: id },
+        data: {
+          description, incentiveTag, thumbnailBase64,
+          brandId, manufacturerId, categoryId, hsnCodeId, taxRateId, unitId,
+          updatedById: session.userId
+        }
+      }) as any);
+    }
+
+    const txResults = await prisma.$transaction(txOps);
+    const updatedProduct = txResults[0];
 
     // Handle code separately as it requires sequence update logic if changed, but we assume code (SKU) might just be updated in DB safely since it's unique
     if (code !== existingProduct.code) {
@@ -295,18 +322,18 @@ export async function PUT(
 
     const existingForAudit = {
       ...existingProduct,
-      sku: existingProduct.variants[0]?.sku,
-      purchasePrice: existingProduct.variants[0]?.purchasePrice,
-      sellingPrice: existingProduct.variants[0]?.sellingPrice,
-      trackInventory: existingProduct.variants[0]?.trackInventory,
-      trackSerials: existingProduct.variants[0]?.trackSerials,
+      sku: existingProduct.variants?.[0]?.sku,
+      purchasePrice: existingProduct.variants?.[0]?.purchasePrice,
+      sellingPrice: existingProduct.variants?.[0]?.sellingPrice,
+      trackInventory: existingProduct.variants?.[0]?.trackInventory,
+      trackSerials: existingProduct.variants?.[0]?.trackSerials,
     };
 
     const newForAudit = {
       ...updatedProduct,
       sku: code,
-      purchasePrice: parseFloat(purchasePrice),
-      sellingPrice: parseFloat(sellingPrice),
+      purchasePrice: purchasePrice !== undefined ? parseFloat(purchasePrice) : undefined,
+      sellingPrice: sellingPrice !== undefined ? parseFloat(sellingPrice) : undefined,
       trackInventory,
       trackSerials,
     };

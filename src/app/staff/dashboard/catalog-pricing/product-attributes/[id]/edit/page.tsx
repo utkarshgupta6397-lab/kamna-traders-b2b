@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Save, Archive, Clock } from 'lucide-react';
+import { ArrowLeft, Save, Archive, Clock, Lock, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import MasterStatusBadge from '../../../_framework/MasterStatusBadge';
@@ -150,6 +150,7 @@ export default function EditProductAttributePage() {
   const isNumeric = formData.dataType === 'Number' || formData.dataType === 'Decimal';
   const isOptions = formData.dataType === 'Dropdown' || formData.dataType === 'Multi Select';
   const isArchived = record?.status === 'Archived';
+  const inUse = record?._count?.productValues > 0;
 
   return (
     <div className="flex flex-col min-h-full bg-[#F6F8FB] pb-20">
@@ -193,6 +194,16 @@ export default function EditProductAttributePage() {
 
       <div className="px-6 py-6 max-w-[1000px] mx-auto w-full grid grid-cols-3 gap-6">
         
+        {inUse && (
+          <div className="col-span-3 bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+            <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+            <div>
+              <h3 className="text-amber-800 font-semibold text-[14px]">Attribute is in use</h3>
+              <p className="text-amber-700 text-[13px] mt-1">This attribute is currently mapped to existing products. Structural properties like Data Type and existing Category mappings are locked to protect product data integrity.</p>
+            </div>
+          </div>
+        )}
+
         <div className="col-span-2 space-y-6">
           <div className="bg-white rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] border border-gray-200 p-6">
             <h2 className="text-[15px] font-semibold text-gray-900 mb-5">Basic Information</h2>
@@ -208,18 +219,20 @@ export default function EditProductAttributePage() {
                 />
               </div>
               <div>
-                <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Data Type</label>
+                <label className="flex items-center gap-1.5 text-[13px] font-medium text-gray-700 mb-1.5">
+                  Data Type {inUse && <Lock size={12} className="text-gray-400" />}
+                </label>
                 <select 
                   value={formData.dataType}
                   onChange={e => setFormData({...formData, dataType: e.target.value})}
-                  disabled={isArchived || record._count.productValues > 0} // Can't change type if in use
+                  disabled={isArchived || inUse}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[13px] focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all disabled:bg-gray-50 disabled:text-gray-500"
                 >
                   {['Text', 'Long Text', 'Number', 'Decimal', 'Dropdown', 'Multi Select', 'Boolean', 'Date'].map(t => (
                     <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
-                {record._count.productValues > 0 && <p className="text-[11px] text-amber-600 mt-1">Data type locked (in use)</p>}
+                {inUse && <p className="text-[11px] text-amber-600 mt-1">Data type locked (in use)</p>}
               </div>
               <div className="col-span-2">
                 <label className="block text-[13px] font-medium text-gray-700 mb-1.5">Description</label>
@@ -280,12 +293,17 @@ export default function EditProductAttributePage() {
                   )}
                   {formData.options.length > 0 && (
                     <div className="flex flex-wrap gap-2 p-3 border border-gray-100 rounded-lg bg-gray-50/50">
-                      {formData.options.map((opt, i) => (
-                        <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-gray-200 text-[12px] font-medium text-gray-700 shadow-sm">
-                          {opt}
-                          {!isArchived && <button onClick={() => removeOption(opt)} className="text-gray-400 hover:text-red-500 ml-1">&times;</button>}
-                        </span>
-                      ))}
+                      {formData.options.map((opt, i) => {
+                        const isOriginalOpt = record?.options?.includes(opt);
+                        const disableDelete = inUse && isOriginalOpt;
+                        return (
+                          <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-gray-200 text-[12px] font-medium text-gray-700 shadow-sm">
+                            {opt}
+                            {!isArchived && !disableDelete && <button onClick={() => removeOption(opt)} className="text-gray-400 hover:text-red-500 ml-1">&times;</button>}
+                            {!isArchived && disableDelete && <Lock size={10} className="text-gray-300 ml-1" title="Option locked (in use)" />}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -308,18 +326,26 @@ export default function EditProductAttributePage() {
             <h2 className="text-[15px] font-semibold text-gray-900 mb-5">Mapped Categories</h2>
             <div className="border border-gray-200 rounded-lg max-h-[300px] overflow-y-auto">
               <div className="divide-y divide-gray-100">
-                {categories.map(cat => (
-                  <label key={cat.id} className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer">
-                    <input 
-                      type="checkbox"
-                      checked={formData.categories.includes(cat.id)}
-                      onChange={() => toggleCategory(cat.id)}
-                      disabled={isArchived}
-                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
-                    />
-                    <span className="text-[13px] font-medium text-gray-700">{cat.name}</span>
-                  </label>
-                ))}
+                {categories.map(cat => {
+                  const isOriginalCategory = record?.categories?.some((c: any) => c.categoryId === cat.id);
+                  const disableUncheck = inUse && isOriginalCategory;
+                  return (
+                    <label key={cat.id} className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer">
+                      <input 
+                        type="checkbox"
+                        checked={formData.categories.includes(cat.id)}
+                        onChange={() => {
+                          if (formData.categories.includes(cat.id) && disableUncheck) return;
+                          toggleCategory(cat.id);
+                        }}
+                        disabled={isArchived || (formData.categories.includes(cat.id) && disableUncheck)}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                      />
+                      <span className="text-[13px] font-medium text-gray-700">{cat.name}</span>
+                      {disableUncheck && <Lock size={12} className="text-gray-400 ml-auto" title="Mapping locked (in use)" />}
+                    </label>
+                  );
+                })}
               </div>
             </div>
           </div>

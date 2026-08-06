@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Search, ChevronDown, ChevronUp, ExternalLink, Copy, AlertCircle, RefreshCw, X, Activity, ChevronRight } from 'lucide-react';
 import { CommunicationWidget } from '@/components/communications/CommunicationWidget';
+import { Select } from '@/components/ui/Select';
 
 const ZOHO_ORG_ID = process.env.NEXT_PUBLIC_ZOHO_ORG_ID || '';
 
@@ -589,19 +590,19 @@ export default function CustomerLookupClient() {
             {/* Status Filter Dropdown */}
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">Status Filter:</span>
-              <select
+              <Select
                 value={statusFilter}
-                onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-                className="w-full sm:w-48 bg-gray-50 border border-gray-300 rounded px-2.5 py-1.5 text-xs font-medium focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]"
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="UNPROCESSED">UNPROCESSED</option>
-                <option value="PENDING_SERIALS">PENDING SERIALS</option>
-                <option value="HOLD">HOLD</option>
-                <option value="READY_TO_ISSUE">READY TO ISSUE</option>
-                <option value="ISSUED">ISSUED</option>
-                <option value="PROCESSED_NO_DCR">PROCESSED_NO_DCR</option>
-              </select>
+                onChange={(val) => { setStatusFilter(val); setPage(1); }}
+                options={[
+                  { label: 'All Statuses', value: 'ALL' },
+                  { label: 'UNPROCESSED', value: 'UNPROCESSED' },
+                  { label: 'PENDING SERIALS', value: 'PENDING_SERIALS' },
+                  { label: 'HOLD', value: 'HOLD' },
+                  { label: 'READY TO ISSUE', value: 'READY_TO_ISSUE' },
+                  { label: 'ISSUED', value: 'ISSUED' },
+                  { label: 'PROCESSED_NO_DCR', value: 'PROCESSED_NO_DCR' },
+                ]}
+              />
             </div>
           </div>
 

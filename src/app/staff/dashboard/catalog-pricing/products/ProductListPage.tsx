@@ -1,8 +1,8 @@
 'use client';
-
+import { resolveProductImage } from '@/lib/utils';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, Search, Filter, Settings2, Download, PackageOpen, Package, Box, Tag, Layers, CheckCircle2, AlertCircle, RefreshCw, X, SortAsc, SortDesc, Copy } from 'lucide-react';
+import { Plus, Search, Filter, Settings2, Download, PackageOpen, Package, Box, Boxes, Tag, Layers, CheckCircle2, AlertCircle, RefreshCw, X, SortAsc, SortDesc, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 import MasterStatusBadge from '../_framework/MasterStatusBadge';
 
@@ -265,6 +265,8 @@ export default function ProductListPage() {
                   records.map((product, index) => {
                     const variant = product.variants?.[0] || {};
                     const isGoods = product.type === 'Goods';
+                    const isFamily = product.catalogType === 'PRODUCT_FAMILY';
+                    const isVariant = !!product.parentProductId;
                     const rowIndex = (page - 1) * limit + index + 1;
                     
                     const dateObj = new Date(product.updatedAt);
@@ -272,6 +274,18 @@ export default function ProductListPage() {
                     const timeStr = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
                     const canEdit = permissions?.role === 'ADMIN' || permissions?.catalog_products_modify;
+                    
+                    let priceDisplay = '-';
+                    if (product.variantProducts && product.variantProducts.length > 0) {
+                      const prices = product.variantProducts.map((vp: any) => vp.variants?.[0]?.sellingPrice || 0).filter((p: number) => p > 0);
+                      if (prices.length > 0) {
+                        const min = Math.min(...prices);
+                        const max = Math.max(...prices);
+                        priceDisplay = min === max ? formatCurrency(min) : `${formatCurrency(min)} - ${formatCurrency(max)}`;
+                      }
+                    } else if (variant.sellingPrice) {
+                      priceDisplay = formatCurrency(variant.sellingPrice);
+                    }
 
                     return (
                       <tr 
@@ -282,21 +296,45 @@ export default function ProductListPage() {
                         <td className="px-4 py-2.5 text-center text-gray-500 text-[12px]">{rowIndex}</td>
                         <td className="px-4 py-2.5">
                           <div className="w-10 h-10 rounded-lg border bg-gray-50 flex items-center justify-center shrink-0 overflow-hidden">
-                            {product.thumbnailBase64 ? (
-                              <img src={product.thumbnailBase64} alt="" className="w-full h-full object-cover" loading="lazy" />
+                            {resolveProductImage(product) ? (
+                              <img src={resolveProductImage(product) as string} alt="" className="w-full h-full object-cover" loading="lazy" />
                             ) : (
                               <Package size={16} className="text-gray-300" />
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-2.5 font-mono text-[13px] font-medium text-gray-700">{product.code}</td>
+                        <td className="px-4 py-2.5">
+                          <div className="font-mono text-[13px] font-medium text-gray-700">{product.code}</div>
+                          {isFamily && (
+                            <div 
+                              className="mt-1 flex items-center gap-1.5 text-indigo-600 w-fit cursor-help" 
+                              title="Product Family - This is a parent catalog entry. Products are created inside this family after approval."
+                            >
+                              <Boxes size={14} className="shrink-0" />
+                              <span className="inline-flex items-center px-1.5 py-[2px] rounded text-[10px] font-medium bg-indigo-50 border border-indigo-200 uppercase tracking-wide">
+                                Family
+                              </span>
+                            </div>
+                          )}
+                        </td>
                         <td className="px-4 py-2.5 max-w-[300px]">
                           <div className="font-semibold text-gray-900 truncate" title={product.name}>{product.name}</div>
                           <div className="mt-0.5 flex items-center gap-2">
                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${isGoods ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-purple-50 text-purple-600 border border-purple-100'}`}>
                               {product.type}
                             </span>
+                            {product.variantProducts && product.variantProducts.length > 0 && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                {product.variantProducts.length} Variants
+                              </span>
+                            )}
                           </div>
+                          {isVariant && product.parentProduct && (
+                            <div className="mt-1 flex items-center gap-1 text-[11px] text-indigo-600 cursor-pointer" onClick={(e) => { e.stopPropagation(); router.push(`/staff/dashboard/catalog-pricing/products/${product.parentProductId}`); }}>
+                              <Boxes size={12} className="shrink-0 opacity-70" />
+                              <span className="hover:underline truncate" title={product.parentProduct.name}>Variant of {product.parentProduct.name}</span>
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-2.5 text-[13px] max-w-[160px] truncate">
                           <div className="text-gray-900 truncate" title={product.brand?.name}>{product.brand?.name || '-'}</div>
@@ -310,7 +348,7 @@ export default function ProductListPage() {
                           <div className="text-gray-500 text-[12px]">{product.taxRate?.percentage}% GST</div>
                         </td>
                         <td className="px-4 py-2.5 font-mono font-medium text-gray-900">
-                          {variant.sellingPrice ? formatCurrency(variant.sellingPrice) : '-'}
+                          {priceDisplay}
                         </td>
                         <td className="px-4 py-2.5 text-center">
                           <div className="flex items-center justify-center gap-2">

@@ -433,6 +433,12 @@ model Product {
   incentiveTag    String?
   thumbnailBase64 String?   @db.Text
 
+  catalogType           String   @default("PRODUCT") // PRODUCT or PRODUCT_FAMILY
+  isVariantProduct      Boolean  @default(false)
+  parentProductId       String?
+  variantAttributeId    String?
+  variantAttributeValue String?
+
   variants        ProductVariant[]
   brand           Brand?                  @relation(fields: [brandId], references: [id])
   manufacturer    Manufacturer?           @relation(fields: [manufacturerId], references: [id])
@@ -445,6 +451,10 @@ model Product {
   approvedBy      User?                   @relation("ProductApprovedBy", fields: [approvedById], references: [id])
   history         MasterDataHistory[]     @relation("ProductHistory")
   attributeValues ProductAttributeValue[]
+
+  parentProduct         Product?  @relation("ProductFamily", fields: [parentProductId], references: [id])
+  variantProducts       Product[] @relation("ProductFamily")
+  variantAttribute      ProductAttribute? @relation("ProductVariantAttribute", fields: [variantAttributeId], references: [id])
 
   @@index([status])
   @@index([brandId])
@@ -1607,6 +1617,7 @@ model ProductAttribute {
   categories    ProductAttributeCategory[]
   productValues ProductAttributeValue[]
   history       MasterDataHistory[]        @relation("ProductAttributeHistory")
+  variantProducts Product[] @relation("ProductVariantAttribute")
 
   @@index([status])
   @@index([dataType])

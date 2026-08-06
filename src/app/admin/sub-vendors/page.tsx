@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Trash2, Save, ArrowUpDown, Loader2, Search, Edit2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { Select } from '@/components/ui/Select';
 
 interface SubVendor {
   id: string;
@@ -260,14 +261,14 @@ export default function SubVendorSettingsPage() {
                     </div>
                     <div className="w-48 p-3">
                       {isEditing ? (
-                        <select 
+                        <Select 
                           value={String(currentEdit.active)} 
-                          onChange={e => handleRowChange(v.id, 'active', e.target.value === 'true')}
-                          className="w-full border rounded px-2 py-1.5 text-xs bg-white"
-                        >
-                          <option value="true">Active</option>
-                          <option value="false">Inactive</option>
-                        </select>
+                          onChange={(val: string) => handleRowChange(v.id, 'active', val === 'true')}
+                          options={[
+                            { label: 'Active', value: 'true' },
+                            { label: 'Inactive', value: 'false' }
+                          ]}
+                        />
                       ) : (
                         <span className={`text-xs font-semibold px-2 py-1 rounded-full ${v.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                           {v.active ? 'Active' : 'Inactive'}

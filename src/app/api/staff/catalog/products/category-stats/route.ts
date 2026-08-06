@@ -18,7 +18,9 @@ export async function GET(request: Request) {
     const trackInventory = searchParams.get('trackInventory');
     const trackSerials = searchParams.get('trackSerials');
 
-    const where: any = {};
+    const where: any = {
+      parentProductId: null
+    };
 
     if (status !== 'ALL') where.status = status;
     if (type && type !== 'ALL') where.type = type;

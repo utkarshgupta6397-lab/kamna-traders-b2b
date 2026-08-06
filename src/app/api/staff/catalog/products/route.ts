@@ -81,6 +81,8 @@ export async function GET(request: Request) {
               { category: { name: { contains: token, mode: 'insensitive' } } },
               { hsnCode: { code: { contains: token, mode: 'insensitive' } } },
               { variants: { some: { sku: { contains: token, mode: 'insensitive' } } } },
+              { variantProducts: { some: { variants: { some: { sku: { contains: token, mode: 'insensitive' } } } } } },
+              { variantProducts: { some: { name: { contains: token, mode: 'insensitive' } } } },
             ]
           };
         });
@@ -128,6 +130,14 @@ export async function GET(request: Request) {
           createdBy: { select: { id: true, name: true } },
           updatedBy: { select: { id: true, name: true } },
           variants: true,
+          variantAttribute: true,
+          variantProducts: {
+            include: {
+              variants: true,
+            },
+            orderBy: { createdAt: 'asc' }
+          },
+          parentProduct: { select: { id: true, name: true, code: true, thumbnailBase64: true } },
         },
       });
 
@@ -150,6 +160,14 @@ export async function GET(request: Request) {
           createdBy: { select: { id: true, name: true } },
           updatedBy: { select: { id: true, name: true } },
           variants: true,
+          variantAttribute: true,
+          variantProducts: {
+            include: {
+              variants: true,
+            },
+            orderBy: { createdAt: 'asc' }
+          },
+          parentProduct: { select: { id: true, name: true, code: true, thumbnailBase64: true } },
         },
       });
     }
@@ -188,7 +206,8 @@ export async function POST(request: Request) {
     const { 
       name, code, description, type, remarks, submitForApproval,
       brandId, manufacturerId, categoryId, hsnCodeId, taxRateId, unitId,
-      purchasePrice, sellingPrice, trackInventory, trackSerials, incentiveTag, thumbnailBase64, productAttributes
+      purchasePrice, sellingPrice, trackInventory, trackSerials, incentiveTag, thumbnailBase64, productAttributes,
+      productType, variantChildren, variantAttributeId, parentProductId
     } = body;
 
     if (!name || !name.trim()) {
@@ -207,19 +226,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'SKU must be 4-20 uppercase alphanumeric characters without spaces or symbols.' }, { status: 400 });
     }
 
-    if (!brandId) return NextResponse.json({ error: 'Brand is required' }, { status: 400 });
-    if (!manufacturerId) return NextResponse.json({ error: 'Manufacturer is required' }, { status: 400 });
+    let resolvedBrandId = brandId;
+    let resolvedManufacturerId = manufacturerId;
+    let resolvedCategoryId = categoryId;
+    let resolvedHsnCodeId = hsnCodeId;
+    let resolvedTaxRateId = taxRateId;
+    let resolvedUnitId = unitId;
 
-    if (!hsnCodeId) return NextResponse.json({ error: 'HSN Code is required' }, { status: 400 });
-    if (!taxRateId) return NextResponse.json({ error: 'Tax Rate is required' }, { status: 400 });
-    if (!unitId) return NextResponse.json({ error: 'Unit of Measurement is required' }, { status: 400 });
-    if (!incentiveTag) return NextResponse.json({ error: 'Incentive Tag is required' }, { status: 400 });
+    if (parentProductId) {
+      const parent = await prisma.product.findUnique({ where: { id: parentProductId } });
+      if (!parent || parent.catalogType !== 'PRODUCT_FAMILY') {
+        return NextResponse.json({ error: 'Invalid parent product family' }, { status: 400 });
+      }
+      resolvedBrandId = parent.brandId;
+      resolvedManufacturerId = parent.manufacturerId;
+      resolvedCategoryId = parent.categoryId;
+      resolvedHsnCodeId = parent.hsnCodeId;
+      resolvedTaxRateId = parent.taxRateId;
+      resolvedUnitId = parent.unitId;
+    } else {
+      if (!resolvedBrandId) return NextResponse.json({ error: 'Brand is required' }, { status: 400 });
+      if (!resolvedManufacturerId) return NextResponse.json({ error: 'Manufacturer is required' }, { status: 400 });
+      if (!resolvedHsnCodeId) return NextResponse.json({ error: 'HSN Code is required' }, { status: 400 });
+      if (!resolvedTaxRateId) return NextResponse.json({ error: 'Tax Rate is required' }, { status: 400 });
+      if (!resolvedUnitId) return NextResponse.json({ error: 'Unit of Measurement is required' }, { status: 400 });
+    }
 
     const pPrice = parseFloat(purchasePrice) || 0;
     const sPrice = parseFloat(sellingPrice) || 0;
 
-    if (pPrice <= 0) return NextResponse.json({ error: 'Purchase Price must be greater than ₹0' }, { status: 400 });
-    if (sPrice <= pPrice) return NextResponse.json({ error: 'Selling Price must be greater than Purchase Price' }, { status: 400 });
+    if (productType !== 'variant') {
+      if (pPrice <= 0) return NextResponse.json({ error: 'Purchase Price must be greater than ₹0' }, { status: 400 });
+      if (sPrice <= pPrice) return NextResponse.json({ error: 'Selling Price must be greater than Purchase Price' }, { status: 400 });
+    }
     
     if (code && code.trim()) {
       const existing = await prisma.product.findUnique({
@@ -231,58 +270,81 @@ export async function POST(request: Request) {
     }
 
     // --- Dynamic Attribute Validation ---
-    if (productAttributes && productAttributes.length > 0) {
-      const activeAttributes = await ProductAttributeService.getAttributesForCategory(categoryId);
-      
-      for (const pa of productAttributes) {
-        const attrConfig = activeAttributes.find(a => a.id === pa.attributeId);
-        if (!attrConfig) {
-          return NextResponse.json({ error: `Invalid or inactive attribute ID: ${pa.attributeId}` }, { status: 400 });
-        }
-        const errorMsg = ProductAttributeValidationService.validateAttributeValue(pa.value, attrConfig);
-        if (errorMsg) {
-          return NextResponse.json({ error: `${attrConfig.attributeName}: ${errorMsg}` }, { status: 400 });
-        }
-      }
+    const activeAttributes = await ProductAttributeService.getAttributesForCategory(resolvedCategoryId);
 
-      // Check for missing mandatory attributes
-      const missingMandatory = activeAttributes.find(attr => 
-        attr.mandatory && !productAttributes.find((pa: any) => pa.attributeId === attr.id)?.value
-      );
-      if (missingMandatory) {
-        return NextResponse.json({ error: `Attribute "${missingMandatory.attributeName}" is required.` }, { status: 400 });
+    if (productType === 'single') {
+      if (productAttributes && productAttributes.length > 0) {
+        for (const pa of productAttributes) {
+          const attrConfig = activeAttributes.find(a => a.id === pa.attributeId);
+          if (!attrConfig) {
+            return NextResponse.json({ error: `Invalid or inactive attribute ID: ${pa.attributeId}` }, { status: 400 });
+          }
+          const errorMsg = ProductAttributeValidationService.validateAttributeValue(pa.value, attrConfig);
+          if (errorMsg) {
+            return NextResponse.json({ error: `${attrConfig.attributeName}: ${errorMsg}` }, { status: 400 });
+          }
+        }
       }
-    } else {
-      // Check if there are mandatory attributes but none were provided
-      const activeAttributes = await ProductAttributeService.getAttributesForCategory(categoryId);
-      const missingMandatory = activeAttributes.find(attr => attr.mandatory);
+      
+      const missingMandatory = activeAttributes.find(attr => 
+        attr.mandatory && (!productAttributes || !productAttributes.find((pa: any) => pa.attributeId === attr.id)?.value)
+      );
       if (missingMandatory) {
         return NextResponse.json({ error: `Attribute "${missingMandatory.attributeName}" is required.` }, { status: 400 });
       }
     }
 
-    const newProduct = await createProductWithDefaultVariant({
-      name: name.trim(),
-      code: code ? code.trim().toUpperCase() : undefined,
-      description: description ? description.trim() : undefined,
-      type,
-      brandId,
-      manufacturerId,
-      categoryId,
-      hsnCodeId,
-      taxRateId,
-      unitId,
-      remarks: remarks ? remarks.trim() : undefined,
-      status: submitForApproval ? 'Approval Pending' : 'Draft',
-      purchasePrice: pPrice,
-      sellingPrice: sPrice,
-      trackInventory: trackInventory !== false,
-      trackSerials: trackSerials === true,
-      incentiveTag,
-      thumbnailBase64,
-      productAttributes,
-      userId: session.userId,
-    });
+    let newProduct;
+    if (productType === 'variant') {
+      const { createVariantProductFamily } = await import('@/lib/product-service');
+      
+      newProduct = await createVariantProductFamily({
+        name: name.trim(),
+        code: code ? code.trim().toUpperCase() : undefined,
+        description: description ? description.trim() : undefined,
+        type,
+        brandId: resolvedBrandId,
+        manufacturerId: resolvedManufacturerId,
+        categoryId: resolvedCategoryId,
+        hsnCodeId: resolvedHsnCodeId,
+        taxRateId: resolvedTaxRateId,
+        unitId: resolvedUnitId,
+        remarks: remarks ? remarks.trim() : undefined,
+        status: submitForApproval ? 'Approval Pending' : 'Draft',
+        purchasePrice: pPrice,
+        sellingPrice: sPrice,
+        trackInventory: trackInventory !== false,
+        trackSerials: trackSerials === true,
+        incentiveTag,
+        thumbnailBase64,
+        userId: session.userId,
+        variantChildren
+      });
+    } else {
+      newProduct = await createProductWithDefaultVariant({
+        name: name.trim(),
+        code: code ? code.trim().toUpperCase() : undefined,
+        description: description ? description.trim() : undefined,
+        type,
+        brandId: resolvedBrandId,
+        manufacturerId: resolvedManufacturerId,
+        categoryId: resolvedCategoryId,
+        hsnCodeId: resolvedHsnCodeId,
+        taxRateId: resolvedTaxRateId,
+        unitId: resolvedUnitId,
+        remarks: remarks ? remarks.trim() : undefined,
+        status: submitForApproval ? 'Approval Pending' : 'Draft',
+        purchasePrice: pPrice,
+        sellingPrice: sPrice,
+        trackInventory: trackInventory !== false,
+        trackSerials: trackSerials === true,
+        incentiveTag,
+        thumbnailBase64,
+        productAttributes,
+        userId: session.userId,
+        parentProductId,
+      });
+    }
 
     return NextResponse.json(newProduct, { status: 201 });
   } catch (error: any) {

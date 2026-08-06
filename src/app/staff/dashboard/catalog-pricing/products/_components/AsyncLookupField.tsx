@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ChevronsUpDown, Loader2, X, AlertCircle, RefreshCw } from 'lucide-react';
 
 interface Option {
@@ -51,6 +52,10 @@ export default function AsyncLookupField({
   const [error, setError] = useState(false);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
 
   // ─── Default label logic ───────────────────────────────────────────────────
   const defaultDisplayValue = (opt: Option): string => {
@@ -98,10 +103,11 @@ export default function AsyncLookupField({
         setOptions(records);
         globalLookupCache.set(cacheKey, { data: records, timestamp: Date.now() });
       } else {
-        throw new Error('API Error');
+        const errorText = await res.text().catch(() => '');
+        throw new Error(`API Error: ${res.status} ${res.statusText} - ${errorText}`);
       }
     } catch (e) {
-      console.error('AsyncLookupField: failed to load options', e);
+      console.error('AsyncLookupField: failed to load options from', cacheKey, e);
       setError(true);
     } finally {
       setLoading(false);
@@ -112,6 +118,40 @@ export default function AsyncLookupField({
   useEffect(() => {
     loadOptions('');
   }, [loadOptions]);
+
+  // ─── Dropdown Positioning ─────────────────────────────────────────────────
+  useEffect(() => {
+    const updatePosition = () => {
+      if (open && triggerRef.current) {
+        const rect = triggerRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        const dropdownHeight = 250; 
+
+        const renderAbove = spaceBelow < dropdownHeight && spaceAbove > spaceBelow;
+
+        setDropdownStyle({
+          position: 'fixed',
+          top: renderAbove ? 'auto' : `${rect.bottom + 4}px`,
+          bottom: renderAbove ? `${window.innerHeight - rect.top + 4}px` : 'auto',
+          left: `${rect.left}px`,
+          width: `${rect.width}px`,
+          zIndex: 9999,
+          maxHeight: `${dropdownHeight}px`
+        });
+      }
+    };
+
+    if (open) {
+      updatePosition();
+      window.addEventListener('scroll', updatePosition, true);
+      window.addEventListener('resize', updatePosition);
+      return () => {
+        window.removeEventListener('scroll', updatePosition, true);
+        window.removeEventListener('resize', updatePosition);
+      };
+    }
+  }, [open]);
 
   // ─── Handle Search ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -159,6 +199,7 @@ export default function AsyncLookupField({
       </label>
 
       <div
+        ref={triggerRef}
         className={`relative w-full flex items-center border rounded-lg transition-all duration-200
           ${open 
             ? 'border-blue-500 ring-[3px] ring-blue-500/10 bg-white shadow-sm' 
@@ -208,12 +249,16 @@ export default function AsyncLookupField({
         )}
       </div>
 
-      {open && !disabled && !error && (
+      {open && !disabled && !error && typeof document !== 'undefined' && createPortal(
         <>
-          <div className="fixed inset-0 z-40" onClick={() => { setOpen(false); setSearch(''); }} />
-          <div className="absolute z-50 mt-1 w-full bg-white shadow-xl max-h-64 rounded-xl border border-gray-100 overflow-hidden">
+          <div className="fixed inset-0 z-[9998]" onClick={() => { setOpen(false); setSearch(''); }} />
+          <div 
+            ref={dropdownRef}
+            style={dropdownStyle}
+            className="z-[9999] bg-white shadow-xl rounded-xl border border-gray-100 overflow-hidden flex flex-col"
+          >
             {/* Search bar */}
-            <div className="p-2 border-b border-gray-100">
+            <div className="p-2 border-b border-gray-100 shrink-0">
               <input
                 type="text"
                 autoFocus
@@ -226,7 +271,7 @@ export default function AsyncLookupField({
             </div>
 
             {/* Options list */}
-            <div className="overflow-auto max-h-48">
+            <div className="overflow-auto flex-1">
               {loading && search ? (
                 <div className="px-4 py-3 text-sm text-gray-500 flex items-center justify-center gap-2">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" /> Searching...
@@ -268,7 +313,8 @@ export default function AsyncLookupField({
               )}
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );

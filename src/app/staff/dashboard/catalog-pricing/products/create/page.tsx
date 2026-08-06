@@ -22,14 +22,24 @@ import {
   Loader2,
   BarChart2,
   Check,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Files,
+  X
 } from 'lucide-react';
+import { Select } from '@/components/ui/Select';
 
-const STEPS: Step[] = [
+const SINGLE_STEPS: Step[] = [
   { id: 'type',      title: 'Product Type' },
   { id: 'details',   title: 'Product Details' },
   { id: 'pricing',   title: 'Tax & Pricing' },
   { id: 'inventory', title: 'Inventory & Review' },
+];
+
+const VARIANT_STEPS: Step[] = [
+  { id: 'type',      title: 'Product Type' },
+  { id: 'details',   title: 'Product Details' },
+  { id: 'tax',       title: 'Tax & Unit' },
+  { id: 'review',    title: 'Review & Submit' },
 ];
 
 // ─── Label helpers ────────────────────────────────────────────────────────────
@@ -59,6 +69,7 @@ export default function CreateProductPage() {
   const [isSaving, setIsSaving]             = useState(false);
   const [isGeneratingSku, setIsGeneratingSku] = useState(false);
   const [productType, setProductType]       = useState<'single' | 'variant'>('single');
+  const activeSteps = productType === 'single' ? SINGLE_STEPS : VARIANT_STEPS;
 
   const [showErrors, setShowErrors] = useState(false);
   const [formData, setFormData] = useState({
@@ -78,11 +89,18 @@ export default function CreateProductPage() {
     trackInventory: true,
     trackSerials:   false,
     incentiveTag:   '',
+    isVariantProduct: false,
+    parentProductId: null as string | null,
     thumbnailBase64: '',
     productAttributes: [] as { attributeId: string; value: string }[],
+    variantAttributeId: '',
+    variantChildren: [] as any[],
   });
 
   const [dynamicAttributes, setDynamicAttributes] = useState<any[]>([]);
+  
+  const [showLockWarning, setShowLockWarning] = useState(false);
+  const [pendingSaveAction, setPendingSaveAction] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (editId) {
@@ -92,6 +110,8 @@ export default function CreateProductPage() {
         .then(res => res.json())
         .then(data => {
           const variant = data.variants?.[0] || {};
+          const isFamily = data.variantProducts && data.variantProducts.length > 0;
+          setProductType(isFamily ? 'variant' : 'single');
           setFormData({
             type: data.type || 'Goods',
             name: data.name || '',
@@ -111,11 +131,14 @@ export default function CreateProductPage() {
             incentiveTag: data.incentiveTag || '',
             thumbnailBase64: data.thumbnailBase64 || '',
             productAttributes: data.attributeValues || [],
+            variantAttributeId: data.variantAttributeId || '',
+            variantChildren: data.variantProducts || [],
+            isVariantProduct: data.isVariantProduct || false,
+            parentProductId: data.parentProductId || null,
           });
         })
         .finally(() => {
           setIsInitializing(false);
-          // currentStep stays 0, but effectiveStep will be 1
         });
     }
   }, [editId]);
@@ -143,13 +166,24 @@ export default function CreateProductPage() {
   }, [formData.categoryId]);
 
   // ─── Generate SKU ────────────────────────────────────────────────────────
-  const handleGenerateSku = async () => {
+  const handleGenerateSku = async (index?: number) => {
     setIsGeneratingSku(true);
     try {
       const res  = await fetch('/api/staff/catalog/products/generate-sku');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to generate SKU');
-      updateForm('code', data.sku);
+      
+      if (typeof index === 'number') {
+        setFormData(prev => {
+           const newChildren = [...prev.variantChildren];
+           if (newChildren[index]) {
+             newChildren[index] = { ...newChildren[index], sku: data.sku };
+           }
+           return { ...prev, variantChildren: newChildren };
+        });
+      } else {
+        updateForm('code', data.sku);
+      }
       toast.success(`SKU generated: ${data.sku}`);
     } catch (e: any) {
       toast.error(e.message);
@@ -158,12 +192,79 @@ export default function CreateProductPage() {
     }
   };
 
+  const handleAddVariantRow = () => {
+    setFormData(prev => ({
+      ...prev,
+      variantChildren: [
+        ...prev.variantChildren,
+        {
+          variantName: '',
+          sku: '',
+          purchasePrice: 0,
+          sellingPrice: 0,
+          attributes: [],
+        }
+      ]
+    }));
+  };
+
+  const handleDuplicateVariantRow = (index: number) => {
+    setFormData(prev => {
+      const newChildren = [...prev.variantChildren];
+      const rowToCopy = { ...newChildren[index] };
+      newChildren.splice(index + 1, 0, rowToCopy);
+      return { ...prev, variantChildren: newChildren };
+    });
+  };
+
+  const handleRemoveVariantRow = (index: number) => {
+    if (formData.variantChildren.length <= 1) {
+      toast.error('A Product Family must contain at least one Variant.');
+      return;
+    }
+    if (!window.confirm('Delete this Variant?')) return;
+    
+    setFormData(prev => {
+      const newChildren = [...prev.variantChildren];
+      newChildren.splice(index, 1);
+      return { ...prev, variantChildren: newChildren };
+    });
+  };
+
+  const updateVariantRow = (index: number, key: string, value: any) => {
+    setFormData(prev => {
+      const newChildren = [...prev.variantChildren];
+      newChildren[index] = { ...newChildren[index], [key]: value };
+      return { ...prev, variantChildren: newChildren };
+    });
+  };
+
+  const updateVariantAttribute = (index: number, attributeId: string, value: string) => {
+    setFormData(prev => {
+      const newChildren = [...prev.variantChildren];
+      const child = { ...newChildren[index] };
+      const attrs = child.attributes ? [...child.attributes] : [];
+      const existingIdx = attrs.findIndex((a: any) => a.attributeId === attributeId);
+      
+      if (!value) {
+        if (existingIdx >= 0) attrs.splice(existingIdx, 1);
+      } else {
+        if (existingIdx >= 0) attrs[existingIdx].value = value;
+        else attrs.push({ attributeId, value });
+      }
+      
+      child.attributes = attrs;
+      newChildren[index] = child;
+      return { ...prev, variantChildren: newChildren };
+    });
+  };
+
   // ─── Step validation before advancing ───────────────────────────────────
   const handleNextStep = () => {
     setShowErrors(true);
     const effectiveStep = isEditMode ? currentStep + 1 : currentStep;
     
-    if (effectiveStep === 0 && productType !== 'single') {
+    if (effectiveStep === 0 && !productType) {
       return;
     }
     
@@ -174,31 +275,32 @@ export default function CreateProductPage() {
       if (!/^[a-zA-Z0-9\s\-/\.\(\)\&+]+$/.test(formData.name.trim())) return;
       if (!/^[A-Z0-9]{4,20}$/.test(formData.code.trim())) return;
       
-      // Validate dynamic attributes
-      for (const attr of dynamicAttributes) {
-        const val = formData.productAttributes.find(pa => pa.attributeId === attr.id)?.value;
-        const errorMsg = ProductAttributeValidationService.validateAttributeValue(val, attr);
-        if (errorMsg) {
-          toast.error(`Attribute "${attr.attributeName}": ${errorMsg}`);
-          return;
+      if (productType === 'single') {
+        for (const attr of dynamicAttributes) {
+          const val = formData.productAttributes.find(pa => pa.attributeId === attr.id)?.value;
+          const errorMsg = ProductAttributeValidationService.validateAttributeValue(val, attr);
+          if (errorMsg) {
+            toast.error(`Attribute "${attr.attributeName}": ${errorMsg}`);
+            return;
+          }
         }
       }
     }
     
     if (effectiveStep === 2) {
-      if (!formData.hsnCodeId || !formData.taxRateId || !formData.unitId || !formData.purchasePrice || !formData.sellingPrice || !formData.incentiveTag) {
+      if (!formData.hsnCodeId || !formData.taxRateId || !formData.unitId) {
         return;
       }
-      if (formData.purchasePrice <= 0 || formData.sellingPrice <= formData.purchasePrice) {
-        return;
+      if (productType === 'single') {
+        if (!formData.purchasePrice || !formData.sellingPrice) return;
+        if (formData.purchasePrice <= 0 || formData.sellingPrice <= formData.purchasePrice) return;
       }
     }
     
     setShowErrors(false);
-    setCurrentStep(prev => Math.min(STEPS.length - 1, prev + 1));
+    setCurrentStep(prev => Math.min(activeSteps.length - 1, prev + 1));
   };
 
-  // ─── Profit Analytics & Incentive Tag Auto-calculation ─────────────────
   const { purchasePrice, sellingPrice } = formData;
   const grossProfit = sellingPrice - purchasePrice;
   const markup = purchasePrice > 0 ? (grossProfit / purchasePrice) * 100 : 0;
@@ -215,7 +317,6 @@ export default function CreateProductPage() {
     }
   }, [purchasePrice, sellingPrice, margin]);
 
-  // ─── Step 4 Dependencies: Inventory & Product Type ───────────────────────
   useEffect(() => {
     if (formData.type === 'Service') {
       setFormData(prev => ({ ...prev, trackInventory: false, trackSerials: false }));
@@ -228,7 +329,6 @@ export default function CreateProductPage() {
     }
   }, [formData.trackInventory]);
 
-  // ─── File Upload Logic ───────────────────────────────────────────────────
   const [thumbnailError, setThumbnailError] = useState('');
   
   const handleThumbnailUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -253,48 +353,36 @@ export default function CreateProductPage() {
     reader.readAsDataURL(file);
   };
 
-  // ─── HSN Helper Logic ──────────────────────────────────────────────────
   const [hsnHelper, setHsnHelper] = useState<any>(null);
   const [loadingHsnHelper, setLoadingHsnHelper] = useState(false);
 
   // ─── Save ────────────────────────────────────────────────────────────────
-  const handleSave = async (submitForApproval: boolean) => {
-    setShowErrors(true);
-    if (!formData.name.trim() || !formData.categoryId || !formData.type || !formData.brandId || !formData.manufacturerId || !formData.code.trim()) {
-      toast.error('Please fill in all mandatory fields');
-      setCurrentStep(1);
+  const handleSave = async (submitForApproval: boolean, skipWarning = false) => {
+    if (isEditMode && productType === 'variant' && !skipWarning) {
+      setPendingSaveAction(submitForApproval);
+      setShowLockWarning(true);
       return;
-    }
-    if (!/^[a-zA-Z0-9\s\-/\.\(\)\&+]+$/.test(formData.name.trim()) || !/^[A-Z0-9]{4,20}$/.test(formData.code.trim())) {
-      toast.error('Product Name or SKU contains invalid characters');
-      setCurrentStep(1);
-      return;
-    }
-
-    // Validate dynamic attributes
-    for (const attr of dynamicAttributes) {
-      const val = formData.productAttributes.find(pa => pa.attributeId === attr.id)?.value;
-      const errorMsg = ProductAttributeValidationService.validateAttributeValue(val, attr);
-      if (errorMsg) {
-        toast.error(`Attribute "${attr.attributeName}": ${errorMsg}`);
-        setCurrentStep(1);
-        return;
-      }
     }
 
     setIsSaving(true);
     try {
       const url = isEditMode ? `/api/staff/catalog/products/${editId}` : '/api/staff/catalog/products';
       const method = isEditMode ? 'PUT' : 'POST';
+      const payload = { ...formData, submitForApproval, productType };
       const res  = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ ...formData, submitForApproval }),
+        body:    JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save product');
-
-      toast.success(submitForApproval ? 'Product submitted for approval!' : 'Product saved as draft!');
+      let successMessage = '';
+      if (submitForApproval) {
+        successMessage = productType === 'variant' ? 'Product Family submitted successfully. Variants can be added after approval.' : 'Product submitted for approval!';
+      } else {
+        successMessage = productType === 'variant' ? 'Product Family saved as draft.' : 'Product saved as draft!';
+      }
+      toast.success(successMessage);
       router.push(`/staff/dashboard/catalog-pricing/products/${data.id}`);
     } catch (e: any) {
       toast.error(e.message);
@@ -307,7 +395,7 @@ export default function CreateProductPage() {
 
   return (
     <ProductStepForm
-      steps={isEditMode ? STEPS.slice(1) : STEPS}
+      steps={isEditMode ? activeSteps.slice(1) : activeSteps}
       currentStep={currentStep}
       onStepChange={setCurrentStep}
       onNextStep={handleNextStep}
@@ -316,9 +404,6 @@ export default function CreateProductPage() {
       isSaving={isSaving}
     >
 
-      {/* ══════════════════════════════════════════════════
-          STEP 1 — Select Product Type
-      ══════════════════════════════════════════════════ */}
       {effectiveStep === 0 && !isEditMode && (
         <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
           <div className="mb-2">
@@ -327,7 +412,6 @@ export default function CreateProductPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Single Product */}
             <div
               onClick={() => setProductType('single')}
               className={`group flex items-start gap-4 p-4 rounded-xl border-[1.5px] cursor-pointer transition-all duration-200 ${
@@ -358,22 +442,31 @@ export default function CreateProductPage() {
               </div>
             </div>
 
-            {/* Variant Product — Coming Soon */}
             <div
-              className="flex items-start gap-4 p-4 rounded-xl border-[1.5px] border-gray-100 bg-gray-50/50 cursor-not-allowed"
-              title="Variant Products will be available in Phase 2."
+              onClick={() => setProductType('variant')}
+              className={`group flex items-start gap-4 p-4 rounded-xl border-[1.5px] cursor-pointer transition-all duration-200 ${
+                productType === 'variant'
+                  ? 'border-blue-600 bg-blue-50/30 shadow-[0_2px_8px_rgba(37,99,235,0.12)]'
+                  : 'border-gray-200 hover:border-gray-300 hover:shadow-sm bg-white'
+              }`}
             >
-              <div className="p-3 rounded-xl flex-shrink-0 bg-gray-200/50 text-gray-400">
+              <div className={`p-3 rounded-xl flex-shrink-0 transition-colors duration-200 ${
+                productType === 'variant' 
+                  ? 'bg-blue-600 text-white shadow-sm' 
+                  : 'bg-gray-100 text-gray-500 group-hover:bg-gray-200 group-hover:text-gray-700'
+              }`}>
                 <Layers size={24} strokeWidth={2} />
               </div>
               <div className="flex-1 min-w-0 pt-0.5">
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-[14px] font-semibold text-gray-500">Variant Product</h3>
-                  <span className="text-[10px] font-medium bg-gray-200/60 text-gray-500 px-2 py-0.5 rounded-full tracking-wide">
-                    COMING SOON
-                  </span>
+                  <h3 className={`text-[14px] font-semibold ${productType === 'variant' ? 'text-blue-900' : 'text-gray-900'}`}>Variant Product</h3>
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+                    productType === 'variant' ? 'border-blue-600 bg-blue-600' : 'border-gray-300'
+                  }`}>
+                    {productType === 'variant' && <Check size={10} className="text-white" strokeWidth={3} />}
+                  </div>
                 </div>
-                <p className="text-[12.5px] text-gray-400 leading-snug">
+                <p className="text-[12.5px] text-gray-500 leading-snug">
                   A product family with multiple variants (Size, Color).
                 </p>
               </div>
@@ -382,9 +475,6 @@ export default function CreateProductPage() {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════
-          STEP 2 — Product Details
-      ══════════════════════════════════════════════════ */}
       {effectiveStep === 1 && (
         <div className="space-y-8 animate-in fade-in zoom-in-95 duration-200">
           <div className="flex items-center gap-3 pb-3 mb-2">
@@ -397,11 +487,9 @@ export default function CreateProductPage() {
 
           <div className="bg-[#FAFBFC] rounded-xl border border-gray-100 p-6 space-y-6">
             
-            {/* Section: Basic Information */}
             <div>
               <h3 className="text-[13px] font-semibold text-gray-900 mb-4 uppercase tracking-wider">Basic Information</h3>
               <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                {/* Product Name — required */}
                 <div className="col-span-2">
                   <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">
                     Product Name <span className="text-red-500">*</span>
@@ -417,7 +505,6 @@ export default function CreateProductPage() {
                   {showErrors && formData.name.trim() && !/^[a-zA-Z0-9\s\-/\.\(\)\&+]+$/.test(formData.name.trim()) && <p className="text-red-500 text-xs mt-1.5">Product Name contains unsupported characters.</p>}
                 </div>
 
-                {/* Product Type (Goods/Service) */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">
                     Product Type <span className="text-red-500">*</span>
@@ -440,7 +527,6 @@ export default function CreateProductPage() {
                   </div>
                 </div>
 
-                {/* SKU / Product Code */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">
                     SKU <span className="text-red-500">*</span>
@@ -474,11 +560,9 @@ export default function CreateProductPage() {
 
             <hr className="border-gray-200/60" />
 
-            {/* Section: Classification */}
             <div>
               <h3 className="text-[13px] font-semibold text-gray-900 mb-4 uppercase tracking-wider">Classification</h3>
               <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                {/* Category — required */}
                 <div className="col-span-2 sm:col-span-1">
                   <AsyncLookupField
                     label="Category"
@@ -499,7 +583,6 @@ export default function CreateProductPage() {
                   />
                 </div>
 
-                {/* Brand */}
                 <div className="col-span-2 sm:col-span-1">
                   <AsyncLookupField
                     label="Brand"
@@ -509,10 +592,9 @@ export default function CreateProductPage() {
                     displayValue={brandDisplay}
                     clearable
                   />
-                  {showErrors && !formData.taxRateId && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
+                  {showErrors && !formData.brandId && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
                 </div>
 
-                {/* Manufacturer */}
                 <div className="col-span-2 sm:col-span-1">
                   <AsyncLookupField
                     label="Manufacturer"
@@ -528,7 +610,7 @@ export default function CreateProductPage() {
               </div>
             </div>
 
-            {dynamicAttributes.length > 0 && (
+            {productType === 'single' && dynamicAttributes.length > 0 && (
               <>
                 <hr className="border-gray-200/60" />
                 <div>
@@ -548,26 +630,24 @@ export default function CreateProductPage() {
                           </label>
                           
                           {(attr.dataType === 'Dropdown' || attr.dataType === 'Multi Select') ? (
-                            <select
+                            <Select
                               value={val}
-                              onChange={e => updateAttribute(attr.id, e.target.value)}
-                              className={`w-full px-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && errorMsg ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
-                            >
-                              <option value="">Select {attr.attributeName}</option>
-                              {attr.options?.map((opt: string) => (
-                                <option key={opt} value={opt}>{opt}</option>
-                              ))}
-                            </select>
+                              onChange={val => updateAttribute(attr.id, val)}
+                              placeholder={`Select ${attr.attributeName}`}
+                              options={(attr.options || []).map((opt: string) => ({ label: opt, value: opt }))}
+                              className={showErrors && errorMsg ? 'border-red-500 ring-1 ring-red-500' : ''}
+                            />
                           ) : (attr.dataType === 'Boolean') ? (
-                            <select
+                            <Select
                               value={val}
-                              onChange={e => updateAttribute(attr.id, e.target.value)}
-                              className={`w-full px-3 py-2 text-[13.5px] border rounded-lg outline-none transition-all duration-200 bg-white focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/10 focus:shadow-sm ${showErrors && errorMsg ? 'border-red-500 ring-1 ring-red-500' : 'border-gray-200'}`}
-                            >
-                              <option value="">Select</option>
-                              <option value="Yes">Yes</option>
-                              <option value="No">No</option>
-                            </select>
+                              onChange={val => updateAttribute(attr.id, val)}
+                              placeholder="Select"
+                              options={[
+                                { label: 'Yes', value: 'Yes' },
+                                { label: 'No', value: 'No' }
+                              ]}
+                              className={showErrors && errorMsg ? 'border-red-500 ring-1 ring-red-500' : ''}
+                            />
                           ) : (
                             <div className="relative">
                               {attr.prefix && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{attr.prefix}</span>}
@@ -595,7 +675,6 @@ export default function CreateProductPage() {
 
             <hr className="border-gray-200/60" />
 
-            {/* Description */}
             <div>
               <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">Description</label>
               <textarea
@@ -610,9 +689,6 @@ export default function CreateProductPage() {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════
-          STEP 3 — Tax & Pricing
-      ══════════════════════════════════════════════════ */}
       {effectiveStep === 2 && (
         <div className="space-y-8 animate-in fade-in zoom-in-95 duration-200">
           <div className="flex items-center gap-3 pb-3 mb-2">
@@ -625,11 +701,9 @@ export default function CreateProductPage() {
 
           <div className="bg-[#FAFBFC] rounded-xl border border-gray-100 p-6 space-y-6">
             
-            {/* Section: Compliance */}
             <div>
               <h3 className="text-[13px] font-semibold text-gray-900 mb-4 uppercase tracking-wider">Compliance</h3>
               <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                {/* HSN Code — code only */}
                 <div className="col-span-2 sm:col-span-1">
                   <AsyncLookupField
                     label="HSN Code"
@@ -665,7 +739,6 @@ export default function CreateProductPage() {
                   />
                   
                   {showErrors && !formData.hsnCodeId && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
-                  {/* HSN Helper Card */}
                   {formData.hsnCodeId && (
                     <div className="mt-2 text-sm">
                       {loadingHsnHelper ? (
@@ -687,7 +760,6 @@ export default function CreateProductPage() {
                   )}
                 </div>
 
-                {/* Tax Rate — name only */}
                 <div className="col-span-2 sm:col-span-1">
                   <AsyncLookupField
                     label="Tax Rate (GST)"
@@ -709,7 +781,6 @@ export default function CreateProductPage() {
                   {showErrors && !formData.taxRateId && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
                 </div>
 
-                {/* Unit of Measurement */}
                 <div className="col-span-2 sm:col-span-1">
                   <AsyncLookupField
                     label="Unit of Measurement"
@@ -735,11 +806,10 @@ export default function CreateProductPage() {
 
             <hr className="border-gray-200/60" />
 
-            {/* Section: Pricing */}
-            <div>
+            {productType === 'single' && (
+              <div>
               <h3 className="text-[13px] font-semibold text-gray-900 mb-4 uppercase tracking-wider">Pricing</h3>
               <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                {/* Purchase Price */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">Purchase Price <span className="text-red-500">*</span></label>
                   <div className="relative">
@@ -757,7 +827,6 @@ export default function CreateProductPage() {
                   {showErrors && (!formData.purchasePrice || formData.purchasePrice <= 0) && <p className="text-red-500 text-xs mt-1.5">Purchase Price must be greater than ₹0.</p>}
                 </div>
 
-                {/* Selling Price */}
                 <div className="col-span-2 sm:col-span-1">
                   <label className="block text-[13.5px] font-medium text-gray-700 mb-1.5">Selling Price <span className="text-red-500">*</span></label>
                   <div className="relative">
@@ -776,7 +845,6 @@ export default function CreateProductPage() {
                 </div>
               </div>
 
-              {/* Live Analytics Summary */}
               <div className={`mt-4 p-4 rounded-xl border flex gap-6 transition-colors duration-300 ${grossProfit < 0 ? 'bg-red-50/50 border-red-100' : grossProfit > 0 && margin < 15 ? 'bg-orange-50/50 border-orange-100' : 'bg-green-50/50 border-green-100'}`}>
                 <div className="flex-1">
                   <p className="text-[12px] text-gray-500 font-medium uppercase tracking-wider mb-1">Gross Profit</p>
@@ -794,42 +862,53 @@ export default function CreateProductPage() {
                 </div>
               </div>
             </div>
+            )}
 
             <hr className="border-gray-200/60" />
 
-            {/* Section: Incentive Tag */}
             <div>
               <h3 className="text-[13px] font-semibold text-gray-900 mb-4 uppercase tracking-wider">Incentive Classification</h3>
               <label className="block text-[13.5px] font-medium text-gray-700 mb-2">
-                Incentive Tag <span className="text-red-500">*</span>
+                Incentive Tag
               </label>
               <div className="flex gap-3">
-                {['High Margin Product', 'Medium Margin Product', 'Low Margin Product'].map(tag => (
-                  <label key={tag} className={`flex-1 flex flex-col items-center justify-center gap-1.5 p-3 rounded-lg border cursor-pointer transition-all duration-200 ${formData.incentiveTag === tag ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium shadow-sm' : `border-gray-200 bg-white text-gray-600 hover:border-gray-300 ${showErrors && !formData.incentiveTag ? 'border-red-400' : ''}`}`}>
-                    <input type="radio" name="incentiveTag" value={tag} checked={formData.incentiveTag === tag} onChange={() => updateForm('incentiveTag', tag)} className="hidden" />
-                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${formData.incentiveTag === tag ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`}>
-                      {formData.incentiveTag === tag && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-                    </div>
-                    <span className="text-[13px]">{tag}</span>
-                  </label>
-                ))}
+                {['High Margin Product', 'Medium Margin Product', 'Low Margin Product'].map(tag => {
+                  const isSelected = formData.incentiveTag === tag;
+                  const isReadOnly = formData.isVariantProduct;
+                  
+                  return (
+                    <label key={tag} className={`flex-1 flex flex-col items-center justify-center gap-1.5 p-3 rounded-lg border transition-all duration-200 ${isSelected ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium shadow-sm' : 'border-gray-200 bg-white text-gray-600'} ${isReadOnly ? (isSelected ? 'opacity-80 cursor-default' : 'opacity-50 cursor-not-allowed') : 'cursor-pointer hover:border-gray-300'}`}>
+                      <input type="radio" name="incentiveTag" value={tag} checked={isSelected} onChange={() => !isReadOnly && updateForm('incentiveTag', tag)} disabled={isReadOnly} className="hidden" />
+                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`}>
+                        {isSelected && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                      </div>
+                      <span className="text-[13px]">{tag}</span>
+                    </label>
+                  );
+                })}
               </div>
-              {showErrors && !formData.incentiveTag && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
+              {formData.isVariantProduct && (
+                <p className="mt-2 text-xs text-gray-500">Incentive classification is inherited from the parent Product Family.</p>
+              )}
             </div>
           </div>
         </div>
       )}
 
       {/* ══════════════════════════════════════════════════
-          STEP 4 — Inventory & Review
+          FINAL STEP — Inventory & Review
       ══════════════════════════════════════════════════ */}
       {effectiveStep === 3 && (
         <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
           <div className="flex items-center gap-3 pb-2">
             <div className="p-2 bg-orange-50 text-orange-600 rounded-lg"><BarChart2 size={18} /></div>
             <div>
-              <h2 className="text-[15px] font-semibold text-gray-900">Inventory & Review</h2>
-              <p className="text-[13px] text-gray-500 mt-0.5">Upload a thumbnail, configure tracking, and add an optional note.</p>
+              <h2 className="text-[15px] font-semibold text-gray-900">
+                {productType === 'single' ? 'Inventory & Review' : 'Review & Submit'}
+              </h2>
+              <p className="text-[13px] text-gray-500 mt-0.5">
+                {productType === 'single' ? 'Upload a thumbnail, configure tracking, and add an optional note.' : 'Upload a thumbnail and add an optional note. Variants can be added after approval.'}
+              </p>
             </div>
           </div>
 
@@ -882,7 +961,8 @@ export default function CreateProductPage() {
             </div>
           </div>
 
-          {/* CARD 2: Inventory Tracking */}
+          {/* CARD 2: Inventory Tracking (Hidden for Variants) */}
+          {productType === 'single' && (
           <div className="bg-[#FAFBFC] rounded-xl border border-gray-100 p-6">
             <h3 className="text-[13px] font-semibold text-gray-900 mb-4 uppercase tracking-wider">Inventory Tracking</h3>
             <div className="space-y-4">
@@ -923,6 +1003,7 @@ export default function CreateProductPage() {
               </div>
             </div>
           </div>
+          )}
 
           {/* CARD 3: Approval */}
           <div className="bg-[#FAFBFC] rounded-xl border border-gray-100 p-6">
@@ -941,6 +1022,38 @@ export default function CreateProductPage() {
         </div>
       )}
 
-      </ProductStepForm>
+        {/* ...other modals can go here... */}
+
+      {showLockWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50 font-inter">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Update Product Family</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              You are modifying a Product Family. Any changes to shared fields (Category, Brand, Manufacturer, HSN, Tax) will affect all existing products within this family. Do you want to proceed?
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button 
+                onClick={() => {
+                  setShowLockWarning(false);
+                  setPendingSaveAction(null);
+                }} 
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  setShowLockWarning(false);
+                  if (pendingSaveAction !== null) handleSave(pendingSaveAction, true);
+                }} 
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              >
+                Yes, Update Family
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </ProductStepForm>
   );
 }

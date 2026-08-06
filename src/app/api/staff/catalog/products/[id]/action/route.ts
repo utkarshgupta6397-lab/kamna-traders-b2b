@@ -108,13 +108,38 @@ export async function POST(
       include: {
         updatedBy: { select: { id: true, name: true } },
         approvedBy: { select: { id: true, name: true } },
-        variants: true
+        variants: true,
+        variantProducts: { include: { variants: true } }
       },
     });
 
+    if (!existing.isVariantProduct && updatedRecord.variantProducts && updatedRecord.variantProducts.length > 0) {
+      const updateManyData = { ...updateData };
+      if (updateManyData.updatedBy?.connect?.id) {
+        updateManyData.updatedById = updateManyData.updatedBy.connect.id;
+        delete updateManyData.updatedBy;
+      }
+      if (updateManyData.approvedBy?.connect?.id) {
+        updateManyData.approvedById = updateManyData.approvedBy.connect.id;
+        delete updateManyData.approvedBy;
+      }
+      await prisma.product.updateMany({
+        where: { parentProductId: id },
+        data: updateManyData
+      });
+    }
+
     if (action === 'approve') {
       // Create skeleton Sku records and WarehouseInventory records for tracked products
-      const trackedVariants = updatedRecord.variants.filter(v => v.trackInventory);
+      let trackedVariants: any[] = [];
+      if (!existing.isVariantProduct && updatedRecord.variantProducts && updatedRecord.variantProducts.length > 0) {
+        for (const child of updatedRecord.variantProducts) {
+          trackedVariants.push(...child.variants.filter((v: any) => v.trackInventory).map((v: any) => ({ ...v, productName: child.name })));
+        }
+      } else {
+        trackedVariants = updatedRecord.variants.filter((v: any) => v.trackInventory).map((v: any) => ({ ...v, productName: updatedRecord.name }));
+      }
+
       if (trackedVariants.length > 0) {
         const activeWarehouses = await prisma.warehouse.findMany({ where: { active: true } });
         
@@ -125,7 +150,7 @@ export async function POST(
             await prisma.sku.create({
               data: {
                 id: variant.sku,
-                name: updatedRecord.name,
+                name: variant.productName,
                 categoryId: updatedRecord.categoryId,
                 brandId: updatedRecord.brandId,
                 price: variant.sellingPrice,

@@ -91,6 +91,44 @@ export async function PUT(
       }
     }
 
+    const usageCount = await prisma.productAttributeValue.count({
+      where: { attributeId: id }
+    });
+    const inUse = usageCount > 0;
+
+    if (inUse) {
+      if (dataType && dataType !== existing.dataType) {
+        return NextResponse.json({ error: `Cannot change Data Type because this attribute is already used by ${usageCount} products.` }, { status: 409 });
+      }
+
+      if (categories) {
+        const existingCatIds = existing.categories.map(c => c.categoryId);
+        const removedCats = existingCatIds.filter(cid => !categories.includes(cid));
+        if (removedCats.length > 0) {
+          return NextResponse.json({ error: 'Cannot remove category mapping because products already contain values for this attribute.' }, { status: 409 });
+        }
+      }
+
+      if (options && Array.isArray(options) && Array.isArray(existing.options)) {
+        const existingOptions = existing.options as string[];
+        const removedOptions = existingOptions.filter(opt => !options.includes(opt));
+        if (removedOptions.length > 0) {
+          const allUsedValues = await prisma.productAttributeValue.findMany({
+            where: { attributeId: id },
+            select: { value: true },
+            distinct: ['value']
+          });
+          
+          for (const rmOpt of removedOptions) {
+            const isUsed = allUsedValues.some(v => v.value === rmOpt || v.value.includes(`"${rmOpt}"`) || v.value.includes(rmOpt));
+            if (isUsed) {
+              return NextResponse.json({ error: `Cannot remove option "${rmOpt}" because it is currently used by a product.` }, { status: 409 });
+            }
+          }
+        }
+      }
+    }
+
     const updated = await prisma.productAttribute.update({
       where: { id },
       data: {

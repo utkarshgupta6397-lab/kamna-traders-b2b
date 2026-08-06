@@ -4,6 +4,7 @@ import { Trash2, Save } from 'lucide-react';
 import SafeDeleteButton from '@/components/SafeDeleteButton';
 import ActionForm, { FormSubmit } from '@/components/ActionForm';
 import ResetPinButton from '@/components/ResetPinButton';
+import { Select } from '@/components/ui/Select';
 
 
 export default async function UsersPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
@@ -29,9 +30,14 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
           <div><label className="block text-xs font-medium text-gray-500 mb-1">Mobile</label>
             <input type="text" name="mobile" required className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" maxLength={10} /></div>
           <div><label className="block text-xs font-medium text-gray-500 mb-1">Role</label>
-            <select name="role" className="w-full border rounded-lg p-2 text-sm bg-white focus:ring-2 focus:ring-[#1A2766] outline-none">
-              <option value="STAFF">Staff</option><option value="ADMIN">Admin</option>
-            </select></div>
+            <Select 
+              name="role" 
+              defaultValue="STAFF"
+              options={[
+                { label: 'Staff', value: 'STAFF' },
+                { label: 'Admin', value: 'ADMIN' }
+              ]} 
+            /></div>
           <div><label className="block text-xs font-medium text-gray-500 mb-1">PIN (6-digit)</label>
             <input type="text" name="pin" maxLength={6} className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-[#1A2766] outline-none" placeholder="Auto if empty" /></div>
           <FormSubmit className="bg-[#AE1B1E] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-800 transition-colors">Add User</FormSubmit>
@@ -68,14 +74,24 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                   <ResetPinButton mobile={u.mobile} />
                 </div>
                 <div className="w-32 p-2">
-                  <select name="role" defaultValue={u.role} className="w-full border rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#1A2766] outline-none">
-                    <option value="STAFF">Staff</option><option value="ADMIN">Admin</option>
-                  </select>
+                  <Select 
+                    name="role" 
+                    defaultValue={u.role}
+                    options={[
+                      { label: 'Staff', value: 'STAFF' },
+                      { label: 'Admin', value: 'ADMIN' }
+                    ]} 
+                  />
                 </div>
                 <div className="w-32 p-2">
-                  <select name="active" defaultValue={String(u.active)} className="w-full border rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#1A2766] outline-none">
-                    <option value="true">Active</option><option value="false">Inactive</option>
-                  </select>
+                  <Select 
+                    name="active" 
+                    defaultValue={String(u.active)}
+                    options={[
+                      { label: 'Active', value: 'true' },
+                      { label: 'Inactive', value: 'false' }
+                    ]} 
+                  />
                 </div>
                 <div className="flex-1 p-2 flex justify-end items-center gap-1">
                   <FormSubmit className="text-[#1A2766] hover:bg-blue-50 p-1.5 rounded transition-colors" icon={<Save size={14} />} />

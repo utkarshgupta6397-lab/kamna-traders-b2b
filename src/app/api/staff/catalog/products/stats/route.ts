@@ -10,14 +10,14 @@ export async function GET(request: Request) {
 
   try {
     const [total, goods, services, active, pending, archived, trackInventory, trackSerials] = await Promise.all([
-      prisma.product.count(),
-      prisma.product.count({ where: { type: 'Goods' } }),
-      prisma.product.count({ where: { type: 'Service' } }),
-      prisma.product.count({ where: { status: 'Active' } }),
-      prisma.product.count({ where: { status: 'Approval Pending' } }),
-      prisma.product.count({ where: { status: 'Archived' } }),
-      prisma.product.count({ where: { variants: { some: { trackInventory: true } } } }),
-      prisma.product.count({ where: { variants: { some: { trackSerials: true } } } }),
+      prisma.product.count({ where: { parentProductId: null } }),
+      prisma.product.count({ where: { type: 'Goods', parentProductId: null } }),
+      prisma.product.count({ where: { type: 'Service', parentProductId: null } }),
+      prisma.product.count({ where: { status: 'Active', parentProductId: null } }),
+      prisma.product.count({ where: { status: 'Approval Pending', parentProductId: null } }),
+      prisma.product.count({ where: { status: 'Archived', parentProductId: null } }),
+      prisma.product.count({ where: { variants: { some: { trackInventory: true } }, parentProductId: null } }),
+      prisma.product.count({ where: { variants: { some: { trackSerials: true } }, parentProductId: null } }),
     ]);
 
     return NextResponse.json({

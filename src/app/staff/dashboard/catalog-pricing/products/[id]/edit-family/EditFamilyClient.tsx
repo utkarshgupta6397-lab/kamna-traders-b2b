@@ -10,7 +10,7 @@ const hsnDisplay = (opt: any): string => opt.code || opt.id;
 const taxDisplay = (opt: any): string => opt.name || opt.id;
 const uomDisplay = (opt: any): string => opt.abbreviation ? `${opt.name} (${opt.abbreviation})` : opt.name || opt.id;
 const brandDisplay = (opt: any): string => opt.name || opt.id;
-const catDisplay = (opt: any): string => opt.name || opt.id;
+const catDisplay = (opt: any): string => opt.pathName || opt.name || opt.id;
 const mfrDisplay = (opt: any): string => opt.name || opt.id;
 
 export default function EditFamilyClient({ product }: { product: any }) {
@@ -194,7 +194,7 @@ export default function EditFamilyClient({ product }: { product: any }) {
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category <span className="text-red-500">*</span></label>
-                <AsyncLookupField endpoint="/api/staff/catalog/categories" value={formData.categoryId} onChange={val => setFormData({ ...formData, categoryId: val })} displayFn={catDisplay} placeholder="Search categories..." />
+                <AsyncLookupField endpoint="/api/staff/catalog/categories/selectable" value={formData.categoryId} onChange={val => setFormData({ ...formData, categoryId: val })} displayFn={catDisplay} placeholder="Search categories..." />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>

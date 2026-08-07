@@ -46,6 +46,8 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
   const [attributeValues, setAttributeValues] = useState<any>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGeneratingSku, setIsGeneratingSku] = useState(false);
+  const [showDeclineModal, setShowDeclineModal] = useState(false);
+  const [declineRemarks, setDeclineRemarks] = useState('');
 
   useEffect(() => {
     const fetchPerms = async () => {
@@ -129,8 +131,31 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
   const showEdit = canEdit && !isApprovalPending && product.status !== 'Archived';
   const showSubmitForApproval = isDraft && (canEdit || isCreator);
   
-  const handleApprovalAction = async (action: 'approve' | 'decline') => {
-    toast.success(`Action ${action} pending backend logic`);
+  const handleApprovalAction = async (action: 'approve' | 'decline' | 'submit') => {
+    if (action === 'decline' && !declineRemarks.trim()) {
+      toast.error('Remarks are required to decline.');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`/api/staff/catalog/products/${product.id}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, remarks: declineRemarks })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Failed to ${action}`);
+      
+      toast.success(`Product family ${action}d successfully`);
+      window.location.reload();
+    } catch (e: any) {
+      toast.error(e.message || `Failed to ${action} product family`);
+    } finally {
+      setIsSubmitting(false);
+      setShowDeclineModal(false);
+    }
   };
 
   const childrenCount = product.variantProducts?.length || 0;
@@ -520,7 +545,7 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
 
             <div className="flex items-center space-x-3">
               {showSubmitForApproval && (
-                <button onClick={() => {}} className="px-4 py-2 bg-blue-50 text-blue-700 font-medium rounded-lg hover:bg-blue-100 transition-colors shadow-sm flex items-center">
+                <button onClick={() => handleApprovalAction('submit')} className="px-4 py-2 bg-blue-50 text-blue-700 font-medium rounded-lg hover:bg-blue-100 transition-colors shadow-sm flex items-center">
                   <CheckCircle2 size={16} className="mr-2" /> Submit for Approval
                 </button>
               )}
@@ -529,7 +554,7 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                   <button onClick={() => handleApprovalAction('approve')} className="px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors shadow-sm flex items-center">
                     <Check size={16} className="mr-2" /> Approve
                   </button>
-                  <button onClick={() => {}} className="px-4 py-2 bg-white border border-red-200 text-red-600 font-medium rounded-lg hover:bg-red-50 transition-colors flex items-center">
+                  <button onClick={() => setShowDeclineModal(true)} className="px-4 py-2 bg-white border border-red-200 text-red-600 font-medium rounded-lg hover:bg-red-50 transition-colors flex items-center">
                     <X size={16} className="mr-2" /> Decline
                   </button>
                 </>
@@ -854,8 +879,35 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
           </div>
 
         </div>
-
       </div>
+      
+      {/* Decline Modal */}
+      {showDeclineModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">Decline Product Family</h3>
+              <button onClick={() => setShowDeclineModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Reason for Declining *</label>
+              <textarea
+                value={declineRemarks}
+                onChange={e => setDeclineRemarks(e.target.value)}
+                className="w-full h-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500/20 focus:border-red-500 resize-none text-[13px]"
+                placeholder="Provide a reason for declining this product family..."
+              ></textarea>
+              <p className="text-xs text-gray-500 mt-2">This reason will be visible in the product's audit history.</p>
+            </div>
+            <div className="px-6 py-4 bg-gray-50 flex items-center justify-end gap-3 rounded-b-xl">
+              <button onClick={() => setShowDeclineModal(false)} className="px-4 py-2 text-[13px] font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={() => handleApprovalAction('decline')} disabled={isSubmitting || !declineRemarks.trim()} className="px-4 py-2 text-[13px] font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50">Decline Product Family</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

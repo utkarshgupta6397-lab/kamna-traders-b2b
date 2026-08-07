@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { CategoryService } from '@/lib/services/CategoryService';
 import { buildProductWhereClause } from '@/lib/services/ProductFilterService';
 
 export async function GET(request: Request) {
@@ -13,30 +14,28 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const where = buildProductWhereClause(searchParams);
 
-    // Since we need to join category names, we group by categoryId,
-    // but Prisma's groupBy doesn't allow including relations directly.
-    // However, we can query all categories and use a _count where condition.
-    
-    const categories = await prisma.category.findMany({
-      select: {
-        id: true,
-        name: true,
-        _count: {
-          select: {
-            products: {
-              where: where
-            }
-          }
-        }
-      },
-      orderBy: { name: 'asc' }
-    });
+    // Use the CategoryService to get the tree with aggregated counts
+    const tree = await CategoryService.getTree(searchParams);
 
-    const activeCategories = categories.map(c => ({
-      id: c.id,
-      name: c.name,
-      count: c._count.products
-    })).filter(c => c.count > 0).sort((a, b) => b.count - a.count);
+    // We want to return a flat list of categories that have products > 0 for the chips
+    const activeCategories: any[] = [];
+    const traverse = (nodes: any[]) => {
+      for (const node of nodes) {
+        if (node.totalProducts > 0) {
+          activeCategories.push({
+            id: node.id,
+            name: node.name,
+            count: node.totalProducts
+          });
+        }
+        if (node.children) {
+          traverse(node.children);
+        }
+      }
+    };
+    traverse(tree);
+
+    activeCategories.sort((a, b) => b.count - a.count);
 
     return NextResponse.json(activeCategories);
   } catch (error: any) {

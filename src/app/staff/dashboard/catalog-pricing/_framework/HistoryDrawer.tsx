@@ -9,102 +9,28 @@ interface HistoryDrawerProps {
   config: MasterConfig;
 }
 
-interface AuditChange {
-  field: string;
-  oldValue: string;
-  newValue: string;
-}
-
-function getFieldName(key: string): string {
-  const mapping: Record<string, string> = {
-    name: 'Name',
-    code: 'Code',
-    description: 'Description',
-    status: 'Status',
-    remarks: 'Remarks',
-    isActive: 'Active Status',
-    active: 'Active Status',
-    percentage: 'Tax Percentage',
-    taxType: 'Tax Type',
-    abbreviation: 'Display Abbreviation',
-    defaultGstRateId: 'Default GST Rate',
-    defaultGstRate: 'Default GST Rate',
-    chapterCode: 'Chapter Code',
-    parent: 'Parent Category',
-    parentId: 'Parent Category',
-  };
-  return mapping[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
-}
-
-function parseValue(val: string): any {
-  if (!val) return null;
-  try {
-    return JSON.parse(val);
-  } catch {
-    return val;
-  }
-}
-
-function formatValue(val: any): string {
-  if (val === undefined || val === null) return '(None)';
-  if (typeof val === 'object') {
-    if (Array.isArray(val)) return val.map(formatValue).join(', ') || '(Empty List)';
-    if (val.name) return String(val.name);
-    if (val.title) return String(val.title);
-    if (val.code) return String(val.code);
-    if (val.id) return String(val.id);
-    return '(Complex Data)';
-  }
-  return String(val);
-}
-
-export function computeDiff(prev: string | null, next: string | null): AuditChange[] {
-  if (!next) return [];
-  const prevObj = prev ? parseValue(prev) : {};
-  const nextObj = parseValue(next);
-
-  if (!nextObj || typeof nextObj !== 'object') {
-    return [{ field: 'Value', oldValue: formatValue(prev), newValue: formatValue(next) }];
-  }
-
-  const diffs: AuditChange[] = [];
-  const keys = Array.from(new Set([...Object.keys(prevObj), ...Object.keys(nextObj)]));
-  
-  const systemKeys = [
-    'updatedAt', 'createdAt', 'approvedAt', 
-    'createdById', 'updatedById', 'approvedById', 
-    'createdBy', 'updatedBy', 'approvedBy',
-    'id', 'version', 'history', 'companyId'
-  ];
-
-  for (const k of keys) {
-    if (systemKeys.includes(k)) continue;
-    if (k.endsWith('Id') && keys.includes(k.replace(/Id$/, ''))) continue;
-
-    const oldVal = prevObj[k];
-    const newVal = nextObj[k];
-
-    if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
-      diffs.push({
-        field: getFieldName(k),
-        oldValue: formatValue(oldVal),
-        newValue: formatValue(newVal),
-      });
-    }
-  }
-
-  return diffs;
-}
+import { AuditDisplayResolver, AuditChange } from '@/lib/services/audit-display-resolver';
 
 let hecRenderCount = 0;
 
 export function HistoryEventCard({ h }: { h: any }) {
   hecRenderCount++;
-  if (hecRenderCount > 10) {
-    console.warn(`[PROFILER] HistoryEventCard render count: ${hecRenderCount} | ID: ${h.id}`);
-  }
+  
   const [expanded, setExpanded] = useState(false);
-  const diffs = React.useMemo(() => computeDiff(h.previousValue, h.newValue), [h.previousValue, h.newValue]);
+  const [diffs, setDiffs] = useState<AuditChange[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    AuditDisplayResolver.resolveDiffs(h).then((res) => {
+      if (mounted) {
+        setDiffs(res);
+        setLoading(false);
+      }
+    });
+    return () => { mounted = false; };
+  }, [h]);
+
   const isLargeChange = diffs.length > 5;
   const visibleDiffs = expanded ? diffs : diffs.slice(0, 5);
 
@@ -164,7 +90,11 @@ export function HistoryEventCard({ h }: { h: any }) {
           <span>{h.performedBy?.name || 'System'}</span>
         </div>
 
-        {diffs.length > 0 && (
+        {loading ? (
+          <div className="space-y-1.5 pt-1 animate-pulse">
+            <div className="h-6 bg-gray-200 rounded border border-gray-150"></div>
+          </div>
+        ) : diffs.length > 0 && (
           <div className="space-y-1.5 pt-1">
             {visibleDiffs.map((d, index) => (
               <div key={index} className="flex flex-col sm:flex-row sm:items-center justify-between text-xs p-2 bg-white rounded border border-gray-150 gap-2">

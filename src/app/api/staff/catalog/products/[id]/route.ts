@@ -5,6 +5,7 @@ import { createMasterAuditLog } from '@/lib/master-data-service';
 import { ProductAttributeService } from '@/lib/services/ProductAttributeService';
 import { ProductAttributeValidationService } from '@/lib/services/ProductAttributeValidationService';
 import { CatalogResolver } from '@/lib/services/CatalogResolver';
+import { CategoryService } from '@/lib/services/CategoryService';
 
 export async function GET(
   request: NextRequest,
@@ -229,6 +230,13 @@ export async function PUT(
         if (existingCode) {
           return NextResponse.json({ error: `Product with code "${parsedCode}" already exists` }, { status: 400 });
         }
+      }
+    }
+
+    if (!existingProduct.parentProductId && categoryId) {
+      const isLeaf = await CategoryService.isLeafCategory(categoryId);
+      if (!isLeaf) {
+        return NextResponse.json({ error: 'Products can only be assigned to leaf categories (categories with no sub-categories).' }, { status: 400 });
       }
     }
 

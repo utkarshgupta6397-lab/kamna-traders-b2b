@@ -54,7 +54,7 @@ const uomDisplay = (opt: any): string =>
   opt.abbreviation ? `${opt.name} (${opt.abbreviation})` : opt.name || opt.id;
 
 const brandDisplay   = (opt: any): string => opt.name || opt.id;
-const catDisplay     = (opt: any): string => opt.name || opt.id;
+const catDisplay     = (opt: any): string => opt.pathName || opt.name || opt.id;
 const mfrDisplay     = (opt: any): string => opt.name || opt.id;
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -567,7 +567,7 @@ export default function CreateProductPage() {
                   <AsyncLookupField
                     label="Category"
                     required
-                    endpoint="/api/staff/catalog/categories"
+                    endpoint="/api/staff/catalog/categories/selectable"
                     extraQueryParams={{ sortBy: 'name' }}
                     value={formData.categoryId}
                     onChange={val => updateForm('categoryId', val || '')}

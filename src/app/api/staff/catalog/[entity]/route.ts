@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { ENTITY_REGISTRY, MasterEntityKey, getNextMasterId, createMasterAuditLog, getPrismaDelegate } from '@/lib/master-data-service';
+import { CategoryService } from '@/lib/services/CategoryService';
 
 export async function GET(
   request: Request,
@@ -50,7 +51,7 @@ export async function GET(
       if (dateTo) where.createdAt.lte = new Date(`${dateTo}T23:59:59.999Z`);
     }
 
-    if (entity === 'categories') {
+    if (entity === 'categories' && categoryType !== 'ALL') {
       if (isRoot || categoryType === 'ROOT') {
         where.parentId = null;
       } else if (categoryType === 'SUB') {
@@ -126,8 +127,6 @@ export async function GET(
 
         records = pagedIds.map((id: any) => rawRecords.find((r: any) => r.id === id)).filter(Boolean);
       } catch (err) {
-        // Fallback for unmigrated DB
-        total = await delegate.count({ where }).catch(() => 0);
         total = await delegate.count({ where }).catch(() => 0);
         records = await delegate.findMany({
           where: {},
@@ -136,37 +135,27 @@ export async function GET(
           take: limit === 'all' ? undefined : (limit as number),
         }).catch(() => []);
       }
-    } else if (entity === 'categories' && sortBy !== 'default' && categoryType !== 'ROOT' && categoryType !== 'SUB' && !isRoot) {
-      // Tree sorting for categories: fetch all, build tree, then paginate
-      try {
-        const allCategories = await delegate.findMany({
-          where,
-          orderBy: sortBy === 'productsMappedCount' ? { products: { _count: sortOrder } } : { [sortBy]: sortOrder },
-          include: {
-            createdBy: { select: { id: true, name: true } },
-            updatedBy: { select: { id: true, name: true } },
-            approvedBy: { select: { id: true, name: true } },
-            parent: { select: { id: true, name: true } },
-            _count: { select: { children: true, products: { where: { status: { in: ['Draft', 'Active', 'Approval Pending'] } } } } },
-          },
-        });
-        
-        total = allCategories.length;
-        
-        // Build flat tree (Root -> Subs -> Root -> Subs)
-        const roots = allCategories.filter((c: any) => !c.parentId);
-        const flatTree: any[] = [];
-        for (const root of roots) {
-          flatTree.push(root);
-          const subs = allCategories.filter((c: any) => c.parentId === root.id);
-          flatTree.push(...subs);
-        }
-        
-        records = limit === 'all' ? flatTree : flatTree.slice((page - 1) * (limit as number), page * (limit as number));
-      } catch (err) {
-        total = 0;
-        records = [];
+    } else if (entity === 'categories') {
+      const recordsFlat = await CategoryService.getFlat(searchParams);
+      const formattedRecords = recordsFlat.map(r => ({
+        ...r,
+        productsMappedCount: r.totalProducts || 0
+      }));
+      let filtered = formattedRecords;
+      if (search) {
+        const lowerSearch = search.toLowerCase();
+        filtered = filtered.filter(r => r.name.toLowerCase().includes(lowerSearch));
       }
+      if (status !== 'ALL') {
+        filtered = filtered.filter(r => r.status === status);
+      }
+      if (categoryType === 'ROOT') {
+        filtered = filtered.filter(r => !r.parentId);
+      } else if (categoryType === 'SUB') {
+        filtered = filtered.filter(r => !!r.parentId);
+      }
+      total = filtered.length;
+      records = limit === 'all' ? filtered : filtered.slice((page - 1) * (limit as number), page * (limit as number));
     } else {
       try {
         total = await delegate.count({ where });
@@ -189,7 +178,6 @@ export async function GET(
           },
         });
       } catch {
-        // Fallback for unmigrated DB schemas lacking relation fields
         try {
           records = await delegate.findMany({
             where: {},
@@ -205,7 +193,7 @@ export async function GET(
       }
     }
 
-    records = records.map(r => ({ ...r, productsMappedCount: r._count?.products || 0 }));
+    records = records.map(r => ({ ...r, productsMappedCount: r._count?.products || r.productsMappedCount || 0 }));
 
     if (entity === 'tax-rates') {
       records = records.map(r => ({
@@ -242,7 +230,6 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid entity' }, { status: 400 });
   }
 
-  // Permission Check
   const createPerm = `${meta.permissionPrefix}_create`;
   if (session.role !== 'ADMIN' && !session[createPerm]) {
     return NextResponse.json({ error: `Permission Denied: ${createPerm}` }, { status: 403 });
@@ -262,7 +249,6 @@ export async function POST(
 
     const delegate = getPrismaDelegate(entity as MasterEntityKey);
 
-    // Check unique name
     const existingName = await delegate.findFirst({
       where: { name: { equals: name.trim(), mode: 'insensitive' } },
     });
@@ -270,12 +256,10 @@ export async function POST(
       return NextResponse.json({ error: `${meta.singularName} with name "${name}" already exists` }, { status: 400 });
     }
 
-    // Allocate ID & Code
     const numId = await getNextMasterId(meta.modelName);
     const finalCode = code && code.trim() ? code.trim().toUpperCase() : `${meta.codePrefix}-${numId}`;
     const initialStatus = submitForApproval ? 'Approval Pending' : 'Draft';
 
-    // Check unique code
     if (finalCode) {
       if (entity === 'hsn-codes' && finalCode.length < 6) {
         return NextResponse.json({ error: 'Company HSN codes must contain a minimum of 6 digits.' }, { status: 400 });
@@ -289,7 +273,6 @@ export async function POST(
       }
     }
 
-    // Check unique abbreviation for units
     if (entity === 'units' && customProps.abbreviation) {
       const parsedAbbrev = customProps.abbreviation.trim().toUpperCase();
       const existingAbbrev = await delegate.findFirst({
@@ -314,12 +297,10 @@ export async function POST(
       updatedBy: { connect: { id: session.userId } },
     };
 
-    // Brand and Category schema use auto-cuid or cuid for ID, others use numeric ID
     if (entity !== 'brands' && entity !== 'categories') {
       createData.id = numId;
     }
 
-    // Custom entity fields
     if (entity === 'tax-rates') {
       createData.percentage = parseFloat(customProps.percentage) || 0.0;
       createData.taxType = customProps.taxType || 'GST';

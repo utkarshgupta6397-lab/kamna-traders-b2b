@@ -4,16 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronsUpDown, Loader2, X, AlertCircle, RefreshCw } from 'lucide-react';
 
-interface Option {
-  id: string;
-  name?: string;
-  code?: string;
-  percentage?: number;
-  abbreviation?: string;
-  taxType?: string;
-  parentId?: string | null;
-  _count?: { children: number };
-}
+import { LookupService, type Option } from '@/lib/services/lookup-service';
 
 interface AsyncLookupFieldProps {
   endpoint: string;
@@ -30,8 +21,7 @@ interface AsyncLookupFieldProps {
   clearable?: boolean;
 }
 
-// ─── Module-level cache to persist across step navigation ────────────────
-const globalLookupCache = new Map<string, { data: Option[]; timestamp: number }>();
+// Module-level cache is now handled by LookupService
 
 export default function AsyncLookupField({
   endpoint,
@@ -68,51 +58,21 @@ export default function AsyncLookupField({
   const getDisplay = displayValue || defaultDisplayValue;
   const getRender = renderOption || ((opt: Option) => getDisplay(opt));
 
-  // ─── Construct Cache Key ──────────────────────────────────────────────────
-  const getCacheKey = useCallback((query: string) => {
-    const qs = new URLSearchParams();
-    qs.set('status', 'Active');
-    qs.set('limit', '100');
-    if (query) qs.set('search', query);
-    if (extraQueryParams) {
-      Object.entries(extraQueryParams).forEach(([k, v]) => qs.set(k, v));
-    }
-    return `${endpoint}?${qs.toString()}`;
-  }, [endpoint, extraQueryParams]);
-
   // ─── Fetch options ────────────────────────────────────────────────────────
   const loadOptions = useCallback(async (query: string = '') => {
-    const cacheKey = getCacheKey(query);
-    const cached = globalLookupCache.get(cacheKey);
-
-    // Use cache if less than 5 minutes old
-    if (cached && Date.now() - cached.timestamp < 1000 * 60 * 5) {
-      setOptions(cached.data);
-      setError(false);
-      return;
-    }
-
     setLoading(true);
     setError(false);
     
     try {
-      const res = await fetch(cacheKey);
-      if (res.ok) {
-        const data = await res.json();
-        const records = data.records || [];
-        setOptions(records);
-        globalLookupCache.set(cacheKey, { data: records, timestamp: Date.now() });
-      } else {
-        const errorText = await res.text().catch(() => '');
-        throw new Error(`API Error: ${res.status} ${res.statusText} - ${errorText}`);
-      }
+      const records = await LookupService.fetchOptions(endpoint, query, extraQueryParams);
+      setOptions(records);
     } catch (e) {
-      console.error('AsyncLookupField: failed to load options from', cacheKey, e);
+      console.error('AsyncLookupField: failed to load options from', endpoint, e);
       setError(true);
     } finally {
       setLoading(false);
     }
-  }, [getCacheKey]);
+  }, [endpoint, extraQueryParams]);
 
   // ─── Eager load on mount ──────────────────────────────────────────────────
   useEffect(() => {
@@ -175,14 +135,9 @@ export default function AsyncLookupField({
     // Check if we have it in some other cache entry? Too complex, just fetch it if needed.
     let cancelled = false;
     (async () => {
-      try {
-        const res = await fetch(`${endpoint}/${value}`);
-        if (res.ok && !cancelled) {
-          const data = await res.json();
-          setPreloadedOption(data);
-        }
-      } catch {
-        // Silent
+      const fetched = await LookupService.fetchById(endpoint, value);
+      if (fetched && !cancelled) {
+        setPreloadedOption(fetched);
       }
     })();
     return () => { cancelled = true; };

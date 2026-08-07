@@ -5,6 +5,7 @@ import { createProductWithDefaultVariant, createVariantProductFamily } from '@/l
 import { ProductAttributeService } from '@/lib/services/ProductAttributeService';
 import { ProductAttributeValidationService } from '@/lib/services/ProductAttributeValidationService';
 import { CatalogResolver } from '@/lib/services/CatalogResolver';
+import { CategoryService } from '@/lib/services/CategoryService';
 import { buildProductWhereClause } from '@/lib/services/ProductFilterService';
 
 export async function GET(request: Request) {
@@ -183,9 +184,17 @@ export async function POST(request: Request) {
     } else {
       if (!resolvedBrandId) return NextResponse.json({ error: 'Brand is required' }, { status: 400 });
       if (!resolvedManufacturerId) return NextResponse.json({ error: 'Manufacturer is required' }, { status: 400 });
+      if (!resolvedCategoryId) return NextResponse.json({ error: 'Category is required' }, { status: 400 });
       if (!resolvedHsnCodeId) return NextResponse.json({ error: 'HSN Code is required' }, { status: 400 });
       if (!resolvedTaxRateId) return NextResponse.json({ error: 'Tax Rate is required' }, { status: 400 });
       if (!resolvedUnitId) return NextResponse.json({ error: 'Unit of Measurement is required' }, { status: 400 });
+    }
+
+    if (!parentProductId && resolvedCategoryId) {
+      const isLeaf = await CategoryService.isLeafCategory(resolvedCategoryId);
+      if (!isLeaf) {
+        return NextResponse.json({ error: 'Products can only be assigned to leaf categories (categories with no sub-categories).' }, { status: 400 });
+      }
     }
 
     const pPrice = parseFloat(purchasePrice) || 0;

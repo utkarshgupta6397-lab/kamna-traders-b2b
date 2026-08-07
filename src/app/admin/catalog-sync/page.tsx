@@ -90,7 +90,50 @@ type ExecuteResult = {
   durationMs: number;
 };
 
-type ActiveTab = 'health' | 'validate' | 'actions' | 'output';
+type ActiveTab = 'health' | 'readiness' | 'resolverHealth' | 'validate' | 'actions' | 'output';
+
+type ResolverHealthReport = {
+  totalProducts: number;
+  totalVariants: number;
+  totalSkus: number;
+  healthScore: number;
+  issues: {
+    duplicateSkus: { count: number; samples: string[] };
+    duplicateZohoIds: { count: number; samples: string[] };
+    duplicateBarcodes: { count: number; samples: string[] };
+    productsWithoutVariant: { count: number; samples: string[] };
+    variantsWithoutProduct: { count: number; samples: string[] };
+    orphanSkus: { count: number; samples: string[] };
+    orphanVariants: { count: number; samples: string[] };
+    inactiveDefaultVariant: { count: number; samples: string[] };
+    missingDefaultVariant: { count: number; samples: string[] };
+    duplicateAttributes: { count: number; samples: string[] };
+    brokenSkuMapping: { count: number; samples: string[] };
+    missingZohoMapping: { count: number; samples: string[] };
+  };
+};
+
+type SyncHealthReport = {
+  health: {
+    totalProducts: number;
+    totalVariants: number;
+    totalSkus: number;
+    productsWithoutSku: number;
+    skusWithoutProduct: number;
+    variantsWithoutSku: number;
+    duplicateSku: number;
+    duplicateZohoIds: number;
+    status: string;
+    score: number;
+  };
+};
+
+type SyncPreviewRow = {
+  id: string;
+  title: string;
+  action: 'Create' | 'Update' | 'Skip' | 'Error';
+  details: string;
+};
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -181,11 +224,17 @@ export default function CatalogMaintenancePage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisReport, setAnalysisReport] = useState<AnalysisReport | null>(null);
 
+  // Sync Health
+  const [syncHealthLoading, setSyncHealthLoading] = useState(false);
+  const [syncHealthData, setSyncHealthData] = useState<SyncHealthReport | null>(null);
+
   // Previews
-  const [importPreview, setImportPreview] = useState<ImportPreviewRow[] | null>(null);
-  const [variantPreview, setVariantPreview] = useState<VariantRepairPreviewRow[] | null>(null);
-  const [skuPreview, setSkuPreview] = useState<SkuRepairPreviewRow[] | null>(null);
+  const [syncPreview, setSyncPreview] = useState<SyncPreviewRow[] | null>(null);
   const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
+
+  // Resolver Health
+  const [resolverHealth, setResolverHealth] = useState<ResolverHealthReport | null>(null);
+  const [resolverHealthLoading, setResolverHealthLoading] = useState(false);
 
   // Execute
   const [executing, setExecuting] = useState<string | null>(null);
@@ -257,15 +306,51 @@ export default function CatalogMaintenancePage() {
     }
   }
 
+  // ── Sync Health ─────────────────────────────────────────────────────────────────
+
+  async function loadSyncHealth() {
+    setSyncHealthLoading(true);
+    setSyncHealthData(null);
+    try {
+      const res = await fetch('/api/admin/catalog-sync/readiness');
+      if (!res.ok) throw new Error('Failed to load sync health');
+      const dataJson = await res.json();
+      setSyncHealthData(dataJson);
+      setActiveTab('readiness');
+    } catch (err: any) {
+      toast.error(`Sync health failed: ${err.message}`);
+    } finally {
+      setSyncHealthLoading(false);
+    }
+  }
+
+  // ── Resolver Health ─────────────────────────────────────────────────────────────
+
+  async function loadResolverHealth() {
+    setResolverHealthLoading(true);
+    setResolverHealth(null);
+    try {
+      const res = await fetch('/api/admin/catalog-resolver/health');
+      if (!res.ok) throw new Error('Failed to load resolver health');
+      const dataJson = await res.json();
+      setResolverHealth(dataJson);
+      setActiveTab('resolverHealth');
+    } catch (err: any) {
+      toast.error(`Resolver health failed: ${err.message}`);
+    } finally {
+      setResolverHealthLoading(false);
+    }
+  }
+
   // ── Preview ─────────────────────────────────────────────────────────────────
 
   async function loadPreview(action: string) {
     setLoadingPreview(action);
     try {
       const data = await callApi('POST', { action, dryRun: true });
-      if (action === 'previewImport' || action === 'importProducts') setImportPreview(data.rows);
-      if (action === 'previewVariantRepair' || action === 'repairVariants') setVariantPreview(data.rows);
-      if (action === 'previewSkuRepair' || action === 'repairSkuMappings') setSkuPreview(data.rows);
+      if (action === 'syncProductToSku' || action === 'syncSkuToProduct') {
+        setSyncPreview(data.result.rows);
+      }
       setActiveTab('actions');
     } catch (err: any) {
       toast.error(`Preview failed: ${err.message}`);
@@ -302,6 +387,8 @@ export default function CatalogMaintenancePage() {
 
   const tabs: { id: ActiveTab; label: string }[] = [
     { id: 'health', label: 'Catalog Health' },
+    { id: 'readiness', label: 'Catalog Synchronization Health' },
+    { id: 'resolverHealth', label: 'Resolver Health' },
     { id: 'validate', label: 'Consistency Report' },
     { id: 'actions', label: 'Maintenance Actions' },
     { id: 'output', label: 'Execution Output' },
@@ -382,7 +469,94 @@ export default function CatalogMaintenancePage() {
             <button onClick={runValidation} disabled={validating} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-60 transition-colors">
               {validating ? <Spinner /> : <ShieldCheck size={15} />} Run Validation
             </button>
+            <button onClick={loadSyncHealth} disabled={syncHealthLoading} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-60 transition-colors">
+              {syncHealthLoading ? <Spinner /> : <ArrowRight size={15} />} Catalog Sync Health
+            </button>
+            <button onClick={loadResolverHealth} disabled={resolverHealthLoading} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-60 transition-colors">
+              {resolverHealthLoading ? <Spinner /> : <Activity size={15} />} Resolver Health
+            </button>
           </div>
+        </div>
+      )}
+
+      {/* ── Tab: Catalog Synchronization Health ── */}
+      {activeTab === 'readiness' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between mb-4">
+            <SectionHeader title="Catalog Synchronization Health" subtitle="Real-time synchronization metrics between Products and legacy SKUs." />
+            <button onClick={loadSyncHealth} disabled={syncHealthLoading} className="flex items-center gap-2 px-3 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 transition-colors">
+              {syncHealthLoading ? <Spinner /> : <RefreshCw size={14} />} Refresh
+            </button>
+          </div>
+          
+          {syncHealthLoading && !syncHealthData && (
+            <div className="flex items-center gap-2 text-gray-500 py-12 justify-center"><Spinner /> Loading metrics...</div>
+          )}
+
+          {syncHealthData && (
+            <div className="space-y-6">
+              <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-6 text-center">
+                <h3 className="text-lg font-bold text-indigo-900 mb-2">Overall Health Score</h3>
+                <div className={`text-4xl font-extrabold ${syncHealthData.health.score === 100 ? 'text-green-600' : syncHealthData.health.score > 80 ? 'text-amber-500' : 'text-red-500'}`}>
+                  {syncHealthData.health.score}%
+                </div>
+                <div className="text-sm font-medium mt-1 text-indigo-700">{syncHealthData.health.status}</div>
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <StatCard label="Products" value={syncHealthData.health.totalProducts} icon={Package} />
+                <StatCard label="Variants" value={syncHealthData.health.totalVariants} icon={Tag} />
+                <StatCard label="SKUs" value={syncHealthData.health.totalSkus} icon={Database} />
+                <StatCard label="Duplicate Zoho IDs" value={syncHealthData.health.duplicateZohoIds} icon={AlertCircle} warn />
+                <StatCard label="Products without SKU" value={syncHealthData.health.productsWithoutSku} icon={AlertCircle} warn />
+                <StatCard label="Variants without SKU" value={syncHealthData.health.variantsWithoutSku} icon={AlertCircle} warn />
+                <StatCard label="SKUs without Product" value={syncHealthData.health.skusWithoutProduct} icon={AlertCircle} warn />
+                <StatCard label="Duplicate SKUs" value={syncHealthData.health.duplicateSku} icon={AlertTriangle} warn />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Resolver Health ── */}
+      {activeTab === 'resolverHealth' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between mb-4">
+            <SectionHeader title="Catalog Resolver Health" subtitle="Real-time diagnostics of the unified Catalog Resolver cache and mapping layer." />
+            <button onClick={loadResolverHealth} disabled={resolverHealthLoading} className="flex items-center gap-2 px-3 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 transition-colors">
+              {resolverHealthLoading ? <Spinner /> : <RefreshCw size={14} />} Refresh
+            </button>
+          </div>
+          
+          {resolverHealthLoading && !resolverHealth && (
+            <div className="flex items-center gap-2 text-gray-500 py-12 justify-center"><Spinner /> Loading metrics...</div>
+          )}
+
+          {resolverHealth && (
+            <div className="space-y-6">
+              <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-6 text-center">
+                <h3 className="text-lg font-bold text-indigo-900 mb-2">Resolver Health Score</h3>
+                <div className={`text-4xl font-extrabold ${resolverHealth.healthScore === 100 ? 'text-green-600' : resolverHealth.healthScore > 80 ? 'text-amber-500' : 'text-red-500'}`}>
+                  {resolverHealth.healthScore}%
+                </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <StatCard label="Total Products" value={resolverHealth.totalProducts} icon={Package} accent />
+                <StatCard label="Total Variants" value={resolverHealth.totalVariants} icon={Tag} accent />
+                <StatCard label="Total SKUs" value={resolverHealth.totalSkus} icon={Database} accent />
+                
+                <StatCard label="Orphan SKUs" value={resolverHealth.issues.orphanSkus.count} icon={AlertTriangle} warn />
+                <StatCard label="Orphan Variants" value={resolverHealth.issues.orphanVariants.count} icon={AlertTriangle} warn />
+                <StatCard label="Duplicate SKUs" value={resolverHealth.issues.duplicateSkus.count} icon={AlertCircle} warn />
+                <StatCard label="Duplicate Barcodes" value={resolverHealth.issues.duplicateBarcodes.count} icon={AlertCircle} warn />
+                <StatCard label="Duplicate Zoho IDs" value={resolverHealth.issues.duplicateZohoIds.count} icon={AlertCircle} warn />
+                <StatCard label="Broken SKU Mapping" value={resolverHealth.issues.brokenSkuMapping.count} icon={AlertTriangle} warn />
+                <StatCard label="Missing Zoho Mapping" value={resolverHealth.issues.missingZohoMapping.count} icon={AlertTriangle} warn />
+                <StatCard label="Missing Default Variant" value={resolverHealth.issues.missingDefaultVariant.count} icon={AlertTriangle} warn />
+                <StatCard label="Duplicate Attributes" value={resolverHealth.issues.duplicateAttributes.count} icon={AlertTriangle} warn />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -493,148 +667,101 @@ export default function CatalogMaintenancePage() {
             </div>
           )}
 
-          {/* ── Action Card: Import Products ── */}
+          {/* ── Action Card: Product to SKU Sync ── */}
           <ActionCard
-            title="Import Products"
-            description="Create Product + default ProductVariant records for every legacy SKU that does not yet have a variant mapping. Idempotent — already-mapped SKUs are skipped automatically."
-            previewAction="previewImport"
-            executeAction="importProducts"
+            title="Product → SKU Synchronization"
+            description="The primary synchronization direction. Ensures all Product Variants have a corresponding SKU record, and updates existing SKUs with any changes to ERP-owned fields (Name, Price, Category, etc.)."
+            previewAction="syncProductToSku"
+            executeAction="syncProductToSku"
             loadingPreview={loadingPreview}
             executing={executing}
-            onPreview={() => loadPreview('previewImport')}
-            onExecute={() => requestExecute('importProducts', 'Import Products', 'This will create Product and ProductVariant records for all eligible SKUs. SKUs already mapped will be skipped. Continue?')}
+            onPreview={() => loadPreview('syncProductToSku')}
+            onExecute={() => requestExecute('syncProductToSku', 'Execute Product → SKU Sync', 'This will create missing SKUs and update existing SKUs based on the Master Product catalog. Continue?')}
           >
-            {importPreview && (
+            {syncPreview && loadingPreview !== 'syncSkuToProduct' && (
               <PreviewTable
-                title="Import Preview"
-                total={importPreview.length}
-                toCreate={importPreview.filter((r) => r.action === 'Create').length}
-                toSkip={importPreview.filter((r) => r.action === 'Skip').length}
+                title="Product → SKU Preview"
+                total={syncPreview.length}
+                toCreate={syncPreview.filter((r) => r.action === 'Create').length}
+                toSkip={syncPreview.filter((r) => r.action === 'Skip').length}
               >
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-gray-100 text-gray-500">
-                      <th className="text-left py-2 pr-4 font-medium">Legacy SKU</th>
-                      <th className="text-left py-2 pr-4 font-medium">Product Name</th>
-                      <th className="text-left py-2 pr-4 font-medium">Brand</th>
-                      <th className="text-left py-2 pr-4 font-medium">Category</th>
+                      <th className="text-left py-2 pr-4 font-medium">Record ID</th>
+                      <th className="text-left py-2 pr-4 font-medium">Title</th>
+                      <th className="text-left py-2 pr-4 font-medium">Details</th>
                       <th className="text-left py-2 font-medium">Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {importPreview.slice(0, 20).map((row) => (
-                      <tr key={row.skuId} className="border-b border-gray-50 hover:bg-gray-50/50">
-                        <td className="py-1.5 pr-4 font-mono text-gray-600">{row.skuId}</td>
-                        <td className="py-1.5 pr-4 text-gray-700 max-w-[200px] truncate">{row.productName}</td>
-                        <td className="py-1.5 pr-4 text-gray-500">{row.brand ?? '—'}</td>
-                        <td className="py-1.5 pr-4 text-gray-500">{row.category ?? '—'}</td>
+                    {syncPreview.slice(0, 20).map((row, idx) => (
+                      <tr key={row.id + idx} className="border-b border-gray-50 hover:bg-gray-50/50">
+                        <td className="py-1.5 pr-4 font-mono text-gray-600">{row.id}</td>
+                        <td className="py-1.5 pr-4 text-gray-700 max-w-[200px] truncate">{row.title}</td>
+                        <td className="py-1.5 pr-4 text-gray-500">{row.details}</td>
                         <td className="py-1.5">
                           <Badge
                             text={row.action}
-                            color={row.action === 'Create' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}
+                            color={row.action === 'Create' ? 'bg-green-100 text-green-700' : row.action === 'Update' ? 'bg-blue-100 text-blue-700' : row.action === 'Error' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}
                           />
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {importPreview.length > 20 && (
-                  <p className="text-xs text-gray-400 mt-2">Showing 20 of {importPreview.length} rows.</p>
+                {syncPreview.length > 20 && (
+                  <p className="text-xs text-gray-400 mt-2">Showing 20 of {syncPreview.length} rows.</p>
                 )}
               </PreviewTable>
             )}
           </ActionCard>
 
-          {/* ── Action Card: Repair Variants ── */}
+          {/* ── Action Card: SKU to Product Sync ── */}
           <ActionCard
-            title="Repair Missing Variants"
-            description="For every Product that has no default ProductVariant, either mark the first existing variant as default, or create a new minimal default variant."
-            previewAction="previewVariantRepair"
-            executeAction="repairVariants"
+            title="SKU → Product Synchronization"
+            description="Syncs approved external fields (like Zoho Item ID) from the legacy SKU table back to the Master Product Catalog. Will never overwrite ERP-owned fields like Product Name or Price."
+            previewAction="syncSkuToProduct"
+            executeAction="syncSkuToProduct"
             loadingPreview={loadingPreview}
             executing={executing}
-            onPreview={() => loadPreview('previewVariantRepair')}
-            onExecute={() => requestExecute('repairVariants', 'Repair Missing Variants', 'This will create or mark default variants for all affected products. Continue?')}
+            onPreview={() => loadPreview('syncSkuToProduct')}
+            onExecute={() => requestExecute('syncSkuToProduct', 'Execute SKU → Product Sync', 'This will sync Zoho metadata and create minimal Product stubs for orphaned legacy SKUs. Continue?')}
           >
-            {variantPreview && (
+            {syncPreview && loadingPreview !== 'syncProductToSku' && (
               <PreviewTable
-                title="Variant Repair Preview"
-                total={variantPreview.length}
-                toCreate={variantPreview.length}
-                toSkip={0}
+                title="SKU → Product Preview"
+                total={syncPreview.length}
+                toCreate={syncPreview.filter((r) => r.action === 'Create').length}
+                toSkip={syncPreview.filter((r) => r.action === 'Skip').length}
               >
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-gray-100 text-gray-500">
-                      <th className="text-left py-2 pr-4 font-medium">Product Code</th>
-                      <th className="text-left py-2 pr-4 font-medium">Product Name</th>
-                      <th className="text-left py-2 pr-4 font-medium">Current Variants</th>
-                      <th className="text-left py-2 font-medium">Proposed Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {variantPreview.slice(0, 20).map((row) => (
-                      <tr key={row.productId} className="border-b border-gray-50 hover:bg-gray-50/50">
-                        <td className="py-1.5 pr-4 font-mono text-gray-600">{row.productCode}</td>
-                        <td className="py-1.5 pr-4 text-gray-700 max-w-[200px] truncate">{row.productName}</td>
-                        <td className="py-1.5 pr-4 text-gray-500 text-center">{row.currentVariantCount}</td>
-                        <td className="py-1.5 text-gray-500">{row.proposedAction}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {variantPreview.length > 20 && (
-                  <p className="text-xs text-gray-400 mt-2">Showing 20 of {variantPreview.length} rows.</p>
-                )}
-              </PreviewTable>
-            )}
-          </ActionCard>
-
-          {/* ── Action Card: Repair SKU Mappings (Phase 1: read-only) ── */}
-          <ActionCard
-            title="Repair SKU Mappings"
-            description="Identifies ProductVariant records that have no corresponding legacy Sku row. Phase 1 is preview-only — no Sku records are created automatically."
-            previewAction="previewSkuRepair"
-            executeAction="repairSkuMappings"
-            loadingPreview={loadingPreview}
-            executing={null}
-            onPreview={() => loadPreview('previewSkuRepair')}
-            onExecute={null}
-            readOnly
-          >
-            {skuPreview && (
-              <PreviewTable
-                title="SKU Mapping Preview"
-                total={skuPreview.length}
-                toCreate={skuPreview.filter((r) => r.status === 'Missing').length}
-                toSkip={skuPreview.filter((r) => r.status === 'OK').length}
-                createLabel="Orphaned"
-                skipLabel="Healthy"
-              >
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-gray-100 text-gray-500">
-                      <th className="text-left py-2 pr-4 font-medium">Variant SKU</th>
-                      <th className="text-left py-2 pr-4 font-medium">Product</th>
-                      <th className="text-left py-2 pr-4 font-medium">Status</th>
+                      <th className="text-left py-2 pr-4 font-medium">Record ID</th>
+                      <th className="text-left py-2 pr-4 font-medium">Title</th>
+                      <th className="text-left py-2 pr-4 font-medium">Details</th>
                       <th className="text-left py-2 font-medium">Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {skuPreview.filter((r) => r.status === 'Missing').slice(0, 20).map((row) => (
-                      <tr key={row.variantId} className="border-b border-gray-50 hover:bg-gray-50/50">
-                        <td className="py-1.5 pr-4 font-mono text-gray-600">{row.variantSku}</td>
-                        <td className="py-1.5 pr-4 text-gray-700 max-w-[200px] truncate">{row.productName}</td>
-                        <td className="py-1.5 pr-4">
-                          <Badge text={row.status} color={row.status === 'OK' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'} />
+                    {syncPreview.slice(0, 20).map((row, idx) => (
+                      <tr key={row.id + idx} className="border-b border-gray-50 hover:bg-gray-50/50">
+                        <td className="py-1.5 pr-4 font-mono text-gray-600">{row.id}</td>
+                        <td className="py-1.5 pr-4 text-gray-700 max-w-[200px] truncate">{row.title}</td>
+                        <td className="py-1.5 pr-4 text-gray-500">{row.details}</td>
+                        <td className="py-1.5">
+                          <Badge
+                            text={row.action}
+                            color={row.action === 'Create' ? 'bg-green-100 text-green-700' : row.action === 'Update' ? 'bg-amber-100 text-amber-700' : row.action === 'Error' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}
+                          />
                         </td>
-                        <td className="py-1.5 text-gray-500">{row.proposedAction}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {skuPreview.filter((r) => r.status === 'Missing').length > 20 && (
-                  <p className="text-xs text-gray-400 mt-2">Showing 20 of {skuPreview.filter((r) => r.status === 'Missing').length} orphaned rows.</p>
+                {syncPreview.length > 20 && (
+                  <p className="text-xs text-gray-400 mt-2">Showing 20 of {syncPreview.length} rows.</p>
                 )}
               </PreviewTable>
             )}

@@ -3,6 +3,7 @@ import { updateInventory } from '../actions';
 import InventoryClient from '@/components/InventoryClient';
 import InventoryTableClient from '@/components/InventoryTableClient';
 import BulkInventoryImportClient from '@/components/BulkInventoryImportClient';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ page?: string; q?: string; wh?: string }> }) {
   const sp = await searchParams;
@@ -32,7 +33,12 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
     }),
     prisma.warehouseInventory.count({ where: whereClause }),
     prisma.warehouse.findMany({ where: { active: true, isSystemWarehouse: false } }),
-    prisma.sku.findMany({ where: { isActive: true }, orderBy: { id: 'asc' } }),
+    CatalogResolver.getAllItems().then(items => 
+      items
+        .filter(item => item.id !== null)
+        .map(item => ({ id: item.id as string, name: item.name || 'Unnamed' }))
+        .sort((a, b) => a.id.localeCompare(b.id))
+    ),
   ]);
   const totalPages = Math.ceil(total / perPage);
 

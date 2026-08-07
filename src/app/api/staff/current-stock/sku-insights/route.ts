@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { NextResponse } from 'next/server';
 import { calculateConsumptionDenominator } from '@/lib/inventory/consumption';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -23,14 +24,14 @@ export async function GET(request: Request) {
   sevenDaysAgo.setHours(0, 0, 0, 0);
 
   try {
-    const sku = await prisma.sku.findUnique({
-      where: { id: skuId },
-      include: {
-        inventory: true
-      }
-    });
+    const [catalogItem, inventory] = await Promise.all([
+      CatalogResolver.findBySku(skuId),
+      prisma.warehouseInventory.findMany({
+        where: { skuId }
+      })
+    ]);
 
-    if (!sku) {
+    if (!catalogItem) {
       return NextResponse.json({ error: 'SKU not found' }, { status: 404 });
     }
 
@@ -187,14 +188,14 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       sku: {
-        id: sku.id,
-        name: sku.name,
-        totalStock: sku.inventory.reduce((sum, inv) => sum + inv.qty, 0),
-        inventoryByWarehouse: sku.inventory.reduce((acc, inv) => {
+        id: catalogItem.legacySku || skuId,
+        name: catalogItem.displayName || catalogItem.productName || 'Unknown Product',
+        totalStock: inventory.reduce((sum, inv) => sum + inv.qty, 0),
+        inventoryByWarehouse: inventory.reduce((acc, inv) => {
           acc[inv.warehouseId] = { qty: inv.qty };
           return acc;
         }, {} as Record<string, { qty: number }>),
-        unit: sku.unit
+        unit: catalogItem.unit
       },
       movements,
       totalsByWarehouse,

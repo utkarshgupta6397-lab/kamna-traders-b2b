@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export async function POST(req: Request) {
   const session = await getSession();
@@ -19,18 +20,19 @@ export async function POST(req: Request) {
     const skuIds = [...new Set(rows.map(r => r.SKU_ID?.toString().trim()).filter(Boolean))];
     const warehouseNames = [...new Set(rows.map(r => r.Warehouse_Name?.toString().trim()).filter(Boolean))];
 
-    const [skus, warehouses] = await Promise.all([
-      prisma.sku.findMany({
-        where: { id: { in: skuIds }, isActive: true },
-        select: { id: true, name: true },
-      }),
+    const [skuMapAll, warehouses] = await Promise.all([
+      CatalogResolver.findManyBySku(skuIds),
       prisma.warehouse.findMany({
         where: { name: { in: warehouseNames }, active: true, isSystemWarehouse: false },
         select: { id: true, name: true },
       }),
     ]);
 
-    const skuMap = new Map(skus.map(s => [s.id, s]));
+    const skuMap = new Map(
+      [...skuMapAll.entries()]
+        .filter(([_, item]) => item && item.isActive)
+        .map(([id, item]) => [id, { id, name: item!.displayName }])
+    );
     const warehouseMap = new Map(warehouses.map(w => [w.name, w]));
 
     // Track combinations to check for duplicates within the file

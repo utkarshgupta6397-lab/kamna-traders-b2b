@@ -38,7 +38,7 @@ export async function PATCH(
     await createMasterAuditLog({
       entityType: 'ProductAttribute',
       entityId: updated.id,
-      action: status === 'Active' ? 'ACTIVATED' : 'DEACTIVATED',
+      action: 'UPDATED',
       newValue: JSON.stringify({ status }),
       remarks: `Attribute marked as ${status}`,
       userId: session.userId,

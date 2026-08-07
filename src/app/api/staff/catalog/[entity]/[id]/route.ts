@@ -256,7 +256,7 @@ export async function DELETE(
       await createMasterAuditLog({
         entityType: meta.modelName,
         entityId: id,
-        action: 'DELETED',
+        action: 'ARCHIVED',
         previousValue: existing.status,
         newValue: 'Deleted',
         remarks: 'Draft record deleted',

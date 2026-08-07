@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { createProductWithDefaultVariant } from '@/lib/product-service';
+import { createProductWithDefaultVariant, createVariantProductFamily } from '@/lib/product-service';
 import { ProductAttributeService } from '@/lib/services/ProductAttributeService';
 import { ProductAttributeValidationService } from '@/lib/services/ProductAttributeValidationService';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -345,6 +346,8 @@ export async function POST(request: Request) {
         parentProductId,
       });
     }
+
+    CatalogResolver.invalidateCache();
 
     return NextResponse.json(newProduct, { status: 201 });
   } catch (error: any) {

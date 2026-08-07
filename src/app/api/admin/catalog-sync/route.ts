@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { catalogSyncService } from '@/lib/services/catalog-sync.service';
+import { CatalogSyncEngine } from '@/lib/services/catalog-sync-engine';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 // ─── GET: Health Dashboard ────────────────────────────────────────────────────
 
@@ -83,6 +85,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, action, dryRun: true, rows });
       }
       const result = await catalogSyncService.importProducts(userId);
+      CatalogResolver.invalidateCache();
       return NextResponse.json({ success: true, action, result });
     }
 
@@ -92,6 +95,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, action, dryRun: true, rows });
       }
       const result = await catalogSyncService.repairVariants(userId);
+      CatalogResolver.invalidateCache();
       return NextResponse.json({ success: true, action, result });
     }
 
@@ -99,7 +103,28 @@ export async function POST(request: Request) {
       // Phase 1: always read-only
       const rows = await catalogSyncService.previewSkuRepair();
       const result = await catalogSyncService.repairSkuMappings(userId);
+      CatalogResolver.invalidateCache();
       return NextResponse.json({ success: true, action, result, rows });
+    }
+
+    if (action === 'syncProductToSku') {
+      if (dryRun !== false || confirmed !== true) {
+        const result = await CatalogSyncEngine.previewProductToSku();
+        return NextResponse.json({ success: true, action, dryRun: true, result });
+      }
+      const result = await CatalogSyncEngine.executeProductToSku();
+      CatalogResolver.invalidateCache();
+      return NextResponse.json({ success: true, action, result });
+    }
+
+    if (action === 'syncSkuToProduct') {
+      if (dryRun !== false || confirmed !== true) {
+        const result = await CatalogSyncEngine.previewSkuToProduct();
+        return NextResponse.json({ success: true, action, dryRun: true, result });
+      }
+      const result = await CatalogSyncEngine.executeSkuToProduct();
+      CatalogResolver.invalidateCache();
+      return NextResponse.json({ success: true, action, result });
     }
 
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });

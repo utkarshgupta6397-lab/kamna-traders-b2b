@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { NextResponse } from 'next/server';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export async function GET(
   request: Request,
@@ -578,9 +579,7 @@ export async function POST(
       }
 
       // Fetch SKU info
-      const sku = await prisma.sku.findUnique({
-        where: { id: dItem.skuId }
-      });
+      const sku = await CatalogResolver.findBySku(dItem.skuId);
       if (!sku) {
         return NextResponse.json({ error: `SKU ${dItem.skuId} not found` }, { status: 400 });
       }
@@ -611,7 +610,7 @@ export async function POST(
       if (!sku.isUnlimited) {
         if (currentSourceQty < dItem.dispatchQty) {
           return NextResponse.json({
-            error: `Insufficient stock for SKU [${dItem.skuId}] ${sku.name} in source warehouse ${transfer.sourceWarehouse.name}. Current stock: ${currentSourceQty}, dispatch requested: ${dItem.dispatchQty}`
+            error: `Insufficient stock for SKU [${dItem.skuId}] ${sku.displayName || sku.productName || 'Unknown'} in source warehouse ${transfer.sourceWarehouse.name}. Current stock: ${currentSourceQty}, dispatch requested: ${dItem.dispatchQty}`
           }, { status: 400 });
         }
       }
@@ -619,7 +618,7 @@ export async function POST(
       dispatchValidations.push({
         skuId: dItem.skuId,
         dispatchQty: dItem.dispatchQty,
-        productName: sku.name,
+        productName: sku.displayName || sku.productName || 'Unknown',
         isUnlimited: sku.isUnlimited,
         currentSourceQty,
         currentDestQty,

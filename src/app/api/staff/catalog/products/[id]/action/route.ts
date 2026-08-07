@@ -1,10 +1,11 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { createMasterAuditLog } from '@/lib/master-data-service';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export async function POST(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getSession();
@@ -195,6 +196,8 @@ export async function POST(
       userId: session.userId,
       productId: id,
     } as any);
+
+    CatalogResolver.invalidateCache();
 
     return NextResponse.json(updatedRecord);
   } catch (error: any) {

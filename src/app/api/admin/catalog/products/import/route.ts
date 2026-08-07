@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { getNextProductCode } from '@/lib/product-service';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -118,6 +119,8 @@ export async function POST(request: Request) {
 
     skippedCount = allSkus.length - allEligibleSkus.length;
     const remainingCount = allEligibleSkus.length - createdCount;
+
+    CatalogResolver.invalidateCache();
 
     return NextResponse.json({
       success: true,

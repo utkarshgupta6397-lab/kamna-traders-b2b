@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export async function GET(req: Request) {
   try {
@@ -37,13 +38,14 @@ export async function GET(req: Request) {
     let skuName = 'Unknown Product';
     let skuDetails = null;
     if (serial.skuId) {
-      const sku = await prisma.sku.findUnique({ 
-        where: { id: serial.skuId }, 
-        select: { id: true, name: true, zohoBooksId2: true } 
-      });
-      if (sku) {
-        skuName = sku.name;
-        skuDetails = sku;
+      const item = await CatalogResolver.findBySku(serial.skuId);
+      if (item) {
+        skuName = item.displayName || item.productName || 'Unknown Product';
+        skuDetails = {
+          id: serial.skuId,
+          name: skuName,
+          zohoBooksId2: item.zohoItemId2 || null
+        };
       }
     }
 
@@ -82,8 +84,8 @@ export async function PATCH(req: Request) {
     if (correctionType === 'CHANGE_SKU') {
       if (!newValues.skuId) return NextResponse.json({ error: 'newValues.skuId required' }, { status: 400 });
       // Verify SKU exists
-      const sku = await prisma.sku.findUnique({ where: { id: newValues.skuId } });
-      if (!sku) return NextResponse.json({ error: 'SKU not found' }, { status: 404 });
+      const item = await CatalogResolver.findBySku(newValues.skuId);
+      if (!item) return NextResponse.json({ error: 'SKU not found' }, { status: 404 });
 
       oldValues.skuId = serial.skuId;
       updateData.skuId = newValues.skuId;

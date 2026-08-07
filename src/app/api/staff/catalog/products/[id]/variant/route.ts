@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { createMasterAuditLog } from '@/lib/master-data-service';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export async function PATCH(
   request: Request,
@@ -75,6 +76,8 @@ export async function PATCH(
       userId: session.userId,
       productId: id,
     } as any);
+
+    CatalogResolver.invalidateCache();
 
     return NextResponse.json(updatedVariant);
   } catch (error: any) {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,9 +90,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ serialNu
     }
 
     if (!computedProduct && serial.skuId) {
-      const sku = await prisma.sku.findUnique({ where: { id: serial.skuId }, select: { name: true } });
-      if (sku) {
-        computedProduct = sku.name;
+      const item = await CatalogResolver.findBySku(serial.skuId);
+      if (item) {
+        computedProduct = item.displayName || item.productName || 'Unknown Product';
         computedSku = serial.skuId;
       }
     }

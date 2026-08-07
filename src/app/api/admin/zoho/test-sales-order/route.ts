@@ -1,7 +1,7 @@
-import { prisma } from '@/lib/db';
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
 import { getSession } from '@/lib/auth';
 import { NextResponse } from 'next/server';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export async function POST() {
   const session = await getSession();
@@ -21,13 +21,9 @@ export async function POST() {
 
   try {
     // 1. Fetch Active SKUs with Zoho IDs
-    const activeSkus = await prisma.sku.findMany({
-      where: {
-        isActive: true,
-        zohoBooksId2: { not: null }
-      },
-      take: 5 // Limit to 5 for testing
-    });
+    const activeSkus = (await CatalogResolver.getAllItems())
+      .filter(i => i.isActive && i.zohoItemId2)
+      .slice(0, 5); // Limit to 5 for testing
 
     if (activeSkus.length === 0) {
       return NextResponse.json({ error: 'No active SKUs with Zoho Books IDs found' }, { status: 400 });
@@ -38,7 +34,7 @@ export async function POST() {
     const reference_number = `TEST-SO-${timestamp}`;
     const date = new Date().toISOString().split('T')[0];
     const line_items = activeSkus.map(sku => ({
-      item_id: sku.zohoBooksId2,
+      item_id: sku.zohoItemId2,
       quantity: 1,
       rate: sku.price
     }));

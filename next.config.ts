@@ -38,12 +38,6 @@ const nextConfig: NextConfig = {
     ];
   },
   /* config options here */
-  turbopack: {
-    rules: {
-      "*.md": ["ignore"],
-      "*.log": ["ignore"],
-    },
-  }, 
   experimental: {
     optimizePackageImports: ['lucide-react', 'date-fns', 'echarts', 'recharts']
   },

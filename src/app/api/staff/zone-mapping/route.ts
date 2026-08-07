@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -24,33 +24,30 @@ export async function GET(request: Request) {
     if (warehouse?.isSystemWarehouse) {
       return NextResponse.json({ error: 'System warehouses are protected.' }, { status: 403 });
     }
-    // Fetch all active SKUs and their inventory record for the selected warehouse
-    const skus = await prisma.sku.findMany({
-      where: { isActive: true },
+    // Fetch all active items from CatalogResolver
+    const activeItems = (await CatalogResolver.getAllItems()).filter(i => i.isActive && i.id);
+    const skuIds = activeItems.map(i => i.id as string);
 
+    // Fetch only inventory records for this warehouse
+    const inventories = await prisma.warehouseInventory.findMany({
+      where: { warehouseId, skuId: { in: skuIds } },
       select: {
-        id: true,
-        name: true,
-        categoryId: true,
-        inventory: {
-          where: { warehouseId: warehouseId },
-          select: { 
-            zone: true, 
-            updatedAt: true,
-            updatedBy: { select: { name: true } }
-          }
-        }
-      },
-      orderBy: { id: 'asc' }
+        skuId: true,
+        zone: true,
+        updatedAt: true,
+        updatedBy: { select: { name: true } }
+      }
     });
 
-    const mappings = skus.map(sku => {
-      const inv = sku.inventory[0];
+    const invMap = new Map(inventories.map(i => [i.skuId, i]));
+
+    const mappings = activeItems.map(item => {
+      const inv = invMap.get(item.id as string);
 
       return {
-        skuId: sku.id,
-        name: sku.name,
-        categoryId: sku.categoryId,
+        skuId: item.id,
+        name: item.name,
+        categoryId: item.categoryId,
         zone: inv?.zone || null,
         updatedAt: inv?.updatedAt || null,
         updatedBy: inv?.updatedBy?.name || null

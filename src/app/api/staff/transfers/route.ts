@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { NextResponse } from 'next/server';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export async function GET(request: Request) {
   try {
@@ -186,12 +187,11 @@ export async function POST(request: Request) {
 
     // Verify SKUs exist
     const skuIds = items.map(i => i.skuId);
-    const skuRecords = await prisma.sku.findMany({
-      where: { id: { in: skuIds } }
-    });
+    const catalogMap = await CatalogResolver.findManyBySku(skuIds);
+    const missingSkus = skuIds.filter(id => !catalogMap.get(id));
 
-    if (skuRecords.length !== skuIds.length) {
-      console.warn("[TRANSFER] Validation failed: one or more SKU records not found in database", { requested: skuIds, found: skuRecords.map(r => r.id) });
+    if (missingSkus.length > 0) {
+      console.warn("[TRANSFER] Validation failed: one or more SKU records not found in database", { requested: skuIds, missing: missingSkus });
       return NextResponse.json({ error: 'One or more SKU IDs are invalid' }, { status: 400 });
     }
 
@@ -202,7 +202,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: `Requested quantity for SKU ${item.skuId} must be greater than 0` }, { status: 400 });
       }
 
-      const sku = skuRecords.find(s => s.id === item.skuId);
+      const sku = catalogMap.get(item.skuId);
       if (!sku) continue;
 
       if (!sku.isUnlimited) {
@@ -218,7 +218,7 @@ export async function POST(request: Request) {
         if (item.requestedQty > currentStock) {
           console.warn("[TRANSFER] Validation failed: requested qty exceeds available stock", { skuId: item.skuId, requested: item.requestedQty, currentStock });
           return NextResponse.json({
-            error: `Requested quantity (${item.requestedQty}) exceeds available stock (${currentStock}) for SKU [${item.skuId}] ${sku.name}.`
+            error: `Requested quantity (${item.requestedQty}) exceeds available stock (${currentStock}) for SKU [${item.skuId}] ${sku.displayName || sku.productName || 'Unknown'}.`
           }, { status: 400 });
         }
       }

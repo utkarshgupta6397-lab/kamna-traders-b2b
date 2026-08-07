@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export async function POST(req: Request) {
   try {
@@ -70,8 +71,8 @@ export async function POST(req: Request) {
 
       // Fallback: query database directly if not pre-fetched
       try {
-        const dbSku = await prisma.sku.findUnique({ where: { id } });
-        if (dbSku) return { name: dbSku.name, code: dbSku.id };
+        const dbSku = await CatalogResolver.findBySku(id);
+        if (dbSku) return { name: dbSku.displayName || dbSku.productName || 'Unknown', code: dbSku.legacySku || id };
       } catch {}
 
       try {

@@ -1,12 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { createMasterAuditLog } from '@/lib/master-data-service';
 import { ProductAttributeService } from '@/lib/services/ProductAttributeService';
 import { ProductAttributeValidationService } from '@/lib/services/ProductAttributeValidationService';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getSession();
@@ -348,6 +349,8 @@ export async function PUT(
       userId: session.userId,
       productId: id,
     } as any);
+
+    CatalogResolver.invalidateCache();
 
     return NextResponse.json(updatedProduct);
   } catch (error: any) {

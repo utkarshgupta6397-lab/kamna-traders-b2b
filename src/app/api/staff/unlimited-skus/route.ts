@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { NextResponse } from 'next/server';
+import { CatalogResolver } from '@/lib/services/CatalogResolver';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,62 +21,60 @@ export async function GET(request: Request) {
   const limit = parseInt(searchParams.get('limit') || '25');
   const skip = (page - 1) * limit;
 
-  const where: any = {};
-
-  if (search) {
-    where.OR = [
-      { id: { contains: search, mode: 'insensitive' } },
-      { name: { contains: search, mode: 'insensitive' } },
-    ];
-  }
-
-  if (categoryId && categoryId !== 'ALL') {
-    const ids = categoryId.split(',').filter(Boolean);
-    if (ids.length > 0) {
-      where.categoryId = { in: ids };
-    }
-  }
-
-  if (brandId && brandId !== 'ALL') {
-    where.brandId = brandId;
-  }
-
-  if (unlimitedFilter && unlimitedFilter !== 'ALL') {
-    const filters = unlimitedFilter.split(',').map(f => f.trim()).filter(Boolean);
-    if (filters.includes('UNLIMITED') && !filters.includes('NORMAL')) {
-      where.isUnlimited = true;
-    } else if (filters.includes('NORMAL') && !filters.includes('UNLIMITED')) {
-      where.isUnlimited = false;
-    }
-  }
-
   try {
-    const [total, skus] = await Promise.all([
-      prisma.sku.count({ where }),
-      prisma.sku.findMany({
-        where,
-        select: {
-          id: true,
-          name: true,
-          isUnlimited: true,
-          updatedAt: true,
-          category: { select: { name: true } },
-          updatedBy: { select: { name: true } }
-        },
-        orderBy: [
-          { isUnlimited: 'desc' }, // Show unlimited first by default or sort by name? Let's just sort by name
-          { name: 'asc' }
-        ],
-        skip,
-        take: limit,
-      })
-    ]);
+    let items = await CatalogResolver.getAllItems();
 
-    // Also get KPI stats
-    const stats = await prisma.$transaction([
-      prisma.sku.count({ where: { isActive: true } }),
-      prisma.sku.count({ where: { isActive: true, isUnlimited: true } })
-    ]);
+    if (search) {
+      const lowerSearch = search.toLowerCase();
+      items = items.filter(i => 
+        (i.id?.toLowerCase().includes(lowerSearch)) || 
+        (i.name?.toLowerCase().includes(lowerSearch))
+      );
+    }
+
+    if (categoryId && categoryId !== 'ALL') {
+      const ids = categoryId.split(',').filter(Boolean);
+      if (ids.length > 0) {
+        items = items.filter(i => i.categoryId && ids.includes(i.categoryId));
+      }
+    }
+
+    if (brandId && brandId !== 'ALL') {
+      items = items.filter(i => i.brandId === brandId);
+    }
+
+    if (unlimitedFilter && unlimitedFilter !== 'ALL') {
+      const filters = unlimitedFilter.split(',').map(f => f.trim()).filter(Boolean);
+      if (filters.includes('UNLIMITED') && !filters.includes('NORMAL')) {
+        items = items.filter(i => i.isUnlimited);
+      } else if (filters.includes('NORMAL') && !filters.includes('UNLIMITED')) {
+        items = items.filter(i => !i.isUnlimited);
+      }
+    }
+
+    const total = items.length;
+
+    items.sort((a, b) => {
+      if (a.isUnlimited !== b.isUnlimited) return a.isUnlimited ? -1 : 1;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+    const paginatedItems = items.slice(skip, skip + limit);
+
+    const categories = await prisma.category.findMany();
+    const catMap = new Map(categories.map(c => [c.id, c.name]));
+
+    const skus = paginatedItems.map(i => ({
+      id: i.id,
+      name: i.name,
+      isUnlimited: i.isUnlimited,
+      updatedAt: new Date(),
+      category: { name: i.categoryId ? catMap.get(i.categoryId) : null },
+      updatedBy: { name: 'System' }
+    }));
+
+    const allItems = await CatalogResolver.getAllItems();
+    const activeItems = allItems.filter(i => i.isActive);
 
     return NextResponse.json({
       skus,
@@ -83,8 +82,8 @@ export async function GET(request: Request) {
       page,
       limit,
       stats: {
-        totalSkus: stats[0],
-        unlimitedSkus: stats[1]
+        totalSkus: activeItems.length,
+        unlimitedSkus: activeItems.filter(i => i.isUnlimited).length
       }
     });
   } catch (error) {

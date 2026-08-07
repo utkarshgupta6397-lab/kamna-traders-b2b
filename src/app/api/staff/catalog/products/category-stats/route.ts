@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { buildProductWhereClause } from '@/lib/services/ProductFilterService';
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -10,43 +11,7 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const search = searchParams.get('search') || '';
-    const status = searchParams.get('status') || 'ALL';
-    const type = searchParams.get('type') || '';
-    const brandId = searchParams.get('brandId') || '';
-    const manufacturerId = searchParams.get('manufacturerId') || '';
-    const trackInventory = searchParams.get('trackInventory');
-    const trackSerials = searchParams.get('trackSerials');
-
-    const where: any = {
-      parentProductId: null
-    };
-
-    if (status !== 'ALL') where.status = status;
-    if (type && type !== 'ALL') where.type = type;
-    if (brandId && brandId !== 'ALL') where.brandId = brandId;
-    if (manufacturerId && manufacturerId !== 'ALL') where.manufacturerId = manufacturerId;
-
-    if (trackInventory === 'true') { where.variants = { some: { trackInventory: true } }; }
-    if (trackInventory === 'false') { where.variants = { some: { trackInventory: false } }; }
-    if (trackSerials === 'true') { where.variants = { ...where.variants, some: { ...where.variants?.some, trackSerials: true } }; }
-    if (trackSerials === 'false') { where.variants = { ...where.variants, some: { ...where.variants?.some, trackSerials: false } }; }
-
-    if (search) {
-      const tokens = search.trim().split(/\\s+/).filter(t => t.length > 0);
-      if (tokens.length > 0) {
-        where.AND = tokens.map((token: string) => ({
-          OR: [
-            { name: { contains: token, mode: 'insensitive' } },
-            { code: { contains: token, mode: 'insensitive' } },
-            { brand: { name: { contains: token, mode: 'insensitive' } } },
-            { manufacturer: { name: { contains: token, mode: 'insensitive' } } },
-            { category: { name: { contains: token, mode: 'insensitive' } } },
-            { variants: { some: { sku: { contains: token, mode: 'insensitive' } } } },
-          ]
-        }));
-      }
-    }
+    const where = buildProductWhereClause(searchParams);
 
     // Since we need to join category names, we group by categoryId,
     // but Prisma's groupBy doesn't allow including relations directly.

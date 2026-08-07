@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { buildProductWhereClause } from '@/lib/services/ProductFilterService';
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -9,15 +10,18 @@ export async function GET(request: Request) {
   }
 
   try {
+    const { searchParams } = new URL(request.url);
+    const where = buildProductWhereClause(searchParams);
+
     const [total, goods, services, active, pending, archived, trackInventory, trackSerials] = await Promise.all([
-      prisma.product.count({ where: { parentProductId: null } }),
-      prisma.product.count({ where: { type: 'Goods', parentProductId: null } }),
-      prisma.product.count({ where: { type: 'Service', parentProductId: null } }),
-      prisma.product.count({ where: { status: 'Active', parentProductId: null } }),
-      prisma.product.count({ where: { status: 'Approval Pending', parentProductId: null } }),
-      prisma.product.count({ where: { status: 'Archived', parentProductId: null } }),
-      prisma.product.count({ where: { variants: { some: { trackInventory: true } }, parentProductId: null } }),
-      prisma.product.count({ where: { variants: { some: { trackSerials: true } }, parentProductId: null } }),
+      prisma.product.count({ where }),
+      prisma.product.count({ where: { ...where, type: 'Goods' } }),
+      prisma.product.count({ where: { ...where, type: 'Service' } }),
+      prisma.product.count({ where: { ...where, status: 'Active' } }),
+      prisma.product.count({ where: { ...where, status: 'Approval Pending' } }),
+      prisma.product.count({ where: { ...where, status: 'Archived' } }),
+      prisma.product.count({ where: { ...where, variants: { some: { trackInventory: true } } } }),
+      prisma.product.count({ where: { ...where, variants: { some: { trackSerials: true } } } }),
     ]);
 
     return NextResponse.json({

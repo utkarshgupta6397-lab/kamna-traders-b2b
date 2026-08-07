@@ -17,6 +17,7 @@ const navItems = [
   { href: '/admin/brands', label: 'Brands', icon: Bookmark },
   { href: '/admin/skus', label: 'SKUs', icon: Package },
   { href: '/admin/sku-sync', label: 'SKU Sync', icon: RefreshCw },
+  { href: '/admin/catalog-sync', label: 'Catalog Maintenance', icon: RefreshCw },
   { href: '/admin/inventory', label: 'Inventory', icon: Database },
   { href: '/admin/zoho-debug', label: 'Zoho Debug', icon: Terminal },
   { href: '/admin/print-debug', label: 'Print Debug', icon: Printer },

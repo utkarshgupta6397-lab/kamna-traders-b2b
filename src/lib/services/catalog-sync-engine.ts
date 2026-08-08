@@ -2,10 +2,14 @@ import { prisma } from '@/lib/db';
 import { getNextProductCode } from '@/lib/product-service';
 
 export interface SyncPreviewRow {
-  id: string; // Sku.id or Variant.id
+  id: string;
   title: string;
-  action: 'Create' | 'Update' | 'Skip' | 'Error';
+  variantName?: string;
+  sku?: string;
+  zohoId?: string | null;
+  action: 'Create' | 'Update' | 'Skip' | 'Error' | 'Conflict';
   details: string;
+  suggestedAction?: string;
 }
 
 export interface SyncResult {
@@ -71,17 +75,30 @@ export class CatalogSyncEngine {
       const desiredIsActive = product.isActive && variant.isActive;
       const desiredZohoId = variant.zohoBookItemId;
 
+      const rowInfo = {
+        id: variant.id,
+        title: product.name,
+        variantName: variant.variantName,
+        sku: skuId,
+        zohoId: desiredZohoId
+      };
+
       if (!existingSku) {
         // CREATE SKU
         // Conflict detection: Zoho ID duplicate
         if (desiredZohoId && zohoIdToSkuId.has(desiredZohoId) && zohoIdToSkuId.get(desiredZohoId) !== skuId) {
-          rows.push({ id: variant.id, title: desiredName, action: 'Error', details: `Duplicate Zoho ID: ${desiredZohoId} already used by SKU ${zohoIdToSkuId.get(desiredZohoId)}` });
+          rows.push({
+            ...rowInfo,
+            action: 'Conflict',
+            details: `Zoho ID ${desiredZohoId} is already claimed by SKU ${zohoIdToSkuId.get(desiredZohoId)}`,
+            suggestedAction: 'Resolve Zoho ID conflict manually before syncing'
+          });
           recordsFailed++;
           errors.push(`Variant ${variant.id} has duplicate Zoho ID ${desiredZohoId}`);
           continue;
         }
 
-        rows.push({ id: variant.id, title: desiredName, action: 'Create', details: `Create SKU ${skuId}` });
+        rows.push({ ...rowInfo, action: 'Create', details: `Create SKU ${skuId}` });
         if (!dryRun) {
           try {
             await prisma.sku.create({
@@ -102,6 +119,8 @@ export class CatalogSyncEngine {
             });
             recordsCreated++;
           } catch (e: any) {
+            rows[rows.length - 1].action = 'Error';
+            rows[rows.length - 1].details = `Failed: ${e.message}`;
             recordsFailed++;
             errors.push(`Failed to create SKU ${skuId}: ${e.message}`);
           }
@@ -121,13 +140,18 @@ export class CatalogSyncEngine {
         if (needsUpdate) {
           // Conflict detection: Zoho ID duplicate
           if (desiredZohoId && zohoIdToSkuId.has(desiredZohoId) && zohoIdToSkuId.get(desiredZohoId) !== skuId) {
-            rows.push({ id: variant.id, title: desiredName, action: 'Error', details: `Duplicate Zoho ID: ${desiredZohoId} already used by SKU ${zohoIdToSkuId.get(desiredZohoId)}` });
+            rows.push({
+              ...rowInfo,
+              action: 'Conflict',
+              details: `Zoho ID ${desiredZohoId} is already claimed by SKU ${zohoIdToSkuId.get(desiredZohoId)}`,
+              suggestedAction: 'Resolve Zoho ID conflict manually before syncing'
+            });
             recordsFailed++;
             errors.push(`Variant ${variant.id} has duplicate Zoho ID ${desiredZohoId}`);
             continue;
           }
 
-          rows.push({ id: variant.id, title: desiredName, action: 'Update', details: `Update existing SKU ${skuId}` });
+          rows.push({ ...rowInfo, action: 'Update', details: `Update existing SKU ${skuId}` });
           if (!dryRun) {
             try {
               await prisma.sku.update({
@@ -144,6 +168,8 @@ export class CatalogSyncEngine {
               });
               recordsUpdated++;
             } catch (e: any) {
+              rows[rows.length - 1].action = 'Error';
+              rows[rows.length - 1].details = `Failed: ${e.message}`;
               recordsFailed++;
               errors.push(`Failed to update SKU ${skuId}: ${e.message}`);
             }
@@ -151,7 +177,7 @@ export class CatalogSyncEngine {
             recordsUpdated++;
           }
         } else {
-          rows.push({ id: variant.id, title: desiredName, action: 'Skip', details: `SKU ${skuId} is up to date` });
+          rows.push({ ...rowInfo, action: 'Skip', details: `SKU ${skuId} is up to date` });
           recordsSkipped++;
         }
       }
@@ -189,17 +215,39 @@ export class CatalogSyncEngine {
     const rows: SyncPreviewRow[] = [];
 
     const skus = await prisma.sku.findMany();
-    const variants = await prisma.productVariant.findMany();
+    const variants = await prisma.productVariant.findMany({ include: { product: true } });
     const variantMap = new Map(variants.map(v => [v.sku, v]));
+    const variantZohoMap = new Map(variants.filter(v => v.zohoBookItemId).map(v => [v.zohoBookItemId, v.sku]));
 
     for (const sku of skus) {
       const variant = variantMap.get(sku.id);
       
       const skuZohoId = sku.zohoBookItemId || sku.zohoBooksId2;
 
+      const rowInfo = {
+        id: sku.id,
+        title: variant?.product?.name || sku.name,
+        variantName: variant?.variantName,
+        sku: sku.id,
+        zohoId: skuZohoId
+      };
+
       if (!variant) {
         // SKU exists, Product missing -> Offer Product creation
-        rows.push({ id: sku.id, title: sku.name, action: 'Create', details: `Create missing Product & Variant for legacy SKU` });
+        // Conflict detection: Zoho ID duplicate
+        if (skuZohoId && variantZohoMap.has(skuZohoId) && variantZohoMap.get(skuZohoId) !== sku.id) {
+          rows.push({
+            ...rowInfo,
+            action: 'Conflict',
+            details: `Zoho ID ${skuZohoId} is already claimed by Variant with SKU ${variantZohoMap.get(skuZohoId)}`,
+            suggestedAction: 'Resolve Zoho ID conflict manually before syncing'
+          });
+          recordsFailed++;
+          errors.push(`SKU ${sku.id} has Zoho ID ${skuZohoId} claimed by another Variant`);
+          continue;
+        }
+
+        rows.push({ ...rowInfo, action: 'Create', details: `Create missing Product & Variant for legacy SKU` });
         if (!dryRun) {
           try {
             await prisma.$transaction(async (tx) => {
@@ -229,6 +277,8 @@ export class CatalogSyncEngine {
             });
             recordsCreated++;
           } catch (e: any) {
+            rows[rows.length - 1].action = 'Error';
+            rows[rows.length - 1].details = `Failed: ${e.message}`;
             recordsFailed++;
             errors.push(`Failed to create Product for SKU ${sku.id}: ${e.message}`);
           }
@@ -243,6 +293,18 @@ export class CatalogSyncEngine {
         const updates: any = {};
         
         if (skuZohoId && variant.zohoBookItemId !== skuZohoId) {
+          // Conflict detection before update
+          if (variantZohoMap.has(skuZohoId) && variantZohoMap.get(skuZohoId) !== variant.sku) {
+            rows.push({
+              ...rowInfo,
+              action: 'Conflict',
+              details: `Zoho ID ${skuZohoId} is already claimed by Variant with SKU ${variantZohoMap.get(skuZohoId)}`,
+              suggestedAction: 'Resolve Zoho ID conflict manually before syncing'
+            });
+            recordsFailed++;
+            errors.push(`SKU ${sku.id} has Zoho ID ${skuZohoId} claimed by another Variant`);
+            continue;
+          }
           needsUpdate = true;
           updates.zohoBookItemId = skuZohoId;
         }
@@ -255,7 +317,7 @@ export class CatalogSyncEngine {
         }
 
         if (needsUpdate) {
-          rows.push({ id: sku.id, title: sku.name, action: 'Update', details: `Sync Zoho metadata to Variant ${variant.id}` });
+          rows.push({ ...rowInfo, action: 'Update', details: `Sync Zoho metadata to Variant ${variant.id}` });
           if (!dryRun) {
             try {
               await prisma.productVariant.update({
@@ -265,6 +327,8 @@ export class CatalogSyncEngine {
               // We also might want to update the Product isActive if it's the default variant, but we keep it simple.
               recordsUpdated++;
             } catch (e: any) {
+              rows[rows.length - 1].action = 'Error';
+              rows[rows.length - 1].details = `Failed: ${e.message}`;
               recordsFailed++;
               errors.push(`Failed to update Variant ${variant.id}: ${e.message}`);
             }
@@ -272,7 +336,7 @@ export class CatalogSyncEngine {
             recordsUpdated++;
           }
         } else {
-          rows.push({ id: sku.id, title: sku.name, action: 'Skip', details: `Variant is already synchronized` });
+          rows.push({ ...rowInfo, action: 'Skip', details: `Variant is already synchronized` });
           recordsSkipped++;
         }
       }

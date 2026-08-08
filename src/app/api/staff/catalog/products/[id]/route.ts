@@ -9,6 +9,7 @@ import { CategoryService } from '@/lib/services/CategoryService';
 import { ZohoProductService } from '@/lib/services/zoho-books';
 import { getZohoTokens } from '@/lib/zoho-auth';
 import { AuditPayloadBuilder } from '@/lib/services/audit-payload-builder';
+import { SharedAttributeCascadeService } from '@/lib/services/SharedAttributeCascadeService';
 
 export async function GET(
   request: NextRequest,
@@ -202,32 +203,37 @@ export async function PATCH(
       productId: id, // Connect FK
     } as any);
 
-    // Zoho Books Sync Trigger for Status Change
     let zohoSyncError = null;
-    if (existing.status !== updatedRecord.status && (updatedRecord.status === 'Active' || updatedRecord.status === 'Inactive')) {
-      try {
-        await Promise.all(updatedRecord.variants.map(async (v) => {
-          if (v.zohoBookItemId) {
-            await ZohoProductService.syncVariant(v.id, 'AUTO_SAVE');
-          }
-        }));
-      } catch (err: any) {
-        console.error('[ZohoStatusSync] Sync error', err);
-        zohoSyncError = err.message || 'Failed to sync status to Zoho Books';
-      }
-    }
 
-    // Image Sync hook
-    if (thumbnailBase64 !== undefined) {
-      const defaultVariant = await prisma.productVariant.findFirst({ where: { productId: id, isDefault: true } });
-      if (defaultVariant?.zohoBookItemId) {
-        const accessToken = await getZohoTokens();
-        if (accessToken) {
-          after(() => {
-            ZohoProductService.uploadImage(defaultVariant.id, defaultVariant.zohoBookItemId!, accessToken, true).catch(err => {
-              console.error('[ZohoImageSync] Image sync error:', err);
+    if (existing.catalogType === 'PRODUCT_FAMILY') {
+      await SharedAttributeCascadeService.cascadeUpdates(id, existing, updatedRecord, session);
+    } else {
+      // Zoho Books Sync Trigger for Status Change
+      if (existing.status !== updatedRecord.status && (updatedRecord.status === 'Active' || updatedRecord.status === 'Inactive')) {
+        try {
+          await Promise.all(updatedRecord.variants.map(async (v: any) => {
+            if (v.zohoBookItemId) {
+              await ZohoProductService.syncVariant(v.id, 'AUTO_SAVE');
+            }
+          }));
+        } catch (err: any) {
+          console.error('[ZohoStatusSync] Sync error', err);
+          zohoSyncError = err.message || 'Failed to sync status to Zoho Books';
+        }
+      }
+
+      // Image Sync hook
+      if (thumbnailBase64 !== undefined) {
+        const defaultVariant = await prisma.productVariant.findFirst({ where: { productId: id, isDefault: true } });
+        if (defaultVariant?.zohoBookItemId) {
+          const accessToken = await getZohoTokens();
+          if (accessToken) {
+            after(() => {
+              ZohoProductService.uploadImage(defaultVariant.id, defaultVariant.zohoBookItemId!, accessToken, true).catch(err => {
+                console.error('[ZohoImageSync] Image sync error:', err);
+              });
             });
-          });
+          }
         }
       }
     }
@@ -375,23 +381,16 @@ export async function PUT(
 
     const txOps = [prisma.product.update({ where: { id }, data: updateData })];
 
-    if (!existingProduct.isVariantProduct && existingProduct.variantProducts && existingProduct.variantProducts.length > 0) {
-      txOps.push(prisma.product.updateMany({
-        where: { parentProductId: id },
-        data: {
-          description, incentiveTag, thumbnailBase64,
-          brandId, manufacturerId, categoryId, hsnCodeId, taxRateId, unitId,
-          updatedById: session.userId
-        }
-      }) as any);
-    }
-
     const txResults = await prisma.$transaction(txOps);
     const updatedProduct = txResults[0];
 
     // Handle code separately as it requires sequence update logic if changed, but we assume code (SKU) might just be updated in DB safely since it's unique
     if (code !== existingProduct.code) {
       await prisma.product.update({ where: { id }, data: { code } });
+    }
+
+    if (existingProduct.catalogType === 'PRODUCT_FAMILY') {
+      await SharedAttributeCascadeService.cascadeUpdates(id, existingProduct, updatedProduct, session);
     }
 
     const existingForAudit = {

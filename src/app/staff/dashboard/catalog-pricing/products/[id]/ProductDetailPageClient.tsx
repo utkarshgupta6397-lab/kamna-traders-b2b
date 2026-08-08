@@ -4,7 +4,7 @@ import React, { useState, useEffect, use, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { resolveProductImage } from '@/lib/utils';
-import { ArrowLeft, Edit2, ShieldAlert, Package, Layers, CheckCircle2, X, FileText, Database, Copy, ExternalLink, Activity, ChevronRight, ChevronDown, Download, Archive, RefreshCw, Image as ImageIcon, Box, Boxes, User, Clock, Check, MoreVertical, Info, Trash2, UploadCloud } from 'lucide-react';
+import { ArrowLeft, Edit2, ShieldAlert, Package, Layers, CheckCircle2, X, FileText, Database, Copy, ExternalLink, Activity, ChevronRight, ChevronDown, Download, Archive, RefreshCw, Image as ImageIcon, Box, Boxes, User, Clock, Check, MoreVertical, Info, Trash2, UploadCloud, PlayCircle, PauseCircle } from 'lucide-react';
 import MasterStatusBadge from '../../_framework/MasterStatusBadge';
 import { HistoryEventCard } from '../../_framework/HistoryDrawer';
 import toast from 'react-hot-toast';
@@ -273,6 +273,41 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 >
                   <Edit2 size={14} />
                   Edit Product
+                </button>
+              )}
+              
+              {(product.status === 'Active' || product.status === 'Inactive') && canEdit && (
+                <button 
+                  onClick={() => {
+                    const isDeactivating = product.status === 'Active';
+                    const newStatus = isDeactivating ? 'Inactive' : 'Active';
+                    const msg = isDeactivating 
+                      ? "Mark this product as Inactive? It will no longer be available for new transactions, quotations or orders until reactivated."
+                      : "Reactivate this product? It will become available for new transactions immediately.";
+                    if (confirm(msg)) {
+                      fetch(`/api/staff/catalog/products/${product.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: newStatus })
+                      }).then(async res => {
+                        const data = await res.json();
+                        if (res.ok) {
+                          setProduct({ ...product, status: newStatus });
+                          if (data.zohoSyncError) {
+                            alert(`ERP Status updated, but Zoho Sync failed: ${data.zohoSyncError}`);
+                          }
+                        } else {
+                          alert(data.error || 'Failed to update status');
+                        }
+                      }).catch(() => alert('Network error while updating status'));
+                    }
+                  }}
+                  className={`h-8 px-4 text-[12px] font-semibold text-white rounded-md flex items-center gap-1.5 transition-colors shadow-sm ${
+                    product.status === 'Active' ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
+                >
+                  {product.status === 'Active' ? <PauseCircle size={14} /> : <PlayCircle size={14} />}
+                  {product.status === 'Active' ? 'Mark Inactive' : 'Mark Active'}
                 </button>
               )}
               {isVariant && (

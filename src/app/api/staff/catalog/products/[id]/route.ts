@@ -8,6 +8,7 @@ import { CatalogResolver } from '@/lib/services/CatalogResolver';
 import { CategoryService } from '@/lib/services/CategoryService';
 import { ZohoProductService } from '@/lib/services/zoho-books';
 import { getZohoTokens } from '@/lib/zoho-auth';
+import { AuditPayloadBuilder } from '@/lib/services/audit-payload-builder';
 
 export async function GET(
   request: NextRequest,
@@ -76,7 +77,13 @@ export async function PATCH(
   const { id } = await params;
 
   try {
-    const existing = await prisma.product.findUnique({ where: { id } });
+    const existing = await prisma.product.findUnique({ 
+      where: { id },
+      include: {
+        brand: true, category: true, manufacturer: true, hsnCode: true, taxRate: true, unit: true,
+        variants: true,
+      }
+    });
     if (!existing) {
       return NextResponse.json({ error: 'Product not found' }, { status: 404 });
     }
@@ -98,7 +105,7 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { name, code, description, remarks, brandId, manufacturerId, categoryId, hsnCodeId, taxRateId, unitId, thumbnailBase64 } = body;
+    const { name, code, description, remarks, brandId, manufacturerId, categoryId, hsnCodeId, taxRateId, unitId, thumbnailBase64, status } = body;
 
     const updateData: any = {
       updatedBy: { connect: { id: session.userId } },
@@ -130,6 +137,7 @@ export async function PATCH(
     if (description !== undefined) updateData.description = description ? description.trim() : null;
     if (remarks !== undefined) updateData.remarks = remarks ? remarks.trim() : null;
     if (thumbnailBase64 !== undefined) updateData.thumbnailBase64 = thumbnailBase64;
+    if (status !== undefined) updateData.status = status;
 
     if (brandId !== undefined) {
       if (brandId) updateData.brand = { connect: { id: brandId } };
@@ -161,7 +169,25 @@ export async function PATCH(
       data: updateData,
       include: {
         updatedBy: { select: { id: true, name: true } },
+        brand: true, category: true, manufacturer: true, hsnCode: true, taxRate: true, unit: true,
+        variants: true,
       },
+    });
+
+    const flatExisting = AuditPayloadBuilder.build({
+      ...existing,
+      purchasePrice: existing.variants?.[0]?.purchasePrice,
+      sellingPrice: existing.variants?.[0]?.sellingPrice,
+      trackInventory: existing.variants?.[0]?.trackInventory,
+      trackSerials: existing.variants?.[0]?.trackSerials,
+    });
+    
+    const flatUpdated = AuditPayloadBuilder.build({
+      ...updatedRecord,
+      purchasePrice: updatedRecord.variants?.[0]?.purchasePrice,
+      sellingPrice: updatedRecord.variants?.[0]?.sellingPrice,
+      trackInventory: updatedRecord.variants?.[0]?.trackInventory,
+      trackSerials: updatedRecord.variants?.[0]?.trackSerials,
     });
 
     // Write audit log
@@ -169,12 +195,27 @@ export async function PATCH(
       entityType: 'Product',
       entityId: id,
       action: 'UPDATED',
-      previousValue: JSON.stringify(existing),
-      newValue: JSON.stringify(updatedRecord),
+      previousValue: JSON.stringify(flatExisting),
+      newValue: JSON.stringify(flatUpdated),
       remarks: remarks || 'Product updated',
       userId: session.userId,
       productId: id, // Connect FK
     } as any);
+
+    // Zoho Books Sync Trigger for Status Change
+    let zohoSyncError = null;
+    if (existing.status !== updatedRecord.status && (updatedRecord.status === 'Active' || updatedRecord.status === 'Inactive')) {
+      try {
+        await Promise.all(updatedRecord.variants.map(async (v) => {
+          if (v.zohoBookItemId) {
+            await ZohoProductService.syncVariant(v.id, 'AUTO_SAVE');
+          }
+        }));
+      } catch (err: any) {
+        console.error('[ZohoStatusSync] Sync error', err);
+        zohoSyncError = err.message || 'Failed to sync status to Zoho Books';
+      }
+    }
 
     // Image Sync hook
     if (thumbnailBase64 !== undefined) {
@@ -191,7 +232,7 @@ export async function PATCH(
       }
     }
 
-    return NextResponse.json(updatedRecord);
+    return NextResponse.json({ ...updatedRecord, zohoSyncError });
   } catch (error: any) {
     console.error(`[API] PATCH /api/staff/catalog/products/${id} error:`, error);
     return NextResponse.json({ error: error.message || 'Failed to update product' }, { status: 500 });

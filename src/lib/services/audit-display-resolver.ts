@@ -64,8 +64,8 @@ function getFieldTitle(key: string): string {
     hsnCodeId: 'HSN Code',
     unitId: 'Unit',
     unitOfMeasurementId: 'Unit',
-    isActive: 'Status',
-    active: 'Status',
+    isActive: 'Is Active',
+    active: 'Is Active',
     sellingPrice: 'Selling Price',
     basePrice: 'Base Price',
   };
@@ -82,23 +82,6 @@ function parseValue(val: string | null | undefined): any {
 }
 
 export class AuditDisplayResolver {
-  static async resolveValue(key: string, val: any): Promise<string> {
-    if (!val || val === 'null') return '—';
-    
-    if (ENDPOINTS[key] && typeof val === 'string') {
-      const option = await LookupService.fetchById(ENDPOINTS[key], val);
-      if (option) {
-        if (key === 'categoryId' && option.parent) {
-          return `${option.parent.name} → ${option.name}`;
-        }
-        if (option.percentage !== undefined) return `${option.percentage}%`;
-        return option.name || option.code || option.abbreviation || val;
-      }
-    }
-    
-    return formatValue(key, val);
-  }
-
   static async resolveDiffs(h: any): Promise<AuditChange[]> {
     const prevParsed = parseValue(h.previousValue);
     const nextParsed = parseValue(h.newValue);
@@ -108,11 +91,11 @@ export class AuditDisplayResolver {
     const changes: AuditChange[] = [];
 
     if ((prevParsed !== null && typeof prevParsed !== 'object') || (nextParsed !== null && typeof nextParsed !== 'object')) {
-      // Handle simple string/primitive changes
+      // Legacy simple string changes
       changes.push({
         field: 'Status',
-        oldValue: await this.resolveValue('status', prevParsed),
-        newValue: await this.resolveValue('status', nextParsed),
+        oldValue: prevParsed ? String(prevParsed) : '—',
+        newValue: nextParsed ? String(nextParsed) : '—',
       });
     } else {
       prevObj = prevParsed || {};
@@ -121,22 +104,17 @@ export class AuditDisplayResolver {
       const keys = Array.from(new Set([...Object.keys(prevObj), ...Object.keys(nextObj)]));
 
       for (const k of keys) {
-        if (IGNORED_FIELDS.has(k) || k.endsWith('Base64') || k.endsWith('Id') && keys.includes(k.replace(/Id$/, ''))) continue;
+        if (IGNORED_FIELDS.has(k) || k.endsWith('Base64') || (k.endsWith('Id') && keys.includes(k.replace(/Id$/, '')))) continue;
         
-        const oldValRaw = prevObj[k];
-        const newValRaw = nextObj[k];
+        const oldVal = prevObj[k] ?? '—';
+        const newVal = nextObj[k] ?? '—';
 
-        if (JSON.stringify(oldValRaw) !== JSON.stringify(newValRaw)) {
-          const oldVal = await this.resolveValue(k, oldValRaw);
-          const newVal = await this.resolveValue(k, newValRaw);
-          
-          if (oldVal !== newVal) {
-            changes.push({
-              field: getFieldTitle(k),
-              oldValue: oldVal,
-              newValue: newVal,
-            });
-          }
+        if (String(oldVal) !== String(newVal)) {
+          changes.push({
+            field: getFieldTitle(k),
+            oldValue: String(oldVal),
+            newValue: String(newVal),
+          });
         }
       }
     }

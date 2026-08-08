@@ -308,6 +308,7 @@ export default function CreateProductPage() {
 
   useEffect(() => {
     if (purchasePrice > 0 && sellingPrice > 0) {
+      let suggested;
       if (margin > 10) suggested = 'High-Margin Product';
       else if (margin > 5) suggested = 'Medium-Margin Product';
       else suggested = 'Low-Margin Product';

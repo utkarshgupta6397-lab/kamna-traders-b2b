@@ -9,6 +9,7 @@ import MasterStatusBadge from '../../_framework/MasterStatusBadge';
 import { HistoryEventCard } from '../../_framework/HistoryDrawer';
 import toast from 'react-hot-toast';
 import { Select } from '@/components/ui/Select';
+import ImportOrphanModal from './ImportOrphanModal';
 
 const evaluateMath = (expr: string | number): string => {
   if (expr === undefined || expr === null || expr === '') return '';
@@ -33,8 +34,11 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
 
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [productSearch, setProductSearch] = useState('');
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   const [permissions, setPermissions] = useState<any>(null);
   const [isActionsOpen, setIsActionsOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -583,8 +587,8 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                   <Box size={20} className="mr-2 text-indigo-600" /> Products Workspace
                 </h2>
                 <div className="flex gap-3">
-                  <button className="px-4 py-2 bg-gray-50 border border-gray-200 text-gray-600 font-medium rounded-lg text-sm flex items-center hover:bg-gray-100 transition-colors shadow-sm cursor-not-allowed" title="Coming Soon">
-                    <UploadCloud size={16} className="mr-2" /> Bulk Import
+                  <button onClick={() => setIsImportModalOpen(true)} disabled={!isActive} className={`px-4 py-2 font-medium rounded-lg text-sm flex items-center shadow-sm transition-all ${isActive ? 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-indigo-600' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'}`}>
+                    <Box size={16} className="mr-2" /> Import Product
                   </button>
                   <button onClick={startAddVariant} disabled={!isActive || isAddingVariant || editingVariantId !== null} className={`px-4 py-2 font-medium rounded-lg text-sm flex items-center shadow-sm transition-all ${isActive && !isAddingVariant && !editingVariantId ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'}`}>
                     <Plus size={16} className="mr-2" /> Add Row
@@ -908,6 +912,15 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
           </div>
         </div>
       )}
+
+      <ImportOrphanModal 
+        isOpen={isImportModalOpen} 
+        onClose={() => setIsImportModalOpen(false)} 
+        familyId={product?.id} 
+        onSuccess={() => {
+          window.location.reload();
+        }}
+      />
     </div>
   );
 }

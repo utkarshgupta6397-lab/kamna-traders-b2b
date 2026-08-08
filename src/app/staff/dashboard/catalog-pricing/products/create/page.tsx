@@ -308,10 +308,9 @@ export default function CreateProductPage() {
 
   useEffect(() => {
     if (purchasePrice > 0 && sellingPrice > 0) {
-      let suggested = '';
-      if (margin > 10) suggested = 'High Margin Product';
-      else if (margin > 5) suggested = 'Medium Margin Product';
-      else suggested = 'Low Margin Product';
+      if (margin > 10) suggested = 'High-Margin Product';
+      else if (margin > 5) suggested = 'Medium-Margin Product';
+      else suggested = 'Low-Margin Product';
       
       setFormData(prev => ({ ...prev, incentiveTag: suggested }));
     }
@@ -872,7 +871,7 @@ export default function CreateProductPage() {
                 Incentive Tag
               </label>
               <div className="flex gap-3">
-                {['High Margin Product', 'Medium Margin Product', 'Low Margin Product'].map(tag => {
+                {['High-Margin Product', 'Medium-Margin Product', 'Low-Margin Product'].map(tag => {
                   const isSelected = formData.incentiveTag === tag;
                   const isReadOnly = formData.isVariantProduct;
                   

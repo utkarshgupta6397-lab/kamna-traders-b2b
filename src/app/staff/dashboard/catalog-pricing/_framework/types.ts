@@ -11,7 +11,9 @@ export interface MasterRecord {
   percentage?: number;
   taxType?: string;
   abbreviation?: string | null;
-  zohoBooksTaxId?: string | null;
+  zohoBooksUnitName?: string | null;
+  zohoBooksIntraTaxId?: string | null;
+  zohoBooksInterTaxId?: string | null;
   defaultGstRate?: { percentage: number } | null;
   chapterCode?: string | null;
   createdById?: string | null;

@@ -151,9 +151,7 @@ export async function POST(
       userId: session.userId,
     });
 
-    if (entity === 'tax-rates' && updatedRecord.zohoBooksTaxId) {
-      updatedRecord.zohoBooksTaxId = updatedRecord.zohoBooksTaxId.toString();
-    }
+    // No need to serialize BigInt for tax rates anymore
 
     return NextResponse.json(updatedRecord);
   } catch (error: any) {

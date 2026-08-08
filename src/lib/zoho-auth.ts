@@ -215,25 +215,33 @@ export async function exchangeAuthCode(code: string): Promise<{ success: boolean
   }
 }
 
-export const CURRENT_SCOPE_VERSION = 3;
+export const CURRENT_SCOPE_VERSION = 5;
+
+// All OAuth Scopes used by Kamna ERP for Zoho Books integration
+const ZOHO_OAUTH_SCOPES = [
+  'ZohoBooks.contacts.READ',
+  'ZohoBooks.contacts.CREATE',
+  // Note: According to Zoho Books API documentation, the Items module
+  // falls under the `settings` scope category.
+  // We MUST use settings.READ, settings.CREATE, and settings.UPDATE
+  // instead of items.* for CRUD operations on items.
+  'ZohoBooks.settings.READ',
+  'ZohoBooks.settings.CREATE',
+  'ZohoBooks.settings.UPDATE',
+  'ZohoBooks.estimates.READ',
+  'ZohoBooks.estimates.CREATE',
+  'ZohoBooks.salesorders.READ',
+  'ZohoBooks.salesorders.CREATE',
+  'ZohoBooks.invoices.READ',
+  'ZohoBooks.invoices.CREATE',
+  'ZohoBooks.customerpayments.READ',
+  'ZohoBooks.bills.READ',
+  'ZohoBooks.vendorpayments.READ',
+  'ZohoBooks.banking.READ'
+];
 
 export function getAuthorizationUrl(): string {
-  const scopes = [
-    'ZohoBooks.contacts.READ',
-    'ZohoBooks.contacts.CREATE',
-    'ZohoBooks.items.READ',
-    'ZohoBooks.estimates.READ',
-    'ZohoBooks.estimates.CREATE',
-    'ZohoBooks.salesorders.READ',
-    'ZohoBooks.salesorders.CREATE',
-    'ZohoBooks.invoices.READ',
-    'ZohoBooks.invoices.CREATE',
-    'ZohoBooks.customerpayments.READ',
-    'ZohoBooks.bills.READ',
-    'ZohoBooks.vendorpayments.READ',
-    'ZohoBooks.banking.READ',
-    'ZohoBooks.settings.READ'
-  ];
+  const scopes = ZOHO_OAUTH_SCOPES;
 
   console.log('ZOHO REDIRECT URI', process.env.ZOHO_REDIRECT_URI);
 

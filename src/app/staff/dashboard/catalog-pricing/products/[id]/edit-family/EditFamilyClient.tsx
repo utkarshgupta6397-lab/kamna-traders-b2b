@@ -223,7 +223,7 @@ export default function EditFamilyClient({ product }: { product: any }) {
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-3">Incentive Classification</label>
                 <div className="flex gap-4">
-                  {['High Margin Product', 'Medium Margin Product', 'Low Margin Product'].map(tag => {
+                  {['High-Margin Product', 'Medium-Margin Product', 'Low-Margin Product'].map(tag => {
                     const isSelected = formData.incentiveTag === tag;
                     return (
                       <label key={tag} className={`flex-1 flex flex-col items-center justify-center gap-1.5 p-3 rounded-lg border cursor-pointer transition-all duration-200 ${isSelected ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium shadow-sm' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}>

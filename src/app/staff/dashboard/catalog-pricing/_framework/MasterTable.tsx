@@ -134,6 +134,25 @@ export default function MasterTable(props: MasterTableProps) {
       renderCell: (r) => <span className="text-gray-600">{r.abbreviation || '-'}</span>
     },
     {
+      id: 'zohoBooksUnitName',
+      label: 'Zoho Unit',
+      width: 'w-[120px]',
+      condition: (key) => key === 'units',
+      renderCell: (r) => (
+        r.zohoBooksUnitName ? (
+          <div className="flex flex-col gap-1 items-start">
+            <span className="text-gray-900 font-medium">{r.zohoBooksUnitName}</span>
+            <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-sm font-semibold tracking-wide uppercase">Mapped</span>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1 items-start">
+            <span className="text-gray-400">-</span>
+            <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-sm font-semibold tracking-wide uppercase">Default</span>
+          </div>
+        )
+      )
+    },
+    {
       id: 'gstRate',
       label: 'GST Rate',
       width: 'w-[100px]',
@@ -147,11 +166,31 @@ export default function MasterTable(props: MasterTableProps) {
       renderCell: (r) => <MasterStatusBadge status={r.status} />
     },
     {
-      id: 'zohoBooksTaxId',
-      label: 'Zoho Books Tax ID',
+      id: 'zohoBooksIntraTaxId',
+      label: 'Intra-State Tax ID',
       width: 'w-[150px]',
       condition: (key) => key === 'tax-rates',
-      renderCell: (r) => <span className="font-mono text-xs text-gray-700">{r.zohoBooksTaxId || '-'}</span>
+      renderCell: (r) => (
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-xs text-gray-700">{r.zohoBooksIntraTaxId || '-'}</span>
+        </div>
+      )
+    },
+    {
+      id: 'zohoBooksInterTaxId',
+      label: 'Inter-State Tax ID',
+      width: 'w-[150px]',
+      condition: (key) => key === 'tax-rates',
+      renderCell: (r) => (
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-xs text-gray-700">{r.zohoBooksInterTaxId || '-'}</span>
+          {!r.zohoBooksInterTaxId && (
+            <span className="text-red-500" title="Missing Inter-State Tax ID. Sync will fail.">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+            </span>
+          )}
+        </div>
+      )
     },
     {
       id: 'createdBy',

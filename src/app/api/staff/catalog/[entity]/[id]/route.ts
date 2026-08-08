@@ -44,9 +44,7 @@ export async function GET(
       return NextResponse.json({ error: 'Record not found' }, { status: 404 });
     }
 
-    if (entity === 'tax-rates' && record.zohoBooksTaxId) {
-      record.zohoBooksTaxId = record.zohoBooksTaxId.toString();
-    }
+    // No need to serialize BigInt for tax rates anymore
 
     return NextResponse.json(record);
   } catch (error: any) {
@@ -134,7 +132,8 @@ export async function PATCH(
     if (entity === 'tax-rates') {
       if (customProps.percentage !== undefined) updateData.percentage = parseFloat(customProps.percentage) || 0.0;
       if (customProps.taxType !== undefined) updateData.taxType = customProps.taxType;
-      if (customProps.zohoBooksTaxId !== undefined) updateData.zohoBooksTaxId = customProps.zohoBooksTaxId ? BigInt(customProps.zohoBooksTaxId) : null;
+      if (customProps.zohoBooksIntraTaxId !== undefined) updateData.zohoBooksIntraTaxId = customProps.zohoBooksIntraTaxId ? customProps.zohoBooksIntraTaxId.trim() : null;
+      if (customProps.zohoBooksInterTaxId !== undefined) updateData.zohoBooksInterTaxId = customProps.zohoBooksInterTaxId ? customProps.zohoBooksInterTaxId.trim() : null;
     } else if (entity === 'units') {
       if (customProps.abbreviation !== undefined) {
         if (!customProps.abbreviation || !customProps.abbreviation.trim()) {
@@ -154,6 +153,9 @@ export async function PATCH(
           }
         }
         updateData.abbreviation = parsedAbbrev;
+      }
+      if (customProps.zohoBooksUnitName !== undefined) {
+        updateData.zohoBooksUnitName = customProps.zohoBooksUnitName ? customProps.zohoBooksUnitName.trim() : null;
       }
     } else if (entity === 'hsn-codes') {
       if (customProps.defaultGstRateId !== undefined) {
@@ -210,9 +212,7 @@ export async function PATCH(
       userId: session.userId,
     });
 
-    if (entity === 'tax-rates' && updatedRecord.zohoBooksTaxId) {
-      updatedRecord.zohoBooksTaxId = updatedRecord.zohoBooksTaxId.toString();
-    }
+    // No need to serialize BigInt for tax rates anymore
 
     return NextResponse.json(updatedRecord);
   } catch (error: any) {
@@ -289,9 +289,7 @@ export async function DELETE(
       userId: session.userId,
     });
 
-    if (entity === 'tax-rates' && archivedRecord.zohoBooksTaxId) {
-      archivedRecord.zohoBooksTaxId = archivedRecord.zohoBooksTaxId.toString();
-    }
+    // No need to serialize BigInt for tax rates anymore
 
     return NextResponse.json(archivedRecord);
   } catch (error: any) {

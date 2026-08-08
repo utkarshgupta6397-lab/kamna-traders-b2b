@@ -8,6 +8,9 @@ import { ArrowLeft, Edit2, ShieldAlert, Package, Layers, CheckCircle2, X, FileTe
 import MasterStatusBadge from '../../_framework/MasterStatusBadge';
 import { HistoryEventCard } from '../../_framework/HistoryDrawer';
 import toast from 'react-hot-toast';
+import dynamic from 'next/dynamic';
+
+const ZohoBooksVariantPanel = dynamic(() => import('@/components/admin/ZohoBooksVariantPanel'), { ssr: false });
 
 const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val);
 
@@ -207,7 +210,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const markup = variant.purchasePrice > 0 ? (grossProfit / variant.purchasePrice) * 100 : 0;
   
   const isHighMargin = margin > 30; // Example rule
-  const isSynced = !!product.zohoBooksId;
+  const isSynced = variant.zohoSyncStatus === 'SYNCED';
   const isFamily = product.variantProducts && product.variantProducts.length > 0;
 
   return (
@@ -743,26 +746,13 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             )}
 
             {/* Integrations */}
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/50 flex items-center gap-2">
-                <Database size={14} className="text-gray-500" />
-                <h3 className="text-[12px] font-bold text-gray-700 uppercase tracking-wide">Integrations</h3>
-              </div>
-              <div className="p-4 space-y-4">
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Zoho Books ID</div>
-                  <div className="text-[13px] font-mono text-gray-400 italic">{product.zohoBooksId || 'Not Synced'}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Zoho Creator ID</div>
-                  <div className="text-[13px] font-mono text-gray-400 italic">{product.zohoCreatorId || 'Not Synced'}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Last Sync</div>
-                  <div className="text-[13px] font-medium text-gray-500">-</div>
-                </div>
-              </div>
-            </div>
+            {!isFamily && (
+              <ZohoBooksVariantPanel 
+                product={product} 
+                variant={variant} 
+                onSuccess={() => window.location.reload()} 
+              />
+            )}
 
             {/* System Info */}
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">

@@ -1,4 +1,4 @@
-import { NextResponse, NextRequest } from 'next/server';
+import { NextResponse, NextRequest, after } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { createMasterAuditLog } from '@/lib/master-data-service';
@@ -6,6 +6,8 @@ import { ProductAttributeService } from '@/lib/services/ProductAttributeService'
 import { ProductAttributeValidationService } from '@/lib/services/ProductAttributeValidationService';
 import { CatalogResolver } from '@/lib/services/CatalogResolver';
 import { CategoryService } from '@/lib/services/CategoryService';
+import { ZohoProductService } from '@/lib/services/zoho-books';
+import { getZohoTokens } from '@/lib/zoho-auth';
 
 export async function GET(
   request: NextRequest,
@@ -174,6 +176,21 @@ export async function PATCH(
       productId: id, // Connect FK
     } as any);
 
+    // Image Sync hook
+    if (thumbnailBase64 !== undefined) {
+      const defaultVariant = await prisma.productVariant.findFirst({ where: { productId: id, isDefault: true } });
+      if (defaultVariant?.zohoBookItemId) {
+        const accessToken = await getZohoTokens();
+        if (accessToken) {
+          after(() => {
+            ZohoProductService.uploadImage(defaultVariant.id, defaultVariant.zohoBookItemId!, accessToken, true).catch(err => {
+              console.error('[ZohoImageSync] Image sync error:', err);
+            });
+          });
+        }
+      }
+    }
+
     return NextResponse.json(updatedRecord);
   } catch (error: any) {
     console.error(`[API] PATCH /api/staff/catalog/products/${id} error:`, error);
@@ -230,6 +247,13 @@ export async function PUT(
         if (existingCode) {
           return NextResponse.json({ error: `Product with code "${parsedCode}" already exists` }, { status: 400 });
         }
+      }
+    }
+
+    if (incentiveTag) {
+      const allowedTags = ['High-Margin Product', 'Medium-Margin Product', 'Low-Margin Product'];
+      if (!allowedTags.includes(incentiveTag)) {
+        return NextResponse.json({ error: `Invalid Incentive Category: "${incentiveTag}". Allowed values are: ${allowedTags.join(', ')}` }, { status: 400 });
       }
     }
 
@@ -359,6 +383,15 @@ export async function PUT(
     } as any);
 
     CatalogResolver.invalidateCache();
+    
+    const defaultVariant = existingProduct.variants?.[0];
+    if (defaultVariant?.id) {
+      after(() => {
+        ZohoProductService.syncVariant(defaultVariant.id, 'AUTO_SAVE').catch(err => {
+          console.error('[ZohoProductSync] Auto-sync error:', err);
+        });
+      });
+    }
 
     return NextResponse.json(updatedProduct);
   } catch (error: any) {

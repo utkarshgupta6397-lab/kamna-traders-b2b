@@ -93,7 +93,8 @@ export default function EditMasterModal({
       if (record.percentage !== undefined) custom.percentage = record.percentage;
       if (record.taxType !== undefined) custom.taxType = record.taxType;
       if (record.abbreviation !== undefined) custom.abbreviation = record.abbreviation;
-      if ((record as any).zohoBooksTaxId !== undefined) custom.zohoBooksTaxId = (record as any).zohoBooksTaxId;
+      if ((record as any).zohoBooksIntraTaxId !== undefined) custom.zohoBooksIntraTaxId = (record as any).zohoBooksIntraTaxId;
+      if ((record as any).zohoBooksInterTaxId !== undefined) custom.zohoBooksInterTaxId = (record as any).zohoBooksInterTaxId;
       if ((record as any).defaultGstRateId !== undefined) custom.defaultGstRateId = (record as any).defaultGstRateId;
       if (record.parentId !== undefined) custom.parentId = record.parentId;
       if (record.chapterCode !== undefined) custom.chapterCode = record.chapterCode;

@@ -195,12 +195,7 @@ export async function GET(
 
     records = records.map(r => ({ ...r, productsMappedCount: r._count?.products || r.productsMappedCount || 0 }));
 
-    if (entity === 'tax-rates') {
-      records = records.map(r => ({
-        ...r,
-        zohoBooksTaxId: r.zohoBooksTaxId ? r.zohoBooksTaxId.toString() : null
-      }));
-    }
+    // No need to serialize BigInt for tax rates anymore, they are strings
 
     return NextResponse.json({
       records,
@@ -304,9 +299,11 @@ export async function POST(
     if (entity === 'tax-rates') {
       createData.percentage = parseFloat(customProps.percentage) || 0.0;
       createData.taxType = customProps.taxType || 'GST';
-      createData.zohoBooksTaxId = customProps.zohoBooksTaxId ? BigInt(customProps.zohoBooksTaxId) : null;
+      createData.zohoBooksIntraTaxId = customProps.zohoBooksIntraTaxId ? customProps.zohoBooksIntraTaxId.trim() : null;
+      createData.zohoBooksInterTaxId = customProps.zohoBooksInterTaxId ? customProps.zohoBooksInterTaxId.trim() : null;
     } else if (entity === 'units') {
       createData.abbreviation = customProps.abbreviation ? customProps.abbreviation.trim() : null;
+      createData.zohoBooksUnitName = customProps.zohoBooksUnitName ? customProps.zohoBooksUnitName.trim() : null;
     } else if (entity === 'hsn-codes') {
       if (customProps.defaultGstRateId) {
         createData.defaultGstRate = { connect: { id: customProps.defaultGstRateId } };
@@ -345,10 +342,6 @@ export async function POST(
       remarks: remarks || 'Initial creation',
       userId: session.userId,
     });
-
-    if (entity === 'tax-rates' && newRecord.zohoBooksTaxId) {
-      newRecord.zohoBooksTaxId = newRecord.zohoBooksTaxId.toString();
-    }
 
     return NextResponse.json(newRecord, { status: 201 });
   } catch (error: any) {

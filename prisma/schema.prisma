@@ -247,53 +247,55 @@ model Manufacturer {
 }
 
 model TaxRate {
-  id              String              @id
-  code            String?             @unique
-  name            String              @unique
-  description     String?
-  zohoBooksTaxId  BigInt?
-  percentage      Float               @default(0.0)
-  taxType         String              @default("GST")
-  status          String              @default("Draft")
-  remarks         String?
-  isActive        Boolean             @default(true)
-  createdById     String?
-  updatedById     String?
-  approvedById    String?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  approvedAt      DateTime?
-  createdBy       User?               @relation("TaxRateCreatedBy", fields: [createdById], references: [id])
-  updatedBy       User?               @relation("TaxRateUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy      User?               @relation("TaxRateApprovedBy", fields: [approvedById], references: [id])
-  history         MasterDataHistory[] @relation("TaxRateHistory")
-  defaultHsnCodes HsnCode[]           @relation("HsnDefaultGstRate")
-  products        Product[]
+  id                  String              @id
+  code                String?             @unique
+  name                String              @unique
+  description         String?
+  zohoBooksIntraTaxId String?
+  zohoBooksInterTaxId String?
+  percentage          Float               @default(0.0)
+  taxType             String              @default("GST")
+  status              String              @default("Draft")
+  remarks             String?
+  isActive            Boolean             @default(true)
+  createdById         String?
+  updatedById         String?
+  approvedById        String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  approvedAt          DateTime?
+  createdBy           User?               @relation("TaxRateCreatedBy", fields: [createdById], references: [id])
+  updatedBy           User?               @relation("TaxRateUpdatedBy", fields: [updatedById], references: [id])
+  approvedBy          User?               @relation("TaxRateApprovedBy", fields: [approvedById], references: [id])
+  history             MasterDataHistory[] @relation("TaxRateHistory")
+  defaultHsnCodes     HsnCode[]           @relation("HsnDefaultGstRate")
+  products            Product[]
 
   @@index([status])
   @@index([createdAt])
 }
 
 model UnitOfMeasurement {
-  id           String              @id
-  code         String?             @unique
-  name         String              @unique
-  description  String?
-  abbreviation String?
-  status       String              @default("Draft")
-  remarks      String?
-  isActive     Boolean             @default(true)
-  createdById  String?
-  updatedById  String?
-  approvedById String?
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  approvedAt   DateTime?
-  createdBy    User?               @relation("UnitCreatedBy", fields: [createdById], references: [id])
-  updatedBy    User?               @relation("UnitUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy   User?               @relation("UnitApprovedBy", fields: [approvedById], references: [id])
-  history      MasterDataHistory[] @relation("UnitHistory")
-  products     Product[]
+  id                String              @id
+  code              String?             @unique
+  name              String              @unique
+  description       String?
+  abbreviation      String?
+  zohoBooksUnitName String?
+  status            String              @default("Draft")
+  remarks           String?
+  isActive          Boolean             @default(true)
+  createdById       String?
+  updatedById       String?
+  approvedById      String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  approvedAt        DateTime?
+  createdBy         User?               @relation("UnitCreatedBy", fields: [createdById], references: [id])
+  updatedBy         User?               @relation("UnitUpdatedBy", fields: [updatedById], references: [id])
+  approvedBy        User?               @relation("UnitApprovedBy", fields: [approvedById], references: [id])
+  history           MasterDataHistory[] @relation("UnitHistory")
+  products          Product[]
 
   @@index([status])
   @@index([createdAt])
@@ -409,6 +411,13 @@ model Sku {
   @@index([zohoBooksId2])
 }
 
+enum ZohoProductSyncStatus {
+  NEVER_SYNCED
+  SYNCING
+  SYNCED
+  SYNC_FAILED
+}
+
 model Product {
   id              String    @id @default(cuid())
   code            String    @unique
@@ -433,8 +442,8 @@ model Product {
   incentiveTag    String?
   thumbnailBase64 String?   @db.Text
 
-  catalogType           String   @default("PRODUCT") // PRODUCT or PRODUCT_FAMILY
-  isVariantProduct      Boolean  @default(false)
+  catalogType           String  @default("PRODUCT") // PRODUCT or PRODUCT_FAMILY
+  isVariantProduct      Boolean @default(false)
   parentProductId       String?
   variantAttributeId    String?
   variantAttributeValue String?
@@ -452,9 +461,9 @@ model Product {
   history         MasterDataHistory[]     @relation("ProductHistory")
   attributeValues ProductAttributeValue[]
 
-  parentProduct         Product?  @relation("ProductFamily", fields: [parentProductId], references: [id])
-  variantProducts       Product[] @relation("ProductFamily")
-  variantAttribute      ProductAttribute? @relation("ProductVariantAttribute", fields: [variantAttributeId], references: [id])
+  parentProduct    Product?          @relation("ProductFamily", fields: [parentProductId], references: [id])
+  variantProducts  Product[]         @relation("ProductFamily")
+  variantAttribute ProductAttribute? @relation("ProductVariantAttribute", fields: [variantAttributeId], references: [id])
 
   @@index([status])
   @@index([brandId])
@@ -463,24 +472,53 @@ model Product {
 }
 
 model ProductVariant {
-  id             String   @id @default(cuid())
-  productId      String
-  variantName    String   @default("Default")
-  sku            String   @unique
-  purchasePrice  Float    @default(0.0)
-  sellingPrice   Float    @default(0.0)
-  trackInventory Boolean  @default(true)
-  trackSerials   Boolean  @default(false)
-  isDefault      Boolean  @default(true)
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  zohoBookItemId String?  @unique
+  id                String                @id @default(cuid())
+  productId         String
+  variantName       String                @default("Default")
+  sku               String                @unique
+  purchasePrice     Float                 @default(0.0)
+  sellingPrice      Float                 @default(0.0)
+  trackInventory    Boolean               @default(true)
+  trackSerials      Boolean               @default(false)
+  isDefault         Boolean               @default(true)
+  isActive          Boolean               @default(true)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  zohoBookItemId    String?               @unique
+  zohoSyncStatus    ZohoProductSyncStatus @default(NEVER_SYNCED)
+  zohoLastSyncAt    DateTime?
+  zohoLastSyncError String?               @db.Text
+  zohoSyncHash      String?
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product      Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  zohoSyncLogs ZohoProductSyncLog[]
 
   @@index([productId])
   @@index([sku])
+  @@index([zohoSyncStatus])
+}
+
+model ZohoProductSyncLog {
+  id              String         @id @default(cuid())
+  variantId       String
+  productId       String
+  zohoBooksItemId String?
+  action          String
+  triggerSource   String
+  status          String
+  startedAt       DateTime
+  completedAt     DateTime?
+  durationMs      Int?
+  requestPayload  Json?
+  responsePayload Json?
+  timeline        Json?
+  apiError        String?        @db.Text
+  createdAt       DateTime       @default(now())
+  variant         ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([variantId])
+  @@index([productId])
+  @@index([createdAt])
 }
 
 model WarehouseInventory {
@@ -1614,10 +1652,10 @@ model ProductAttribute {
   createdBy User? @relation("AttributeCreatedBy", fields: [createdById], references: [id])
   updatedBy User? @relation("AttributeUpdatedBy", fields: [updatedById], references: [id])
 
-  categories    ProductAttributeCategory[]
-  productValues ProductAttributeValue[]
-  history       MasterDataHistory[]        @relation("ProductAttributeHistory")
-  variantProducts Product[] @relation("ProductVariantAttribute")
+  categories      ProductAttributeCategory[]
+  productValues   ProductAttributeValue[]
+  history         MasterDataHistory[]        @relation("ProductAttributeHistory")
+  variantProducts Product[]                  @relation("ProductVariantAttribute")
 
   @@index([status])
   @@index([dataType])

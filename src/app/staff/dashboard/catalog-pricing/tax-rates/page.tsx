@@ -22,8 +22,15 @@ const TAX_RATES_CONFIG: MasterConfig = {
       required: true,
     },
     { 
-      name: 'zohoBooksTaxId', 
-      label: 'Zoho Books Tax ID', 
+      name: 'zohoBooksIntraTaxId', 
+      label: 'Zoho Books Intra-State Tax ID', 
+      type: 'text', 
+      required: true, 
+      pattern: '^[0-9]+$' 
+    },
+    { 
+      name: 'zohoBooksInterTaxId', 
+      label: 'Zoho Books Inter-State Tax ID', 
       type: 'text', 
       required: true, 
       pattern: '^[0-9]+$' 

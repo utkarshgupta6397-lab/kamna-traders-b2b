@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
+import { after } from 'next/server';
 import { getSession } from '@/lib/auth';
+import { ZohoProductService } from '@/lib/services/zoho-books';
 import { prisma } from '@/lib/db';
 import { createProductWithDefaultVariant, createVariantProductFamily } from '@/lib/product-service';
 import { ProductAttributeService } from '@/lib/services/ProductAttributeService';
@@ -214,6 +216,13 @@ export async function POST(request: Request) {
       }
     }
 
+    if (incentiveTag) {
+      const allowedTags = ['High-Margin Product', 'Medium-Margin Product', 'Low-Margin Product'];
+      if (!allowedTags.includes(incentiveTag)) {
+        return NextResponse.json({ error: `Invalid Incentive Category: "${incentiveTag}". Allowed values are: ${allowedTags.join(', ')}` }, { status: 400 });
+      }
+    }
+
     // --- Dynamic Attribute Validation ---
     const activeAttributes = await ProductAttributeService.getAttributesForCategory(resolvedCategoryId);
 
@@ -292,6 +301,16 @@ export async function POST(request: Request) {
     }
 
     CatalogResolver.invalidateCache();
+
+    // Fire and forget Zoho Sync
+    const defaultVariant = await prisma.productVariant.findFirst({ where: { productId: newProduct.id, isDefault: true } });
+    if (defaultVariant?.id) {
+      after(() => {
+        ZohoProductService.syncVariant(defaultVariant.id, 'AUTO_SAVE').catch(err => {
+          console.error('[ZohoProductSync] Auto-sync error on create:', err);
+        });
+      });
+    }
 
     return NextResponse.json(newProduct, { status: 201 });
   } catch (error: any) {

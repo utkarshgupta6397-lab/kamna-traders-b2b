@@ -11,6 +11,33 @@ import toast from 'react-hot-toast';
 import { Select } from '@/components/ui/Select';
 import ImportOrphanModal from './ImportOrphanModal';
 
+const AttributeValuePill = ({ value }: { value: string | null | undefined }) => {
+  if (!value) return <span className="text-gray-300">—</span>;
+  
+  // Deterministic color selection
+  const colors = [
+    'bg-blue-50 text-blue-700 border-blue-200',
+    'bg-indigo-50 text-indigo-700 border-indigo-200',
+    'bg-purple-50 text-purple-700 border-purple-200',
+    'bg-pink-50 text-pink-700 border-pink-200',
+    'bg-teal-50 text-teal-700 border-teal-200',
+    'bg-cyan-50 text-cyan-700 border-cyan-200',
+    'bg-orange-50 text-orange-700 border-orange-200',
+  ];
+  
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = value.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const colorIndex = Math.abs(hash) % colors.length;
+  
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border whitespace-nowrap ${colors[colorIndex]}`}>
+      {value}
+    </span>
+  );
+};
+
 const evaluateMath = (expr: string | number): string => {
   if (expr === undefined || expr === null || expr === '') return '';
   const strExpr = String(expr).trim();
@@ -382,148 +409,173 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
     setFormData((prev: any) => ({ ...prev, [field]: evaluateMath(prev[field]) }));
   };
 
-  const renderInlineRow = (isEditMode: boolean, existingItem?: any) => (
-    <tr className="bg-blue-50/50 shadow-sm">
-      {/* Product Name - FROZEN */}
-      <td style={{ minWidth: 320, width: 320, position: 'sticky', left: 0, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className="px-4 py-3 bg-blue-50 align-top">
-        <input 
-          type="text" 
-          placeholder="Product Name" 
-          value={formData.name} 
-          onChange={e => setFormData({ ...formData, name: e.target.value })} 
-          onKeyDown={e => handleKeyDown(e, 'name')}
-          className="w-full text-sm px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-sm" 
-        />
-      </td>
-      {/* SKU - FROZEN */}
-      <td style={{ minWidth: 180, width: 180, position: 'sticky', left: 320, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className="px-4 py-3 bg-blue-50 align-top">
-        <div className="relative">
-          <input 
-            type="text" 
-            placeholder="SKU" 
-            value={formData.code} 
-            onChange={e => setFormData({ ...formData, code: e.target.value.toUpperCase() })} 
-            onKeyDown={e => handleKeyDown(e, 'code')}
-            className="w-full text-sm pl-3 pr-8 py-2 border border-gray-300 rounded uppercase font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-sm" 
-          />
-          <button 
-            onClick={handleGenerateSku} 
-            disabled={isGeneratingSku}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-600 focus:text-blue-600 transition-colors"
-            title="Generate SKU"
-          >
-            {isGeneratingSku ? <div className="h-4 w-4 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" /> : <Wand2 size={16} />}
-          </button>
-        </div>
-      </td>
-      
-      {/* Dynamic Attributes */}
-      {attributes.map(attr => (
-        <td key={attr.id} style={{ minWidth: 180, width: 180 }} className="px-4 py-3 align-top">
-          {(attr.dataType === 'Dropdown' || attr.dataType === 'Multi Select') ? (
-            <Select
-              value={attributeValues[attr.id] || ''}
-              onChange={val => setAttributeValues({ ...attributeValues, [attr.id]: val })}
-              placeholder={`Select`}
-              options={(attr.options || []).map((opt: string) => ({ label: opt, value: opt }))}
-              className={`${attr.mandatory && !attributeValues[attr.id] ? 'border-red-400 ring-1 ring-red-400' : 'border-gray-300'} shadow-sm`}
-            />
-          ) : (attr.dataType === 'Boolean') ? (
-            <Select
-              value={attributeValues[attr.id] || ''}
-              onChange={val => setAttributeValues({ ...attributeValues, [attr.id]: val })}
-              placeholder="Select"
-              options={[
-                { label: 'Yes', value: 'Yes' },
-                { label: 'No', value: 'No' }
-              ]}
-              className={`${attr.mandatory && !attributeValues[attr.id] ? 'border-red-400 ring-1 ring-red-400' : 'border-gray-300'} shadow-sm`}
-            />
+  const renderInlineRow = (isEditMode: boolean, existingItem?: any, rowIndex?: number) => {
+    const isInactive = existingItem?.status === 'Inactive';
+    const trBg = isInactive ? 'bg-red-50/50' : 'bg-blue-50/40';
+    const stickyBg = isInactive ? 'bg-red-50' : 'bg-[#f4f7fb]'; // match the trBg color roughly for sticky elements
+
+    return (
+      <tr className={`${trBg} shadow-sm group`}>
+        {/* Index */}
+        <td style={{ minWidth: 48, width: 48, position: 'sticky', left: 0, zIndex: 10 }} className={`px-2 py-3 text-center text-xs font-medium text-gray-500 ${stickyBg}`}>
+          {rowIndex !== undefined ? rowIndex : ''}
+        </td>
+        {/* Thumbnail */}
+        <td style={{ minWidth: 52, width: 52, position: 'sticky', left: 48, zIndex: 10 }} className={`px-4 py-3 text-center ${stickyBg}`}>
+          {existingItem?.thumbnailBase64 ? (
+            <img src={existingItem.thumbnailBase64} alt="Thumb" className="w-8 h-8 object-cover rounded-md border border-gray-200 shadow-sm mx-auto opacity-70" />
           ) : (
-            <div className="relative">
-              {attr.prefix && <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{attr.prefix}</span>}
-              <input
-                type={attr.dataType === 'Number' || attr.dataType === 'Decimal' ? 'number' : attr.dataType === 'Date' ? 'date' : 'text'}
-                className={`w-full ${attr.prefix ? 'pl-7' : 'pl-3'} ${attr.suffix ? 'pr-7' : 'pr-3'} py-2 text-sm border rounded outline-none transition-all focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm ${attr.mandatory && !attributeValues[attr.id] ? 'border-red-400 ring-1 ring-red-400' : 'border-gray-300'}`}
-                placeholder={attr.placeholder || ''}
-                value={attributeValues[attr.id] || ''}
-                min={attr.minValue ?? undefined}
-                max={attr.maxValue ?? undefined}
-                step={attr.dataType === 'Decimal' ? '0.01' : '1'}
-                onChange={e => setAttributeValues({ ...attributeValues, [attr.id]: e.target.value })}
-                onKeyDown={e => handleKeyDown(e, `attr_${attr.id}`)}
-              />
-              {attr.suffix && <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{attr.suffix}</span>}
+            <div className="w-8 h-8 bg-gray-100 rounded-md border border-gray-200 flex items-center justify-center mx-auto text-gray-400 opacity-70">
+              <ImageIcon size={14} />
             </div>
           )}
         </td>
-      ))}
-      
-      {/* Purchase Price */}
-      <td style={{ minWidth: 140, width: 140 }} className="px-4 py-3 align-top text-right">
-        <div className="relative">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">₹</span>
+        {/* Product Name */}
+        <td style={{ minWidth: 280, width: 280, position: 'sticky', left: 100, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className={`px-4 py-3 align-top ${stickyBg}`}>
           <input 
             type="text" 
-            placeholder="0.00" 
-            value={formData.purchasePrice} 
-            onChange={e => setFormData({ ...formData, purchasePrice: e.target.value })} 
-            onKeyDown={e => handleKeyDown(e, 'purchasePrice')}
-            onBlur={() => handlePriceBlur('purchasePrice')}
-            className="w-full text-sm pl-7 pr-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none shadow-sm text-right" 
+            placeholder="Product Name" 
+            value={formData.name} 
+            onChange={e => setFormData({ ...formData, name: e.target.value })} 
+            onKeyDown={e => handleKeyDown(e, 'name')}
+            className="w-full text-sm px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-sm" 
           />
-        </div>
-      </td>
-      {/* Selling Price */}
-      <td style={{ minWidth: 140, width: 140 }} className="px-4 py-3 align-top text-right">
-        <div className="relative">
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-sm">₹</span>
-          <input 
-            type="text" 
-            placeholder="0.00" 
-            value={formData.sellingPrice} 
-            onChange={e => setFormData({ ...formData, sellingPrice: e.target.value })} 
-            onKeyDown={e => handleKeyDown(e, 'sellingPrice')}
-            onBlur={() => handlePriceBlur('sellingPrice')}
-            className="w-full text-sm pl-7 pr-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none shadow-sm text-right" 
-          />
-        </div>
-      </td>
-      {/* Inventory */}
-      <td style={{ minWidth: 100, width: 100 }} className="px-4 py-3 align-middle text-center">
-        <input 
-          type="checkbox" 
-          checked={formData.trackInventory} 
-          onChange={e => setFormData({ ...formData, trackInventory: e.target.checked })} 
-          className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" 
-        />
-      </td>
-      {/* Serials */}
-      <td style={{ minWidth: 100, width: 100 }} className="px-4 py-3 align-middle text-center">
-        <input 
-          type="checkbox" 
-          checked={formData.trackSerials} 
-          onChange={e => setFormData({ ...formData, trackSerials: e.target.checked })} 
-          className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" 
-        />
-      </td>
-      {/* Status */}
-      <td style={{ minWidth: 140, width: 140 }} className="px-4 py-3 align-top pt-4">
-        {existingItem ? <MasterStatusBadge status={existingItem.status} /> : <span className="text-xs font-medium text-gray-400 uppercase tracking-wider bg-gray-100 px-2.5 py-1 rounded-full border border-gray-200 shadow-sm inline-block">Draft</span>}
-      </td>
-      {/* Actions */}
-      <td style={{ minWidth: 120, width: 120, position: 'sticky', right: 0, zIndex: 10, borderLeft: '1px solid #E5E7EB' }} className="px-4 py-3 bg-blue-50 align-top text-right">
-        <div className="flex justify-end gap-1.5 mt-0.5">
-          <button onClick={handleCancelInline} disabled={isSubmitting} className="text-gray-500 hover:text-red-600 p-1.5 rounded-lg border border-transparent hover:border-red-200 bg-transparent hover:bg-red-50 disabled:opacity-50 transition-all flex items-center justify-center" title="Cancel">
-            <X size={18} />
-          </button>
-          <button onClick={handleSaveInline} disabled={isSubmitting} className="text-white p-1.5 rounded-lg border border-transparent bg-green-600 hover:bg-green-700 disabled:opacity-50 transition-all shadow-sm flex items-center justify-center font-medium" title="Save Row">
-            <Check size={18} />
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
+        </td>
+        {/* SKU */}
+        <td style={{ minWidth: 160, width: 160, position: 'sticky', left: 380, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className={`px-4 py-3 align-top ${stickyBg}`}>
+          <div className="relative">
+            <input 
+              type="text" 
+              placeholder="SKU" 
+              value={formData.code} 
+              onChange={e => setFormData({ ...formData, code: e.target.value.toUpperCase() })} 
+              onKeyDown={e => handleKeyDown(e, 'code')}
+              className="w-full text-sm pl-2 pr-7 py-1.5 border border-gray-300 rounded uppercase font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all shadow-sm" 
+            />
+            <button 
+              onClick={handleGenerateSku} 
+              disabled={isGeneratingSku}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-600 focus:text-blue-600 transition-colors"
+              title="Generate SKU"
+            >
+              {isGeneratingSku ? <div className="h-3 w-3 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" /> : <Wand2 size={14} />}
+            </button>
+          </div>
+        </td>
+        
+        {/* Dynamic Attributes */}
+        {attributes.map(attr => (
+          <td key={attr.id} style={{ minWidth: 160, width: 160 }} className="px-4 py-3 align-top">
+            {(attr.dataType === 'Dropdown' || attr.dataType === 'Multi Select') ? (
+              <Select
+                value={attributeValues[attr.id] || ''}
+                onChange={val => setAttributeValues({ ...attributeValues, [attr.id]: val })}
+                placeholder={`Select`}
+                options={(attr.options || []).map((opt: string) => ({ label: opt, value: opt }))}
+                className={`${attr.mandatory && !attributeValues[attr.id] ? 'border-red-400 ring-1 ring-red-400' : 'border-gray-300'} shadow-sm text-sm`}
+              />
+            ) : (attr.dataType === 'Boolean') ? (
+              <Select
+                value={attributeValues[attr.id] || ''}
+                onChange={val => setAttributeValues({ ...attributeValues, [attr.id]: val })}
+                placeholder="Select"
+                options={[
+                  { label: 'Yes', value: 'Yes' },
+                  { label: 'No', value: 'No' }
+                ]}
+                className={`${attr.mandatory && !attributeValues[attr.id] ? 'border-red-400 ring-1 ring-red-400' : 'border-gray-300'} shadow-sm text-sm`}
+              />
+            ) : (
+              <div className="relative">
+                {attr.prefix && <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">{attr.prefix}</span>}
+                <input
+                  type={attr.dataType === 'Number' || attr.dataType === 'Decimal' ? 'number' : attr.dataType === 'Date' ? 'date' : 'text'}
+                  className={`w-full ${attr.prefix ? 'pl-6' : 'pl-2'} ${attr.suffix ? 'pr-6' : 'pr-2'} py-1.5 text-sm border rounded outline-none transition-all focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm ${attr.mandatory && !attributeValues[attr.id] ? 'border-red-400 ring-1 ring-red-400' : 'border-gray-300'}`}
+                  placeholder={attr.placeholder || ''}
+                  value={attributeValues[attr.id] || ''}
+                  min={attr.minValue ?? undefined}
+                  max={attr.maxValue ?? undefined}
+                  step={attr.dataType === 'Decimal' ? '0.01' : '1'}
+                  onChange={e => setAttributeValues({ ...attributeValues, [attr.id]: e.target.value })}
+                  onKeyDown={e => handleKeyDown(e, `attr_${attr.id}`)}
+                />
+                {attr.suffix && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">{attr.suffix}</span>}
+              </div>
+            )}
+          </td>
+        ))}
+        
+        {/* Purchase Price */}
+        <td style={{ minWidth: 130, width: 130 }} className="px-4 py-3 align-top text-right">
+          <div className="relative">
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-xs">₹</span>
+            <input 
+              type="text" 
+              placeholder="0.00" 
+              value={formData.purchasePrice} 
+              onChange={e => setFormData({ ...formData, purchasePrice: e.target.value })} 
+              onKeyDown={e => handleKeyDown(e, 'purchasePrice')}
+              onBlur={() => handlePriceBlur('purchasePrice')}
+              className="w-full text-sm pl-5 pr-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none shadow-sm text-right" 
+            />
+          </div>
+        </td>
+        {/* Selling Price */}
+        <td style={{ minWidth: 130, width: 130 }} className="px-4 py-3 align-top text-right">
+          <div className="relative">
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium text-xs">₹</span>
+            <input 
+              type="text" 
+              placeholder="0.00" 
+              value={formData.sellingPrice} 
+              onChange={e => setFormData({ ...formData, sellingPrice: e.target.value })} 
+              onKeyDown={e => handleKeyDown(e, 'sellingPrice')}
+              onBlur={() => handlePriceBlur('sellingPrice')}
+              className="w-full text-sm pl-5 pr-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none shadow-sm text-right" 
+            />
+          </div>
+        </td>
+        {/* Status */}
+        <td style={{ minWidth: 130, width: 130 }} className="px-4 py-3 align-middle text-left whitespace-nowrap">
+          {existingItem ? <MasterStatusBadge status={existingItem.status} /> : <span className="text-xs font-medium text-gray-400 uppercase tracking-wider bg-gray-100 px-2.5 py-1 rounded-full border border-gray-200 shadow-sm inline-block">Draft</span>}
+        </td>
+        {/* Zoho Sync */}
+        {visibleColumns.has('zoho') && (
+          <td style={{ minWidth: 110, width: 110 }} className="px-4 py-3 align-middle text-left whitespace-nowrap text-sm text-gray-400">
+            —
+          </td>
+        )}
+        {/* Inventory */}
+        {visibleColumns.has('inventory') && (
+          <td style={{ minWidth: 90, width: 90 }} className="px-4 py-3 align-middle text-center">
+            <input 
+              type="checkbox" 
+              checked={formData.trackInventory} 
+              onChange={e => setFormData({ ...formData, trackInventory: e.target.checked })} 
+              className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" 
+            />
+          </td>
+        )}
+        {/* Updated At */}
+        {visibleColumns.has('updatedAt') && (
+          <td style={{ minWidth: 120, width: 120 }} className="px-4 py-3 align-middle text-sm text-gray-400">
+            —
+          </td>
+        )}
+        {/* Actions */}
+        <td style={{ minWidth: 120, width: 120, position: 'sticky', right: 0, zIndex: 10, borderLeft: '1px solid #E5E7EB' }} className={`px-4 py-3 align-middle text-right ${stickyBg}`}>
+          <div className="flex justify-end gap-1.5">
+            <button onClick={handleCancelInline} disabled={isSubmitting} className="text-gray-500 hover:text-red-600 p-1.5 rounded-lg border border-transparent hover:border-red-200 bg-white/50 hover:bg-red-50 disabled:opacity-50 transition-all flex items-center justify-center shadow-sm" title="Cancel">
+              <X size={16} />
+            </button>
+            <button onClick={handleSaveInline} disabled={isSubmitting} className="text-white p-1.5 rounded-lg border border-transparent bg-green-600 hover:bg-green-700 disabled:opacity-50 transition-all shadow-sm flex items-center justify-center font-medium" title="Save Row">
+              <Check size={16} />
+            </button>
+          </div>
+        </td>
+      </tr>
+    );
+  };
 
   // Derived state for table
   const filteredProducts = product?.variantProducts?.filter((child: any) => {
@@ -659,13 +711,16 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                 <table className="min-w-max w-full divide-y divide-gray-200 border-b border-gray-200">
                   <thead className="bg-gray-50/90 backdrop-blur-sm shadow-sm sticky top-0 z-20">
                     <tr>
-                      <th style={{ minWidth: 52, width: 52, position: 'sticky', left: 0, zIndex: 30 }} className="px-4 py-3.5 text-center text-xs font-semibold text-gray-700 bg-gray-50">
+                      <th style={{ minWidth: 48, width: 48, position: 'sticky', left: 0, zIndex: 30 }} className="px-2 py-3.5 text-center text-xs font-semibold text-gray-700 bg-gray-50">
+                        #
+                      </th>
+                      <th style={{ minWidth: 52, width: 52, position: 'sticky', left: 48, zIndex: 30 }} className="px-4 py-3.5 text-center text-xs font-semibold text-gray-700 bg-gray-50">
                         <ImageIcon size={16} className="mx-auto text-gray-400" />
                       </th>
-                      <th style={{ minWidth: 280, width: 280, position: 'sticky', left: 52, zIndex: 30, borderRight: '1px solid #E5E7EB' }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
+                      <th style={{ minWidth: 280, width: 280, position: 'sticky', left: 100, zIndex: 30, borderRight: '1px solid #E5E7EB' }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
                         Product Name
                       </th>
-                      <th style={{ minWidth: 160, width: 160, position: 'sticky', left: 332, zIndex: 30, borderRight: '1px solid #E5E7EB' }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
+                      <th style={{ minWidth: 160, width: 160, position: 'sticky', left: 380, zIndex: 30, borderRight: '1px solid #E5E7EB' }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
                         SKU
                       </th>
                       {attributes.map(attr => (
@@ -703,15 +758,30 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedProducts.map((child: any) => {
+                    {isAddingVariant && renderInlineRow(true, null, paginatedProducts.length + 1)}
+                    {paginatedProducts.map((child: any, idx: number) => {
+                      const absoluteIndex = (currentPage - 1) * rowsPerPage + idx + 1;
+                      
                       if (editingVariantId === child.id) {
-                        return React.cloneElement(renderInlineRow(true, child), { key: child.id });
+                        return React.cloneElement(renderInlineRow(true, child, absoluteIndex), { key: child.id });
                       }
                       
+                      const isInactive = child.status === 'Inactive';
+                      const trClasses = isInactive 
+                        ? "bg-red-50/50 hover:bg-red-50/80 transition-colors group"
+                        : "bg-white hover:bg-gray-50/80 transition-colors group";
+                      const stickyClasses = isInactive 
+                        ? "bg-red-50/50 group-hover:bg-red-50/80 transition-colors"
+                        : "bg-white group-hover:bg-gray-50/80 transition-colors";
+                      
                       return (
-                        <tr key={child.id} className="hover:bg-gray-50/80 transition-colors group">
+                        <tr key={child.id} className={trClasses}>
+                          {/* Index */}
+                          <td style={{ minWidth: 48, width: 48, position: 'sticky', left: 0, zIndex: 10 }} className={`px-2 py-4 text-center text-xs font-medium text-gray-500 ${stickyClasses}`}>
+                            {absoluteIndex}
+                          </td>
                           {/* Thumbnail */}
-                          <td style={{ minWidth: 52, width: 52, position: 'sticky', left: 0, zIndex: 10 }} className="px-4 py-4 text-center bg-white group-hover:bg-gray-50/80 transition-colors">
+                          <td style={{ minWidth: 52, width: 52, position: 'sticky', left: 48, zIndex: 10 }} className={`px-4 py-4 text-center ${stickyClasses}`}>
                             {product.thumbnailBase64 ? (
                               <img src={product.thumbnailBase64} alt={product.name} className="w-8 h-8 object-cover rounded-md border border-gray-200 shadow-sm mx-auto" />
                             ) : (
@@ -721,11 +791,11 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                             )}
                           </td>
                           {/* Product Name */}
-                          <td style={{ minWidth: 280, width: 280, position: 'sticky', left: 52, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className="px-4 py-4 text-sm font-medium text-gray-900 bg-white group-hover:bg-gray-50/80 transition-colors">
+                          <td style={{ minWidth: 280, width: 280, position: 'sticky', left: 100, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className={`px-4 py-4 text-sm font-medium text-gray-900 ${stickyClasses}`}>
                             {child.name}
                           </td>
                           {/* SKU */}
-                          <td style={{ minWidth: 160, width: 160, position: 'sticky', left: 332, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className="px-4 py-4 text-sm text-gray-600 font-mono bg-white group-hover:bg-gray-50/80 transition-colors">
+                          <td style={{ minWidth: 160, width: 160, position: 'sticky', left: 380, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className={`px-4 py-4 text-sm text-gray-600 font-mono ${stickyClasses}`}>
                             <span className="bg-gray-100/80 border border-gray-200 px-2 py-1 rounded">{child.code}</span>
                           </td>
                           
@@ -734,7 +804,7 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                             const val = child.attributeValues?.find((a: any) => a.attributeId === attr.id)?.value;
                             return (
                               <td key={attr.id} style={{ minWidth: 160, width: 160 }} className="px-4 py-4 text-sm text-gray-600 truncate">
-                                {val || <span className="text-gray-300">—</span>}
+                                <AttributeValuePill value={val} />
                               </td>
                             );
                           })}
@@ -769,7 +839,7 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                               {new Date(child.updatedAt).toLocaleDateString()}
                             </td>
                           )}
-                          <td style={{ minWidth: 120, width: 120, position: 'sticky', right: 0, zIndex: 10, borderLeft: '1px solid #E5E7EB' }} className="px-4 py-4 whitespace-nowrap text-right bg-white group-hover:bg-gray-50/80 transition-colors">
+                          <td style={{ minWidth: 120, width: 120, position: 'sticky', right: 0, zIndex: 10, borderLeft: '1px solid #E5E7EB' }} className={`px-4 py-4 whitespace-nowrap text-right ${stickyClasses}`}>
                             <div className="flex justify-end gap-1">
                               {child.status === 'Draft' || child.status === 'Declined' ? (
                                 <>

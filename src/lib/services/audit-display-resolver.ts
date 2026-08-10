@@ -45,9 +45,18 @@ function formatValue(key: string, val: any): string {
   }
 
   if (typeof val === 'object') {
-    if (Array.isArray(val)) return val.length ? val.join(', ') : '—';
+    if (Array.isArray(val)) {
+      if (val.length === 0) return '—';
+      if (key.toLowerCase() === 'variants' || key.toLowerCase() === 'variantproducts') {
+        return `${val.length} variant${val.length === 1 ? '' : 's'}`;
+      }
+      // If small array, could map names. Let's just do count for safety.
+      return `${val.length} item${val.length === 1 ? '' : 's'}`;
+    }
     if (val.name) return String(val.name);
     if (val.code) return String(val.code);
+    if (val.sku) return String(val.sku);
+    if (val.abbreviation) return String(val.abbreviation);
     if (val.id) return String(val.id);
     return '—';
   }
@@ -139,14 +148,17 @@ export class AuditDisplayResolver {
       for (const k of keys) {
         if (IGNORED_FIELDS.has(k) || k.endsWith('Base64') || (k.endsWith('Id') && keys.includes(k.replace(/Id$/, '')))) continue;
         
-        const oldVal = prevObj[k] ?? '—';
-        const newVal = nextObj[k] ?? '—';
+        const oldVal = prevObj[k];
+        const newVal = nextObj[k];
 
-        if (String(oldVal) !== String(newVal)) {
+        const formattedOld = formatValue(k, oldVal);
+        const formattedNew = formatValue(k, newVal);
+
+        if (formattedOld !== formattedNew && !(formattedOld === '—' && formattedNew === '—')) {
           changes.push({
             field: getFieldTitle(k),
-            oldValue: String(oldVal),
-            newValue: String(newVal),
+            oldValue: formattedOld,
+            newValue: formattedNew,
           });
         }
       }

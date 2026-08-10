@@ -8,7 +8,7 @@ const IGNORED_FIELDS = new Set([
   'createdById', 'updatedById', 'deletedById', 'approvedById',
   'thumbnailBase64', 'imageBase64', 'createdAt', 'updatedAt', 'approvedAt',
   'version', 'history', 'password', 'salt',
-  'variants', 'variantProducts', 'images', 'attachments', 'gallery'
+  'images', 'attachments', 'gallery', 'zohoSyncLogs', 'zohoBookItemId'
 ]);
 
 function getFieldTitle(key: string): string {
@@ -16,7 +16,7 @@ function getFieldTitle(key: string): string {
     brand: 'Brand',
     manufacturer: 'Manufacturer',
     category: 'Category',
-    taxRate: 'GST',
+    taxRate: 'GST Rate',
     hsnCode: 'HSN Code',
     unit: 'Unit',
     isActive: 'Is Active',
@@ -28,6 +28,8 @@ function getFieldTitle(key: string): string {
     trackSerials: 'Serial Tracking',
     incentiveTag: 'Incentive Tag',
     zohoBookItemId: 'Zoho Books Link',
+    variants: 'Variants',
+    variantProducts: 'Variant Products'
   };
   return map[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
 }
@@ -56,10 +58,21 @@ export class AuditPayloadBuilder {
 
       if (typeof value === 'object') {
         // If it's a related model, try to extract a meaningful name
-        if (Array.isArray(value)) continue; // We ignore arrays of relations
+        if (Array.isArray(value)) {
+          if (value.length === 0) {
+            cleanPayload[fieldTitle] = '—';
+            continue;
+          }
+          if (key === 'variants' || key === 'variantProducts') {
+            cleanPayload[fieldTitle] = `${value.length} variant${value.length === 1 ? '' : 's'}`;
+            continue;
+          }
+          cleanPayload[fieldTitle] = `${value.length} item${value.length === 1 ? '' : 's'}`;
+          continue;
+        }
         
         const valObj = value as any;
-        if (valObj.percentage !== undefined) {
+        if (valObj.percentage !== undefined && valObj.percentage !== null) {
           cleanPayload[fieldTitle] = `${valObj.percentage}%`;
         } else if (valObj.name) {
           cleanPayload[fieldTitle] = String(valObj.name);
@@ -67,6 +80,8 @@ export class AuditPayloadBuilder {
           cleanPayload[fieldTitle] = String(valObj.code);
         } else if (valObj.abbreviation) {
           cleanPayload[fieldTitle] = String(valObj.abbreviation);
+        } else {
+          cleanPayload[fieldTitle] = '—';
         }
         continue;
       }

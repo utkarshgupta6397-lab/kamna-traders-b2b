@@ -31,7 +31,7 @@ export class ProductFamilyAuditFormatter {
       const oldVal = flatBefore[key] ?? '—';
       const newVal = flatAfter[key] ?? '—';
 
-      if (oldVal !== newVal) {
+      if (oldVal !== newVal && !(oldVal === '—' && newVal === '—')) {
         changes.push(`${key}: ${oldVal} → ${newVal}`);
       }
     }
@@ -48,8 +48,8 @@ export class ProductFamilyAuditFormatter {
       title: 'Variant Added',
       changes: [
         `SKU: ${variant.sku}`,
-        `Purchase Price: ₹${Number(variant.purchasePrice || 0).toFixed(2)}`,
-        `Selling Price: ₹${Number(variant.sellingPrice || 0).toFixed(2)}`
+        `Purchase Price: ${variant.purchasePrice != null ? `₹${Number(variant.purchasePrice).toFixed(2)}` : '—'}`,
+        `Selling Price: ${variant.sellingPrice != null ? `₹${Number(variant.sellingPrice).toFixed(2)}` : '—'}`
       ]
     };
     return JSON.stringify(format);

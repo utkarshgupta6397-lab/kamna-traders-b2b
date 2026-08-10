@@ -44,6 +44,7 @@ interface SkuItem {
   categoryId?: string | null;
   inventory: SkuInventory;
   unit?: string | null;
+  unitShort?: string | null;
 }
 
 interface Props {
@@ -466,8 +467,55 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   };
 
   return (
-    <div ref={containerRef} className="flex flex-col h-full bg-white rounded-lg shadow-sm border border-gray-200">
-      {/* Header & Filters */}
+    <div className="flex h-full gap-5">
+      {/* Sidebar Navigation */}
+      <div className="w-56 flex-shrink-0">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-[fit-content]">
+          <nav className="flex flex-col p-3 space-y-4">
+            <div>
+              <h3 className="px-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
+                VIEWS
+              </h3>
+              <div className="space-y-0.5">
+                {/* Active View */}
+                <button className="flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors bg-[#1A2766]/5 text-[#1A2766] border border-transparent text-left relative overflow-hidden">
+                  <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#1A2766]" />
+                  <div className="flex items-center gap-2.5 pl-1">
+                    <Box size={16} />
+                    <span>Multi-Warehouse View</span>
+                  </div>
+                </button>
+                
+                {/* Upcoming Views */}
+                <button className="flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors text-gray-400 hover:bg-gray-50 cursor-not-allowed border border-transparent text-left">
+                  <div className="flex items-center gap-2.5">
+                    <span>Single Warehouse</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded uppercase tracking-wider border border-gray-200">Soon</span>
+                </button>
+
+                <button className="flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors text-gray-400 hover:bg-gray-50 cursor-not-allowed border border-transparent text-left">
+                  <div className="flex items-center gap-2.5">
+                    <span>By Category</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded uppercase tracking-wider border border-gray-200">Soon</span>
+                </button>
+
+                <button className="flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors text-gray-400 hover:bg-gray-50 cursor-not-allowed border border-transparent text-left">
+                  <div className="flex items-center gap-2.5">
+                    <span>Stock Valuation</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded uppercase tracking-wider border border-gray-200">Soon</span>
+                </button>
+              </div>
+            </div>
+          </nav>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div ref={containerRef} className="flex-1 flex flex-col h-full min-w-0 bg-white rounded-lg shadow-sm border border-gray-200">
+        {/* Header & Filters */}
       <div className="p-4 border-b border-gray-200 bg-gray-50 flex flex-col gap-4 shrink-0 rounded-t-lg relative z-[100]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-[#1A2766]">
@@ -680,7 +728,6 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                 return (
                   <React.Fragment key={categoryId}>
                     {/* Category Header Row */}
-                    {/* Category Header Row */}
                     <tr className="bg-indigo-50/70 font-bold border-b border-indigo-100 text-[#1A2766] text-xs transition-colors hover:bg-indigo-50">
                       <td colSpan={2} className="px-4 py-2 border-r border-indigo-100 sticky left-0 z-10 bg-indigo-50/90 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                         {categoryMap[categoryId] || 'Unknown Category'} <span className="text-[10px] font-normal text-gray-500 ml-2">({catItems.length} items)</span>
@@ -690,7 +737,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                           <div className="flex items-baseline justify-center gap-1">
                             <span>{catTotals[wh.id] >= 999999999 ? '∞' : catTotals[wh.id].toLocaleString()}</span>
                             {catTotals[wh.id] > 0 && catTotals[wh.id] < 999999999 && catTotals.sharedUnit && (
-                              <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{catTotals.sharedUnit}</span>
+                              <span className="text-[10px] text-gray-400 font-medium opacity-70 capitalize">{catTotals.sharedUnit}</span>
                             )}
                           </div>
                         </td>
@@ -699,7 +746,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                         <div className="flex items-baseline justify-center gap-1">
                           <span>{catTotals['IN_TRANSIT'] >= 999999999 ? '∞' : catTotals['IN_TRANSIT'].toLocaleString()}</span>
                           {catTotals['IN_TRANSIT'] > 0 && catTotals['IN_TRANSIT'] < 999999999 && catTotals.sharedUnit && (
-                            <span className="text-[10px] text-indigo-400/70 font-medium lowercase">{catTotals.sharedUnit}</span>
+                            <span className="text-[10px] text-indigo-400/70 font-medium capitalize">{catTotals.sharedUnit}</span>
                           )}
                         </div>
                       </td>
@@ -707,7 +754,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                         <div className="flex items-baseline justify-center gap-1">
                           <span>{catTotals.total >= 999999999 ? '∞' : catTotals.total.toLocaleString()}</span>
                           {catTotals.total > 0 && catTotals.total < 999999999 && catTotals.sharedUnit && (
-                            <span className="text-[10px] text-indigo-900 font-medium opacity-70 lowercase">{catTotals.sharedUnit}</span>
+                            <span className="text-[10px] text-indigo-900 font-medium opacity-70 capitalize">{catTotals.sharedUnit}</span>
                           )}
                         </div>
                       </td>
@@ -715,7 +762,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                         <div className="flex items-baseline justify-center gap-1">
                           <span>{formatCPDValue(catTotals.cpd)}</span>
                           {catTotals.sharedUnit && (
-                            <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{catTotals.sharedUnit}/day</span>
+                            <span className="text-[10px] text-gray-400 font-medium opacity-70 capitalize">{catTotals.sharedUnit}/day</span>
                           )}
                         </div>
                       </td>
@@ -757,6 +804,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                               const isInfinite = qty >= 999999999;
                               const threshold = thresholdMap[`${wh.id}_${item.id}`];
                               const isLow = !isInfinite && !isNegative && threshold !== undefined && qty < threshold;
+                              const displayUnit = item.unitShort || item.unit || 'Nos';
                               return (
                                 <td key={wh.id} className={`px-4 py-1.5 text-center border-r border-gray-100 font-mono ${isNegative ? 'text-red-600 bg-red-50/20' : isLow ? 'bg-amber-50 text-amber-700' : qty > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
                                   <div className="flex items-baseline justify-center gap-1">
@@ -765,8 +813,8 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                                       <span className="text-amber-600 font-bold mr-0.5 cursor-help" title={`Below minimum threshold (Min: ${threshold})`}>⚠</span>
                                     )}
                                     <span className="font-bold">{isInfinite ? '∞' : qty.toLocaleString()}</span>
-                                    {!isInfinite && qty !== 0 && item.unit && (
-                                      <span className={`text-[10px] font-medium opacity-70 lowercase ${isNegative ? 'text-red-400' : isLow ? 'text-amber-500' : 'text-gray-400'}`}>{item.unit}</span>
+                                    {!isInfinite && qty !== 0 && (
+                                      <span className={`text-[10px] font-medium opacity-70 capitalize ${isNegative ? 'text-red-400' : isLow ? 'text-amber-500' : 'text-gray-400'}`}>{displayUnit}</span>
                                     )}
                                   </div>
                                 </td>
@@ -776,13 +824,14 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                               const inTransitQty = item.inventory['IN_TRANSIT']?.qty || 0;
                               const isNegative = inTransitQty < 0;
                               const isInfinite = inTransitQty >= 999999999;
+                              const displayUnit = item.unitShort || item.unit || 'Nos';
                               return (
                                 <td className={`px-4 py-1.5 text-center border-r border-indigo-100 font-mono bg-indigo-50/30 group-hover:bg-indigo-50/50 ${isNegative ? 'text-red-600 font-bold bg-red-50/20' : inTransitQty > 0 ? 'text-indigo-900 font-semibold' : 'text-gray-300'}`}>
                                   <div className="flex items-baseline justify-center gap-1">
                                     {isNegative && <AlertTriangle size={10} className="text-red-600 mb-0.5" />}
                                     <span>{isInfinite ? '∞' : inTransitQty.toLocaleString()}</span>
-                                    {!isInfinite && inTransitQty !== 0 && item.unit && (
-                                      <span className={`text-[10px] font-medium opacity-70 lowercase ${isNegative ? 'text-red-400' : 'text-indigo-400'}`}>{item.unit}</span>
+                                    {!isInfinite && inTransitQty !== 0 && (
+                                      <span className={`text-[10px] font-medium opacity-70 capitalize ${isNegative ? 'text-red-400' : 'text-indigo-400'}`}>{displayUnit}</span>
                                     )}
                                   </div>
                                 </td>
@@ -792,8 +841,8 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                               <div className="flex items-center justify-center gap-2">
                                 <div className="flex items-baseline gap-0.5 font-bold text-gray-900 justify-end min-w-[50px]">
                                   <span>{item.rowTotal >= 999999999 ? '∞' : item.rowTotal.toLocaleString()}</span>
-                                  {item.rowTotal > 0 && item.rowTotal < 999999999 && item.unit && (
-                                    <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{item.unit}</span>
+                                  {item.rowTotal > 0 && item.rowTotal < 999999999 && (
+                                    <span className="text-[10px] text-gray-400 font-medium opacity-70 capitalize">{item.unitShort || item.unit || 'Nos'}</span>
                                   )}
                                 </div>
                                 {item.rowTotal > 0 && item.rowTotal < 999999999 && (
@@ -815,9 +864,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                             <td className="px-4 py-1.5 text-center border-r border-gray-100 text-[13px] font-medium text-gray-600">
                               <div className="flex items-baseline justify-center gap-1">
                                 <span>{formatCPDValue(item.netCPD)}</span>
-                                {item.unit && (
-                                  <span className="text-[10px] text-gray-400 font-medium opacity-70 lowercase">{item.unit}/day</span>
-                                )}
+                                <span className="text-[10px] text-gray-400 font-medium opacity-70 capitalize">{item.unitShort || item.unit || 'Nos'}/day</span>
                               </div>
                             </td>
                             <td className={`px-4 py-1.5 text-center text-[13px] font-black ${
@@ -848,7 +895,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                     <div className="flex items-baseline justify-center gap-1">
                       <span>{grandTotals[wh.id] >= 999999999 ? '∞' : grandTotals[wh.id].toLocaleString()}</span>
                       {grandTotals[wh.id] > 0 && grandTotals[wh.id] < 999999999 && grandTotals.sharedUnit && (
-                        <span className="text-[10px] text-white/50 font-medium lowercase">{grandTotals.sharedUnit}</span>
+                        <span className="text-[10px] text-white/50 font-medium capitalize">{grandTotals.sharedUnit}</span>
                       )}
                     </div>
                   </td>
@@ -857,7 +904,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                   <div className="flex items-baseline justify-center gap-1">
                     <span>{grandTotals['IN_TRANSIT'] >= 999999999 ? '∞' : grandTotals['IN_TRANSIT'].toLocaleString()}</span>
                     {grandTotals['IN_TRANSIT'] > 0 && grandTotals['IN_TRANSIT'] < 999999999 && grandTotals.sharedUnit && (
-                      <span className="text-[10px] text-indigo-200/60 font-medium lowercase">{grandTotals.sharedUnit}</span>
+                      <span className="text-[10px] text-indigo-200/60 font-medium capitalize">{grandTotals.sharedUnit}</span>
                     )}
                   </div>
                 </td>
@@ -865,7 +912,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                   <div className="flex items-baseline justify-center gap-1">
                     <span>{grandTotals.total >= 999999999 ? '∞' : grandTotals.total.toLocaleString()}</span>
                     {grandTotals.total > 0 && grandTotals.total < 999999999 && grandTotals.sharedUnit && (
-                      <span className="text-[10px] text-white/50 font-medium lowercase">{grandTotals.sharedUnit}</span>
+                      <span className="text-[10px] text-white/50 font-medium capitalize">{grandTotals.sharedUnit}</span>
                     )}
                   </div>
                 </td>
@@ -873,7 +920,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
                   <div className="flex items-baseline justify-center gap-1">
                     <span>{formatCPDValue(grandTotals.totalCPD)}</span>
                     {grandTotals.sharedUnit && (
-                      <span className="text-[10px] text-white/50 font-medium lowercase">{grandTotals.sharedUnit}/day</span>
+                      <span className="text-[10px] text-white/50 font-medium capitalize">{grandTotals.sharedUnit}/day</span>
                     )}
                   </div>
                 </td>
@@ -987,6 +1034,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
         sku={selectedSku} 
         warehouses={warehouses} 
       />
+      </div>
     </div>
   );
 }

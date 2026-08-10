@@ -40,7 +40,28 @@ export async function GET(
           include: { attribute: true }
         },
         variantProducts: {
-          include: { 
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            description: true,
+            type: true,
+            brandId: true,
+            manufacturerId: true,
+            categoryId: true,
+            hsnCodeId: true,
+            taxRateId: true,
+            unitId: true,
+            status: true,
+            isActive: true,
+            incentiveTag: true,
+            catalogType: true,
+            isVariantProduct: true,
+            parentProductId: true,
+            variantAttributeId: true,
+            variantAttributeValue: true,
+            createdAt: true,
+            updatedAt: true,
             variants: true,
             attributeValues: {
               include: { attribute: true }
@@ -49,6 +70,7 @@ export async function GET(
         },
         parentProduct: true,
         history: {
+          take: 50,
           orderBy: { performedAt: 'desc' },
           include: { performedBy: { select: { id: true, name: true } } },
         },

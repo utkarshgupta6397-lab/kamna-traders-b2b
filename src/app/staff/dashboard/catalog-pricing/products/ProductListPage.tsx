@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Plus, Search, Filter, Settings2, Download, PackageOpen, Package, Box, Boxes, Tag, Layers, CheckCircle2, AlertCircle, RefreshCw, X, SortAsc, SortDesc, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 import MasterStatusBadge from '../_framework/MasterStatusBadge';
+import ImportFromZohoDialog from './_components/ImportFromZohoDialog';
 
 const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val);
 
@@ -22,7 +23,9 @@ export default function ProductListPage() {
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [status, setStatus] = useState(searchParams.get('status') || 'ALL');
   const [type, setType] = useState(searchParams.get('type') || 'ALL');
+  const [itemType, setItemType] = useState(searchParams.get('itemType') || 'ALL');
   const [categoryId, setCategoryId] = useState(searchParams.get('categoryId') || 'ALL');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   const [brandId, setBrandId] = useState(searchParams.get('brandId') || '');
   const [manufacturerId, setManufacturerId] = useState(searchParams.get('manufacturerId') || '');
@@ -57,6 +60,7 @@ export default function ProductListPage() {
       if (search) q.set('search', search);
       if (status !== 'ALL') q.set('status', status);
       if (type !== 'ALL') q.set('type', type);
+      if (itemType !== 'ALL') q.set('itemType', itemType);
       if (categoryId !== 'ALL') q.set('categoryId', categoryId);
       
       q.set('sortBy', sortBy);
@@ -88,7 +92,7 @@ export default function ProductListPage() {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [search, status, type, categoryId, sortBy, sortOrder, page, limit]);
+  }, [search, status, type, itemType, categoryId, sortBy, sortOrder, page, limit]);
 
   useEffect(() => {
     const delay = setTimeout(() => fetchRecords(), 300);
@@ -134,12 +138,20 @@ export default function ProductListPage() {
             </div>
             <div className="flex items-center gap-3">
               {(permissions?.role === 'ADMIN' || permissions?.catalog_products_create) && (
-                <button 
-                  onClick={() => router.push('/staff/dashboard/catalog-pricing/products/create')}
-                  className="h-10 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-[13.5px] transition-colors shadow-sm inline-flex items-center gap-2"
-                >
-                  <Plus size={16} /> Create Product
-                </button>
+                <>
+                  <button 
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="h-10 px-4 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-[13.5px] transition-colors shadow-sm inline-flex items-center gap-2"
+                  >
+                    <Download size={16} /> Import from Zoho
+                  </button>
+                  <button 
+                    onClick={() => router.push('/staff/dashboard/catalog-pricing/products/create')}
+                    className="h-10 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-[13.5px] transition-colors shadow-sm inline-flex items-center gap-2"
+                  >
+                    <Plus size={16} /> Create Product
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -170,6 +182,13 @@ export default function ProductListPage() {
                 <option value="Goods">Goods</option>
                 <option value="Service">Services</option>
               </select>
+
+              <select className="h-10 px-3 text-[13px] border-gray-200 rounded-lg text-gray-700 bg-white cursor-pointer hover:border-gray-300 transition-colors shadow-sm" value={itemType} onChange={e => setItemType(e.target.value)}>
+                <option value="ALL">All Items</option>
+                <option value="Standard">Standard</option>
+                <option value="Parents">Parents</option>
+                <option value="Variants">Variants</option>
+              </select>
             </div>
 
             <div className="flex items-center gap-3">
@@ -186,7 +205,7 @@ export default function ProductListPage() {
 
       <div className="max-w-[1600px] mx-auto px-6 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard title="Total Products" value={stats?.total} icon={PackageOpen} color="bg-gray-100 text-gray-600" active={status === 'ALL' && type === 'ALL'} onClick={() => { setStatus('ALL'); setType('ALL'); setPage(1); }} />
+          <KpiCard title="Total Products" value={stats?.total} icon={PackageOpen} color="bg-gray-100 text-gray-600" active={status === 'ALL' && type === 'ALL' && itemType === 'ALL'} onClick={() => { setStatus('ALL'); setType('ALL'); setItemType('ALL'); setPage(1); }} />
           <KpiCard title="Active Goods" value={stats?.goods} icon={Box} color="bg-blue-100 text-blue-600" active={type === 'Goods'} onClick={() => { setType('Goods'); setPage(1); }} />
           <KpiCard title="Services" value={stats?.services} icon={Layers} color="bg-purple-100 text-purple-600" active={type === 'Service'} onClick={() => { setType('Service'); setPage(1); }} />
           <KpiCard title="Approval Pending" value={stats?.pending} icon={AlertCircle} color="bg-orange-100 text-orange-600" active={status === 'Approval Pending'} onClick={() => { setStatus('Approval Pending'); setPage(1); }} />
@@ -256,7 +275,7 @@ export default function ProductListPage() {
                       </div>
                       <h3 className="text-gray-900 font-semibold mb-1">No products found</h3>
                       <p className="text-gray-500 text-sm mb-4">Try adjusting your filters or search query.</p>
-                      <button onClick={() => { setSearch(''); setStatus('ALL'); setType('ALL'); setCategoryId('ALL'); }} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-[13px] font-medium transition-colors">
+                      <button onClick={() => { setSearch(''); setStatus('ALL'); setType('ALL'); setItemType('ALL'); setCategoryId('ALL'); }} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-[13px] font-medium transition-colors">
                         Clear All Filters
                       </button>
                     </td>
@@ -398,6 +417,14 @@ export default function ProductListPage() {
           )}
         </div>
       </div>
+      <ImportFromZohoDialog
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImportSuccess={() => {
+          setIsImportModalOpen(false);
+          fetchRecords(true);
+        }}
+      />
     </div>
   );
 }

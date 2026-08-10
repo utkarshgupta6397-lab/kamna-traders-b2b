@@ -5,6 +5,7 @@ export function buildProductWhereClause(searchParams: URLSearchParams): any {
   const dateFrom = searchParams.get('dateFrom') || '';
   const dateTo = searchParams.get('dateTo') || '';
   const type = searchParams.get('type') || '';
+  const itemType = searchParams.get('itemType') || 'ALL';
   const brandId = searchParams.get('brandId') || '';
   const manufacturerId = searchParams.get('manufacturerId') || '';
   const categoryId = searchParams.get('categoryId') || '';
@@ -21,6 +22,18 @@ export function buildProductWhereClause(searchParams: URLSearchParams): any {
     where.status = status;
   }
   if (type && type !== 'ALL') where.type = type;
+
+  if (itemType !== 'ALL') {
+    if (itemType === 'Standard') {
+      where.catalogType = 'PRODUCT';
+      where.parentProductId = null;
+    } else if (itemType === 'Parents') {
+      where.catalogType = 'PRODUCT_FAMILY';
+    } else if (itemType === 'Variants') {
+      where.parentProductId = { not: null };
+    }
+  }
+
   if (brandId && brandId !== 'ALL') where.brandId = brandId;
   if (manufacturerId && manufacturerId !== 'ALL') where.manufacturerId = manufacturerId;
   if (categoryId && categoryId !== 'ALL') where.categoryId = categoryId;

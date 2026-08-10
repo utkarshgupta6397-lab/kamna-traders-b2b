@@ -12,7 +12,7 @@ export class ProductRepository {
         variants: true,
         brand: { select: { name: true } },
         category: { select: { name: true } },
-        unit: { select: { name: true } },
+        unit: { select: { name: true, abbreviation: true, code: true } },
       },
       orderBy: { name: 'asc' },
     });

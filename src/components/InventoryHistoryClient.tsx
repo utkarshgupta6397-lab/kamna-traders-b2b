@@ -40,6 +40,7 @@ interface Sku {
   id: string;
   name: string;
   unit?: string | null;
+  unitShort?: string | null;
 }
 
 interface Props {
@@ -539,7 +540,7 @@ function InventoryAdjustModal({ warehouses, skus, onClose, onSuccess }: {
   
   const [adjustmentQty, setAdjustmentQty] = useState<string>('');
   const [finalQty, setFinalQty] = useState<string>('');
-  const [remarks, setRemarks] = useState('');
+  const [remarks, setRemarks] = useState('Stock Adjustment');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Fetch current stock when both Wh and SKU are selected
@@ -578,7 +579,7 @@ function InventoryAdjustModal({ warehouses, skus, onClose, onSuccess }: {
   };
 
   const selectedSku = useMemo(() => skus.find(s => s.id === skuId), [skus, skuId]);
-  const unit = selectedSku?.unit || 'Units';
+  const unit = selectedSku?.unitShort || selectedSku?.unit || 'Units';
 
   const afterQty = (currentQty ?? 0) + (parseInt(adjustmentQty) || 0);
   const isInvalid = afterQty < 0 || !warehouseId || !skuId || !remarks || remarks.trim().length < 3;

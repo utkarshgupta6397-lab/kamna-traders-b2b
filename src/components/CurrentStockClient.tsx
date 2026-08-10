@@ -22,6 +22,7 @@ interface Warehouse {
 interface Category {
   id: string;
   name: string;
+  parentId?: string | null;
 }
 
 interface Brand {
@@ -70,7 +71,6 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
-  const [selectedCaseSizes, setSelectedCaseSizes] = useState<number[]>([]);
   const [selectedWarehouses, setSelectedWarehouses] = useState<string[]>([]);
   const [hideOos, setHideOos] = useState(true);
 
@@ -140,11 +140,31 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   }, [items, searchQuery]);
 
 
-  // Unique case sizes for filter
-  const caseSizeOptions = useMemo(() => {
-    const sizes = new Set(items.map(item => item.caseSize));
-    return Array.from(sizes).filter(s => s !== 1).sort((a, b) => a - b);
-  }, [items]);
+  const hierarchicalCategories = useMemo(() => {
+    const map = new Map<string, Category & { children: any[], level: number }>();
+    categories.forEach(c => map.set(c.id, { ...c, children: [], level: 0 }));
+    const root: any[] = [];
+    categories.forEach(c => {
+      if (c.parentId && map.has(c.parentId)) {
+        map.get(c.parentId)!.children.push(map.get(c.id));
+      } else {
+        root.push(map.get(c.id));
+      }
+    });
+
+    const flattened: (Category & { level: number })[] = [];
+    const traverse = (nodes: any[], level: number) => {
+      // Sort nodes alphabetically
+      nodes.sort((a, b) => a.name.localeCompare(b.name));
+      nodes.forEach(n => {
+        n.level = level;
+        flattened.push({ id: n.id, name: n.name, parentId: n.parentId, level: n.level });
+        traverse(n.children, level + 1);
+      });
+    };
+    traverse(root, 0);
+    return flattened;
+  }, [categories]);
 
 
   // Unified computation pass to minimize object creation and property-set pressure (V8 OrderedHashSet growth)
@@ -164,7 +184,6 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
       // 1. Basic Filters (Short-circuit as early as possible)
       if (selectedCategories.length > 0 && !selectedCategories.includes(item.categoryId || 'uncategorized')) continue;
       if (selectedBrands.length > 0 && !selectedBrands.includes(item.brandId || 'unbranded')) continue;
-      if (selectedCaseSizes.length > 0 && !selectedCaseSizes.includes(item.caseSize)) continue;
       
       if (q) {
         if (!item.name.toLowerCase().includes(q) && !item.id.toLowerCase().includes(q)) continue;
@@ -269,7 +288,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
     grand.totalDOIInfo = calculateDOIInfo(grand.total, grand.totalCPD);
 
     return { categoryGroups: groups, grandTotals: grand, processedCount: count };
-  }, [items, visibleWarehouses, selectedWarehouses, warehouses.length, consumptionData, selectedCategories, selectedBrands, selectedCaseSizes, debouncedSearchQuery, hideOos]);
+  }, [items, visibleWarehouses, selectedWarehouses, warehouses.length, consumptionData, selectedCategories, selectedBrands, debouncedSearchQuery, hideOos]);
 
 
 
@@ -290,12 +309,6 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   const toggleBrand = (id: string) => {
     setSelectedBrands(prev => 
       prev.includes(id) ? prev.filter(b => b !== id) : [...prev, id]
-    );
-  };
-
-  const toggleCaseSize = (size: number) => {
-    setSelectedCaseSizes(prev => 
-      prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size]
     );
   };
 
@@ -453,9 +466,9 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
   };
 
   return (
-    <div ref={containerRef} className="flex flex-col h-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+    <div ref={containerRef} className="flex flex-col h-full bg-white rounded-lg shadow-sm border border-gray-200">
       {/* Header & Filters */}
-      <div className="p-4 border-b border-gray-200 bg-gray-50 flex flex-col gap-4 shrink-0">
+      <div className="p-4 border-b border-gray-200 bg-gray-50 flex flex-col gap-4 shrink-0 rounded-t-lg relative z-[100]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-[#1A2766]">
             <Box size={20} />
@@ -522,14 +535,17 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
             </button>
             <div className="absolute left-0 mt-1 z-50 w-48 bg-white border border-gray-200 rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
               <div className="p-1 max-h-60 overflow-auto">
-                {categories.map(c => (
+                {hierarchicalCategories.map(c => (
                   <button
                     key={c.id}
                     onClick={() => toggleCategory(c.id)}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 rounded text-left"
+                    className="w-full flex items-center px-3 py-1.5 text-sm hover:bg-gray-50 rounded text-left"
                   >
-                    <div className={`w-4 h-4 border rounded shrink-0 flex items-center justify-center ${selectedCategories.includes(c.id) ? 'bg-[#1A2766] border-[#1A2766]' : 'bg-white border-gray-300'}`}>
-                      {selectedCategories.includes(c.id) && <Check size={10} className="text-white" />}
+                    <div className="flex-shrink-0 flex items-center text-gray-400 gap-1" style={{ paddingLeft: `${c.level * 16}px` }}>
+                      {c.level > 0 && <span className="font-mono text-[10px] mr-1">└─</span>}
+                      <div className={`w-4 h-4 border rounded shrink-0 flex items-center justify-center mr-2 ${selectedCategories.includes(c.id) ? 'bg-[#1A2766] border-[#1A2766]' : 'bg-white border-gray-300'}`}>
+                        {selectedCategories.includes(c.id) && <Check size={10} className="text-white" />}
+                      </div>
                     </div>
                     <span className="truncate">{c.name}</span>
                   </button>
@@ -563,30 +579,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
             </div>
           </div>
 
-          {/* Multi-select Case Size */}
-          <div className="relative group">
-            <button className="flex items-center gap-1.5 text-[13px] font-medium border border-gray-200 text-gray-700 rounded-md h-8 px-3 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400/20 transition-colors">
-              <span className="text-gray-400 font-bold text-xs">CS</span>
-              <span>{selectedCaseSizes.length > 0 ? `${selectedCaseSizes.length} Case Sizes` : 'Case Size'}</span>
-              <ChevronDown size={14} className="text-gray-400" />
-            </button>
-            <div className="absolute left-0 mt-1 z-50 w-40 bg-white border border-gray-200 rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
-              <div className="p-1 max-h-60 overflow-auto">
-                {caseSizeOptions.map(size => (
-                  <button
-                    key={size}
-                    onClick={() => toggleCaseSize(size)}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 rounded"
-                  >
-                    <div className={`w-4 h-4 border rounded flex items-center justify-center ${selectedCaseSizes.includes(size) ? 'bg-[#1A2766] border-[#1A2766]' : 'bg-white border-gray-300'}`}>
-                      {selectedCaseSizes.includes(size) && <Check size={10} className="text-white" />}
-                    </div>
-                    {size}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+
 
           {/* Multi-select Warehouse */}
           <div className="relative group">
@@ -656,7 +649,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
       </div>
 
       {/* Main Table Area */}
-      <div className="flex-1 overflow-auto bg-white">
+      <div className="flex-1 overflow-auto bg-white rounded-b-lg">
         <table className="w-full text-sm text-left border-collapse">
           <thead className="text-xs text-gray-700 uppercase bg-gray-100 sticky top-0 z-10 shadow-sm">
             <tr>

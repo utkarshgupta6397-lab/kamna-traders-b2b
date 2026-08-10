@@ -31,6 +31,7 @@ export class ProductLookupService {
       case 'inventory':
       case 'warehouse':
         where.status = 'Active';
+        where.catalogType = { not: 'PRODUCT_FAMILY' };
         where.variants = { some: { trackInventory: true, isActive: true } };
         break;
       case 'dcr':

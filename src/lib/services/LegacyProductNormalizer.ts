@@ -47,6 +47,7 @@ export class LegacyProductNormalizer {
       brand: product.brand?.name ?? null,
       brandId: product.brandId ?? null,
       unit: product.unit?.name ?? null,
+      unitShort: product.unit?.abbreviation || product.unit?.code || null,
       moq: 1, // Defaulting as Product model doesn't store this
       stepQty: 1, // Defaulting
       price: variant.sellingPrice || 0,

@@ -31,12 +31,12 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
         orderBy: { name: 'asc' }
       }),
       prisma.category.findMany({ 
-        where: { active: true }, 
-        select: { id: true, name: true },
+        where: { active: true, status: 'Active' }, 
+        select: { id: true, name: true, parentId: true },
         orderBy: { name: 'asc' }
       }),
       prisma.brand.findMany({
-        where: { active: true },
+        where: { active: true, status: 'Active' },
         select: { id: true, name: true },
         orderBy: { name: 'asc' }
       }),

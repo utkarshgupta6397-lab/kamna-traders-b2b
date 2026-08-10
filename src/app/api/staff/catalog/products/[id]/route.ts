@@ -198,13 +198,13 @@ export async function PATCH(
       },
     });
 
-    const flatExisting = AuditPayloadBuilder.build({
+    const flatExisting = {
       ...existing,
       purchasePrice: existing.variants?.[0]?.purchasePrice,
       sellingPrice: existing.variants?.[0]?.sellingPrice,
       trackInventory: existing.variants?.[0]?.trackInventory,
       trackSerials: existing.variants?.[0]?.trackSerials,
-    });
+    };
     
     const flatUpdated = {
       ...updatedRecord,
@@ -303,7 +303,10 @@ export async function PUT(
 
     const existingProduct = await prisma.product.findUnique({
       where: { id },
-      include: { variants: true, variantProducts: true }
+      include: { 
+        brand: true, category: true, manufacturer: true, hsnCode: true, taxRate: true, unit: true,
+        variants: true, variantProducts: true 
+      }
     });
 
     if (!existingProduct) {
@@ -413,7 +416,14 @@ export async function PUT(
       };
     }
 
-    const txOps = [prisma.product.update({ where: { id }, data: updateData })];
+    const txOps = [prisma.product.update({ 
+      where: { id }, 
+      data: updateData,
+      include: { 
+        brand: true, category: true, manufacturer: true, hsnCode: true, taxRate: true, unit: true,
+        variants: true, variantProducts: true 
+      }
+    })];
 
     const txResults = await prisma.$transaction(txOps);
     const updatedProduct = txResults[0];

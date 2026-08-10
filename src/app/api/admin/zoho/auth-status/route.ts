@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getZohoAuthStatus, getZohoOrgId } from '@/lib/zoho-auth';
-import { requireAdmin } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 
 export async function GET() {
   try {
-    const admin = await requireAdmin();
-    if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await getSession();
+    if (!session || session.role !== 'Admin') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const status = await getZohoAuthStatus();
     const orgId = getZohoOrgId();

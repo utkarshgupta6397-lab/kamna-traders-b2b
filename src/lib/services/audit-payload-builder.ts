@@ -58,14 +58,15 @@ export class AuditPayloadBuilder {
         // If it's a related model, try to extract a meaningful name
         if (Array.isArray(value)) continue; // We ignore arrays of relations
         
-        if (value.percentage !== undefined) {
-          cleanPayload[fieldTitle] = `${value.percentage}%`;
-        } else if (value.name) {
-          cleanPayload[fieldTitle] = String(value.name);
-        } else if (value.code) {
-          cleanPayload[fieldTitle] = String(value.code);
-        } else if (value.abbreviation) {
-          cleanPayload[fieldTitle] = String(value.abbreviation);
+        const valObj = value as any;
+        if (valObj.percentage !== undefined) {
+          cleanPayload[fieldTitle] = `${valObj.percentage}%`;
+        } else if (valObj.name) {
+          cleanPayload[fieldTitle] = String(valObj.name);
+        } else if (valObj.code) {
+          cleanPayload[fieldTitle] = String(valObj.code);
+        } else if (valObj.abbreviation) {
+          cleanPayload[fieldTitle] = String(valObj.abbreviation);
         }
         continue;
       }
@@ -83,5 +84,19 @@ export class AuditPayloadBuilder {
     }
 
     return cleanPayload;
+  }
+
+  static buildVariantSummary(variant: any): Record<string, string> {
+    if (!variant || typeof variant !== 'object') return {};
+
+    const summary: Record<string, string> = {
+      [getFieldTitle('sku')]: String(variant.sku || '—'),
+      [getFieldTitle('purchasePrice')]: `₹${Number(variant.purchasePrice || 0).toFixed(2)}`,
+      [getFieldTitle('sellingPrice')]: `₹${Number(variant.sellingPrice || 0).toFixed(2)}`,
+      [getFieldTitle('trackInventory')]: variant.trackInventory ? 'Enabled' : 'Disabled',
+      [getFieldTitle('trackSerials')]: variant.trackSerials ? 'Enabled' : 'Disabled',
+    };
+
+    return summary;
   }
 }

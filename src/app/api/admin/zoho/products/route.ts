@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       variants,
-      stats: stats[0],
+      stats: (stats as any[])[0],
       pagination: {
         total,
         page,

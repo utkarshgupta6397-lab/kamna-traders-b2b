@@ -1,6 +1,6 @@
 import { prisma } from './db';
-import { getNextMasterId, createMasterAuditLog } from './master-data-service';
-
+import { getNextMasterId } from './master-data-service';
+import { ProductFamilyAuditFormatter } from './services/ProductFamilyAuditFormatter';
 export async function getNextProductCode(): Promise<string> {
   const numId = await getNextMasterId('Product');
   return `PRD${numId}`;
@@ -162,7 +162,8 @@ export async function createVariantProductFamily(params: CreateVariantFamilyPara
         entityType: 'Product',
         entityId: family.id,
         action: finalStatus === 'Approval Pending' ? 'SUBMITTED' : 'CREATED',
-        newValue: JSON.stringify({ name: family.name, code: family.code, status: family.status, variantsCount: params.variantChildren.length }),
+        previousValue: null,
+        newValue: ProductFamilyAuditFormatter.formatFamilyCreated(family, params.variantChildren.length),
         remarks: params.remarks || 'Initial Family creation',
         performedById: params.userId,
         productId: family.id,

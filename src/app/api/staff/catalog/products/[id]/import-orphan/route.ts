@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { ProductAttributeService } from '@/lib/services/ProductAttributeService';
 import { ProductAttributeValidationService } from '@/lib/services/ProductAttributeValidationService';
+import { ProductFamilyAuditFormatter } from '@/lib/services/ProductFamilyAuditFormatter';
 
 export async function POST(
   request: Request,
@@ -157,7 +158,8 @@ export async function POST(
           entityType: 'Product',
           entityId: family.id,
           action: 'Imported Into Product Family',
-          newValue: JSON.stringify({ importedProductId: orphan.id, importedProductName: orphan.name }),
+          previousValue: null,
+          newValue: ProductFamilyAuditFormatter.formatVariantImported(orphan, family),
           remarks: `Imported standalone product ${orphan.code} into family ${family.code}`,
           performedById: session.userId,
           productId: family.id,
@@ -169,7 +171,8 @@ export async function POST(
           entityType: 'Product',
           entityId: orphan.id,
           action: 'Imported Into Product Family',
-          newValue: JSON.stringify({ familyId: family.id, familyName: family.name }),
+          previousValue: null,
+          newValue: ProductFamilyAuditFormatter.formatVariantImported(orphan, family),
           remarks: `Product converted to variant and attached to family ${family.code}`,
           performedById: session.userId,
           productId: orphan.id,

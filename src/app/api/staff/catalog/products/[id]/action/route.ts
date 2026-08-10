@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { createMasterAuditLog } from '@/lib/master-data-service';
 import { CatalogResolver } from '@/lib/services/CatalogResolver';
+import { ProductFamilyAuditFormatter } from '@/lib/services/ProductFamilyAuditFormatter';
 
 export async function POST(
   request: NextRequest,
@@ -190,8 +191,8 @@ export async function POST(
       entityType: 'Product',
       entityId: id,
       action: auditAction,
-      previousValue: existing.status,
-      newValue: targetStatus,
+      previousValue: null,
+      newValue: ProductFamilyAuditFormatter.formatStatusAction(action, existing.status, targetStatus, remarks),
       remarks: remarks || `Action: ${action}`,
       userId: session.userId,
       productId: id,

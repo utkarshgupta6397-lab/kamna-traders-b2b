@@ -9,6 +9,7 @@ import { CategoryService } from '@/lib/services/CategoryService';
 import { ZohoProductService } from '@/lib/services/zoho-books';
 import { getZohoTokens } from '@/lib/zoho-auth';
 import { AuditPayloadBuilder } from '@/lib/services/audit-payload-builder';
+import { ProductFamilyAuditFormatter } from '@/lib/services/ProductFamilyAuditFormatter';
 import { SharedAttributeCascadeService } from '@/lib/services/SharedAttributeCascadeService';
 
 export async function GET(
@@ -205,21 +206,32 @@ export async function PATCH(
       trackSerials: existing.variants?.[0]?.trackSerials,
     });
     
-    const flatUpdated = AuditPayloadBuilder.build({
+    const flatUpdated = {
       ...updatedRecord,
       purchasePrice: updatedRecord.variants?.[0]?.purchasePrice,
       sellingPrice: updatedRecord.variants?.[0]?.sellingPrice,
       trackInventory: updatedRecord.variants?.[0]?.trackInventory,
       trackSerials: updatedRecord.variants?.[0]?.trackSerials,
-    });
+    };
+
+    let newValueStr = '';
+    
+    // Check if it's an image-only update
+    const isImageOnly = Object.keys(body).length === 1 && 'thumbnailBase64' in body;
+    
+    if (isImageOnly) {
+      newValueStr = ProductFamilyAuditFormatter.formatImageUpdated(existing.code);
+    } else {
+      newValueStr = ProductFamilyAuditFormatter.formatFamilyUpdated(flatExisting, flatUpdated);
+    }
 
     // Write audit log
     await createMasterAuditLog({
       entityType: 'Product',
       entityId: id,
       action: 'UPDATED',
-      previousValue: JSON.stringify(flatExisting),
-      newValue: JSON.stringify(flatUpdated),
+      previousValue: null, // formatFamilyUpdated generates the diff, no previousValue needed in DB
+      newValue: newValueStr,
       remarks: remarks || 'Product updated',
       userId: session.userId,
       productId: id, // Connect FK
@@ -433,12 +445,13 @@ export async function PUT(
       trackSerials,
     };
 
+    // Write audit log
     await createMasterAuditLog({
       entityType: 'Product',
       entityId: id,
       action: 'UPDATED',
-      previousValue: JSON.stringify(existingForAudit),
-      newValue: JSON.stringify(newForAudit),
+      previousValue: null, // formatFamilyUpdated handles diff
+      newValue: ProductFamilyAuditFormatter.formatFamilyUpdated(existingForAudit, newForAudit),
       remarks: remarks || 'Product updated',
       userId: session.userId,
       productId: id,

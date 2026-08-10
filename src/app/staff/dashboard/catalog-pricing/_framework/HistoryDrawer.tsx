@@ -43,6 +43,11 @@ export function HistoryEventCard({ h }: { h: any }) {
       case 'DECLINED': return 'bg-rose-50 text-rose-700 border-rose-200';
       case 'ARCHIVED': return 'bg-red-50 text-red-700 border-red-200';
       case 'RESTORED': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'Imported Into Product Family': return 'bg-purple-50 text-purple-700 border-purple-200';
+      case 'VARIANT_ADDED': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'BULK_UPDATE': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'IMAGE_UPDATED': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'ZOHO_SYNC': return 'bg-sky-50 text-sky-700 border-sky-200';
       default: return 'bg-gray-100 text-gray-700 border-gray-200';
     }
   };
@@ -52,11 +57,16 @@ export function HistoryEventCard({ h }: { h: any }) {
       case 'CREATED': return 'Created';
       case 'UPDATED': return 'Updated';
       case 'SUBMITTED': return 'Submitted for Approval';
-      case 'APPROVED': return 'Approved (Legacy)';
+      case 'APPROVED': return 'Approved';
       case 'ACTIVATED': return 'Activated';
       case 'DECLINED': return 'Declined';
       case 'ARCHIVED': return 'Archived';
       case 'RESTORED': return 'Reactivated';
+      case 'Imported Into Product Family': return 'Variant Imported';
+      case 'VARIANT_ADDED': return 'Variant Added';
+      case 'BULK_UPDATE': return 'Bulk Update';
+      case 'IMAGE_UPDATED': return 'Parent Image Updated';
+      case 'ZOHO_SYNC': return 'Zoho Sync';
       default: return action;
     }
   };

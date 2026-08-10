@@ -300,7 +300,7 @@ export default function EditProductAttributePage() {
                           <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-gray-200 text-[12px] font-medium text-gray-700 shadow-sm">
                             {opt}
                             {!isArchived && !disableDelete && <button onClick={() => removeOption(opt)} className="text-gray-400 hover:text-red-500 ml-1">&times;</button>}
-                            {!isArchived && disableDelete && <Lock size={10} className="text-gray-300 ml-1" title="Option locked (in use)" />}
+                            {!isArchived && disableDelete && <Lock size={10} className="text-gray-300 ml-1" aria-label="Option locked (in use)" />}
                           </span>
                         );
                       })}
@@ -342,7 +342,7 @@ export default function EditProductAttributePage() {
                         className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
                       />
                       <span className="text-[13px] font-medium text-gray-700">{cat.name}</span>
-                      {disableUncheck && <Lock size={12} className="text-gray-400 ml-auto" title="Mapping locked (in use)" />}
+                      {disableUncheck && <Lock size={12} className="text-gray-400 ml-auto" aria-label="Mapping locked (in use)" />}
                     </label>
                   );
                 })}

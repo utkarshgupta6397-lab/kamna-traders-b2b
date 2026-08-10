@@ -4,7 +4,7 @@ import React, { useState, useEffect, use, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { resolveProductImage } from '@/lib/utils';
-import { ArrowLeft, Edit2, ShieldAlert, Layers, CheckCircle2, X, FileText, ExternalLink, Activity, ChevronDown, Check, MoreVertical, Box, Clock, Image as ImageIcon, UploadCloud, Plus, Save, Wand2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Edit2, ShieldAlert, Layers, CheckCircle2, X, FileText, ExternalLink, Activity, ChevronDown, Check, MoreVertical, Box, Clock, Image as ImageIcon, UploadCloud, Plus, Save, Wand2, Trash2, Download, RefreshCw, Columns, Search } from 'lucide-react';
 import MasterStatusBadge from '../../_framework/MasterStatusBadge';
 import { HistoryEventCard } from '../../_framework/HistoryDrawer';
 import toast from 'react-hot-toast';
@@ -35,12 +35,16 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [productSearch, setProductSearch] = useState('');
-  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set(['zoho', 'inventory', 'updatedAt']));
+  const [isColumnSelectorOpen, setIsColumnSelectorOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [permissions, setPermissions] = useState<any>(null);
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const colDropdownRef = useRef<HTMLDivElement>(null);
   
   // Inline edit/add state
   const [attributes, setAttributes] = useState<any[]>([]);
@@ -97,6 +101,9 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsActionsOpen(false);
+      }
+      if (colDropdownRef.current && !colDropdownRef.current.contains(event.target as Node)) {
+        setIsColumnSelectorOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -518,6 +525,15 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
     </tr>
   );
 
+  // Derived state for table
+  const filteredProducts = product?.variantProducts?.filter((child: any) => {
+    if (!productSearch) return true;
+    const s = productSearch.toLowerCase();
+    return child.name.toLowerCase().includes(s) || child.code.toLowerCase().includes(s);
+  }) || [];
+  const totalPages = Math.ceil(filteredProducts.length / rowsPerPage) || 1;
+  const paginatedProducts = filteredProducts.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+
   return (
     <div className="min-h-screen bg-[#F4F6F8] pb-12 font-inter">
       {/* HEADER */}
@@ -582,16 +598,59 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
           {/* LEFT COLUMN: PRODUCTS WORKSPACE (75%) */}
           <div className="lg:col-span-9 flex flex-col">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full relative">
-              <div className="px-6 py-4 border-b border-gray-200 bg-white flex justify-between items-center sticky top-0 z-20">
-                <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-                  <Box size={20} className="mr-2 text-indigo-600" /> Products Workspace
-                </h2>
-                <div className="flex gap-3">
-                  <button onClick={() => setIsImportModalOpen(true)} disabled={!isActive} className={`px-4 py-2 font-medium rounded-lg text-sm flex items-center shadow-sm transition-all ${isActive ? 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-indigo-600' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'}`}>
+              <div className="px-6 py-4 border-b border-gray-200 bg-white flex flex-row flex-nowrap overflow-x-auto items-center justify-between gap-4 sticky top-0 z-20">
+                <div className="relative flex-shrink-0">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search size={16} className="text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search by Name / SKU"
+                    value={productSearch}
+                    onChange={(e) => {
+                      setProductSearch(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="pl-9 pr-4 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500 w-64 outline-none"
+                  />
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button onClick={() => setIsImportModalOpen(true)} disabled={!isActive} className={`px-3 py-1.5 font-medium rounded-lg text-sm flex items-center shadow-sm transition-all ${isActive ? 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'}`}>
                     <Box size={16} className="mr-2" /> Import Product
                   </button>
-                  <button onClick={startAddVariant} disabled={!isActive || isAddingVariant || editingVariantId !== null} className={`px-4 py-2 font-medium rounded-lg text-sm flex items-center shadow-sm transition-all ${isActive && !isAddingVariant && !editingVariantId ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'}`}>
-                    <Plus size={16} className="mr-2" /> Add Row
+                  <button onClick={startAddVariant} disabled={!isActive || isAddingVariant || editingVariantId !== null} className={`px-3 py-1.5 font-medium rounded-lg text-sm flex items-center shadow-sm transition-all ${isActive && !isAddingVariant && !editingVariantId ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'}`}>
+                    <Plus size={16} className="mr-2" /> Create Variant
+                  </button>
+                  <div className="relative" ref={colDropdownRef}>
+                    <button onClick={() => setIsColumnSelectorOpen(!isColumnSelectorOpen)} className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors shadow-sm flex items-center text-sm">
+                      <Columns size={16} className="mr-2" /> Columns <ChevronDown size={14} className="ml-2" />
+                    </button>
+                    {isColumnSelectorOpen && (
+                      <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-2">
+                        {['zoho', 'inventory', 'updatedAt'].map(col => (
+                          <label key={col} className="flex items-center px-4 py-2 hover:bg-gray-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={visibleColumns.has(col)}
+                              onChange={() => {
+                                const newSet = new Set(visibleColumns);
+                                if (newSet.has(col)) newSet.delete(col);
+                                else newSet.add(col);
+                                setVisibleColumns(newSet);
+                              }}
+                              className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 mr-3"
+                            />
+                            <span className="text-sm text-gray-700">{col === 'zoho' ? 'Zoho Sync Status' : col === 'updatedAt' ? 'Updated At' : 'Inventory'}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => {}} className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors shadow-sm flex items-center text-sm">
+                    <Download size={16} className="mr-2" /> Export
+                  </button>
+                  <button onClick={() => fetchProduct()} className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors shadow-sm flex items-center text-sm">
+                    <RefreshCw size={16} className="mr-2" /> Refresh
                   </button>
                 </div>
               </div>
@@ -600,51 +659,73 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                 <table className="min-w-max w-full divide-y divide-gray-200 border-b border-gray-200">
                   <thead className="bg-gray-50/90 backdrop-blur-sm shadow-sm sticky top-0 z-20">
                     <tr>
-                      <th style={{ minWidth: 320, width: 320, position: 'sticky', left: 0, zIndex: 30, borderRight: '1px solid #E5E7EB' }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
+                      <th style={{ minWidth: 52, width: 52, position: 'sticky', left: 0, zIndex: 30 }} className="px-4 py-3.5 text-center text-xs font-semibold text-gray-700 bg-gray-50">
+                        <ImageIcon size={16} className="mx-auto text-gray-400" />
+                      </th>
+                      <th style={{ minWidth: 280, width: 280, position: 'sticky', left: 52, zIndex: 30, borderRight: '1px solid #E5E7EB' }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
                         Product Name
                       </th>
-                      <th style={{ minWidth: 180, width: 180, position: 'sticky', left: 320, zIndex: 30, borderRight: '1px solid #E5E7EB' }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
+                      <th style={{ minWidth: 160, width: 160, position: 'sticky', left: 332, zIndex: 30, borderRight: '1px solid #E5E7EB' }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
                         SKU
                       </th>
                       {attributes.map(attr => (
-                        <th key={attr.id} style={{ minWidth: 180, width: 180 }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">
+                        <th key={attr.id} style={{ minWidth: 160, width: 160 }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">
                           {attr.attributeName} {attr.mandatory && <span className="text-red-500">*</span>}
                         </th>
                       ))}
-                      <th style={{ minWidth: 140, width: 140 }} className="px-4 py-3.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      <th style={{ minWidth: 130, width: 130 }} className="px-4 py-3.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Purchase Price
                       </th>
-                      <th style={{ minWidth: 140, width: 140 }} className="px-4 py-3.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      <th style={{ minWidth: 130, width: 130 }} className="px-4 py-3.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Selling Price
                       </th>
-                      <th style={{ minWidth: 100, width: 100 }} className="px-4 py-3.5 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Inventory
-                      </th>
-                      <th style={{ minWidth: 100, width: 100 }} className="px-4 py-3.5 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Serials
-                      </th>
-                      <th style={{ minWidth: 140, width: 140 }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      <th style={{ minWidth: 130, width: 130 }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Status
                       </th>
+                      {visibleColumns.has('zoho') && (
+                        <th style={{ minWidth: 110, width: 110 }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          Zoho Sync
+                        </th>
+                      )}
+                      {visibleColumns.has('inventory') && (
+                        <th style={{ minWidth: 90, width: 90 }} className="px-4 py-3.5 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          Inventory
+                        </th>
+                      )}
+                      {visibleColumns.has('updatedAt') && (
+                        <th style={{ minWidth: 120, width: 120 }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          Updated At
+                        </th>
+                      )}
                       <th style={{ minWidth: 120, width: 120, position: 'sticky', right: 0, zIndex: 30, borderLeft: '1px solid #E5E7EB' }} className="px-4 py-3.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
                         Actions
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {product.variantProducts?.map((child: any) => {
+                    {paginatedProducts.map((child: any) => {
                       if (editingVariantId === child.id) {
                         return React.cloneElement(renderInlineRow(true, child), { key: child.id });
                       }
                       
                       return (
                         <tr key={child.id} className="hover:bg-gray-50/80 transition-colors group">
-                          {/* Product Name - FROZEN */}
-                          <td style={{ minWidth: 320, width: 320, position: 'sticky', left: 0, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className="px-4 py-4 text-sm font-medium text-gray-900 bg-white group-hover:bg-gray-50/80 transition-colors">
+                          {/* Thumbnail */}
+                          <td style={{ minWidth: 52, width: 52, position: 'sticky', left: 0, zIndex: 10 }} className="px-4 py-4 text-center bg-white group-hover:bg-gray-50/80 transition-colors">
+                            {product.thumbnailBase64 ? (
+                              <img src={product.thumbnailBase64} alt={product.name} className="w-8 h-8 object-cover rounded-md border border-gray-200 shadow-sm mx-auto" />
+                            ) : (
+                              <div className="w-8 h-8 bg-gray-100 rounded-md border border-gray-200 flex items-center justify-center mx-auto text-gray-400">
+                                <ImageIcon size={14} />
+                              </div>
+                            )}
+                          </td>
+                          {/* Product Name */}
+                          <td style={{ minWidth: 280, width: 280, position: 'sticky', left: 52, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className="px-4 py-4 text-sm font-medium text-gray-900 bg-white group-hover:bg-gray-50/80 transition-colors">
                             {child.name}
                           </td>
-                          {/* SKU - FROZEN */}
-                          <td style={{ minWidth: 180, width: 180, position: 'sticky', left: 320, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className="px-4 py-4 text-sm text-gray-600 font-mono bg-white group-hover:bg-gray-50/80 transition-colors">
+                          {/* SKU */}
+                          <td style={{ minWidth: 160, width: 160, position: 'sticky', left: 332, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className="px-4 py-4 text-sm text-gray-600 font-mono bg-white group-hover:bg-gray-50/80 transition-colors">
                             <span className="bg-gray-100/80 border border-gray-200 px-2 py-1 rounded">{child.code}</span>
                           </td>
                           
@@ -652,27 +733,42 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                           {attributes.map(attr => {
                             const val = child.attributeValues?.find((a: any) => a.attributeId === attr.id)?.value;
                             return (
-                              <td key={attr.id} style={{ minWidth: 180, width: 180 }} className="px-4 py-4 text-sm text-gray-600 truncate">
+                              <td key={attr.id} style={{ minWidth: 160, width: 160 }} className="px-4 py-4 text-sm text-gray-600 truncate">
                                 {val || <span className="text-gray-300">—</span>}
                               </td>
                             );
                           })}
                           
-                          <td style={{ minWidth: 140, width: 140 }} className="px-4 py-4 text-sm text-gray-600 text-right">
+                          <td style={{ minWidth: 130, width: 130 }} className="px-4 py-4 text-sm text-gray-600 text-right">
                             ₹{child.variants?.[0]?.purchasePrice?.toFixed(2) || '—'}
                           </td>
-                          <td style={{ minWidth: 140, width: 140 }} className="px-4 py-4 text-sm text-gray-600 text-right">
+                          <td style={{ minWidth: 130, width: 130 }} className="px-4 py-4 text-sm text-gray-600 text-right">
                             ₹{child.variants?.[0]?.sellingPrice?.toFixed(2) || '—'}
                           </td>
-                          <td style={{ minWidth: 100, width: 100 }} className="px-4 py-4 text-center">
-                            {child.variants?.[0]?.trackInventory ? <CheckCircle2 size={16} className="text-green-500 mx-auto" /> : <X size={16} className="text-gray-300 mx-auto" />}
-                          </td>
-                          <td style={{ minWidth: 100, width: 100 }} className="px-4 py-4 text-center">
-                            {child.variants?.[0]?.trackSerials ? <CheckCircle2 size={16} className="text-green-500 mx-auto" /> : <X size={16} className="text-gray-300 mx-auto" />}
-                          </td>
-                          <td style={{ minWidth: 140, width: 140 }} className="px-4 py-4 whitespace-nowrap">
+                          <td style={{ minWidth: 130, width: 130 }} className="px-4 py-4 whitespace-nowrap">
                             <MasterStatusBadge status={child.status} />
                           </td>
+                          {visibleColumns.has('zoho') && (
+                            <td style={{ minWidth: 110, width: 110 }} className="px-4 py-4 text-left whitespace-nowrap">
+                              {(() => {
+                                const status = child.variants?.[0]?.zohoSyncStatus;
+                                if (status === 'SYNCED') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"><CheckCircle2 size={12} className="mr-1" /> Synced</span>;
+                                if (status === 'PENDING') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"><Clock size={12} className="mr-1" /> Pending</span>;
+                                if (status === 'FAILED') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800"><ShieldAlert size={12} className="mr-1" /> Failed</span>;
+                                return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">Never</span>;
+                              })()}
+                            </td>
+                          )}
+                          {visibleColumns.has('inventory') && (
+                            <td style={{ minWidth: 90, width: 90 }} className="px-4 py-4 text-center">
+                              {child.variants?.[0]?.trackInventory ? <CheckCircle2 size={16} className="text-green-500 mx-auto" /> : <X size={16} className="text-gray-300 mx-auto" />}
+                            </td>
+                          )}
+                          {visibleColumns.has('updatedAt') && (
+                            <td style={{ minWidth: 120, width: 120 }} className="px-4 py-4 text-sm text-gray-600 whitespace-nowrap">
+                              {new Date(child.updatedAt).toLocaleDateString()}
+                            </td>
+                          )}
                           <td style={{ minWidth: 120, width: 120, position: 'sticky', right: 0, zIndex: 10, borderLeft: '1px solid #E5E7EB' }} className="px-4 py-4 whitespace-nowrap text-right bg-white group-hover:bg-gray-50/80 transition-colors">
                             <div className="flex justify-end gap-1">
                               {child.status === 'Draft' || child.status === 'Declined' ? (
@@ -721,17 +817,57 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                     
                     {isAddingVariant && renderInlineRow(false)}
                     
-                    {!isAddingVariant && childrenCount === 0 && (
+                    {!isAddingVariant && paginatedProducts.length === 0 && (
                       <tr>
-                        <td colSpan={9 + attributes.length} className="px-6 py-16 text-center bg-gray-50 border-b border-gray-200">
+                        <td colSpan={11 + attributes.length} className="px-6 py-16 text-center bg-gray-50 border-b border-gray-200">
                           <Box size={40} className="mx-auto text-gray-300 mb-3" />
-                          <h3 className="text-sm font-medium text-gray-900">No products found</h3>
-                          <p className="mt-1 text-sm text-gray-500">Click "Add Row" to start building your product matrix.</p>
+                          <h3 className="text-sm font-medium text-gray-900">{productSearch ? 'No matching products' : 'No products found'}</h3>
+                          <p className="mt-1 text-sm text-gray-500">{productSearch ? 'Try a different search term.' : 'Click "Create Variant" to start building your product matrix.'}</p>
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
+              </div>
+              
+              {/* Pagination */}
+              <div className="px-6 py-3 border-t border-gray-200 bg-white flex items-center justify-between mt-auto">
+                <div className="flex items-center text-sm text-gray-500">
+                  Showing {(currentPage - 1) * rowsPerPage + (paginatedProducts.length > 0 ? 1 : 0)} to {Math.min(currentPage * rowsPerPage, filteredProducts.length)} of {filteredProducts.length} entries
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-500">Rows per page:</span>
+                  <select 
+                    value={rowsPerPage} 
+                    onChange={(e) => {
+                      setRowsPerPage(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="border border-gray-300 rounded-md text-sm py-1 pl-2 pr-6 bg-white focus:ring-indigo-500 focus:border-indigo-500"
+                  >
+                    {[10, 25, 50].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                  
+                  <div className="flex space-x-1 ml-4 border-l pl-4 border-gray-200">
+                    <button 
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="px-2 py-1 rounded-md border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    >
+                      Prev
+                    </button>
+                    <div className="px-3 py-1 text-sm font-medium text-gray-700">
+                      {currentPage} / {totalPages}
+                    </div>
+                    <button 
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="px-2 py-1 rounded-md border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -739,17 +875,48 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
           {/* RIGHT COLUMN: FAMILY SUMMARY (25%) */}
           <div className="lg:col-span-3 flex flex-col space-y-6">
             
-            {/* COMPLETENESS CHECKLIST */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center">
-                <CheckCircle2 size={18} className="text-green-500 mr-2" /> Completeness
-              </h2>
-              <div className="space-y-2">
-                <div className={`flex items-center text-sm ${product.name ? 'text-green-700' : 'text-gray-400'}`}><Check size={16} className="mr-2"/> Basic Info</div>
-                <div className={`flex items-center text-sm ${resolveProductImage(product) ? 'text-green-700' : 'text-gray-400'}`}><Check size={16} className="mr-2"/> Image</div>
-                <div className={`flex items-center text-sm ${product.categoryId ? 'text-green-700' : 'text-gray-400'}`}><Check size={16} className="mr-2"/> Category</div>
-                <div className={`flex items-center text-sm ${product.hsnCodeId ? 'text-green-700' : 'text-gray-400'}`}><Check size={16} className="mr-2"/> HSN Assigned</div>
-                <div className={`flex items-center text-sm ${childrenCount > 0 ? 'text-green-700' : 'text-gray-400'}`}><Check size={16} className="mr-2"/> Products Added</div>
+            {/* FAMILY SUMMARY */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center">
+                <Activity size={16} className="text-indigo-600 mr-2" />
+                <h2 className="text-base font-semibold text-gray-900">Family Summary</h2>
+              </div>
+              <div className="p-0">
+                {(() => {
+                  const total = product?.variantProducts?.length || 0;
+                  const active = product?.variantProducts?.filter((c: any) => c.status === 'Active').length || 0;
+                  const inactive = total - active;
+                  const synced = product?.variantProducts?.filter((c: any) => c.variants?.[0]?.zohoSyncStatus === 'SYNCED').length || 0;
+                  const notSynced = total - synced;
+                  return (
+                    <div className="divide-y divide-gray-100">
+                      <div className="flex justify-between items-center px-6 py-3">
+                        <span className="text-sm text-gray-500 font-medium">Total Products</span>
+                        <span className="text-sm font-semibold text-gray-900">{total}</span>
+                      </div>
+                      <div className="flex justify-between items-center px-6 py-3">
+                        <span className="text-sm text-gray-500 font-medium">Active / Inactive</span>
+                        <div className="text-sm font-medium">
+                          <span className="text-green-600">{active}</span>
+                          <span className="text-gray-400 mx-1">/</span>
+                          <span className="text-gray-500">{inactive}</span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center px-6 py-3">
+                        <span className="text-sm text-gray-500 font-medium">Zoho Synced</span>
+                        <div className="text-sm font-medium">
+                          <span className="text-blue-600">{synced}</span>
+                          <span className="text-gray-400 mx-1">/</span>
+                          <span className="text-gray-500">{notSynced}</span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center px-6 py-3">
+                        <span className="text-sm text-gray-500 font-medium">Total Inventory</span>
+                        <span className="text-sm text-gray-400">N/A</span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -819,14 +986,14 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
 
           {/* RIGHT PANELS (IMAGES & FUTURE) */}
           <div className="flex flex-col space-y-6 h-[400px]">
-            {/* IMAGE GALLERY */}
+            {/* PARENT PRODUCT IMAGE */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden h-full flex flex-col">
               <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center">
                 <ImageIcon size={16} className="text-gray-500 mr-2" />
-                <h3 className="text-base font-semibold text-gray-900">Image Gallery</h3>
+                <h3 className="text-base font-semibold text-gray-900">Parent Product Image</h3>
               </div>
               <div 
-                className="p-6 flex gap-4 overflow-x-auto flex-1"
+                className="p-6 flex flex-col items-center justify-center flex-1 text-center"
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
               >
@@ -839,44 +1006,44 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                 />
                 
                 {resolveProductImage(product) ? (
-                  <div className="relative group w-32 h-32 rounded-lg border border-gray-200 overflow-hidden flex-shrink-0 shadow-sm">
-                    <img src={resolveProductImage(product)} alt="Product Thumbnail" className="w-full h-full object-cover" />
+                  <div className="relative group w-40 h-40 rounded-xl border border-gray-200 overflow-hidden shadow-sm mb-4">
+                    <img src={resolveProductImage(product) || ''} alt="Product Thumbnail" className="w-full h-full object-cover" />
                     {canEdit && (
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
                         <button 
                           onClick={() => fileInputRef.current?.click()}
                           className="p-2 bg-white/20 hover:bg-white/40 text-white rounded-lg transition-colors"
                           title="Replace Image"
                         >
-                          <UploadCloud size={16} />
+                          <UploadCloud size={20} />
                         </button>
                         <button 
                           onClick={handleRemoveImage}
                           className="p-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg transition-colors"
                           title="Delete Image"
                         >
-                          <Trash2 size={16} />
+                          <Trash2 size={20} />
                         </button>
                       </div>
                     )}
                   </div>
-                ) : null}
-
-                {canEdit && !resolveProductImage(product) && (
-                  <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-32 h-32 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 hover:bg-gray-50 hover:border-indigo-400 hover:text-indigo-600 transition-colors cursor-pointer flex-shrink-0 bg-gray-50/50"
-                  >
-                    <ImageIcon size={24} className="mb-2" />
-                    <span className="text-xs font-bold uppercase tracking-wider">Add Image</span>
+                ) : (
+                  <div className="w-40 h-40 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 flex flex-col items-center justify-center mb-4 transition-colors hover:bg-gray-100 hover:border-indigo-400">
+                    <ImageIcon size={32} className="text-gray-400 mb-2" />
+                    <button 
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={!canEdit}
+                      className="text-sm font-medium text-indigo-600 disabled:opacity-50"
+                    >
+                      Click to upload
+                    </button>
+                    <span className="text-xs text-gray-500 mt-1">or drag and drop</span>
                   </div>
                 )}
                 
-                {!canEdit && !resolveProductImage(product) && (
-                  <div className="w-full h-32 flex items-center justify-center text-gray-400 text-sm italic">
-                    No images available
-                  </div>
-                )}
+                <p className="text-xs text-gray-500 mt-2 max-w-[200px] leading-snug">
+                  This image is shared across all variant products.
+                </p>
               </div>
             </div>
 

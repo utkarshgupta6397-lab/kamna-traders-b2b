@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { createMasterAuditLog } from '@/lib/master-data-service';
 import { CatalogResolver } from '@/lib/services/CatalogResolver';
+import { AuditPayloadBuilder } from '@/lib/services/audit-payload-builder';
 
 export async function PATCH(
   request: Request,
@@ -70,8 +71,8 @@ export async function PATCH(
       entityId: id,
       action: 'UPDATED',
       fieldName: 'Default Variant',
-      previousValue: JSON.stringify(defaultVariant),
-      newValue: JSON.stringify(updatedVariant),
+      previousValue: JSON.stringify(AuditPayloadBuilder.buildVariantSummary(defaultVariant)),
+      newValue: JSON.stringify(AuditPayloadBuilder.buildVariantSummary(updatedVariant)),
       remarks: 'Updated pricing/inventory settings',
       userId: session.userId,
       productId: id,

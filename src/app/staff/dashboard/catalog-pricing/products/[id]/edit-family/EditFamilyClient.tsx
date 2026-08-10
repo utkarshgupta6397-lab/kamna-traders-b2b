@@ -194,30 +194,30 @@ export default function EditFamilyClient({ product }: { product: any }) {
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category <span className="text-red-500">*</span></label>
-                <AsyncLookupField endpoint="/api/staff/catalog/categories/selectable" value={formData.categoryId} onChange={val => setFormData({ ...formData, categoryId: val })} displayFn={catDisplay} placeholder="Search categories..." />
+                <AsyncLookupField endpoint="/api/staff/catalog/categories/selectable" value={formData.categoryId} onChange={val => setFormData({ ...formData, categoryId: val })} displayValue={catDisplay} placeholder="Search categories..." label="" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
-                <AsyncLookupField endpoint="/api/staff/catalog/brands" value={formData.brandId} onChange={val => setFormData({ ...formData, brandId: val })} displayFn={brandDisplay} placeholder="Search brands..." />
+                <AsyncLookupField endpoint="/api/staff/catalog/brands" value={formData.brandId} onChange={val => setFormData({ ...formData, brandId: val })} displayValue={brandDisplay} placeholder="Search brands..." label="" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Manufacturer</label>
-                <AsyncLookupField endpoint="/api/staff/catalog/manufacturers" value={formData.manufacturerId} onChange={val => setFormData({ ...formData, manufacturerId: val })} displayFn={mfrDisplay} placeholder="Search manufacturers..." />
+                <AsyncLookupField endpoint="/api/staff/catalog/manufacturers" value={formData.manufacturerId} onChange={val => setFormData({ ...formData, manufacturerId: val })} displayValue={mfrDisplay} placeholder="Search manufacturers..." label="" />
               </div>
               
               <div className="col-span-2"><hr className="border-gray-200 my-2" /></div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">HSN Code <span className="text-red-500">*</span></label>
-                <AsyncLookupField endpoint="/api/staff/catalog/hsn-codes" value={formData.hsnCodeId} onChange={val => setFormData({ ...formData, hsnCodeId: val })} displayFn={hsnDisplay} placeholder="Search HSN codes..." />
+                <AsyncLookupField endpoint="/api/staff/catalog/hsn-codes" value={formData.hsnCodeId} onChange={val => setFormData({ ...formData, hsnCodeId: val })} displayValue={hsnDisplay} placeholder="Search HSN codes..." label="" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">GST Tax Rate <span className="text-red-500">*</span></label>
-                <AsyncLookupField endpoint="/api/staff/catalog/tax-rates" value={formData.taxRateId} onChange={val => setFormData({ ...formData, taxRateId: val })} displayFn={taxDisplay} placeholder="Select GST rate..." />
+                <AsyncLookupField endpoint="/api/staff/catalog/tax-rates" value={formData.taxRateId} onChange={val => setFormData({ ...formData, taxRateId: val })} displayValue={taxDisplay} placeholder="Select GST rate..." label="" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Unit of Measurement (UoM) <span className="text-red-500">*</span></label>
-                <AsyncLookupField endpoint="/api/staff/catalog/units" value={formData.unitId} onChange={val => setFormData({ ...formData, unitId: val })} displayFn={uomDisplay} placeholder="Select UoM..." />
+                <AsyncLookupField endpoint="/api/staff/catalog/units" value={formData.unitId} onChange={val => setFormData({ ...formData, unitId: val })} displayValue={uomDisplay} placeholder="Select UoM..." label="" />
               </div>
               
               <div className="col-span-2">

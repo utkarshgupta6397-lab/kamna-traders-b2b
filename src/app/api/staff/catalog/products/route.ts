@@ -303,7 +303,7 @@ export async function POST(request: Request) {
     CatalogResolver.invalidateCache();
 
     // Fire and forget Zoho Sync
-    const defaultVariant = await prisma.productVariant.findFirst({ where: { productId: newProduct.id, isDefault: true } });
+    const defaultVariant = await prisma.productVariant.findFirst({ where: { productId: newProduct?.id, isDefault: true } });
     if (defaultVariant?.id) {
       after(() => {
         ZohoProductService.syncVariant(defaultVariant.id, 'AUTO_SAVE').catch(err => {

@@ -381,7 +381,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           <div className="flex items-start gap-4">
             <div className="w-24 h-24 rounded-lg border border-gray-200 bg-white flex items-center justify-center shrink-0 shadow-sm overflow-hidden p-1">
               {resolveProductImage(product) ? (
-                <img src={resolveProductImage(product)} alt={product.name} className="w-full h-full object-contain rounded" />
+                <img src={resolveProductImage(product) || ''} alt={product.name} className="w-full h-full object-contain rounded" />
               ) : (
                 <Package size={32} className="text-gray-300" />
               )}
@@ -674,7 +674,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 
                 {resolveProductImage(product) ? (
                   <div className="relative group w-24 h-24 rounded-lg border border-gray-200 overflow-hidden flex-shrink-0">
-                    <img src={resolveProductImage(product)} alt="Product Thumbnail" className="w-full h-full object-cover" />
+                    <img src={resolveProductImage(product) || ''} alt="Product Thumbnail" className="w-full h-full object-cover" />
                     {canEdit && (
                       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                         <button 

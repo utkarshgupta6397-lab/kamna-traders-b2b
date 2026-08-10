@@ -543,7 +543,7 @@ export default function CreateProductPage() {
                     <div className="absolute right-1">
                       <button
                         type="button"
-                        onClick={handleGenerateSku}
+                        onClick={() => handleGenerateSku()}
                         disabled={isGeneratingSku}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors disabled:opacity-40"
                       >

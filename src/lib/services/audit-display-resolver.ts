@@ -86,9 +86,42 @@ export class AuditDisplayResolver {
     const prevParsed = parseValue(h.previousValue);
     const nextParsed = parseValue(h.newValue);
 
+    const changes: AuditChange[] = [];
+
+    // Check if nextParsed is the new AuditEventFormat: { title, changes: string[] }
+    if (nextParsed && typeof nextParsed === 'object' && Array.isArray(nextParsed.changes)) {
+      // It's the new structured format. Map the changes array.
+      nextParsed.changes.forEach((changeStr: string) => {
+        // changeStr could be "Field: Old → New" or just "Message"
+        const parts = changeStr.split(' → ');
+        if (parts.length === 2) {
+          const fieldParts = parts[0].split(': ');
+          if (fieldParts.length >= 2) {
+            changes.push({
+              field: fieldParts.shift()!,
+              oldValue: fieldParts.join(': '),
+              newValue: parts[1]
+            });
+          } else {
+            changes.push({
+              field: 'Detail',
+              oldValue: parts[0],
+              newValue: parts[1]
+            });
+          }
+        } else {
+          changes.push({
+            field: 'Detail',
+            oldValue: '—',
+            newValue: changeStr
+          });
+        }
+      });
+      return changes;
+    }
+
     let prevObj: any = {};
     let nextObj: any = {};
-    const changes: AuditChange[] = [];
 
     if ((prevParsed !== null && typeof prevParsed !== 'object') || (nextParsed !== null && typeof nextParsed !== 'object')) {
       // Legacy simple string changes

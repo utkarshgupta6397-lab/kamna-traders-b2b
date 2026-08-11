@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Plus, Trash2, Search, AlertCircle, ChevronRight } from 'lucide-react';
-import { isRecommendedForDcr } from '@/lib/dcr-config';
 import { useDcrStats } from '../../layout';
 import { CommunicationWidget } from '@/components/communications/CommunicationWidget';
 
@@ -429,7 +428,7 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
 
   // Pre-filter SKU Master based on business rules
   const eligibleSkus = skuMaster.filter(s => {
-    return s.caseSize > 1 && s.isActive !== false;
+    return s.isDcrEligible && s.isActive !== false;
   });
 
   const filteredSkus = eligibleSkus.filter(s => s.name.toLowerCase().includes(skuSearch.toLowerCase())).slice(0, 10);
@@ -455,7 +454,11 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
   }
 
   const zohoItems = invoice.items.filter((i: any) => i.source === 'ZOHO');
-  const hasRecommendedItems = zohoItems.some((i: any) => isRecommendedForDcr(i.itemName));
+  const hasRecommendedItems = zohoItems.some((i: any) => {
+    // Resolve Product Master mapping using skuMaster
+    const resolvedSku = skuMaster.find(s => s.zohoBooksId2 === i.itemId || s.zohoItemId === i.itemId || s.id === i.itemId);
+    return resolvedSku?.isDcrEligible;
+  });
   
   const selectedZohoItems = zohoItems.filter((i: any) => selections[i.id]);
   const totalSelectedCount = selectedZohoItems.length + manualItems.length;
@@ -576,7 +579,8 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
               <tbody className="divide-y divide-gray-100">
                 {zohoItems.map((item: any) => {
                   const isSelected = !!selections[item.id];
-                  const isRecommended = isRecommendedForDcr(item.itemName);
+                  const resolvedSku = skuMaster.find(s => s.zohoBooksId2 === item.itemId || s.zohoItemId === item.itemId || s.id === item.itemId);
+                  const isRecommended = !!resolvedSku?.isDcrEligible;
                   return (
                     <tr 
                       key={item.id} 
@@ -674,8 +678,17 @@ export default function ReviewClient({ invoiceId }: { invoiceId: string }) {
                     >
                       <div className="font-semibold text-blue-900 font-mono text-[10px]">{sku.id}</div>
                       <div className="font-medium text-gray-900 text-[11px] leading-snug">{sku.name}</div>
-                      <div className="text-[9px] text-gray-500 mt-0.5">
-                        Case Size: {sku.caseSize}
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {sku.brand && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                            {sku.brand}
+                          </span>
+                        )}
+                        {sku.wattage && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-[#1A2766]/10 text-[#1A2766] border border-[#1A2766]/20">
+                            {sku.wattage}
+                          </span>
+                        )}
                       </div>
                     </div>
                   )) : (

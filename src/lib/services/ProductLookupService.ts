@@ -1,6 +1,7 @@
 import { ProductRepository } from '../repositories/ProductRepository';
 import { LegacyProductNormalizer } from './LegacyProductNormalizer';
 import { Prisma } from '@prisma/client';
+import { prisma } from '@/lib/db';
 
 export type ProductSearchPurpose = 
   | 'inventory'
@@ -37,6 +38,12 @@ export class ProductLookupService {
       case 'dcr':
         where.status = 'Active';
         where.variants = { some: { trackInventory: true, trackSerials: true, isActive: true } };
+        where.attributeValues = {
+          some: {
+            value: 'DCR',
+            attribute: { attributeName: 'Panel Type' }
+          }
+        };
         break;
       case 'sales':
       case 'purchase':
@@ -96,6 +103,14 @@ export class ProductLookupService {
       inventoryMap.set(inv.skuId, existing);
     });
 
+    // Fetch legacy Sku records to map caseSize and moq
+    const legacySkus = await prisma.sku.findMany({
+      where: { id: { in: skuIds } },
+      select: { id: true, caseSize: true, moq: true, stepQty: true }
+    });
+    const skuMap = new Map<string, any>();
+    legacySkus.forEach((s: any) => skuMap.set(s.id, s));
+
     // Normalize and Map response
     const results: any[] = [];
 
@@ -112,7 +127,7 @@ export class ProductLookupService {
         if (!options.includeInactive && !variant.isActive) return;
 
         results.push(
-          LegacyProductNormalizer.mapToLegacySkuStructure(normalized, variant, inventoryMap, options.warehouseId)
+          LegacyProductNormalizer.mapToLegacySkuStructure(normalized, variant, inventoryMap, options.warehouseId, skuMap)
         );
       });
     });

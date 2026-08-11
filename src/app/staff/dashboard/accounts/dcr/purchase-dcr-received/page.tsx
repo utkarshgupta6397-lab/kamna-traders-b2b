@@ -79,7 +79,7 @@ function PurchaseDcrReceivedContent() {
     fetch('/api/staff/skus')
       .then(r => r.json())
       .then(data => {
-        const filtered = (data.skus || data || []).filter((s: any) => s.caseSize > 1 && s.isActive !== false);
+        const filtered = (data.skus || data || []).filter((s: any) => s.isDcrEligible && s.isActive !== false);
         setSkus(filtered);
       })
       .catch(() => setSkus([]));

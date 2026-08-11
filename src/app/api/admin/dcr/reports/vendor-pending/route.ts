@@ -45,10 +45,13 @@ export async function GET(req: Request) {
     const skuIdsToFetch = Array.from(new Set(serials.map((s: any) => s.skuId).filter(Boolean))) as string[];
     
     // Fetch from Sku master
-    const skus = await import('@/lib/services/ProductLookupService').then(m => 
-      m.ProductLookupService.search('dcr', { skuIds: skuIdsToFetch })
+    const catalogItems = await import('@/lib/services/CatalogResolver').then(m => 
+      m.CatalogResolver.findManyBySku(skuIdsToFetch)
     );
-    const skuMap = new Map(skus.map((s: any) => [s.id, { name: s.name, skuCode: s.zohoBooksId2 || s.id }]));
+    const skuMap = new Map();
+    catalogItems.forEach((item, id) => {
+      skuMap.set(id, { name: item.displayName || item.productName || item.name || 'Unknown Product', skuCode: item.legacySku || item.zohoItemId || id });
+    });
 
     const missingMappingSerials: string[] = [];
     const now = new Date().getTime();

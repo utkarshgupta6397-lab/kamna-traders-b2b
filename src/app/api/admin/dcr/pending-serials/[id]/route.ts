@@ -151,15 +151,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (skuMismatchSerials.length > 0) {
       const mismatchIds = Array.from(new Set(skuMismatchSerials.map(s => s.skuId).filter(Boolean))) as string[];
       
-      const [mismatchSkus, mismatchInvoiceItems] = await Promise.all([
-        import('@/lib/services/ProductLookupService').then(m => m.ProductLookupService.search('dcr', { skuIds: mismatchIds })),
+      const [mismatchCatalogItems, mismatchInvoiceItems] = await Promise.all([
+        import('@/lib/services/CatalogResolver').then(m => m.CatalogResolver.findManyBySku(mismatchIds)),
         prisma.dcrInvoiceItem.findMany({ where: { id: { in: mismatchIds } } })
       ]);
       
       skuMismatchSerials.forEach(s => {
-        const skuRec = mismatchSkus.find(i => i.id === s.skuId);
+        const skuRec = mismatchCatalogItems.get(s.skuId!);
         const invItemRec = mismatchInvoiceItems.find(i => i.id === s.skuId);
-        const originalName = skuRec ? skuRec.name : (invItemRec ? invItemRec.itemName : s.skuId);
+        const originalName = skuRec ? (skuRec.displayName || skuRec.productName || skuRec.name) : (invItemRec ? invItemRec.itemName : s.skuId);
         validationErrors.push(`SKU mismatch for serial: ${s.serialNumber}. It is locked to ${originalName}.`);
       });
     }

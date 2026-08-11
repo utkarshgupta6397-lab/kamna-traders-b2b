@@ -50,8 +50,8 @@ export async function POST(req: Request) {
       if (s.skuId) skuIds.add(s.skuId);
     });
 
-    const skuList = await import('@/lib/services/ProductLookupService').then(m => 
-      m.ProductLookupService.search('dcr', { skuIds: Array.from(skuIds) })
+    const skuListMap = await import('@/lib/services/CatalogResolver').then(m => 
+      m.CatalogResolver.findManyBySku(Array.from(skuIds))
     );
     const invoiceItemList = await prisma.dcrInvoiceItem.findMany({
       where: { id: { in: Array.from(skuIds) } }
@@ -63,8 +63,8 @@ export async function POST(req: Request) {
 
     const resolveSku = async (id: string | null) => {
       if (!id) return { name: 'N/A', code: 'N/A' };
-      const sku = skuList.find(s => s.id === id);
-      if (sku) return { name: sku.name, code: sku.id };
+      const sku = skuListMap.get(id);
+      if (sku) return { name: sku.displayName || sku.productName || sku.name || 'Unknown', code: sku.legacySku || id };
 
       const invItem = invoiceItemList.find(i => i.id === id);
       if (invItem) return { name: invItem.itemName, code: invItem.sku || 'N/A' };

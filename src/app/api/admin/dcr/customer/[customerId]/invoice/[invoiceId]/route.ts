@@ -56,8 +56,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
     const itemIds = invoice.items.map(i => i.itemId).filter(Boolean) as string[];
     const skuNames = invoice.items.map(i => i.sku).filter(Boolean) as string[];
     
-    const skus = await import('@/lib/services/ProductLookupService').then(m => 
-      m.ProductLookupService.search('dcr', { skuIds: skuNames }) // skuNames are the variant SKUs
+    const catalogItemsMap = await import('@/lib/services/CatalogResolver').then(m => 
+      m.CatalogResolver.findManyBySku(skuNames) // skuNames are the variant SKUs
     );
 
     // Map serials and compute metrics
@@ -76,7 +76,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
 
       // Identify item vendor
       let itemVendor = '--';
-      const matchedSku = skus.find(s => s.zohoBooksId2 === item.itemId || s.id === item.sku);
+      const matchedSku = catalogItemsMap.get(item.sku || '') || Array.from(catalogItemsMap.values()).find(s => s.zohoItemId === item.itemId || s.zohoItemId2 === item.itemId);
       if (matchedSku?.brand) {
         itemVendor = matchedSku.brand;
       }

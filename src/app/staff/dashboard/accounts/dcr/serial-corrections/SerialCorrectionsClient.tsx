@@ -60,7 +60,7 @@ export default function SerialCorrectionsClient() {
   useEffect(() => {
     fetch('/api/staff/skus')
       .then(r => r.json())
-      .then(data => setAllSkus((data.skus || data || []).filter((s: any) => s.caseSize > 1 && s.isActive !== false)))
+      .then(data => setAllSkus((data.skus || data || []).filter((s: any) => s.isDcrEligible && s.isActive !== false)))
       .catch(() => {});
   }, []);
 

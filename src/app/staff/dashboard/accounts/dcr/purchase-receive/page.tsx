@@ -76,7 +76,7 @@ export default function PurchaseReceiveDashboard() {
   useEffect(() => {
     if (isFormOpen && skus.length === 0) {
       fetchWithCache('/api/staff/skus')
-        .then(d => setSkus((d.skus || d || []).filter((s: any) => s.caseSize > 1 && s.isActive !== false)))
+        .then(d => setSkus((d.skus || d || []).filter((s: any) => s.isDcrEligible && s.isActive !== false)))
         .catch(() => setSkus([]));
     }
   }, [isFormOpen, skus.length]);

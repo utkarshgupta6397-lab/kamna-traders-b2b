@@ -1,3 +1,5 @@
+import { DcrEligibilityService } from './DcrEligibilityService';
+
 export class LegacyProductNormalizer {
   /**
    * Normalizes legacy products, providing safe defaults for missing metadata.
@@ -16,7 +18,7 @@ export class LegacyProductNormalizer {
   /**
    * Maps a Product and its variants to the legacy flat SKU structure expected by existing UI components.
    */
-  static mapToLegacySkuStructure(product: any, variant: any, inventoryMap?: Map<string, any[]>, warehouseId?: string) {
+  static mapToLegacySkuStructure(product: any, variant: any, inventoryMap?: Map<string, any[]>, warehouseId?: string, skuMap?: Map<string, any>) {
     const skuInventory = inventoryMap ? (inventoryMap.get(variant.sku) || []) : [];
     
     const targetInv = warehouseId ? skuInventory.find(inv => inv.warehouseId === warehouseId) : null;
@@ -48,10 +50,10 @@ export class LegacyProductNormalizer {
       brandId: product.brandId ?? null,
       unit: product.unit?.name ?? null,
       unitShort: product.unit?.abbreviation || product.unit?.code || null,
-      moq: 1, // Defaulting as Product model doesn't store this
-      stepQty: 1, // Defaulting
+      moq: skuMap?.get(variant.sku)?.moq ?? 1,
+      stepQty: skuMap?.get(variant.sku)?.stepQty ?? 1,
       price: variant.sellingPrice || 0,
-      caseSize: 1, // Defaulting
+      caseSize: skuMap?.get(variant.sku)?.caseSize ?? 1,
       categoryId: product.categoryId,
       categoryName: product.category?.name ?? null,
       inventoryQty,
@@ -70,7 +72,9 @@ export class LegacyProductNormalizer {
       isOutOfStock: isOos,
 
       // UI matrix compatibility
-      inventory: inventoryDict
+      inventory: inventoryDict,
+      isDcrEligible: DcrEligibilityService.evaluateProduct(product),
+      wattage: product.attributeValues?.find((av: any) => av.attribute?.attributeName === 'Wattage')?.value ?? null
     };
   }
 }

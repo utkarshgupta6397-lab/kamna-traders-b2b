@@ -115,10 +115,13 @@ export async function GET(req: Request) {
     ]);
 
     const skuIdsToFetch = Array.from(new Set(serials.map((s: any) => s.skuId).filter(Boolean)));
-    const skus = await import('@/lib/services/ProductLookupService').then(m => 
-      m.ProductLookupService.search('dcr', { skuIds: skuIdsToFetch as string[] })
+    const catalogItems = await import('@/lib/services/CatalogResolver').then(m => 
+      m.CatalogResolver.findManyBySku(skuIdsToFetch as string[])
     );
-    const skuMap = new Map(skus.map((s: any) => [s.id, s.name]));
+    const skuMap = new Map();
+    catalogItems.forEach((item, id) => {
+      skuMap.set(id, item.displayName || item.productName || item.name || 'Unknown Product');
+    });
 
     const enrichedSerials = serials.map((s: any) => {
       let computedProduct = null;

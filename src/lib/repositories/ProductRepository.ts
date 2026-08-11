@@ -13,6 +13,7 @@ export class ProductRepository {
         brand: { select: { name: true } },
         category: { select: { name: true } },
         unit: { select: { name: true, abbreviation: true, code: true } },
+        attributeValues: { include: { attribute: true } },
       },
       orderBy: { name: 'asc' },
     });

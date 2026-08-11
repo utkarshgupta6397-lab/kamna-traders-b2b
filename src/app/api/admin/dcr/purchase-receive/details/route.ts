@@ -84,10 +84,13 @@ export async function GET(req: Request) {
     );
 
     const skuIds = Array.from(new Set(receiptSerials.map(s => s.skuId).filter(Boolean))) as string[];
-    const skus = await import('@/lib/services/ProductLookupService').then(m => 
-      m.ProductLookupService.search('dcr', { skuIds: skuIds })
+    const catalogItems = await import('@/lib/services/CatalogResolver').then(m => 
+      m.CatalogResolver.findManyBySku(skuIds)
     );
-    const skuMap = new Map(skus.map(s => [s.id, s.name]));
+    const skuMap = new Map();
+    catalogItems.forEach((item, id) => {
+      skuMap.set(id, item.displayName || item.productName || item.name || 'Unknown Product');
+    });
 
     const linesMap = new Map<string, { skuId: string; skuName: string; eligibleSerials: string[] }>();
 

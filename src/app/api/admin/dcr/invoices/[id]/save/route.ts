@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { DcrEligibilityService } from '@/lib/services/DcrEligibilityService';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -118,6 +119,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // Add new manual items
         for (const mItem of manualItems) {
           if (mItem.id.startsWith('manual_')) {
+            if (mItem.itemId) {
+              const isEligible = await DcrEligibilityService.isSkuDcrEligible(mItem.itemId);
+              if (!isEligible) {
+                 throw new Error(`Product ${mItem.itemName} is not DCR eligible based on Product Master rules.`);
+              }
+            }
+
             await tx.dcrInvoiceItem.create({
               data: {
                 dcrInvoiceId: id,

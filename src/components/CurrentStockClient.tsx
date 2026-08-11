@@ -6,6 +6,7 @@ import {
   CheckCircle2, FileDown, RefreshCw, Loader2, Info 
 } from 'lucide-react';
 import SkuInsightsDrawer from './SkuInsightsDrawer';
+import CurrentStockSidebar from './CurrentStockSidebar';
 import { formatStockDate } from '@/lib/date-utils';
 import { DOI_THRESHOLDS } from '@/lib/config';
 import { formatCPDValue, calculateDOIInfo, calculateConsumptionDenominator } from '@/lib/inventory/consumption';
@@ -468,50 +469,7 @@ export default function CurrentStockClient({ warehouses, categories, brands, ite
 
   return (
     <div className="flex h-full gap-5">
-      {/* Sidebar Navigation */}
-      <div className="w-56 flex-shrink-0">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-[fit-content]">
-          <nav className="flex flex-col p-3 space-y-4">
-            <div>
-              <h3 className="px-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
-                VIEWS
-              </h3>
-              <div className="space-y-0.5">
-                {/* Active View */}
-                <button className="flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors bg-[#1A2766]/5 text-[#1A2766] border border-transparent text-left relative overflow-hidden">
-                  <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#1A2766]" />
-                  <div className="flex items-center gap-2.5 pl-1">
-                    <Box size={16} />
-                    <span>Multi-Warehouse View</span>
-                  </div>
-                </button>
-                
-                {/* Upcoming Views */}
-                <button className="flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors text-gray-400 hover:bg-gray-50 cursor-not-allowed border border-transparent text-left">
-                  <div className="flex items-center gap-2.5">
-                    <span>Single Warehouse</span>
-                  </div>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded uppercase tracking-wider border border-gray-200">Soon</span>
-                </button>
-
-                <button className="flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors text-gray-400 hover:bg-gray-50 cursor-not-allowed border border-transparent text-left">
-                  <div className="flex items-center gap-2.5">
-                    <span>By Category</span>
-                  </div>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded uppercase tracking-wider border border-gray-200">Soon</span>
-                </button>
-
-                <button className="flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors text-gray-400 hover:bg-gray-50 cursor-not-allowed border border-transparent text-left">
-                  <div className="flex items-center gap-2.5">
-                    <span>Stock Valuation</span>
-                  </div>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded uppercase tracking-wider border border-gray-200">Soon</span>
-                </button>
-              </div>
-            </div>
-          </nav>
-        </div>
-      </div>
+      <CurrentStockSidebar activeView="multi" />
 
       {/* Main Content */}
       <div ref={containerRef} className="flex-1 flex flex-col h-full min-w-0 bg-white rounded-lg shadow-sm border border-gray-200">

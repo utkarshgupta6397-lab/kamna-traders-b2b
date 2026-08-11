@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { calculateConsumptionDenominator } from '@/lib/inventory/consumption';
 import CurrentStockClient from '@/components/CurrentStockClient';
+import AdvancedStockClient from '@/components/AdvancedStockClient';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -15,6 +16,16 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
   if (sp.safe === '1') {
     return <div className="p-20 text-center font-bold text-red-600 bg-red-50 rounded-2xl border-2 border-red-200">SAFE MODE ACTIVE: Heavy dashboard components disabled to prevent overheating. <a href="?" className="underline ml-2">Exit Safe Mode</a></div>;
   }
+  
+  if (sp.view === 'advanced') {
+    const warehouses = await prisma.warehouse.findMany({
+      where: { active: true },
+      select: { id: true, name: true, isSystemWarehouse: true },
+      orderBy: { name: 'asc' }
+    });
+    return <AdvancedStockClient warehouses={warehouses} />;
+  }
+
   // --- CPD/DOI PRE-CALCULATION ---
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);

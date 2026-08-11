@@ -1687,3 +1687,10 @@ model ProductAttributeValue {
   @@index([productId])
   @@index([attributeId])
 }
+
+model InventoryConfig {
+  id            String   @id @default("singleton")
+  leadTimeDays  Float    @default(3)
+  safetyFactor  Float    @default(1.5)
+  updatedAt     DateTime @updatedAt
+}

@@ -17,6 +17,11 @@ npx prisma db push --accept-data-loss
 echo "4. Backing up old production build..."
 cp -r .next .next.backup || true
 
+# Clean up any orphaned build processes that might have hung
+pkill -f "next build" || true
+# Ensure clean state to prevent lock file errors
+rm -rf .next
+
 echo "5. Building Next.js app..."
 if ! npm run build; then
   echo "❌ Build failed! Restoring old production build..."

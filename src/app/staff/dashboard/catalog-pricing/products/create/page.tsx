@@ -105,6 +105,10 @@ export default function CreateProductPage() {
 
   const [dynamicAttributes, setDynamicAttributes] = useState<any[]>([]);
   
+  const [recommendations, setRecommendations] = useState<{ hsnCodes: string[], taxRates: string[], units: string[] } | null>(null);
+  const [loadingRecommendations, setLoadingRecommendations] = useState(false);
+  const [selectedCategoryOption, setSelectedCategoryOption] = useState<any>(null);
+
   const [showLockWarning, setShowLockWarning] = useState(false);
   const [pendingSaveAction, setPendingSaveAction] = useState<boolean | null>(null);
 
@@ -170,6 +174,59 @@ export default function CreateProductPage() {
       setDynamicAttributes([]);
     }
   }, [formData.categoryId]);
+
+  // Clear recommendations if category changes
+  useEffect(() => {
+    setRecommendations(null);
+  }, [formData.categoryId, selectedCategoryOption?.parentId]);
+
+  // Fetch recommendations when entering Step 2 (Tax & Pricing) which is effectiveStep === 2
+  useEffect(() => {
+    const step = isEditMode ? currentStep + 1 : currentStep;
+    if (step === 2 && formData.categoryId) {
+      // Avoid refetching if we already have it for this context
+      if (recommendations) return;
+      
+      setLoadingRecommendations(true);
+      
+      let apiUrl = `/api/staff/catalog/recommendations?categoryId=${encodeURIComponent(
+        selectedCategoryOption?.parentId || formData.categoryId
+      )}`;
+      
+      if (selectedCategoryOption?.parentId) {
+        apiUrl += `&subCategoryId=${encodeURIComponent(formData.categoryId)}`;
+      }
+
+      console.log(`[Dev Console] PRODUCT_RECOMMENDATION_REQUEST_START`, {
+        categoryId: selectedCategoryOption?.parentId || formData.categoryId,
+        subCategoryId: selectedCategoryOption?.parentId ? formData.categoryId : undefined,
+      });
+
+      fetch(apiUrl)
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) throw new Error(data.error);
+          setRecommendations({
+            hsnCodes: data.hsnCodes || [],
+            taxRates: data.taxRates || [],
+            units: data.units || []
+          });
+          console.log(`[Dev Console] PRODUCT_RECOMMENDATION_REQUEST_SUCCESS`, {
+            activeSkuCount: data.activeSkuCount,
+            recommendedHsn: data.hsnCodes,
+            recommendedTaxRate: data.taxRates,
+            recommendedUom: data.units
+          });
+        })
+        .catch(err => {
+          console.error(`[Dev Console] PRODUCT_RECOMMENDATION_REQUEST_FAILED`, err);
+          setRecommendations(null);
+        })
+        .finally(() => {
+          setLoadingRecommendations(false);
+        });
+    }
+  }, [currentStep, isEditMode, formData.categoryId, selectedCategoryOption, recommendations]);
 
   // ─── Generate SKU ────────────────────────────────────────────────────────
   const handleGenerateSku = async (index?: number) => {
@@ -576,7 +633,10 @@ export default function CreateProductPage() {
                     endpoint="/api/staff/catalog/categories/selectable"
                     extraQueryParams={{ sortBy: 'name', status: 'Active' }}
                     value={formData.categoryId}
-                    onChange={val => updateForm('categoryId', val || '')}
+                    onChange={(val, opt) => {
+                      updateForm('categoryId', val || '');
+                      setSelectedCategoryOption(opt || null);
+                    }}
                     displayValue={catDisplay}
                     isOptionDisabled={opt => opt.parentId === null && (opt._count?.children || 0) > 0}
                     renderOption={opt => {
@@ -743,6 +803,8 @@ export default function CreateProductPage() {
                       </span>
                     )}
                     clearable
+                    isLoadingRecommendations={loadingRecommendations}
+                    recommendedIds={recommendations?.hsnCodes || []}
                   />
                   
                   {showErrors && !formData.hsnCodeId && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
@@ -784,6 +846,8 @@ export default function CreateProductPage() {
                       </span>
                     )}
                     clearable
+                    isLoadingRecommendations={loadingRecommendations}
+                    recommendedIds={recommendations?.taxRates || []}
                   />
                   {showErrors && !formData.taxRateId && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
                 </div>
@@ -805,6 +869,8 @@ export default function CreateProductPage() {
                       </span>
                     )}
                     clearable
+                    isLoadingRecommendations={loadingRecommendations}
+                    recommendedIds={recommendations?.units || []}
                   />
                   {showErrors && !formData.unitId && <p className="text-red-500 text-xs mt-1.5">This field is required.</p>}
                 </div>

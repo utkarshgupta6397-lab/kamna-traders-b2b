@@ -19,6 +19,8 @@ interface AsyncLookupFieldProps {
   isOptionDisabled?: (opt: Option) => boolean;
   extraQueryParams?: Record<string, string>;
   clearable?: boolean;
+  recommendedIds?: string[];
+  isLoadingRecommendations?: boolean;
 }
 
 // Module-level cache is now handled by LookupService
@@ -36,6 +38,8 @@ export default function AsyncLookupField({
   isOptionDisabled,
   extraQueryParams,
   clearable = false,
+  recommendedIds = [],
+  isLoadingRecommendations = false,
 }: AsyncLookupFieldProps) {
   const [options, setOptions] = useState<Option[]>([]);
   const [loading, setLoading] = useState(false);
@@ -227,6 +231,11 @@ export default function AsyncLookupField({
 
             {/* Options list */}
             <div className="overflow-auto flex-1">
+              {isLoadingRecommendations && (
+                <div className="px-4 py-2 text-[11px] font-medium text-blue-600 bg-blue-50/50 flex items-center justify-center gap-1.5 border-b border-blue-100">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Searching recommendations...
+                </div>
+              )}
               {loading && search ? (
                 <div className="px-4 py-3 text-sm text-gray-500 flex items-center justify-center gap-2">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" /> Searching...
@@ -237,6 +246,7 @@ export default function AsyncLookupField({
                 options.map((opt) => {
                   const optDisabled = isOptionDisabled ? isOptionDisabled(opt) : false;
                   const isSelected = value === opt.id;
+                  const isRecommended = recommendedIds.includes(opt.id);
                   return (
                     <div
                       key={opt.id}
@@ -256,7 +266,12 @@ export default function AsyncLookupField({
                         setSearch('');
                       }}
                     >
-                      <span className="block truncate">{getRender(opt)}</span>
+                      <div className="flex items-center justify-between">
+                        <div className="block truncate flex-1">{getRender(opt)}</div>
+                        {isRecommended && (
+                          <span className="ml-2 shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-700 border border-green-200">Recommended</span>
+                        )}
+                      </div>
                       {isSelected && (
                         <span className="absolute inset-y-0 right-0 flex items-center pr-3 text-blue-600">
                           <Check className="h-3.5 w-3.5" />

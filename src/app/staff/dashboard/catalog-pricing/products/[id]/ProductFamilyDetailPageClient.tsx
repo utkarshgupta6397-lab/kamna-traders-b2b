@@ -4,7 +4,7 @@ import React, { useState, useEffect, use, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { resolveProductImage } from '@/lib/utils';
-import { ArrowLeft, Edit2, ShieldAlert, Layers, CheckCircle2, X, FileText, ExternalLink, Activity, ChevronDown, Check, MoreVertical, Box, Clock, Image as ImageIcon, UploadCloud, Plus, Save, Wand2, Trash2, Download, RefreshCw, Columns, Search } from 'lucide-react';
+import { ArrowLeft, Edit2, ShieldAlert, Layers, CheckCircle2, X, FileText, ExternalLink, Activity, ChevronDown, Check, MoreVertical, Box, Clock, Image as ImageIcon, UploadCloud, Plus, Save, Wand2, Trash2, Download, RefreshCw, Columns, Search, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import MasterStatusBadge from '../../_framework/MasterStatusBadge';
 import { HistoryEventCard } from '../../_framework/HistoryDrawer';
 import toast from 'react-hot-toast';
@@ -65,7 +65,10 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set(['zoho', 'inventory', 'updatedAt']));
   const [isColumnSelectorOpen, setIsColumnSelectorOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [visibilityMode, setVisibilityMode] = useState<'active' | 'all'>('active');
+  type SortConfig = { key: string, direction: 'asc' | 'desc' } | null;
+  const [sortConfig, setSortConfig] = useState<SortConfig>(null);
   const [permissions, setPermissions] = useState<any>(null);
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -577,12 +580,62 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
     );
   };
 
+  const requestSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key) {
+      if (sortConfig.direction === 'asc') direction = 'desc';
+      else {
+        setSortConfig(null);
+        return;
+      }
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const renderSortIcon = (key: string) => {
+    if (!sortConfig || sortConfig.key !== key) return <ArrowUpDown size={12} className="ml-1 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity inline-block" />;
+    return sortConfig.direction === 'asc' ? <ArrowUp size={12} className="ml-1 text-indigo-600 inline-block" /> : <ArrowDown size={12} className="ml-1 text-indigo-600 inline-block" />;
+  };
+
   // Derived state for table
-  const filteredProducts = product?.variantProducts?.filter((child: any) => {
-    if (!productSearch) return true;
-    const s = productSearch.toLowerCase();
-    return child.name.toLowerCase().includes(s) || child.code.toLowerCase().includes(s);
-  }) || [];
+  const filteredProducts = (product?.variantProducts || [])
+    .filter((child: any) => {
+      // Visibility Filter
+      if (visibilityMode === 'active' && child.status === 'Inactive') return false;
+      return true;
+    })
+    .filter((child: any) => {
+      // Search Filter
+      if (!productSearch) return true;
+      const s = productSearch.toLowerCase();
+      return child.name.toLowerCase().includes(s) || child.code.toLowerCase().includes(s);
+    })
+    .sort((a: any, b: any) => {
+      // Sort Filter
+      if (!sortConfig) return 0;
+      
+      let valA: any = '';
+      let valB: any = '';
+      
+      if (sortConfig.key === 'purchasePrice') {
+        valA = a.variants?.[0]?.purchasePrice || 0;
+        valB = b.variants?.[0]?.purchasePrice || 0;
+      } else if (sortConfig.key === 'sellingPrice') {
+        valA = a.variants?.[0]?.sellingPrice || 0;
+        valB = b.variants?.[0]?.sellingPrice || 0;
+      } else if (sortConfig.key === 'status') {
+        valA = a.status || '';
+        valB = b.status || '';
+      } else if (sortConfig.key.startsWith('attr_')) {
+        const attrId = sortConfig.key.replace('attr_', '');
+        valA = a.attributeValues?.find((av: any) => av.attributeId === attrId)?.value || '';
+        valB = b.attributeValues?.find((av: any) => av.attributeId === attrId)?.value || '';
+      }
+      
+      if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
   const totalPages = Math.ceil(filteredProducts.length / rowsPerPage) || 1;
   const paginatedProducts = filteredProducts.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
@@ -642,401 +695,411 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
       </div>
 
       {/* CONTENT */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        {/* TOP / MIDDLE ROW */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
-          
-          {/* LEFT COLUMN: PRODUCTS WORKSPACE (75%) */}
-          <div className="lg:col-span-9 flex flex-col">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full relative">
-              <div className="px-6 py-4 border-b border-gray-200 bg-white flex flex-row flex-nowrap overflow-x-auto items-center justify-between gap-4 sticky top-0 z-20">
-                <div className="relative flex-shrink-0">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Search size={16} className="text-gray-400" />
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Search by Name / SKU"
-                    value={productSearch}
-                    onChange={(e) => {
-                      setProductSearch(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="pl-9 pr-4 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500 w-64 outline-none"
-                  />
-                </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <button onClick={() => setIsImportModalOpen(true)} disabled={!isActive} className={`px-3 py-1.5 font-medium rounded-lg text-sm flex items-center shadow-sm transition-all ${isActive ? 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'}`}>
-                    <Box size={16} className="mr-2" /> Import Product
-                  </button>
-                  <button onClick={startAddVariant} disabled={!isActive || isAddingVariant || editingVariantId !== null} className={`px-3 py-1.5 font-medium rounded-lg text-sm flex items-center shadow-sm transition-all ${isActive && !isAddingVariant && !editingVariantId ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'}`}>
-                    <Plus size={16} className="mr-2" /> Create Variant
-                  </button>
-                  <div className="relative" ref={colDropdownRef}>
-                    <button onClick={() => setIsColumnSelectorOpen(!isColumnSelectorOpen)} className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors shadow-sm flex items-center text-sm">
-                      <Columns size={16} className="mr-2" /> Columns <ChevronDown size={14} className="ml-2" />
-                    </button>
-                    {isColumnSelectorOpen && (
-                      <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-2">
-                        {['zoho', 'inventory', 'updatedAt'].map(col => (
-                          <label key={col} className="flex items-center px-4 py-2 hover:bg-gray-50 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={visibleColumns.has(col)}
-                              onChange={() => {
-                                const newSet = new Set(visibleColumns);
-                                if (newSet.has(col)) newSet.delete(col);
-                                else newSet.add(col);
-                                setVisibleColumns(newSet);
-                              }}
-                              className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 mr-3"
-                            />
-                            <span className="text-sm text-gray-700">{col === 'zoho' ? 'Zoho Sync Status' : col === 'updatedAt' ? 'Updated At' : 'Inventory'}</span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <button onClick={() => {}} className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors shadow-sm flex items-center text-sm">
-                    <Download size={16} className="mr-2" /> Export
-                  </button>
-                  <button onClick={() => fetchProduct()} className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors shadow-sm flex items-center text-sm">
-                    <RefreshCw size={16} className="mr-2" /> Refresh
-                  </button>
-                </div>
-              </div>
-              
-              <div className="overflow-x-auto w-full relative" style={{ maxWidth: '100vw' }}>
-                <table className="min-w-max w-full divide-y divide-gray-200 border-b border-gray-200">
-                  <thead className="bg-gray-50/90 backdrop-blur-sm shadow-sm sticky top-0 z-20">
-                    <tr>
-                      <th style={{ minWidth: 48, width: 48, position: 'sticky', left: 0, zIndex: 30 }} className="px-2 py-3.5 text-center text-xs font-semibold text-gray-700 bg-gray-50">
-                        #
-                      </th>
-                      <th style={{ minWidth: 52, width: 52, position: 'sticky', left: 48, zIndex: 30 }} className="px-4 py-3.5 text-center text-xs font-semibold text-gray-700 bg-gray-50">
-                        <ImageIcon size={16} className="mx-auto text-gray-400" />
-                      </th>
-                      <th style={{ minWidth: 280, width: 280, position: 'sticky', left: 100, zIndex: 30, borderRight: '1px solid #E5E7EB' }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
-                        Product Name
-                      </th>
-                      <th style={{ minWidth: 160, width: 160, position: 'sticky', left: 380, zIndex: 30, borderRight: '1px solid #E5E7EB' }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
-                        SKU
-                      </th>
-                      {attributes.map(attr => (
-                        <th key={attr.id} style={{ minWidth: 160, width: 160 }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">
-                          {attr.attributeName} {attr.mandatory && <span className="text-red-500">*</span>}
-                        </th>
-                      ))}
-                      <th style={{ minWidth: 130, width: 130 }} className="px-4 py-3.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Purchase Price
-                      </th>
-                      <th style={{ minWidth: 130, width: 130 }} className="px-4 py-3.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Selling Price
-                      </th>
-                      <th style={{ minWidth: 130, width: 130 }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Status
-                      </th>
-                      {visibleColumns.has('zoho') && (
-                        <th style={{ minWidth: 110, width: 110 }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                          Zoho Sync
-                        </th>
-                      )}
-                      {visibleColumns.has('inventory') && (
-                        <th style={{ minWidth: 90, width: 90 }} className="px-4 py-3.5 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                          Inventory
-                        </th>
-                      )}
-                      {visibleColumns.has('updatedAt') && (
-                        <th style={{ minWidth: 120, width: 120 }} className="px-4 py-3.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                          Updated At
-                        </th>
-                      )}
-                      <th style={{ minWidth: 120, width: 120, position: 'sticky', right: 0, zIndex: 30, borderLeft: '1px solid #E5E7EB' }} className="px-4 py-3.5 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {isAddingVariant && renderInlineRow(true, null, paginatedProducts.length + 1)}
-                    {paginatedProducts.map((child: any, idx: number) => {
-                      const absoluteIndex = (currentPage - 1) * rowsPerPage + idx + 1;
-                      
-                      if (editingVariantId === child.id) {
-                        return React.cloneElement(renderInlineRow(true, child, absoluteIndex), { key: child.id });
-                      }
-                      
-                      const isInactive = child.status === 'Inactive';
-                      const trClasses = isInactive 
-                        ? "bg-red-50/50 hover:bg-red-50/80 transition-colors group"
-                        : "bg-white hover:bg-gray-50/80 transition-colors group";
-                      const stickyClasses = isInactive 
-                        ? "bg-red-50/50 group-hover:bg-red-50/80 transition-colors"
-                        : "bg-white group-hover:bg-gray-50/80 transition-colors";
-                      
-                      return (
-                        <tr key={child.id} className={trClasses}>
-                          {/* Index */}
-                          <td style={{ minWidth: 48, width: 48, position: 'sticky', left: 0, zIndex: 10 }} className={`px-2 py-4 text-center text-xs font-medium text-gray-500 ${stickyClasses}`}>
-                            {absoluteIndex}
-                          </td>
-                          {/* Thumbnail */}
-                          <td style={{ minWidth: 52, width: 52, position: 'sticky', left: 48, zIndex: 10 }} className={`px-4 py-4 text-center ${stickyClasses}`}>
-                            {product.thumbnailBase64 ? (
-                              <img src={product.thumbnailBase64} alt={product.name} className="w-8 h-8 object-cover rounded-md border border-gray-200 shadow-sm mx-auto" />
-                            ) : (
-                              <div className="w-8 h-8 bg-gray-100 rounded-md border border-gray-200 flex items-center justify-center mx-auto text-gray-400">
-                                <ImageIcon size={14} />
-                              </div>
-                            )}
-                          </td>
-                          {/* Product Name */}
-                          <td style={{ minWidth: 280, width: 280, position: 'sticky', left: 100, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className={`px-4 py-4 text-sm font-medium text-gray-900 ${stickyClasses}`}>
-                            {child.name}
-                          </td>
-                          {/* SKU */}
-                          <td style={{ minWidth: 160, width: 160, position: 'sticky', left: 380, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className={`px-4 py-4 text-sm text-gray-600 font-mono ${stickyClasses}`}>
-                            <span className="bg-gray-100/80 border border-gray-200 px-2 py-1 rounded">{child.code}</span>
-                          </td>
-                          
-                          {/* Dynamic Attributes */}
-                          {attributes.map(attr => {
-                            const val = child.attributeValues?.find((a: any) => a.attributeId === attr.id)?.value;
-                            return (
-                              <td key={attr.id} style={{ minWidth: 160, width: 160 }} className="px-4 py-4 text-sm text-gray-600 truncate">
-                                <AttributeValuePill value={val} />
-                              </td>
-                            );
-                          })}
-                          
-                          <td style={{ minWidth: 130, width: 130 }} className="px-4 py-4 text-sm text-gray-600 text-right">
-                            ₹{child.variants?.[0]?.purchasePrice?.toFixed(2) || '—'}
-                          </td>
-                          <td style={{ minWidth: 130, width: 130 }} className="px-4 py-4 text-sm text-gray-600 text-right">
-                            ₹{child.variants?.[0]?.sellingPrice?.toFixed(2) || '—'}
-                          </td>
-                          <td style={{ minWidth: 130, width: 130 }} className="px-4 py-4 whitespace-nowrap">
-                            <MasterStatusBadge status={child.status} />
-                          </td>
-                          {visibleColumns.has('zoho') && (
-                            <td style={{ minWidth: 110, width: 110 }} className="px-4 py-4 text-left whitespace-nowrap">
-                              {(() => {
-                                const status = child.variants?.[0]?.zohoSyncStatus;
-                                if (status === 'SYNCED') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"><CheckCircle2 size={12} className="mr-1" /> Synced</span>;
-                                if (status === 'PENDING') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"><Clock size={12} className="mr-1" /> Pending</span>;
-                                if (status === 'FAILED') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800"><ShieldAlert size={12} className="mr-1" /> Failed</span>;
-                                return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">Never</span>;
-                              })()}
-                            </td>
-                          )}
-                          {visibleColumns.has('inventory') && (
-                            <td style={{ minWidth: 90, width: 90 }} className="px-4 py-4 text-center">
-                              {child.variants?.[0]?.trackInventory ? <CheckCircle2 size={16} className="text-green-500 mx-auto" /> : <X size={16} className="text-gray-300 mx-auto" />}
-                            </td>
-                          )}
-                          {visibleColumns.has('updatedAt') && (
-                            <td style={{ minWidth: 120, width: 120 }} className="px-4 py-4 text-sm text-gray-600 whitespace-nowrap">
-                              {new Date(child.updatedAt).toLocaleDateString()}
-                            </td>
-                          )}
-                          <td style={{ minWidth: 120, width: 120, position: 'sticky', right: 0, zIndex: 10, borderLeft: '1px solid #E5E7EB' }} className={`px-4 py-4 whitespace-nowrap text-right ${stickyClasses}`}>
-                            <div className="flex justify-end gap-1">
-                              {child.status === 'Draft' || child.status === 'Declined' ? (
-                                <>
-                                  <button onClick={() => startEditVariant(child)} disabled={isAddingVariant || editingVariantId !== null} className={`p-1.5 text-gray-500 hover:text-indigo-600 rounded-md transition-colors ${isAddingVariant || editingVariantId !== null ? 'opacity-50 cursor-not-allowed' : ''}`} title="Edit Variant">
-                                    <Edit2 size={16} />
-                                  </button>
-                                  <button onClick={() => handleVariantAction(child.id, 'submit')} disabled={isSubmitting || isAddingVariant || editingVariantId !== null} className="p-1.5 text-gray-500 hover:text-green-600 rounded-md transition-colors" title="Submit For Approval">
-                                    <CheckCircle2 size={16} />
-                                  </button>
-                                  <button onClick={() => handleVariantAction(child.id, 'delete')} disabled={isSubmitting || isAddingVariant || editingVariantId !== null} className="p-1.5 text-gray-500 hover:text-red-600 rounded-md transition-colors" title="Delete Variant">
-                                    <Trash2 size={16} />
-                                  </button>
-                                </>
-                              ) : child.status === 'Approval Pending' ? (
-                                <>
-                                  {canApprove && (
-                                    <>
-                                      <button onClick={() => handleVariantAction(child.id, 'approve')} disabled={isSubmitting} className="p-1.5 text-gray-500 hover:text-green-600 rounded-md transition-colors" title="Approve">
-                                        <Check size={16} />
-                                      </button>
-                                      <button onClick={() => handleVariantAction(child.id, 'decline')} disabled={isSubmitting} className="p-1.5 text-gray-500 hover:text-red-600 rounded-md transition-colors" title="Decline">
-                                        <X size={16} />
-                                      </button>
-                                    </>
-                                  )}
-                                  <button onClick={() => router.push(`/staff/dashboard/catalog-pricing/products/${child.id}`)} className="p-1.5 text-gray-500 hover:text-blue-600 rounded-md transition-colors" title="View Variant">
-                                    <ExternalLink size={16} />
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button onClick={() => startEditVariant(child)} disabled={isAddingVariant || editingVariantId !== null} className={`p-1.5 text-gray-500 hover:text-indigo-600 rounded-md transition-colors ${isAddingVariant || editingVariantId !== null ? 'opacity-50 cursor-not-allowed' : ''}`} title="Edit Variant inline">
-                                    <Edit2 size={16} />
-                                  </button>
-                                  <button onClick={() => router.push(`/staff/dashboard/catalog-pricing/products/${child.id}`)} className="p-1.5 text-gray-500 hover:text-blue-600 rounded-md transition-colors" title="View Variant details">
-                                    <ExternalLink size={16} />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    
-                    {isAddingVariant && renderInlineRow(false)}
-                    
-                    {!isAddingVariant && paginatedProducts.length === 0 && (
-                      <tr>
-                        <td colSpan={11 + attributes.length} className="px-6 py-16 text-center bg-gray-50 border-b border-gray-200">
-                          <Box size={40} className="mx-auto text-gray-300 mb-3" />
-                          <h3 className="text-sm font-medium text-gray-900">{productSearch ? 'No matching products' : 'No products found'}</h3>
-                          <p className="mt-1 text-sm text-gray-500">{productSearch ? 'Try a different search term.' : 'Click "Create Variant" to start building your product matrix.'}</p>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              
-              {/* Pagination */}
-              <div className="px-6 py-3 border-t border-gray-200 bg-white flex items-center justify-between mt-auto">
-                <div className="flex items-center text-sm text-gray-500">
-                  Showing {(currentPage - 1) * rowsPerPage + (paginatedProducts.length > 0 ? 1 : 0)} to {Math.min(currentPage * rowsPerPage, filteredProducts.length)} of {filteredProducts.length} entries
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-gray-500">Rows per page:</span>
-                  <select 
-                    value={rowsPerPage} 
-                    onChange={(e) => {
-                      setRowsPerPage(Number(e.target.value));
-                      setCurrentPage(1);
-                    }}
-                    className="border border-gray-300 rounded-md text-sm py-1 pl-2 pr-6 bg-white focus:ring-indigo-500 focus:border-indigo-500"
-                  >
-                    {[10, 25, 50].map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                  
-                  <div className="flex space-x-1 ml-4 border-l pl-4 border-gray-200">
-                    <button 
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                      className="px-2 py-1 rounded-md border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                    >
-                      Prev
-                    </button>
-                    <div className="px-3 py-1 text-sm font-medium text-gray-700">
-                      {currentPage} / {totalPages}
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">        {/* HORIZONTAL CARDS */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          {/* FAMILY SUMMARY */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center">
+              <Activity size={16} className="text-indigo-600 mr-2" />
+              <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Family Summary</h2>
+            </div>
+            <div className="p-0 flex-1">
+              {(() => {
+                const total = product?.variantProducts?.length || 0;
+                const active = product?.variantProducts?.filter((c: any) => c.status === 'Active').length || 0;
+                const inactive = total - active;
+                const synced = product?.variantProducts?.filter((c: any) => c.variants?.[0]?.zohoSyncStatus === 'SYNCED').length || 0;
+                const failed = product?.variantProducts?.filter((c: any) => c.variants?.[0]?.zohoSyncStatus === 'SYNC_FAILED').length || 0;
+                const notSynced = total - synced - failed;
+                return (
+                  <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 h-full">
+                    <div className="p-4 flex flex-col justify-center">
+                      <p className="text-xs text-gray-500 font-medium mb-1">Total Products</p>
+                      <p className="text-lg font-semibold text-gray-900">{total}</p>
                     </div>
-                    <button 
-                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages}
-                      className="px-2 py-1 rounded-md border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                    >
-                      Next
-                    </button>
+                    <div className="p-4 flex flex-col justify-center">
+                      <p className="text-xs text-gray-500 font-medium mb-1">Active / Inactive</p>
+                      <p className="text-lg font-semibold"><span className="text-green-600">{active}</span> <span className="text-gray-300 font-normal">/</span> <span className="text-gray-500">{inactive}</span></p>
+                    </div>
+                    <div className="p-4 flex flex-col justify-center">
+                      <p className="text-xs text-gray-500 font-medium mb-1">Zoho Sync Status</p>
+                      <p className="text-lg font-semibold"><span className="text-green-600" title="Synced">{synced}</span> <span className="text-gray-300 font-normal">/</span> <span className="text-yellow-500" title="Pending">{notSynced}</span> <span className="text-gray-300 font-normal">/</span> <span className="text-red-600" title="Failed">{failed}</span></p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">Synced / Pending / Failed</p>
+                    </div>
+                    <div className="p-4 flex flex-col justify-center">
+                      <p className="text-xs text-gray-500 font-medium mb-1">Total Inventory</p>
+                      <p className="text-lg text-gray-400 font-medium">N/A</p>
+                    </div>
                   </div>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* FAMILY DETAILS */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center">
+              <Layers size={16} className="text-gray-500 mr-2" />
+              <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Family Details</h2>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-4 flex-1">
+              <div><p className="text-xs font-medium text-gray-500">Category</p><p className="mt-1 text-sm text-gray-900">{product.category?.name || '—'}</p></div>
+              <div><p className="text-xs font-medium text-gray-500">Brand</p><p className="mt-1 text-sm text-gray-900">{product.brand?.name || '—'}</p></div>
+              <div><p className="text-xs font-medium text-gray-500">Manufacturer</p><p className="mt-1 text-sm text-gray-900">{product.manufacturer?.name || '—'}</p></div>
+              <div>
+                <p className="text-xs font-medium text-gray-500">Incentive Category</p>
+                <div className="mt-1">
+                  {product.incentiveTag ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                      {product.incentiveTag}
+                    </span>
+                  ) : <span className="text-sm text-gray-500">—</span>}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* RIGHT COLUMN: FAMILY SUMMARY (25%) */}
-          <div className="lg:col-span-3 flex flex-col space-y-6">
-            
-            {/* FAMILY SUMMARY */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center">
-                <Activity size={16} className="text-indigo-600 mr-2" />
-                <h2 className="text-base font-semibold text-gray-900">Family Summary</h2>
+          {/* TAX & LOGISTICS */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center">
+              <FileText size={16} className="text-gray-500 mr-2" />
+              <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Tax & Logistics</h2>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-4 flex-1">
+              <div><p className="text-xs font-medium text-gray-500">HSN Code</p><p className="mt-1 text-sm text-gray-900">{product.hsnCode?.code || 'Not Assigned'}</p></div>
+              <div><p className="text-xs font-medium text-gray-500">GST Rate</p><p className="mt-1 text-sm text-gray-900">{product.taxRate ? `${product.taxRate.percentage}%` : 'Not Assigned'}</p></div>
+              <div><p className="text-xs font-medium text-gray-500">Unit of Measurement</p><p className="mt-1 text-sm text-gray-900">{product.unit ? (product.unit.name || product.unit.abbreviation) : 'Not Assigned'}</p></div>
+            </div>
+          </div>
+        </div>
+
+        {/* PRODUCTS TABLE */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col relative mb-6">
+          <div className="px-4 py-2 border-b border-gray-200 bg-white flex flex-row flex-nowrap overflow-x-auto items-center justify-between gap-4 sticky top-0 z-20">
+            <div className="relative flex-shrink-0">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search size={14} className="text-gray-400" />
               </div>
-              <div className="p-0">
-                {(() => {
-                  const total = product?.variantProducts?.length || 0;
-                  const active = product?.variantProducts?.filter((c: any) => c.status === 'Active').length || 0;
-                  const inactive = total - active;
-                  const synced = product?.variantProducts?.filter((c: any) => c.variants?.[0]?.zohoSyncStatus === 'SYNCED').length || 0;
-                  const failed = product?.variantProducts?.filter((c: any) => c.variants?.[0]?.zohoSyncStatus === 'SYNC_FAILED').length || 0;
-                  const notSynced = total - synced - failed;
-                  return (
-                    <div className="divide-y divide-gray-100">
-                      <div className="flex justify-between items-center px-6 py-3">
-                        <span className="text-sm text-gray-500 font-medium">Total Products</span>
-                        <span className="text-sm font-semibold text-gray-900">{total}</span>
+              <input
+                type="text"
+                placeholder="Search by Name / SKU"
+                value={productSearch}
+                onChange={(e) => {
+                  setProductSearch(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="pl-9 pr-3 py-1 border border-gray-300 rounded-md text-xs focus:ring-indigo-500 focus:border-indigo-500 w-64 outline-none"
+              />
+            </div>
+            <div className="flex gap-2 flex-shrink-0 items-center">
+              <button onClick={() => setIsImportModalOpen(true)} disabled={!isActive} className={`px-2.5 py-1 font-medium rounded-md text-xs flex items-center shadow-sm transition-all ${isActive ? 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'}`}>
+                <Box size={14} className="mr-1.5" /> Import
+              </button>
+              <button onClick={startAddVariant} disabled={!isActive || isAddingVariant || editingVariantId !== null} className={`px-2.5 py-1 font-medium rounded-md text-xs flex items-center shadow-sm transition-all ${isActive && !isAddingVariant && !editingVariantId ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow' : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'}`}>
+                <Plus size={14} className="mr-1.5" /> Create
+              </button>
+              <div className="relative" ref={colDropdownRef}>
+                <button onClick={() => setIsColumnSelectorOpen(!isColumnSelectorOpen)} className="px-2.5 py-1 bg-white border border-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-50 transition-colors shadow-sm flex items-center text-xs">
+                  <Columns size={14} className="mr-1.5" /> Columns <ChevronDown size={14} className="ml-1" />
+                </button>
+                {isColumnSelectorOpen && (
+                  <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-2">
+                    {['zoho', 'inventory', 'updatedAt'].map(col => (
+                      <label key={col} className="flex items-center px-4 py-1.5 hover:bg-gray-50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={visibleColumns.has(col)}
+                          onChange={() => {
+                            const newSet = new Set(visibleColumns);
+                            if (newSet.has(col)) newSet.delete(col);
+                            else newSet.add(col);
+                            setVisibleColumns(newSet);
+                          }}
+                          className="w-3.5 h-3.5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 mr-3"
+                        />
+                        <span className="text-xs text-gray-700">{col === 'zoho' ? 'Zoho Sync Status' : col === 'updatedAt' ? 'Updated At' : 'Inventory'}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => {}} className="px-2.5 py-1 bg-white border border-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-50 transition-colors shadow-sm flex items-center text-xs">
+                <Download size={14} className="mr-1.5" /> Export
+              </button>
+              <button onClick={() => fetchProduct()} className="px-2.5 py-1 bg-white border border-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-50 transition-colors shadow-sm flex items-center text-xs">
+                <RefreshCw size={14} className="mr-1.5" /> Refresh
+              </button>
+
+              <div className="h-5 w-px bg-gray-200 mx-1"></div>
+
+              {/* Show Inactive Toggle */}
+              <div className="flex bg-gray-100 p-0.5 rounded-md border border-gray-200">
+                <button 
+                  onClick={() => { setVisibilityMode('active'); setCurrentPage(1); }}
+                  className={`px-2.5 py-1 text-[11px] font-medium rounded transition-all ${visibilityMode === 'active' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Active Only
+                </button>
+                <button 
+                  onClick={() => { setVisibilityMode('all'); setCurrentPage(1); }}
+                  className={`px-2.5 py-1 text-[11px] font-medium rounded transition-all ${visibilityMode === 'all' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  All Products
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto w-full relative" style={{ maxWidth: '100vw' }}>
+            <table className="min-w-max w-full divide-y divide-gray-200 border-b border-gray-200">
+              <thead className="bg-gray-50/90 backdrop-blur-sm shadow-sm sticky top-0 z-20">
+                <tr>
+                  <th style={{ minWidth: 40, width: 40, position: 'sticky', left: 0, zIndex: 30 }} className="px-2 py-2 text-center text-[11px] font-semibold text-gray-700 bg-gray-50">
+                    #
+                  </th>
+                  <th style={{ minWidth: 48, width: 48, position: 'sticky', left: 40, zIndex: 30 }} className="px-3 py-2 text-center text-[11px] font-semibold text-gray-700 bg-gray-50">
+                    <ImageIcon size={14} className="mx-auto text-gray-400" />
+                  </th>
+                  <th style={{ minWidth: 260, width: 260, position: 'sticky', left: 88, zIndex: 30, borderRight: '1px solid #E5E7EB' }} className="px-3 py-2 text-left text-[11px] font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
+                    Product Name
+                  </th>
+                  <th style={{ minWidth: 140, width: 140, position: 'sticky', left: 348, zIndex: 30, borderRight: '1px solid #E5E7EB' }} className="px-3 py-2 text-left text-[11px] font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
+                    SKU
+                  </th>
+                  {attributes.map(attr => (
+                    <th key={attr.id} style={{ minWidth: 140, width: 140 }} onClick={() => requestSort(`attr_${attr.id}`)} className="px-3 py-2 text-left text-[11px] font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap group cursor-pointer hover:bg-gray-100 transition-colors">
+                      <div className="flex items-center">
+                        {attr.attributeName} {attr.mandatory && <span className="text-red-500">*</span>}
+                        {renderSortIcon(`attr_${attr.id}`)}
                       </div>
-                      <div className="flex justify-between items-center px-6 py-3">
-                        <span className="text-sm text-gray-500 font-medium">Active / Inactive</span>
-                        <div className="text-sm font-medium">
-                          <span className="text-green-600">{active}</span>
-                          <span className="text-gray-400 mx-1">/</span>
-                          <span className="text-gray-500">{inactive}</span>
-                        </div>
-                      </div>
-                      <div className="flex justify-between items-center px-6 py-3">
-                        <span className="text-sm text-gray-500 font-medium">Zoho Sync Status</span>
-                        <div className="text-sm font-medium">
-                          <span className="text-green-600" title="Synced">{synced}</span>
-                          <span className="text-gray-400 mx-1">/</span>
-                          <span className="text-red-600" title="Failed">{failed}</span>
-                          <span className="text-gray-400 mx-1">/</span>
-                          <span className="text-gray-500" title="Not Synced">{notSynced}</span>
-                        </div>
-                      </div>
-                      <div className="flex justify-between items-center px-6 py-3">
-                        <span className="text-sm text-gray-500 font-medium">Total Inventory</span>
-                        <span className="text-sm text-gray-400">N/A</span>
-                      </div>
+                    </th>
+                  ))}
+                  <th style={{ minWidth: 120, width: 120 }} onClick={() => requestSort('purchasePrice')} className="px-3 py-2 text-right text-[11px] font-semibold text-gray-700 uppercase tracking-wider group cursor-pointer hover:bg-gray-100 transition-colors">
+                    <div className="flex items-center justify-end">
+                      Purchase Price
+                      {renderSortIcon('purchasePrice')}
                     </div>
+                  </th>
+                  <th style={{ minWidth: 120, width: 120 }} onClick={() => requestSort('sellingPrice')} className="px-3 py-2 text-right text-[11px] font-semibold text-gray-700 uppercase tracking-wider group cursor-pointer hover:bg-gray-100 transition-colors">
+                    <div className="flex items-center justify-end">
+                      Selling Price
+                      {renderSortIcon('sellingPrice')}
+                    </div>
+                  </th>
+                  <th style={{ minWidth: 120, width: 120 }} onClick={() => requestSort('status')} className="px-3 py-2 text-left text-[11px] font-semibold text-gray-700 uppercase tracking-wider group cursor-pointer hover:bg-gray-100 transition-colors">
+                    <div className="flex items-center">
+                      Status
+                      {renderSortIcon('status')}
+                    </div>
+                  </th>
+                  {visibleColumns.has('zoho') && (
+                    <th style={{ minWidth: 90, width: 90 }} className="px-3 py-2 text-left text-[11px] font-semibold text-gray-700 uppercase tracking-wider">
+                      Zoho Sync
+                    </th>
+                  )}
+                  {visibleColumns.has('inventory') && (
+                    <th style={{ minWidth: 80, width: 80 }} className="px-3 py-2 text-center text-[11px] font-semibold text-gray-700 uppercase tracking-wider">
+                      Inventory
+                    </th>
+                  )}
+                  {visibleColumns.has('updatedAt') && (
+                    <th style={{ minWidth: 100, width: 100 }} className="px-3 py-2 text-left text-[11px] font-semibold text-gray-700 uppercase tracking-wider">
+                      Updated At
+                    </th>
+                  )}
+                  <th style={{ minWidth: 100, width: 100, position: 'sticky', right: 0, zIndex: 30, borderLeft: '1px solid #E5E7EB' }} className="px-3 py-2 text-right text-[11px] font-semibold text-gray-700 uppercase tracking-wider bg-gray-50">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {isAddingVariant && renderInlineRow(true, null, paginatedProducts.length + 1)}
+                {paginatedProducts.map((child: any, idx: number) => {
+                  const absoluteIndex = (currentPage - 1) * rowsPerPage + idx + 1;
+                  
+                  if (editingVariantId === child.id) {
+                    return React.cloneElement(renderInlineRow(true, child, absoluteIndex), { key: child.id });
+                  }
+                  
+                  const isInactive = child.status === 'Inactive';
+                  const trClasses = isInactive 
+                    ? "bg-red-50/50 hover:bg-red-50/80 transition-colors group"
+                    : "bg-white hover:bg-gray-50/80 transition-colors group";
+                  const stickyClasses = isInactive 
+                    ? "bg-red-50/50 group-hover:bg-red-50/80 transition-colors"
+                    : "bg-white group-hover:bg-gray-50/80 transition-colors";
+                  
+                  return (
+                    <tr key={child.id} className={trClasses}>
+                      {/* Index */}
+                      <td style={{ minWidth: 40, width: 40, position: 'sticky', left: 0, zIndex: 10 }} className={`px-2 py-2 text-center text-xs font-medium text-gray-500 ${stickyClasses}`}>
+                        {absoluteIndex}
+                      </td>
+                      {/* Thumbnail */}
+                      <td style={{ minWidth: 48, width: 48, position: 'sticky', left: 40, zIndex: 10 }} className={`px-3 py-2 text-center ${stickyClasses}`}>
+                        {product.thumbnailBase64 ? (
+                          <img src={product.thumbnailBase64} alt={product.name} className="w-7 h-7 object-cover rounded-md border border-gray-200 shadow-sm mx-auto" />
+                        ) : (
+                          <div className="w-7 h-7 bg-gray-100 rounded-md border border-gray-200 flex items-center justify-center mx-auto text-gray-400">
+                            <ImageIcon size={12} />
+                          </div>
+                        )}
+                      </td>
+                      {/* Product Name */}
+                      <td style={{ minWidth: 260, width: 260, position: 'sticky', left: 88, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className={`px-3 py-2 text-xs font-medium text-gray-900 ${stickyClasses}`}>
+                        <div className="line-clamp-2" title={child.name}>{child.name}</div>
+                      </td>
+                      {/* SKU */}
+                      <td style={{ minWidth: 140, width: 140, position: 'sticky', left: 348, zIndex: 10, borderRight: '1px solid #E5E7EB' }} className={`px-3 py-2 text-xs text-gray-600 font-mono ${stickyClasses}`}>
+                        <span className="bg-gray-100/80 border border-gray-200 px-1.5 py-0.5 rounded">{child.code}</span>
+                      </td>
+                      
+                      {/* Dynamic Attributes */}
+                      {attributes.map(attr => {
+                        const val = child.attributeValues?.find((a: any) => a.attributeId === attr.id)?.value;
+                        return (
+                          <td key={attr.id} style={{ minWidth: 140, width: 140 }} className="px-3 py-2 text-xs text-gray-600 truncate">
+                            <AttributeValuePill value={val} />
+                          </td>
+                        );
+                      })}
+                      
+                      <td style={{ minWidth: 120, width: 120 }} className="px-3 py-2 text-xs text-gray-600 text-right">
+                        ₹{child.variants?.[0]?.purchasePrice?.toFixed(2) || '—'}
+                      </td>
+                      <td style={{ minWidth: 120, width: 120 }} className="px-3 py-2 text-xs text-gray-600 text-right">
+                        ₹{child.variants?.[0]?.sellingPrice?.toFixed(2) || '—'}
+                      </td>
+                      <td style={{ minWidth: 120, width: 120 }} className="px-3 py-2 whitespace-nowrap text-xs">
+                        <MasterStatusBadge status={child.status} />
+                      </td>
+                      {visibleColumns.has('zoho') && (
+                        <td style={{ minWidth: 90, width: 90 }} className="px-3 py-2 text-left whitespace-nowrap text-xs">
+                          {(() => {
+                            const status = child.variants?.[0]?.zohoSyncStatus;
+                            if (status === 'SYNCED') return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-800"><CheckCircle2 size={10} className="mr-1" /> Synced</span>;
+                            if (status === 'PENDING') return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-100 text-yellow-800"><Clock size={10} className="mr-1" /> Pending</span>;
+                            if (status === 'FAILED') return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-800"><ShieldAlert size={10} className="mr-1" /> Failed</span>;
+                            return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-800">Never</span>;
+                          })()}
+                        </td>
+                      )}
+                      {visibleColumns.has('inventory') && (
+                        <td style={{ minWidth: 80, width: 80 }} className="px-3 py-2 text-center text-xs">
+                          {child.variants?.[0]?.trackInventory ? <CheckCircle2 size={14} className="text-green-500 mx-auto" /> : <X size={14} className="text-gray-300 mx-auto" />}
+                        </td>
+                      )}
+                      {visibleColumns.has('updatedAt') && (
+                        <td style={{ minWidth: 100, width: 100 }} className="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">
+                          {new Date(child.updatedAt).toLocaleDateString()}
+                        </td>
+                      )}
+                      <td style={{ minWidth: 100, width: 100, position: 'sticky', right: 0, zIndex: 10, borderLeft: '1px solid #E5E7EB' }} className={`px-3 py-2 whitespace-nowrap text-right ${stickyClasses}`}>
+                        <div className="flex justify-end gap-1">
+                          {child.status === 'Draft' || child.status === 'Declined' ? (
+                            <>
+                              <button onClick={() => startEditVariant(child)} disabled={isAddingVariant || editingVariantId !== null} className={`p-1 text-gray-500 hover:text-indigo-600 rounded-md transition-colors ${isAddingVariant || editingVariantId !== null ? 'opacity-50 cursor-not-allowed' : ''}`} title="Edit Variant">
+                                <Edit2 size={14} />
+                              </button>
+                              <button onClick={() => handleVariantAction(child.id, 'submit')} disabled={isSubmitting || isAddingVariant || editingVariantId !== null} className="p-1 text-gray-500 hover:text-green-600 rounded-md transition-colors" title="Submit For Approval">
+                                <CheckCircle2 size={14} />
+                              </button>
+                              <button onClick={() => handleVariantAction(child.id, 'delete')} disabled={isSubmitting || isAddingVariant || editingVariantId !== null} className="p-1 text-gray-500 hover:text-red-600 rounded-md transition-colors" title="Delete Variant">
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          ) : child.status === 'Approval Pending' ? (
+                            <>
+                              {canApprove && (
+                                <>
+                                  <button onClick={() => handleVariantAction(child.id, 'approve')} disabled={isSubmitting} className="p-1 text-gray-500 hover:text-green-600 rounded-md transition-colors" title="Approve">
+                                    <Check size={14} />
+                                  </button>
+                                  <button onClick={() => handleVariantAction(child.id, 'decline')} disabled={isSubmitting} className="p-1 text-gray-500 hover:text-red-600 rounded-md transition-colors" title="Decline">
+                                    <X size={14} />
+                                  </button>
+                                </>
+                              )}
+                              <button onClick={() => router.push(`/staff/dashboard/catalog-pricing/products/${child.id}`)} className="p-1 text-gray-500 hover:text-blue-600 rounded-md transition-colors" title="View Variant">
+                                <ExternalLink size={14} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={() => startEditVariant(child)} disabled={isAddingVariant || editingVariantId !== null} className={`p-1 text-gray-500 hover:text-indigo-600 rounded-md transition-colors ${isAddingVariant || editingVariantId !== null ? 'opacity-50 cursor-not-allowed' : ''}`} title="Edit Variant inline">
+                                <Edit2 size={14} />
+                              </button>
+                              <button onClick={() => router.push(`/staff/dashboard/catalog-pricing/products/${child.id}`)} className="p-1 text-gray-500 hover:text-blue-600 rounded-md transition-colors" title="View Variant details">
+                                <ExternalLink size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
                   );
-                })()}
-              </div>
-            </div>
+                })}
+                
 
-            {/* BASIC INFO */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center">
-                <Layers size={16} className="text-gray-500 mr-2" />
-                <h2 className="text-base font-semibold text-gray-900">Family Details</h2>
-              </div>
-              <div className="p-6 space-y-4">
-                <div><p className="text-xs font-medium text-gray-500">Category</p><p className="mt-1 text-sm text-gray-900">{product.category?.name || '—'}</p></div>
-                <div><p className="text-xs font-medium text-gray-500">Brand</p><p className="mt-1 text-sm text-gray-900">{product.brand?.name || '—'}</p></div>
-                <div><p className="text-xs font-medium text-gray-500">Manufacturer</p><p className="mt-1 text-sm text-gray-900">{product.manufacturer?.name || '—'}</p></div>
-                <div>
-                  <p className="text-xs font-medium text-gray-500">Incentive Category</p>
-                  <p className="mt-1 text-sm text-gray-900">
-                    {product.incentiveTag ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
-                        {product.incentiveTag}
-                      </span>
-                    ) : 'None'}
-                  </p>
+                {!isAddingVariant && paginatedProducts.length === 0 && (
+                  <tr>
+                    <td colSpan={11 + attributes.length} className="px-6 py-12 text-center bg-gray-50 border-b border-gray-200">
+                      <Box size={32} className="mx-auto text-gray-300 mb-2" />
+                      <h3 className="text-sm font-medium text-gray-900">{productSearch ? 'No matching products' : 'No products found'}</h3>
+                      <p className="mt-1 text-xs text-gray-500">{productSearch ? 'Try a different search term.' : 'Click "Create Variant" to start building your product matrix.'}</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Pagination */}
+          <div className="px-4 py-2 border-t border-gray-200 bg-white flex items-center justify-between mt-auto">
+            <div className="flex items-center text-xs text-gray-500">
+              Showing {(currentPage - 1) * rowsPerPage + (paginatedProducts.length > 0 ? 1 : 0)} to {Math.min(currentPage * rowsPerPage, filteredProducts.length)} of {filteredProducts.length} entries
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-xs text-gray-500">Rows per page:</span>
+              <select 
+                value={rowsPerPage} 
+                onChange={(e) => {
+                  setRowsPerPage(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="border border-gray-300 rounded-md text-xs py-1 pl-2 pr-6 bg-white focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                {[10, 25, 50].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+              
+              <div className="flex space-x-1 ml-3 border-l pl-3 border-gray-200">
+                <button 
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-2 py-1 rounded-md border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                >
+                  Prev
+                </button>
+                <div className="px-2 py-1 text-xs font-medium text-gray-700">
+                  {currentPage} / {totalPages}
                 </div>
+                <button 
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-2 py-1 rounded-md border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                >
+                  Next
+                </button>
               </div>
             </div>
-
-            {/* TAX & LOGISTICS */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center">
-                <FileText size={16} className="text-gray-500 mr-2" />
-                <h2 className="text-base font-semibold text-gray-900">Tax & Logistics</h2>
-              </div>
-              <div className="p-6 space-y-4">
-                <div><p className="text-xs font-medium text-gray-500">HSN Code</p><p className="mt-1 text-sm text-gray-900">{product.hsnCode?.code || 'Not Assigned'}</p></div>
-                <div><p className="text-xs font-medium text-gray-500">GST Rate</p><p className="mt-1 text-sm text-gray-900">{product.taxRate ? `${product.taxRate.percentage}%` : 'Not Assigned'}</p></div>
-                <div><p className="text-xs font-medium text-gray-500">Unit of Measurement</p><p className="mt-1 text-sm text-gray-900">{product.unit ? (product.unit.name || product.unit.abbreviation) : 'Not Assigned'}</p></div>
-              </div>
-            </div>
-
           </div>
         </div>
 
         {/* BOTTOM ROW */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
           {/* ACTIVITY TIMELINE */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[400px]">
+          <div className="lg:col-span-8 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[400px]">
             <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center">
               <Activity size={16} className="text-gray-500 mr-2" />
               <h3 className="text-base font-semibold text-gray-900">Activity Timeline</h3>
@@ -1057,69 +1120,65 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
             </div>
           </div>
 
-          {/* RIGHT PANELS (IMAGES & FUTURE) */}
-          <div className="flex flex-col space-y-6 h-[400px]">
-            {/* PARENT PRODUCT IMAGE */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden h-full flex flex-col">
-              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center">
-                <ImageIcon size={16} className="text-gray-500 mr-2" />
-                <h3 className="text-base font-semibold text-gray-900">Parent Product Image</h3>
-              </div>
-              <div 
-                className="p-6 flex flex-col items-center justify-center flex-1 text-center"
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-              >
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  className="hidden" 
-                  accept="image/jpeg, image/png, image/webp"
-                  onChange={handleImageUpload}
-                />
-                
-                {resolveProductImage(product) ? (
-                  <div className="relative group w-40 h-40 rounded-xl border border-gray-200 overflow-hidden shadow-sm mb-4">
-                    <img src={resolveProductImage(product) || ''} alt="Product Thumbnail" className="w-full h-full object-cover" />
-                    {canEdit && (
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
-                        <button 
-                          onClick={() => fileInputRef.current?.click()}
-                          className="p-2 bg-white/20 hover:bg-white/40 text-white rounded-lg transition-colors"
-                          title="Replace Image"
-                        >
-                          <UploadCloud size={20} />
-                        </button>
-                        <button 
-                          onClick={handleRemoveImage}
-                          className="p-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg transition-colors"
-                          title="Delete Image"
-                        >
-                          <Trash2 size={20} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="w-40 h-40 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 flex flex-col items-center justify-center mb-4 transition-colors hover:bg-gray-100 hover:border-indigo-400">
-                    <ImageIcon size={32} className="text-gray-400 mb-2" />
-                    <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={!canEdit}
-                      className="text-sm font-medium text-indigo-600 disabled:opacity-50"
-                    >
-                      Click to upload
-                    </button>
-                    <span className="text-xs text-gray-500 mt-1">or drag and drop</span>
-                  </div>
-                )}
-                
-                <p className="text-xs text-gray-500 mt-2 max-w-[200px] leading-snug">
-                  This image is shared across all variant products.
-                </p>
-              </div>
+          {/* PARENT PRODUCT IMAGE */}
+          <div className="lg:col-span-4 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-[400px]">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center">
+              <ImageIcon size={16} className="text-gray-500 mr-2" />
+              <h3 className="text-base font-semibold text-gray-900">Parent Product Image</h3>
             </div>
-
+            <div 
+              className="p-6 flex flex-col items-center justify-center flex-1 text-center"
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+            >
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                className="hidden" 
+                accept="image/jpeg, image/png, image/webp"
+                onChange={handleImageUpload}
+              />
+              
+              {resolveProductImage(product) ? (
+                <div className="relative group w-48 h-48 rounded-xl border border-gray-200 overflow-hidden shadow-sm mb-4">
+                  <img src={resolveProductImage(product) || ''} alt="Product Thumbnail" className="w-full h-full object-cover" />
+                  {canEdit && (
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
+                      <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="p-2 bg-white/20 hover:bg-white/40 text-white rounded-lg transition-colors"
+                        title="Replace Image"
+                      >
+                        <UploadCloud size={20} />
+                      </button>
+                      <button 
+                        onClick={handleRemoveImage}
+                        className="p-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg transition-colors"
+                        title="Delete Image"
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="w-48 h-48 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 flex flex-col items-center justify-center mb-4 transition-colors hover:bg-gray-100 hover:border-indigo-400">
+                  <ImageIcon size={32} className="text-gray-400 mb-2" />
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={!canEdit}
+                    className="text-sm font-medium text-indigo-600 disabled:opacity-50"
+                  >
+                    Click to upload
+                  </button>
+                  <span className="text-xs text-gray-500 mt-1">or drag and drop</span>
+                </div>
+              )}
+              
+              <p className="text-xs text-gray-500 mt-2 max-w-[200px] leading-snug">
+                This image is shared across all variant products.
+              </p>
+            </div>
           </div>
 
         </div>

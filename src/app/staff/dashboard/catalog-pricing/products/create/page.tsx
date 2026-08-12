@@ -26,6 +26,7 @@ import {
   Files,
   X
 } from 'lucide-react';
+import { LookupService } from '@/lib/services/lookup-service';
 import { Select } from '@/components/ui/Select';
 
 const SINGLE_STEPS: Step[] = [
@@ -60,6 +61,11 @@ const mfrDisplay     = (opt: any): string => opt.name || opt.id;
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function CreateProductPage() {
   const router = useRouter();
+
+  // Clear lookup cache on mount so user sees fresh categories/brands
+  useEffect(() => {
+    LookupService.clearCache();
+  }, []);
   const searchParams = useSearchParams();
   const editId = searchParams.get('edit');
   const [isEditMode, setIsEditMode] = useState(false);

@@ -9,7 +9,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    const selectable = await CategoryService.getSelectableTree();
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status');
+    const categoryWhere = status ? { status } : undefined;
+    
+    const selectable = await CategoryService.getSelectableTree(searchParams, categoryWhere);
     return NextResponse.json({ records: selectable, total: selectable.length, page: 1, limit: selectable.length });
   } catch (error: any) {
     console.error(`[API] GET /api/staff/catalog/categories/selectable error:`, error);

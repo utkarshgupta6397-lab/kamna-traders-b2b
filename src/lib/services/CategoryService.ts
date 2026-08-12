@@ -74,8 +74,8 @@ export class CategoryService {
    * Retrieves only categories that are valid for product assignment.
    * Business Rule: Products can only belong to leaf categories (categories with no children).
    */
-  static async getSelectableTree() {
-    const tree = await this.getTree();
+  static async getSelectableTree(searchParams?: URLSearchParams, categoryWhere?: any) {
+    const tree = await this.getTree(searchParams, categoryWhere);
     // A tree node is selectable if it has no children.
     // If we want to return a flat list of just selectable ones:
     const selectable: any[] = [];

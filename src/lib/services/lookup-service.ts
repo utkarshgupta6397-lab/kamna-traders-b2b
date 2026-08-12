@@ -14,6 +14,10 @@ export interface Option {
 const globalLookupCache = new Map<string, { data: Option[]; timestamp: number }>();
 
 export class LookupService {
+  static clearCache() {
+    globalLookupCache.clear();
+  }
+
   /**
    * Sort options alphabetically ignoring case and leading/trailing spaces.
    * Special handling for categories to preserve hierarchy.

@@ -82,11 +82,12 @@ export class ZohoProductService {
       if (isUpdate) {
         addStep('Create vs Update Decision', 'success', { decision: 'update', itemId: variant.zohoBookItemId });
         payload = await this.buildPartialPayload(variant, newHash);
-        addStep('Payload Generated', 'success', { payload });
         
         if (!payload || Object.keys(payload).length === 0) {
-          apiResult = { success: true };
+          addStep('Payload Generated', 'success', { reason: 'No changes needed, sync skipped' });
+          apiResult = { success: true, skipped: true };
         } else {
+          addStep('Payload Generated', 'success', { payload });
           addStep('API Request Sent', 'success', { url: `${this.getApiBaseUrl()}/books/v3/items/${variant.zohoBookItemId}?organization_id=${getZohoOrgId()}` });
           apiResult = await this.updateItem(variant.zohoBookItemId!, payload, accessToken);
           addStep('API Response Received', apiResult.success ? 'success' : 'error', undefined, apiResult.raw, !apiResult.success ? apiResult.error : undefined);
@@ -126,7 +127,7 @@ export class ZohoProductService {
         }
       });
 
-      addStep('Synchronization Completed', 'success');
+      addStep('Synchronization Completed', 'success', { outcome: apiResult.skipped ? 'skipped' : 'success' });
       const completedAt = new Date();
       const durationMs = completedAt.getTime() - startedAt.getTime();
 
@@ -150,7 +151,7 @@ export class ZohoProductService {
             erpAbbreviation: variant.product.unit.abbreviation,
             zohoBooksUnitName: variant.product.unit.zohoBooksUnitName,
             mappingFound: !!variant.product.unit.zohoBooksUnitName?.trim(),
-            finalUnitSent: payload.unit,
+            finalUnitSent: payload?.unit,
             origin: variant.product.unit.zohoBooksUnitName?.trim() ? 'Zoho Mapping' : 'Default Fallback',
             reason: variant.product.unit.zohoBooksUnitName?.trim() ? 'Using configured Zoho Books Unit Name' : 'No Zoho mapping configured, using ERP abbreviation'
           } : undefined
@@ -161,7 +162,14 @@ export class ZohoProductService {
 
       return { success: true, zohoSyncStatus: 'SYNCED', zohoBooksItemId: finalZohoItemId, timeline, durationMs };
     } catch (error: any) {
-      addStep('Synchronization Completed', 'error', undefined, undefined, error.message);
+      const existingSyncCompleted = timeline.find(t => t.step === 'Synchronization Completed');
+      if (existingSyncCompleted) {
+        existingSyncCompleted.status = 'error';
+        existingSyncCompleted.exception = error.message;
+        existingSyncCompleted.output = undefined;
+      } else {
+        addStep('Synchronization Completed', 'error', undefined, undefined, error.message);
+      }
       const completedAt = new Date();
       const durationMs = completedAt.getTime() - startedAt.getTime();
       console.error('[ZohoProductService] Sync failed:', error);

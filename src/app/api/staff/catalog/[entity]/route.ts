@@ -149,7 +149,7 @@ export async function GET(
       if (status !== 'ALL') {
         filtered = filtered.filter(r => r.status === status);
       }
-      if (categoryType === 'ROOT') {
+      if (isRoot || categoryType === 'ROOT') {
         filtered = filtered.filter(r => !r.parentId);
       } else if (categoryType === 'SUB') {
         filtered = filtered.filter(r => !!r.parentId);

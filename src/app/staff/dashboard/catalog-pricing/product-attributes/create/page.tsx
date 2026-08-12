@@ -42,7 +42,7 @@ export default function CreateProductAttributePage() {
             setPermissions(perms);
             
             // Then fetch categories
-            fetch('/api/staff/catalog/categories?limit=all')
+            fetch('/api/staff/catalog/categories?limit=all&status=Active')
               .then(res => res.json())
               .then(data => {
                 setCategories(data.records || []);

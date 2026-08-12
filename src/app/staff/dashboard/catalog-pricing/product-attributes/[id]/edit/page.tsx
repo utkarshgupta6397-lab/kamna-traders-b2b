@@ -45,12 +45,25 @@ export default function EditProductAttributePage() {
             
             // Then fetch attribute data
             Promise.all([
-              fetch('/api/staff/catalog/categories?limit=all').then(r => r.json()),
+              fetch('/api/staff/catalog/categories?limit=all&status=Active').then(r => r.json()),
               fetch(`/api/staff/catalog/product-attributes/${id}`).then(r => r.json())
             ]).then(([catsData, attrData]) => {
               if (attrData.error) throw new Error(attrData.error);
               
-              setCategories(catsData.records || []);
+              let fetchedCategories = catsData.records || [];
+              const existingMapped = attrData.categories || [];
+              
+              // Ensure already mapped categories are available in the list, even if inactive
+              existingMapped.forEach((mappedCat: any) => {
+                if (mappedCat.category && !fetchedCategories.some((c: any) => c.id === mappedCat.categoryId)) {
+                  fetchedCategories.push({
+                    id: mappedCat.categoryId,
+                    name: `${mappedCat.category.name} (Inactive)`
+                  });
+                }
+              });
+
+              setCategories(fetchedCategories);
               setRecord(attrData);
               setFormData({
                 attributeName: attrData.attributeName || '',

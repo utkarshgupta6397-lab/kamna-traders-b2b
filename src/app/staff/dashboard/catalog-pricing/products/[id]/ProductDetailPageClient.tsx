@@ -786,6 +786,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 product={product} 
                 variant={variant} 
                 onSuccess={() => window.location.reload()} 
+                canEdit={canEdit}
               />
             )}
 

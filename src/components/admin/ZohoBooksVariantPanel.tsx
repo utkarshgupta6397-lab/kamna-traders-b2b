@@ -1,18 +1,20 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Database, RefreshCw, Download, ExternalLink, Copy, CheckCircle2, ShieldAlert } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Database, RefreshCw, Download, ExternalLink, Copy, CheckCircle2, ShieldAlert, Edit2, X, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ZohoSyncResultsModal from './ZohoSyncResultsModal';
 
 export default function ZohoBooksVariantPanel({ 
   product, 
   variant, 
-  onSuccess 
+  onSuccess,
+  canEdit
 }: { 
   product: any; 
   variant: any; 
-  onSuccess: () => void 
+  onSuccess: () => void;
+  canEdit?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [fetchId, setFetchId] = useState('');
@@ -20,9 +22,44 @@ export default function ZohoBooksVariantPanel({
   const [showImportConfirm, setShowImportConfirm] = useState(false);
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [syncLogData, setSyncLogData] = useState<any>(null);
+  
+  const [isEditingId, setIsEditingId] = useState(false);
+  const [newZohoId, setNewZohoId] = useState(variant?.zohoBookItemId || '');
+
+  useEffect(() => {
+    setNewZohoId(variant?.zohoBookItemId || '');
+  }, [variant?.zohoBookItemId]);
 
   const status = variant?.zohoSyncStatus || 'NEVER_SYNCED';
   const isLinked = !!variant?.zohoBookItemId;
+
+  const handleSaveId = async () => {
+    if (!newZohoId || !newZohoId.trim()) {
+      toast.error('Zoho Books Item ID is required');
+      return;
+    }
+    if (!/^\d+$/.test(newZohoId.trim())) {
+      toast.error('Zoho Books Item ID must contain only digits');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/staff/catalog/products/${product.id}/zoho/edit-id`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zohoBooksItemId: newZohoId.trim(), variantId: variant?.id })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success('Zoho Books Item ID updated');
+      setIsEditingId(false);
+      onSuccess();
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to update ID');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSyncNow = async () => {
     setLoading(true);
@@ -148,10 +185,47 @@ export default function ZohoBooksVariantPanel({
             <div>
               <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Zoho Books Item ID</div>
               <div className="flex items-center justify-between">
-                <div className="text-[13px] font-mono font-bold text-gray-900 bg-gray-100 px-2 py-1 rounded border border-gray-200 select-all">
-                  {variant.zohoBookItemId}
-                </div>
-                <div className="flex gap-1">
+                {isEditingId ? (
+                  <div className="flex gap-2 flex-1 mr-4">
+                    <input 
+                      type="text" 
+                      value={newZohoId}
+                      onChange={e => setNewZohoId(e.target.value)}
+                      placeholder="Enter new Zoho ID"
+                      className="flex-1 h-8 px-2 text-[13px] font-mono border border-blue-400 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                    />
+                    <button 
+                      onClick={handleSaveId}
+                      disabled={loading || !newZohoId.trim() || newZohoId.trim() === variant.zohoBookItemId}
+                      className="h-8 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50 transition-colors"
+                      title="Save"
+                    >
+                      <Save size={14} />
+                    </button>
+                    <button 
+                      onClick={() => { setIsEditingId(false); setNewZohoId(variant.zohoBookItemId); }}
+                      disabled={loading}
+                      className="h-8 px-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors"
+                      title="Cancel"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-[13px] font-mono font-bold text-gray-900 bg-gray-100 px-2 py-1 rounded border border-gray-200 select-all flex items-center gap-2">
+                    {variant.zohoBookItemId}
+                    {canEdit && (
+                      <button 
+                        onClick={() => setIsEditingId(true)}
+                        className="text-gray-400 hover:text-blue-600 transition-colors"
+                        title="Edit ID"
+                      >
+                        <Edit2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                )}
+                <div className="flex gap-1 shrink-0">
                   <button onClick={() => { navigator.clipboard.writeText(variant.zohoBookItemId); toast.success('Copied to clipboard'); }} className="p-1 text-gray-400 hover:text-gray-700 rounded"><Copy size={14} /></button>
                   <a href={`https://books.zoho.in/app#/inventory/items/${variant.zohoBookItemId}`} target="_blank" rel="noopener noreferrer" className="p-1 text-blue-500 hover:text-blue-700 rounded"><ExternalLink size={14} /></a>
                 </div>

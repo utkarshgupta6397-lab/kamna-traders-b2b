@@ -7,7 +7,7 @@ import { decrypt } from '@/lib/jwt';
  * Strictly decodes JWT and checks roles.
  * NO Database lookups here (Edge runtime cannot use Node.js Prisma client).
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 1. Bypass during reset (Note: global is not shared between Edge and Node)

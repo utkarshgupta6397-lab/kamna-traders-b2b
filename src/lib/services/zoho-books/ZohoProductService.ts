@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
 import { ZohoSyncLogger } from './ZohoSyncLogger';
+import { DevLogger } from '@/lib/utils/DevLogger';
 import crypto from 'crypto';
 
 export type TriggerSource = 'AUTO_SAVE' | 'MANUAL_SYNC' | 'IMPORT_FROM_ZOHO';
@@ -22,8 +23,10 @@ export class ZohoProductService {
     return process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
   }
 
-  static async syncVariant(variantId: string, triggerSource: TriggerSource): Promise<SyncResult> {
+  static async syncVariant(variantId: string, triggerSource: TriggerSource, providedRunId?: string): Promise<SyncResult> {
     const startedAt = new Date();
+    const runId = providedRunId || crypto.randomUUID();
+    try { DevLogger.log({ module: 'Zoho Trace', runId, event: '4. [ZOHO-TRACE] SYNC_VARIANT_ENTERED', status: 'INFO', input: { variantId, triggerSource, timestamp: new Date().toISOString() } }); } catch(e) { console.error('[DEV-LOGGER-FAILURE]', e); }
     const timeline: { step: string; status: 'pending' | 'success' | 'error' | 'skipped'; timestamp: string; input?: any; output?: any; exception?: any }[] = [];
     const addStep = (step: string, status: 'pending' | 'success' | 'error' | 'skipped', input?: any, output?: any, exception?: any) => {
       timeline.push({ step, status, timestamp: new Date().toISOString(), input, output, exception });
@@ -45,24 +48,40 @@ export class ZohoProductService {
               hsnCode: true,
               taxRate: true,
               unit: true,
+              parentProduct: true,
             }
           }
         }
       });
 
+      const startedAt = new Date();
+      let timeline: Array<{ step: string; status: 'success' | 'error' | 'pending' | 'skipped'; details?: any; response?: any; error?: string }> = [];
+      const addStep = (step: string, status: 'success' | 'error' | 'pending' | 'skipped', details?: any, response?: any, error?: string) => {
+        timeline.push({ step, status, details, response, error });
+        try { DevLogger.log({ module: 'Zoho Sync Step', runId, event: step, status: status === 'success' ? 'SUCCESS' : status === 'error' ? 'ERROR' : status === 'skipped' ? 'WARNING' : 'INFO', input: details, output: response, error }); } catch(e) {}
+      };
+
       if (!variant || !variant.product) {
         addStep('Product Loaded', 'error');
         throw new Error('Variant or Product not found');
       }
-      addStep('Product Loaded', 'success');
-      addStep('Variant Loaded', 'success');
+
+      try { DevLogger.log({ module: 'Zoho Trace', runId, event: '5. VARIANT_LOADED', status: 'INFO', input: { variantId, hasProduct: !!variant.product, hasZohoItemId: !!variant.zohoBookItemId } }); } catch(e) {}
+      
+      const effective = this.resolveEffectiveZohoProductData(variant);
+
+      try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] SYNC_SOURCE_STATE', status: 'INFO', input: { variantId, sku: variant.sku, incentiveTag: variant.product.incentiveTag, hasThumbnailBase64: !!variant.product.thumbnailBase64, thumbnailBase64Length: variant.product.thumbnailBase64?.length, zohoBookItemId: variant.zohoBookItemId, zohoSyncHash: variant.zohoSyncHash } }); } catch(e) {}
 
       // 1. Compute hash and check if dirty
       const newHash = this.computeSyncHash(variant);
       const [newDataHash, newImageHash] = newHash.split('|');
       const [oldDataHash, oldImageHash] = variant.zohoSyncHash ? variant.zohoSyncHash.split('|') : ['', ''];
 
+      try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] EFFECTIVE_DATA_RESOLVED', status: 'INFO', input: { variantId, localIncentiveTag: variant.product.incentiveTag, parentIncentiveTag: variant.product.parentProduct?.incentiveTag, effectiveIncentiveTag: effective.incentiveTag, hasLocalImage: !!variant.product.thumbnailBase64, hasParentImage: !!variant.product.parentProduct?.thumbnailBase64, effectiveHasImage: !!effective.thumbnailBase64, oldDataHash, newDataHash, oldImageHash, newImageHash } }); } catch(e) {}
+      try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] HASH_STATE', status: 'INFO', input: { variantId, triggerSource, oldSyncHash: variant.zohoSyncHash, newSyncHash: newHash, oldDataHash, newDataHash, oldImageHash, newImageHash, dataHashChanged: oldDataHash !== newDataHash, imageHashChanged: oldImageHash !== newImageHash } }); } catch(e) {}
+
       if (variant.zohoBookItemId && variant.zohoSyncHash === newHash && triggerSource === 'AUTO_SAVE') {
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] EARLY_RETURN', status: 'INFO', input: { reason: 'AUTO_SAVE hash match', variantId, triggerSource, isUpdate: true, zohoBookItemId: variant.zohoBookItemId } }); } catch(e) {}
         const durationMs = Date.now() - startedAt.getTime();
         return { success: true, zohoSyncStatus: 'SYNCED', zohoBooksItemId: variant.zohoBookItemId, timeline, durationMs };
       }
@@ -78,15 +97,20 @@ export class ZohoProductService {
         addStep('OAuth Token Retrieved', 'error');
         throw new Error('Zoho Books not connected or token expired');
       }
+      try { DevLogger.log({ module: 'Zoho Trace', runId, event: '6. [ZOHO-TRACE] TOKEN_RETRIEVED', status: 'INFO' }); } catch(e) { console.error('[DEV-LOGGER-FAILURE]', e); }
       addStep('OAuth Token Retrieved', 'success');
 
       let isUpdate = !!variant.zohoBookItemId;
+      try { DevLogger.log({ module: 'Zoho Trace', runId, event: '7. [ZOHO-TRACE] CREATE_UPDATE_DECISION', status: 'INFO', input: { variantId, isUpdate, zohoBookItemId: variant.zohoBookItemId } }); } catch(e) { console.error('[DEV-LOGGER-FAILURE]', e); }
 
       // ─── STEP 1: Item Create/Update (core fields, NO custom_fields) ───
       if (isUpdate) {
         addStep('Create vs Update Decision', 'success', { decision: 'update', itemId: variant.zohoBookItemId });
         
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] UPDATE_BRANCH_EVALUATION', status: 'INFO', input: { oldDataHash, newDataHash, dataHashChanged: oldDataHash !== newDataHash, willCallZohoUpdate: oldDataHash !== newDataHash } }); } catch(e) {}
+
         if (oldDataHash === newDataHash) {
+          try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] ITEM_UPDATE_SKIPPED', status: 'INFO', input: { reason: 'data hash unchanged', oldDataHash, newDataHash } }); } catch(e) {}
           addStep('Item Update', 'skipped', { reason: 'Data unchanged, item update skipped' });
           apiResult = { success: true, skipped: true };
         } else {
@@ -96,18 +120,28 @@ export class ZohoProductService {
           
           addStep('Item Update', 'pending', { payload });
           addStep('API Request Sent', 'success', { url: `${this.getApiBaseUrl()}/books/v3/items/${variant.zohoBookItemId}?organization_id=${getZohoOrgId()}` });
+          try { DevLogger.log({ module: 'Zoho Trace', runId, event: '8. [ZOHO-TRACE] BEFORE_ZOHO_UPDATE', status: 'INFO', input: { variantId } }); } catch(e) { console.error('[DEV-LOGGER-FAILURE]', e); }
+          try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] BEFORE_ZOHO_UPDATE', status: 'INFO', input: { itemId: variant.zohoBookItemId, method: 'PUT' } }); } catch(e) {}
           apiResult = await this.updateItem(variant.zohoBookItemId!, payload, accessToken);
+          try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] AFTER_ZOHO_UPDATE', status: 'INFO', input: { success: apiResult.success, itemId: variant.zohoBookItemId, responseSummary: apiResult.success ? 'success' : apiResult.error } }); } catch(e) {}
           addStep('Item Update', apiResult.success ? 'success' : 'error', undefined, apiResult.raw, !apiResult.success ? apiResult.error : undefined);
         }
       } else {
         addStep('Create vs Update Decision', 'success', { decision: 'create' });
+        DevLogger.log({ module: 'Zoho Sync', runId, event: '1. BEFORE buildPayload', status: 'INFO', output: { variantId, zohoBookItemId: variant.zohoBookItemId, incentiveTag: variant.product.incentiveTag, thumbnailExists: !!variant.product.thumbnailBase64, thumbnailLength: variant.product.thumbnailBase64?.length || 0, computedImageHash: newImageHash, computedDataHash: newDataHash } });
         payload = await this.buildPayload(variant);
+        DevLogger.log({ module: 'Zoho Sync', runId, event: '2. AFTER buildPayload', status: 'INFO', output: { payload: { ...payload, custom_fields: payload.custom_fields }, custom_fields: payload.custom_fields, incentive_field: payload.custom_fields?.find((f: any) => f.api_name === 'cf_incentive_category'), hasImageData: !!payload.image || !!payload.image_name } });
         // Remove custom_fields from the main payload — handled separately after creation
+        DevLogger.log({ module: 'Zoho Sync', runId, event: '3. BEFORE delete payload.custom_fields', status: 'INFO', output: { hasCustomFields: !!payload.custom_fields, incentiveValue: payload.custom_fields?.find((f: any) => f.api_name === 'cf_incentive_category')?.value } });
         delete payload.custom_fields;
+        DevLogger.log({ module: 'Zoho Sync', runId, event: '4. AFTER delete payload.custom_fields', status: 'INFO', output: { hasCustomFields: !!payload.custom_fields, incentiveValue: payload.custom_fields?.find((f: any) => f.api_name === 'cf_incentive_category')?.value } });
         
         addStep('Item Create', 'pending', { payload });
         addStep('API Request Sent', 'success', { url: `${this.getApiBaseUrl()}/books/v3/items?organization_id=${getZohoOrgId()}` });
+        DevLogger.log({ module: 'Zoho Sync', runId, event: '5. BEFORE Zoho CREATE POST', status: 'INFO', input: { exactPayload: payload, url: `${this.getApiBaseUrl()}/books/v3/items?organization_id=${getZohoOrgId()}`, method: 'POST' } });
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '8. [ZOHO-TRACE] BEFORE_ZOHO_CREATE', status: 'INFO', input: { variantId } }); } catch(e) { console.error('[DEV-LOGGER-FAILURE]', e); }
         apiResult = await this.createItem(payload, accessToken);
+        DevLogger.log({ module: 'Zoho Sync', runId, event: '6. AFTER Zoho CREATE POST', status: apiResult.success ? 'SUCCESS' : 'ERROR', output: { success: apiResult.success, rawResponse: apiResult.raw, returnedItemId: apiResult.itemId } });
         addStep('Item Create', apiResult.success ? 'success' : 'error', undefined, apiResult.raw, !apiResult.success ? apiResult.error : undefined);
       }
       
@@ -121,24 +155,30 @@ export class ZohoProductService {
       addStep('Zoho Item Fetch', 'pending');
       let zohoItem: any;
       try {
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] BEFORE_ZOHO_FETCH', status: 'INFO', input: { itemId: finalZohoItemId } }); } catch(e) {}
         zohoItem = await this.fetchItemWithToken(finalZohoItemId, accessToken);
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] AFTER_ZOHO_FETCH', status: 'INFO', input: { success: true, itemId: finalZohoItemId, image_name: zohoItem?.image_name, customFieldCount: zohoItem?.custom_fields?.length } }); } catch(e) {}
         addStep('Zoho Item Fetch', 'success', undefined, { 
           image_name: zohoItem?.image_name, 
           custom_fields_count: zohoItem?.custom_fields?.length,
           cf_incentive: zohoItem?.custom_fields?.find((c: any) => c.api_name === 'cf_incentive_category')?.value 
         });
       } catch (fetchErr: any) {
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] AFTER_ZOHO_FETCH', status: 'ERROR', input: { success: false, itemId: finalZohoItemId, error: fetchErr.message } }); } catch(e) {}
         addStep('Zoho Item Fetch', 'error', undefined, undefined, fetchErr.message);
         throw new Error(`Failed to fetch Zoho item after update: ${fetchErr.message}`);
       }
 
       // ─── STEP 3: Incentive Category custom field update ───
-      const erpIncentiveTag = variant.product.incentiveTag || '';
+      const erpIncentiveTag = effective.incentiveTag || '';
       const zohoIncentiveField = zohoItem?.custom_fields?.find((c: any) => c.api_name === 'cf_incentive_category');
       const zohoIncentiveValue = zohoIncentiveField?.value || '';
       const zohoIncentiveFieldId = zohoIncentiveField?.customfield_id;
 
+      try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] INCENTIVE_DECISION_FULL', status: 'INFO', input: { erpIncentiveTag, zohoIncentiveValue, zohoIncentiveFieldId, valuesMatch: erpIncentiveTag === zohoIncentiveValue, willUpdate: erpIncentiveTag !== zohoIncentiveValue, skipReason: erpIncentiveTag === zohoIncentiveValue ? 'Value already matches' : '' } }); } catch(e) {}
+
       if (erpIncentiveTag === zohoIncentiveValue) {
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] INCENTIVE_UPDATE_SKIPPED', status: 'INFO', input: { reason: 'Value already matches' } }); } catch(e) {}
         addStep('Custom Field: Incentive Category', 'skipped', { 
           reason: 'Value already matches', 
           erpValue: erpIncentiveTag, 
@@ -160,7 +200,11 @@ export class ZohoProductService {
           }]
         };
 
+        if (!isUpdate) DevLogger.log({ module: 'Zoho Sync', runId, event: '7. BEFORE Incentive Category dedicated PUT', status: 'INFO', input: { finalZohoItemId, customfield_id: zohoIncentiveFieldId, api_name: 'cf_incentive_category', value: erpIncentiveTag, exactPayload: cfPayload } });
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] BEFORE_INCENTIVE_UPDATE', status: 'INFO', input: { itemId: finalZohoItemId, customfield_id: zohoIncentiveFieldId, api_name: 'cf_incentive_category', value: erpIncentiveTag } }); } catch(e) {}
         const cfResult = await this.updateItem(finalZohoItemId, cfPayload, accessToken);
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] AFTER_INCENTIVE_UPDATE', status: 'INFO', input: { success: cfResult.success, responseSummary: cfResult.success ? 'success' : cfResult.error } }); } catch(e) {}
+        if (!isUpdate) DevLogger.log({ module: 'Zoho Sync', runId, event: '8. AFTER Incentive Category PUT', status: cfResult.success ? 'SUCCESS' : 'ERROR', output: { success: cfResult.success, rawResponse: cfResult.raw } });
         if (!cfResult.success) {
           addStep('Custom Field: Incentive Category', 'error', undefined, cfResult.raw, cfResult.error);
           throw new Error(`Custom field update failed: ${cfResult.error}`);
@@ -169,13 +213,22 @@ export class ZohoProductService {
       }
 
       // ─── STEP 4: Image upload ───
-      const erpHasImage = !!variant.product.thumbnailBase64;
+      const erpHasImage = !!effective.thumbnailBase64;
       const zohoHasImage = !!(zohoItem?.image_name);
       const imageHashChanged = oldImageHash !== newImageHash;
+      
+      const willUpload = erpHasImage && (!zohoHasImage || imageHashChanged);
+      let skipReason = '';
+      if (!erpHasImage) skipReason = 'No ERP image';
+      else if (!willUpload) skipReason = 'Image unchanged and Zoho already has image';
+
+      try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] IMAGE_DECISION_FULL', status: 'INFO', input: { erpHasImage, thumbnailBase64Length: effective.thumbnailBase64?.length || 0, oldImageHash, newImageHash, imageHashChanged, zohoImageName: zohoItem?.image_name, zohoHasImage, willUpload, skipReason } }); } catch(e) {}
 
       if (!erpHasImage) {
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] IMAGE_UPLOAD_SKIPPED', status: 'INFO', input: { reason: 'No ERP image' } }); } catch(e) {}
         addStep('Image Upload', 'skipped', { reason: 'No ERP image' });
       } else if (zohoHasImage && !imageHashChanged) {
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] IMAGE_UPLOAD_SKIPPED', status: 'INFO', input: { reason: 'Image unchanged and Zoho already has image' } }); } catch(e) {}
         addStep('Image Upload', 'skipped', { reason: 'Image unchanged and Zoho already has image' });
       } else {
         // Upload needed: either Zoho has no image, or image hash changed
@@ -183,7 +236,11 @@ export class ZohoProductService {
           reason: !zohoHasImage ? 'Zoho has no image' : 'Image changed',
           zohoHasImage, imageHashChanged 
         });
-        const uploadResult = await this.uploadImage(variantId, finalZohoItemId, accessToken, false);
+        if (!isUpdate) DevLogger.log({ module: 'Zoho Sync', runId, event: '9. BEFORE image upload', status: 'INFO', input: { finalZohoItemId, erpHasImage, newImageHash, oldImageHash, imageHashChanged, endpoint: `${this.getApiBaseUrl()}/books/v3/items/${finalZohoItemId}/image?organization_id=${getZohoOrgId()}`, contentType: 'multipart/form-data', imageLength: effective.thumbnailBase64?.length, isCallingUploadImage: true } });
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] BEFORE_IMAGE_UPLOAD', status: 'INFO', input: { itemId: finalZohoItemId, imageHashChanged, zohoHasImage } }); } catch(e) {}
+        const uploadResult = await this.uploadImageInternal(effective.thumbnailBase64, finalZohoItemId, accessToken, false);
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] AFTER_IMAGE_UPLOAD', status: 'INFO', input: { success: uploadResult.success, warning: uploadResult.warning } }); } catch(e) {}
+        if (!isUpdate) DevLogger.log({ module: 'Zoho Sync', runId, event: '10. AFTER image upload', status: uploadResult.success ? 'SUCCESS' : 'ERROR', output: { success: uploadResult.success, warning: uploadResult.warning } });
         if (!uploadResult.success) {
           addStep('Image Upload', 'error', undefined, undefined, uploadResult.warning);
           throw new Error(`Image upload failed: ${uploadResult.warning}`);
@@ -193,9 +250,12 @@ export class ZohoProductService {
 
       // ─── STEP 5: Post-sync verification ───
       addStep('Post-Sync Verification', 'pending');
+      let mismatches: string[] = [];
+      let verifyItem: any;
       try {
-        const verifyItem = await this.fetchItemWithToken(finalZohoItemId, accessToken);
-        const mismatches: string[] = [];
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] BEFORE_VERIFICATION', status: 'INFO' }); } catch(e) {}
+        verifyItem = await this.fetchItemWithToken(finalZohoItemId, accessToken);
+        if (!isUpdate) DevLogger.log({ module: 'Zoho Sync', runId, event: '11. POST-CREATE GET', status: 'INFO', output: { item_id: verifyItem.item_id, custom_fields: verifyItem.custom_fields, image_name: verifyItem.image_name, image_document_id: verifyItem.image_document_id } });
 
         // Verify name
         const expectedName = variant.product.name.substring(0, 100);
@@ -233,6 +293,8 @@ export class ZohoProductService {
           mismatches.push(`image: ERP has image but Zoho image_name is empty`);
         }
 
+        try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] AFTER_VERIFICATION', status: 'INFO', input: { mismatches, verifiedIncentiveValue: verifyIncentiveValue, verifiedImageName: verifyItem.image_name, verifiedSku: verifyItem.sku, verifiedRate: verifyItem.rate, verifiedPurchaseRate: verifyItem.purchase_rate } }); } catch(e) {}
+
         if (mismatches.length > 0) {
           addStep('Post-Sync Verification', 'error', undefined, { mismatches });
           throw new Error(`Sync verification failed: ${mismatches.join('; ')}`);
@@ -242,6 +304,7 @@ export class ZohoProductService {
           verified: ['name', 'sku', 'rate', 'purchase_rate', 'cf_incentive_category', 'image'] 
         });
       } catch (verifyErr: any) {
+        if (!isUpdate) DevLogger.log({ module: 'Zoho Sync', runId, event: '12. FINAL SYNCED GATE (FAIL)', status: 'ERROR', error: verifyErr.message, output: { erpIncentiveTag, zohoIncentiveValue: verifyItem?.custom_fields?.find((c: any) => c.api_name === 'cf_incentive_category')?.value || '', erpHasImage, zohoImageName: verifyItem?.image_name, verificationMismatches: mismatches || [], reasonForSync: verifyErr.message } });
         if (verifyErr.message.startsWith('Sync verification failed')) {
           throw verifyErr;
         }
@@ -250,7 +313,9 @@ export class ZohoProductService {
       }
 
       // ─── STEP 6: All operations succeeded — mark SYNCED ───
+      if (!isUpdate) DevLogger.log({ module: 'Zoho Sync', runId, event: '12. FINAL SYNCED GATE (SUCCESS)', status: 'SUCCESS', output: { erpIncentiveTag, zohoIncentiveValue: verifyItem?.custom_fields?.find((c: any) => c.api_name === 'cf_incentive_category')?.value || '', erpHasImage, zohoImageName: verifyItem?.image_name, verificationMismatches: mismatches || [], reasonForSync: 'All checks passed, reached Step 6' } });
       addStep('Database Updated', 'success');
+      try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] BEFORE_SYNCED_STATUS', status: 'INFO', input: { mismatches, allChecksPassed: mismatches.length === 0, zohoBookItemId: finalZohoItemId } }); } catch(e) {}
       await prisma.productVariant.update({
         where: { id: variantId },
         data: {
@@ -261,6 +326,7 @@ export class ZohoProductService {
           zohoBookItemId: finalZohoItemId,
         }
       });
+      try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] SYNCED_STATUS_WRITTEN', status: 'INFO' }); } catch(e) {}
 
       addStep('Synchronization Completed', 'success', { outcome: apiResult.skipped ? 'data_skipped' : 'success' });
       const completedAt = new Date();
@@ -297,6 +363,7 @@ export class ZohoProductService {
 
       return { success: true, zohoSyncStatus: 'SYNCED', zohoBooksItemId: finalZohoItemId, timeline, durationMs };
     } catch (error: any) {
+      try { DevLogger.log({ module: 'Zoho Trace', runId, event: '[ZOHO-FORENSIC] SYNC_ERROR', status: 'ERROR', input: { error: error.message, stack: error.stack } }); } catch(e) {}
       const existingSyncCompleted = timeline.find(t => t.step === 'Synchronization Completed');
       if (existingSyncCompleted) {
         existingSyncCompleted.status = 'error';
@@ -526,21 +593,25 @@ export class ZohoProductService {
   static async uploadImage(variantId: string, zohoBooksItemId: string, accessToken: string, force?: boolean): Promise<{ success: boolean; warning?: string }> {
     const variant = await prisma.productVariant.findUnique({
       where: { id: variantId },
-      include: { product: true }
+      include: { product: { include: { parentProduct: true } } }
     });
-    if (!variant || !variant.product.thumbnailBase64) {
+    const effective = this.resolveEffectiveZohoProductData(variant);
+    if (!effective.thumbnailBase64) {
       return { success: false, warning: 'No image found' };
     }
+    return this.uploadImageInternal(effective.thumbnailBase64, zohoBooksItemId, accessToken, false);
+  }
 
+  private static async uploadImageInternal(base64Data: string, itemId: string, accessToken: string, isCreate: boolean = false): Promise<{ success: boolean; warning?: string }> {
     try {
-      const base64Data = variant.product.thumbnailBase64.replace(/^data:image\/\w+;base64,/, '');
-      const buffer = Buffer.from(base64Data, 'base64');
+      const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(cleanBase64, 'base64');
       
       const formData = new FormData();
       formData.append('image', new Blob([buffer]), 'product_image.jpg');
 
       const orgId = getZohoOrgId();
-      const url = `${this.getApiBaseUrl()}/books/v3/items/${zohoBooksItemId}/image?organization_id=${orgId}`;
+      const url = `${this.getApiBaseUrl()}/books/v3/items/${itemId}/image?organization_id=${orgId}`;
       
       const res = await fetch(url, {
         method: 'POST',
@@ -558,105 +629,97 @@ export class ZohoProductService {
     }
   }
 
-  static async buildPayload(variant: any): Promise<ZohoBooksItemPayload> {
-    const product = variant.product;
-    const isGoods = product.type !== 'Service';
-    
-    let item_type = 'sales_and_purchases';
-    if (variant.trackInventory) {
-      item_type = 'inventory';
-    } else if (!isGoods) {
-      item_type = 'service';
-    } else if (variant.sellingPrice > 0 && variant.purchasePrice > 0) {
-      item_type = 'sales_and_purchases';
-    } else if (variant.sellingPrice > 0) {
-      item_type = 'sales';
-    } else if (variant.purchasePrice > 0) {
-      item_type = 'purchases';
-    }
+  private static async buildPayload(variant: any) {
+    const effective = this.resolveEffectiveZohoProductData(variant);
 
     const payload: any = {
-      name: product.name.substring(0, 100),
-      sku: variant.sku || product.code,
-      description: product.description ? product.description.substring(0, 2000) : '',
-      product_type: isGoods ? 'goods' : 'service',
-      item_type,
+      name: variant.product.name.substring(0, 100),
+      sku: variant.sku || variant.product.code,
+      description: variant.product.description || '',
       rate: variant.sellingPrice || 0,
       purchase_rate: variant.purchasePrice || 0,
-      is_taxable: !!product.taxRate,
-      status: product.status === 'Active' ? 'active' : 'inactive',
+      is_taxable: true,
+      item_type: variant.product.type === 'Service' ? 'sales' : (variant.trackInventory ? 'inventory' : 'sales_and_purchases'),
+      status: variant.product.status === 'Active' ? 'active' : 'inactive',
+      product_type: variant.product.type === 'Service' ? 'service' : 'goods',
+      
+      custom_fields: []
     };
 
-    if (product.unit) {
-      const zohoBooksUnitName = product.unit.zohoBooksUnitName?.trim();
-      payload.unit = zohoBooksUnitName || product.unit.abbreviation;
+    if (effective.incentiveTag) {
+      payload.custom_fields.push({
+        api_name: 'cf_incentive_category',
+        value: effective.incentiveTag
+      });
     }
 
-    if (product.hsnCode) {
-      payload.hsn_or_sac = product.hsnCode.code;
+    if (variant.product.unit) {
+      const zohoBooksUnitName = variant.product.unit.zohoBooksUnitName?.trim();
+      payload.unit = zohoBooksUnitName || variant.product.unit.abbreviation;
     }
 
-    if (product.taxRate) {
-      if (!product.taxRate.zohoBooksIntraTaxId || !product.taxRate.zohoBooksInterTaxId) {
-        throw new Error(`Tax Rate '${product.taxRate.name}' is missing Zoho Books Intra/Inter Tax IDs.`);
-      }
-      
-      payload.tax_percentage = product.taxRate.percentage;
+    if (variant.product.hsnCode) {
+      payload.hsn_or_sac = variant.product.hsnCode.code;
+    }
+
+    if (variant.product.taxRate) {
+      payload.tax_percentage = variant.product.taxRate.percentage;
       payload.item_tax_preferences = [
-        {
-          tax_id: product.taxRate.zohoBooksIntraTaxId,
-          tax_specification: 'intra'
-        },
-        {
-          tax_id: product.taxRate.zohoBooksInterTaxId,
-          tax_specification: 'inter'
-        }
+        { tax_id: variant.product.taxRate.zohoBooksIntraTaxId, tax_specification: 'intra' },
+        { tax_id: variant.product.taxRate.zohoBooksInterTaxId, tax_specification: 'inter' }
       ];
     }
-
-    payload.custom_fields = [{
-      api_name: 'cf_incentive_category',
-      value: product.incentiveTag || ''
-    }];
 
     return payload;
   }
 
   static async buildPartialPayload(variant: any, newHash: string): Promise<Partial<ZohoBooksItemPayload> | null> {
     if (variant.zohoSyncHash === newHash) return null;
-    // For safety in partial update, we just build the full payload.
-    // In a strict implementation we would diff with the previous payload, 
-    // but building the full payload works for PUT /items as Zoho ignores unchanged fields.
     return this.buildPayload(variant);
   }
 
-  static computeSyncHash(variant: any): string {
-    const product = variant.product;
-    if (!product) return '';
-    
-    const data = [
-      product.name,
-      variant.sku,
-      product.description,
-      variant.sellingPrice,
-      variant.purchasePrice,
-      variant.trackInventory,
-      product.type,
-      product.status,
-      product.hsnCode?.code,
-      product.taxRate?.id,
-      product.taxRate?.percentage,
-      product.brand?.name,
-      product.category?.name,
-      product.manufacturer?.name,
-      product.incentiveTag,
-      product.unit?.name,
-      product.unit?.abbreviation,
-      product.unit?.zohoBooksUnitName
-    ].join('|');
+  private static resolveEffectiveZohoProductData(variant: any) {
+    let thumbnailBase64 = variant.product.thumbnailBase64;
+    let incentiveTag = variant.product.incentiveTag;
 
-    const dataHash = crypto.createHash('sha256').update(data).digest('hex');
-    const imageHash = product.thumbnailBase64 ? crypto.createHash('sha256').update(product.thumbnailBase64).digest('hex').substring(0, 64) : 'no_image';
+    if (!thumbnailBase64 && variant.product.parentProduct?.thumbnailBase64) {
+      thumbnailBase64 = variant.product.parentProduct.thumbnailBase64;
+    }
+    if (!incentiveTag && variant.product.parentProduct?.incentiveTag) {
+      incentiveTag = variant.product.parentProduct.incentiveTag;
+    }
+
+    return { thumbnailBase64, incentiveTag };
+  }
+
+  private static computeSyncHash(variant: any): string {
+    const effective = this.resolveEffectiveZohoProductData(variant);
+    
+    const dataParts = [
+      variant.product.name.substring(0, 100),
+      variant.sku || variant.product.code,
+      variant.product.description || '',
+      (variant.sellingPrice || 0).toString(),
+      (variant.purchasePrice || 0).toString(),
+      variant.trackInventory ? 'true' : 'false',
+      variant.product.type || '',
+      variant.product.status || '',
+      variant.product.hsnCode?.code || '',
+      variant.product.taxRate?.id || '',
+      (variant.product.taxRate?.percentage || 0).toString(),
+      variant.product.brand?.name || '',
+      variant.product.category?.name || '',
+      variant.product.manufacturer?.name || '',
+      effective.incentiveTag || '',
+      variant.product.unit?.name || '',
+      variant.product.unit?.abbreviation || '',
+      variant.product.unit?.zohoBooksUnitName || ''
+    ];
+    
+    const dataHash = crypto.createHash('sha256').update(dataParts.join('|')).digest('hex');
+    const imageHash = effective.thumbnailBase64 ? 
+      crypto.createHash('md5').update(effective.thumbnailBase64).digest('hex') : 
+      'no_image';
 
     return `${dataHash}|${imageHash}`;
   }

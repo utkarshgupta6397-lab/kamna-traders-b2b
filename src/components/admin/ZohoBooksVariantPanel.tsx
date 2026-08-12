@@ -63,10 +63,23 @@ export default function ZohoBooksVariantPanel({
 
   const handleSyncNow = async () => {
     setLoading(true);
+    const runId = Math.random().toString(36).substring(2, 15);
     try {
-      const res = await fetch(`/api/staff/catalog/products/${product.id}/zoho/sync`, {
+      fetch('/api/debug/log-event', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          module: 'Zoho Trace',
+          runId,
+          event: '1. [ZOHO-TRACE] UI_SYNC_CLICK',
+          status: 'INFO',
+          input: { variantId: variant?.id, timestamp: new Date().toISOString() }
+        })
+      }).catch(e => console.error('[DEV-LOGGER-FAILURE]', e));
+
+      const res = await fetch(`/api/staff/catalog/products/${product.id}/zoho/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-trace-run-id': runId },
         body: JSON.stringify({ variantId: variant?.id })
       });
       const data = await res.json();

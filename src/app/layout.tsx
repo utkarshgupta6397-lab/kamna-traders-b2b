@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import NextTopLoader from 'nextjs-toploader';
 import TelemetryOverlay from "@/components/dev/TelemetryOverlay";
+import DevConsole from "@/components/debug/DevConsole";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -46,6 +47,7 @@ export default function RootLayout({
         />
         {children}
         <TelemetryOverlay />
+        <DevConsole />
       </body>
     </html>
   );

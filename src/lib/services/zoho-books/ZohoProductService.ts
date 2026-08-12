@@ -59,6 +59,9 @@ export class ZohoProductService {
 
       // 1. Compute hash and check if dirty
       const newHash = this.computeSyncHash(variant);
+      const [newDataHash, newImageHash] = newHash.split('|');
+      const [oldDataHash, oldImageHash] = variant.zohoSyncHash ? variant.zohoSyncHash.split('|') : ['', ''];
+
       if (variant.zohoBookItemId && variant.zohoSyncHash === newHash && triggerSource === 'AUTO_SAVE') {
         const durationMs = Date.now() - startedAt.getTime();
         return { success: true, zohoSyncStatus: 'SYNCED', zohoBooksItemId: variant.zohoBookItemId, timeline, durationMs };
@@ -81,16 +84,22 @@ export class ZohoProductService {
 
       if (isUpdate) {
         addStep('Create vs Update Decision', 'success', { decision: 'update', itemId: variant.zohoBookItemId });
-        payload = await this.buildPartialPayload(variant, newHash);
         
-        if (!payload || Object.keys(payload).length === 0) {
-          addStep('Payload Generated', 'success', { reason: 'No changes needed, sync skipped' });
+        if (oldDataHash === newDataHash) {
+          addStep('Payload Generated', 'success', { reason: 'Data unchanged, item update skipped' });
           apiResult = { success: true, skipped: true };
         } else {
-          addStep('Payload Generated', 'success', { payload });
-          addStep('API Request Sent', 'success', { url: `${this.getApiBaseUrl()}/books/v3/items/${variant.zohoBookItemId}?organization_id=${getZohoOrgId()}` });
-          apiResult = await this.updateItem(variant.zohoBookItemId!, payload, accessToken);
-          addStep('API Response Received', apiResult.success ? 'success' : 'error', undefined, apiResult.raw, !apiResult.success ? apiResult.error : undefined);
+          payload = await this.buildPartialPayload(variant, newHash);
+          
+          if (!payload || Object.keys(payload).length === 0) {
+            addStep('Payload Generated', 'success', { reason: 'No changes needed, sync skipped' });
+            apiResult = { success: true, skipped: true };
+          } else {
+            addStep('Payload Generated', 'success', { payload });
+            addStep('API Request Sent', 'success', { url: `${this.getApiBaseUrl()}/books/v3/items/${variant.zohoBookItemId}?organization_id=${getZohoOrgId()}` });
+            apiResult = await this.updateItem(variant.zohoBookItemId!, payload, accessToken);
+            addStep('API Response Received', apiResult.success ? 'success' : 'error', undefined, apiResult.raw, !apiResult.success ? apiResult.error : undefined);
+          }
         }
       } else {
         addStep('Create vs Update Decision', 'success', { decision: 'create' });
@@ -108,11 +117,17 @@ export class ZohoProductService {
 
       const finalZohoItemId = isUpdate ? variant.zohoBookItemId! : apiResult.itemId!;
 
-      if (variant.product.thumbnailBase64 && (!isUpdate || variant.zohoSyncHash !== newHash)) {
+      if (variant.product.thumbnailBase64 && (!isUpdate || oldImageHash !== newImageHash)) {
         addStep('Image Upload', 'pending');
-        this.uploadImage(variantId, finalZohoItemId, accessToken, false).catch(e => {
-          console.error('[ZohoProductService] Async image upload failed:', e);
-        });
+        const uploadResult = await this.uploadImage(variantId, finalZohoItemId, accessToken, false);
+        if (!uploadResult.success) {
+          addStep('Image Upload', 'error', undefined, undefined, uploadResult.warning);
+          throw new Error(`Image upload failed: ${uploadResult.warning}`);
+        }
+        const lastStep = timeline[timeline.length - 1];
+        if (lastStep.step === 'Image Upload') lastStep.status = 'success';
+      } else if (variant.product.thumbnailBase64) {
+        addStep('Image Upload', 'success', { reason: 'Image unchanged, upload skipped' });
       }
 
       addStep('Database Updated', 'success');
@@ -471,12 +486,10 @@ export class ZohoProductService {
       ];
     }
 
-    if (product.incentiveTag) {
-      payload.custom_fields = [{
-        api_name: 'cf_incentive_category',
-        value: product.incentiveTag
-      }];
-    }
+    payload.custom_fields = [{
+      api_name: 'cf_incentive_category',
+      value: product.incentiveTag || ''
+    }];
 
     return payload;
   }
@@ -511,10 +524,12 @@ export class ZohoProductService {
       product.incentiveTag,
       product.unit?.name,
       product.unit?.abbreviation,
-      product.unit?.zohoBooksUnitName,
-      product.thumbnailBase64 ? crypto.createHash('sha256').update(product.thumbnailBase64).digest('hex').substring(0, 64) : ''
+      product.unit?.zohoBooksUnitName
     ].join('|');
 
-    return crypto.createHash('sha256').update(data).digest('hex');
+    const dataHash = crypto.createHash('sha256').update(data).digest('hex');
+    const imageHash = product.thumbnailBase64 ? crypto.createHash('sha256').update(product.thumbnailBase64).digest('hex').substring(0, 64) : 'no_image';
+
+    return `${dataHash}|${imageHash}`;
   }
 }

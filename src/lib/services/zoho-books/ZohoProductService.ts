@@ -24,8 +24,8 @@ export class ZohoProductService {
 
   static async syncVariant(variantId: string, triggerSource: TriggerSource): Promise<SyncResult> {
     const startedAt = new Date();
-    const timeline: { step: string; status: 'pending' | 'success' | 'error'; timestamp: string; input?: any; output?: any; exception?: any }[] = [];
-    const addStep = (step: string, status: 'pending' | 'success' | 'error', input?: any, output?: any, exception?: any) => {
+    const timeline: { step: string; status: 'pending' | 'success' | 'error' | 'skipped'; timestamp: string; input?: any; output?: any; exception?: any }[] = [];
+    const addStep = (step: string, status: 'pending' | 'success' | 'error' | 'skipped', input?: any, output?: any, exception?: any) => {
       timeline.push({ step, status, timestamp: new Date().toISOString(), input, output, exception });
     };
 
@@ -82,33 +82,33 @@ export class ZohoProductService {
 
       let isUpdate = !!variant.zohoBookItemId;
 
+      // ─── STEP 1: Item Create/Update (core fields, NO custom_fields) ───
       if (isUpdate) {
         addStep('Create vs Update Decision', 'success', { decision: 'update', itemId: variant.zohoBookItemId });
         
         if (oldDataHash === newDataHash) {
-          addStep('Payload Generated', 'success', { reason: 'Data unchanged, item update skipped' });
+          addStep('Item Update', 'skipped', { reason: 'Data unchanged, item update skipped' });
           apiResult = { success: true, skipped: true };
         } else {
-          payload = await this.buildPartialPayload(variant, newHash);
+          payload = await this.buildPayload(variant);
+          // Remove custom_fields from the main payload — handled separately
+          delete payload.custom_fields;
           
-          if (!payload || Object.keys(payload).length === 0) {
-            addStep('Payload Generated', 'success', { reason: 'No changes needed, sync skipped' });
-            apiResult = { success: true, skipped: true };
-          } else {
-            addStep('Payload Generated', 'success', { payload });
-            addStep('API Request Sent', 'success', { url: `${this.getApiBaseUrl()}/books/v3/items/${variant.zohoBookItemId}?organization_id=${getZohoOrgId()}` });
-            apiResult = await this.updateItem(variant.zohoBookItemId!, payload, accessToken);
-            addStep('API Response Received', apiResult.success ? 'success' : 'error', undefined, apiResult.raw, !apiResult.success ? apiResult.error : undefined);
-          }
+          addStep('Item Update', 'pending', { payload });
+          addStep('API Request Sent', 'success', { url: `${this.getApiBaseUrl()}/books/v3/items/${variant.zohoBookItemId}?organization_id=${getZohoOrgId()}` });
+          apiResult = await this.updateItem(variant.zohoBookItemId!, payload, accessToken);
+          addStep('Item Update', apiResult.success ? 'success' : 'error', undefined, apiResult.raw, !apiResult.success ? apiResult.error : undefined);
         }
       } else {
         addStep('Create vs Update Decision', 'success', { decision: 'create' });
         payload = await this.buildPayload(variant);
-        addStep('Payload Generated', 'success', { payload });
+        // Remove custom_fields from the main payload — handled separately after creation
+        delete payload.custom_fields;
         
+        addStep('Item Create', 'pending', { payload });
         addStep('API Request Sent', 'success', { url: `${this.getApiBaseUrl()}/books/v3/items?organization_id=${getZohoOrgId()}` });
         apiResult = await this.createItem(payload, accessToken);
-        addStep('API Response Received', apiResult.success ? 'success' : 'error', undefined, apiResult.raw, !apiResult.success ? apiResult.error : undefined);
+        addStep('Item Create', apiResult.success ? 'success' : 'error', undefined, apiResult.raw, !apiResult.success ? apiResult.error : undefined);
       }
       
       if (!apiResult.success) {
@@ -117,19 +117,139 @@ export class ZohoProductService {
 
       const finalZohoItemId = isUpdate ? variant.zohoBookItemId! : apiResult.itemId!;
 
-      if (variant.product.thumbnailBase64 && (!isUpdate || oldImageHash !== newImageHash)) {
-        addStep('Image Upload', 'pending');
+      // ─── STEP 2: Fetch Zoho item to check current state ───
+      addStep('Zoho Item Fetch', 'pending');
+      let zohoItem: any;
+      try {
+        zohoItem = await this.fetchItemWithToken(finalZohoItemId, accessToken);
+        addStep('Zoho Item Fetch', 'success', undefined, { 
+          image_name: zohoItem?.image_name, 
+          custom_fields_count: zohoItem?.custom_fields?.length,
+          cf_incentive: zohoItem?.custom_fields?.find((c: any) => c.api_name === 'cf_incentive_category')?.value 
+        });
+      } catch (fetchErr: any) {
+        addStep('Zoho Item Fetch', 'error', undefined, undefined, fetchErr.message);
+        throw new Error(`Failed to fetch Zoho item after update: ${fetchErr.message}`);
+      }
+
+      // ─── STEP 3: Incentive Category custom field update ───
+      const erpIncentiveTag = variant.product.incentiveTag || '';
+      const zohoIncentiveField = zohoItem?.custom_fields?.find((c: any) => c.api_name === 'cf_incentive_category');
+      const zohoIncentiveValue = zohoIncentiveField?.value || '';
+      const zohoIncentiveFieldId = zohoIncentiveField?.customfield_id;
+
+      if (erpIncentiveTag === zohoIncentiveValue) {
+        addStep('Custom Field: Incentive Category', 'skipped', { 
+          reason: 'Value already matches', 
+          erpValue: erpIncentiveTag, 
+          zohoValue: zohoIncentiveValue 
+        });
+      } else {
+        addStep('Custom Field: Incentive Category', 'pending', { 
+          erpValue: erpIncentiveTag, 
+          zohoValue: zohoIncentiveValue,
+          customfield_id: zohoIncentiveFieldId
+        });
+
+        // Build custom field update payload using customfield_id if available
+        const cfPayload: any = {
+          custom_fields: [{
+            ...(zohoIncentiveFieldId ? { customfield_id: zohoIncentiveFieldId } : {}),
+            api_name: 'cf_incentive_category',
+            value: erpIncentiveTag
+          }]
+        };
+
+        const cfResult = await this.updateItem(finalZohoItemId, cfPayload, accessToken);
+        if (!cfResult.success) {
+          addStep('Custom Field: Incentive Category', 'error', undefined, cfResult.raw, cfResult.error);
+          throw new Error(`Custom field update failed: ${cfResult.error}`);
+        }
+        addStep('Custom Field: Incentive Category', 'success', undefined, cfResult.raw);
+      }
+
+      // ─── STEP 4: Image upload ───
+      const erpHasImage = !!variant.product.thumbnailBase64;
+      const zohoHasImage = !!(zohoItem?.image_name);
+      const imageHashChanged = oldImageHash !== newImageHash;
+
+      if (!erpHasImage) {
+        addStep('Image Upload', 'skipped', { reason: 'No ERP image' });
+      } else if (zohoHasImage && !imageHashChanged) {
+        addStep('Image Upload', 'skipped', { reason: 'Image unchanged and Zoho already has image' });
+      } else {
+        // Upload needed: either Zoho has no image, or image hash changed
+        addStep('Image Upload', 'pending', { 
+          reason: !zohoHasImage ? 'Zoho has no image' : 'Image changed',
+          zohoHasImage, imageHashChanged 
+        });
         const uploadResult = await this.uploadImage(variantId, finalZohoItemId, accessToken, false);
         if (!uploadResult.success) {
           addStep('Image Upload', 'error', undefined, undefined, uploadResult.warning);
           throw new Error(`Image upload failed: ${uploadResult.warning}`);
         }
-        const lastStep = timeline[timeline.length - 1];
-        if (lastStep.step === 'Image Upload') lastStep.status = 'success';
-      } else if (variant.product.thumbnailBase64) {
-        addStep('Image Upload', 'success', { reason: 'Image unchanged, upload skipped' });
+        addStep('Image Upload', 'success');
       }
 
+      // ─── STEP 5: Post-sync verification ───
+      addStep('Post-Sync Verification', 'pending');
+      try {
+        const verifyItem = await this.fetchItemWithToken(finalZohoItemId, accessToken);
+        const mismatches: string[] = [];
+
+        // Verify name
+        const expectedName = variant.product.name.substring(0, 100);
+        if (verifyItem.name !== expectedName) {
+          mismatches.push(`name: expected '${expectedName}', got '${verifyItem.name}'`);
+        }
+
+        // Verify SKU
+        const expectedSku = variant.sku || variant.product.code;
+        if (verifyItem.sku !== expectedSku) {
+          mismatches.push(`sku: expected '${expectedSku}', got '${verifyItem.sku}'`);
+        }
+
+        // Verify rate
+        const expectedRate = variant.sellingPrice || 0;
+        if (Math.abs(parseFloat(verifyItem.rate) - expectedRate) > 0.01) {
+          mismatches.push(`rate: expected ${expectedRate}, got ${verifyItem.rate}`);
+        }
+
+        // Verify purchase_rate
+        const expectedPurchaseRate = variant.purchasePrice || 0;
+        if (Math.abs(parseFloat(verifyItem.purchase_rate) - expectedPurchaseRate) > 0.01) {
+          mismatches.push(`purchase_rate: expected ${expectedPurchaseRate}, got ${verifyItem.purchase_rate}`);
+        }
+
+        // Verify incentive category custom field
+        const verifyCf = verifyItem.custom_fields?.find((c: any) => c.api_name === 'cf_incentive_category');
+        const verifyIncentiveValue = verifyCf?.value || '';
+        if (verifyIncentiveValue !== erpIncentiveTag) {
+          mismatches.push(`cf_incentive_category: expected '${erpIncentiveTag}', got '${verifyIncentiveValue}'`);
+        }
+
+        // Verify image presence
+        if (erpHasImage && !verifyItem.image_name) {
+          mismatches.push(`image: ERP has image but Zoho image_name is empty`);
+        }
+
+        if (mismatches.length > 0) {
+          addStep('Post-Sync Verification', 'error', undefined, { mismatches });
+          throw new Error(`Sync verification failed: ${mismatches.join('; ')}`);
+        }
+
+        addStep('Post-Sync Verification', 'success', undefined, { 
+          verified: ['name', 'sku', 'rate', 'purchase_rate', 'cf_incentive_category', 'image'] 
+        });
+      } catch (verifyErr: any) {
+        if (verifyErr.message.startsWith('Sync verification failed')) {
+          throw verifyErr;
+        }
+        addStep('Post-Sync Verification', 'error', undefined, undefined, verifyErr.message);
+        throw new Error(`Post-sync verification error: ${verifyErr.message}`);
+      }
+
+      // ─── STEP 6: All operations succeeded — mark SYNCED ───
       addStep('Database Updated', 'success');
       await prisma.productVariant.update({
         where: { id: variantId },
@@ -142,7 +262,7 @@ export class ZohoProductService {
         }
       });
 
-      addStep('Synchronization Completed', 'success', { outcome: apiResult.skipped ? 'skipped' : 'success' });
+      addStep('Synchronization Completed', 'success', { outcome: apiResult.skipped ? 'data_skipped' : 'success' });
       const completedAt = new Date();
       const durationMs = completedAt.getTime() - startedAt.getTime();
 
@@ -294,7 +414,15 @@ export class ZohoProductService {
   static async fetchItem(itemId: string): Promise<any | null> {
     const accessToken = await getZohoTokens();
     if (!accessToken) throw new Error('Zoho token not found');
+    try {
+      return await this.fetchItemWithToken(itemId, accessToken);
+    } catch (e: any) {
+      if (e.message?.includes('not found')) return null;
+      throw e;
+    }
+  }
 
+  static async fetchItemWithToken(itemId: string, accessToken: string): Promise<any> {
     const orgId = getZohoOrgId();
     const url = `${this.getApiBaseUrl()}/books/v3/items/${itemId}?organization_id=${orgId}`;
     
@@ -303,7 +431,7 @@ export class ZohoProductService {
       headers: { 'Authorization': `Zoho-oauthtoken ${accessToken}` }
     });
 
-    if (res.status === 404) return null;
+    if (res.status === 404) throw new Error(`Item ${itemId} not found in Zoho Books`);
     const data = await res.json();
     if (!res.ok || data.code !== 0) throw new Error(data.message || `HTTP ${res.status}`);
     

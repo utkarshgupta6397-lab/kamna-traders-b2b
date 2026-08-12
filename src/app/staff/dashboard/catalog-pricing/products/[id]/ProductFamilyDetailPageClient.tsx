@@ -957,7 +957,8 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                   const active = product?.variantProducts?.filter((c: any) => c.status === 'Active').length || 0;
                   const inactive = total - active;
                   const synced = product?.variantProducts?.filter((c: any) => c.variants?.[0]?.zohoSyncStatus === 'SYNCED').length || 0;
-                  const notSynced = total - synced;
+                  const failed = product?.variantProducts?.filter((c: any) => c.variants?.[0]?.zohoSyncStatus === 'SYNC_FAILED').length || 0;
+                  const notSynced = total - synced - failed;
                   return (
                     <div className="divide-y divide-gray-100">
                       <div className="flex justify-between items-center px-6 py-3">
@@ -973,11 +974,13 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                         </div>
                       </div>
                       <div className="flex justify-between items-center px-6 py-3">
-                        <span className="text-sm text-gray-500 font-medium">Zoho Synced</span>
+                        <span className="text-sm text-gray-500 font-medium">Zoho Sync Status</span>
                         <div className="text-sm font-medium">
-                          <span className="text-blue-600">{synced}</span>
+                          <span className="text-green-600" title="Synced">{synced}</span>
                           <span className="text-gray-400 mx-1">/</span>
-                          <span className="text-gray-500">{notSynced}</span>
+                          <span className="text-red-600" title="Failed">{failed}</span>
+                          <span className="text-gray-400 mx-1">/</span>
+                          <span className="text-gray-500" title="Not Synced">{notSynced}</span>
                         </div>
                       </div>
                       <div className="flex justify-between items-center px-6 py-3">

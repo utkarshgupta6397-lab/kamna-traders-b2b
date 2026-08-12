@@ -210,7 +210,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const markup = variant.purchasePrice > 0 ? (grossProfit / variant.purchasePrice) * 100 : 0;
   
   const isHighMargin = margin > 30; // Example rule
-  const isSynced = variant.zohoSyncStatus === 'SYNCED';
+  const syncStatus = variant.zohoSyncStatus || 'NEVER_SYNCED';
   const isFamily = product.variantProducts && product.variantProducts.length > 0;
 
   return (
@@ -409,9 +409,21 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     ) : !isFamily && (
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase bg-gray-100 text-gray-500 border border-gray-200"><Box size={10} className="mr-1" /> No Tracking</span>
                     )}
-                    {isSynced ? (
+                    {syncStatus === 'SYNCED' && (
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase bg-green-50 text-green-700 border border-green-200"><CheckCircle2 size={10} className="mr-1" /> Zoho Synced</span>
-                    ) : (
+                    )}
+                    {syncStatus === 'SYNC_FAILED' && (
+                      <span 
+                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase bg-red-50 text-red-700 border border-red-200 cursor-help"
+                        title={variant.zohoLastSyncError || 'Sync failed'}
+                      >
+                        <ShieldAlert size={10} className="mr-1" /> Sync Failed
+                      </span>
+                    )}
+                    {syncStatus === 'SYNCING' && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase bg-blue-50 text-blue-700 border border-blue-200"><RefreshCw size={10} className="mr-1 animate-spin" /> Syncing...</span>
+                    )}
+                    {(syncStatus === 'NEVER_SYNCED' || !syncStatus) && (
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase bg-gray-100 text-gray-500 border border-gray-200"><Clock size={10} className="mr-1" /> Not Synced</span>
                     )}
                   </div>

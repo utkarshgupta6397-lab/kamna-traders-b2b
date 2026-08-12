@@ -11,8 +11,13 @@ export async function GET(request: Request) {
   }
 
   try {
+    const tReqStart = Date.now();
     const { searchParams } = new URL(request.url);
+    console.log('[PRODUCTS-TRACE] CATEGORY_COUNTS_START', { searchParams: searchParams.toString() });
     const where = buildProductWhereClause(searchParams);
+
+    // Fetch total products matching the non-category filters directly
+    const totalCount = await prisma.product.count({ where });
 
     // Use the CategoryService to get the tree with aggregated counts, but only for Active categories
     const tree = await CategoryService.getTree(searchParams, { status: 'Active' });
@@ -37,7 +42,15 @@ export async function GET(request: Request) {
 
     activeCategories.sort((a, b) => b.count - a.count);
 
-    return NextResponse.json(activeCategories);
+    const responsePayload = { categories: activeCategories, total: totalCount };
+    console.log('[PRODUCTS-TRACE] CATEGORY_COUNTS_END', { 
+      durationMs: Date.now() - tReqStart,
+      categoryCount: activeCategories.length,
+      totalCount,
+      responseSizeBytes: JSON.stringify(responsePayload).length
+    });
+
+    return NextResponse.json(responsePayload);
   } catch (error: any) {
     console.error(`[API] GET /api/staff/catalog/products/category-stats error:`, error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });

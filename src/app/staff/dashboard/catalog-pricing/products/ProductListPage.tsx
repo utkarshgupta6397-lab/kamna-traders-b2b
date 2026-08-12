@@ -1,6 +1,6 @@
 'use client';
 import { resolveProductImage } from '@/lib/utils';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Plus, Search, Filter, Settings2, Download, PackageOpen, Package, Box, Boxes, Tag, Layers, CheckCircle2, AlertCircle, RefreshCw, X, SortAsc, SortDesc, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -15,12 +15,16 @@ export default function ProductListPage() {
 
   const [records, setRecords] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
-  const [categories, setCategories] = useState<{id: string, name: string, count: number}[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [categoryTotal, setCategoryTotal] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [permissions, setPermissions] = useState<any>(null);
   
+  const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
   const [search, setSearch] = useState(searchParams.get('search') || '');
+  const [isFetching, setIsFetching] = useState(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [status, setStatus] = useState(searchParams.get('status') || 'ALL');
   const [type, setType] = useState(searchParams.get('type') || 'ALL');
   const [itemType, setItemType] = useState(searchParams.get('itemType') || 'ALL');
@@ -41,6 +45,7 @@ export default function ProductListPage() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>((searchParams.get('sortOrder') as any) || 'desc');
 
   useEffect(() => {
+    console.log('[PRODUCTS-TRACE] PAGE_LOAD_START', { timestamp: new Date().toISOString() });
     const fetchPerms = async () => {
       const res = await fetch('/api/auth/session');
       if (res.ok) {
@@ -49,11 +54,43 @@ export default function ProductListPage() {
       }
     };
     fetchPerms();
+
+    const fetchStats = async () => {
+      try {
+        const resStats = await fetch(`/api/staff/catalog/products/stats`);
+        if (resStats.ok) {
+          setStats(await resStats.json());
+        }
+      } catch (e) {
+        console.error('Failed to load global stats', e);
+      }
+    };
+    fetchStats();
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (search !== searchTerm) {
+        console.log('[PRODUCTS-TRACE] SEARCH_CHANGED', { search: searchTerm });
+        setSearch(searchTerm);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm, search]);
 
   const fetchRecords = useCallback(async (isRefresh = false) => {
     if (isRefresh) setIsRefreshing(true);
-    else setLoading(true);
+    
+    setIsFetching(true);
+    if (records.length === 0) setLoading(true);
+
+    if (abortControllerRef.current) {
+      console.log('[PRODUCTS-TRACE] REQUEST_ABORTED', { reason: 'new request started' });
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const signal = controller.signal;
 
     try {
       const q = new URLSearchParams();
@@ -72,38 +109,58 @@ export default function ProductListPage() {
       const catQ = new URLSearchParams(q.toString());
       catQ.delete('categoryId'); // Category stats shouldn't be filtered by categoryId itself
 
-      const [resRecords, resStats, resCats] = await Promise.all([
-        fetch(`/api/staff/catalog/products?${q.toString()}`),
-        fetch(`/api/staff/catalog/products/stats`),
-        fetch(`/api/staff/catalog/products/category-stats?${catQ.toString()}`)
+      console.log('[PRODUCTS-TRACE] PRODUCT_REQUEST_START', { 
+        search, status, type, itemType, categoryId, page, limit, sortBy, sortOrder 
+      });
+      const startTime = Date.now();
+
+      const [resRecords, resCats] = await Promise.all([
+        fetch(`/api/staff/catalog/products?${q.toString()}`, { signal }),
+        fetch(`/api/staff/catalog/products/category-stats?${catQ.toString()}`, { signal })
       ]);
 
       if (resRecords.ok) {
         const data = await resRecords.json();
         setRecords(data.records);
         setTotal(data.total);
+        console.log('[PRODUCTS-TRACE] PRODUCT_REQUEST_END', { 
+          durationMs: Date.now() - startTime,
+          resultCount: data.records.length,
+          total: data.total
+        });
       }
-      if (resStats.ok) setStats(await resStats.json());
+      
       if (resCats.ok) {
-        const cats = await resCats.json();
-        setCategories(cats);
+        const catsData = await resCats.json();
+        const catsArray = Array.isArray(catsData) ? catsData : catsData.categories || [];
+        setCategories(catsArray);
+        
+        if (catsData.total !== undefined) {
+          setCategoryTotal(catsData.total);
+        }
+
         // Reset categoryId to ALL if the currently selected category is not in the active categories list
-        if (categoryId !== 'ALL' && !cats.some((c: any) => c.id === categoryId)) {
+        if (categoryId !== 'ALL' && !catsArray.some((c: any) => c.id === categoryId)) {
           setCategoryId('ALL');
         }
       }
       
-    } catch (e) {
+    } catch (e: any) {
+      if (e.name === 'AbortError') return;
+      console.error('[PRODUCTS-TRACE] PRODUCT_REQUEST_ERROR', e);
       toast.error('Failed to load products');
     } finally {
-      setLoading(false);
-      setIsRefreshing(false);
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+        setIsFetching(false);
+        setIsRefreshing(false);
+        console.log('[PRODUCTS-TRACE] PAGE_RENDER_READY', { timestamp: new Date().toISOString() });
+      }
     }
-  }, [search, status, type, itemType, categoryId, sortBy, sortOrder, page, limit]);
+  }, [search, status, type, itemType, categoryId, sortBy, sortOrder, page, limit, records.length]);
 
   useEffect(() => {
-    const delay = setTimeout(() => fetchRecords(), 300);
-    return () => clearTimeout(delay);
+    fetchRecords();
   }, [fetchRecords]);
 
   const handleSort = (field: string) => {
@@ -131,7 +188,7 @@ export default function ProductListPage() {
   );
 
   // Dynamic category counting
-  const totalVisibleCount = categories.reduce((sum, c) => sum + c.count, 0);
+  const totalVisibleCount = categoryTotal > 0 ? categoryTotal : categories.reduce((sum, c) => sum + c.count, 0);
 
   return (
     <div className="min-h-screen bg-[#F6F8FB] pb-24">
@@ -170,8 +227,8 @@ export default function ProductListPage() {
                 type="text" 
                 placeholder="Search by Product Name, SKU, Brand, Manufacturer, Category..."
                 className="w-full pl-10 pr-4 h-[44px] text-[14px] bg-white border border-gray-300 rounded-xl focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/20 shadow-sm transition-all"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
               />
             </div>
             
@@ -218,18 +275,26 @@ export default function ProductListPage() {
           <KpiCard title="Approval Pending" value={stats?.pending} icon={AlertCircle} color="bg-orange-100 text-orange-600" active={status === 'Approval Pending'} onClick={() => { setStatus('Approval Pending'); setPage(1); }} />
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
+        <div className={`flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide transition-opacity duration-200 ${isFetching ? 'opacity-50 pointer-events-none' : ''}`}>
           <button onClick={() => { setCategoryId('ALL'); setPage(1); }} className={`px-3 py-1.5 rounded-full border text-[13px] font-medium whitespace-nowrap transition-colors ${categoryId === 'ALL' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-            All ({totalVisibleCount})
+            All ({isFetching ? '...' : totalVisibleCount})
           </button>
           {categories.map(cat => (
             <button key={cat.id} onClick={() => { setCategoryId(cat.id); setPage(1); }} className={`px-3 py-1.5 rounded-full border text-[13px] font-medium whitespace-nowrap transition-colors ${categoryId === cat.id ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-              {cat.name} ({cat.count})
+              {cat.name} ({isFetching ? '...' : cat.count})
             </button>
           ))}
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col relative">
+          {isFetching && records.length > 0 && (
+            <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px] z-10 flex items-start justify-center pt-24">
+              <div className="bg-white px-4 py-2.5 rounded-full shadow-lg border border-gray-100 flex items-center gap-3">
+                <RefreshCw className="animate-spin text-blue-600" size={16} />
+                <span className="text-sm font-medium text-gray-700">Updating results...</span>
+              </div>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse whitespace-nowrap min-w-[1200px]">
               <thead>

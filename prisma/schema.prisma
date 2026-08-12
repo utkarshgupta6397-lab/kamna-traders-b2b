@@ -469,6 +469,9 @@ model Product {
   @@index([brandId])
   @@index([categoryId])
   @@index([createdAt])
+  @@index([type])
+  @@index([catalogType])
+  @@index([parentProductId])
 }
 
 model ProductVariant {
@@ -1689,8 +1692,8 @@ model ProductAttributeValue {
 }
 
 model InventoryConfig {
-  id            String   @id @default("singleton")
-  leadTimeDays  Float    @default(3)
-  safetyFactor  Float    @default(1.5)
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default("singleton")
+  leadTimeDays Float    @default(3)
+  safetyFactor Float    @default(1.5)
+  updatedAt    DateTime @updatedAt
 }

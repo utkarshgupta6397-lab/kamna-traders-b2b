@@ -17,7 +17,9 @@ export async function GET(request: Request) {
   }
 
   try {
+    const tReqStart = Date.now();
     const { searchParams } = new URL(request.url);
+    console.log('[PRODUCTS-TRACE] PRODUCT_REQUEST_START', { searchParams: searchParams.toString() });
     const ALLOWED_SORT_FIELDS = ['updatedAt', 'createdAt', 'name', 'code', 'status', 'purchasePrice', 'sellingPrice'];
     const rawSortBy = searchParams.get('sortBy') || 'updatedAt';
     const sortBy = ALLOWED_SORT_FIELDS.includes(rawSortBy) ? rawSortBy : 'updatedAt';
@@ -32,10 +34,13 @@ export async function GET(request: Request) {
     let records: any[] = [];
 
     if (sortBy === 'default') {
+      const tCountStart = Date.now();
+      console.log('[PRODUCTS-TRACE] PRODUCT_COUNT_START');
       const allRecords = await prisma.product.findMany({
         where,
         select: { id: true, status: true, updatedAt: true },
       });
+      console.log('[PRODUCTS-TRACE] PRODUCT_COUNT_END', { durationMs: Date.now() - tCountStart });
 
       const statusWeight: Record<string, number> = {
         'Approval Pending': 1,
@@ -57,71 +62,151 @@ export async function GET(request: Request) {
         ? allRecords.map((r: any) => r.id) 
         : allRecords.slice((page - 1) * (limit as number), page * (limit as number)).map((r: any) => r.id);
 
+      const PRODUCT_SELECT = {
+        id: true,
+        code: true,
+        name: true,
+        type: true,
+        catalogType: true,
+        status: true,
+        updatedAt: true,
+        thumbnailBase64: true,
+        parentProductId: true,
+        isActive: true,
+        brandId: true,
+        categoryId: true,
+        brand: { select: { id: true, name: true } },
+        manufacturer: { select: { id: true, name: true } },
+        category: { select: { id: true, name: true } },
+        hsnCode: { select: { id: true, code: true } },
+        taxRate: { select: { id: true, percentage: true } },
+        updatedBy: { select: { id: true, name: true } },
+        variants: {
+          select: {
+            sellingPrice: true,
+            trackInventory: true,
+            trackSerials: true,
+            isActive: true,
+            sku: true,
+            zohoBookItemId: true
+          }
+        },
+        variantProducts: {
+          select: {
+            variants: {
+              select: {
+                sellingPrice: true
+              }
+            }
+          }
+        },
+        parentProduct: {
+          select: {
+            id: true,
+            name: true,
+            thumbnailBase64: true
+          }
+        }
+      };
+
+      const tFindManyStart = Date.now();
+      console.log('[PRODUCTS-TRACE] PRODUCT_FIND_MANY_START');
       const rawRecords = await prisma.product.findMany({
         where: { id: { in: pagedIds } },
-        include: {
-          brand: { select: { id: true, name: true } },
-          manufacturer: { select: { id: true, name: true } },
-          category: { select: { id: true, name: true } },
-          hsnCode: { select: { id: true, code: true, name: true } },
-          taxRate: { select: { id: true, name: true, percentage: true } },
-          unit: { select: { id: true, abbreviation: true } },
-          createdBy: { select: { id: true, name: true } },
-          updatedBy: { select: { id: true, name: true } },
-          variants: true,
-          variantAttribute: true,
-          variantProducts: {
-            include: {
-              variants: true,
-            },
-            orderBy: { createdAt: 'asc' }
-          },
-          parentProduct: { select: { id: true, name: true, code: true, thumbnailBase64: true } },
-        },
+        select: PRODUCT_SELECT,
+      // (Include removed, using select in chunk 1)
       });
+      console.log('[PRODUCTS-TRACE] PRODUCT_FIND_MANY_END', { durationMs: Date.now() - tFindManyStart });
 
       records = pagedIds.map((id: any) => rawRecords.find((r: any) => r.id === id)).filter(Boolean);
     } else {
+      const tCountStart = Date.now();
+      console.log('[PRODUCTS-TRACE] PRODUCT_COUNT_START');
       total = await prisma.product.count({ where });
+      console.log('[PRODUCTS-TRACE] PRODUCT_COUNT_END', { durationMs: Date.now() - tCountStart });
 
+      const tFindManyStart = Date.now();
+      console.log('[PRODUCTS-TRACE] PRODUCT_FIND_MANY_START');
       records = await prisma.product.findMany({
         where,
         orderBy: { [sortBy]: sortOrder },
         skip: limit === 'all' ? undefined : (page - 1) * (limit as number),
         take: limit === 'all' ? undefined : (limit as number),
-        include: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          type: true,
+          catalogType: true,
+          status: true,
+          updatedAt: true,
+          thumbnailBase64: true,
+          parentProductId: true,
+          isActive: true,
+          brandId: true,
+          categoryId: true,
           brand: { select: { id: true, name: true } },
           manufacturer: { select: { id: true, name: true } },
           category: { select: { id: true, name: true } },
-          hsnCode: { select: { id: true, code: true, name: true } },
-          taxRate: { select: { id: true, name: true, percentage: true } },
-          unit: { select: { id: true, abbreviation: true } },
-          createdBy: { select: { id: true, name: true } },
+          hsnCode: { select: { id: true, code: true } },
+          taxRate: { select: { id: true, percentage: true } },
           updatedBy: { select: { id: true, name: true } },
-          variants: true,
-          variantAttribute: true,
-          variantProducts: {
-            include: {
-              variants: true,
-            },
-            orderBy: { createdAt: 'asc' }
+          variants: {
+            select: {
+              sellingPrice: true,
+              trackInventory: true,
+              trackSerials: true,
+              isActive: true,
+              sku: true,
+              zohoBookItemId: true
+            }
           },
-          parentProduct: { select: { id: true, name: true, code: true, thumbnailBase64: true } },
+          variantProducts: {
+            select: {
+              variants: {
+                select: {
+                  sellingPrice: true
+                }
+              }
+            }
+          },
+          parentProduct: {
+            select: {
+              id: true,
+              name: true,
+              thumbnailBase64: true
+            }
+          }
         },
+      // (Include removed, using select in chunk 3)
       });
+      console.log('[PRODUCTS-TRACE] PRODUCT_FIND_MANY_END', { durationMs: Date.now() - tFindManyStart });
     }
     
     // Normalize legacy products (e.g., default missing ProductType)
+    const tTransformStart = Date.now();
+    console.log('[PRODUCTS-TRACE] PRODUCT_TRANSFORM_START');
     const { LegacyProductNormalizer } = await import('@/lib/services/LegacyProductNormalizer');
     records = records.map((r: any) => LegacyProductNormalizer.normalizeProduct(r));
+    console.log('[PRODUCTS-TRACE] PRODUCT_TRANSFORM_END', { durationMs: Date.now() - tTransformStart });
 
-    return NextResponse.json({
+    console.log('[PRODUCTS-TRACE] PRODUCT_RESPONSE_READY');
+    const responsePayload = {
       records,
       total,
       page,
       limit,
       totalPages: limit === 'all' ? 1 : Math.ceil(total / (limit as number)),
+    };
+    
+    // Console log to measure payload size for auditing
+    const payloadSize = JSON.stringify(responsePayload).length;
+    console.log(`[PRODUCTS-TRACE] PRODUCT_REQUEST_END`, { 
+      durationMs: Date.now() - tReqStart,
+      responseSizeBytes: payloadSize
     });
+
+    return NextResponse.json(responsePayload);
   } catch (error: any) {
     console.error(`[API] GET /api/staff/catalog/products error:`, error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });

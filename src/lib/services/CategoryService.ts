@@ -24,8 +24,10 @@ export class CategoryService {
    * Retrieves all categories structured as a tree (parent -> children).
    */
   static async getTree(searchParams?: URLSearchParams, categoryWhere?: any) {
+    const tPrismaStart = Date.now();
     const categories = await prisma.category.findMany({
       where: categoryWhere,
+      select: { id: true, name: true, parentId: true },
       orderBy: { name: 'asc' },
     });
 
@@ -37,6 +39,10 @@ export class CategoryService {
       where: productsWhere,
       _count: { _all: true },
     });
+    console.log('[PRODUCTS-TRACE] CATEGORY_STATS_PRISMA_END', { durationMs: Date.now() - tPrismaStart });
+
+    const tTreeStart = Date.now();
+    console.log('[PRODUCTS-TRACE] CATEGORY_STATS_TREE_BUILD_START', { timestamp: new Date().toISOString() });
 
     const productCounts = Object.fromEntries(
       productsGrouped.map((g) => [g.categoryId, g._count._all])
@@ -55,17 +61,19 @@ export class CategoryService {
       }
     });
 
-    // Helper to calculate total products recursively (a parent category has products = its own + all children)
+    // Helper to assign total products. (No longer recursively summing children).
     const calculateTotals = (node: any): number => {
       let total = node.productCount;
-      for (const child of node.children) {
-        total += calculateTotals(child);
-      }
       node.totalProducts = total;
+      for (const child of node.children) {
+        calculateTotals(child);
+      }
       return total;
     };
 
     roots.forEach(calculateTotals);
+
+    console.log('[PRODUCTS-TRACE] CATEGORY_STATS_TREE_BUILD_END', { durationMs: Date.now() - tTreeStart });
 
     return roots;
   }

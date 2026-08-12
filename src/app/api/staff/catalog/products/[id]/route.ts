@@ -164,7 +164,11 @@ export async function PATCH(
     if (status !== undefined) updateData.status = status;
 
     if (brandId !== undefined) {
-      if (brandId) updateData.brand = { connect: { id: brandId } };
+      if (brandId) {
+        const brand = await prisma.brand.findUnique({ where: { id: brandId } });
+        if (!brand || brand.status !== 'Active') return NextResponse.json({ error: 'Brand must be Active' }, { status: 400 });
+        updateData.brand = { connect: { id: brandId } };
+      }
       else updateData.brand = { disconnect: true };
     }
     if (manufacturerId !== undefined) {
@@ -172,7 +176,11 @@ export async function PATCH(
       else updateData.manufacturer = { disconnect: true };
     }
     if (categoryId !== undefined) {
-      if (categoryId) updateData.category = { connect: { id: categoryId } };
+      if (categoryId) {
+        const category = await prisma.category.findUnique({ where: { id: categoryId } });
+        if (!category || category.status !== 'Active') return NextResponse.json({ error: 'Category must be Active' }, { status: 400 });
+        updateData.category = { connect: { id: categoryId } };
+      }
       else updateData.category = { disconnect: true };
     }
     if (hsnCodeId !== undefined) {
@@ -345,6 +353,20 @@ export async function PUT(
       const isLeaf = await CategoryService.isLeafCategory(categoryId);
       if (!isLeaf) {
         return NextResponse.json({ error: 'Products can only be assigned to leaf categories (categories with no sub-categories).' }, { status: 400 });
+      }
+    }
+
+    if (categoryId) {
+      const category = await prisma.category.findUnique({ where: { id: categoryId } });
+      if (!category || category.status !== 'Active') {
+        return NextResponse.json({ error: 'Category must be Active' }, { status: 400 });
+      }
+    }
+
+    if (brandId) {
+      const brand = await prisma.brand.findUnique({ where: { id: brandId } });
+      if (!brand || brand.status !== 'Active') {
+        return NextResponse.json({ error: 'Brand must be Active' }, { status: 400 });
       }
     }
 

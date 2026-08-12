@@ -84,7 +84,14 @@ export default function ProductListPage() {
         setTotal(data.total);
       }
       if (resStats.ok) setStats(await resStats.json());
-      if (resCats.ok) setCategories(await resCats.json());
+      if (resCats.ok) {
+        const cats = await resCats.json();
+        setCategories(cats);
+        // Reset categoryId to ALL if the currently selected category is not in the active categories list
+        if (categoryId !== 'ALL' && !cats.some((c: any) => c.id === categoryId)) {
+          setCategoryId('ALL');
+        }
+      }
       
     } catch (e) {
       toast.error('Failed to load products');

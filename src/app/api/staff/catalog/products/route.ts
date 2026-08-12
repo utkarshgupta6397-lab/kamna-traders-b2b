@@ -198,6 +198,20 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Products can only be assigned to leaf categories (categories with no sub-categories).' }, { status: 400 });
       }
     }
+    
+    if (resolvedCategoryId) {
+      const category = await prisma.category.findUnique({ where: { id: resolvedCategoryId } });
+      if (!category || category.status !== 'Active') {
+        return NextResponse.json({ error: 'Category must be Active' }, { status: 400 });
+      }
+    }
+    
+    if (resolvedBrandId) {
+      const brand = await prisma.brand.findUnique({ where: { id: resolvedBrandId } });
+      if (!brand || brand.status !== 'Active') {
+        return NextResponse.json({ error: 'Brand must be Active' }, { status: 400 });
+      }
+    }
 
     const pPrice = parseFloat(purchasePrice) || 0;
     const sPrice = parseFloat(sellingPrice) || 0;

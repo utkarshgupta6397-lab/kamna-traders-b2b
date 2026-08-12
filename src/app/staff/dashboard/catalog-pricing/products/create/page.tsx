@@ -568,7 +568,7 @@ export default function CreateProductPage() {
                     label="Category"
                     required
                     endpoint="/api/staff/catalog/categories/selectable"
-                    extraQueryParams={{ sortBy: 'name' }}
+                    extraQueryParams={{ sortBy: 'name', status: 'Active' }}
                     value={formData.categoryId}
                     onChange={val => updateForm('categoryId', val || '')}
                     displayValue={catDisplay}
@@ -587,6 +587,7 @@ export default function CreateProductPage() {
                   <AsyncLookupField
                     label="Brand"
                     endpoint="/api/staff/catalog/brands"
+                    extraQueryParams={{ status: 'Active' }}
                     value={formData.brandId}
                     onChange={val => updateForm('brandId', val || '')}
                     displayValue={brandDisplay}

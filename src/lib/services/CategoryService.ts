@@ -23,8 +23,9 @@ export class CategoryService {
   /**
    * Retrieves all categories structured as a tree (parent -> children).
    */
-  static async getTree(searchParams?: URLSearchParams) {
+  static async getTree(searchParams?: URLSearchParams, categoryWhere?: any) {
     const categories = await prisma.category.findMany({
+      where: categoryWhere,
       orderBy: { name: 'asc' },
     });
 

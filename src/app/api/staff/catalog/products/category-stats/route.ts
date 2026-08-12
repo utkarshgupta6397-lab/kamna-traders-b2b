@@ -14,8 +14,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const where = buildProductWhereClause(searchParams);
 
-    // Use the CategoryService to get the tree with aggregated counts
-    const tree = await CategoryService.getTree(searchParams);
+    // Use the CategoryService to get the tree with aggregated counts, but only for Active categories
+    const tree = await CategoryService.getTree(searchParams, { status: 'Active' });
 
     // We want to return a flat list of categories that have products > 0 for the chips
     const activeCategories: any[] = [];

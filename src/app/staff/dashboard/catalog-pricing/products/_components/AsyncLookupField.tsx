@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronsUpDown, Loader2, X, AlertCircle, RefreshCw } from 'lucide-react';
 
@@ -150,6 +150,25 @@ export default function AsyncLookupField({
   const selectedOption = options.find(o => o.id === value) || preloadedOption;
   const displayLabel = value && selectedOption ? getDisplay(selectedOption) : null;
 
+  const sortedOptions = useMemo(() => {
+    if (!options.length) return options;
+    return [...options].sort((a, b) => {
+      const aRec = recommendedIds.includes(a.id);
+      const bRec = recommendedIds.includes(b.id);
+      if (aRec && !bRec) return -1;
+      if (!aRec && bRec) return 1;
+
+      const aVal = a.percentage !== undefined ? a.percentage : getDisplay(a);
+      const bVal = b.percentage !== undefined ? b.percentage : getDisplay(b);
+
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        if (aVal !== bVal) return aVal - bVal;
+      }
+      
+      return String(aVal).localeCompare(String(bVal), undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [options, recommendedIds, getDisplay]);
+
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="relative">
@@ -240,10 +259,10 @@ export default function AsyncLookupField({
                 <div className="px-4 py-3 text-sm text-gray-500 flex items-center justify-center gap-2">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" /> Searching...
                 </div>
-              ) : options.length === 0 ? (
+              ) : sortedOptions.length === 0 ? (
                 <div className="px-4 py-3 text-sm text-gray-400 text-center">No results found.</div>
               ) : (
-                options.map((opt) => {
+                sortedOptions.map((opt) => {
                   const optDisabled = isOptionDisabled ? isOptionDisabled(opt) : false;
                   const isSelected = value === opt.id;
                   const isRecommended = recommendedIds.includes(opt.id);

@@ -126,6 +126,16 @@ export async function PATCH(
       }
       updateData.code = parsedCode;
     }
+
+    // Auto-heal missing codes for Brands (and other entities using the same structure)
+    if (entity === 'brands') {
+      let finalCode = updateData.code !== undefined ? updateData.code : existing.code;
+      if (!finalCode || finalCode.trim() === '') {
+        const { getNextMasterId } = await import('@/lib/master-data-service');
+        const numId = await getNextMasterId(meta.modelName);
+        updateData.code = `${meta.codePrefix}-${numId}`;
+      }
+    }
     if (description !== undefined) updateData.description = description ? description.trim() : null;
     if (remarks !== undefined) updateData.remarks = remarks ? remarks.trim() : null;
 

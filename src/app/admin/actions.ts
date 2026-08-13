@@ -107,7 +107,10 @@ export async function deleteCategory(id: string) {
 export async function createBrand(data: FormData) {
   await requireAdmin();
   const name = data.get('name') as string;
-  await prisma.brand.create({ data: { name } });
+  const { getNextMasterId, ENTITY_REGISTRY } = await import('@/lib/master-data-service');
+  const numId = await getNextMasterId('Brand');
+  const code = `${ENTITY_REGISTRY.brands.codePrefix}-${numId}`;
+  await prisma.brand.create({ data: { name, code } });
   revalidatePath('/admin/brands');
 }
 
@@ -116,7 +119,18 @@ export async function updateBrand(data: FormData) {
   const id = data.get('id') as string;
   const name = data.get('name') as string;
   const active = data.get('active') === 'true';
-  await prisma.brand.update({ where: { id }, data: { name, active } });
+
+  const existing = await prisma.brand.findUnique({ where: { id } });
+  if (!existing) throw new Error('Brand not found');
+
+  let code = existing.code;
+  if (!code || code.trim() === '') {
+    const { getNextMasterId, ENTITY_REGISTRY } = await import('@/lib/master-data-service');
+    const numId = await getNextMasterId('Brand');
+    code = `${ENTITY_REGISTRY.brands.codePrefix}-${numId}`;
+  }
+
+  await prisma.brand.update({ where: { id }, data: { name, active, code } });
   revalidatePath('/admin/brands');
 }
 

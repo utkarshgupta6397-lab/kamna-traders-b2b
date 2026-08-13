@@ -58,6 +58,7 @@ export async function GET(request: Request) {
     const products = await prisma.product.findMany({
       where: {
         categoryId: { in: validCategoryIds },
+        catalogType: { not: 'PRODUCT_FAMILY' },
       },
       select: {
         id: true,

@@ -70,18 +70,6 @@ export default function ProductListPage() {
       }
     };
     fetchPerms();
-
-    const fetchStats = async () => {
-      try {
-        const resStats = await fetch(`/api/staff/catalog/products/stats`);
-        if (resStats.ok) {
-          setStats(await resStats.json());
-        }
-      } catch (e) {
-        console.error('Failed to load global stats', e);
-      }
-    };
-    fetchStats();
   }, []);
 
   useEffect(() => {
@@ -122,7 +110,7 @@ export default function ProductListPage() {
     return q;
   }, [search, status, type, itemType, categoryId, kpi]);
 
-  const cacheRef = useRef<Map<string, { timestamp: number, records: any[], total: number, catsData: any }>>(new Map());
+  const cacheRef = useRef<Map<string, { timestamp: number, records: any[], total: number, catsData: any, statsData: any }>>(new Map());
 
   const fetchRecords = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -158,6 +146,10 @@ export default function ProductListPage() {
           setRecords(cached.records);
           setTotal(cached.total);
           
+          if (cached.statsData) {
+            setStats(cached.statsData);
+          }
+
           const catsArray = Array.isArray(cached.catsData) ? cached.catsData : cached.catsData.categories || [];
           setCategories(catsArray);
           if (cached.catsData.total !== undefined) {
@@ -173,14 +165,16 @@ export default function ProductListPage() {
         }
       }
 
-      const [resRecords, resCats] = await Promise.all([
+      const [resRecords, resCats, resStats] = await Promise.all([
         fetch(`/api/staff/catalog/products?${q.toString()}`, { signal }),
-        fetch(`/api/staff/catalog/products/category-stats?${catQ.toString()}`, { signal })
+        fetch(`/api/staff/catalog/products/category-stats?${catQ.toString()}`, { signal }),
+        fetch(`/api/staff/catalog/products/stats?${q.toString()}`, { signal })
       ]);
 
       let newRecords: any[] = [];
       let newTotal = 0;
       let newCatsData: any = { categories: [], total: 0 };
+      let newStatsData: any = null;
 
       if (resRecords.ok) {
         const data = await resRecords.json();
@@ -202,12 +196,18 @@ export default function ProductListPage() {
         }
       }
 
-      if (resRecords.ok && resCats.ok) {
+      if (resStats.ok) {
+        newStatsData = await resStats.json();
+        setStats(newStatsData);
+      }
+
+      if (resRecords.ok && resCats.ok && resStats.ok) {
         cacheRef.current.set(cacheKey, {
           timestamp: Date.now(),
           records: newRecords,
           total: newTotal,
-          catsData: newCatsData
+          catsData: newCatsData,
+          statsData: newStatsData
         });
       }
       

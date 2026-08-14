@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { buildProductWhereClause } from '@/lib/services/ProductFilterService';
+import { buildProductWhereClause, buildZohoSyncedProductCondition } from '@/lib/services/ProductFilterService';
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -15,15 +15,15 @@ export async function GET(request: Request) {
 
     const [total, goods, services, active, pending, archived, trackInventory, trackSerials, zohoSynced, zohoNotSynced] = await Promise.all([
       prisma.product.count({ where }),
-      prisma.product.count({ where: { ...where, type: 'Goods', status: 'Active' } }),
-      prisma.product.count({ where: { ...where, type: 'Service' } }),
-      prisma.product.count({ where: { ...where, status: 'Active' } }),
-      prisma.product.count({ where: { ...where, status: 'Approval Pending' } }),
-      prisma.product.count({ where: { ...where, status: 'Archived' } }),
-      prisma.product.count({ where: { ...where, variants: { some: { trackInventory: true } } } }),
-      prisma.product.count({ where: { ...where, variants: { some: { trackSerials: true } } } }),
-      prisma.product.count({ where: { ...where, variants: { some: { zohoBookItemId: { not: null, notIn: [''] } } } } }),
-      prisma.product.count({ where: { ...where, variants: { some: { OR: [{ zohoBookItemId: null }, { zohoBookItemId: '' }] } } } }),
+      prisma.product.count({ where: { AND: [where, { type: 'Goods', status: 'Active' }] } }),
+      prisma.product.count({ where: { AND: [where, { type: 'Service' }] } }),
+      prisma.product.count({ where: { AND: [where, { status: 'Active' }] } }),
+      prisma.product.count({ where: { AND: [where, { status: 'Approval Pending' }] } }),
+      prisma.product.count({ where: { AND: [where, { status: 'Archived' }] } }),
+      prisma.product.count({ where: { AND: [where, { variants: { some: { trackInventory: true } } }] } }),
+      prisma.product.count({ where: { AND: [where, { variants: { some: { trackSerials: true } } }] } }),
+      prisma.product.count({ where: { AND: [where, buildZohoSyncedProductCondition(true)] } }),
+      prisma.product.count({ where: { AND: [where, buildZohoSyncedProductCondition(false)] } }),
     ]);
 
     return NextResponse.json({

@@ -54,9 +54,11 @@ export function buildProductWhereClause(searchParams: URLSearchParams): any {
 
   const zohoSynced = searchParams.get('zohoSynced');
   if (zohoSynced === 'true') {
-    where.variants = { ...where.variants, some: { ...where.variants?.some, zohoBookItemId: { not: null, notIn: [''] } } };
+    if (!where.AND) where.AND = [];
+    where.AND.push(buildZohoSyncedProductCondition(true));
   } else if (zohoSynced === 'false') {
-    where.variants = { ...where.variants, some: { ...where.variants?.some, OR: [{ zohoBookItemId: null }, { zohoBookItemId: '' }] } };
+    if (!where.AND) where.AND = [];
+    where.AND.push(buildZohoSyncedProductCondition(false));
   }
 
   if (createdBy) {
@@ -93,4 +95,12 @@ export function buildProductWhereClause(searchParams: URLSearchParams): any {
   }
 
   return where;
+}
+
+export function buildZohoSyncedProductCondition(isSynced: boolean) {
+  if (isSynced) {
+    return { variants: { some: { zohoSyncStatus: 'SYNCED' } } };
+  } else {
+    return { NOT: { variants: { some: { zohoSyncStatus: 'SYNCED' } } } };
+  }
 }

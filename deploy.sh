@@ -74,8 +74,10 @@ if ! npm run build; then
     echo "❌ Build failed! Deployment aborted."
     echo "   - Production application was NOT affected and remains live."
     rm -rf .next.new || true
+    unset NEXT_BUILD_DIR
     exit 1
 fi
+unset NEXT_BUILD_DIR
 echo "✓ Next.js build completed in $((SECONDS - STEP_START))s"
 NEXT_BUILD_TIME=$((SECONDS - STEP_START))
 

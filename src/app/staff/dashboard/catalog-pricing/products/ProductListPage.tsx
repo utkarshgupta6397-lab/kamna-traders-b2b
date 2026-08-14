@@ -6,6 +6,7 @@ import { Plus, Search, Filter, Settings2, Download, PackageOpen, Package, Box, B
 import toast from 'react-hot-toast';
 import MasterStatusBadge from '../_framework/MasterStatusBadge';
 import ImportFromZohoDialog from './_components/ImportFromZohoDialog';
+import * as XLSX from 'xlsx';
 
 const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val);
 
@@ -21,28 +22,43 @@ export default function ProductListPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [permissions, setPermissions] = useState<any>(null);
   
-  const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
-  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const search = searchParams.get('search') || '';
+  const [searchInput, setSearchInput] = useState(search);
   const [isFetching, setIsFetching] = useState(true);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const [status, setStatus] = useState(searchParams.get('status') || 'ALL');
-  const [type, setType] = useState(searchParams.get('type') || 'ALL');
-  const [itemType, setItemType] = useState(searchParams.get('itemType') || 'ALL');
-  const [categoryId, setCategoryId] = useState(searchParams.get('categoryId') || 'ALL');
+  
+  const status = searchParams.get('status') || 'ALL';
+  const type = searchParams.get('type') || 'ALL';
+  const itemType = searchParams.get('itemType') || 'ALL';
+  const categoryId = searchParams.get('categoryId') || 'ALL';
+  const kpi = searchParams.get('kpi') || 'total';
+
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
-  const [brandId, setBrandId] = useState(searchParams.get('brandId') || '');
-  const [manufacturerId, setManufacturerId] = useState(searchParams.get('manufacturerId') || '');
-  const [hsnCodeId, setHsnCodeId] = useState(searchParams.get('hsnCodeId') || '');
-  const [taxRateId, setTaxRateId] = useState(searchParams.get('taxRateId') || '');
-  const [unitId, setUnitId] = useState(searchParams.get('unitId') || '');
+  const page = Number(searchParams.get('page')) || 1;
+  const limit = Number(searchParams.get('limit')) || 25;
+  const sortBy = searchParams.get('sortBy') || 'updatedAt';
+  const sortOrder = (searchParams.get('sortOrder') as any) || 'desc';
 
-
-  const [page, setPage] = useState(Number(searchParams.get('page')) || 1);
-  const [limit, setLimit] = useState(Number(searchParams.get('limit')) || 25);
   const [total, setTotal] = useState(0);
-  const [sortBy, setSortBy] = useState(searchParams.get('sortBy') || 'updatedAt');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>((searchParams.get('sortOrder') as any) || 'desc');
+
+  const updateFilter = useCallback((updates: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    let pageReset = false;
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === 'ALL' || value === 'total') {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+      if (key !== 'page' && key !== 'limit' && key !== 'sortBy' && key !== 'sortOrder') {
+        pageReset = true;
+      }
+    }
+    if (pageReset) params.delete('page');
+    router.push(`?${params.toString()}`, { scroll: false });
+  }, [searchParams, router]);
 
   useEffect(() => {
     console.log('[PRODUCTS-TRACE] PAGE_LOAD_START', { timestamp: new Date().toISOString() });
@@ -70,22 +86,54 @@ export default function ProductListPage() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (search !== searchTerm) {
-        console.log('[PRODUCTS-TRACE] SEARCH_CHANGED', { search: searchTerm });
-        setSearch(searchTerm);
+      if (search !== searchInput) {
+        updateFilter({ search: searchInput || null });
       }
     }, 400);
     return () => clearTimeout(timer);
-  }, [searchTerm, search]);
+  }, [searchInput, search, updateFilter]);
+
+  const getEffectiveFilters = useCallback(() => {
+    let effectiveStatus = status;
+    let effectiveType = type;
+    let zohoSynced = null;
+
+    if (kpi === 'active_goods') {
+      if (status === 'ALL') effectiveStatus = 'Active';
+      if (type === 'ALL') effectiveType = 'Goods';
+    } else if (kpi === 'services') {
+      if (type === 'ALL') effectiveType = 'Service';
+    } else if (kpi === 'pending') {
+      if (status === 'ALL') effectiveStatus = 'Approval Pending';
+    } else if (kpi === 'zoho_synced') {
+      zohoSynced = 'true';
+    } else if (kpi === 'zoho_not_synced') {
+      zohoSynced = 'false';
+    }
+
+    const q = new URLSearchParams();
+    if (search) q.set('search', search);
+    if (effectiveStatus !== 'ALL') q.set('status', effectiveStatus);
+    if (effectiveType !== 'ALL') q.set('type', effectiveType);
+    if (itemType !== 'ALL') q.set('itemType', itemType);
+    if (categoryId !== 'ALL') q.set('categoryId', categoryId);
+    if (zohoSynced) q.set('zohoSynced', zohoSynced);
+
+    return q;
+  }, [search, status, type, itemType, categoryId, kpi]);
+
+  const cacheRef = useRef<Map<string, { timestamp: number, records: any[], total: number, catsData: any }>>(new Map());
 
   const fetchRecords = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setIsRefreshing(true);
+    if (isRefresh) {
+      setIsRefreshing(true);
+      cacheRef.current.clear();
+    }
     
     setIsFetching(true);
     if (records.length === 0) setLoading(true);
 
     if (abortControllerRef.current) {
-      console.log('[PRODUCTS-TRACE] REQUEST_ABORTED', { reason: 'new request started' });
       abortControllerRef.current.abort();
     }
     const controller = new AbortController();
@@ -93,56 +141,74 @@ export default function ProductListPage() {
     const signal = controller.signal;
 
     try {
-      const q = new URLSearchParams();
-      if (search) q.set('search', search);
-      if (status !== 'ALL') q.set('status', status);
-      if (type !== 'ALL') q.set('type', type);
-      if (itemType !== 'ALL') q.set('itemType', itemType);
-      if (categoryId !== 'ALL') q.set('categoryId', categoryId);
-      
+      const q = getEffectiveFilters();
       q.set('sortBy', sortBy);
       q.set('sortOrder', sortOrder);
       q.set('page', page.toString());
       q.set('limit', limit.toString());
 
-      // Send the exact same filters to category-stats so counts are dynamic
-      const catQ = new URLSearchParams(q.toString());
-      catQ.delete('categoryId'); // Category stats shouldn't be filtered by categoryId itself
+      const catQ = getEffectiveFilters();
+      catQ.delete('categoryId');
 
-      console.log('[PRODUCTS-TRACE] PRODUCT_REQUEST_START', { 
-        search, status, type, itemType, categoryId, page, limit, sortBy, sortOrder 
-      });
-      const startTime = Date.now();
+      const cacheKey = q.toString() + '|' + catQ.toString();
+      
+      if (!isRefresh && cacheRef.current.has(cacheKey)) {
+        const cached = cacheRef.current.get(cacheKey)!;
+        if (Date.now() - cached.timestamp < 1000 * 60 * 5) {
+          setRecords(cached.records);
+          setTotal(cached.total);
+          
+          const catsArray = Array.isArray(cached.catsData) ? cached.catsData : cached.catsData.categories || [];
+          setCategories(catsArray);
+          if (cached.catsData.total !== undefined) {
+            setCategoryTotal(cached.catsData.total);
+          }
+          if (categoryId !== 'ALL' && !catsArray.some((c: any) => c.id === categoryId)) {
+            updateFilter({ categoryId: null });
+          }
+          
+          setLoading(false);
+          setIsFetching(false);
+          return;
+        }
+      }
 
       const [resRecords, resCats] = await Promise.all([
         fetch(`/api/staff/catalog/products?${q.toString()}`, { signal }),
         fetch(`/api/staff/catalog/products/category-stats?${catQ.toString()}`, { signal })
       ]);
 
+      let newRecords: any[] = [];
+      let newTotal = 0;
+      let newCatsData: any = { categories: [], total: 0 };
+
       if (resRecords.ok) {
         const data = await resRecords.json();
-        setRecords(data.records);
-        setTotal(data.total);
-        console.log('[PRODUCTS-TRACE] PRODUCT_REQUEST_END', { 
-          durationMs: Date.now() - startTime,
-          resultCount: data.records.length,
-          total: data.total
-        });
+        newRecords = data.records;
+        newTotal = data.total;
+        setRecords(newRecords);
+        setTotal(newTotal);
       }
       
       if (resCats.ok) {
-        const catsData = await resCats.json();
-        const catsArray = Array.isArray(catsData) ? catsData : catsData.categories || [];
+        newCatsData = await resCats.json();
+        const catsArray = Array.isArray(newCatsData) ? newCatsData : newCatsData.categories || [];
         setCategories(catsArray);
-        
-        if (catsData.total !== undefined) {
-          setCategoryTotal(catsData.total);
+        if (newCatsData.total !== undefined) {
+          setCategoryTotal(newCatsData.total);
         }
-
-        // Reset categoryId to ALL if the currently selected category is not in the active categories list
         if (categoryId !== 'ALL' && !catsArray.some((c: any) => c.id === categoryId)) {
-          setCategoryId('ALL');
+          updateFilter({ categoryId: null });
         }
+      }
+
+      if (resRecords.ok && resCats.ok) {
+        cacheRef.current.set(cacheKey, {
+          timestamp: Date.now(),
+          records: newRecords,
+          total: newTotal,
+          catsData: newCatsData
+        });
       }
       
     } catch (e: any) {
@@ -154,10 +220,9 @@ export default function ProductListPage() {
         setLoading(false);
         setIsFetching(false);
         setIsRefreshing(false);
-        console.log('[PRODUCTS-TRACE] PAGE_RENDER_READY', { timestamp: new Date().toISOString() });
       }
     }
-  }, [search, status, type, itemType, categoryId, sortBy, sortOrder, page, limit, records.length]);
+  }, [getEffectiveFilters, sortBy, sortOrder, page, limit, categoryId, updateFilter]);
 
   useEffect(() => {
     fetchRecords();
@@ -165,24 +230,84 @@ export default function ProductListPage() {
 
   const handleSort = (field: string) => {
     if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+      updateFilter({ sortOrder: sortOrder === 'asc' ? 'desc' : 'asc' });
     } else {
-      setSortBy(field);
-      setSortOrder('asc');
+      updateFilter({ sortBy: field, sortOrder: 'asc' });
     }
   };
 
-  const KpiCard = ({ title, value, icon: Icon, color, onClick, active }: any) => (
+  const exportProducts = async () => {
+    setIsExporting(true);
+    try {
+      const q = getEffectiveFilters();
+      q.set('limit', 'all');
+      const res = await fetch(`/api/staff/catalog/products?${q.toString()}`);
+      if (!res.ok) throw new Error('Export failed');
+      const data = await res.json();
+      const exportRecords = data.records;
+      
+      const headers = ['SKU', 'Product Name', 'Product Type', 'Type', 'Brand', 'Manufacturer', 'Category', 'HSN Code', 'Tax Rate', 'Status', 'Selling Price', 'Zoho Books Item ID'];
+      const rows = exportRecords.map((p: any) => {
+        let productType = 'Standard';
+        if (p.catalogType === 'PRODUCT_FAMILY') productType = 'Parent';
+        else if (p.isVariantProduct) productType = 'Variant';
+        
+        const zohoId = p.variants?.[0]?.zohoBookItemId || '';
+
+        return [
+          p.code || '',
+          p.name || '',
+          productType,
+          p.type || '',
+          p.brand?.name || '',
+          p.manufacturer?.name || '',
+          p.category?.name || '',
+          p.hsnCode?.code || '',
+          `${p.taxRate?.percentage || 0}%`,
+          p.status || '',
+          p.variants?.[0]?.sellingPrice || '',
+          zohoId ? String(zohoId) : ''
+        ];
+      });
+
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+      for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+        // Force SKU (A) and Zoho ID (L) to display and behave as text
+        for (const C of [0, 11]) {
+          const cell = worksheet[XLSX.utils.encode_cell({c: C, r: R})];
+          if (cell) {
+            cell.t = 's'; // Force string type internally
+            cell.z = '@'; // Force text cell format visually in Excel
+          }
+        }
+      }
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Products');
+      XLSX.writeFile(workbook, `products_export_${new Date().getTime()}.xlsx`);
+    } catch (e) {
+      console.error('Export error', e);
+      toast.error('Failed to export products');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const KpiCard = ({ title, value, icon: Icon, color, onClick, active, extra }: any) => (
     <div 
       onClick={onClick}
-      className={`bg-white rounded-xl border p-4 flex items-center gap-4 cursor-pointer transition-all duration-200 hover:shadow-md ${active ? 'ring-2 ring-blue-500 border-blue-500 shadow-sm' : 'border-gray-200'}`}
+      className={`bg-white rounded-xl border p-4 flex items-center gap-4 cursor-pointer transition-all duration-200 hover:shadow-md relative ${active ? 'ring-2 ring-blue-500 border-blue-500 shadow-sm' : 'border-gray-200'}`}
     >
       <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${color}`}>
         <Icon size={24} />
       </div>
-      <div>
+      <div className="flex-1">
         <div className="text-gray-500 text-sm font-medium">{title}</div>
-        <div className="text-2xl font-bold text-gray-900">{value ?? '...'}</div>
+        <div className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          {value ?? '...'} 
+          {extra && <div onClick={e => e.stopPropagation()} className="ml-auto">{extra}</div>}
+        </div>
       </div>
     </div>
   );
@@ -227,13 +352,13 @@ export default function ProductListPage() {
                 type="text" 
                 placeholder="Search by Product Name, SKU, Brand, Manufacturer, Category..."
                 className="w-full pl-10 pr-4 h-[44px] text-[14px] bg-white border border-gray-300 rounded-xl focus:border-blue-500 focus:ring-[3px] focus:ring-blue-500/20 shadow-sm transition-all"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
+                value={searchInput}
+                onChange={e => setSearchInput(e.target.value)}
               />
             </div>
             
             <div className="flex flex-1 items-center gap-3">
-              <select className="h-10 px-3 text-[13px] border-gray-200 rounded-lg text-gray-700 bg-white cursor-pointer hover:border-gray-300 transition-colors shadow-sm" value={status} onChange={e => setStatus(e.target.value)}>
+              <select className="h-10 px-3 text-[13px] border-gray-200 rounded-lg text-gray-700 bg-white cursor-pointer hover:border-gray-300 transition-colors shadow-sm" value={status} onChange={e => updateFilter({ status: e.target.value })}>
                 <option value="ALL">All Statuses</option>
                 <option value="Active">Active</option>
                 <option value="Approval Pending">Pending Approval</option>
@@ -241,13 +366,13 @@ export default function ProductListPage() {
                 <option value="Archived">Archived</option>
               </select>
               
-              <select className="h-10 px-3 text-[13px] border-gray-200 rounded-lg text-gray-700 bg-white cursor-pointer hover:border-gray-300 transition-colors shadow-sm" value={type} onChange={e => setType(e.target.value)}>
+              <select className="h-10 px-3 text-[13px] border-gray-200 rounded-lg text-gray-700 bg-white cursor-pointer hover:border-gray-300 transition-colors shadow-sm" value={type} onChange={e => updateFilter({ type: e.target.value })}>
                 <option value="ALL">All Types</option>
                 <option value="Goods">Goods</option>
                 <option value="Service">Services</option>
               </select>
 
-              <select className="h-10 px-3 text-[13px] border-gray-200 rounded-lg text-gray-700 bg-white cursor-pointer hover:border-gray-300 transition-colors shadow-sm" value={itemType} onChange={e => setItemType(e.target.value)}>
+              <select className="h-10 px-3 text-[13px] border-gray-200 rounded-lg text-gray-700 bg-white cursor-pointer hover:border-gray-300 transition-colors shadow-sm" value={itemType} onChange={e => updateFilter({ itemType: e.target.value })}>
                 <option value="ALL">All Items</option>
                 <option value="Standard">Standard</option>
                 <option value="Parents">Parents</option>
@@ -256,11 +381,14 @@ export default function ProductListPage() {
             </div>
 
             <div className="flex items-center gap-3">
+              <button onClick={() => { setSearchInput(''); updateFilter({ search: null, status: 'ALL', type: 'ALL', itemType: 'ALL', categoryId: 'ALL', kpi: 'total', page: '1' }); }} className="h-10 px-3 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors inline-flex items-center gap-2 shadow-sm">
+                <X size={14} /> Reset Filters
+              </button>
               <button onClick={() => fetchRecords(true)} className="h-10 px-3 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:text-blue-600 transition-colors inline-flex items-center gap-2 shadow-sm">
                 <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} /> Refresh
               </button>
-              <button className="h-10 px-3 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors inline-flex items-center gap-2 shadow-sm">
-                <Download size={14} /> Export
+              <button onClick={exportProducts} disabled={isExporting} className="h-10 px-3 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors inline-flex items-center gap-2 shadow-sm disabled:opacity-50">
+                {isExporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />} Export
               </button>
             </div>
           </div>
@@ -268,19 +396,43 @@ export default function ProductListPage() {
       </div>
 
       <div className="max-w-[1600px] mx-auto px-6 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard title="Total Products" value={stats?.total} icon={PackageOpen} color="bg-gray-100 text-gray-600" active={status === 'ALL' && type === 'ALL' && itemType === 'ALL'} onClick={() => { setStatus('ALL'); setType('ALL'); setItemType('ALL'); setPage(1); }} />
-          <KpiCard title="Active Goods" value={stats?.goods} icon={Box} color="bg-blue-100 text-blue-600" active={type === 'Goods'} onClick={() => { setType('Goods'); setPage(1); }} />
-          <KpiCard title="Services" value={stats?.services} icon={Layers} color="bg-purple-100 text-purple-600" active={type === 'Service'} onClick={() => { setType('Service'); setPage(1); }} />
-          <KpiCard title="Approval Pending" value={stats?.pending} icon={AlertCircle} color="bg-orange-100 text-orange-600" active={status === 'Approval Pending'} onClick={() => { setStatus('Approval Pending'); setPage(1); }} />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <KpiCard title="Total Products" value={stats?.total} icon={PackageOpen} color="bg-gray-100 text-gray-600" active={kpi === 'total'} onClick={() => updateFilter({ kpi: 'total' })} />
+          <KpiCard title="Active Goods" value={stats?.goods} icon={Box} color="bg-blue-100 text-blue-600" active={kpi === 'active_goods'} onClick={() => updateFilter({ kpi: 'active_goods' })} />
+          <KpiCard title="Services" value={stats?.services} icon={Layers} color="bg-purple-100 text-purple-600" active={kpi === 'services'} onClick={() => updateFilter({ kpi: 'services' })} />
+          <KpiCard title="Approval Pending" value={stats?.pending} icon={AlertCircle} color="bg-orange-100 text-orange-600" active={kpi === 'pending'} onClick={() => updateFilter({ kpi: 'pending' })} />
+          <KpiCard 
+            title={kpi === 'zoho_not_synced' ? "Zoho Not Synced" : "Zoho Synced"} 
+            value={kpi === 'zoho_not_synced' ? stats?.zohoNotSynced : stats?.zohoSynced} 
+            icon={RefreshCw} 
+            color="bg-indigo-100 text-indigo-600" 
+            active={kpi === 'zoho_synced' || kpi === 'zoho_not_synced'} 
+            onClick={() => updateFilter({ kpi: kpi === 'zoho_not_synced' ? 'zoho_not_synced' : 'zoho_synced' })}
+            extra={
+              <div className="flex bg-gray-100 rounded-md p-0.5 border border-gray-200" onClick={e => e.stopPropagation()}>
+                <button 
+                  onClick={() => updateFilter({ kpi: 'zoho_synced' })} 
+                  className={`px-2 py-1 text-[11px] font-medium rounded-sm transition-colors ${kpi === 'zoho_synced' || (kpi !== 'zoho_not_synced' && kpi !== 'zoho_synced') ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  ✓ Synced
+                </button>
+                <button 
+                  onClick={() => updateFilter({ kpi: 'zoho_not_synced' })} 
+                  className={`px-2 py-1 text-[11px] font-medium rounded-sm transition-colors ${kpi === 'zoho_not_synced' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Not Synced
+                </button>
+              </div>
+            }
+          />
         </div>
 
         <div className={`flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide transition-opacity duration-200 ${isFetching ? 'opacity-50 pointer-events-none' : ''}`}>
-          <button onClick={() => { setCategoryId('ALL'); setPage(1); }} className={`px-3 py-1.5 rounded-full border text-[13px] font-medium whitespace-nowrap transition-colors ${categoryId === 'ALL' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+          <button onClick={() => updateFilter({ categoryId: 'ALL' })} className={`px-3 py-1.5 rounded-full border text-[13px] font-medium whitespace-nowrap transition-colors ${categoryId === 'ALL' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
             All ({isFetching ? '...' : totalVisibleCount})
           </button>
           {categories.map(cat => (
-            <button key={cat.id} onClick={() => { setCategoryId(cat.id); setPage(1); }} className={`px-3 py-1.5 rounded-full border text-[13px] font-medium whitespace-nowrap transition-colors ${categoryId === cat.id ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+            <button key={cat.id} onClick={() => updateFilter({ categoryId: cat.id })} className={`px-3 py-1.5 rounded-full border text-[13px] font-medium whitespace-nowrap transition-colors ${categoryId === cat.id ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
               {cat.name} ({isFetching ? '...' : cat.count})
             </button>
           ))}
@@ -347,7 +499,7 @@ export default function ProductListPage() {
                       </div>
                       <h3 className="text-gray-900 font-semibold mb-1">No products found</h3>
                       <p className="text-gray-500 text-sm mb-4">Try adjusting your filters or search query.</p>
-                      <button onClick={() => { setSearch(''); setStatus('ALL'); setType('ALL'); setItemType('ALL'); setCategoryId('ALL'); }} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-[13px] font-medium transition-colors">
+                      <button onClick={() => { setSearchInput(''); updateFilter({ search: null, status: 'ALL', type: 'ALL', itemType: 'ALL', categoryId: 'ALL', kpi: 'total', page: '1' }); }} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-[13px] font-medium transition-colors">
                         Clear All Filters
                       </button>
                     </td>
@@ -473,7 +625,7 @@ export default function ProductListPage() {
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   <span className="text-[12px] text-gray-500">Rows:</span>
-                  <select className="h-8 px-2 py-1 text-[13px] border-gray-200 rounded-md bg-white cursor-pointer hover:border-gray-300" value={limit} onChange={e => { setLimit(Number(e.target.value)); setPage(1); }}>
+                  <select className="h-8 px-2 py-1 text-[13px] border-gray-200 rounded-md bg-white cursor-pointer hover:border-gray-300" value={limit} onChange={e => updateFilter({ limit: e.target.value, page: '1' })}>
                     <option value={10}>10</option>
                     <option value={25}>25</option>
                     <option value={50}>50</option>
@@ -481,8 +633,8 @@ export default function ProductListPage() {
                   </select>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1.5 border border-gray-200 rounded-md bg-white text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Prev</button>
-                  <button onClick={() => setPage(p => Math.min(Math.ceil(total/limit), p + 1))} disabled={page >= Math.ceil(total/limit)} className="px-3 py-1.5 border border-gray-200 rounded-md bg-white text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Next</button>
+                  <button onClick={() => updateFilter({ page: String(Math.max(1, page - 1)) })} disabled={page === 1} className="px-3 py-1.5 border border-gray-200 rounded-md bg-white text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Prev</button>
+                  <button onClick={() => updateFilter({ page: String(Math.min(Math.ceil(total/limit), page + 1)) })} disabled={page >= Math.ceil(total/limit)} className="px-3 py-1.5 border border-gray-200 rounded-md bg-white text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Next</button>
                 </div>
               </div>
             </div>

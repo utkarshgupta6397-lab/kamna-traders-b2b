@@ -52,6 +52,13 @@ export function buildProductWhereClause(searchParams: URLSearchParams): any {
     where.variants = { ...where.variants, some: { ...where.variants?.some, trackSerials: false } }; 
   }
 
+  const zohoSynced = searchParams.get('zohoSynced');
+  if (zohoSynced === 'true') {
+    where.variants = { ...where.variants, some: { ...where.variants?.some, zohoBookItemId: { not: null, notIn: [''] } } };
+  } else if (zohoSynced === 'false') {
+    where.variants = { ...where.variants, some: { ...where.variants?.some, OR: [{ zohoBookItemId: null }, { zohoBookItemId: '' }] } };
+  }
+
   if (createdBy) {
     where.createdById = createdBy;
   }

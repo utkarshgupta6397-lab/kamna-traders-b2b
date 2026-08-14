@@ -13,15 +13,17 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const where = buildProductWhereClause(searchParams);
 
-    const [total, goods, services, active, pending, archived, trackInventory, trackSerials] = await Promise.all([
+    const [total, goods, services, active, pending, archived, trackInventory, trackSerials, zohoSynced, zohoNotSynced] = await Promise.all([
       prisma.product.count({ where }),
-      prisma.product.count({ where: { ...where, type: 'Goods' } }),
+      prisma.product.count({ where: { ...where, type: 'Goods', status: 'Active' } }),
       prisma.product.count({ where: { ...where, type: 'Service' } }),
       prisma.product.count({ where: { ...where, status: 'Active' } }),
       prisma.product.count({ where: { ...where, status: 'Approval Pending' } }),
       prisma.product.count({ where: { ...where, status: 'Archived' } }),
       prisma.product.count({ where: { ...where, variants: { some: { trackInventory: true } } } }),
       prisma.product.count({ where: { ...where, variants: { some: { trackSerials: true } } } }),
+      prisma.product.count({ where: { ...where, variants: { some: { zohoBookItemId: { not: null, notIn: [''] } } } } }),
+      prisma.product.count({ where: { ...where, variants: { some: { OR: [{ zohoBookItemId: null }, { zohoBookItemId: '' }] } } } }),
     ]);
 
     return NextResponse.json({
@@ -32,7 +34,9 @@ export async function GET(request: Request) {
       pending,
       archived,
       trackInventory,
-      trackSerials
+      trackSerials,
+      zohoSynced,
+      zohoNotSynced
     });
   } catch (error: any) {
     console.error(`[API] GET /api/staff/catalog/products/stats error:`, error);

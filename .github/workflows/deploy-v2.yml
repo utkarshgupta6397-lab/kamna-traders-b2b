@@ -1,0 +1,92 @@
+name: Phase 2A Build Test
+
+on:
+  push:
+    branches:
+      - phase2/deployment-build-test
+
+jobs:
+  build-and-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Next.js application
+        run: npm run build
+
+      - name: Assemble Standalone Artifact
+        run: |
+          echo "Assembling standalone artifact..."
+          mkdir -p release
+          
+          # Copy standalone output
+          cp -r .next/standalone/. release/
+          
+          # Next.js standalone does not include public and .next/static folders, so copy them manually
+          # Only copy if they exist
+          if [ -d "public" ]; then
+            cp -r public release/public
+          fi
+          
+          if [ -d ".next/static" ]; then
+            mkdir -p release/.next
+            cp -r .next/static release/.next/static
+          fi
+          
+          if [ -d "prisma" ]; then
+            cp -r prisma release/prisma
+          fi
+          
+          # Ensure no local .env files are included
+          find release -type f -name ".env*" -delete
+
+          # Compress to tar.gz
+          cd release
+          tar -czf ../release.tar.gz .
+          cd ..
+          
+          echo "Artifact assembled successfully."
+
+      - name: Verify Artifact Contents
+        run: |
+          echo "Verifying release.tar.gz..."
+          mkdir -p verify-tmp
+          tar -xzf release.tar.gz -C verify-tmp
+          
+          echo "--- Contents of verify-tmp ---"
+          ls -la verify-tmp
+          
+          echo "--- Verifying required files ---"
+          if [ ! -f "verify-tmp/server.js" ]; then echo "Error: server.js missing"; exit 1; fi
+          if [ ! -d "verify-tmp/.next/static" ]; then echo "Error: .next/static missing"; exit 1; fi
+          if [ ! -d "verify-tmp/prisma" ]; then echo "Error: prisma missing"; exit 1; fi
+          if ls verify-tmp/.env* 1> /dev/null 2>&1; then echo "Error: .env files found!"; exit 1; fi
+          
+          echo "Verification passed!"
+          
+          echo "--- Artifact Sizes ---"
+          echo "Compressed:"
+          du -sh release.tar.gz
+          echo "Uncompressed:"
+          du -sh verify-tmp
+          
+          rm -rf verify-tmp release
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kamna-erp-release-phase2a
+          path: release.tar.gz
+          retention-days: 1

@@ -25,6 +25,9 @@ jobs:
 
       - name: Build Next.js application
         run: npm run build
+        env:
+          SESSION_SECRET: dummy_secret_for_build_validation_only
+          ENCRYPTION_KEY: dummy_encryption_key_for_build_only
 
       - name: Assemble Standalone Artifact
         run: |

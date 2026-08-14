@@ -128,7 +128,7 @@ export async function PATCH(
     }
 
     // Auto-heal missing codes for Brands (and other entities using the same structure)
-    if (entity === 'brands') {
+    if (entity === 'brands' || entity === 'categories') {
       let finalCode = updateData.code !== undefined ? updateData.code : existing.code;
       if (!finalCode || finalCode.trim() === '') {
         const { getNextMasterId } = await import('@/lib/master-data-service');

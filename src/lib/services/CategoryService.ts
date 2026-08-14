@@ -27,7 +27,12 @@ export class CategoryService {
     const tPrismaStart = Date.now();
     const categories = await prisma.category.findMany({
       where: categoryWhere,
-      select: { id: true, name: true, parentId: true },
+      include: {
+        createdBy: { select: { id: true, name: true } },
+        updatedBy: { select: { id: true, name: true } },
+        approvedBy: { select: { id: true, name: true } },
+        parent: { select: { id: true, name: true } }
+      },
       orderBy: { name: 'asc' },
     });
 

@@ -533,8 +533,21 @@ export default function ProductListPage() {
                     return (
                       <tr 
                         key={product.id} 
-                        className="hover:bg-blue-50/60 transition-colors group cursor-pointer" 
-                        onClick={() => router.push(`/staff/dashboard/catalog-pricing/products/${product.id}`)}
+                        className="hover:bg-blue-50/60 transition-colors group cursor-pointer focus:outline-none focus:bg-blue-50 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-500" 
+                        onClick={(e) => {
+                          const target = e.target as HTMLElement;
+                          if (target.closest('button, a, input, select, textarea, [role="button"], [data-no-row-navigation]')) return;
+                          window.open(`/staff/dashboard/catalog-pricing/products/${product.id}`, '_blank', 'noopener,noreferrer');
+                        }}
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            const target = e.target as HTMLElement;
+                            if (target.closest('button, a, input, select, textarea, [role="button"], [data-no-row-navigation]')) return;
+                            e.preventDefault();
+                            window.open(`/staff/dashboard/catalog-pricing/products/${product.id}`, '_blank', 'noopener,noreferrer');
+                          }
+                        }}
                       >
                         <td className="px-4 py-2.5 text-center text-gray-500 text-[12px]">{rowIndex}</td>
                         <td className="px-4 py-2.5">

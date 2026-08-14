@@ -54,41 +54,59 @@ export async function GET(request: Request) {
 
     const validCategoryIds = Array.from(categoryIds);
 
-    // 4. Fetch Products and Variants
+    // 4. Resolve "Panel Type" Attribute Dynamically
+    const panelTypeAttr = await prisma.productAttribute.findFirst({
+      where: { attributeName: 'Panel Type' },
+      select: { id: true }
+    });
+
+    const selectArgs: any = {
+      id: true,
+      name: true,
+      status: true,
+      updatedAt: true,
+      brand: { select: { name: true } },
+      category: { select: { name: true } },
+      variants: {
+        select: {
+          id: true,
+          sku: true,
+          variantName: true,
+          isActive: true,
+          updatedAt: true,
+        }
+      }
+    };
+
+    if (panelTypeAttr) {
+      selectArgs.attributeValues = {
+        where: { attributeId: panelTypeAttr.id },
+        select: { value: true }
+      };
+    }
+
+    // 5. Fetch Products and Variants
     const products = await prisma.product.findMany({
       where: {
         categoryId: { in: validCategoryIds },
         catalogType: { not: 'PRODUCT_FAMILY' },
       },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-        updatedAt: true,
-        brand: { select: { name: true } },
-        category: { select: { name: true } },
-        variants: {
-          select: {
-            id: true,
-            sku: true,
-            variantName: true,
-            isActive: true,
-            updatedAt: true,
-          }
-        }
-      }
+      select: selectArgs
     });
 
-    // 5. Flatten the response
+    // 6. Flatten the response
     const flatProducts: any[] = [];
     const seenExternalIds = new Set<string>();
 
-    for (const p of products) {
+    for (const p of products as any[]) {
+      const panelType = (p.attributeValues && p.attributeValues.length > 0) ? p.attributeValues[0].value : null;
+
       const baseProduct = {
         name: p.name,
         brand: p.brand?.name || null,
         category: p.category?.name || 'Solar Panels',
         status: p.status === 'Active' ? 'active' : 'inactive',
+        panel_type: panelType,
       };
 
       if (p.variants && p.variants.length > 0) {
@@ -103,6 +121,7 @@ export async function GET(request: Request) {
             brand: baseProduct.brand,
             category: baseProduct.category,
             status: v.isActive ? baseProduct.status : 'inactive',
+            panel_type: baseProduct.panel_type,
             updated_at: v.updatedAt.toISOString(),
           });
         }
@@ -117,6 +136,7 @@ export async function GET(request: Request) {
           brand: baseProduct.brand,
           category: baseProduct.category,
           status: baseProduct.status,
+          panel_type: baseProduct.panel_type,
           updated_at: p.updatedAt.toISOString(),
         });
       }

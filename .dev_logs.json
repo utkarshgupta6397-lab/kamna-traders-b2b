@@ -1,0 +1,698 @@
+[
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "2. [ZOHO-TRACE] API_SYNC_REQUEST_RECEIVED",
+    "status": "INFO",
+    "input": {
+      "method": "POST",
+      "timestamp": "2026-08-14T09:43:51.487Z"
+    },
+    "id": "e3098d33-1475-4f1e-b57f-f8f6e1051c62",
+    "timestamp": "2026-08-14T09:43:51.487Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "3. [ZOHO-TRACE] SERVICE_CALL_START",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmsq64uc7000bua5hb4fs9j57"
+    },
+    "id": "734c1823-98ed-49f8-bb98-0530e6b9f2a7",
+    "timestamp": "2026-08-14T09:43:51.496Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "4. [ZOHO-TRACE] SYNC_VARIANT_ENTERED",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmsq64uc7000bua5hb4fs9j57",
+      "triggerSource": "MANUAL_SYNC",
+      "timestamp": "2026-08-14T09:43:51.497Z"
+    },
+    "id": "17578305-f1ef-4719-8b83-62768128c10d",
+    "timestamp": "2026-08-14T09:43:51.497Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "5. VARIANT_LOADED",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmsq64uc7000bua5hb4fs9j57",
+      "hasProduct": true,
+      "hasZohoItemId": true
+    },
+    "id": "9a738ff1-36fd-476c-9ac4-c9ef8cdc1a8f",
+    "timestamp": "2026-08-14T09:43:51.503Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] SYNC_SOURCE_STATE",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmsq64uc7000bua5hb4fs9j57",
+      "sku": "891GSW",
+      "incentiveTag": null,
+      "hasThumbnailBase64": false,
+      "zohoBookItemId": "1759923000024030068",
+      "zohoSyncHash": "65fa2b7468283739ccac6177f4dd44fe7489cb43d5f23f091478d8e871d1a244|330b6a96d98a91ab1b9316a24efb6bb4"
+    },
+    "id": "4350d46a-b21d-4580-a58d-7eaebc72e2b6",
+    "timestamp": "2026-08-14T09:43:51.504Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] EFFECTIVE_DATA_RESOLVED",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmsq64uc7000bua5hb4fs9j57",
+      "localIncentiveTag": null,
+      "parentIncentiveTag": "Low-Margin Product",
+      "effectiveIncentiveTag": "Low-Margin Product",
+      "hasLocalImage": false,
+      "hasParentImage": true,
+      "effectiveHasImage": true,
+      "oldDataHash": "65fa2b7468283739ccac6177f4dd44fe7489cb43d5f23f091478d8e871d1a244",
+      "newDataHash": "65fa2b7468283739ccac6177f4dd44fe7489cb43d5f23f091478d8e871d1a244",
+      "oldImageHash": "330b6a96d98a91ab1b9316a24efb6bb4",
+      "newImageHash": "330b6a96d98a91ab1b9316a24efb6bb4"
+    },
+    "id": "5129fab0-1b54-40d4-96e5-4e4689ed5be2",
+    "timestamp": "2026-08-14T09:43:51.504Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] HASH_STATE",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmsq64uc7000bua5hb4fs9j57",
+      "triggerSource": "MANUAL_SYNC",
+      "oldSyncHash": "65fa2b7468283739ccac6177f4dd44fe7489cb43d5f23f091478d8e871d1a244|330b6a96d98a91ab1b9316a24efb6bb4",
+      "newSyncHash": "65fa2b7468283739ccac6177f4dd44fe7489cb43d5f23f091478d8e871d1a244|330b6a96d98a91ab1b9316a24efb6bb4",
+      "oldDataHash": "65fa2b7468283739ccac6177f4dd44fe7489cb43d5f23f091478d8e871d1a244",
+      "newDataHash": "65fa2b7468283739ccac6177f4dd44fe7489cb43d5f23f091478d8e871d1a244",
+      "oldImageHash": "330b6a96d98a91ab1b9316a24efb6bb4",
+      "newImageHash": "330b6a96d98a91ab1b9316a24efb6bb4",
+      "dataHashChanged": false,
+      "imageHashChanged": false
+    },
+    "id": "c310ccab-2bb1-4ddd-b5f9-45bf90dd9fa1",
+    "timestamp": "2026-08-14T09:43:51.504Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "6. [ZOHO-TRACE] TOKEN_RETRIEVED",
+    "status": "INFO",
+    "id": "43b687c9-be34-479d-98ee-ebc993bbec75",
+    "timestamp": "2026-08-14T09:43:51.847Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "OAuth Token Retrieved",
+    "status": "SUCCESS",
+    "id": "d8c5d6ce-66bd-446d-a529-f20136df4fae",
+    "timestamp": "2026-08-14T09:43:51.848Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "7. [ZOHO-TRACE] CREATE_UPDATE_DECISION",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmsq64uc7000bua5hb4fs9j57",
+      "isUpdate": true,
+      "zohoBookItemId": "1759923000024030068"
+    },
+    "id": "7559864f-8521-4644-98d6-78033d96425d",
+    "timestamp": "2026-08-14T09:43:51.848Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "Create vs Update Decision",
+    "status": "SUCCESS",
+    "input": {
+      "decision": "update",
+      "itemId": "1759923000024030068"
+    },
+    "id": "c8327661-0002-46af-9f49-5ca2c28e26f1",
+    "timestamp": "2026-08-14T09:43:51.848Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] UPDATE_BRANCH_EVALUATION",
+    "status": "INFO",
+    "input": {
+      "oldDataHash": "65fa2b7468283739ccac6177f4dd44fe7489cb43d5f23f091478d8e871d1a244",
+      "newDataHash": "65fa2b7468283739ccac6177f4dd44fe7489cb43d5f23f091478d8e871d1a244",
+      "dataHashChanged": false,
+      "willCallZohoUpdate": false
+    },
+    "id": "33840354-3dd6-44ac-ac8a-08b921dff435",
+    "timestamp": "2026-08-14T09:43:51.848Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] ITEM_UPDATE_SKIPPED",
+    "status": "INFO",
+    "input": {
+      "reason": "data hash unchanged",
+      "oldDataHash": "65fa2b7468283739ccac6177f4dd44fe7489cb43d5f23f091478d8e871d1a244",
+      "newDataHash": "65fa2b7468283739ccac6177f4dd44fe7489cb43d5f23f091478d8e871d1a244"
+    },
+    "id": "5e19670b-d306-46af-806c-6f785894d1ab",
+    "timestamp": "2026-08-14T09:43:51.849Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "Item Update",
+    "status": "WARNING",
+    "input": {
+      "reason": "Data unchanged, item update skipped"
+    },
+    "id": "a9f73dd2-f517-4621-a1b4-f0b543d6ecab",
+    "timestamp": "2026-08-14T09:43:51.849Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "Zoho Item Fetch",
+    "status": "INFO",
+    "id": "b6db1f1d-ec1b-42e9-9914-ae5981aa03c3",
+    "timestamp": "2026-08-14T09:43:51.849Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] BEFORE_ZOHO_FETCH",
+    "status": "INFO",
+    "input": {
+      "itemId": "1759923000024030068"
+    },
+    "id": "3cc91037-e48e-48f5-b827-9fc913f78a16",
+    "timestamp": "2026-08-14T09:43:51.849Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] AFTER_ZOHO_FETCH",
+    "status": "INFO",
+    "input": {
+      "success": true,
+      "itemId": "1759923000024030068",
+      "image_name": "product_image.jpg",
+      "customFieldCount": 1
+    },
+    "id": "4c159f8c-ce33-4b66-8176-330e5f601086",
+    "timestamp": "2026-08-14T09:43:52.323Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "Zoho Item Fetch",
+    "status": "SUCCESS",
+    "output": {
+      "image_name": "product_image.jpg",
+      "custom_fields_count": 1,
+      "cf_incentive": "Low-Margin Product"
+    },
+    "id": "840ba7fc-bca0-40bb-b23e-040d8d434115",
+    "timestamp": "2026-08-14T09:43:52.323Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] INCENTIVE_DECISION_FULL",
+    "status": "INFO",
+    "input": {
+      "erpIncentiveTag": "Low-Margin Product",
+      "zohoIncentiveValue": "Low-Margin Product",
+      "zohoIncentiveFieldId": "1759923000003859210",
+      "valuesMatch": true,
+      "willUpdate": false,
+      "skipReason": "Value already matches"
+    },
+    "id": "9e35ad26-3913-422e-a932-37492ef2664d",
+    "timestamp": "2026-08-14T09:43:52.324Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] INCENTIVE_UPDATE_SKIPPED",
+    "status": "INFO",
+    "input": {
+      "reason": "Value already matches"
+    },
+    "id": "93c6361b-8e84-45cb-bc5d-967dde83103b",
+    "timestamp": "2026-08-14T09:43:52.324Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "Custom Field: Incentive Category",
+    "status": "WARNING",
+    "input": {
+      "reason": "Value already matches",
+      "erpValue": "Low-Margin Product",
+      "zohoValue": "Low-Margin Product"
+    },
+    "id": "781610b4-56c4-4583-993e-ef130b62268b",
+    "timestamp": "2026-08-14T09:43:52.324Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] IMAGE_DECISION_FULL",
+    "status": "INFO",
+    "input": {
+      "erpHasImage": true,
+      "thumbnailBase64Length": 58719,
+      "oldImageHash": "330b6a96d98a91ab1b9316a24efb6bb4",
+      "newImageHash": "330b6a96d98a91ab1b9316a24efb6bb4",
+      "imageHashChanged": false,
+      "zohoImageName": "product_image.jpg",
+      "zohoHasImage": true,
+      "willUpload": false,
+      "skipReason": "Image unchanged and Zoho already has image"
+    },
+    "id": "743aa6ce-5027-4965-9e0d-0851fb851c04",
+    "timestamp": "2026-08-14T09:43:52.324Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] IMAGE_UPLOAD_SKIPPED",
+    "status": "INFO",
+    "input": {
+      "reason": "Image unchanged and Zoho already has image"
+    },
+    "id": "f900ddbe-e3d6-4294-9be4-6df54efdea06",
+    "timestamp": "2026-08-14T09:43:52.324Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "Image Upload",
+    "status": "WARNING",
+    "input": {
+      "reason": "Image unchanged and Zoho already has image"
+    },
+    "id": "90b3e756-c432-40e1-b66e-b712cfabfe7b",
+    "timestamp": "2026-08-14T09:43:52.325Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "Post-Sync Verification",
+    "status": "INFO",
+    "id": "ba0d58ab-384b-4439-8951-2f038864a84e",
+    "timestamp": "2026-08-14T09:43:52.325Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] BEFORE_VERIFICATION",
+    "status": "INFO",
+    "id": "6900e34e-5081-4226-b789-43473a2fb048",
+    "timestamp": "2026-08-14T09:43:52.325Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] AFTER_VERIFICATION",
+    "status": "INFO",
+    "input": {
+      "mismatches": [],
+      "verifiedIncentiveValue": "Low-Margin Product",
+      "verifiedImageName": "product_image.jpg",
+      "verifiedSku": "891GSW",
+      "verifiedRate": 12,
+      "verifiedPurchaseRate": 10
+    },
+    "id": "56d688c9-1c7d-4929-877f-605c4b9a370b",
+    "timestamp": "2026-08-14T09:43:52.496Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "Post-Sync Verification",
+    "status": "SUCCESS",
+    "output": {
+      "verified": [
+        "name",
+        "sku",
+        "rate",
+        "purchase_rate",
+        "cf_incentive_category",
+        "image"
+      ]
+    },
+    "id": "6505a6cf-3837-42ca-8866-d8cf437499d3",
+    "timestamp": "2026-08-14T09:43:52.496Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "Database Updated",
+    "status": "SUCCESS",
+    "id": "2a264fb4-d350-4900-bbea-8b8903d73a60",
+    "timestamp": "2026-08-14T09:43:52.496Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] BEFORE_SYNCED_STATUS",
+    "status": "INFO",
+    "input": {
+      "mismatches": [],
+      "allChecksPassed": true,
+      "zohoBookItemId": "1759923000024030068"
+    },
+    "id": "5a4401e0-d8a8-4324-9cbb-dd7fe8d1631e",
+    "timestamp": "2026-08-14T09:43:52.497Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "[ZOHO-FORENSIC] SYNCED_STATUS_WRITTEN",
+    "status": "INFO",
+    "id": "43af7aba-83d8-4f33-acc8-c3a357f16d48",
+    "timestamp": "2026-08-14T09:43:52.500Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "Synchronization Completed",
+    "status": "SUCCESS",
+    "input": {
+      "outcome": "data_skipped"
+    },
+    "id": "331ac2d5-8025-489b-9ad1-0f70a87af406",
+    "timestamp": "2026-08-14T09:43:52.501Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "9ccff334-450e-4b31-be08-4963853bb938",
+    "event": "9. [ZOHO-TRACE] SERVICE_CALL_END",
+    "status": "SUCCESS",
+    "output": {
+      "variantId": "cmsq64uc7000bua5hb4fs9j57",
+      "success": true,
+      "zohoSyncStatus": "SYNCED"
+    },
+    "id": "d4bd3baa-d1ce-406b-97b5-f9ff095fbbe5",
+    "timestamp": "2026-08-14T09:43:52.510Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "2. [ZOHO-TRACE] API_SYNC_REQUEST_RECEIVED",
+    "status": "INFO",
+    "input": {
+      "method": "POST",
+      "timestamp": "2026-08-14T09:43:52.559Z"
+    },
+    "id": "d39a17f2-18fe-45b3-8ff7-36623823804b",
+    "timestamp": "2026-08-14T09:43:52.559Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "3. [ZOHO-TRACE] SERVICE_CALL_START",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmshgpr1m0018uaqs9nnlpyii"
+    },
+    "id": "8f86fd4f-71f4-4188-8d9a-f61198fd855a",
+    "timestamp": "2026-08-14T09:43:52.562Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "4. [ZOHO-TRACE] SYNC_VARIANT_ENTERED",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmshgpr1m0018uaqs9nnlpyii",
+      "triggerSource": "MANUAL_SYNC",
+      "timestamp": "2026-08-14T09:43:52.562Z"
+    },
+    "id": "c1d414f9-4473-4a6a-b5bc-c4ad199583a4",
+    "timestamp": "2026-08-14T09:43:52.562Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "5. VARIANT_LOADED",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmshgpr1m0018uaqs9nnlpyii",
+      "hasProduct": true,
+      "hasZohoItemId": true
+    },
+    "id": "53a2cc5e-d5a5-4dbb-a362-4ecb6d3eac41",
+    "timestamp": "2026-08-14T09:43:52.572Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "[ZOHO-FORENSIC] SYNC_SOURCE_STATE",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmshgpr1m0018uaqs9nnlpyii",
+      "sku": "AA4UUM",
+      "incentiveTag": "Low-Margin Product",
+      "hasThumbnailBase64": true,
+      "thumbnailBase64Length": 58719,
+      "zohoBookItemId": "1759923000008207074",
+      "zohoSyncHash": null
+    },
+    "id": "94f3014d-9f37-443a-a962-003e475773bf",
+    "timestamp": "2026-08-14T09:43:52.572Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "[ZOHO-FORENSIC] EFFECTIVE_DATA_RESOLVED",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmshgpr1m0018uaqs9nnlpyii",
+      "localIncentiveTag": "Low-Margin Product",
+      "parentIncentiveTag": "Low-Margin Product",
+      "effectiveIncentiveTag": "Low-Margin Product",
+      "hasLocalImage": true,
+      "hasParentImage": true,
+      "effectiveHasImage": true,
+      "oldDataHash": "",
+      "newDataHash": "cc92cddeda71ca505c06b3958f596c70fac34be5c1450c6396df2e48a913b67d",
+      "oldImageHash": "",
+      "newImageHash": "330b6a96d98a91ab1b9316a24efb6bb4"
+    },
+    "id": "2f634881-d9db-405b-afce-d6aada1bdcec",
+    "timestamp": "2026-08-14T09:43:52.572Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "[ZOHO-FORENSIC] HASH_STATE",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmshgpr1m0018uaqs9nnlpyii",
+      "triggerSource": "MANUAL_SYNC",
+      "oldSyncHash": null,
+      "newSyncHash": "cc92cddeda71ca505c06b3958f596c70fac34be5c1450c6396df2e48a913b67d|330b6a96d98a91ab1b9316a24efb6bb4",
+      "oldDataHash": "",
+      "newDataHash": "cc92cddeda71ca505c06b3958f596c70fac34be5c1450c6396df2e48a913b67d",
+      "oldImageHash": "",
+      "newImageHash": "330b6a96d98a91ab1b9316a24efb6bb4",
+      "dataHashChanged": true,
+      "imageHashChanged": true
+    },
+    "id": "5813b31c-5aa6-4b19-b573-94bc7b53d70e",
+    "timestamp": "2026-08-14T09:43:52.573Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "6. [ZOHO-TRACE] TOKEN_RETRIEVED",
+    "status": "INFO",
+    "id": "69536d7d-03fa-4bf1-b05b-12e7655e1e39",
+    "timestamp": "2026-08-14T09:43:52.583Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "OAuth Token Retrieved",
+    "status": "SUCCESS",
+    "id": "2ff47db0-ad8b-47c8-bab3-97dbc587d3ad",
+    "timestamp": "2026-08-14T09:43:52.584Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "7. [ZOHO-TRACE] CREATE_UPDATE_DECISION",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmshgpr1m0018uaqs9nnlpyii",
+      "isUpdate": true,
+      "zohoBookItemId": "1759923000008207074"
+    },
+    "id": "5011c8ce-bdbc-4bbc-b2a3-d86e5525154a",
+    "timestamp": "2026-08-14T09:43:52.584Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "Create vs Update Decision",
+    "status": "SUCCESS",
+    "input": {
+      "decision": "update",
+      "itemId": "1759923000008207074"
+    },
+    "id": "6f6a667b-d5c1-415f-bdc8-8ae63a03109d",
+    "timestamp": "2026-08-14T09:43:52.585Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "[ZOHO-FORENSIC] UPDATE_BRANCH_EVALUATION",
+    "status": "INFO",
+    "input": {
+      "oldDataHash": "",
+      "newDataHash": "cc92cddeda71ca505c06b3958f596c70fac34be5c1450c6396df2e48a913b67d",
+      "dataHashChanged": true,
+      "willCallZohoUpdate": true
+    },
+    "id": "e645ba78-2ac8-4d8f-b336-486d8684cec2",
+    "timestamp": "2026-08-14T09:43:52.585Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "Item Update",
+    "status": "INFO",
+    "input": {
+      "payload": {
+        "name": "Test Bifacial 560 Watt DCR Solar Panel II",
+        "sku": "AA4UUM",
+        "description": "",
+        "rate": 14560,
+        "purchase_rate": 14000,
+        "is_taxable": true,
+        "item_type": "inventory",
+        "status": "active",
+        "product_type": "goods",
+        "unit": "Pcs",
+        "hsn_or_sac": "85411000",
+        "tax_percentage": 18,
+        "item_tax_preferences": [
+          {
+            "tax_id": "1759923000000023199",
+            "tax_specification": "intra"
+          },
+          {
+            "tax_id": "1759923000000023097",
+            "tax_specification": "inter"
+          }
+        ]
+      }
+    },
+    "id": "9ce92454-0793-4140-b4a7-8ad8ad362e86",
+    "timestamp": "2026-08-14T09:43:52.586Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "API Request Sent",
+    "status": "SUCCESS",
+    "input": {
+      "url": "https://www.zohoapis.in/books/v3/items/1759923000008207074?organization_id=60027595766"
+    },
+    "id": "60b1097d-81fb-4e31-b619-8841b17116b9",
+    "timestamp": "2026-08-14T09:43:52.586Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "8. [ZOHO-TRACE] BEFORE_ZOHO_UPDATE",
+    "status": "INFO",
+    "input": {
+      "variantId": "cmshgpr1m0018uaqs9nnlpyii"
+    },
+    "id": "3b8623ac-dadc-4c2b-85cc-0652710a4c48",
+    "timestamp": "2026-08-14T09:43:52.586Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "[ZOHO-FORENSIC] BEFORE_ZOHO_UPDATE",
+    "status": "INFO",
+    "input": {
+      "itemId": "1759923000008207074",
+      "method": "PUT"
+    },
+    "id": "99bd0fa3-6c10-4a91-bc19-149348badf19",
+    "timestamp": "2026-08-14T09:43:52.586Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "[ZOHO-FORENSIC] AFTER_ZOHO_UPDATE",
+    "status": "INFO",
+    "input": {
+      "success": false,
+      "itemId": "1759923000008207074",
+      "responseSummary": "This SKU given for \"Test Bifacial 560 Watt DCR Solar Panel II\" (AA4UUM) already exists."
+    },
+    "id": "b7e46a70-0555-4160-92ef-f72e58ee1a0c",
+    "timestamp": "2026-08-14T09:43:52.965Z"
+  },
+  {
+    "module": "Zoho Sync Step",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "Item Update",
+    "status": "ERROR",
+    "output": {
+      "code": 1001,
+      "message": "This SKU given for \"Test Bifacial 560 Watt DCR Solar Panel II\" (AA4UUM) already exists."
+    },
+    "error": "This SKU given for \"Test Bifacial 560 Watt DCR Solar Panel II\" (AA4UUM) already exists.",
+    "id": "566c63c7-e332-4b99-832b-fec41e7044c4",
+    "timestamp": "2026-08-14T09:43:52.965Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "[ZOHO-FORENSIC] SYNC_ERROR",
+    "status": "ERROR",
+    "input": {
+      "error": "This SKU given for \"Test Bifacial 560 Watt DCR Solar Panel II\" (AA4UUM) already exists.",
+      "stack": "Error: This SKU given for \"Test Bifacial 560 Watt DCR Solar Panel II\" (AA4UUM) already exists.\n    at ZohoProductService.syncVariant (webpack-internal:///(rsc)/./src/lib/services/zoho-books/ZohoProductService.ts:436:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async POST (webpack-internal:///(rsc)/./src/app/api/staff/catalog/products/[id]/zoho/sync/route.ts:81:24)\n    at async AppRouteRouteModule.do (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/compiled/next-server/app-route.runtime.dev.js:5:40115)\n    at async AppRouteRouteModule.handle (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/compiled/next-server/app-route.runtime.dev.js:5:47321)\n    at async responseGenerator (webpack-internal:///(rsc)/./node_modules/next/dist/build/webpack/loaders/next-app-loader/index.js?name=app%2Fapi%2Fstaff%2Fcatalog%2Fproducts%2F%5Bid%5D%2Fzoho%2Fsync%2Froute&page=%2Fapi%2Fstaff%2Fcatalog%2Fproducts%2F%5Bid%5D%2Fzoho%2Fsync%2Froute&appPaths=&allNormalizedAppPaths=&pagePath=private-next-app-dir%2Fapi%2Fstaff%2Fcatalog%2Fproducts%2F%5Bid%5D%2Fzoho%2Fsync%2Froute.ts&appDir=%2FUsers%2Futkarshgupta%2FDownloads%2Fkamna-b2b-erp%2Fsrc%2Fapp&pageExtensions=tsx&pageExtensions=ts&pageExtensions=jsx&pageExtensions=js&rootDir=%2FUsers%2Futkarshgupta%2FDownloads%2Fkamna-b2b-erp&isDev=true&tsconfigPath=&basePath=&assetPrefix=&nextConfigOutput=standalone&preferredRegion=&middlewareConfig=e30%3D&isGlobalNotFoundEnabled=!:250:38)\n    at async AppRouteRouteModule.handleResponse (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/compiled/next-server/app-route.runtime.dev.js:1:227141)\n    at async handleResponse (webpack-internal:///(rsc)/./node_modules/next/dist/build/webpack/loaders/next-app-loader/index.js?name=app%2Fapi%2Fstaff%2Fcatalog%2Fproducts%2F%5Bid%5D%2Fzoho%2Fsync%2Froute&page=%2Fapi%2Fstaff%2Fcatalog%2Fproducts%2F%5Bid%5D%2Fzoho%2Fsync%2Froute&appPaths=&allNormalizedAppPaths=&pagePath=private-next-app-dir%2Fapi%2Fstaff%2Fcatalog%2Fproducts%2F%5Bid%5D%2Fzoho%2Fsync%2Froute.ts&appDir=%2FUsers%2Futkarshgupta%2FDownloads%2Fkamna-b2b-erp%2Fsrc%2Fapp&pageExtensions=tsx&pageExtensions=ts&pageExtensions=jsx&pageExtensions=js&rootDir=%2FUsers%2Futkarshgupta%2FDownloads%2Fkamna-b2b-erp&isDev=true&tsconfigPath=&basePath=&assetPrefix=&nextConfigOutput=standalone&preferredRegion=&middlewareConfig=e30%3D&isGlobalNotFoundEnabled=!:313:32)\n    at async Module.handler (webpack-internal:///(rsc)/./node_modules/next/dist/build/webpack/loaders/next-app-loader/index.js?name=app%2Fapi%2Fstaff%2Fcatalog%2Fproducts%2F%5Bid%5D%2Fzoho%2Fsync%2Froute&page=%2Fapi%2Fstaff%2Fcatalog%2Fproducts%2F%5Bid%5D%2Fzoho%2Fsync%2Froute&appPaths=&allNormalizedAppPaths=&pagePath=private-next-app-dir%2Fapi%2Fstaff%2Fcatalog%2Fproducts%2F%5Bid%5D%2Fzoho%2Fsync%2Froute.ts&appDir=%2FUsers%2Futkarshgupta%2FDownloads%2Fkamna-b2b-erp%2Fsrc%2Fapp&pageExtensions=tsx&pageExtensions=ts&pageExtensions=jsx&pageExtensions=js&rootDir=%2FUsers%2Futkarshgupta%2FDownloads%2Fkamna-b2b-erp&isDev=true&tsconfigPath=&basePath=&assetPrefix=&nextConfigOutput=standalone&preferredRegion=&middlewareConfig=e30%3D&isGlobalNotFoundEnabled=!:368:13)\n    at async DevServer.renderToResponseWithComponentsImpl (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/server/base-server.js:1454:9)\n    at async DevServer.renderPageComponent (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/server/base-server.js:1506:24)\n    at async DevServer.renderToResponseImpl (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/server/base-server.js:1556:32)\n    at async DevServer.pipeImpl (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/server/base-server.js:1043:25)\n    at async NextNodeServer.handleCatchallRenderRequest (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/server/next-server.js:338:17)\n    at async DevServer.handleRequestImpl (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/server/base-server.js:934:17)\n    at async /Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/server/dev/next-dev-server.js:394:20\n    at async Span.traceAsyncFn (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/trace/trace.js:164:20)\n    at async DevServer.handleRequest (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/server/dev/next-dev-server.js:390:24)\n    at async invokeRender (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/server/lib/router-server.js:266:21)\n    at async handleRequest (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/server/lib/router-server.js:465:24)\n    at async requestHandlerImpl (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/server/lib/router-server.js:514:13)\n    at async Server.requestListener (/Users/utkarshgupta/Downloads/kamna-b2b-erp/node_modules/next/dist/server/lib/start-server.js:225:13)"
+    },
+    "id": "a072f6e3-8d2f-48fd-8f87-8eaf49bd7238",
+    "timestamp": "2026-08-14T09:43:52.966Z"
+  },
+  {
+    "module": "Zoho Trace",
+    "runId": "27b37e88-8f08-4e67-978e-9853d7970507",
+    "event": "9. [ZOHO-TRACE] SERVICE_CALL_END",
+    "status": "SUCCESS",
+    "output": {
+      "variantId": "cmshgpr1m0018uaqs9nnlpyii",
+      "success": false,
+      "zohoSyncStatus": "SYNC_FAILED"
+    },
+    "id": "b5f792fa-bf75-4ef7-9a42-572c1103f368",
+    "timestamp": "2026-08-14T09:43:53.057Z"
+  }
+]

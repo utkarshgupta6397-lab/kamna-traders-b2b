@@ -86,6 +86,15 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
   const [isGeneratingSku, setIsGeneratingSku] = useState(false);
   const [showDeclineModal, setShowDeclineModal] = useState(false);
   const [declineRemarks, setDeclineRemarks] = useState('');
+  
+  // Bulk Sync State
+  const [isBulkSyncModalOpen, setIsBulkSyncModalOpen] = useState(false);
+  const [bulkSyncState, setBulkSyncState] = useState<'IDLE' | 'CLEARING' | 'SYNCING' | 'DONE'>('IDLE');
+  const [bulkSyncStats, setBulkSyncStats] = useState<{ total: number, toClear: number, alreadyCleared: number, linked: number, unlinked: number } | null>(null);
+  const [bulkSyncProgress, setBulkSyncProgress] = useState<{ total: number, current: number, successes: number, failures: any[] }>({ total: 0, current: 0, successes: 0, failures: [] });
+  const [bulkVariants, setBulkVariants] = useState<any[]>([]);
+  const [isBulkDropdownOpen, setIsBulkDropdownOpen] = useState(false);
+  const bulkDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchPerms = async () => {
@@ -134,6 +143,9 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
       }
       if (colDropdownRef.current && !colDropdownRef.current.contains(event.target as Node)) {
         setIsColumnSelectorOpen(false);
+      }
+      if (bulkDropdownRef.current && !bulkDropdownRef.current.contains(event.target as Node)) {
+        setIsBulkDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -196,6 +208,91 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
     } finally {
       setIsSubmitting(false);
       setShowDeclineModal(false);
+    }
+  };
+
+  const openBulkSyncModal = () => {
+    setIsBulkDropdownOpen(false);
+    if (!product || !product.variantProducts) return;
+    const variants = product.variantProducts;
+    const total = variants.length;
+    let toClear = 0;
+    let linked = 0;
+    
+    variants.forEach((v: any) => {
+      if (v.description) toClear++;
+      if (v.variants?.[0]?.zohoBookItemId) linked++;
+    });
+    
+    setBulkSyncStats({
+      total,
+      toClear,
+      alreadyCleared: total - toClear,
+      linked,
+      unlinked: total - linked
+    });
+    setBulkSyncState('IDLE');
+    setBulkSyncProgress({ total: 0, current: 0, successes: 0, failures: [] });
+    setBulkVariants([]);
+    setIsBulkSyncModalOpen(true);
+  };
+
+  const executeBulkSync = async (retryFailures = false) => {
+    try {
+      let variantsToSync = bulkVariants;
+      
+      if (!retryFailures) {
+        setBulkSyncState('CLEARING');
+        const res = await fetch(`/api/staff/catalog/products/${id}/clear-description`, {
+          method: 'POST'
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to clear descriptions');
+        
+        variantsToSync = data.variants || [];
+        setBulkVariants(variantsToSync);
+        setBulkSyncProgress({ total: variantsToSync.length, current: 0, successes: 0, failures: [] });
+      } else {
+        variantsToSync = bulkSyncProgress.failures.map(f => f.variant);
+        setBulkSyncProgress(prev => ({ ...prev, total: prev.total + variantsToSync.length, failures: [] }));
+      }
+      
+      setBulkSyncState('SYNCING');
+      
+      let successes = bulkSyncProgress.successes;
+      const failures: any[] = [];
+      
+      for (let i = 0; i < variantsToSync.length; i++) {
+        const v = variantsToSync[i];
+        setBulkSyncProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        
+        if (!v.zohoBookItemId) {
+          // Skip Zoho sync if no item ID exists
+          successes++;
+          setBulkSyncProgress(prev => ({ ...prev, successes }));
+          continue;
+        }
+        
+        try {
+          const syncRes = await fetch(`/api/staff/catalog/products/${v.productId}/zoho/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ variantId: v.id })
+          });
+          const syncData = await syncRes.json();
+          if (!syncRes.ok) throw new Error(syncData.error || 'Sync failed');
+          successes++;
+        } catch (err: any) {
+          failures.push({ variant: v, reason: err.message });
+        }
+        setBulkSyncProgress(prev => ({ ...prev, successes, failures }));
+      }
+      
+      setBulkSyncState('DONE');
+      fetchProduct(); // Refresh data to show cleared descriptions
+    } catch (e: any) {
+      toast.error(e.message || 'Error executing bulk sync');
+      setBulkSyncState('DONE');
     }
   };
 
@@ -685,9 +782,33 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
                 </>
               )}
               {showEdit && (
-                <button onClick={() => router.push(`/staff/dashboard/catalog-pricing/products/${id}/edit-family`)} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors shadow-sm flex items-center">
-                  <Edit2 size={16} className="mr-2" /> Edit Family
-                </button>
+                <div className="flex items-center">
+                  <button onClick={() => router.push(`/staff/dashboard/catalog-pricing/products/${id}/edit-family`)} className="px-4 py-2 bg-white border border-gray-300 border-r-0 rounded-l-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors shadow-sm flex items-center h-10">
+                    <Edit2 size={16} className="mr-2" /> Edit Family
+                  </button>
+                  <div className="relative h-10" ref={bulkDropdownRef}>
+                    <button 
+                      onClick={() => setIsBulkDropdownOpen(!isBulkDropdownOpen)} 
+                      className="px-2.5 py-2 bg-white border border-gray-300 text-gray-700 font-medium rounded-r-lg hover:bg-gray-50 transition-colors shadow-sm h-full flex items-center"
+                    >
+                      <MoreVertical size={16} />
+                    </button>
+                    {isBulkDropdownOpen && (
+                      <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                        <button 
+                          onClick={openBulkSyncModal}
+                          className="w-full text-left px-4 py-3 hover:bg-red-50 transition-colors group flex items-start space-x-3"
+                        >
+                          <Trash2 size={16} className="text-red-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <p className="text-sm font-medium text-red-600 group-hover:text-red-700">Clear Descriptions & Sync to Zoho</p>
+                            <p className="text-xs text-gray-500 mt-1">Remove descriptions from all products and sync changes to Zoho Books.</p>
+                          </div>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -1212,14 +1333,164 @@ export default function ProductFamilyDetailPageClient({ params }: { params: Prom
         </div>
       )}
 
-      <ImportOrphanModal 
-        isOpen={isImportModalOpen} 
-        onClose={() => setIsImportModalOpen(false)} 
-        familyId={product?.id} 
-        onSuccess={() => {
-          window.location.reload();
-        }}
-      />
+      {isImportModalOpen && (
+        <ImportOrphanModal 
+          isOpen={isImportModalOpen} 
+          onClose={() => setIsImportModalOpen(false)} 
+          familyId={product?.id} 
+          onSuccess={() => {
+            window.location.reload();
+          }}
+        />
+      )}
+      
+      {/* Bulk Sync Modal */}
+      {isBulkSyncModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+                <Trash2 size={18} className="text-red-500 mr-2" />
+                Clear Descriptions & Sync
+              </h2>
+              {bulkSyncState === 'IDLE' && (
+                <button onClick={() => setIsBulkSyncModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={20} />
+                </button>
+              )}
+            </div>
+            
+            <div className="p-6">
+              {bulkSyncState === 'IDLE' && (
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600">
+                    This will remove the description from all <strong>{bulkSyncStats?.total}</strong> products in "{product.name}" and sync the updated products to Zoho Books.
+                  </p>
+                  
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Total Products</span>
+                      <span className="font-medium">{bulkSyncStats?.total}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Descriptions to clear</span>
+                      <span className="font-medium text-amber-600">{bulkSyncStats?.toClear}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Already no description</span>
+                      <span className="font-medium text-green-600">{bulkSyncStats?.alreadyCleared}</span>
+                    </div>
+                    <div className="flex justify-between text-sm pt-2 border-t border-gray-200">
+                      <span className="text-gray-600">Linked to Zoho Books</span>
+                      <span className="font-medium text-blue-600">{bulkSyncStats?.linked}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Not linked (sync skipped)</span>
+                      <span className="font-medium text-gray-500">{bulkSyncStats?.unlinked}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex p-3 bg-red-50 text-red-800 rounded-lg text-xs items-start">
+                    <ShieldAlert size={14} className="mr-2 flex-shrink-0 mt-0.5" />
+                    <p>Existing product names, SKUs, prices, tax settings, attributes, inventory data and other fields will not be changed. This action cannot be automatically undone.</p>
+                  </div>
+                </div>
+              )}
+              
+              {bulkSyncState === 'CLEARING' && (
+                <div className="py-8 flex flex-col items-center justify-center text-center">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mb-4"></div>
+                  <h3 className="text-lg font-medium text-gray-900">Clearing descriptions...</h3>
+                  <p className="text-sm text-gray-500 mt-2">Updating database records securely.</p>
+                </div>
+              )}
+              
+              {bulkSyncState === 'SYNCING' && (
+                <div className="py-6 space-y-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-medium text-gray-900 flex items-center">
+                      <CheckCircle2 size={16} className="text-green-500 mr-2" />
+                      {bulkVariants.length} / {bulkVariants.length} products updated
+                    </h3>
+                  </div>
+                  
+                  <div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Syncing with Zoho Books...</h3>
+                    <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                      <div className="bg-indigo-600 h-2 rounded-full transition-all duration-300" style={{ width: `${(bulkSyncProgress.current / bulkSyncProgress.total) * 100 || 0}%` }}></div>
+                    </div>
+                    <p className="text-sm text-gray-500 font-medium">
+                      ✓ {bulkSyncProgress.current} / {bulkSyncProgress.total} processed
+                    </p>
+                  </div>
+                </div>
+              )}
+              
+              {bulkSyncState === 'DONE' && (
+                <div className="py-2 space-y-4">
+                  {bulkSyncProgress.failures.length === 0 ? (
+                    <div className="text-center">
+                      <div className="h-12 w-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Check size={24} />
+                      </div>
+                      <h3 className="text-lg font-medium text-gray-900">Descriptions cleared successfully.</h3>
+                      <div className="mt-4 bg-gray-50 rounded-lg p-4 text-sm text-gray-600 text-left space-y-2">
+                        <p>✓ {bulkVariants.length} / {bulkVariants.length} products updated</p>
+                        <p>✓ {bulkSyncProgress.successes} / {bulkSyncProgress.total} Zoho Books items synced</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="flex items-center mb-4 text-amber-600">
+                        <ShieldAlert size={20} className="mr-2" />
+                        <h3 className="text-lg font-medium">Completed with warnings</h3>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600 space-y-2 mb-4">
+                        <p>✓ {bulkVariants.length} / {bulkVariants.length} descriptions cleared</p>
+                        <p className="text-green-600">✓ {bulkSyncProgress.successes} / {bulkSyncProgress.total} Zoho Books items synced</p>
+                        <p className="text-red-600">✗ {bulkSyncProgress.failures.length} syncs failed</p>
+                      </div>
+                      
+                      <div className="max-h-40 overflow-y-auto text-xs space-y-2 border border-gray-200 rounded p-2">
+                        {bulkSyncProgress.failures.map((f, i) => (
+                          <div key={i} className="text-red-600 bg-red-50 p-2 rounded">
+                            <span className="font-semibold">{f.variant.sku}</span>: {f.reason}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+              {bulkSyncState === 'IDLE' && (
+                <>
+                  <button onClick={() => setIsBulkSyncModalOpen(false)} className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button onClick={() => executeBulkSync(false)} className="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 font-medium">
+                    Clear Descriptions & Sync
+                  </button>
+                </>
+              )}
+              {bulkSyncState === 'DONE' && (
+                <>
+                  {bulkSyncProgress.failures.length > 0 && (
+                    <button onClick={() => executeBulkSync(true)} className="px-4 py-2 text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 font-medium">
+                      Retry Failed
+                    </button>
+                  )}
+                  <button onClick={() => setIsBulkSyncModalOpen(false)} className="px-4 py-2 text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 font-medium">
+                    Done
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

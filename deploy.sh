@@ -52,37 +52,100 @@ echo "3b. Pushing Prisma schema to DB..."
 npx prisma db push --accept-data-loss
 echo "✓ Prisma db push completed in $((SECONDS - STEP_START))s"
 
-# 4. Next.js Build
-echo "4. Backing up old production build..."
-cp -r .next .next.backup || true
-pkill -f "next build" || true
-rm -rf .next
-
+# 4. Out-of-place Next.js Build & Cache Preservation
 STEP_START=$SECONDS
-echo "5. Building Next.js app..."
-if ! npm run build; then
-  echo "❌ Build failed! Restoring old production build..."
-  rm -rf .next
-  mv .next.backup .next || true
-  exit 1
+echo "4. Preparing out-of-place Next.js build environment..."
+
+rm -rf .next.new || true
+mkdir -p .next.new
+
+if [ -d ".next/cache" ]; then
+    echo "   - Preserving Next.js cache..."
+    cp -a .next/cache .next.new/cache || true
 fi
-rm -rf .next.backup
-echo "✓ Next.js build completed in $((SECONDS - STEP_START))s"
+echo "✓ Cache preparation completed in $((SECONDS - STEP_START))s"
 
-# 5. PM2 Reload
 STEP_START=$SECONDS
-echo "6. Reloading PM2 gracefully..."
-pm2 reload kamna --update-env
+echo "5. Building Next.js app (out-of-place)..."
+
+export NEXT_BUILD_DIR=".next.new"
+
+if ! npm run build; then
+    echo "❌ Build failed! Deployment aborted."
+    echo "   - Production application was NOT affected and remains live."
+    rm -rf .next.new || true
+    exit 1
+fi
+echo "✓ Next.js build completed in $((SECONDS - STEP_START))s"
+NEXT_BUILD_TIME=$((SECONDS - STEP_START))
+
+# 5. Atomic Activation
+STEP_START=$SECONDS
+echo "6. Activating new build..."
+
+# Clean up any leftover rollback directories
+rm -rf .next.rollback || true
+
+# Perform the fastest possible directory swap (not truly atomic, but <1ms downtime without symlinks)
+if [ -d ".next" ]; then
+    mv .next .next.rollback
+fi
+mv .next.new .next
+
+echo "✓ Activation completed in $((SECONDS - STEP_START))s"
+
+# 6. PM2 Reload
+STEP_START=$SECONDS
+echo "7. Reloading PM2 gracefully..."
+if ! pm2 reload kamna --update-env; then
+    echo "❌ PM2 reload failed! Restoring previous build..."
+    mv .next .next.failed_reload || true
+    mv .next.rollback .next || true
+    pm2 reload kamna --update-env || true
+    exit 1
+fi
 echo "✓ PM2 reload completed in $((SECONDS - STEP_START))s"
 
-# 6. Health Check
+# 7. Health Check and Rollback
 STEP_START=$SECONDS
-echo "7. Verifying deployment health..."
+echo "8. Verifying deployment health..."
+
+# Give PM2 a few seconds to start the new workers
 sleep 5
-curl -f http://localhost:3000/api/health
-echo "✓ Health check completed in $((SECONDS - STEP_START))s"
+
+if ! curl -f http://localhost:3000/api/health; then
+    echo ""
+    echo "❌ Health check failed! Initiating automatic rollback..."
+    
+    # Restore the previous working build
+    mv .next .next.failed_health || true
+    mv .next.rollback .next || true
+    
+    echo "   - Reloading PM2 with restored build..."
+    if ! pm2 reload kamna --update-env; then
+        echo "💥 CRITICAL DEPLOYMENT FAILURE: Rollback PM2 reload also failed!"
+        echo "   - The application may be offline."
+        exit 1
+    fi
+    
+    sleep 5
+    if curl -f http://localhost:3000/api/health; then
+        echo "✓ Production successfully restored to previous known-good state."
+        echo "❌ Deployment FAILED. (Rolled back safely)."
+        exit 1
+    else
+        echo "💥 CRITICAL DEPLOYMENT FAILURE: Rollback health check also failed!"
+        echo "   - The application is likely offline or broken."
+        exit 1
+    fi
+fi
+
+echo "✓ Health check passed in $((SECONDS - STEP_START))s"
+
+# Cleanup
+rm -rf .next.rollback || true
 
 echo "======================================"
 echo "Deployment completed successfully! ✅"
 echo "Total deployment time: $((SECONDS - DEPLOY_START_TIME))s"
-
+echo "Next.js build time: ${NEXT_BUILD_TIME}s"

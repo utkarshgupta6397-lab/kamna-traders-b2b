@@ -167,7 +167,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWid
         </div>
         {headerRight && <div>{headerRight}</div>}
       </div>
-      <div className="overflow-x-auto overflow-y-auto max-h-[560px] relative bg-white">
+      <div className="overflow-x-auto overflow-y-auto max-h-[560px] relative bg-white pivot-scroll-container">
         <table className="text-sm text-left" style={{ minWidth: 'max-content', width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
           <thead>
             <tr className="bg-[#f8f9fb]">
@@ -636,20 +636,74 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
     if (!pivot1Ref.current) return;
     setIsExporting(true);
     const tid = toast.loading('Capturing screenshot...');
+    
+    const originalNode = pivot1Ref.current;
+    const scrollContainer = originalNode.querySelector('.pivot-scroll-container') as HTMLElement;
+    const styleSnapshot = new Map<HTMLElement, string | null>();
+    
     try {
-      const node = pivot1Ref.current;
-      // Use html-to-image style overrides to expand the node without a visible DOM jump
-      const canvas = await toCanvas(node, { 
-        pixelRatio: 1.5, 
-        backgroundColor: '#ffffff',
-        width: node.scrollWidth,
-        height: node.scrollHeight,
-        style: {
-          width: `${node.scrollWidth}px`,
-          maxWidth: 'none',
-          overflow: 'visible'
+      // 1. Snapshot and override main node
+      styleSnapshot.set(originalNode, originalNode.getAttribute('style'));
+      originalNode.style.setProperty('width', 'max-content', 'important');
+      originalNode.style.setProperty('max-width', 'none', 'important');
+      
+      // 2. Snapshot and override scroll container
+      if (scrollContainer) {
+        styleSnapshot.set(scrollContainer, scrollContainer.getAttribute('style'));
+        scrollContainer.style.setProperty('overflow', 'visible', 'important');
+        scrollContainer.style.setProperty('max-height', 'none', 'important');
+        scrollContainer.style.setProperty('height', 'auto', 'important');
+        scrollContainer.style.setProperty('max-width', 'none', 'important');
+      }
+
+      // 3. Disable sticky positioning
+      const stickyElements = originalNode.querySelectorAll('th, td, thead, tr');
+      stickyElements.forEach((el) => {
+        const e = el as HTMLElement;
+        const currentStyle = e.getAttribute('style');
+        if (currentStyle && currentStyle.includes('sticky')) {
+          styleSnapshot.set(e, currentStyle);
+          e.style.setProperty('position', 'static', 'important');
         }
       });
+      
+      // 4. Wait for layout
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      if ('fonts' in document) {
+        await (document as any).fonts.ready;
+      }
+      
+      // 5. Measure full dimensions
+      const fullWidth = originalNode.scrollWidth;
+      const fullHeight = originalNode.scrollHeight;
+      
+      // 6. Capture
+      const canvas = await toCanvas(originalNode, {
+        pixelRatio: 1.5,
+        backgroundColor: '#ffffff',
+        width: fullWidth,
+        height: fullHeight,
+        style: {
+          margin: '0',
+          padding: '0'
+        },
+        cacheBust: true
+      });
+      
+      // 7. Validate canvas
+      if (canvas.width < 100 || canvas.height < 100) {
+        throw new Error('Screenshot rendering produced an empty image.');
+      }
+      
+      // Lightweight pixel validation (sample center pixel)
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+         const pixel = ctx.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data;
+         if (pixel[3] === 0) {
+            // completely transparent center means it likely failed
+            console.warn('Canvas center pixel is transparent, but continuing...');
+         }
+      }
       
       const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
       
@@ -671,11 +725,20 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
       link.download = `solar-panel-stock-brand-wattage${suffix}-${timestamp}.jpg`;
       link.href = dataUrl;
       link.click();
+      
       toast.success('Screenshot captured', { id: tid });
     } catch (err) {
       console.error(err);
       toast.error('Failed to capture screenshot', { id: tid });
     } finally {
+      // 8. Restore UI exactly
+      styleSnapshot.forEach((originalStyle, el) => {
+        if (originalStyle === null) {
+          el.removeAttribute('style');
+        } else {
+          el.setAttribute('style', originalStyle);
+        }
+      });
       setIsExporting(false);
     }
   };

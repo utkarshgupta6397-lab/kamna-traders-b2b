@@ -3,10 +3,12 @@ import { Box } from 'lucide-react';
 import Link from 'next/link';
 
 interface CurrentStockSidebarProps {
-  activeView: 'multi' | 'advanced';
+  activeView: 'solar' | 'multi' | 'advanced';
 }
 
 export default function CurrentStockSidebar({ activeView }: CurrentStockSidebarProps) {
+  const isSolar = activeView === 'solar';
+  const isMulti = activeView === 'multi';
   const isAdvanced = activeView === 'advanced';
 
   return (
@@ -18,14 +20,26 @@ export default function CurrentStockSidebar({ activeView }: CurrentStockSidebarP
               VIEWS
             </h3>
             <div className="space-y-0.5">
-              {/* Multi-Warehouse View */}
+              {/* Solar Panel Stock View */}
               <Link 
                 href="/staff/dashboard/operations/current-stock" 
-                className={`flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors border border-transparent text-left ${!isAdvanced ? 'bg-[#1A2766]/5 text-[#1A2766] relative overflow-hidden' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 group'}`}
+                className={`flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors border border-transparent text-left ${isSolar ? 'bg-[#1A2766]/5 text-[#1A2766] relative overflow-hidden' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 group'}`}
               >
-                {!isAdvanced && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#1A2766]" />}
-                <div className={`flex items-center gap-2.5 ${!isAdvanced ? 'pl-1' : ''}`}>
-                  <Box size={16} className={!isAdvanced ? '' : 'text-gray-400 group-hover:text-gray-600'} />
+                {isSolar && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#1A2766]" />}
+                <div className={`flex items-center gap-2.5 ${isSolar ? 'pl-1' : ''}`}>
+                  <Box size={16} className={isSolar ? '' : 'text-gray-400 group-hover:text-gray-600'} />
+                  <span>Solar Panel Stock</span>
+                </div>
+              </Link>
+              
+              {/* Multi-Warehouse View */}
+              <Link 
+                href="/staff/dashboard/operations/current-stock?view=multi" 
+                className={`flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors border border-transparent text-left ${isMulti ? 'bg-[#1A2766]/5 text-[#1A2766] relative overflow-hidden' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 group'}`}
+              >
+                {isMulti && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#1A2766]" />}
+                <div className={`flex items-center gap-2.5 ${isMulti ? 'pl-1' : ''}`}>
+                  <Box size={16} className={isMulti ? '' : 'text-gray-400 group-hover:text-gray-600'} />
                   <span>Multi-Warehouse View</span>
                 </div>
               </Link>

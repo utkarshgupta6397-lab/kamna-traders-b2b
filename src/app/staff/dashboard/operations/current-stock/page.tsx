@@ -17,7 +17,11 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
     return <div className="p-20 text-center font-bold text-red-600 bg-red-50 rounded-2xl border-2 border-red-200">SAFE MODE ACTIVE: Heavy dashboard components disabled to prevent overheating. <a href="?" className="underline ml-2">Exit Safe Mode</a></div>;
   }
   
-  if (sp.view === 'advanced') {
+  const isAdvanced = sp.view === 'advanced';
+  const isMulti = sp.view === 'multi';
+  const isSolar = !isAdvanced && !isMulti;
+
+  if (isAdvanced) {
     const warehouses = await prisma.warehouse.findMany({
       where: { active: true },
       select: { id: true, name: true, isSystemWarehouse: true },
@@ -35,23 +39,25 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   sevenDaysAgo.setHours(0, 0, 0, 0);
 
-    const [warehouses, categories, brands, items, recentSales, thresholds] = await Promise.all([
-      prisma.warehouse.findMany({ 
-        where: { active: true }, 
-        select: { id: true, name: true, isSystemWarehouse: true },
-        orderBy: { name: 'asc' }
-      }),
-      prisma.category.findMany({ 
-        where: { active: true, status: 'Active' }, 
-        select: { id: true, name: true, parentId: true },
-        orderBy: { name: 'asc' }
-      }),
-      prisma.brand.findMany({
-        where: { active: true, status: 'Active' },
-        select: { id: true, name: true },
-        orderBy: { name: 'asc' }
-      }),
-      import('@/lib/services/ProductLookupService').then(m => m.ProductLookupService.search('inventory')),
+  const productSearchOptions = isSolar ? { categoryName: 'Solar Panel' } : {};
+
+  const [warehouses, categories, brands, items, recentSales, thresholds] = await Promise.all([
+    prisma.warehouse.findMany({ 
+      where: { active: true }, 
+      select: { id: true, name: true, isSystemWarehouse: true },
+      orderBy: { name: 'asc' }
+    }),
+    prisma.category.findMany({ 
+      where: { active: true, status: 'Active' }, 
+      select: { id: true, name: true, parentId: true },
+      orderBy: { name: 'asc' }
+    }),
+    prisma.brand.findMany({
+      where: { active: true, status: 'Active' },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' }
+    }),
+    import('@/lib/services/ProductLookupService').then(m => m.ProductLookupService.search('inventory', productSearchOptions)),
     // Fetch successful cart items from last 30 days for CPD/Age calculation
     prisma.cartItem.findMany({
       where: {
@@ -74,8 +80,6 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
   ]);
 
   // Aggregate Consumption Data
-  // lookup[skuId][warehouseId] = { totalOut, activeDaysCount, firstSale }
-  // lookup[skuId]['overall'] = { firstSale, activeDaysCount, totalOut }
   const consumptionData: Record<string, any> = {};
 
   recentSales.forEach(m => {
@@ -155,6 +159,20 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
   const thresholdMap: Record<string, number> = {};
   for (const t of thresholds) {
     thresholdMap[`${t.warehouseId}_${t.skuId}`] = t.minimumQty;
+  }
+
+  if (isSolar) {
+    // Dynamic import to avoid SSR issues if any, or just import at top
+    const SolarPanelStockClient = (await import('@/components/SolarPanelStockClient')).default;
+    return (
+      <SolarPanelStockClient 
+        warehouses={warehouses} 
+        categories={categories} 
+        brands={brands}
+        items={items}
+        canSync={!!session.canRunSkuSync}
+      />
+    );
   }
 
   return (

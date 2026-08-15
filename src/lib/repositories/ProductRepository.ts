@@ -14,6 +14,7 @@ export class ProductRepository {
         category: { select: { name: true } },
         unit: { select: { name: true, abbreviation: true, code: true } },
         attributeValues: { include: { attribute: true } },
+        parentProduct: { select: { name: true } },
       },
       orderBy: { name: 'asc' },
     });

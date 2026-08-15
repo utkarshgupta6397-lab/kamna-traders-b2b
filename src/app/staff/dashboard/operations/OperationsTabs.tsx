@@ -34,8 +34,8 @@ export default function OperationsTabs({
     }`;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-6 border-b border-gray-200 overflow-x-auto whitespace-nowrap" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+    <div className="flex flex-col h-[calc(100vh-80px)]">
+      <div className="shrink-0 flex items-center gap-6 border-b border-gray-200 overflow-x-auto whitespace-nowrap mb-6" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
         <Link href="/staff/dashboard/operations/carts" className={tabCls('carts')}>
           <ShoppingCart size={16} strokeWidth={1.8} />
           Carts
@@ -56,7 +56,7 @@ export default function OperationsTabs({
         )}
       </div>
 
-      <div>{children}</div>
+      <div className="flex-1 min-h-0">{children}</div>
     </div>
   );
 }

@@ -74,7 +74,9 @@ export class LegacyProductNormalizer {
       // UI matrix compatibility
       inventory: inventoryDict,
       isDcrEligible: DcrEligibilityService.evaluateProduct(product),
-      wattage: product.attributeValues?.find((av: any) => av.attribute?.attributeName === 'Wattage')?.value ?? null
+      wattage: product.attributeValues?.find((av: any) => av.attribute?.attributeName === 'Wattage')?.value ?? null,
+      parentProductId: product.parentProductId ?? null,
+      parentProductName: product.parentProduct?.name ?? null
     };
   }
 }

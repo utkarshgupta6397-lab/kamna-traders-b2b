@@ -18,6 +18,7 @@ export interface ProductSearchOptions {
   skuIds?: string[];
   includeArchived?: boolean;
   includeInactive?: boolean;
+  categoryName?: string;
 }
 
 export class ProductLookupService {
@@ -64,6 +65,12 @@ export class ProductLookupService {
     // Status overrides for product-master (if they don't want archived)
     if (!options.includeArchived && purpose === 'product-master') {
       where.status = { not: 'Archived' };
+    }
+
+    if (options.categoryName) {
+      where.category = {
+        name: { contains: options.categoryName, mode: 'insensitive' }
+      };
     }
 
     if (options.skuIds && options.skuIds.length > 0) {

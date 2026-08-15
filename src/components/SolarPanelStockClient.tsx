@@ -421,9 +421,18 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
     return Math.max(0, item.inventory[whId]?.qty || 0);
   };
 
+  const meaningfulWarehouses = useMemo(() => {
+    return visibleWarehouses.filter(wh => {
+      for (const item of effectiveItems) {
+        if (getQty(item, wh.id) > 0) return true;
+      }
+      return false;
+    });
+  }, [effectiveItems, visibleWarehouses, activeDrilldown]);
+
   const handleCellClick = (dim: SolarPanelDrilldown) => setActiveDrilldown(dim);
 
-  const whDcrCols: PivotColumnDef[] = visibleWarehouses.map(wh => ({
+  const whDcrCols: PivotColumnDef[] = meaningfulWarehouses.map(wh => ({
     id: wh.id, label: wh.name, isWarehouseGroup: true,
     subColumns: [{ id: 'DCR', label: 'DCR' }, { id: 'Non-DCR', label: 'Non-DCR' }],
   }));
@@ -447,7 +456,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
       const b = bm.get(brand)!;
       if (!b.wattages.has(wattage)) b.wattages.set(wattage, { data: {}, totalDcr: 0, totalNonDcr: 0 });
       const w = b.wattages.get(wattage)!;
-      visibleWarehouses.forEach(wh => {
+      meaningfulWarehouses.forEach(wh => {
         const qty = getQty(item, wh.id);
         if (qty > 0) {
           const ck = `${wh.id}_${isDcr ? 'DCR' : 'Non-DCR'}`;
@@ -464,10 +473,14 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
     });
     const result: PivotRowDef[] = [];
     Array.from(bm.entries()).sort((a, b) => a[0].localeCompare(b[0])).forEach(([brand, bObj]) => {
+      const validWattages = Array.from(bObj.wattages.entries())
+        .filter(([w, wObj]) => (wObj.totalDcr + wObj.totalNonDcr) > 0)
+        .sort((a, b) => { if (a[0] === 'Unknown') return 1; if (b[0] === 'Unknown') return -1; return (parseInt(a[0]) || 0) - (parseInt(b[0]) || 0); });
+      
+      if (validWattages.length === 0) return;
+      
       result.push({ id: `group_${brand}`, label: brand, isGroupHeader: true, cells: {} });
-      Array.from(bObj.wattages.entries())
-        .sort((a, b) => { if (a[0] === 'Unknown') return 1; if (b[0] === 'Unknown') return -1; return (parseInt(a[0]) || 0) - (parseInt(b[0]) || 0); })
-        .forEach(([watt, wObj]) => {
+      validWattages.forEach(([watt, wObj]) => {
           let href;
           if (watt !== 'Unknown' && solarCategory?.id) {
             href = `/staff/dashboard/catalog-pricing/products?categoryId=${solarCategory.id}&search=${encodeURIComponent(watt)}`;
@@ -498,7 +511,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
 
     result.push({ id: 'gt_row', label: 'Grand Total', isGrandTotal: true, cells: gtRowCells });
     return result;
-  }, [effectiveItems, visibleWarehouses, solarCategory]);
+  }, [effectiveItems, meaningfulWarehouses, solarCategory]);
 
   // Pivot 2: Product Series
   const pivot2Rows = useMemo<PivotRowDef[]>(() => {
@@ -511,7 +524,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
       if (!sm.has(series)) sm.set(series, { data: {}, totalDcr: 0, totalNonDcr: 0 });
       const s = sm.get(series)!;
       const isDcr = !!item.isDcrEligible;
-      visibleWarehouses.forEach(wh => {
+      meaningfulWarehouses.forEach(wh => {
         const qty = getQty(item, wh.id);
         if (qty > 0) {
           const ck = `${wh.id}_${isDcr ? 'DCR' : 'Non-DCR'}`;
@@ -525,7 +538,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
         }
       });
     });
-    const result: PivotRowDef[] = Array.from(sm.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([series, sObj]) => ({
+    const result: PivotRowDef[] = Array.from(sm.entries()).filter(([s, sObj]) => (sObj.totalDcr + sObj.totalNonDcr) > 0).sort((a, b) => a[0].localeCompare(b[0])).map(([series, sObj]) => ({
       id: `series_${series}`, label: series, 
       cells: { 
         ...sObj.data, 
@@ -546,10 +559,10 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
 
     result.push({ id: 'gt_row', label: 'Grand Total', isGrandTotal: true, cells: gtRowCells });
     return result;
-  }, [effectiveItems, visibleWarehouses]);
+  }, [effectiveItems, meaningfulWarehouses]);
 
   // Pivot 3: Brand x Warehouse
-  const pivot3Cols: PivotColumnDef[] = [...visibleWarehouses.map(wh => ({ id: wh.id, label: wh.name })), { id: 'GT', label: 'Grand Total', isGrandTotal: true }];
+  const pivot3Cols: PivotColumnDef[] = [...meaningfulWarehouses.map(wh => ({ id: wh.id, label: wh.name })), { id: 'GT', label: 'Grand Total', isGrandTotal: true }];
   const pivot3Rows = useMemo<PivotRowDef[]>(() => {
     const bm = new Map<string, { data: Record<string, PivotCellDef>; total: number }>();
     let total = 0; const ct: Record<string, number> = {};
@@ -557,7 +570,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
       const brand = item.brand || 'Unbranded';
       if (!bm.has(brand)) bm.set(brand, { data: {}, total: 0 });
       const b = bm.get(brand)!;
-      visibleWarehouses.forEach(wh => {
+      meaningfulWarehouses.forEach(wh => {
         const qty = getQty(item, wh.id);
         if (qty > 0) { 
           const current = b.data[wh.id];
@@ -566,7 +579,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
         }
       });
     });
-    const result: PivotRowDef[] = Array.from(bm.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([brand, bObj]) => ({ 
+    const result: PivotRowDef[] = Array.from(bm.entries()).filter(([b, bObj]) => bObj.total > 0).sort((a, b) => a[0].localeCompare(b[0])).map(([brand, bObj]) => ({ 
       id: `b_${brand}`, label: brand, cells: { ...bObj.data, 'GT': { value: bObj.total, dimensions: { brandId: brand } } } 
     }));
 
@@ -576,11 +589,11 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
 
     result.push({ id: 'gt_row', label: 'Grand Total', isGrandTotal: true, cells: gtRowCells });
     return result;
-  }, [effectiveItems, visibleWarehouses]);
+  }, [effectiveItems, meaningfulWarehouses]);
 
   // Pivot 4: Summary (New Orientation: Y = DCR/Non-DCR/Total, X = Warehouses)
   const pivot4Cols: PivotColumnDef[] = [
-    ...visibleWarehouses.map(wh => ({ id: wh.id, label: wh.name, isWarehouseGroup: true })),
+    ...meaningfulWarehouses.map(wh => ({ id: wh.id, label: wh.name, isWarehouseGroup: true })),
     { id: 'GT', label: 'Grand Total', isGrandTotal: true }
   ];
   const pivot4Rows = useMemo<PivotRowDef[]>(() => {
@@ -591,7 +604,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
     
     effectiveItems.forEach(item => {
       const isDcr = !!item.isDcrEligible;
-      visibleWarehouses.forEach(wh => {
+      meaningfulWarehouses.forEach(wh => {
         const qty = getQty(item, wh.id);
         if (qty > 0) {
           if (isDcr) { 
@@ -612,12 +625,12 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
     nonDcrCells['GT'] = { value: gtNonDcr, dimensions: { dcrStatus: 'Non-DCR' } }; 
     totalCells['GT'] = { value: gtDcr + gtNonDcr, dimensions: {} };
     
-    return [
-      { id: 'r_dcr', label: 'DCR', cells: dcrCells },
-      { id: 'r_nondcr', label: 'Non-DCR', cells: nonDcrCells },
-      { id: 'r_total', label: 'TOTAL', isGrandTotal: true, cells: totalCells }
-    ];
-  }, [effectiveItems, visibleWarehouses]);
+    const rows: PivotRowDef[] = [];
+    if (gtDcr > 0) rows.push({ id: 'r_dcr', label: 'DCR', cells: dcrCells });
+    if (gtNonDcr > 0) rows.push({ id: 'r_nondcr', label: 'Non-DCR', cells: nonDcrCells });
+    rows.push({ id: 'r_total', label: 'TOTAL', isGrandTotal: true, cells: totalCells });
+    return rows;
+  }, [effectiveItems, meaningfulWarehouses]);
 
   const handleTakeScreenshot = async () => {
     if (!pivot1Ref.current) return;
@@ -740,10 +753,10 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
         {renderDrilldownBar()}
 
         <div className="flex-1 overflow-y-auto p-5 bg-[#f7f8fb] min-h-0 relative">
-          {effectiveItems.length === 0 ? (
+          {(!meaningfulWarehouses.length || effectiveItems.length === 0) ? (
             <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-400">
               <AlertTriangle size={32} className="text-amber-400" />
-              <div className="text-lg font-semibold text-gray-700">No Data Found</div>
+              <div className="text-lg font-semibold text-gray-700">No Solar Panel stock found</div>
               <p className="text-sm">Try adjusting your filters or drill-down context.</p>
             </div>
           ) : (

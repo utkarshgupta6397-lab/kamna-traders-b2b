@@ -13,7 +13,7 @@ export async function createSession(params: {
 }) {
   const start = performance.now();
   const { userId, role, deviceType, userAgent, ipAddress } = params;
-  const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
   
   const sessionToken = (typeof crypto !== 'undefined' && crypto.randomUUID) 
     ? crypto.randomUUID() 
@@ -32,7 +32,16 @@ export async function createSession(params: {
 
   const jwt = await encrypt({ userId, role, sessionToken, deviceType, expires: expires.toISOString() });
   const cookieStore = await cookies();
-  cookieStore.set('session', jwt, { expires, httpOnly: true, secure: process.env.NODE_ENV === 'production' });
+  
+  const domain = process.env.COOKIE_DOMAIN || undefined;
+  
+  cookieStore.set('session', jwt, { 
+    expires, 
+    httpOnly: true, 
+    secure: process.env.NODE_ENV === 'production' || !!process.env.HTTPS_LOCAL, 
+    sameSite: 'lax',
+    domain
+  });
 
   console.log(`[Perf] createSession: ${(performance.now() - start).toFixed(2)}ms`);
 }

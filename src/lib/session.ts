@@ -282,12 +282,23 @@ export async function invalidateSession(sessionToken: string) {
  * Lightweight cleanup: Only deletes rows older than 7 days.
  */
 export async function cleanupStaleSessions() {
-  const threshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const threshold = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000); // 45 days
   try {
     await prisma.activeSession.deleteMany({
       where: { lastSeenAt: { lt: threshold } },
     });
   } catch (err) {
     console.error('[Session] Cleanup failed:', err);
+  }
+}
+
+export async function updateSessionLastSeen(sessionToken: string) {
+  try {
+    await prisma.activeSession.update({
+      where: { sessionToken },
+      data: { lastSeenAt: new Date() },
+    });
+  } catch (err) {
+    console.error('[Session] Update lastSeenAt failed:', err);
   }
 }

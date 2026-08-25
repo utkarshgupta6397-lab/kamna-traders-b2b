@@ -69,11 +69,6 @@ echo "✓ Cache preparation completed in $((SECONDS - STEP_START))s"
 STEP_START=$SECONDS
 echo "5. Building Next.js app (out-of-place)..."
 
-# CRITICAL FIX: Next.js out-of-place builds fail if tsconfig still references the OLD .next/types directory
-# which contains references to routes that have been deleted in this deployment.
-sed -i 's/".next\/types\/\*\*\/\*.ts",//g' tsconfig.json || true
-sed -i 's/".next\/dev\/types\/\*\*\/\*.ts",//g' tsconfig.json || true
-
 if ! NEXT_BUILD_DIR=".next.new" npm run build; then
     echo "❌ Build failed! Deployment aborted."
     echo "   - Production application was NOT affected and remains live."

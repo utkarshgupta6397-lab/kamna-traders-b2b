@@ -111,7 +111,7 @@ export function FullScreenViewer({ imageUrl, onClose }: { imageUrl: string; onCl
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `kamna-solar-panel-stock-${Date.now()}.png`;
+      a.download = imageUrl.startsWith('data:application/pdf') ? `Solar-Panel-Stock-Combined-Report.pdf` : `kamna-solar-panel-stock-${Date.now()}.png`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -131,7 +131,8 @@ export function FullScreenViewer({ imageUrl, onClose }: { imageUrl: string; onCl
       setIsSharing(true);
       const resp = await fetch(imageUrl);
       const blob = await resp.blob();
-      const file = new File([blob], `kamna-solar-panel-stock.png`, { type: blob.type });
+      const ext = imageUrl.startsWith('data:application/pdf') ? 'pdf' : 'png';
+      const file = new File([blob], `Solar-Panel-Stock-Combined-Report.${ext}`, { type: blob.type });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: 'Kamna Solar Panel Stock' });
       } else {
@@ -194,44 +195,44 @@ export function FullScreenViewer({ imageUrl, onClose }: { imageUrl: string; onCl
         </div>
       </div>
 
-      {/* Image area — pinch/zoom/pan */}
+      {/* Viewer area */}
       <div
-        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', touchAction: 'none' }}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-      >
-        <img
-          ref={imgRef}
-          src={imageUrl}
-          alt="Solar Panel Stock Report"
-          style={{
-            maxWidth: '100%',
-            maxHeight: '100%',
-            objectFit: 'contain',
-            transformOrigin: 'center center',
-            transition: 'none',
-            userSelect: 'none',
-            WebkitUserSelect: 'none',
-            pointerEvents: 'none',
-          }}
-        />
-      </div>
+          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', touchAction: 'none' }}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          <img
+            ref={imgRef}
+            src={imageUrl}
+            alt="Solar Panel Stock Report"
+            style={{
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: 'contain',
+              transformOrigin: 'center center',
+              transition: 'none',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              pointerEvents: 'none',
+            }}
+          />
+        </div>
 
       {/* Bottom hint */}
       <div style={{
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)',
-        textAlign: 'center',
-        background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 100%)',
-        paddingTop: 16,
-        pointerEvents: 'none',
-      }}>
-        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, margin: 0 }}>Pinch to zoom · Double-tap to reset</p>
-      </div>
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)',
+          textAlign: 'center',
+          background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 100%)',
+          paddingTop: 16,
+          pointerEvents: 'none',
+        }}>
+          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, margin: 0 }}>Pinch to zoom · Double-tap to reset</p>
+        </div>
     </div>
   );
 }

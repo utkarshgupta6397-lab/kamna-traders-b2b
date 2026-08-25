@@ -217,7 +217,7 @@ export function CommunicationWidget({ customerId, orderId, invoiceId, className 
       
       {message && (
         <a 
-          href={`http://localhost:3004/communications/${message.messageId}`}
+          href={`${process.env.NEXT_PUBLIC_GATEWAY_BASE_URL || process.env.GATEWAY_BASE_URL || 'http://localhost:3004'}/communications/${message.messageId}`}
           target="_blank"
           rel="noopener noreferrer"
           className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold text-[#1A2766] hover:bg-slate-50 transition-colors shadow-sm"

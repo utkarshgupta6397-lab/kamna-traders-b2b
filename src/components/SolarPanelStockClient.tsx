@@ -60,6 +60,7 @@ interface PivotTableProps {
   headerRight?: React.ReactNode;
   isExportMode?: boolean;
   containerRef?: React.RefObject<HTMLDivElement | null>;
+  reportId?: string;
 }
 
 // Heatmap — Google Charts colorful interpolation
@@ -217,7 +218,13 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWid
             )}
           </thead>
           <tbody>
-            {rows.map(row => {
+            {(() => {
+              let groupRowIndex = 0;
+              return rows.map(row => {
+                const isAlt = !row.isGrandTotal && !row.isGroupHeader && (groupRowIndex % 2 !== 0);
+                if (!row.isGroupHeader && !row.isGrandTotal) {
+                  groupRowIndex++;
+                }
               if (row.isGroupHeader) {
                 return (
                   <tr key={row.id} className="bg-slate-50/80 border-b border-slate-200">
@@ -234,9 +241,9 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWid
               }
               
               return (
-                <tr key={row.id} className={`border-b border-gray-100 transition-all ${row.isGrandTotal ? 'font-bold text-[12px] text-white' : 'hover:brightness-95 group'}`} style={row.isGrandTotal && !isExportMode ? { position: "sticky", bottom: 0, zIndex: 30 } : {}}>
+                <tr key={row.id} className={`border-b border-gray-100 transition-all ${row.isGrandTotal ? 'font-bold text-[12px] text-white' : 'hover:brightness-95 group'} ${isAlt ? 'bg-[#fcfdfd]' : 'bg-white'}`} style={row.isGrandTotal && !isExportMode ? { position: "sticky", bottom: 0, zIndex: 30 } : {}}>
                   <td
-                    className={`px-3 py-1.5 font-medium border-r border-gray-200 transition-colors ${row.isGrandTotal ? 'text-[11px] font-black uppercase tracking-wider border-t-2 border-t-white/10 border-r border-r-white/20' : `text-[13px] text-gray-700 bg-white ${row.id.includes('_child_') ? 'pl-7 text-gray-600 text-[12px]' : ''}`}`}
+                    className={`px-3 py-1.5 font-medium border-r border-gray-200 transition-colors ${row.isGrandTotal ? 'text-[11px] font-black uppercase tracking-wider border-t-2 border-t-white/10 border-r border-r-white/20' : `text-[13px] text-gray-700 ${isAlt ? 'bg-[#fcfdfd]' : 'bg-white'} ${row.id.includes('_child_') ? 'pl-7 text-gray-600 text-[12px]' : ''}`}`}
                     style={row.isGrandTotal ? { ...LS(40), backgroundColor: GT_BG, color: '#fff' } : LS(20)}
                   >
                     <div className="flex items-center" title={row.label} style={{ maxWidth: firstColWidth - 28 }}>
@@ -283,7 +290,8 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWid
                   })}
                 </tr>
               );
-            })}
+            });
+            })()}
           </tbody>
         </table>
       </div>
@@ -319,6 +327,9 @@ const MultiSelectFilter = ({ label, options, selected, onToggle, prefix, wideMen
 
 export default function SolarPanelStockClient({ warehouses, categories, brands, items, isExportMode = false, autoCapture = false, onCaptured, onCaptureError }: Props) {
   const pivot1Ref = useRef<HTMLDivElement>(null);
+  const pivot2Ref = useRef<HTMLDivElement>(null);
+  const pivot3Ref = useRef<HTMLDivElement>(null);
+  const pivot4Ref = useRef<HTMLDivElement>(null);
   
   // Global Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -328,7 +339,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
   const [selectedDcr, setSelectedDcr] = useState<string[]>([]);
   const [selectedSeries, setSelectedSeries] = useState<string[]>([]);
   const [selectedWattages, setSelectedWattages] = useState<string[]>([]);
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportingReportId, setExportingReportId] = useState<string | null>(null);
 
   // Shared Drilldown State
   const [activeDrilldown, setActiveDrilldown] = useState<SolarPanelDrilldown | null>(null);
@@ -635,12 +646,12 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
     return rows;
   }, [effectiveItems, meaningfulWarehouses]);
 
-  const handleTakeScreenshot = async () => {
-    if (!pivot1Ref.current) return;
-    setIsExporting(true);
+  const handleTakeScreenshot = async (targetRef: React.RefObject<HTMLDivElement | null>, reportId: string) => {
+    if (!targetRef.current) return;
+    setExportingReportId(reportId);
     const tid = toast.loading('Capturing screenshot...');
     
-    const originalNode = pivot1Ref.current;
+    const originalNode = targetRef.current;
     const scrollContainer = originalNode.querySelector('.pivot-scroll-container') as HTMLElement;
     const styleSnapshot = new Map<HTMLElement, string | null>();
     
@@ -729,7 +740,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
         onCaptured(dataUrl);
       } else {
         const link = document.createElement('a');
-        link.download = `solar-panel-stock-brand-wattage${suffix}-${timestamp}.jpg`;
+        link.download = `solar-panel-stock-${reportId.toLowerCase().replace(/[^a-z0-9]+/g, '-')}${suffix}-${timestamp}.jpg`;
         link.href = dataUrl;
         link.click();
         toast.success('Screenshot captured', { id: tid });
@@ -750,7 +761,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
           el.setAttribute('style', originalStyle);
         }
       });
-      setIsExporting(false);
+      setExportingReportId(null);
     }
   };
 
@@ -759,9 +770,21 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
     if (autoCapture && !hasCaptured.current && pivot1Ref.current) {
       hasCaptured.current = true;
       // Slight delay to ensure fonts/layout are fully stable
-      setTimeout(handleTakeScreenshot, 300);
+      setTimeout(() => handleTakeScreenshot(pivot1Ref, 'brand-wattage-breakdown'), 300);
     }
   }, [autoCapture, pivot1Rows, handleTakeScreenshot]);
+
+
+  const renderScreenshotBtn = (ref: React.RefObject<HTMLDivElement | null>, reportId: string) => (
+    <button 
+      onClick={() => handleTakeScreenshot(ref, reportId)} 
+      disabled={exportingReportId !== null}
+      className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md border border-gray-200 transition-colors ${exportingReportId !== null ? 'opacity-50 cursor-not-allowed' : ''}`}
+    >
+      {exportingReportId === reportId ? <Loader2 size={13} className="animate-spin text-gray-500" /> : <Camera size={13} className="text-gray-500" />}
+      {exportingReportId === reportId ? 'Capturing...' : 'Screenshot'}
+    </button>
+  );
 
   const renderDrilldownBar = () => {
     if (!activeDrilldown) return null;
@@ -873,16 +896,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
                 firstColWidth={220}
                 activeDrilldown={activeDrilldown}
                 onCellClick={handleCellClick}
-                headerRight={
-                  <button 
-                    onClick={handleTakeScreenshot} 
-                    disabled={isExporting}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md border border-gray-200 transition-colors ${isExporting ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    {isExporting ? <Loader2 size={13} className="animate-spin text-gray-500" /> : <Camera size={13} className="text-gray-500" />}
-                    {isExporting ? 'Capturing...' : 'Screenshot'}
-                  </button>
-                }
+                headerRight={renderScreenshotBtn(pivot1Ref, 'brand-wattage-breakdown')}
               />
               <PivotTable 
                 title="Product Series Breakdown" 
@@ -893,6 +907,8 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
                 firstColWidth={310} 
                 activeDrilldown={activeDrilldown}
                 onCellClick={handleCellClick}
+                containerRef={pivot2Ref}
+                headerRight={renderScreenshotBtn(pivot2Ref, 'product-series-breakdown')}
               />
               <PivotTable 
                 title="Brand × Warehouse Stock" 
@@ -903,6 +919,8 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
                 firstColWidth={220} 
                 activeDrilldown={activeDrilldown}
                 onCellClick={handleCellClick}
+                containerRef={pivot3Ref}
+                headerRight={renderScreenshotBtn(pivot3Ref, 'brand-warehouse-stock')}
               />
               <PivotTable 
                 title="Total Panels Summary" 
@@ -913,6 +931,8 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
                 firstColWidth={180} 
                 activeDrilldown={activeDrilldown}
                 onCellClick={handleCellClick}
+                containerRef={pivot4Ref}
+                headerRight={renderScreenshotBtn(pivot4Ref, 'total-panels-summary')}
               />
             </div>
           )}

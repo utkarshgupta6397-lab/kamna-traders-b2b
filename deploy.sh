@@ -16,6 +16,7 @@ CURRENT_PRISMA_HASH=$(sha1sum prisma/schema.prisma 2>/dev/null | awk '{print $1}
 
 git fetch origin
 git reset --hard origin/main
+git clean -fd
 
 NEW_PKG_HASH=$(sha1sum package.json package-lock.json 2>/dev/null | sha1sum | awk '{print $1}') || true
 NEW_PRISMA_HASH=$(sha1sum prisma/schema.prisma 2>/dev/null | awk '{print $1}') || true
@@ -59,10 +60,10 @@ echo "4. Preparing out-of-place Next.js build environment..."
 rm -rf .next.new || true
 mkdir -p .next.new
 
-if [ -d ".next/cache" ]; then
-    echo "   - Preserving Next.js cache..."
-    cp -a .next/cache .next.new/cache || true
-fi
+# if [ -d ".next/cache" ]; then
+#     echo "   - Preserving Next.js cache..."
+#     cp -a .next/cache .next.new/cache || true
+# fi
 echo "✓ Cache preparation completed in $((SECONDS - STEP_START))s"
 
 STEP_START=$SECONDS

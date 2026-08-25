@@ -1,13 +1,15 @@
 'use client';
 
+import dynamic from 'next/dynamic';
+const PdfViewer = dynamic(() => import('./PdfViewer'), { ssr: false });
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Search, Box, ChevronDown, Check, Loader2, AlertTriangle, ExternalLink, X, Camera
 } from 'lucide-react';
 import CurrentStockSidebar from './CurrentStockSidebar';
 import { formatStockDate } from '@/lib/date-utils';
-import { toCanvas } from 'html-to-image';
-import { FullScreenViewer } from '@/app/mobile/_components/StockImageViewer';
+
+import { jsPDF } from 'jspdf';
 import toast from 'react-hot-toast';
 
 // Types
@@ -166,7 +168,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrill
     : 'border-l border-l-gray-200/50';
 
   return (
-    <div ref={containerRef} className="bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col mb-6" style={{ overflow: 'hidden' }}>
+    <div ref={containerRef} className={`bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col mb-6 ${isExportMode ? "export-container" : "overflow-hidden"}`} style={isExportMode ? { overflow: "visible" } : { overflow: "hidden" }}>
       <div className="px-4 py-3 border-b border-gray-100 bg-white shrink-0 flex items-center justify-between">
         <div>
           <h2 className="font-bold text-gray-900 text-[13px] uppercase tracking-wide">{title}</h2>
@@ -175,12 +177,25 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrill
         {headerRight && <div>{headerRight}</div>}
       </div>
       <div className={`relative bg-white pivot-scroll-container ${isExportMode ? "" : "overflow-x-auto overflow-y-auto max-h-[560px]"}`}>
-        <table className="text-sm text-left" style={{ minWidth: 'max-content', width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+        <table className={`text-sm text-left ${isExportMode ? "export-table" : ""}`} style={isExportMode ? { width: "100%", maxWidth: "100%", borderCollapse: "separate", borderSpacing: 0 } : { minWidth: "max-content", width: "100%", borderCollapse: "separate", borderSpacing: 0 }}>
+          
+          {isExportMode && (
+            <colgroup>
+              <col style={{ width: "23%" }} />
+              {flatLeaves.map((leaf, idx) => {
+                let p = "5%";
+                if (leaf.label === 'DCR') p = "5%";
+                else if (leaf.label === 'Non-DCR') p = "6.6%";
+                else if (leaf.isTotal) p = "7%";
+                return <col key={`col_${idx}`} style={{ width: p }} />;
+              })}
+            </colgroup>
+          )}
           <thead>
             <tr className="bg-[#f8f9fb]">
               <th
                 className="px-3 py-2.5 font-bold text-[11px] text-gray-600 uppercase tracking-wide border-b-2 border-b-gray-300 border-r border-r-gray-200 bg-[#f8f9fb] text-left"
-                style={{ ...LS(40), whiteSpace: 'nowrap' }}
+                style={{ ...LS(40), whiteSpace: isExportMode ? 'normal' : 'nowrap', width: 'auto' }}
                 rowSpan={hasSubCols ? 2 : 1}
               >
                 {firstColLabel}
@@ -194,7 +209,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrill
                     colSpan={span}
                     rowSpan={hasSubCols && !c.subColumns ? 2 : 1}
                     className={`px-2 py-2.5 text-[11px] font-bold uppercase tracking-wide text-center border-b border-b-gray-200 ${isGT ? 'text-white border-b-2 border-b-white/20 border-l-4 border-l-white/30' : 'text-gray-700 border-l-2 border-l-slate-300'}`}
-                    style={isGT ? { ...RS(0, 35), backgroundColor: GT_BG, minWidth: gtTotalWidth } : (isExportMode ? { backgroundColor: "#EEF2FF" } : { position: "sticky", top: 0, zIndex: 30, backgroundColor: "#EEF2FF" })}
+                    style={isGT ? { ...RS(0, 35), backgroundColor: GT_BG, minWidth: isExportMode ? "auto" : gtTotalWidth } : (isExportMode ? { backgroundColor: "#EEF2FF" } : { position: "sticky", top: 0, zIndex: 30, backgroundColor: "#EEF2FF" })}
                   >
                     {c.label}
                   </th>
@@ -208,8 +223,8 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrill
                   return (
                     <th
                       key={`sub_${idx}`}
-                      className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-center border-b-2 border-b-gray-300 ${isGT ? 'text-blue-100 border-l border-l-white/10' : leaf.isFirstInGroup ? 'text-sky-700 border-l-2 border-l-slate-300' : 'text-gray-500 border-l border-l-gray-200'} ${leaf.isTotal && !isGT ? 'bg-[#EEF2FF] text-indigo-700 font-bold' : ''}`}
-                      style={isGT ? { ...RS(leaf.rightOffset!, 35), backgroundColor: GT_BG, width: leaf.width, minWidth: leaf.width, maxWidth: leaf.width } : (isExportMode ? { backgroundColor: leaf.isTotal ? "#EEF2FF" : "#f8f9fb", width: leaf.width, minWidth: leaf.width, maxWidth: leaf.width } : { position: "sticky", top: 37, zIndex: 30, backgroundColor: leaf.isTotal ? "#EEF2FF" : "#f8f9fb", width: leaf.width, minWidth: leaf.width, maxWidth: leaf.width })}
+                      className={`px-1 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-center border-b-2 border-b-gray-300 ${isGT ? 'text-blue-100 border-l border-l-white/10' : leaf.isFirstInGroup ? 'text-sky-700 border-l-2 border-l-slate-300' : 'text-gray-500 border-l border-l-gray-200'} ${leaf.isTotal && !isGT ? 'bg-[#EEF2FF] text-indigo-700 font-bold' : ''}`}
+                      style={isGT ? { ...RS(leaf.rightOffset!, 35), backgroundColor: GT_BG, width: isExportMode ? "auto" : leaf.width, minWidth: isExportMode ? "auto" : leaf.width } : (isExportMode ? { backgroundColor: leaf.isTotal ? "#EEF2FF" : "#f8f9fb", width: "auto" } : { position: "sticky", top: 37, zIndex: 30, backgroundColor: leaf.isTotal ? "#EEF2FF" : "#f8f9fb", width: leaf.width, minWidth: leaf.width, maxWidth: leaf.width })}
                     >
                       {leaf.label}
                     </th>
@@ -234,7 +249,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrill
                     </td>
                     {flatLeaves.map((leaf, idx) => (
                       <td key={idx} className={groupBorder(leaf)}
-                        style={leaf.isGrandTotal ? { ...RS(leaf.rightOffset!, 15), backgroundColor: '#ECEEF8', width: leaf.width, minWidth: leaf.width } : { backgroundColor: '#f8f9fb' }}
+                        style={leaf.isGrandTotal ? { ...RS(leaf.rightOffset!, 15), backgroundColor: '#ECEEF8', width: isExportMode ? 'auto' : leaf.width, minWidth: isExportMode ? 'auto' : leaf.width } : { backgroundColor: '#f8f9fb' }}
                       />
                     ))}
                   </tr>
@@ -245,16 +260,16 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrill
                 <tr key={row.id} className={`border-b border-gray-100 transition-all ${row.isGrandTotal ? 'font-bold text-[12px] text-white' : 'hover:brightness-95 group'} ${isAlt ? 'bg-[#fcfdfd]' : 'bg-white'}`} style={row.isGrandTotal && !isExportMode ? { position: "sticky", bottom: 0, zIndex: 30 } : {}}>
                   <td
                     className={`px-3 py-1.5 font-medium border-r border-gray-200 transition-colors ${row.isGrandTotal ? 'text-[11px] font-black uppercase tracking-wider border-t-2 border-t-white/10 border-r border-r-white/20' : `text-[13px] text-gray-700 ${isAlt ? 'bg-[#fcfdfd]' : 'bg-white'} ${row.id.includes('_child_') ? 'pl-7 text-gray-600 text-[12px]' : ''}`}`}
-                    style={row.isGrandTotal ? { ...LS(40), backgroundColor: GT_BG, color: '#fff', whiteSpace: 'nowrap' } : { ...LS(20), whiteSpace: 'nowrap' }}
+                    style={row.isGrandTotal ? { ...LS(40), backgroundColor: GT_BG, color: '#fff', whiteSpace: isExportMode ? 'normal' : 'nowrap' } : { ...LS(20), whiteSpace: isExportMode ? 'normal' : 'nowrap' }}
                   >
                     <div className="flex items-center gap-1.5" title={row.label}>
                       {row.href && !row.isGrandTotal ? (
                         <a href={row.href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 hover-group truncate font-semibold cursor-pointer">
-                          <span className="truncate">{row.label}</span>
+                          <span className={isExportMode ? "whitespace-normal break-words" : "truncate"}>{row.label}</span>
                           <ExternalLink size={10} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                         </a>
                       ) : (
-                        <span className="truncate">{row.label}</span>
+                        <span className={isExportMode ? "whitespace-normal break-words" : "truncate"}>{row.label}</span>
                       )}
                       
                       {!row.isGrandTotal && row.id.includes('_child_Unknown') && (
@@ -281,9 +296,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrill
                         onClick={() => { if (isClickable) onCellClick(dim); }}
                         title={isClickable && !row.isGrandTotal ? 'Click to drill down' : undefined}
                         className={`px-2 py-1.5 text-center transition-all ${row.isGrandTotal ? `border-t-2 border-t-white/10 py-2.5 ${leaf.isFirstInGroup && !leaf.isGrandTotal ? 'border-l-2 border-l-white/20' : ''} ${leaf.isGrandTotal && leaf.isFirstInGroup ? 'border-l-4 border-l-white/30' : ''}` : `text-[13px] ${groupBorder(leaf)}`} ${hoverClass} ${highlightClass}`}
-                        style={leaf.isGrandTotal 
-                          ? { ...RS(leaf.rightOffset!, row.isGrandTotal ? 35 : 20), ...cs, ...interactiveStyle, width: leaf.width, minWidth: leaf.width } 
-                          : { ...cs, ...interactiveStyle, width: leaf.width, minWidth: leaf.width }}
+                        style={leaf.isGrandTotal ? { ...RS(leaf.rightOffset!, row.isGrandTotal ? 35 : 20), ...cs, ...interactiveStyle, width: isExportMode ? 'auto' : leaf.width, minWidth: isExportMode ? 'auto' : leaf.width } : { ...cs, ...interactiveStyle, width: isExportMode ? 'auto' : leaf.width, minWidth: isExportMode ? 'auto' : leaf.width }}
                       >
                         {val === 0 ? <span className={row.isGrandTotal ? "opacity-40" : "text-gray-200 select-none"}>—</span> : val.toLocaleString()}
                       </td>
@@ -648,135 +661,90 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
     return rows;
   }, [effectiveItems, meaningfulWarehouses]);
 
-  const handleTakeScreenshot = async (targetRef: React.RefObject<HTMLDivElement | null>, reportId: string) => {
-    if (!targetRef.current) return;
+
+  
+  // Safely chunks rows to prevent cutting across pages and repeats headers
+  const paginateRows = (rows: PivotRowDef[], maxRowsPerPage: number) => {
+    const chunks: PivotRowDef[][] = [];
+    let currentChunk: PivotRowDef[] = [];
+    let currentGroupHeader: PivotRowDef | null = null;
+
+    const pushChunk = () => {
+      if (currentChunk.length > 0) {
+        chunks.push([...currentChunk]);
+        currentChunk = [];
+      }
+    };
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+
+      if (row.isGrandTotal) {
+        if (currentChunk.length >= maxRowsPerPage - 1) pushChunk();
+        currentChunk.push(row);
+        continue;
+      }
+
+      if (row.isGroupHeader) {
+        currentGroupHeader = row;
+        let groupSize = 1;
+        for (let j = i + 1; j < rows.length; j++) {
+          if (rows[j].isGroupHeader || rows[j].isGrandTotal) break;
+          groupSize++;
+        }
+
+        if (currentChunk.length > 0 && currentChunk.length + groupSize > maxRowsPerPage && groupSize <= maxRowsPerPage) {
+           pushChunk();
+        } else if (currentChunk.length >= maxRowsPerPage) {
+           pushChunk();
+        }
+        currentChunk.push(row);
+      } else {
+        if (currentChunk.length >= maxRowsPerPage) {
+          pushChunk();
+          if (currentGroupHeader) {
+            // Repeat the exact header for seamless continuity
+            currentChunk.push({ ...currentGroupHeader, id: `${currentGroupHeader.id}_cont`, label: `${currentGroupHeader.label} (Continued)` });
+          }
+        }
+        currentChunk.push(row);
+      }
+    }
+    pushChunk();
+    return chunks;
+  };
+
+  const handleTakeScreenshot = async (reportId: string) => {
     setExportingReportId(reportId);
-    const tid = toast.loading('Capturing screenshot...');
-    
-    const originalNode = targetRef.current;
-    const scrollContainer = originalNode.querySelector('.pivot-scroll-container') as HTMLElement;
-    const styleSnapshot = new Map<HTMLElement, string | null>();
-    
+    const tid = toast.loading('Generating PDF report...');
     try {
-      // 1. Snapshot and override main node
-      styleSnapshot.set(originalNode, originalNode.getAttribute('style'));
-      originalNode.style.setProperty('width', 'max-content', 'important');
-      originalNode.style.setProperty('max-width', 'none', 'important');
-      
-      // 2. Snapshot and override scroll container
-      if (scrollContainer) {
-        styleSnapshot.set(scrollContainer, scrollContainer.getAttribute('style'));
-        scrollContainer.style.setProperty('overflow', 'visible', 'important');
-        scrollContainer.style.setProperty('max-height', 'none', 'important');
-        scrollContainer.style.setProperty('height', 'auto', 'important');
-        scrollContainer.style.setProperty('max-width', 'none', 'important');
-      }
-
-      // 3. Disable sticky positioning
-      const stickyElements = originalNode.querySelectorAll('th, td, thead, tr');
-      stickyElements.forEach((el) => {
-        const e = el as HTMLElement;
-        const currentStyle = e.getAttribute('style');
-        if (currentStyle && currentStyle.includes('sticky')) {
-          styleSnapshot.set(e, currentStyle);
-          e.style.setProperty('position', 'static', 'important');
-        }
-      });
-      
-      // 4. Wait for layout
-      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      if ('fonts' in document) {
-        await (document as any).fonts.ready;
-      }
-      
-      // 5. Measure full dimensions
-      const fullWidth = originalNode.scrollWidth;
-      const fullHeight = originalNode.scrollHeight;
-      
-      // 6. Capture
-      const canvas = await toCanvas(originalNode, {
-        pixelRatio: 1.5,
-        backgroundColor: '#ffffff',
-        width: fullWidth,
-        height: fullHeight,
-        style: {
-          margin: '0',
-          padding: '0'
-        },
-        cacheBust: true
-      });
-      
-      // 7. Validate canvas
-      if (canvas.width < 100 || canvas.height < 100) {
-        throw new Error('Screenshot rendering produced an empty image.');
-      }
-      
-      // Lightweight pixel validation (sample center pixel)
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-         const pixel = ctx.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data;
-         if (pixel[3] === 0) {
-            // completely transparent center means it likely failed
-            console.warn('Canvas center pixel is transparent, but continuing...');
-         }
-      }
-      
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
-      
-      const d = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const timestamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
-      
-      let suffix = '';
-      if (activeDrilldown) {
-        const parts = [];
-        if (activeDrilldown.brandId) parts.push(activeDrilldown.brandId);
-        if (activeDrilldown.wattage) parts.push(`${activeDrilldown.wattage}w`);
-        if (parts.length > 0) {
-           suffix = '-' + parts.join('-').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-        }
-      }
-
-      if (onCaptured) {
-        toast.dismiss(tid);
-        onCaptured(dataUrl);
-      } else {
-        toast.success('Screenshot generated successfully', { id: tid });
-        setPreviewImage(dataUrl);
-      }
-    } catch (err) {
+      const res = await fetch('/api/staff/operations/solar-panel-stock/export');
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setPreviewImage(url); // We'll reuse previewImage state to store the PDF url!
+      toast.success('Report generated', { id: tid });
+      if (onCaptured) onCaptured(url);
+    } catch (err: any) {
       console.error(err);
-      if (onCaptureError) {
-        onCaptureError(err);
-      } else {
-        toast.error('Failed to capture screenshot', { id: tid });
-      }
+      toast.error('Failed to generate report', { id: tid });
+      if (onCaptureError) onCaptureError(err);
     } finally {
-      // 8. Restore UI exactly
-      styleSnapshot.forEach((originalStyle, el) => {
-        if (originalStyle === null) {
-          el.removeAttribute('style');
-        } else {
-          el.setAttribute('style', originalStyle);
-        }
-      });
       setExportingReportId(null);
     }
   };
 
   const hasCaptured = useRef(false);
   useEffect(() => {
-    if (autoCapture && !hasCaptured.current && pivot1Ref.current) {
+    if (autoCapture && !hasCaptured.current && !isExportMode) {
       hasCaptured.current = true;
-      // Slight delay to ensure fonts/layout are fully stable
-      setTimeout(() => handleTakeScreenshot(pivot1Ref, 'brand-wattage-breakdown'), 300);
+      handleTakeScreenshot('auto-export');
     }
-  }, [autoCapture, pivot1Rows, handleTakeScreenshot]);
+  }, [autoCapture, isExportMode]);
 
-
-  const renderScreenshotBtn = (ref: React.RefObject<HTMLDivElement | null>, reportId: string) => (
+  const renderScreenshotBtn = (reportId: string) => (
     <button 
-      onClick={() => handleTakeScreenshot(ref, reportId)} 
+      onClick={() => handleTakeScreenshot(reportId)} 
       disabled={exportingReportId !== null}
       className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md border border-gray-200 transition-colors ${exportingReportId !== null ? 'opacity-50 cursor-not-allowed' : ''}`}
     >
@@ -825,24 +793,41 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
 
   if (isExportMode) {
     return (
-      <div className="bg-white p-8" style={{ width: "max-content", minWidth: 1400 }}>
-        <PivotTable 
-          containerRef={pivot1Ref}
-          title="Brand & Wattage Breakdown" 
-          subtitle="Rows: Brand → Wattage  |  Columns: Warehouse → DCR / Non-DCR  |  Grand Total pinned right" 
-          firstColLabel="Brand / Wattage" 
-          columns={cols12} 
-          rows={pivot1Rows} 
-          activeDrilldown={activeDrilldown}
-          onCellClick={handleCellClick}
-          isExportMode={true}
-        />
+      <div style={{ width: "100%", backgroundColor: "#fff", padding: 0 }}>
+        {/* PAGE 1: Product Series Breakdown */}
+        <div className="print-page-break-after">
+          <PivotTable 
+            title="Product Series Breakdown" 
+            subtitle="Rows: Product Series (Parent Products)  |  Columns: Warehouse → DCR / Non-DCR" 
+            firstColLabel="Product Series" 
+            columns={cols12} 
+            rows={pivot2Rows} 
+            activeDrilldown={activeDrilldown}
+            onCellClick={handleCellClick}
+            isExportMode={true}
+          />
+        </div>
+
+        {/* PAGE 2+: Brand & Wattage Breakdown */}
+        <div>
+          <PivotTable 
+            title="Brand & Wattage Breakdown" 
+            subtitle="Rows: Brand → Wattage  |  Columns: Warehouse → DCR / Non-DCR  |  Grand Total pinned right" 
+            firstColLabel="Brand / Wattage" 
+            columns={cols12} 
+            rows={pivot1Rows} 
+            activeDrilldown={activeDrilldown}
+            onCellClick={handleCellClick}
+            isExportMode={true}
+          />
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex h-full gap-5">
+      {previewImage && <PdfViewer url={previewImage} onClose={() => setPreviewImage(null)} />}
       <CurrentStockSidebar activeView="solar" />
       <div className="flex-1 flex flex-col h-full min-w-0 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between shrink-0 rounded-t-lg">
@@ -893,7 +878,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
                 rows={pivot1Rows} 
                 activeDrilldown={activeDrilldown}
                 onCellClick={handleCellClick}
-                headerRight={renderScreenshotBtn(pivot1Ref, 'brand-wattage-breakdown')}
+                headerRight={renderScreenshotBtn('brand-wattage-breakdown')}
               />
               <PivotTable 
                 title="Product Series Breakdown" 
@@ -904,7 +889,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
                 activeDrilldown={activeDrilldown}
                 onCellClick={handleCellClick}
                 containerRef={pivot2Ref}
-                headerRight={renderScreenshotBtn(pivot2Ref, 'product-series-breakdown')}
+                headerRight={renderScreenshotBtn('product-series-breakdown')}
               />
               <PivotTable 
                 title="Brand × Warehouse Stock" 
@@ -915,7 +900,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
                 activeDrilldown={activeDrilldown}
                 onCellClick={handleCellClick}
                 containerRef={pivot3Ref}
-                headerRight={renderScreenshotBtn(pivot3Ref, 'brand-warehouse-stock')}
+                headerRight={renderScreenshotBtn('brand-warehouse-stock')}
               />
               <PivotTable 
                 title="Total Panels Summary" 
@@ -926,13 +911,12 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
                 activeDrilldown={activeDrilldown}
                 onCellClick={handleCellClick}
                 containerRef={pivot4Ref}
-                headerRight={renderScreenshotBtn(pivot4Ref, 'total-panels-summary')}
+                headerRight={renderScreenshotBtn('total-panels-summary')}
               />
             </div>
           )}
         </div>
       </div>
-      {previewImage && <FullScreenViewer imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
-      </div>
+    </div>
   );
 }

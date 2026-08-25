@@ -7,6 +7,7 @@ import {
 import CurrentStockSidebar from './CurrentStockSidebar';
 import { formatStockDate } from '@/lib/date-utils';
 import { toCanvas } from 'html-to-image';
+import { FullScreenViewer } from '@/app/mobile/_components/StockImageViewer';
 import toast from 'react-hot-toast';
 
 // Types
@@ -54,7 +55,7 @@ export interface PivotRowDef {
 }
 interface PivotTableProps {
   title: string; subtitle: string; firstColLabel: string;
-  columns: PivotColumnDef[]; rows: PivotRowDef[]; firstColWidth?: number;
+  columns: PivotColumnDef[]; rows: PivotRowDef[];
   activeDrilldown: SolarPanelDrilldown | null;
   onCellClick: (dimensions: SolarPanelDrilldown) => void;
   headerRight?: React.ReactNode;
@@ -134,7 +135,7 @@ function isDrilldownMatch(cellDim: SolarPanelDrilldown | undefined, active: Sola
   return Object.keys(active).every(k => (active as any)[k] === (cellDim as any)[k]);
 }
 
-function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWidth = 220, activeDrilldown, onCellClick, headerRight, containerRef, isExportMode }: PivotTableProps) {
+function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrilldown, onCellClick, headerRight, containerRef, isExportMode }: PivotTableProps) {
   type Leaf = { id: string; label: string; width: number; isGrandTotal: boolean; isTotal: boolean; parentId?: string; isFirstInGroup: boolean; rightOffset?: number; };
   const flatLeaves: Leaf[] = [];
   columns.forEach(col => {
@@ -179,7 +180,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWid
             <tr className="bg-[#f8f9fb]">
               <th
                 className="px-3 py-2.5 font-bold text-[11px] text-gray-600 uppercase tracking-wide border-b-2 border-b-gray-300 border-r border-r-gray-200 bg-[#f8f9fb] text-left"
-                style={{ ...LS(40), width: firstColWidth, minWidth: firstColWidth, maxWidth: firstColWidth }}
+                style={{ ...LS(40), whiteSpace: 'nowrap' }}
                 rowSpan={hasSubCols ? 2 : 1}
               >
                 {firstColLabel}
@@ -244,9 +245,9 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWid
                 <tr key={row.id} className={`border-b border-gray-100 transition-all ${row.isGrandTotal ? 'font-bold text-[12px] text-white' : 'hover:brightness-95 group'} ${isAlt ? 'bg-[#fcfdfd]' : 'bg-white'}`} style={row.isGrandTotal && !isExportMode ? { position: "sticky", bottom: 0, zIndex: 30 } : {}}>
                   <td
                     className={`px-3 py-1.5 font-medium border-r border-gray-200 transition-colors ${row.isGrandTotal ? 'text-[11px] font-black uppercase tracking-wider border-t-2 border-t-white/10 border-r border-r-white/20' : `text-[13px] text-gray-700 ${isAlt ? 'bg-[#fcfdfd]' : 'bg-white'} ${row.id.includes('_child_') ? 'pl-7 text-gray-600 text-[12px]' : ''}`}`}
-                    style={row.isGrandTotal ? { ...LS(40), backgroundColor: GT_BG, color: '#fff' } : LS(20)}
+                    style={row.isGrandTotal ? { ...LS(40), backgroundColor: GT_BG, color: '#fff', whiteSpace: 'nowrap' } : { ...LS(20), whiteSpace: 'nowrap' }}
                   >
-                    <div className="flex items-center" title={row.label} style={{ maxWidth: firstColWidth - 28 }}>
+                    <div className="flex items-center gap-1.5" title={row.label}>
                       {row.href && !row.isGrandTotal ? (
                         <a href={row.href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 hover-group truncate font-semibold cursor-pointer">
                           <span className="truncate">{row.label}</span>
@@ -257,7 +258,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWid
                       )}
                       
                       {!row.isGrandTotal && row.id.includes('_child_Unknown') && (
-                        <span style={{ marginLeft: 6, fontSize: 10, color: '#f59e0b', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 3, padding: '1px 4px', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: 10, color: '#f59e0b', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 3, padding: '1px 4px', whiteSpace: 'nowrap' }}>
                           no wattage
                         </span>
                       )}
@@ -340,6 +341,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
   const [selectedSeries, setSelectedSeries] = useState<string[]>([]);
   const [selectedWattages, setSelectedWattages] = useState<string[]>([]);
   const [exportingReportId, setExportingReportId] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Shared Drilldown State
   const [activeDrilldown, setActiveDrilldown] = useState<SolarPanelDrilldown | null>(null);
@@ -739,11 +741,8 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
         toast.dismiss(tid);
         onCaptured(dataUrl);
       } else {
-        const link = document.createElement('a');
-        link.download = `solar-panel-stock-${reportId.toLowerCase().replace(/[^a-z0-9]+/g, '-')}${suffix}-${timestamp}.jpg`;
-        link.href = dataUrl;
-        link.click();
-        toast.success('Screenshot captured', { id: tid });
+        toast.success('Screenshot generated successfully', { id: tid });
+        setPreviewImage(dataUrl);
       }
     } catch (err) {
       console.error(err);
@@ -834,7 +833,6 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
           firstColLabel="Brand / Wattage" 
           columns={cols12} 
           rows={pivot1Rows} 
-          firstColWidth={220}
           activeDrilldown={activeDrilldown}
           onCellClick={handleCellClick}
           isExportMode={true}
@@ -893,7 +891,6 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
                 firstColLabel="Brand / Wattage" 
                 columns={cols12} 
                 rows={pivot1Rows} 
-                firstColWidth={220}
                 activeDrilldown={activeDrilldown}
                 onCellClick={handleCellClick}
                 headerRight={renderScreenshotBtn(pivot1Ref, 'brand-wattage-breakdown')}
@@ -904,7 +901,6 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
                 firstColLabel="Product Series" 
                 columns={cols12} 
                 rows={pivot2Rows} 
-                firstColWidth={310} 
                 activeDrilldown={activeDrilldown}
                 onCellClick={handleCellClick}
                 containerRef={pivot2Ref}
@@ -916,7 +912,6 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
                 firstColLabel="Brand" 
                 columns={pivot3Cols} 
                 rows={pivot3Rows} 
-                firstColWidth={220} 
                 activeDrilldown={activeDrilldown}
                 onCellClick={handleCellClick}
                 containerRef={pivot3Ref}
@@ -928,7 +923,6 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
                 firstColLabel="Metric" 
                 columns={pivot4Cols} 
                 rows={pivot4Rows} 
-                firstColWidth={180} 
                 activeDrilldown={activeDrilldown}
                 onCellClick={handleCellClick}
                 containerRef={pivot4Ref}
@@ -938,6 +932,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
           )}
         </div>
       </div>
-    </div>
+      {previewImage && <FullScreenViewer imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
+      </div>
   );
 }

@@ -6,7 +6,7 @@ import { RefreshCw, X, Download, Share2, ZoomIn } from 'lucide-react';
 // ---------------------------------------------------------------------------
 // Full-screen viewer with native pinch-zoom / pan
 // ---------------------------------------------------------------------------
-function FullScreenViewer({ imageUrl, onClose }: { imageUrl: string; onClose: () => void }) {
+export function FullScreenViewer({ imageUrl, onClose }: { imageUrl: string; onClose: () => void }) {
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -239,86 +239,3 @@ function FullScreenViewer({ imageUrl, onClose }: { imageUrl: string; onClose: ()
 // ---------------------------------------------------------------------------
 // Main viewer component (shown inside the Solar Panel Stock page)
 // ---------------------------------------------------------------------------
-export default function StockImageViewer() {
-  const [timestamp, setTimestamp] = useState(Date.now());
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [viewerOpen, setViewerOpen] = useState(false);
-
-  const imageUrl = `/api/internal/generate-stock-image?t=${timestamp}`;
-
-  const handleRefresh = () => {
-    setLoading(true);
-    setError(false);
-    setTimestamp(Date.now());
-    setViewerOpen(false);
-  };
-
-  return (
-    <>
-      {/* Full-screen viewer portal */}
-      {viewerOpen && !loading && !error && (
-        <FullScreenViewer imageUrl={imageUrl} onClose={() => setViewerOpen(false)} />
-      )}
-
-      <div className="flex-1 flex flex-col relative bg-[#F8F9FB] min-h-0">
-        {/* Header bar */}
-        <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-100 z-10 shadow-[0_2px_8px_rgba(0,0,0,0.02)]">
-          <div>
-            <h2 className="font-bold text-[13px] text-slate-800 uppercase tracking-widest">Current Stock</h2>
-          </div>
-          <button
-            onClick={handleRefresh}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F8F9FB] text-slate-500 rounded-lg active:bg-slate-100 disabled:opacity-50 transition-colors border border-slate-200"
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            <span className="text-[11px] font-bold uppercase tracking-wider">Refresh</span>
-          </button>
-        </div>
-
-        {/* Image area */}
-        <div className="flex-1 overflow-y-auto relative bg-[#F8F9FB] p-4 flex flex-col items-center">
-          {/* Loading overlay */}
-          {loading && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#F8F9FB] z-10">
-              <div className="w-8 h-8 border-4 border-slate-200 border-t-[#1A2766] rounded-full animate-spin mb-3" />
-              <div className="font-bold text-slate-800 text-sm">Generating Report…</div>
-              <div className="text-slate-500 text-xs mt-1">This may take a few seconds</div>
-            </div>
-          )}
-
-          {error ? (
-            <div className="text-center p-6 bg-white rounded-xl border border-red-100 mt-4 w-full max-w-sm">
-              <div className="text-red-500 font-bold mb-2">Failed to generate stock report</div>
-              <button onClick={handleRefresh} className="text-sm text-[#1A2766] font-semibold underline">Try again</button>
-            </div>
-          ) : (
-            <div 
-              className="relative w-full max-w-md bg-white rounded-xl shadow-[0_4px_12px_rgba(0,0,0,0.05)] border border-slate-200 overflow-hidden cursor-zoom-in active:scale-[0.98] transition-transform"
-              onClick={() => !loading && !error && setViewerOpen(true)}
-            >
-              <div className="aspect-[4/3] w-full relative">
-                <img
-                  src={imageUrl}
-                  alt="Solar Panel Stock Preview"
-                  className={`w-full h-full object-cover object-top transition-opacity duration-300 ${loading ? 'opacity-0' : 'opacity-100'}`}
-                  onLoad={() => setLoading(false)}
-                  onError={() => { setLoading(false); setError(true); }}
-                  style={{ pointerEvents: 'none' }}
-                />
-              </div>
-              <div className="px-4 py-3 bg-white border-t border-slate-100 flex items-center justify-between pointer-events-none">
-                <span className="text-sm font-semibold text-slate-800">Stock Report Preview</span>
-                <div className="flex items-center gap-1 text-[#1A2766] bg-blue-50 px-2 py-1 rounded text-xs font-bold">
-                  <ZoomIn size={12} />
-                  View Full
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}

@@ -24,6 +24,10 @@ interface SkuItem {
 interface Props {
   warehouses: Warehouse[]; categories: any[]; brands: Brand[];
   items: SkuItem[]; canSync?: boolean;
+  isExportMode?: boolean;
+  autoCapture?: boolean;
+  onCaptured?: (dataUrl: string) => void;
+  onCaptureError?: (err: any) => void;
 }
 
 export interface SolarPanelDrilldown {
@@ -54,6 +58,7 @@ interface PivotTableProps {
   activeDrilldown: SolarPanelDrilldown | null;
   onCellClick: (dimensions: SolarPanelDrilldown) => void;
   headerRight?: React.ReactNode;
+  isExportMode?: boolean;
   containerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -128,7 +133,7 @@ function isDrilldownMatch(cellDim: SolarPanelDrilldown | undefined, active: Sola
   return Object.keys(active).every(k => (active as any)[k] === (cellDim as any)[k]);
 }
 
-function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWidth = 220, activeDrilldown, onCellClick, headerRight, containerRef }: PivotTableProps) {
+function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWidth = 220, activeDrilldown, onCellClick, headerRight, containerRef, isExportMode }: PivotTableProps) {
   type Leaf = { id: string; label: string; width: number; isGrandTotal: boolean; isTotal: boolean; parentId?: string; isFirstInGroup: boolean; rightOffset?: number; };
   const flatLeaves: Leaf[] = [];
   columns.forEach(col => {
@@ -151,8 +156,8 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWid
   const { getStyle } = buildHeatmap(rows);
   const GT_BG = '#1A2766';
 
-  const LS = (z: number): React.CSSProperties => ({ position: 'sticky', left: 0, zIndex: z });
-  const RS = (right: number, z: number): React.CSSProperties => ({ position: 'sticky', right, zIndex: z });
+  const LS = (z: number): React.CSSProperties => isExportMode ? {} : ({ position: "sticky", left: 0, zIndex: z });
+  const RS = (right: number, z: number): React.CSSProperties => isExportMode ? {} : ({ position: "sticky", right, zIndex: z });
   const groupBorder = (l: Leaf) =>
     l.isFirstInGroup && !l.isGrandTotal ? 'border-l-2 border-l-slate-300'
     : l.isGrandTotal && l.isFirstInGroup ? 'border-l-4 border-l-[#1A2766]/40'
@@ -167,7 +172,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWid
         </div>
         {headerRight && <div>{headerRight}</div>}
       </div>
-      <div className="overflow-x-auto overflow-y-auto max-h-[560px] relative bg-white pivot-scroll-container">
+      <div className={`relative bg-white pivot-scroll-container ${isExportMode ? "" : "overflow-x-auto overflow-y-auto max-h-[560px]"}`}>
         <table className="text-sm text-left" style={{ minWidth: 'max-content', width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
           <thead>
             <tr className="bg-[#f8f9fb]">
@@ -187,7 +192,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWid
                     colSpan={span}
                     rowSpan={hasSubCols && !c.subColumns ? 2 : 1}
                     className={`px-2 py-2.5 text-[11px] font-bold uppercase tracking-wide text-center border-b border-b-gray-200 ${isGT ? 'text-white border-b-2 border-b-white/20 border-l-4 border-l-white/30' : 'text-gray-700 border-l-2 border-l-slate-300'}`}
-                    style={isGT ? { ...RS(0, 35), backgroundColor: GT_BG, minWidth: gtTotalWidth } : { position: 'sticky', top: 0, zIndex: 30, backgroundColor: '#EEF2FF' }}
+                    style={isGT ? { ...RS(0, 35), backgroundColor: GT_BG, minWidth: gtTotalWidth } : (isExportMode ? { backgroundColor: "#EEF2FF" } : { position: "sticky", top: 0, zIndex: 30, backgroundColor: "#EEF2FF" })}
                   >
                     {c.label}
                   </th>
@@ -202,9 +207,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWid
                     <th
                       key={`sub_${idx}`}
                       className={`px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-center border-b-2 border-b-gray-300 ${isGT ? 'text-blue-100 border-l border-l-white/10' : leaf.isFirstInGroup ? 'text-sky-700 border-l-2 border-l-slate-300' : 'text-gray-500 border-l border-l-gray-200'} ${leaf.isTotal && !isGT ? 'bg-[#EEF2FF] text-indigo-700 font-bold' : ''}`}
-                      style={isGT
-                        ? { ...RS(leaf.rightOffset!, 35), backgroundColor: GT_BG, width: leaf.width, minWidth: leaf.width, maxWidth: leaf.width }
-                        : { position: 'sticky', top: 37, zIndex: 30, backgroundColor: leaf.isTotal ? '#EEF2FF' : '#f8f9fb', width: leaf.width, minWidth: leaf.width, maxWidth: leaf.width }}
+                      style={isGT ? { ...RS(leaf.rightOffset!, 35), backgroundColor: GT_BG, width: leaf.width, minWidth: leaf.width, maxWidth: leaf.width } : (isExportMode ? { backgroundColor: leaf.isTotal ? "#EEF2FF" : "#f8f9fb", width: leaf.width, minWidth: leaf.width, maxWidth: leaf.width } : { position: "sticky", top: 37, zIndex: 30, backgroundColor: leaf.isTotal ? "#EEF2FF" : "#f8f9fb", width: leaf.width, minWidth: leaf.width, maxWidth: leaf.width })}
                     >
                       {leaf.label}
                     </th>
@@ -231,7 +234,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, firstColWid
               }
               
               return (
-                <tr key={row.id} className={`border-b border-gray-100 transition-all ${row.isGrandTotal ? 'font-bold text-[12px] text-white' : 'hover:brightness-95 group'}`} style={row.isGrandTotal ? { position: 'sticky', bottom: 0, zIndex: 30 } : {}}>
+                <tr key={row.id} className={`border-b border-gray-100 transition-all ${row.isGrandTotal ? 'font-bold text-[12px] text-white' : 'hover:brightness-95 group'}`} style={row.isGrandTotal && !isExportMode ? { position: "sticky", bottom: 0, zIndex: 30 } : {}}>
                   <td
                     className={`px-3 py-1.5 font-medium border-r border-gray-200 transition-colors ${row.isGrandTotal ? 'text-[11px] font-black uppercase tracking-wider border-t-2 border-t-white/10 border-r border-r-white/20' : `text-[13px] text-gray-700 bg-white ${row.id.includes('_child_') ? 'pl-7 text-gray-600 text-[12px]' : ''}`}`}
                     style={row.isGrandTotal ? { ...LS(40), backgroundColor: GT_BG, color: '#fff' } : LS(20)}
@@ -314,7 +317,7 @@ const MultiSelectFilter = ({ label, options, selected, onToggle, prefix, wideMen
   </div>
 );
 
-export default function SolarPanelStockClient({ warehouses, categories, brands, items }: Props) {
+export default function SolarPanelStockClient({ warehouses, categories, brands, items, isExportMode = false, autoCapture = false, onCaptured, onCaptureError }: Props) {
   const pivot1Ref = useRef<HTMLDivElement>(null);
   
   // Global Filters
@@ -721,15 +724,23 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
         }
       }
 
-      const link = document.createElement('a');
-      link.download = `solar-panel-stock-brand-wattage${suffix}-${timestamp}.jpg`;
-      link.href = dataUrl;
-      link.click();
-      
-      toast.success('Screenshot captured', { id: tid });
+      if (onCaptured) {
+        toast.dismiss(tid);
+        onCaptured(dataUrl);
+      } else {
+        const link = document.createElement('a');
+        link.download = `solar-panel-stock-brand-wattage${suffix}-${timestamp}.jpg`;
+        link.href = dataUrl;
+        link.click();
+        toast.success('Screenshot captured', { id: tid });
+      }
     } catch (err) {
       console.error(err);
-      toast.error('Failed to capture screenshot', { id: tid });
+      if (onCaptureError) {
+        onCaptureError(err);
+      } else {
+        toast.error('Failed to capture screenshot', { id: tid });
+      }
     } finally {
       // 8. Restore UI exactly
       styleSnapshot.forEach((originalStyle, el) => {
@@ -742,6 +753,15 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
       setIsExporting(false);
     }
   };
+
+  const hasCaptured = useRef(false);
+  useEffect(() => {
+    if (autoCapture && !hasCaptured.current && pivot1Ref.current) {
+      hasCaptured.current = true;
+      // Slight delay to ensure fonts/layout are fully stable
+      setTimeout(handleTakeScreenshot, 300);
+    }
+  }, [autoCapture, pivot1Rows, handleTakeScreenshot]);
 
   const renderDrilldownBar = () => {
     if (!activeDrilldown) return null;
@@ -780,6 +800,25 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
       </div>
     );
   };
+
+  if (isExportMode) {
+    return (
+      <div className="bg-white p-8" style={{ width: "max-content", minWidth: 1400 }}>
+        <PivotTable 
+          containerRef={pivot1Ref}
+          title="Brand & Wattage Breakdown" 
+          subtitle="Rows: Brand → Wattage  |  Columns: Warehouse → DCR / Non-DCR  |  Grand Total pinned right" 
+          firstColLabel="Brand / Wattage" 
+          columns={cols12} 
+          rows={pivot1Rows} 
+          firstColWidth={220}
+          activeDrilldown={activeDrilldown}
+          onCellClick={handleCellClick}
+          isExportMode={true}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full gap-5">

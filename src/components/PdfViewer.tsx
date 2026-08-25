@@ -33,7 +33,10 @@ export default function PdfViewer({ url, onClose, filename = 'Report.pdf' }: Pdf
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col backdrop-blur-sm">
-      <div className="flex-none p-4 flex items-center justify-between border-b border-white/10 bg-black/50">
+      <div 
+        className="flex-none pb-4 px-4 flex items-center justify-between border-b border-white/10 bg-black/50"
+        style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
+      >
         <div className="flex items-center gap-4">
           <button onClick={onClose} className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors">
             <X size={24} />

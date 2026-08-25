@@ -140,7 +140,9 @@ function StaffLoginContent() {
       const data = await res.json();
       if (res.ok) {
         setIsTransition(true);
-        router.push(data.role === 'ADMIN' ? '/admin' : '/staff/dashboard');
+        const callbackUrl = searchParams.get('callbackUrl');
+        const target = (callbackUrl && callbackUrl.startsWith('/')) ? callbackUrl : (data.role === 'ADMIN' ? '/admin' : '/staff/dashboard');
+        router.push(target);
       } else {
         setLoading(false);
         setError(data.error || 'Login failed');

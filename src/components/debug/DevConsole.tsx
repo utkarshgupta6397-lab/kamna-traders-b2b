@@ -3,11 +3,15 @@
 import React, { useState, useEffect } from 'react';
 import { DevLogRun, DevLogEntry, DevLogStatus } from '@/lib/utils/DevLogger';
 import { Bug, X, Trash2, Copy, ChevronDown, ChevronRight, Check } from 'lucide-react';
+import { usePathname } from 'next/navigation';
 
 export default function DevConsole() {
+  const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [runs, setRuns] = useState<DevLogRun[]>([]);
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
+
+
   const [expandedEntries, setExpandedEntries] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDev, setIsDev] = useState(false);
@@ -71,6 +75,7 @@ export default function DevConsole() {
   };
 
   if (!isDev) return null;
+  if (pathname?.startsWith('/mobile')) return null;
 
   const getStatusColor = (status: DevLogStatus) => {
     switch (status) {

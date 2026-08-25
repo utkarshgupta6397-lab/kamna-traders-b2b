@@ -28,7 +28,11 @@ export async function GET(req: Request) {
     });
     
     const page = await browser.newPage();
-    await page.setViewport({ width: 1400, height: 900 });
+    await page.setViewport({ 
+      width: 1400, 
+      height: 900,
+      deviceScaleFactor: 3 // High resolution (3x density) for sharp text
+    });
 
     const url = new URL(req.url);
     const baseUrl = `${url.protocol}//${url.host}`;
@@ -86,15 +90,14 @@ export async function GET(req: Request) {
     });
 
     const imageBuffer = await (containerHandle.asElement()!).screenshot({
-      type: 'jpeg',
-      quality: 90
+      type: 'png' // Lossless PNG for crisp text
     });
 
     await browser.close();
 
     return new Response(imageBuffer as any, {
       headers: {
-        'Content-Type': 'image/jpeg',
+        'Content-Type': 'image/png',
         'Cache-Control': 'no-store, max-age=0'
       }
     });

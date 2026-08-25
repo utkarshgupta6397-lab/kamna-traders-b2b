@@ -18,6 +18,7 @@ interface TelemetryCall {
 export default function TelemetryOverlay() {
   const [isOpen, setIsOpen] = useState(false);
   const [calls, setCalls] = useState<TelemetryCall[]>([]);
+
   const [pageLoadTime, setPageLoadTime] = useState<number>(0);
   const [filter, setFilter] = useState<"ALL" | "LOCAL" | "ZOHO" | "SLOW" | "ERROR">("ALL");
   const [toast, setToast] = useState<string | null>(null);
@@ -28,6 +29,7 @@ export default function TelemetryOverlay() {
   };
 
   const pathname = usePathname() || "Unknown Page";
+  
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
 
@@ -338,6 +340,8 @@ Please provide:
   if (process.env.NODE_ENV !== "development" && process.env.NEXT_PUBLIC_ENABLE_API_TELEMETRY !== "true") {
     return null;
   }
+
+  if (pathname.startsWith('/mobile')) return null;
 
   return (
     <>

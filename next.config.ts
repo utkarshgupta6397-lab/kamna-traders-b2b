@@ -1,9 +1,24 @@
 import type { NextConfig } from "next";
+import os from "os";
+
+function getLanIps() {
+  const ips: string[] = [];
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (!iface.internal && iface.family === 'IPv4') {
+        ips.push(iface.address);
+        ips.push(`${iface.address}:3000`);
+      }
+    }
+  }
+  return ips;
+}
 
 const nextConfig: NextConfig = {
   distDir: process.env.NEXT_BUILD_DIR || '.next',
   output: "standalone",
-  allowedDevOrigins: ['localhost', 'localhost:3002', '192.168.1.23', '192.168.1.23:3000', '192.168.1.25', '192.168.1.25:3002'],
+  allowedDevOrigins: ['localhost', 'localhost:3002', '192.168.1.23', '192.168.1.23:3000', '192.168.1.25', '192.168.1.25:3002', ...getLanIps()],
   async redirects() {
     return [
       {

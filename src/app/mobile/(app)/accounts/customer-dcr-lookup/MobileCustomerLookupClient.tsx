@@ -26,6 +26,94 @@ export default function MobileCustomerLookupClient() {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [isStatusSheetOpen, setIsStatusSheetOpen] = useState(false);
 
+  // Inline Expansion State
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
+  const [inlineFilter, setInlineFilter] = useState('ALL');
+  const [invoiceSerialData, setInvoiceSerialData] = useState<Record<string, {
+    status: 'idle' | 'loading' | 'success' | 'error',
+    items: any[],
+    total: number,
+    page: number,
+    hasMore: boolean,
+  }>>({});
+
+  const INLINE_STATUS_OPTIONS = [
+    { label: 'All', value: 'ALL' },
+    { label: 'Serial Pending', value: 'SERIAL_PENDING' },
+    { label: 'Vendor DCR Pending', value: 'VENDOR_PENDING' },
+    { label: 'On Hold', value: 'HOLD' },
+    { label: 'Ready to Issue', value: 'READY_TO_ISSUE' },
+    { label: 'Issued', value: 'ISSUED' },
+  ];
+
+  const fetchInvoiceSerials = async (invId: string, pageNum: number, filterType: string) => {
+    setInvoiceSerialData(prev => ({
+      ...prev,
+      [invId]: {
+        ...(prev[invId] || { items: [], total: 0, hasMore: false }),
+        status: 'loading',
+        page: pageNum
+      }
+    }));
+
+    try {
+      const params = new URLSearchParams({
+        invoiceId: invId,
+        page: pageNum.toString(),
+        limit: '50'
+      });
+
+      if (filterType === 'VENDOR_PENDING') {
+        params.append('vendorDcrStatus', 'NOT_RECEIVED');
+      } else if (filterType === 'SERIAL_PENDING') {
+        params.append('status', 'AVAILABLE'); 
+      } else if (filterType !== 'ALL') {
+        params.append('status', filterType);
+      }
+
+      const res = await fetch(`/api/admin/dcr/serial-registry?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setInvoiceSerialData(prev => {
+        const existingItems = pageNum === 1 ? [] : (prev[invId]?.items || []);
+        const newItems = [...existingItems, ...(data.serials || [])];
+        return {
+          ...prev,
+          [invId]: {
+            status: 'success',
+            items: newItems,
+            total: data.total || 0,
+            page: pageNum,
+            hasMore: newItems.length < (data.total || 0)
+          }
+        };
+      });
+    } catch (err) {
+      setInvoiceSerialData(prev => ({
+        ...prev,
+        [invId]: {
+          ...(prev[invId] || { items: [], total: 0, page: 1, hasMore: false }),
+          status: 'error'
+        }
+      }));
+    }
+  };
+
+  const toggleInvoiceExpanded = (invId: string) => {
+    if (expandedInvoiceId === invId) {
+      setExpandedInvoiceId(null);
+    } else {
+      setExpandedInvoiceId(invId);
+      setInlineFilter('ALL');
+      const existing = invoiceSerialData[invId];
+      if (!existing || existing.status === 'error') {
+        fetchInvoiceSerials(invId, 1, 'ALL');
+      }
+    }
+  };
+
+
   const STATUS_OPTIONS = [
     { label: 'All Statuses', value: 'ALL' },
     { label: 'UNPROCESSED', value: 'UNPROCESSED' },
@@ -99,6 +187,7 @@ export default function MobileCustomerLookupClient() {
     setSelectedCustomerId(cust.id);
     localStorage.setItem('mobile_dcr_customer_id', cust.id);
     setCustomer(cust);
+    setExpandedInvoiceId(null);
     setSummary(null);
     setBalance(null);
     setIsSearchSheetOpen(false);
@@ -144,6 +233,34 @@ export default function MobileCustomerLookupClient() {
     onHold: dcrOnlyFiltered.reduce((sum: number, inv: any) => sum + inv.onHold, 0),
     readyToIssue: dcrOnlyFiltered.reduce((sum: number, inv: any) => sum + inv.readyToIssue, 0),
     issued: dcrOnlyFiltered.reduce((sum: number, inv: any) => sum + inv.issued, 0),
+  };
+
+
+  const getSerialStatusBadge = (status: string) => {
+    let colorClass = 'bg-gray-100 text-gray-600 border-gray-200';
+    switch (status) {
+      case 'AVAILABLE': colorClass = 'bg-blue-50 text-blue-600 border-blue-200'; break;
+      case 'ALLOCATED': colorClass = 'bg-purple-50 text-purple-600 border-purple-200'; break;
+      case 'HOLD': colorClass = 'bg-red-50 text-red-600 border-red-200'; break;
+      case 'READY_TO_ISSUE': colorClass = 'bg-teal-50 text-teal-600 border-teal-200'; break;
+      case 'ISSUED': colorClass = 'bg-green-50 text-green-600 border-green-200'; break;
+      case 'RETURNED': colorClass = 'bg-orange-50 text-orange-600 border-orange-200'; break;
+    }
+    return (
+      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border whitespace-nowrap ${colorClass}`}>
+        {status.replace(/_/g, ' ')}
+      </span>
+    );
+  };
+
+  const getVendorDcrBadge = (status: string) => {
+    let colorClass = 'text-gray-600';
+    switch (status) {
+      case 'NOT_RECEIVED': colorClass = 'text-orange-600 font-bold'; break;
+      case 'RECEIVED': colorClass = 'text-green-600 font-bold'; break;
+      case 'EXEMPT': colorClass = 'text-blue-600 font-bold'; break;
+    }
+    return <span className={colorClass}>{status.replace(/_/g, ' ')}</span>;
   };
 
   const getWorkflowBadge = (inv: any) => {
@@ -272,7 +389,7 @@ export default function MobileCustomerLookupClient() {
               <div className="flex flex-col gap-3 mt-2">
                 <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
                   <button
-                    onClick={() => setFilterMode('PENDING')}
+                    onClick={() => { setFilterMode('PENDING'); setExpandedInvoiceId(null); }}
                     className={`flex-1 py-2 rounded-md text-xs font-bold transition-all ${
                       filterMode === 'PENDING' ? 'bg-white text-[#1A2766] shadow-sm' : 'text-slate-500'
                     }`}
@@ -280,7 +397,7 @@ export default function MobileCustomerLookupClient() {
                     Pending DCR
                   </button>
                   <button
-                    onClick={() => setFilterMode('ALL')}
+                    onClick={() => { setFilterMode('ALL'); setExpandedInvoiceId(null); }}
                     className={`flex-1 py-2 rounded-md text-xs font-bold transition-all ${
                       filterMode === 'ALL' ? 'bg-white text-[#1A2766] shadow-sm' : 'text-slate-500'
                     }`}
@@ -318,9 +435,18 @@ export default function MobileCustomerLookupClient() {
                 ) : (
                   filteredInvoices.map((inv: any) => (
                     <div key={inv.id} className="bg-white border border-slate-200 rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden">
-                      <div className="p-4 border-b border-slate-100 flex justify-between items-start">
+                      <div 
+                        className="p-4 border-b border-slate-100 flex justify-between items-start active:bg-slate-50 transition-colors cursor-pointer"
+                        onClick={() => toggleInvoiceExpanded(inv.id)}
+                      >
                         <div className="flex flex-col gap-1">
-                          <span className="font-bold text-[#1A2766]">{inv.invoiceNumber}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-[#1A2766]">{inv.invoiceNumber}</span>
+                            <ChevronDown 
+                              size={16} 
+                              className={`text-[#1A2766] transition-transform duration-200 ${expandedInvoiceId === inv.id ? 'rotate-180' : ''}`} 
+                            />
+                          </div>
                           <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
                             {new Date(inv.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })} · {inv.salesperson}
                           </span>
@@ -362,6 +488,109 @@ export default function MobileCustomerLookupClient() {
                           </div>
                         )}
                       </div>
+
+                        {/* EXPANDED SOLAR ITEMS SECTION */}
+                        {expandedInvoiceId === inv.id && (
+                          <div className="border-t border-slate-200 bg-white p-4 animate-in slide-in-from-top-2 duration-200">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-800">Invoice Solar Items</h4>
+                              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{inv.dcrPanels} Total</span>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-2 mb-4 text-[10px] font-medium">
+                              <div className="flex justify-between bg-orange-50/50 p-1.5 rounded border border-orange-100/50">
+                                <span className="text-slate-500">Serial Pending</span>
+                                <span className="font-bold text-orange-700">{inv.serialEntryPending}</span>
+                              </div>
+                              <div className="flex justify-between bg-yellow-50/50 p-1.5 rounded border border-yellow-100/50">
+                                <span className="text-slate-500">Vendor Pending</span>
+                                <span className="font-bold text-yellow-700">{inv.vendorDcrPending}</span>
+                              </div>
+                              <div className="flex justify-between bg-red-50/50 p-1.5 rounded border border-red-100/50">
+                                <span className="text-slate-500">On Hold</span>
+                                <span className="font-bold text-red-700">{inv.onHold}</span>
+                              </div>
+                              <div className="flex justify-between bg-teal-50/50 p-1.5 rounded border border-teal-100/50">
+                                <span className="text-slate-500">Ready to Issue</span>
+                                <span className="font-bold text-teal-700">{inv.readyToIssue}</span>
+                              </div>
+                              <div className="flex justify-between bg-green-50/50 p-1.5 rounded col-span-2 border border-green-100/50">
+                                <span className="text-slate-500">Issued</span>
+                                <span className="font-bold text-green-700">{inv.issued}</span>
+                              </div>
+                            </div>
+
+                            <div className="mb-4">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500">Status:</span>
+                                <select 
+                                  value={inlineFilter}
+                                  onChange={(e) => {
+                                    const newFilter = e.target.value;
+                                    setInlineFilter(newFilter);
+                                    fetchInvoiceSerials(inv.id, 1, newFilter);
+                                  }}
+                                  className="bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#1A2766]"
+                                >
+                                  {INLINE_STATUS_OPTIONS.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+
+                            {invoiceSerialData[inv.id]?.status === 'loading' && invoiceSerialData[inv.id]?.page === 1 ? (
+                              <div className="flex flex-col gap-2">
+                                {[1,2,3].map(i => (
+                                  <div key={i} className="h-16 bg-slate-100 rounded-lg animate-pulse" />
+                                ))}
+                              </div>
+                            ) : invoiceSerialData[inv.id]?.status === 'error' ? (
+                              <div className="text-center p-4 border border-red-100 bg-red-50 rounded-lg">
+                                <p className="text-xs text-red-600 font-bold mb-2">Unable to load invoice solar items.</p>
+                                <button 
+                                  onClick={() => fetchInvoiceSerials(inv.id, 1, inlineFilter)}
+                                  className="text-[11px] bg-white border border-red-200 text-red-700 px-3 py-1.5 rounded shadow-sm font-bold"
+                                >
+                                  Retry
+                                </button>
+                              </div>
+                            ) : invoiceSerialData[inv.id]?.items?.length === 0 ? (
+                              <div className="text-center p-6 text-xs text-slate-500 bg-slate-50 rounded-lg border border-slate-100">
+                                No solar items found for this invoice.
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-2">
+                                {invoiceSerialData[inv.id]?.items?.map(serial => (
+                                  <div key={serial.id} className="border border-slate-200 rounded-lg bg-slate-50 p-2.5 flex flex-col gap-2">
+                                    <div className="flex justify-between items-start gap-2">
+                                      <span className="font-mono text-[11px] font-bold text-slate-800 break-all leading-tight">{serial.serialNumber}</span>
+                                      {getSerialStatusBadge(serial.status)}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 leading-tight font-medium">
+                                      {serial.computedProduct || serial.skuId || 'Unknown Product'}
+                                    </div>
+                                    <div className="text-[10px] font-medium mt-1 pt-1.5 border-t border-slate-200/60 flex items-center">
+                                      <span className="text-slate-400 mr-1.5">Vendor DCR:</span>
+                                      {getVendorDcrBadge(serial.vendorDcrStatus)}
+                                    </div>
+                                  </div>
+                                ))}
+                                
+                                {invoiceSerialData[inv.id]?.hasMore && (
+                                  <button 
+                                    onClick={() => fetchInvoiceSerials(inv.id, (invoiceSerialData[inv.id]?.page || 1) + 1, inlineFilter)}
+                                    disabled={invoiceSerialData[inv.id]?.status === 'loading'}
+                                    className="w-full mt-2 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-[#1A2766] active:bg-slate-50 disabled:opacity-50 transition-colors"
+                                  >
+                                    {invoiceSerialData[inv.id]?.status === 'loading' ? 'Loading...' : 'Load More'}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                     </div>
                   ))
                 )}

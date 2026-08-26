@@ -16,7 +16,25 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Query is required' }, { status: 400 });
     }
 
+    const isList = searchParams.get('list') === 'true';
     const query = q.trim();
+
+    if (isList) {
+      const customers = await prisma.customer.findMany({
+        where: {
+          status: 'active',
+          OR: [
+            { id: { contains: query } },
+            { gstNumber: { contains: query, mode: 'insensitive' } },
+            { name: { contains: query, mode: 'insensitive' } }
+          ]
+        },
+        take: 10,
+        select: { id: true, name: true, gstNumber: true }
+      });
+      return NextResponse.json({ success: true, customers });
+    }
+
     let customer = null;
 
     // 1. Exact Customer ID match

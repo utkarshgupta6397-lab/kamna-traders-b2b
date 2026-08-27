@@ -106,8 +106,9 @@ export default function MobileCustomerStatementClient({ userName }: { userName: 
           if (res.ok) {
             const data = await res.json();
             if (data.success) {
-              searchCache.set(normalized, data.customers);
-              setSuggestions(data.customers);
+              const activeCustomers = data.customers.filter((c: Customer) => c.status && c.status.toLowerCase() === 'active');
+              searchCache.set(normalized, activeCustomers);
+              setSuggestions(activeCustomers);
               setShowSuggestions(true);
             }
           }
@@ -405,7 +406,7 @@ export default function MobileCustomerStatementClient({ userName }: { userName: 
                 const perWatt = item.rate / wattage;
                 displayRateStr = `${item.quantity} pcs × ${wattage} Watt × ${formatMoney(perWatt)}`;
               } else if (item.unit) {
-                displayRateStr = `${item.quantity} pcs   ${item.unit} × ${formatMoney(item.rate)}`;
+                displayRateStr = `${item.quantity} ${item.unit} × ${formatMoney(item.rate)}`;
               } else {
                 displayRateStr = `${item.quantity} × ${formatMoney(item.rate)}`;
               }

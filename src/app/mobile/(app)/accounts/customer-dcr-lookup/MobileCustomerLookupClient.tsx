@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, ChevronDown, X, Activity, RefreshCw } from 'lucide-react';
+import { Search, ChevronDown, X, Activity, RefreshCw , FileText} from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useRouter } from 'next/navigation';
 
 export default function MobileCustomerLookupClient() {
+  const router = useRouter();
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   
   // Data States
@@ -305,10 +307,10 @@ export default function MobileCustomerLookupClient() {
       {/* SELECTED CUSTOMER VIEW */}
       {selectedCustomerId && (
         <>
-          <div className="px-4 pt-4">
+          <div className="px-4 pt-4 flex items-stretch gap-2">
             <button 
               onClick={() => setIsSearchSheetOpen(true)}
-              className="w-full flex items-center justify-between bg-white border border-slate-200 rounded-xl p-3 shadow-sm active:bg-slate-50 transition-colors"
+              className="flex-1 flex items-center justify-between bg-white border border-slate-200 rounded-xl p-3 shadow-sm active:bg-slate-50 transition-colors min-w-0"
             >
               <div className="flex flex-col items-start truncate pr-2">
                 <span className="text-[10px] font-bold uppercase text-slate-400 mb-0.5">Select Customer</span>
@@ -320,6 +322,27 @@ export default function MobileCustomerLookupClient() {
               </div>
               <ChevronDown className="text-slate-400 shrink-0" size={20} />
             </button>
+            {customer && (
+              <button
+                onClick={(e) => {
+                   e.stopPropagation();
+                   const customerMeta = {
+                     id: selectedCustomerId,
+                     name: customer.name,
+                     gstNumber: customer.gstNumber || 'NOT_AVAILABLE',
+                     status: customer.status || 'active'
+                   };
+                   sessionStorage.setItem('mobile-stmt-customerId', selectedCustomerId!);
+                   sessionStorage.setItem(`mobile-stmt-customerMeta-${selectedCustomerId}`, JSON.stringify(customerMeta));
+                   router.push('/mobile/accounts/customer-statement?backTo=/mobile/accounts/customer-dcr-lookup');
+                }}
+                className="shrink-0 aspect-square bg-white border border-slate-200 rounded-xl shadow-sm text-indigo-600 active:bg-indigo-50 transition-colors flex items-center justify-center"
+                title="View Customer Statement"
+                aria-label="View Customer Statement"
+              >
+                <FileText size={20} />
+              </button>
+            )}
           </div>
 
           {isError ? (

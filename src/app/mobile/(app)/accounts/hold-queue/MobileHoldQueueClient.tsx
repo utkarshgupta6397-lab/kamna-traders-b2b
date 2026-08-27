@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, Search, RefreshCw, Lock, ChevronDown, ChevronUp, CheckCircle, ArrowRightCircle, Loader2 } from 'lucide-react';
+import { ChevronLeft, Search, RefreshCw, Lock, ChevronDown, ChevronUp, CheckCircle, ArrowRightCircle, Loader2 , FileText} from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // Interfaces mirroring the desktop HoldQueueClient

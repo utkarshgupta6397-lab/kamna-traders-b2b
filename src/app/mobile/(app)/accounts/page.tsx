@@ -1,9 +1,11 @@
 import { getSession } from '@/lib/auth';
 import Link from 'next/link';
-import { ChevronLeft, Users, ChevronRight , Activity } from 'lucide-react';
+import { ChevronLeft, Users, ChevronRight, Activity, FileText } from 'lucide-react';
 
 export default async function MobileAccountsPage() {
   const session = await getSession();
+
+  const canViewStatement = session?.role === 'ADMIN' || session?.accounts_customer_statement;
 
   return (
     <div className="flex-1 flex flex-col font-sans">
@@ -20,6 +22,21 @@ export default async function MobileAccountsPage() {
         <div className="mb-4 text-[11px] font-bold text-slate-400 tracking-wider uppercase px-1">
           Available Modules
         </div>
+
+        {canViewStatement && (
+          <Link href="/mobile/accounts/customer-statement" className="flex items-center justify-between bg-white p-4 rounded-[16px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 active:scale-[0.98] transition-transform mb-3">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-purple-50 text-purple-600 rounded-xl border border-purple-100/50">
+                <FileText size={22} strokeWidth={2.5} />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <div className="font-bold text-slate-800 text-[15px]">Customer Statement</div>
+                <div className="text-[12px] text-slate-500 font-medium">View Customer Ledger & Balances</div>
+              </div>
+            </div>
+            <ChevronRight size={20} className="text-slate-300" />
+          </Link>
+        )}
 
         <Link href="/mobile/accounts/customer-dcr-lookup" className="flex items-center justify-between bg-white p-4 rounded-[16px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 active:scale-[0.98] transition-transform">
           <div className="flex items-center gap-4">

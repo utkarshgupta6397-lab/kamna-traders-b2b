@@ -82,6 +82,7 @@ const getAgeInfo = (dateStr: string | null) => {
 
 export default function MobileHoldQueueClient() {
   const router = useRouter();
+
   
   // Data States
   const [customers, setCustomers] = useState<CustomerHoldRecord[]>([]);
@@ -95,6 +96,9 @@ export default function MobileHoldQueueClient() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   
+  // Sort State
+  const [sortBy, setSortBy] = useState<string>('default');
+
   // Validation / Permission States
   const [unlockedCustomers, setUnlockedCustomers] = useState<Set<string>>(new Set());
   const [globalRefreshCompleted, setGlobalRefreshCompleted] = useState(false);
@@ -106,6 +110,12 @@ export default function MobileHoldQueueClient() {
   const [expandedSkus, setExpandedSkus] = useState<Set<string>>(new Set());
   const [selectedSerials, setSelectedSerials] = useState<Set<string>>(new Set());
   const [isReleasing, setIsReleasing] = useState(false);
+  const [isRefreshingAll, setIsRefreshingAll] = useState(false);
+
+  const openCustomerDetail = (customer: CustomerHoldRecord) => {
+    setSelectedCustomer(customer);
+  };
+
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
@@ -127,18 +137,18 @@ export default function MobileHoldQueueClient() {
       if (data.userPermissions) setUserPermissions(data.userPermissions);
       
       // Update selected customer reference if detail view is open
-      if (selectedCustomer) {
-        const updated = data.customers?.find((c: any) => c.customerId === selectedCustomer.customerId);
-        if (updated) setSelectedCustomer(updated);
-        else setSelectedCustomer(null); // Customer is no longer on hold
-      }
+      setSelectedCustomer(prev => {
+        if (!prev) return null;
+        const updated = data.customers?.find((c: any) => c.customerId === prev.customerId);
+        return updated || null;
+      });
     } catch (err: any) {
       toast.error('Failed to load Hold Queue');
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, selectedCustomer]);
+  }, [debouncedSearch]);
 
   useEffect(() => {
     fetchData();
@@ -165,6 +175,26 @@ export default function MobileHoldQueueClient() {
       toast.error('Unable to refresh outstanding');
     } finally {
       setRefreshingCustomerId(null);
+    }
+  };
+
+  const handleRefreshAll = async () => {
+    setIsRefreshingAll(true);
+    try {
+      const res = await fetch('/api/admin/dcr/hold-queue/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!res.ok) throw new Error('Failed to refresh all');
+      
+      setGlobalRefreshCompleted(true);
+      toast.success('Hold Queue refreshed');
+      
+      fetchData();
+    } catch (err: any) {
+      toast.error('Unable to refresh Hold Queue');
+    } finally {
+      setIsRefreshingAll(false);
     }
   };
 
@@ -241,6 +271,18 @@ export default function MobileHoldQueueClient() {
     });
   };
   
+  const renderedCustomers = useMemo(() => {
+    if (sortBy === 'default') return customers;
+    
+    return [...customers].sort((a, b) => {
+      if (sortBy === 'outstanding_desc') return b.outstandingBalance - a.outstandingBalance;
+      if (sortBy === 'outstanding_asc') return a.outstandingBalance - b.outstandingBalance;
+      if (sortBy === 'serials_desc') return b.serialsOnHold - a.serialsOnHold;
+      if (sortBy === 'serials_asc') return a.serialsOnHold - b.serialsOnHold;
+      return 0;
+    });
+  }, [customers, sortBy]);
+
   // ==========================================
   // RENDER: CUSTOMER DETAIL VIEW (HELD INVOICES)
   // ==========================================
@@ -250,7 +292,7 @@ export default function MobileHoldQueueClient() {
         {/* Header */}
         <header className="sticky top-0 z-50 bg-[#1A2766] text-white shadow-md pt-[env(safe-area-inset-top)]">
           <div className="flex items-center px-1 min-h-[56px] py-1">
-            <button onClick={() => setSelectedCustomer(null)} className="flex items-center gap-1 px-3 py-2 active:opacity-60 transition-opacity">
+            <button type="button" onClick={() => setSelectedCustomer(null)} className="flex items-center gap-1 px-3 py-2 active:opacity-60 transition-opacity">
               <ChevronLeft size={24} strokeWidth={2.5} />
               <div className="flex flex-col">
                 <span className="font-bold text-[14px] leading-tight truncate max-w-[200px]">{selectedCustomer.customerName}</span>
@@ -443,6 +485,31 @@ export default function MobileHoldQueueClient() {
       </header>
 
       <main className="flex-1 px-3 py-4 flex flex-col gap-4">
+        {/* Top Info Bar */}
+        <div className="flex justify-between items-center mb-1">
+          <h2 className="text-sm font-bold text-slate-800">Hold Summary</h2>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRefreshAll}
+              disabled={isRefreshingAll}
+              className="flex items-center gap-1 bg-white border border-slate-200 shadow-sm text-slate-600 px-2 py-1 rounded text-[10px] font-bold uppercase active:scale-95 disabled:opacity-50 transition-all"
+            >
+              <RefreshCw size={12} className={isRefreshingAll ? "animate-spin text-[#1A2766]" : ""} />
+              {isRefreshingAll ? 'Refreshing...' : 'Refresh All'}
+            </button>
+            <div className="bg-slate-200/60 px-2 py-1 rounded text-[10px] font-bold text-slate-600 flex gap-1 items-center shadow-sm">
+              <span>REVIEW LIMIT:</span>
+              <span className="text-slate-900 font-black">
+                {!userPermissions.holdQueueReviewEnabled 
+                  ? 'None' 
+                  : userPermissions.holdQueueReviewLimit === null 
+                    ? 'Unlimited' 
+                    : fmtCurrency(userPermissions.holdQueueReviewLimit)}
+              </span>
+            </div>
+          </div>
+        </div>
+
         {/* KPI Cards */}
         <div className="grid grid-cols-2 gap-2">
           <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col">
@@ -463,16 +530,33 @@ export default function MobileHoldQueueClient() {
           </div>
         </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search customer, invoice, serial..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 transition-all shadow-sm"
-          />
+                {/* Search & Sort */}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 transition-all shadow-sm"
+            />
+          </div>
+          
+          <div className="relative">
+            <select 
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="appearance-none bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2.5 text-[11px] font-bold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20"
+            >
+              <option value="default">Default Sort</option>
+              <option value="outstanding_desc">Outstanding — High to Low</option>
+              <option value="outstanding_asc">Outstanding — Low to High</option>
+              <option value="serials_desc">Serials Pending — High to Low</option>
+              <option value="serials_asc">Serials Pending — Low to High</option>
+            </select>
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
         </div>
 
         {/* Customer List */}
@@ -481,12 +565,12 @@ export default function MobileHoldQueueClient() {
             [1, 2, 3].map(i => (
               <div key={i} className="bg-white h-24 rounded-xl border border-slate-200 animate-pulse" />
             ))
-          ) : customers.length === 0 ? (
+          ) : renderedCustomers.length === 0 ? (
             <div className="text-center p-8 bg-white border border-slate-200 rounded-xl text-slate-500 text-sm">
               No customers on hold found.
             </div>
           ) : (
-            customers.map(customer => {
+            renderedCustomers.map(customer => {
               let isAuthorized = false;
               if (userPermissions.holdQueueReviewEnabled) {
                 if (userPermissions.holdQueueReviewLimit === null) isAuthorized = true;
@@ -498,7 +582,7 @@ export default function MobileHoldQueueClient() {
               return (
                 <div 
                   key={customer.customerId}
-                  onClick={() => { if (canReview) setSelectedCustomer(customer) }}
+                  onClick={() => { if (canReview) openCustomerDetail(customer) }}
                   className={`bg-white border border-slate-200 rounded-xl p-3 shadow-sm transition-transform ${canReview ? 'active:scale-[0.98] cursor-pointer' : 'opacity-80'}`}
                 >
                   <div className="flex justify-between items-start mb-2 border-b border-slate-100 pb-2">
@@ -526,7 +610,7 @@ export default function MobileHoldQueueClient() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (canReview) setSelectedCustomer(customer);
+                          if (canReview) openCustomerDetail(customer);
                         }}
                         disabled={!canReview}
                         className={`flex items-center gap-1 text-[11px] font-bold px-3 py-1.5 rounded shadow-sm transition-colors ${

@@ -19,7 +19,8 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
   
   const isAdvanced = sp.view === 'advanced';
   const isMulti = sp.view === 'multi';
-  const isSolar = !isAdvanced && !isMulti;
+  const isWire = sp.view === 'wire';
+  const isSolar = !isAdvanced && !isMulti && !isWire;
 
   if (isAdvanced) {
     const warehouses = await prisma.warehouse.findMany({
@@ -39,7 +40,9 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   sevenDaysAgo.setHours(0, 0, 0, 0);
 
-  const productSearchOptions = isSolar ? { categoryName: 'Solar Panel' } : {};
+  const productSearchOptions = isWire 
+    ? { categoryName: 'Wire & Cables' } 
+    : isSolar ? { categoryName: 'Solar Panel' } : {};
 
   const [warehouses, categories, brands, items, recentSales, thresholds] = await Promise.all([
     prisma.warehouse.findMany({ 
@@ -168,6 +171,19 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
       <SolarPanelStockClient 
         warehouses={warehouses} 
         categories={categories} 
+        brands={brands}
+        items={items}
+        canSync={!!session.canRunSkuSync}
+      />
+    );
+  }
+
+  if (isWire) {
+    const WireCableStockClient = (await import('@/components/WireCableStockClient')).default;
+    return (
+      <WireCableStockClient
+        warehouses={warehouses}
+        categories={categories}
         brands={brands}
         items={items}
         canSync={!!session.canRunSkuSync}

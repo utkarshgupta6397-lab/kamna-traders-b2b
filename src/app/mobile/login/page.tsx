@@ -18,7 +18,22 @@ function MobileLoginContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isValid) return;
+    
+    // AutoFill fallback: if React state is stale, read from DOM
+    let currentMobile = mobile;
+    let currentPin = pin;
+    
+    if (!isValid) {
+      const form = e.target as HTMLFormElement;
+      const mInput = form.querySelector('#mobile') as HTMLInputElement;
+      const pInput = form.querySelector('#pin') as HTMLInputElement;
+      if (mInput && pInput) {
+        currentMobile = mInput.value.replace(/\D/g, '').slice(0, 10);
+        currentPin = pInput.value.replace(/\D/g, '').slice(0, 6);
+      }
+    }
+    
+    if (currentMobile.length !== 10 || currentPin.length !== 6) return;
     
     setLoading(true);
     setError('');
@@ -27,7 +42,7 @@ function MobileLoginContent() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mobile, pin }),
+        body: JSON.stringify({ mobile: currentMobile, pin: currentPin }),
       });
       
       const data = await res.json();
@@ -124,7 +139,7 @@ function MobileLoginContent() {
 
             <button
               type="submit"
-              disabled={!isValid || loading}
+              disabled={loading}
               className="w-full bg-[#1A2766] text-white font-bold text-[15px] py-[18px] rounded-[16px] shadow-[0_4px_14px_rgba(26,39,102,0.15)] active:scale-[0.98] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:scale-100 flex items-center justify-center gap-2 mt-2"
             >
               {loading ? <div className="w-5 h-5 rounded-full border-[2.5px] border-white/30 border-t-white animate-spin" /> : 'Sign In'}

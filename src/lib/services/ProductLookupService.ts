@@ -68,9 +68,35 @@ export class ProductLookupService {
     }
 
     if (options.categoryName) {
-      where.category = {
-        name: { contains: options.categoryName, mode: 'insensitive' }
-      };
+      // Find matching root categories
+      const matchCats = await prisma.category.findMany({
+        where: { name: { contains: options.categoryName, mode: 'insensitive' } },
+        select: { id: true }
+      });
+      const matchIds = matchCats.map(c => c.id);
+      
+      // Find children of those categories
+      if (matchIds.length > 0) {
+        const childCats = await prisma.category.findMany({
+          where: { parentId: { in: matchIds } },
+          select: { id: true }
+        });
+        const childIds = childCats.map(c => c.id);
+        
+        // Find grandchildren (just in case)
+        const grandChildCats = await prisma.category.findMany({
+          where: { parentId: { in: childIds } },
+          select: { id: true }
+        });
+        const grandChildIds = grandChildCats.map(c => c.id);
+        
+        where.categoryId = { in: [...matchIds, ...childIds, ...grandChildIds] };
+      } else {
+        // Fallback to old behavior if no exact matches found initially
+        where.category = {
+          name: { contains: options.categoryName, mode: 'insensitive' }
+        };
+      }
     }
 
     if (options.skuIds && options.skuIds.length > 0) {

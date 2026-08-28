@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, Box, ChevronDown, Check, AlertTriangle, X } from 'lucide-react';
+import { Search, Box, ChevronDown, Check, AlertTriangle, X, Download } from 'lucide-react';
 import CurrentStockSidebar from './CurrentStockSidebar';
 import { formatStockDate } from '@/lib/date-utils';
 
@@ -45,6 +45,7 @@ export interface PivotCellDef {
 export interface PivotRowDef {
   id: string; label: string; isGroupHeader?: boolean; isGrandTotal?: boolean; depth?: number;
   cells: Record<string, PivotCellDef>;
+  uom?: string;
 }
 
 export interface PivotColumnDef {
@@ -386,7 +387,7 @@ export default function WireCableStockClient({ warehouses, items }: Props) {
 
   const { physicalRows, bundleRows, colorRows } = useMemo(() => {
     type CellData = { warehouseData: Record<string, PivotCellDef>; colorData: Record<string, PivotCellDef>; total: ColorMetrics };
-    type Hierarchy = Map<string, Map<string, Map<string, CellData & { bundleSizeStr: string }>>>;
+    type Hierarchy = Map<string, Map<string, Map<string, CellData & { bundleSizeStr: string; uom: string }>>>;
     
     const root: Hierarchy = new Map();
     
@@ -415,7 +416,8 @@ export default function WireCableStockClient({ warehouses, items }: Props) {
           warehouseData: {}, 
           colorData: {},
           total: { physical: 0, bundle: 0, hasNA: false },
-          bundleSizeStr: item.bundleLength ? `${item.bundleLength} mtr` : ''
+          bundleSizeStr: item.bundleLength ? `${item.bundleLength} mtr` : '',
+          uom: item.unit || 'N/A'
         });
       } else if (item.bundleLength && !bMap.get(width)!.bundleSizeStr) {
         bMap.get(width)!.bundleSizeStr = `${item.bundleLength} mtr`;
@@ -539,7 +541,7 @@ export default function WireCableStockClient({ warehouses, items }: Props) {
                   hasNA: isBundle ? src.totalMetrics.hasNA : false
                 };
               });
-              result.push({ id: `row_${type}_${brand}_${width}`, label: rowLabel, depth: 2, cells: mappedData });
+              result.push({ id: `row_${type}_${brand}_${width}`, label: rowLabel, depth: 2, cells: mappedData, uom: wObj.uom });
             }
           });
         });
@@ -580,6 +582,145 @@ export default function WireCableStockClient({ warehouses, items }: Props) {
   const toggle = (set: React.Dispatch<React.SetStateAction<string[]>>, val: string) =>
     set(prev => prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val]);
 
+  const handleExportPDF = async () => {
+    try {
+      const { default: jsPDF } = await import('jspdf');
+      const { default: autoTable } = await import('jspdf-autotable');
+      
+      const doc = new jsPDF({ orientation: 'landscape', format: 'a4' });
+      
+      doc.setFontSize(16);
+      doc.setTextColor(20, 30, 80);
+      doc.text('KAMNA ERP — Wire & Cables Stock', 14, 15);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text(`Generated: ${formatStockDate(new Date())}`, 14, 22);
+
+      const filterParts = [];
+      if (selectedWarehouses.length) filterParts.push(`Warehouses: ${selectedWarehouses.length}`);
+      if (selectedWireTypes.length) filterParts.push(`Types: ${selectedWireTypes.join(', ')}`);
+      if (selectedBrands.length) filterParts.push(`Brands: ${selectedBrands.join(', ')}`);
+      if (selectedWidths.length) filterParts.push(`Widths: ${selectedWidths.join(', ')}`);
+      if (selectedColors.length) filterParts.push(`Colors: ${selectedColors.join(', ')}`);
+      const filterStr = filterParts.length ? filterParts.join(' | ') : 'All data (no filters)';
+      doc.text(`Filters: ${filterStr}`, 14, 28);
+
+      let currentY = 38;
+
+      const renderTable = (title: string, columns: PivotColumnDef[], rows: PivotRowDef[]) => {
+        if (currentY > 170) {
+          doc.addPage();
+          currentY = 15;
+        }
+
+        doc.setFontSize(12);
+        doc.setTextColor(40, 40, 40);
+        doc.text(title, 14, currentY);
+        currentY += 6;
+
+        const head = [['Wire Type / Brand / Width', 'UOM', ...columns.map(c => c.label)]];
+        const { getStyle } = buildHeatmap(rows);
+
+        const body = rows.map(row => {
+          const rowData: Record<string, unknown>[] = [];
+          const isType = row.depth === 0;
+          const isBrand = row.depth === 1;
+          const isWidth = row.depth === 2;
+          
+          let labelStr = row.label;
+          if (isBrand) labelStr = `   ${row.label}`;
+          if (isWidth) labelStr = `      ${row.label}`;
+          
+          let cellBg: [number, number, number] = [255, 255, 255];
+          let textColor: [number, number, number] = [50, 50, 50];
+          let fontStyle: 'normal' | 'bold' = 'normal';
+
+          if (row.isGroupHeader) {
+            cellBg = isType ? [241, 245, 249] : [248, 250, 252];
+            fontStyle = 'bold';
+            textColor = isType ? [30, 41, 59] : [71, 85, 105];
+          } else if (row.isGrandTotal) {
+            cellBg = [26, 39, 102];
+            textColor = [255, 255, 255];
+            fontStyle = 'bold';
+          }
+
+          rowData.push({
+            content: labelStr,
+            styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' }
+          });
+          
+          rowData.push({
+            content: row.isGroupHeader || row.isGrandTotal ? '' : (row.uom || '—'),
+            styles: { fillColor: cellBg, textColor: row.isGroupHeader ? cellBg : textColor, fontStyle, halign: 'center' }
+          });
+
+          columns.forEach(col => {
+            const cell = row.cells[col.id];
+            const val = cell?.value || 0;
+            
+            let content = '—';
+            if (val > 0) {
+              content = val.toLocaleString(undefined, { maximumFractionDigits: 2 });
+              if (cell?.hasNA) content += ' *';
+            }
+
+            if (row.isGroupHeader) {
+              rowData.push({ content: '', styles: { fillColor: cellBg } });
+              return;
+            }
+
+            const style = getStyle(val, !!row.isGrandTotal, !!col.isGrandTotal);
+            let outBg = cellBg;
+            let outText = textColor;
+            let outFont = fontStyle;
+
+            if (style.backgroundColor && typeof style.backgroundColor === 'string') {
+               const match = style.backgroundColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+               if (match) {
+                 outBg = [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10)];
+               }
+            }
+            if (style.color === '#fff') outText = [255, 255, 255];
+            if (style.fontWeight === 600) outFont = 'bold';
+
+            rowData.push({
+              content,
+              styles: { fillColor: outBg, textColor: outText, fontStyle: outFont, halign: 'center' }
+            });
+          });
+          
+          return rowData;
+        });
+
+        autoTable(doc, {
+          startY: currentY,
+          head,
+          body,
+          theme: 'grid',
+          styles: { fontSize: 7, cellPadding: 2, lineWidth: 0.1, lineColor: [220, 220, 220] },
+          headStyles: { fillColor: [248, 249, 251], textColor: [80, 80, 80], fontStyle: 'bold', halign: 'center' },
+          columnStyles: { 0: { cellWidth: 50, halign: 'left' }, 1: { cellWidth: 15, halign: 'center' } },
+          showHead: 'everyPage',
+          margin: { top: 15, right: 14, bottom: 15, left: 14 }
+        });
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+      };
+
+      renderTable('PHYSICAL STOCK — MTR', pivotCols, physicalRows);
+      renderTable('BUNDLE STOCK — BDLS', pivotCols, bundleRows);
+      renderTable('COLOR STOCK — MTR', colorPivotCols, colorRows);
+      
+      doc.save('Wire_Cable_Stock.pdf');
+    } catch (error) {
+      console.error('Failed to generate PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    }
+  };
+
   return (
     <div className="flex h-full gap-5">
       <CurrentStockSidebar activeView="wire" />
@@ -608,6 +749,11 @@ export default function WireCableStockClient({ warehouses, items }: Props) {
           <MultiSelectFilter label="Brands" options={availableBrands} selected={selectedBrands} onToggle={id => toggle(setSelectedBrands, id)} />
           <MultiSelectFilter label="Widths" options={availableWidths} selected={selectedWidths} onToggle={id => toggle(setSelectedWidths, id)} />
           <MultiSelectFilter label="Colors" options={availableColors} selected={selectedColors} onToggle={id => toggle(setSelectedColors, id)} />
+          
+          <button onClick={handleExportPDF} className="ml-auto flex items-center gap-2 px-4 py-1.5 bg-[#1A2766] text-white text-[13px] font-semibold rounded-md shadow-sm hover:bg-[#1A2766]/90 transition-colors h-8">
+            <Download size={14} />
+            Screenshot
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 bg-[#f7f8fb] min-h-0 relative">

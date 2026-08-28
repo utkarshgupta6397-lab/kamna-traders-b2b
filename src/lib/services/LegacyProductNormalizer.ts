@@ -76,7 +76,12 @@ export class LegacyProductNormalizer {
       isDcrEligible: DcrEligibilityService.evaluateProduct(product),
       wattage: product.attributeValues?.find((av: any) => av.attribute?.attributeName === 'Wattage')?.value ?? null,
       parentProductId: product.parentProductId ?? null,
-      parentProductName: product.parentProduct?.name ?? null
+      parentProductName: product.parentProduct?.name ?? null,
+      
+      // Wire & Cable attributes
+      wireWidth: (product.attributeValues || []).find((av: any) => ['wire width (sqmm)', 'wire width', 'width (sqmm)'].includes(av.attribute?.attributeName?.toLowerCase().trim()))?.value ?? null,
+      wireColor: (product.attributeValues || []).find((av: any) => ['wire color', 'color'].includes(av.attribute?.attributeName?.toLowerCase().trim()))?.value ?? null,
+      bundleLength: (product.attributeValues || []).find((av: any) => ['bundle length', 'bundle size', 'length'].includes(av.attribute?.attributeName?.toLowerCase().trim()))?.value ?? null,
     };
   }
 }

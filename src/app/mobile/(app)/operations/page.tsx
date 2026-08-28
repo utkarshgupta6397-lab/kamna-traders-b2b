@@ -21,18 +21,33 @@ export default async function MobileOperationsPage() {
           Available Modules
         </div>
 
-        <Link href="/mobile/operations/solar-panel-stock" className="flex items-center justify-between bg-white p-4 rounded-[16px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 active:scale-[0.98] transition-transform">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-amber-50 text-amber-600 rounded-xl border border-amber-100/50">
-              <Package size={22} strokeWidth={2.5} />
+        <div className="flex flex-col gap-3">
+          <Link href="/mobile/operations/solar-panel-stock" className="flex items-center justify-between bg-white p-4 rounded-[16px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 active:scale-[0.98] transition-transform">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-amber-50 text-amber-600 rounded-xl border border-amber-100/50">
+                <Package size={22} strokeWidth={2.5} />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <div className="font-bold text-slate-800 text-[15px]">Solar Panel Stock</div>
+                <div className="text-[12px] text-slate-500 font-medium">View Current Stock</div>
+              </div>
             </div>
-            <div className="flex flex-col gap-0.5">
-              <div className="font-bold text-slate-800 text-[15px]">Solar Panel Stock</div>
-              <div className="text-[12px] text-slate-500 font-medium">View Current Stock</div>
+            <ChevronRight size={20} className="text-slate-300" />
+          </Link>
+
+          <Link href="/mobile/operations/wire-cable-stock" className="flex items-center justify-between bg-white p-4 rounded-[16px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 active:scale-[0.98] transition-transform">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100/50">
+                <Package size={22} strokeWidth={2.5} />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <div className="font-bold text-slate-800 text-[15px]">Wire & Cables Stock</div>
+                <div className="text-[12px] text-slate-500 font-medium">View Current Stock</div>
+              </div>
             </div>
-          </div>
-          <ChevronRight size={20} className="text-slate-300" />
-        </Link>
+            <ChevronRight size={20} className="text-slate-300" />
+          </Link>
+        </div>
       </main>
     </div>
   );

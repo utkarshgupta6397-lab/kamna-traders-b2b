@@ -3,7 +3,7 @@ import { Box } from 'lucide-react';
 import Link from 'next/link';
 
 interface CurrentStockSidebarProps {
-  activeView: 'solar' | 'multi' | 'advanced';
+  activeView: 'solar' | 'wire' | 'multi' | 'advanced';
 }
 
 export default function CurrentStockSidebar({ activeView }: CurrentStockSidebarProps) {
@@ -29,6 +29,18 @@ export default function CurrentStockSidebar({ activeView }: CurrentStockSidebarP
                 <div className={`flex items-center gap-2.5 ${isSolar ? 'pl-1' : ''}`}>
                   <Box size={16} className={isSolar ? '' : 'text-gray-400 group-hover:text-gray-600'} />
                   <span>Solar Panel Stock</span>
+                </div>
+              </Link>
+              
+              {/* Wire & Cable Stock View */}
+              <Link 
+                href="/staff/dashboard/operations/current-stock?view=wire" 
+                className={`flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors border border-transparent text-left ${activeView === 'wire' ? 'bg-[#1A2766]/5 text-[#1A2766] relative overflow-hidden' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 group'}`}
+              >
+                {activeView === 'wire' && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#1A2766]" />}
+                <div className={`flex items-center gap-2.5 ${activeView === 'wire' ? 'pl-1' : ''}`}>
+                  <Box size={16} className={activeView === 'wire' ? '' : 'text-gray-400 group-hover:text-gray-600'} />
+                  <span>Wire & Cable Stock</span>
                 </div>
               </Link>
               

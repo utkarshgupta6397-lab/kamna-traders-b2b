@@ -1,7 +1,7 @@
 import { getSession } from '@/lib/auth';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
-import MobileStockExportClient from './MobileStockExportClient';
+import MobileSolarPanelStockClient from './MobileSolarPanelStockClient';
 import { prisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
@@ -44,7 +44,7 @@ export default async function MobileSolarPanelStockPage() {
       </header>
 
       <main className="flex-1 flex flex-col min-h-0 w-full relative">
-        <MobileStockExportClient 
+        <MobileSolarPanelStockClient 
           warehouses={warehouses} 
           categories={categories} 
           brands={brands} 

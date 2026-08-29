@@ -5,6 +5,7 @@ import { Search, Box, ChevronDown, Check, Camera, Loader2, Download, X } from 'l
 import CurrentStockSidebar from './CurrentStockSidebar';
 import { formatStockDate } from '@/lib/date-utils';
 import toast from 'react-hot-toast';
+import { StockPageShell, StockHeader, StockFilterBar, StockEmptyState } from './CurrentStockShared';
 
 // Types
 interface Warehouse { id: string; name: string; isSystemWarehouse?: boolean; }
@@ -246,50 +247,42 @@ export default function InverterStockClient({ warehouses, items }: Props) {
     }
   };
 
-  const handleTakeScreenshot = async () => {
+  const generateStockScreenshotPDF = async () => {
     setExportingReportId('screenshot');
     const tid = toast.loading('Generating PDF report...');
     try {
-      const { default: jsPDF } = await import('jspdf');
-      const { default: autoTable } = await import('jspdf-autotable');
-      const doc = new jsPDF({ orientation: 'landscape', format: 'a4' });
-      
-      doc.setFontSize(16);
-      doc.setTextColor(20, 30, 80);
-      doc.text('KAMNA ERP — Inverter Stock', 14, 15);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100);
-      doc.text(`Generated: ${formatStockDate(new Date())}`, 14, 22);
-
-      const filterParts = [];
-      if (selectedWarehouses.length) filterParts.push(`Warehouses: ${selectedWarehouses.length}`);
-      if (selectedBrands.length) filterParts.push(`Brands: ${selectedBrands.join(', ')}`);
-      if (selectedCapacities.length) filterParts.push(`Capacities: ${selectedCapacities.length}`);
-      if (selectedTypes.length) filterParts.push(`Types: ${selectedTypes.join(', ')}`);
-      const filterStr = filterParts.length ? filterParts.join(' | ') : 'All data (no filters)';
-      doc.text(`Filters: ${filterStr}`, 14, 28);
+      const { generateStockScreenshotPDF } = await import('./current-stock/screenshot');
+      const filters = [];
+      if (selectedWarehouses.length) filters.push(`Warehouses: ${selectedWarehouses.length}`);
+      if (selectedBrands.length) filters.push(`Brands: ${selectedBrands.join(', ')}`);
+      if (selectedCapacities.length) filters.push(`Capacities: ${selectedCapacities.length}`);
+      if (selectedTypes.length) filters.push(`Types: ${selectedTypes.join(', ')}`);
 
       const head = [['Brand / Capacity / Config', ...displayedWarehouses.map(w => w.name), 'Grand Total']];
       
       const body = matrixRows.map(row => {
-        const rowData: Record<string, unknown>[] = [];
-        
+        const rowData: any[] = [];
         let labelStr = row.label;
+        let cellBg = [255, 255, 255];
+        let textColor = [50, 50, 50];
+        let fontStyle = 'normal';
+
         if (row.isGroupHeader) {
-           rowData.push({ content: labelStr, styles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: 'bold', halign: 'left' } });
+           cellBg = [241, 245, 249]; textColor = [30, 41, 59]; fontStyle = 'bold';
         } else if (row.isGrandTotal) {
-           rowData.push({ content: 'Grand Total', styles: { fillColor: [26, 39, 102], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'left' } });
+           cellBg = [26, 39, 102]; textColor = [255, 255, 255]; fontStyle = 'bold';
+           labelStr = 'Grand Total';
         } else {
            const sub = [row.invType, row.phase].filter(x => x && x !== 'Unknown').join(' | ');
            labelStr = `   ${formatCapacityDisplay(row.label)}${sub ? `\n   (${sub})` : ''}`;
-           rowData.push({ content: labelStr, styles: { fillColor: [255, 255, 255], textColor: [50, 50, 50], halign: 'left' } });
         }
+        
+        rowData.push({ content: labelStr, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' } });
 
         const cols = [...displayedWarehouses.map(w => w.id), 'GT'];
         cols.forEach(colId => {
           if (row.isGroupHeader) {
-            rowData.push({ content: '', styles: { fillColor: [241, 245, 249] } });
+            rowData.push({ content: '', styles: { fillColor: cellBg } });
             return;
           }
           const val = row.cells[colId] || 0;
@@ -298,37 +291,34 @@ export default function InverterStockClient({ warehouses, items }: Props) {
           
           let styles = {};
           if (row.isGrandTotal) {
-            styles = { fillColor: [26, 39, 102], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' };
+            styles = { fillColor: cellBg, textColor, fontStyle: 'bold', halign: 'center' };
           } else {
-            const isGTCol = colId === 'GT';
-            const max = isGTCol ? maxGt : maxBody;
-            const bgStyle = getHeatmapStyle(val, max, isGTCol, false);
-            let bg = [255,255,255];
-            let tx = [50,50,50];
-            if (bgStyle.backgroundColor && typeof bgStyle.backgroundColor === 'string') {
-               const match = bgStyle.backgroundColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-               if (match) bg = [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10)];
+            const rawStyle = getHeatmapStyle(val, colId === 'GT' ? maxGt : maxBody, colId === 'GT', false);
+            let outBg = cellBg;
+            let outText = textColor;
+            if (rawStyle.backgroundColor && typeof rawStyle.backgroundColor === 'string') {
+              const m = rawStyle.backgroundColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+              if (m) outBg = [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
             }
-            if (bgStyle.color === '#fff') tx = [255,255,255];
-            styles = { fillColor: bg, textColor: tx, halign: 'center', fontStyle: bgStyle.fontWeight === 600 ? 'bold' : 'normal' };
+            if (rawStyle.color === '#fff') outText = [255, 255, 255];
+            styles = { fillColor: outBg, textColor: outText, halign: 'center' };
           }
           rowData.push({ content, styles });
         });
+        
         return rowData;
       });
 
-      autoTable(doc, {
-        startY: 35, head, body, theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 2, lineWidth: 0.1, lineColor: [220, 220, 220] },
-        headStyles: { fillColor: [248, 249, 251], textColor: [80, 80, 80], fontStyle: 'bold', halign: 'center' },
-        columnStyles: { 0: { cellWidth: 70, halign: 'left' } },
-        showHead: 'everyPage', margin: { top: 15, right: 14, bottom: 15, left: 14 }
+      await generateStockScreenshotPDF({
+        title: 'KAMNA ERP — Inverter Stock',
+        filters,
+        tables: [{ head, body }],
+        filename: `KAMNA_InverterStock_${new Date().getTime()}.pdf`
       });
-      doc.save('Inverter_Stock.pdf');
-      toast.success('Report generated', { id: tid });
-    } catch (err: any) {
+      toast.success('Screenshot captured', { id: tid });
+    } catch (err) {
       console.error(err);
-      toast.error('Failed to generate report', { id: tid });
+      toast.error('Failed to capture screenshot', { id: tid });
     } finally {
       setExportingReportId(null);
     }
@@ -430,54 +420,42 @@ export default function InverterStockClient({ warehouses, items }: Props) {
   }, [filteredItems, meaningfulWarehouses]);
 
   return (
-    <div className="flex h-full gap-5">
-      <CurrentStockSidebar activeView="inverter" />
-      <div className="flex-1 flex flex-col h-full min-w-0 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between shrink-0 rounded-t-lg">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#1A2766]/10 flex items-center justify-center">
-              <Box size={17} className="text-[#1A2766]" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-gray-900 leading-tight">Inverter Stock</h1>
-              <p className="text-[11px] text-gray-500 font-medium">Real-time inventory view</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {exportingReportId === 'screenshot' ? (
-              <button disabled className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-gray-700 bg-gray-100 rounded-md border border-gray-200 opacity-50">
-                <Loader2 size={13} className="animate-spin text-gray-500" /> Capturing...
-              </button>
-            ) : (
-              <button onClick={handleTakeScreenshot} className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md border border-gray-200 transition-colors">
-                <Camera size={13} className="text-gray-500" /> Screenshot
-              </button>
-            )}
-            <button onClick={handleExportRawData} disabled={isExporting} className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-white bg-green-600 hover:bg-green-700 rounded-md border border-transparent transition-colors">
-              {isExporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-              Raw Data
-            </button>
-          </div>
-        </div>
+    <StockPageShell sidebar={<CurrentStockSidebar activeView="inverter" />}>
+      <StockHeader
+        icon={Box}
+        title="Inverter Stock"
+        subtitle="Real-time inventory view"
+        itemCount={filteredItems.length}
+        date={formatStockDate(new Date())}
+        onExportRaw={handleExportRawData}
+        onScreenshot={generateStockScreenshotPDF}
+        isExporting={isExporting}
+        isScreenshotting={exportingReportId === 'screenshot'}
+      />
+      
+      <StockFilterBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search product or SKU..."
+      >
+        <MultiSelectFilter label="Warehouses" options={operationalWarehouses} selected={selectedWarehouses} onToggle={id => toggle(setSelectedWarehouses, id)} />
+        <MultiSelectFilter label="Brands" options={availableBrands} selected={selectedBrands} onToggle={id => toggle(setSelectedBrands, id)} />
+        <MultiSelectFilter label="Types" options={availableTypes} selected={selectedTypes} onToggle={id => toggle(setSelectedTypes, id)} />
+        <MultiSelectFilter label="Phases" options={availablePhases} selected={selectedPhases} onToggle={id => toggle(setSelectedPhases, id)} />
+        <MultiSelectFilter label="Capacities" options={availableCapacities} selected={selectedCapacities} onToggle={id => toggle(setSelectedCapacities, id)} wideMenu />
+      </StockFilterBar>
 
-        <div className="px-4 py-3 bg-white border-b border-gray-100 flex items-center gap-2 flex-wrap shrink-0">
-          <div className="relative mr-2 w-64 shrink-0">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input type="text" placeholder="Search product or SKU..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]" />
-            {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14}/></button>}
-          </div>
-          <MultiSelectFilter label="Warehouses" options={operationalWarehouses} selected={selectedWarehouses} onToggle={id => toggle(setSelectedWarehouses, id)} />
-          <MultiSelectFilter label="Brands" options={availableBrands} selected={selectedBrands} onToggle={id => toggle(setSelectedBrands, id)} />
-          <MultiSelectFilter label="Types" options={availableTypes} selected={selectedTypes} onToggle={id => toggle(setSelectedTypes, id)} />
-          <MultiSelectFilter label="Phases" options={availablePhases} selected={selectedPhases} onToggle={id => toggle(setSelectedPhases, id)} />
-          <MultiSelectFilter label="Capacities" options={availableCapacities} selected={selectedCapacities} onToggle={id => toggle(setSelectedCapacities, id)} wideMenu />
-        </div>
-
-        <div className="flex-1 overflow-auto bg-[#F8F9FB] p-4">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col mb-6 overflow-hidden max-w-[100%]">
+      <div className="flex-1 overflow-auto bg-[#F8F9FB] p-5">
+        {matrixRows.length === 0 ? (
+          <StockEmptyState 
+            icon={Box} 
+            title="No Inverter stock found" 
+            message="Try adjusting your filters or search terms." 
+          />
+        ) : (
+          <div className="bg-white border border-slate-200 rounded-[8px] shadow-sm flex flex-col overflow-hidden max-w-[100%]">
             <div className="relative bg-white pivot-scroll-container overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)]">
-              <table className="text-sm text-left border-collapse" style={{ minWidth: "100%" }}>
+              <table className="text-[13px] text-left border-collapse" style={{ minWidth: "100%" }}>
                 <thead>
                   <tr className="bg-[#f8f9fb]">
                     <th className="px-4 py-3 font-bold text-[12px] text-gray-700 uppercase tracking-wider border-b-2 border-gray-300 border-r border-gray-200 bg-[#f8f9fb] h-[42px]" style={{ position: 'sticky', left: 0, top: 0, zIndex: 50 }}>
@@ -545,8 +523,8 @@ export default function InverterStockClient({ warehouses, items }: Props) {
               </table>
             </div>
           </div>
-        </div>
+        )}
       </div>
-    </div>
+    </StockPageShell>
   );
 }

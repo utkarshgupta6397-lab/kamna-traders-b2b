@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, Box, ChevronDown, Check, AlertTriangle, X, Download } from 'lucide-react';
 import CurrentStockSidebar from './CurrentStockSidebar';
 import { formatStockDate } from '@/lib/date-utils';
+import { StockPageShell, StockHeader, StockFilterBar, StockEmptyState } from './CurrentStockShared';
 
 // Types
 interface Warehouse { id: string; name: string; isSystemWarehouse?: boolean; }
@@ -809,54 +810,38 @@ export default function WireCableStockClient({ warehouses, items }: Props) {
   };
 
   return (
-    <div className="flex h-full gap-5">
-      <CurrentStockSidebar activeView="wire" />
-      <div className="flex-1 flex flex-col h-full min-w-0 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between shrink-0 rounded-t-lg">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#1A2766]/10 flex items-center justify-center">
-              <Box size={17} className="text-[#1A2766]" />
-            </div>
-            <div>
-              <h1 className="text-[15px] font-bold tracking-tight text-gray-900 leading-tight">Wire & Cable Stock</h1>
-              <div className="text-[11px] text-blue-600 font-medium">Category: Wire & Cables · {filteredItems.length} SKUs</div>
-            </div>
-          </div>
-          <div className="text-[10px] text-gray-400 font-medium">Last updated: {formatStockDate(new Date())}</div>
-        </div>
+    <>
+      <StockPageShell sidebar={<CurrentStockSidebar activeView="wire" />}>
+        <StockHeader
+        icon={Box}
+        title="Wire & Cable Stock"
+        subtitle="Category: Wire & Cables"
+        itemCount={filteredItems.length}
+        date={formatStockDate(new Date())}
+        onExportRaw={handleExportRawData}
+        onScreenshot={handleExportPDF}
+        isExporting={isExporting}
+      />
+      <StockFilterBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search product or SKU…"
+      >
+        <MultiSelectFilter label="Warehouses" options={operationalWarehouses.map(w => ({ id: w.id, name: w.name }))} selected={selectedWarehouses} onToggle={id => toggle(setSelectedWarehouses, id)} prefix={<Box size={13} className="text-slate-400" />} />
+        <MultiSelectFilter label="Wire Types" options={availableWireTypes} selected={selectedWireTypes} onToggle={id => toggle(setSelectedWireTypes, id)} />
+        <MultiSelectFilter label="Brands" options={availableBrands} selected={selectedBrands} onToggle={id => toggle(setSelectedBrands, id)} />
+        <MultiSelectFilter label="Widths" options={availableWidths} selected={selectedWidths} onToggle={id => toggle(setSelectedWidths, id)} />
+        <MultiSelectFilter label="Colors" options={availableColors} selected={selectedColors} onToggle={id => toggle(setSelectedColors, id)} />
+      </StockFilterBar>
 
-        <div className="px-4 py-2.5 border-b border-gray-100 bg-white flex flex-wrap items-center gap-2 shrink-0 relative z-[100] overflow-visible">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-            <input type="text" placeholder="Search product or SKU…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 bg-gray-50 border border-gray-200 rounded-md text-[13px] text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-white transition-colors h-8" />
-          </div>
-          <MultiSelectFilter label="Warehouses" options={operationalWarehouses.map(w => ({ id: w.id, name: w.name }))} selected={selectedWarehouses} onToggle={id => toggle(setSelectedWarehouses, id)} prefix={<Box size={13} className="text-gray-400" />} />
-          <MultiSelectFilter label="Wire Types" options={availableWireTypes} selected={selectedWireTypes} onToggle={id => toggle(setSelectedWireTypes, id)} />
-          <MultiSelectFilter label="Brands" options={availableBrands} selected={selectedBrands} onToggle={id => toggle(setSelectedBrands, id)} />
-          <MultiSelectFilter label="Widths" options={availableWidths} selected={selectedWidths} onToggle={id => toggle(setSelectedWidths, id)} />
-          <MultiSelectFilter label="Colors" options={availableColors} selected={selectedColors} onToggle={id => toggle(setSelectedColors, id)} />
-          
-          <div className="ml-auto flex items-center gap-2">
-            <button onClick={handleExportRawData} disabled={isExporting} className="flex items-center gap-2 px-4 py-1.5 bg-white border border-gray-300 text-gray-700 text-[13px] font-semibold rounded-md shadow-sm hover:bg-gray-50 transition-colors h-8 disabled:opacity-50 disabled:cursor-not-allowed">
-              <Download size={14} />
-              {isExporting ? 'Exporting...' : 'Raw Data'}
-            </button>
-            <button onClick={handleExportPDF} className="flex items-center gap-2 px-4 py-1.5 bg-[#1A2766] text-white text-[13px] font-semibold rounded-md shadow-sm hover:bg-[#1A2766]/90 transition-colors h-8">
-              <Download size={14} />
-              Screenshot
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5 bg-[#f7f8fb] min-h-0 relative">
-          {(!meaningfulWarehouses.length || filteredItems.length === 0) ? (
-            <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-400">
-              <AlertTriangle size={32} className="text-amber-400" />
-              <div className="text-lg font-semibold text-gray-700">No Wire & Cable stock found</div>
-              <p className="text-sm">Try adjusting your filters.</p>
-            </div>
-          ) : (
+      <div className="flex-1 overflow-y-auto p-5 bg-[#f7f8fb] min-h-0 relative">
+        {(!meaningfulWarehouses.length || filteredItems.length === 0) ? (
+          <StockEmptyState 
+            icon={AlertTriangle} 
+            title="No Wire & Cable stock found" 
+            message="Try adjusting your filters." 
+          />
+        ) : (
             <>
               <PivotTable 
                 title="PHYSICAL STOCK — MTR"
@@ -923,8 +908,8 @@ export default function WireCableStockClient({ warehouses, items }: Props) {
             </>
           )}
         </div>
-      </div>
+      </StockPageShell>
       <BreakdownModal data={modalData} onClose={() => setModalData(null)} />
-    </div>
+    </>
   );
 }

@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, ChevronDown, ChevronRight, Check, Loader2, Download, X, Wrench } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, Check, Loader2, Download, X, Wrench, Camera, AlertTriangle } from 'lucide-react';
 import CurrentStockSidebar from './CurrentStockSidebar';
+import { StockPageShell, StockHeader, StockFilterBar, StockEmptyState } from './CurrentStockShared';
+import { formatStockDate } from '@/lib/date-utils';
 
 // Types
 interface Warehouse { id: string; name: string; isSystemWarehouse?: boolean; }
@@ -180,6 +182,7 @@ export default function SolarAccessoriesStockClient({ warehouses, items }: Props
       sku?: string;
       unit?: string;
       cells: Record<string, number>;
+      isVisible?: boolean;
     }[] = [];
     let maxB = 0;
     let maxG = 0;
@@ -232,48 +235,117 @@ export default function SolarAccessoriesStockClient({ warehouses, items }: Props
       label: 'Grand Total', 
       isGrandTotal: true, 
       cells: colTotals,
-      unit: allUnits.size === 1 ? Array.from(allUnits)[0] : undefined
+      unit: allUnits.size === 1 ? Array.from(allUnits)[0] : undefined,
+      isVisible: true
     });
     
     return { matrixRows: rows, maxBody: maxB, maxGt: maxG };
   }, [filteredItems, meaningfulWarehouses, expandedCategories]);
 
+  const [isScreenshotting, setIsScreenshotting] = useState(false);
+
+  const handleTakeScreenshot = async () => {
+    setIsScreenshotting(true);
+    try {
+      const { generateStockScreenshotPDF } = await import('./current-stock/screenshot');
+      const filters = [];
+      if (selectedWarehouses.length) filters.push(`Warehouses: ${selectedWarehouses.length}`);
+
+      const formatQty = (v: number, unit?: string) => unit ? `${v} ${unit}` : `${v}`;
+      const head = [['Category / Product Name', ...meaningfulWarehouses.map(w => w.name), 'Grand Total']];
+      
+      const body = matrixRows.map(row => {
+        const rowData: any[] = [];
+        let labelStr = row.label;
+        let cellBg = [255, 255, 255];
+        let textColor = [50, 50, 50];
+        let fontStyle = 'normal';
+
+        if (row.isGroupHeader) {
+           cellBg = [241, 245, 249]; textColor = [30, 41, 59]; fontStyle = 'bold';
+        } else if (row.isGrandTotal) {
+           cellBg = [26, 39, 102]; textColor = [255, 255, 255]; fontStyle = 'bold';
+           labelStr = 'Grand Total';
+        } else {
+           labelStr = `   ${row.label} - ${row.sku}`;
+        }
+        
+        rowData.push({ content: labelStr, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' } });
+
+        const cols = [...meaningfulWarehouses.map(w => w.id), 'GT'];
+        cols.forEach(colId => {
+          const val = row.cells[colId] || 0;
+          let content = '—';
+          if (val > 0) content = formatQty(val, row.unit);
+          
+          let styles = {};
+          if (row.isGroupHeader) {
+            styles = { fillColor: cellBg, textColor, fontStyle: 'bold', halign: 'center' };
+          } else if (row.isGrandTotal) {
+            styles = { fillColor: cellBg, textColor, fontStyle: 'bold', halign: 'center' };
+          } else {
+            const rawStyle = getHeatmapStyle(val, colId === 'GT' ? maxGt : maxBody, colId === 'GT', false);
+            let outBg = cellBg;
+            let outText = textColor;
+            if (rawStyle.backgroundColor && typeof rawStyle.backgroundColor === 'string') {
+              const m = rawStyle.backgroundColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+              if (m) outBg = [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
+            }
+            if (rawStyle.color === '#fff') outText = [255, 255, 255];
+            styles = { fillColor: outBg, textColor: outText, halign: 'center' };
+          }
+          rowData.push({ content, styles });
+        });
+        
+        return rowData;
+      });
+
+      await generateStockScreenshotPDF({
+        title: 'KAMNA ERP — Solar Accessories Stock',
+        filters,
+        tables: [{ head, body }],
+        filename: `KAMNA_AccessoriesStock_${new Date().getTime()}.pdf`
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsScreenshotting(false);
+    }
+  };
+
   return (
-    <div className="flex h-full gap-5">
-      <CurrentStockSidebar activeView="accessories" />
-      <div className="flex-1 flex flex-col h-full min-w-0 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between shrink-0 rounded-t-lg">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#1A2766]/10 flex items-center justify-center">
-              <Wrench size={17} className="text-[#1A2766]" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-gray-900 leading-tight">Solar Accessories Stock</h1>
-              <p className="text-[11px] text-gray-500 font-medium">Current inventory by category</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={handleExportRawData} disabled={isExporting} className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-white bg-green-600 hover:bg-green-700 rounded-md border border-transparent transition-colors">
-              {isExporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-              Raw Data
-            </button>
-          </div>
-        </div>
+    <StockPageShell sidebar={<CurrentStockSidebar activeView="accessories" />}>
+      <StockHeader
+        icon={Wrench}
+        title="Solar Accessories Stock"
+        subtitle="Current inventory by category"
+        itemCount={filteredItems.length}
+        date={formatStockDate(new Date())}
+        onExportRaw={handleExportRawData}
+        onScreenshot={handleTakeScreenshot}
+        isExporting={isExporting}
+        isScreenshotting={isScreenshotting}
+      />
+      
+      <StockFilterBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search product or SKU..."
+      >
+        <MultiSelectFilter label="Warehouses" options={operationalWarehouses} selected={selectedWarehouses} onToggle={id => toggle(setSelectedWarehouses, id)} />
+      </StockFilterBar>
 
-        <div className="px-4 py-3 bg-white border-b border-gray-100 flex items-center gap-2 flex-wrap shrink-0">
-          <div className="relative mr-2 w-64 shrink-0">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input type="text" placeholder="Search product or SKU..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]" />
-            {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14}/></button>}
-          </div>
-          <MultiSelectFilter label="Warehouses" options={operationalWarehouses} selected={selectedWarehouses} onToggle={id => toggle(setSelectedWarehouses, id)} />
-        </div>
-
-        <div className="flex-1 overflow-auto bg-[#F8F9FB] p-4">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col mb-6 overflow-hidden max-w-[100%]">
+      <div className="flex-1 overflow-auto bg-[#F8F9FB] p-5">
+        {matrixRows.length === 0 ? (
+          <StockEmptyState 
+            icon={Wrench} 
+            title="No Solar Accessories stock found" 
+            message="Try adjusting your filters or search terms." 
+          />
+        ) : (
+          <div className="bg-white border border-slate-200 rounded-[8px] shadow-sm flex flex-col overflow-hidden max-w-[100%]">
             <div className="relative bg-white pivot-scroll-container overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)]">
-              <table className="text-sm text-left border-collapse" style={{ minWidth: "100%" }}>
+              <table className="text-[13px] text-left border-collapse" style={{ minWidth: "100%" }}>
                 <thead>
                   <tr className="bg-[#f8f9fb]">
                     <th className="px-4 py-3 font-bold text-[12px] text-gray-700 uppercase tracking-wider border-b-2 border-gray-300 border-r border-gray-200 bg-[#f8f9fb] h-[42px]" style={{ position: 'sticky', left: 0, top: 0, zIndex: 50 }}>
@@ -356,8 +428,8 @@ export default function SolarAccessoriesStockClient({ warehouses, items }: Props
               </table>
             </div>
           </div>
-        </div>
+        )}
       </div>
-    </div>
+    </StockPageShell>
   );
 }

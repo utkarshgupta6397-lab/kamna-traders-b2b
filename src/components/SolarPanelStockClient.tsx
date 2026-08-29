@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import CurrentStockSidebar from './CurrentStockSidebar';
 import { formatStockDate } from '@/lib/date-utils';
+import { StockPageShell, StockHeader, StockFilterBar, StockEmptyState } from './CurrentStockShared';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -766,6 +767,148 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
   const hasNonDcrData = nonDcrRows.some(r => r.isGroupHeader);
   const hasAnyData    = hasDcrData || hasNonDcrData;
 
+  const [isExporting, setIsExporting] = useState(false);
+  const [isScreenshotting, setIsScreenshotting] = useState(false);
+
+  const handleExportRawData = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const XLSX = await import('xlsx');
+      const rows = filteredItems.map(item => {
+        const row: Record<string, string | number> = {
+          'SKU': item.id,
+          'Product Name': item.name,
+          'Brand': item.brand || 'Unknown',
+          'Series': item.parentProductName || 'No Series',
+          'Wattage': item.wattage || 'Unknown',
+          'DCR Status': item.isDcrEligible ? 'DCR' : 'Non-DCR'
+        };
+        let gt = 0;
+        visibleWarehouses.forEach(wh => {
+          const q = item.inventory[wh.id]?.qty || 0;
+          row[wh.name] = q;
+          gt += q;
+        });
+        row['Grand Total'] = gt;
+        return row;
+      });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Solar Panel Stock");
+      XLSX.writeFile(wb, `KAMNA_Solar_Panel_Stock_${new Date().getTime()}.xlsx`);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    if (isScreenshotting) return;
+    setIsScreenshotting(true);
+    try {
+      const { generateStockScreenshotPDF } = await import('./current-stock/screenshot');
+      const filters = [];
+      if (selectedWarehouses.length) filters.push(`Warehouses: ${selectedWarehouses.length}`);
+      if (selectedBrands.length) filters.push(`Brands: ${selectedBrands.length}`);
+      if (selectedDcr.length) filters.push(`DCR: ${selectedDcr.join(', ')}`);
+      if (selectedSeries.length) filters.push(`Series: ${selectedSeries.length}`);
+      if (selectedWattages.length) filters.push(`Wattages: ${selectedWattages.length}`);
+
+      const tables = [];
+      
+      const buildTableBody = (cols: PivotColumnDef[], pRows: PivotRowDef[]) => {
+        return pRows.map(r => {
+          const cells = cols.map(c => {
+             const cell = r.cells[c.id];
+             const v = typeof cell === 'number' ? cell : (cell?.value || 0);
+             return { val: v, bg: [255, 255, 255] as [number, number, number], text: [50, 50, 50] as [number, number, number] };
+          });
+          const gtCell = r.cells['GT'];
+          const gtVal = typeof gtCell === 'number' ? gtCell : (gtCell?.value || 0);
+          cells.push({ val: gtVal, bg: [255, 255, 255] as [number, number, number], text: [50, 50, 50] as [number, number, number] });
+          return {
+             isGroupHeader: r.isGroupHeader,
+             isGrandTotal: r.isGrandTotal,
+             label: r.label,
+             cells
+          };
+        });
+      };
+
+      if (hasDcrData) {
+         tables.push({
+           title: 'DCR Solar Panel Stock',
+           head: [['Series / SKU', '', ...dcrCols.map(c => c.label), 'Grand Total']],
+           body: buildTableBody(dcrCols, dcrRows).map(r => {
+             const rowArr: any[] = [];
+             
+             let cellBg = [255,255,255];
+             let textColor = [50,50,50];
+             let fontStyle = 'normal';
+             if (r.isGroupHeader) { cellBg = [241,245,249]; textColor = [30,41,59]; fontStyle = 'bold'; }
+             else if (r.isGrandTotal) { cellBg = [26,39,102]; textColor = [255,255,255]; fontStyle = 'bold'; }
+
+             rowArr.push({ content: r.isGroupHeader || r.isGrandTotal ? r.label : `   ${r.label}`, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' } });
+             rowArr.push({ content: '—', styles: { fillColor: cellBg, textColor: r.isGroupHeader ? cellBg : textColor, fontStyle, halign: 'center' } }); // UOM filler
+             
+             if (r.isGroupHeader) {
+               r.cells.forEach(() => rowArr.push({ content: '', styles: { fillColor: cellBg } }));
+             } else {
+               r.cells.forEach(c => {
+                 let content = '—';
+                 if (c.val > 0) content = c.val.toLocaleString();
+                 rowArr.push({ content, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'center' } });
+               });
+             }
+             return rowArr;
+           })
+         });
+      }
+      
+      if (hasNonDcrData) {
+         tables.push({
+           title: 'Non-DCR Solar Panel Stock',
+           head: [['Series / SKU', '', ...nonDcrCols.map(c => c.label), 'Grand Total']],
+           body: buildTableBody(nonDcrCols, nonDcrRows).map(r => {
+             const rowArr: any[] = [];
+             let cellBg = [255,255,255];
+             let textColor = [50,50,50];
+             let fontStyle = 'normal';
+             if (r.isGroupHeader) { cellBg = [241,245,249]; textColor = [30,41,59]; fontStyle = 'bold'; }
+             else if (r.isGrandTotal) { cellBg = [26,39,102]; textColor = [255,255,255]; fontStyle = 'bold'; }
+
+             rowArr.push({ content: r.isGroupHeader || r.isGrandTotal ? r.label : `   ${r.label}`, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' } });
+             rowArr.push({ content: '—', styles: { fillColor: cellBg, textColor: r.isGroupHeader ? cellBg : textColor, fontStyle, halign: 'center' } });
+             
+             if (r.isGroupHeader) {
+               r.cells.forEach(() => rowArr.push({ content: '', styles: { fillColor: cellBg } }));
+             } else {
+               r.cells.forEach(c => {
+                 let content = '—';
+                 if (c.val > 0) content = c.val.toLocaleString();
+                 rowArr.push({ content, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'center' } });
+               });
+             }
+             return rowArr;
+           })
+         });
+      }
+
+      await generateStockScreenshotPDF({
+        title: 'KAMNA ERP — Solar Panel Stock',
+        filters,
+        tables,
+        filename: `KAMNA_SolarPanelStock_${new Date().getTime()}.pdf`
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsScreenshotting(false);
+    }
+  };
+
   if (isExportMode) {
     return (
       <div className="bg-white">
@@ -794,56 +937,51 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
   }
 
   return (
-    <div className="h-[calc(100vh-64px)] overflow-hidden flex bg-[#f8f9fb]">
-      <CurrentStockSidebar activeView="solar" />
-      <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden relative">
-        <div className="shrink-0 bg-white border-b border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
-                Solar Panel Stock
-              </h1>
-              <p className="text-sm text-gray-500 mt-1">Real-time DCR and Non-DCR matrix view.</p>
-            </div>
-            <div className="text-sm text-gray-500 font-medium">As of {formatStockDate(new Date())}</div>
-          </div>
-          <div className="px-6 py-3 flex items-center gap-3 flex-wrap relative z-[100] overflow-visible">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-              <input
-                type="text" placeholder="Search SKU..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-4 py-1.5 h-8 border border-gray-200 rounded-md text-[13px] w-64 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50"
-              />
-            </div>
-            <div className="h-4 w-px bg-gray-200 mx-1 shrink-0" />
-            <MultiSelectFilter label="Warehouses" options={operationalWarehouses} selected={selectedWarehouses} onToggle={(id) => toggle(setSelectedWarehouses, id)} wideMenu />
-            <MultiSelectFilter label="Brands" options={availableBrands} selected={selectedBrands} onToggle={(id) => toggle(setSelectedBrands, id)} />
-            <MultiSelectFilter label="DCR Status" options={[{id:'DCR',name:'DCR'},{id:'Non-DCR',name:'Non-DCR'}]} selected={selectedDcr} onToggle={(id) => toggle(setSelectedDcr, id)} />
-            <MultiSelectFilter label="Series" options={availableSeries.map(s => ({ id: s, name: s }))} selected={selectedSeries} onToggle={(id) => toggle(setSelectedSeries, id)} wideMenu />
-            <MultiSelectFilter label="Wattage" options={availableWattages.map(w => ({ id: w, name: formatWattageDisplay(w) }))} selected={selectedWattages} onToggle={(id) => toggle(setSelectedWattages, id)} />
-            
-            {(debouncedSearch || selectedWarehouses.length > 0 || selectedBrands.length > 0 || selectedDcr.length > 0 || selectedSeries.length > 0 || selectedWattages.length > 0) && (
-              <button 
-                onClick={() => {
-                  setSearchQuery(''); setDebouncedSearch('');
-                  setSelectedWarehouses([]); setSelectedBrands([]); setSelectedDcr([]);
-                  setSelectedSeries([]); setSelectedWattages([]);
-                }}
-                className="ml-auto text-[13px] text-blue-600 font-medium hover:text-blue-800"
-              >
-                Clear All
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 relative">
-          {!hasAnyData ? (
-            <div className="h-64 flex flex-col items-center justify-center bg-white rounded-lg border border-gray-200 border-dashed">
-              <Box size={40} className="text-gray-300 mb-3" />
-              <p className="text-gray-500 font-medium text-[15px]">No Solar Panel stock found</p>
-              <p className="text-gray-400 text-[13px] mt-1">Try adjusting your filters or search terms.</p>
-            </div>
-          ) : (
+    <StockPageShell sidebar={<CurrentStockSidebar activeView="solar" />}>
+      <StockHeader
+        icon={Box}
+        title="Solar Panel Stock"
+        subtitle="Real-time DCR and Non-DCR matrix view."
+        itemCount={filteredItems.length}
+        date={formatStockDate(new Date())}
+        onExportRaw={handleExportRawData}
+        onScreenshot={handleExportPDF}
+        isExporting={isExporting}
+        isScreenshotting={isScreenshotting}
+      />
+      
+      <StockFilterBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search product or SKU…"
+      >
+        <MultiSelectFilter label="Warehouses" options={operationalWarehouses.map(w => ({ id: w.id, name: w.name }))} selected={selectedWarehouses} onToggle={(id) => toggle(setSelectedWarehouses, id)} wideMenu />
+        <MultiSelectFilter label="Brands" options={availableBrands} selected={selectedBrands} onToggle={(id) => toggle(setSelectedBrands, id)} />
+        <MultiSelectFilter label="DCR Status" options={[{id:'DCR',name:'DCR'},{id:'Non-DCR',name:'Non-DCR'}]} selected={selectedDcr} onToggle={(id) => toggle(setSelectedDcr, id)} />
+        <MultiSelectFilter label="Series" options={availableSeries.map(s => ({ id: s, name: s }))} selected={selectedSeries} onToggle={(id) => toggle(setSelectedSeries, id)} wideMenu />
+        <MultiSelectFilter label="Wattage" options={availableWattages.map(w => ({ id: w, name: formatWattageDisplay(w) }))} selected={selectedWattages} onToggle={(id) => toggle(setSelectedWattages, id)} />
+        {(debouncedSearch || selectedWarehouses.length > 0 || selectedBrands.length > 0 || selectedDcr.length > 0 || selectedSeries.length > 0 || selectedWattages.length > 0) && (
+          <button 
+            onClick={() => {
+              setSearchQuery(''); setDebouncedSearch('');
+              setSelectedWarehouses([]); setSelectedBrands([]); setSelectedDcr([]);
+              setSelectedSeries([]); setSelectedWattages([]);
+            }}
+            className="ml-auto text-[13px] text-blue-600 font-medium hover:text-blue-800"
+          >
+            Clear All
+          </button>
+        )}
+      </StockFilterBar>
+
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 relative">
+        {!hasAnyData ? (
+          <StockEmptyState 
+            icon={Box} 
+            title="No Solar Panel stock found" 
+            message="Try adjusting your filters or search terms." 
+          />
+        ) : (
             <div className="space-y-6 max-w-full pb-10">
               {hasDcrData && (
                 <PivotTable
@@ -860,7 +998,6 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </StockPageShell>
   );
 }

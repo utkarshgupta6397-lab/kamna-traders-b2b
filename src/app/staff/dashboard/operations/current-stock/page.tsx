@@ -19,7 +19,8 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
   const isMulti = sp.view === 'multi';
   const isWire = sp.view === 'wire';
   const isInverter = sp.view === 'inverter';
-  const isSolar = !isMulti && !isWire && !isInverter;
+  const isAccessories = sp.view === 'accessories';
+  const isSolar = !isMulti && !isWire && !isInverter && !isAccessories;
 
   // --- CPD/DOI PRE-CALCULATION ---
   const thirtyDaysAgo = new Date();
@@ -32,6 +33,7 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
 
   const productSearchOptions = isWire 
     ? { categoryName: 'Wire & Cables' } 
+    : isAccessories ? { categoryName: 'Solar Accessories' }
     : isSolar ? { categoryName: 'Solar Panel' } 
     : isInverter ? { categoryName: 'Inverter' } : {};
 
@@ -186,6 +188,19 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
     const InverterStockClient = (await import('@/components/InverterStockClient')).default;
     return (
       <InverterStockClient
+        warehouses={warehouses}
+        categories={categories}
+        brands={brands}
+        items={items}
+        canSync={!!session.canRunSkuSync}
+      />
+    );
+  }
+
+  if (isAccessories) {
+    const SolarAccessoriesStockClient = (await import('@/components/SolarAccessoriesStockClient')).default;
+    return (
+      <SolarAccessoriesStockClient
         warehouses={warehouses}
         categories={categories}
         brands={brands}

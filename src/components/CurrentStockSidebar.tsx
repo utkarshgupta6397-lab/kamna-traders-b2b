@@ -1,9 +1,9 @@
 import React from 'react';
-import { Sun, Zap, Battery, Layers } from 'lucide-react';
+import { Sun, Zap, Battery, Layers, Wrench } from 'lucide-react';
 import Link from 'next/link';
 
 interface CurrentStockSidebarProps {
-  activeView: 'solar' | 'wire' | 'multi' | 'inverter';
+  activeView: 'solar' | 'wire' | 'multi' | 'inverter' | 'accessories';
 }
 
 export default function CurrentStockSidebar({ activeView }: CurrentStockSidebarProps) {
@@ -52,6 +52,18 @@ export default function CurrentStockSidebar({ activeView }: CurrentStockSidebarP
                 <div className={`flex items-center gap-2.5 ${activeView === 'inverter' ? 'pl-1' : ''}`}>
                   <Battery size={16} className={activeView === 'inverter' ? '' : 'text-gray-400 group-hover:text-gray-600'} />
                   <span>Inverter Stock</span>
+                </div>
+              </Link>
+
+              {/* Solar Accessories Stock View */}
+              <Link 
+                href="/staff/dashboard/operations/current-stock?view=accessories" 
+                className={`flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors border border-transparent text-left ${activeView === 'accessories' ? 'bg-[#1A2766]/5 text-[#1A2766] relative overflow-hidden' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 group'}`}
+              >
+                {activeView === 'accessories' && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#1A2766]" />}
+                <div className={`flex items-center gap-2.5 ${activeView === 'accessories' ? 'pl-1' : ''}`}>
+                  <Wrench size={16} className={activeView === 'accessories' ? '' : 'text-gray-400 group-hover:text-gray-600'} />
+                  <span>Solar Accessories</span>
                 </div>
               </Link>
               

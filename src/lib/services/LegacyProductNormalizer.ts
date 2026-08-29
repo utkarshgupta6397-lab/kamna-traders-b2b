@@ -82,6 +82,11 @@ export class LegacyProductNormalizer {
       wireWidth: (product.attributeValues || []).find((av: any) => ['wire width (sqmm)', 'wire width', 'width (sqmm)'].includes(av.attribute?.attributeName?.toLowerCase().trim()))?.value ?? null,
       wireColor: (product.attributeValues || []).find((av: any) => ['wire color', 'color'].includes(av.attribute?.attributeName?.toLowerCase().trim()))?.value ?? null,
       bundleLength: (product.attributeValues || []).find((av: any) => ['bundle length', 'bundle size', 'length'].includes(av.attribute?.attributeName?.toLowerCase().trim()))?.value ?? null,
+      
+      // Inverter attributes
+      inverterType: (product.attributeValues || []).find((av: any) => av.attribute?.attributeName?.toLowerCase().trim() === 'inverter type')?.value ?? null,
+      inverterCapacity: (product.attributeValues || []).find((av: any) => av.attribute?.attributeName?.toLowerCase().trim() === 'inverter capacity')?.value ?? null,
+      phaseType: (product.attributeValues || []).find((av: any) => av.attribute?.attributeName?.toLowerCase().trim() === 'phase type')?.value ?? null,
     };
   }
 }

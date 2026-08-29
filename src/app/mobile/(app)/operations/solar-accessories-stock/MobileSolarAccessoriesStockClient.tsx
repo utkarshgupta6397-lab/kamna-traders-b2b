@@ -13,6 +13,7 @@ import {
   Loader2,
   AlertTriangle,
   Wrench,
+  Package,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -41,6 +42,22 @@ interface SkuItem {
 interface Props {
   warehouses: Warehouse[];
   items: SkuItem[];
+}
+
+interface ProductData {
+  name: string;
+  sku: string;
+  unit: string;
+  warehouseEntries: { wh: Warehouse; qty: number }[];
+  grandTotal: number;
+}
+
+interface CategoryData {
+  categoryName: string;
+  products: ProductData[];
+  categoryTotals: Record<string, number>;
+  categoryGrandTotal: number;
+  categoryUnit: string | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,87 +199,21 @@ function MobileFilterSheet({ isOpen, onClose, warehouseOptions, selectedWarehous
 }
 
 // ---------------------------------------------------------------------------
-// Drilldown Sheet (Category Detail)
+// Product Warehouse Drilldown Sheet
 // ---------------------------------------------------------------------------
 
-interface CategoryData {
-  categoryName: string;
-  products: {
-    name: string;
-    sku: string;
-    unit: string;
-    warehouseEntries: { wh: Warehouse; qty: number }[];
-    grandTotal: number;
-  }[];
-  categoryTotals: Record<string, number>;
-  categoryGrandTotal: number;
-  categoryUnit: string | undefined;
-}
-
-function ProductRow({ product }: { product: CategoryData['products'][0] }) {
-  const [expanded, setExpanded] = useState(false);
-  const activeEntries = product.warehouseEntries.filter(e => e.qty > 0);
-
-  return (
-    <div className="bg-white rounded-[14px] border border-slate-200 shadow-sm overflow-hidden mb-2.5">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3.5 active:bg-slate-50 transition-colors text-left"
-      >
-        <div className="flex-1 min-w-0 pr-3">
-          <div className="font-bold text-[14px] text-slate-800 break-words leading-snug">
-            {product.name}
-          </div>
-          {product.sku && (
-            <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-              {product.sku}
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="flex items-baseline gap-1 text-right">
-            <span className="font-black text-[15px] text-slate-900">{product.grandTotal.toLocaleString()}</span>
-            <span className="text-[9px] font-bold text-slate-400 uppercase">{product.unit || 'pcs'}</span>
-          </div>
-          {expanded ? (
-            <ChevronUp size={16} className="text-slate-400" />
-          ) : (
-            <ChevronDown size={16} className="text-slate-400" />
-          )}
-        </div>
-      </button>
-
-      {expanded && activeEntries.length > 0 && (
-        <div className="bg-slate-50 border-t border-slate-100 px-4 py-3 flex flex-col gap-2">
-          {activeEntries.map(({ wh, qty }) => (
-            <div key={wh.id} className="flex items-center justify-between">
-              <span className="text-[13px] font-medium text-slate-600">{wh.name}</span>
-              <div className="flex items-baseline gap-1 shrink-0">
-                <span className="text-[14px] font-bold text-slate-800">{qty.toLocaleString()}</span>
-                <span className="text-[9px] font-bold text-slate-400 uppercase">{product.unit || 'pcs'}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CategorySheet({ data, onClose, allWarehouses }: { data: CategoryData | null; onClose: () => void; allWarehouses: Warehouse[] }) {
+function ProductWarehouseSheet({ product, onClose }: { product: ProductData | null; onClose: () => void }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [renderData, setRenderData] = useState<CategoryData | null>(null);
-  const [activeTab, setActiveTab] = useState<'Products / SKUs' | 'By Warehouse'>('Products / SKUs');
+  const [renderData, setRenderData] = useState<ProductData | null>(null);
 
   useEffect(() => {
-    if (data) {
-      setRenderData(data);
-      setActiveTab('Products / SKUs');
+    if (product) {
+      setRenderData(product);
       requestAnimationFrame(() => setIsOpen(true));
     } else {
       setIsOpen(false);
     }
-  }, [data]);
+  }, [product]);
 
   const handleClose = () => {
     setIsOpen(false);
@@ -270,7 +221,8 @@ function CategorySheet({ data, onClose, allWarehouses }: { data: CategoryData | 
   };
 
   if (!renderData && !isOpen) return null;
-  const d = renderData || data!;
+  const p = renderData || product!;
+  const activeEntries = p.warehouseEntries.filter(e => e.qty > 0);
 
   return (
     <div
@@ -278,7 +230,7 @@ function CategorySheet({ data, onClose, allWarehouses }: { data: CategoryData | 
       onClick={handleClose}
     >
       <div
-        className={`bg-[#F8F9FB] w-full max-h-[92dvh] rounded-t-2xl shadow-xl flex flex-col transition-transform duration-300 pb-[env(safe-area-inset-bottom)] ${isOpen ? 'translate-y-0' : 'translate-y-full'}`}
+        className={`bg-[#F8F9FB] w-full max-h-[85dvh] rounded-t-2xl shadow-xl flex flex-col transition-transform duration-300 pb-[env(safe-area-inset-bottom)] ${isOpen ? 'translate-y-0' : 'translate-y-full'}`}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -286,11 +238,16 @@ function CategorySheet({ data, onClose, allWarehouses }: { data: CategoryData | 
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <h3 className="font-black text-slate-900 text-[18px] tracking-tight leading-snug break-words">
-                {d.categoryName}
+                {p.name}
               </h3>
-              <div className="flex items-baseline gap-1.5 mt-2">
-                <span className="font-black text-[#1A2766] text-[20px] leading-none">{d.categoryGrandTotal.toLocaleString()}</span>
-                <span className="text-[11px] font-bold text-slate-400 uppercase">{d.categoryUnit || 'pcs'} total</span>
+              {p.sku && (
+                <div className="mt-1 text-[13px] font-mono text-slate-500">
+                  {p.sku}
+                </div>
+              )}
+              <div className="flex items-baseline gap-1.5 mt-2.5">
+                <span className="font-black text-[#1A2766] text-[20px] leading-none">{p.grandTotal.toLocaleString()}</span>
+                <span className="text-[11px] font-bold text-slate-400 uppercase">{p.unit || 'pcs'} total</span>
               </div>
             </div>
             <button
@@ -300,60 +257,108 @@ function CategorySheet({ data, onClose, allWarehouses }: { data: CategoryData | 
               <X size={20} strokeWidth={2.5} />
             </button>
           </div>
-
-          {/* Segmented Control */}
-          <div className="mt-4 bg-[#F8F9FB] rounded-xl border border-slate-200 p-1 flex">
-            {(['Products / SKUs', 'By Warehouse'] as const).map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`flex-1 py-2 text-[12px] font-bold rounded-lg transition-all ${
-                  activeTab === tab
-                    ? 'bg-white text-slate-800 shadow-sm border border-slate-200/60'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0">
-          {activeTab === 'Products / SKUs' ? (
-            <div>
-              {d.products.length === 0 ? (
-                <div className="text-center text-slate-400 text-[13px] py-8">No products found</div>
-              ) : (
-                d.products.map(product => (
-                  <ProductRow key={product.sku} product={product} />
-                ))
-              )}
-            </div>
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">
+            Warehouse Stock
+          </div>
+          {activeEntries.length === 0 ? (
+            <div className="text-center text-slate-400 text-[13px] py-8">No warehouse data</div>
           ) : (
             <div className="flex flex-col gap-2.5">
-              {allWarehouses
-                .map(wh => ({ wh, qty: d.categoryTotals[wh.id] || 0 }))
-                .filter(e => e.qty > 0)
-                .map(({ wh, qty }) => (
-                  <div
-                    key={wh.id}
-                    className="bg-white rounded-[14px] border border-slate-200 shadow-sm flex items-center justify-between px-4 py-3"
-                  >
-                    <span className="font-semibold text-[14px] text-slate-700 flex-1 min-w-0 pr-4 break-words leading-snug">
-                      {wh.name}
-                    </span>
-                    <div className="flex items-baseline gap-1 shrink-0">
-                      <span className="font-black text-[16px] text-slate-900 leading-none">{qty.toLocaleString()}</span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">{d.categoryUnit || 'pcs'}</span>
-                    </div>
+              {activeEntries.map(({ wh, qty }) => (
+                <div
+                  key={wh.id}
+                  className="bg-white rounded-[14px] border border-slate-200 shadow-sm flex items-center justify-between px-4 py-3"
+                >
+                  <span className="font-semibold text-[14px] text-slate-700 flex-1 min-w-0 pr-4 break-words leading-snug">
+                    {wh.name}
+                  </span>
+                  <div className="flex items-baseline gap-1 shrink-0">
+                    <span className="font-black text-[18px] text-slate-900 leading-none">{qty.toLocaleString()}</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">{p.unit || 'pcs'}</span>
                   </div>
-                ))}
+                </div>
+              ))}
             </div>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Expandable Category Card
+// ---------------------------------------------------------------------------
+
+function CategoryCard({
+  category,
+  onProductClick,
+}: {
+  category: CategoryData;
+  onProductClick: (p: ProductData) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="bg-white rounded-[14px] border border-slate-200 shadow-sm overflow-hidden flex flex-col transition-all">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-start justify-between px-4 py-3.5 active:bg-slate-50 transition-colors text-left"
+      >
+        <div className="flex items-start gap-2.5 min-w-0 flex-1 mr-3">
+          {expanded ? (
+            <ChevronUp size={20} className="text-slate-400 shrink-0 mt-[1px]" />
+          ) : (
+            <ChevronDown size={20} className="text-slate-400 shrink-0 mt-[1px]" />
+          )}
+          <span className="font-bold text-[15px] text-slate-800 break-words leading-snug">
+            {category.categoryName}
+          </span>
+        </div>
+        <div className="flex items-baseline gap-1 shrink-0 mt-[2px]">
+          <span className="text-[15px] font-black text-[#1A2766] leading-none">
+            {category.categoryGrandTotal.toLocaleString()}
+          </span>
+          <span className="text-[9px] font-bold text-slate-400 uppercase">{category.categoryUnit || 'pcs'}</span>
+        </div>
+      </button>
+
+      {expanded && category.products.length > 0 && (
+        <div className="border-t border-slate-100 bg-slate-50/50 flex flex-col">
+          {category.products.map((product) => (
+            <button
+              key={product.sku}
+              onClick={() => onProductClick(product)}
+              className="w-full flex items-start justify-between px-4 py-3.5 border-b border-slate-100 last:border-0 active:bg-blue-50/50 transition-colors text-left"
+            >
+              <div className="flex items-start gap-2 min-w-0 flex-1 mr-3 pl-1">
+                <Package size={14} className="text-slate-300 shrink-0 mt-[3px]" />
+                <div className="flex flex-col min-w-0">
+                  <span className="font-bold text-[13.5px] text-slate-700 break-words leading-snug">
+                    {product.name}
+                  </span>
+                  {product.sku && (
+                    <span className="text-[11px] text-slate-400 font-mono mt-0.5 break-words">
+                      {product.sku}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 mt-[2px]">
+                <div className="flex items-baseline gap-1 text-right">
+                  <span className="font-black text-[14px] text-slate-900">{product.grandTotal.toLocaleString()}</span>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase">{product.unit || 'pcs'}</span>
+                </div>
+                <ChevronRight size={16} className="text-slate-300" />
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -368,7 +373,7 @@ export default function MobileSolarAccessoriesStockClient({ warehouses, items }:
   const [selectedWarehouses, setSelectedWarehouses] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [drilldown, setDrilldown] = useState<CategoryData | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<ProductData | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery), 200);
@@ -385,7 +390,8 @@ export default function MobileSolarAccessoriesStockClient({ warehouses, items }:
   const filteredItems = useMemo(() => {
     const q = debouncedSearch.toLowerCase().trim();
     return items.filter(item => {
-      if (q && !item.name.toLowerCase().includes(q) && !(item.sku || item.id).toLowerCase().includes(q))
+      // Search logic: check name, sku, or categoryName
+      if (q && !item.name.toLowerCase().includes(q) && !(item.sku || item.id).toLowerCase().includes(q) && !(item.categoryName || '').toLowerCase().includes(q))
         return false;
       return true;
     });
@@ -538,11 +544,13 @@ export default function MobileSolarAccessoriesStockClient({ warehouses, items }:
           <div className="text-[10px] font-bold text-slate-400 tracking-wider uppercase mb-1">SKUs</div>
           <div className="text-lg font-black text-slate-800 leading-none">{activeSkuCount}</div>
         </div>
-        <div className="bg-white rounded-[14px] p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-center">
+        <div className="bg-white rounded-[14px] p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-center min-w-0">
           <div className="text-[10px] font-bold text-slate-400 tracking-wider uppercase mb-1">Total Stock</div>
-          <div className="text-lg font-black text-blue-600 leading-none truncate">
-            {totalStock.toLocaleString()}
-            <span className="text-[10px] font-bold ml-1 text-blue-400">{globalUnit || 'pcs'}</span>
+          <div className="flex items-baseline gap-1 overflow-hidden">
+            <span className="text-lg font-black text-blue-600 leading-none truncate">
+              {totalStock.toLocaleString()}
+            </span>
+            <span className="text-[10px] font-bold text-blue-400 shrink-0">{globalUnit || 'pcs'}</span>
           </div>
         </div>
         <div className="bg-white rounded-[14px] p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-center">
@@ -623,35 +631,22 @@ export default function MobileSolarAccessoriesStockClient({ warehouses, items }:
                   Grand Total
                 </span>
               </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-[18px] font-black text-white leading-none">
+              <div className="flex items-baseline gap-1 min-w-0 ml-3">
+                <span className="text-[18px] font-black text-white leading-none truncate">
                   {totalStock.toLocaleString()}
                 </span>
-                <span className="text-[10px] font-bold text-white/70 uppercase">{globalUnit || 'pcs'}</span>
+                <span className="text-[10px] font-bold text-white/70 uppercase shrink-0">{globalUnit || 'pcs'}</span>
               </div>
             </div>
 
             {/* Category cards */}
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2.5">
               {categoryCards.map(card => (
-                <button
+                <CategoryCard
                   key={card.categoryName}
-                  onClick={() => setDrilldown(card)}
-                  className="w-full bg-white rounded-[14px] border border-slate-200 shadow-sm flex items-center justify-between px-4 py-3.5 active:bg-slate-50 transition-colors text-left"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-3">
-                    <ChevronRight size={18} className="text-slate-300 shrink-0" />
-                    <span className="font-bold text-[14px] text-slate-800 truncate">
-                      {card.categoryName}
-                    </span>
-                  </div>
-                  <div className="flex items-baseline gap-1 shrink-0">
-                    <span className="text-[15px] font-black text-[#1A2766] whitespace-nowrap leading-none">
-                      {card.categoryGrandTotal.toLocaleString()}
-                    </span>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase">{card.categoryUnit || 'pcs'}</span>
-                  </div>
-                </button>
+                  category={card}
+                  onProductClick={setSelectedProduct}
+                />
               ))}
             </div>
           </div>
@@ -667,11 +662,10 @@ export default function MobileSolarAccessoriesStockClient({ warehouses, items }:
         onApply={setSelectedWarehouses}
       />
 
-      {/* Category Drilldown bottom sheet */}
-      <CategorySheet
-        data={drilldown}
-        onClose={() => setDrilldown(null)}
-        allWarehouses={meaningfulWarehouses}
+      {/* Product Drilldown bottom sheet */}
+      <ProductWarehouseSheet
+        product={selectedProduct}
+        onClose={() => setSelectedProduct(null)}
       />
     </div>
   );

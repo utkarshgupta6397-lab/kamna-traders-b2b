@@ -263,8 +263,8 @@ export default function SolarAccessoriesStockClient({ warehouses, items }: Props
             styles = { fillColor: cellBg, textColor, fontStyle: 'bold', halign: 'center' };
           } else {
             const rawStyle = getHeatmapStyle(val, colId === 'GT' ? maxGt : maxBody, colId === 'GT', false);
-            const outBg = rawStyle.backgroundColor || cellBg;
-            const outText = rawStyle.color || textColor;
+            const outBg = (rawStyle as any).pdfFillColor || cellBg;
+            const outText = (rawStyle as any).pdfTextColor || textColor;
             styles = { fillColor: outBg, textColor: outText, halign: 'center' };
           }
           rowData.push({ content, styles });

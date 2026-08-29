@@ -761,19 +761,43 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
 
       const tables = [];
       
-      const buildTableBody = (cols: PivotColumnDef[], pRows: PivotRowDef[]) => {
+            const buildPdfRows = (cols: PivotColumnDef[], pRows: PivotRowDef[]) => {
+        const { getStyle } = buildHeatmap(pRows);
         return pRows.map(r => {
-          const cells = cols.map(c => {
-             const cell = r.cells[c.id];
-             const v = typeof cell === 'number' ? cell : (cell?.value || 0);
-             return { val: v, bg: [255, 255, 255] as [number, number, number], text: [50, 50, 50] as [number, number, number] };
+          const rowArr: any[] = [];
+          let cellBg = [255, 255, 255];
+          let textColor = [50, 50, 50];
+          let fontStyle = 'normal';
+          
+          if (r.isGroupHeader) {
+             cellBg = [241, 245, 249]; textColor = [30, 41, 59]; fontStyle = 'bold';
+          } else if (r.isGrandTotal) {
+             cellBg = [26, 39, 102]; textColor = [255, 255, 255]; fontStyle = 'bold';
+          }
+
+          rowArr.push({ 
+            content: r.isGroupHeader || r.isGrandTotal ? r.label : `   ${r.label}`, 
+            styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' } 
           });
-          return {
-             isGroupHeader: r.isGroupHeader,
-             isGrandTotal: r.isGrandTotal,
-             label: r.label,
-             cells
-          };
+          
+          cols.forEach(c => {
+            const cell = r.cells[c.id];
+            const val = typeof cell === 'number' ? cell : (cell?.value || 0);
+            let content = '—';
+            if (val > 0) content = val.toLocaleString();
+            if (r.isGroupHeader && val === 0) content = '';
+
+            const rawStyle = getStyle(r, c.id, val, !!c.isGrandTotal);
+            const outBg = (rawStyle as any).pdfFillColor || cellBg;
+            const outText = (rawStyle as any).pdfTextColor || textColor;
+            
+            rowArr.push({
+              content,
+              styles: { fillColor: outBg, textColor: outText, fontStyle: c.isGrandTotal ? 'bold' : fontStyle, halign: 'center' }
+            });
+          });
+          
+          return rowArr;
         });
       };
 
@@ -781,28 +805,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
          tables.push({
            title: 'DCR Solar Panel Stock',
            head: [['Series / SKU', ...dcrCols.map(c => c.label)]],
-           body: buildTableBody(dcrCols, buildMatrixRows('DCR', dcrWarehouses, true)).map(r => {
-             const rowArr: any[] = [];
-             
-             let cellBg = [255,255,255];
-             let textColor = [50,50,50];
-             let fontStyle = 'normal';
-             if (r.isGroupHeader) { cellBg = [241,245,249]; textColor = [30,41,59]; fontStyle = 'bold'; }
-             else if (r.isGrandTotal) { cellBg = [26,39,102]; textColor = [255,255,255]; fontStyle = 'bold'; }
-
-             rowArr.push({ content: r.isGroupHeader || r.isGrandTotal ? r.label : `   ${r.label}`, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' } });
-             
-             if (r.isGroupHeader) {
-               r.cells.forEach(() => rowArr.push({ content: '', styles: { fillColor: cellBg } }));
-             } else {
-               r.cells.forEach((c: any) => {
-                 let content = '—';
-                 if (c.val > 0) content = c.val.toLocaleString();
-                 rowArr.push({ content, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'center' } });
-               });
-             }
-             return rowArr;
-           })
+           body: buildPdfRows(dcrCols, buildMatrixRows('DCR', dcrWarehouses, true))
          });
       }
       
@@ -810,30 +813,9 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
          tables.push({
            title: 'Non-DCR Solar Panel Stock',
            head: [['Series / SKU', ...nonDcrCols.map(c => c.label)]],
-           body: buildTableBody(nonDcrCols, buildMatrixRows('Non-DCR', nonDcrWarehouses, true)).map(r => {
-             const rowArr: any[] = [];
-             let cellBg = [255,255,255];
-             let textColor = [50,50,50];
-             let fontStyle = 'normal';
-             if (r.isGroupHeader) { cellBg = [241,245,249]; textColor = [30,41,59]; fontStyle = 'bold'; }
-             else if (r.isGrandTotal) { cellBg = [26,39,102]; textColor = [255,255,255]; fontStyle = 'bold'; }
-
-             rowArr.push({ content: r.isGroupHeader || r.isGrandTotal ? r.label : `   ${r.label}`, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' } });
-             
-             if (r.isGroupHeader) {
-               r.cells.forEach(() => rowArr.push({ content: '', styles: { fillColor: cellBg } }));
-             } else {
-               r.cells.forEach((c: any) => {
-                 let content = '—';
-                 if (c.val > 0) content = c.val.toLocaleString();
-                 rowArr.push({ content, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'center' } });
-               });
-             }
-             return rowArr;
-           })
+           body: buildPdfRows(nonDcrCols, buildMatrixRows('Non-DCR', nonDcrWarehouses, true))
          });
-      }
-
+      };
       await generateStockScreenshotPDF({
         title: 'KAMNA ERP — Solar Panel Stock',
         filters,

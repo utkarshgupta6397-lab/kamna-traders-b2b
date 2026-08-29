@@ -1,4 +1,6 @@
+
 'use client';
+import { getSharedHeatmapStyle } from "@/components/CurrentStockShared";
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
@@ -96,18 +98,6 @@ function formatCapacityDisplay(normalizedValue: string): string {
   if (!normalizedValue || normalizedValue === 'Unknown') return normalizedValue;
   if (/[a-zA-Z]/.test(normalizedValue)) return normalizedValue;
   return `${normalizedValue} kW`;
-}
-
-// ---------------------------------------------------------------------------
-// Subtle mobile heatmap  (intensity-only, no aggressive desktop saturation)
-// ---------------------------------------------------------------------------
-
-function getMobileHeatmapStyle(val: number, maxVal: number): React.CSSProperties {
-  if (val <= 0 || maxVal <= 0) return {};
-  const ratio = Math.min(1, val / maxVal);
-  // Subtle indigo opacity tint: 6% → 22%
-  const opacity = Math.round((0.06 + ratio * 0.16) * 100) / 100;
-  return { backgroundColor: `rgba(99,102,241,${opacity})` };
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +247,7 @@ function ConfigCard({
           {warehouseEntries
             .filter(({ qty }) => qty !== null && qty !== undefined && qty !== 0)
             .map(({ wh, qty }) => {
-              const heatStyle = getMobileHeatmapStyle(qty, maxWhQty);
+              const heatStyle = getSharedHeatmapStyle(qty, maxWhQty);
               return (
                 <div
                   key={wh.id}

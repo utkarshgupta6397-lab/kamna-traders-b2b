@@ -1,4 +1,6 @@
+
 'use client';
+import { getSharedHeatmapStyle } from "@/components/CurrentStockShared";
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
@@ -66,60 +68,6 @@ function formatWattageDisplay(raw: string | null | undefined): string {
 
 // ─── Mobile heatmap ───────────────────────────────────────────────────────────
 
-function getMobileHeatmapStyle(val: number, values: number[]): React.CSSProperties {
-  if (val <= 0 || values.length === 0) return {};
-  
-  const getRankRatio = (n: number): number => {
-    if (values.length === 1) return 1;
-    let left = 0, right = values.length - 1;
-    while (left <= right) {
-      const mid = Math.floor((left + right) / 2);
-      if (values[mid] === n) {
-        let start = mid;
-        while (start > 0 && values[start - 1] === n) start--;
-        let end = mid;
-        while (end < values.length - 1 && values[end + 1] === n) end++;
-        return ((start + end) / 2) / (values.length - 1);
-      } else if (values[mid] < n) {
-        left = mid + 1;
-      } else {
-        right = mid - 1;
-      }
-    }
-    return left / values.length;
-  };
-
-  const ratio = getRankRatio(val);
-  const heatColors = [
-    { r: 254, g: 226, b: 226 }, // Red 100
-    { r: 254, g: 215, b: 170 }, // Orange 200
-    { r: 254, g: 240, b: 138 }, // Yellow 200
-    { r: 187, g: 247, b: 208 }, // Green 200
-    { r: 74,  g: 222, b: 128 }, // Green 400
-  ];
-
-  const steps = heatColors.length - 1;
-  const scaled = ratio * steps;
-  const idx = Math.floor(scaled);
-  let r, g, b;
-  if (idx >= steps) {
-    r = heatColors[steps].r; g = heatColors[steps].g; b = heatColors[steps].b;
-  } else {
-    const t = scaled - idx;
-    const c1 = heatColors[idx];
-    const c2 = heatColors[idx + 1];
-    r = Math.round(c1.r + (c2.r - c1.r) * t);
-    g = Math.round(c1.g + (c2.g - c1.g) * t);
-    b = Math.round(c1.b + (c2.b - c1.b) * t);
-  }
-
-  const isDark = (r * 0.299 + g * 0.587 + b * 0.114) < 150;
-  return { 
-    backgroundColor: `rgb(${r},${g},${b})`, 
-    color: isDark ? '#fff' : '#0f172a',
-    fontWeight: ratio > 0.4 ? 600 : 500
-  };
-}
 
 // ─── Overflow menu ────────────────────────────────────────────────────────────
 
@@ -246,7 +194,7 @@ function WattageCard({ wattage, grandTotal, warehouseEntries, scaleValues }: Wat
             <div className="px-4 py-3 text-[13px] text-slate-400 italic">No warehouse data</div>
           ) : (
             visibleWarehouses.map(({ wh, qty }) => {
-              const heatStyle = getMobileHeatmapStyle(qty, scaleValues);
+              const heatStyle = getSharedHeatmapStyle(qty, scaleValues[scaleValues.length - 1] || 1);
               return (
                 <div
                   key={wh.id}

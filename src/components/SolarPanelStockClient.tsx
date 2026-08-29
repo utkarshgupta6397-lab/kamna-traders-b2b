@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import CurrentStockSidebar from './CurrentStockSidebar';
 import { formatStockDate } from '@/lib/date-utils';
+import { StockPageShell, StockHeader, StockFilterBar, StockEmptyState, STOCK_TABLE_CONFIG, getSharedHeatmapStyle } from './CurrentStockShared';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ export interface PivotColumnDef {
 export interface PivotRowDef {
   id: string; label: string; isGroupHeader?: boolean; isGrandTotal?: boolean;
   isExpanded?: boolean;
+  parentId?: string;
   onToggle?: () => void;
   href?: string;
   cells: Record<string, PivotCellDef | number>;
@@ -62,116 +64,42 @@ function formatWattageDisplay(raw: string | null | undefined): string {
 // ─── Heatmap ─────────────────────────────────────────────────────────────────
 
 function buildHeatmap(rows: PivotRowDef[]) {
-  const whValues: number[] = [];
-  const gtValues: number[] = [];
+  let maxGroupV = 0, maxGT = 0;
+  const childMaxMap: Record<string, number> = {};
 
-  rows.forEach(row => {
-    if (row.isGrandTotal) return;
-    Object.entries(row.cells).forEach(([colId, cell]) => {
-      const val = typeof cell === 'number' ? cell : cell?.value;
-      const n = Number(val);
-      if (!isNaN(n) && n > 0) {
-        if (colId === 'GT' || colId.startsWith('GT_')) {
-          gtValues.push(n);
-        } else {
-          whValues.push(n);
+  rows.forEach(r => {
+    Object.entries(r.cells).forEach(([colId, cellObj]) => {
+      const val = typeof cellObj === 'number' ? cellObj : (cellObj?.value || 0);
+      if (colId === 'GT' || colId.startsWith('GT_')) {
+        maxGT = Math.max(maxGT, val);
+      } else {
+        if (r.isGroupHeader) {
+          maxGroupV = Math.max(maxGroupV, val);
+        } else if (!r.isGrandTotal && r.parentId) {
+          childMaxMap[r.parentId] = Math.max(childMaxMap[r.parentId] || 0, val);
         }
       }
     });
   });
 
-  whValues.sort((a, b) => a - b);
-  gtValues.sort((a, b) => a - b);
-
-  const getRankRatio = (n: number, values: number[]): number => {
-    if (values.length === 0 || n <= 0) return 0;
-    if (values.length === 1) return 1;
-    
-    let left = 0, right = values.length - 1;
-    while (left <= right) {
-      const mid = Math.floor((left + right) / 2);
-      if (values[mid] === n) {
-        let start = mid;
-        while (start > 0 && values[start - 1] === n) start--;
-        let end = mid;
-        while (end < values.length - 1 && values[end + 1] === n) end++;
-        return ((start + end) / 2) / (values.length - 1);
-      } else if (values[mid] < n) {
-        left = mid + 1;
-      } else {
-        right = mid - 1;
+  const getStyle = (row: PivotRowDef, colId: string, val: number, isGtCol: boolean): React.CSSProperties => {
+    if (row.isGrandTotal || isGtCol) {
+      return getSharedHeatmapStyle(val, isGtCol ? maxGT : maxGroupV, true, false);
+    }
+    if (row.isGroupHeader) {
+      if (row.isExpanded) {
+        return { backgroundColor: '#F8FAFC', color: '#334155', fontWeight: 600 };
       }
+      return getSharedHeatmapStyle(val, maxGroupV, false, false);
     }
-    return left / values.length;
-  };
-
-  const getInterpolatedColor = (ratio: number, colors: {r:number,g:number,b:number}[]) => {
-    const steps = colors.length - 1;
-    const scaled = ratio * steps;
-    const idx = Math.floor(scaled);
-    let r, g, b;
-    if (idx >= steps) {
-      r = colors[steps].r; g = colors[steps].g; b = colors[steps].b;
-    } else {
-      const t = scaled - idx;
-      const c1 = colors[idx];
-      const c2 = colors[idx + 1];
-      r = Math.round(c1.r + (c2.r - c1.r) * t);
-      g = Math.round(c1.g + (c2.g - c1.g) * t);
-      b = Math.round(c1.b + (c2.b - c1.b) * t);
+    if (row.parentId) {
+      return getSharedHeatmapStyle(val, childMaxMap[row.parentId] || 1, false, false);
     }
-    return { r, g, b };
-  };
-
-  const getStyle = (val: number, isGTRow: boolean, isGTCol: boolean): React.CSSProperties => {
-    const n = Number(val) || 0;
-    
-    if (isGTRow) {
-      return { backgroundColor: '#1e2b6d', color: '#fff' };
-    }
-    
-    if (n <= 0) {
-      if (isGTCol) return { backgroundColor: '#f8fafc', color: '#94a3b8' };
-      return {};
-    }
-
-    if (isGTCol) {
-      const ratio = getRankRatio(n, gtValues);
-      const heatColors = [
-        { r: 255, g: 255, b: 255 }, // White
-        { r: 254, g: 226, b: 226 }, // Red 100
-        { r: 252, g: 165, b: 165 }, // Red 300
-        { r: 239, g: 68,  b: 68 },  // Red 500
-      ];
-      const { r, g, b } = getInterpolatedColor(ratio, heatColors);
-      const isDark = (r * 0.299 + g * 0.587 + b * 0.114) < 150;
-      return { 
-        backgroundColor: `rgb(${r},${g},${b})`, 
-        color: isDark ? '#fff' : '#0f172a', 
-        fontWeight: ratio > 0.4 ? 700 : 600 
-      };
-    }
-
-    // Warehouse cells
-    const ratio = getRankRatio(n, whValues);
-    const heatColors = [
-      { r: 255, g: 255, b: 255 }, // White / Blank
-      { r: 187, g: 247, b: 208 }, // Light Green (Green 200)
-      { r: 74,  g: 222, b: 128 }, // Green 400
-      { r: 251, g: 146, b: 60 },  // Orange 400
-      { r: 239, g: 68,  b: 68 },  // Red 500
-    ];
-    
-    const { r, g, b } = getInterpolatedColor(ratio, heatColors);
-    const isDark = (r * 0.299 + g * 0.587 + b * 0.114) < 150;
-    return { 
-      backgroundColor: `rgb(${r},${g},${b})`, 
-      color: isDark ? '#fff' : '#0f172a', 
-      fontWeight: ratio > 0.4 ? 600 : 500 
-    };
+    return getSharedHeatmapStyle(val, maxGroupV, false, false);
   };
   return { getStyle };
 }
+
 // ─── PivotTable component ─────────────────────────────────────────────────────
 
 function PivotTable({ title, subtitle, firstColLabel, columns, rows, isExportMode }: PivotTableProps) {
@@ -181,10 +109,25 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, isExportMod
     const isGT = !!col.isGrandTotal;
     if (col.subColumns?.length) {
       col.subColumns.forEach((sc, si) => {
-        flatLeaves.push({ id: `${col.id}_${sc.id}`, label: sc.label, width: sc.isTotal ? 85 : 70, isGrandTotal: isGT, isTotal: !!sc.isTotal, parentId: col.id, isFirstInGroup: si === 0 });
+        flatLeaves.push({ 
+          id: `${col.id}_${sc.id}`, 
+          label: sc.label, 
+          width: STOCK_TABLE_CONFIG.WAREHOUSE_COL_WIDTH, 
+          isGrandTotal: isGT, 
+          isTotal: !!sc.isTotal, 
+          parentId: col.id, 
+          isFirstInGroup: si === 0 
+        });
       });
     } else {
-      flatLeaves.push({ id: col.id, label: col.label, width: isGT ? 85 : 72, isGrandTotal: isGT, isTotal: false, isFirstInGroup: true });
+      flatLeaves.push({ 
+        id: col.id, 
+        label: col.label, 
+        width: isGT ? STOCK_TABLE_CONFIG.GRAND_TOTAL_COL_WIDTH : STOCK_TABLE_CONFIG.WAREHOUSE_COL_WIDTH, 
+        isGrandTotal: isGT, 
+        isTotal: false, 
+        isFirstInGroup: true 
+      });
     }
   });
 
@@ -229,7 +172,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, isExportMod
             <tr className="bg-[#f8f9fb]">
               <th
                 className="px-3 py-2.5 font-bold text-[11px] text-gray-600 uppercase tracking-wide border-b-2 border-b-gray-300 border-r border-r-gray-200 bg-[#f8f9fb] text-left"
-                style={{ ...LS(40), whiteSpace: isExportMode ? 'normal' : 'nowrap', width: 'auto' }}
+                style={{ ...LS(40), minWidth: '240px', maxWidth: '350px', whiteSpace: 'normal', wordBreak: 'break-word', width: 'auto' }}
                 rowSpan={hasSubCols ? 2 : 1}
               >
                 {firstColLabel}
@@ -289,7 +232,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, isExportMod
                     {flatLeaves.map((leaf, idx) => {
                       const cellData = row.cells?.[leaf.id];
                       const val = typeof cellData === 'number' ? cellData : cellData?.value || 0;
-                      const cs = getStyle(val, false, leaf.isGrandTotal);
+                      const cs = getStyle(row, leaf.id, val, leaf.isGrandTotal);
                       
                       return (
                         <td key={idx} className={`px-2 py-1.5 text-center text-[13px] font-bold ${groupBorder(leaf)}`}
@@ -323,7 +266,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, isExportMod
                   {flatLeaves.map((leaf, idx) => {
                     const cellData = row.cells[leaf.id];
                     const val = typeof cellData === 'number' ? cellData : cellData?.value || 0;
-                    const cs = getStyle(val, !!row.isGrandTotal, leaf.isGrandTotal);
+                    const cs = getStyle(row, leaf.id, val, leaf.isGrandTotal);
 
                     return (
                       <td key={idx}
@@ -653,7 +596,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
   }, [groupedData, visibleWarehouses]);
 
   // ── Row builder ─────────────────────────────────────────────────────────────
-  const buildMatrixRows = (classification: 'DCR' | 'Non-DCR', activeWhs: Warehouse[]): PivotRowDef[] => {
+  const buildMatrixRows = (classification: 'DCR' | 'Non-DCR', activeWhs: Warehouse[], forceExpand: boolean = false): PivotRowDef[] => {
     const classMap = groupedData.get(classification)!;
     const result: PivotRowDef[] = [];
     let gtTotal = 0;
@@ -685,7 +628,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
       });
 
       const groupId = `group_${classification}_${series}`;
-      const isExpanded = isExportMode || expandedGroups.has(groupId);
+      const isExpanded = forceExpand || isExportMode || expandedGroups.has(groupId);
       
       const seriesCells: Record<string, PivotCellDef> = {};
       activeWhs.forEach(wh => {
@@ -723,6 +666,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
 
           result.push({
             id: `row_${classification}_${series}_child_${childKey}`,
+            parentId: groupId,
             label: entry.label,
             href: entry.href,
             cells,
@@ -766,6 +710,143 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
   const hasNonDcrData = nonDcrRows.some(r => r.isGroupHeader);
   const hasAnyData    = hasDcrData || hasNonDcrData;
 
+  const [isExporting, setIsExporting] = useState(false);
+  const [isScreenshotting, setIsScreenshotting] = useState(false);
+
+  const handleExportRawData = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const XLSX = await import('xlsx');
+      const rows = filteredItems.map(item => {
+        const row: Record<string, string | number> = {
+          'SKU': item.id,
+          'Product Name': item.name,
+          'Brand': item.brand || 'Unknown',
+          'Series': item.parentProductName || 'No Series',
+          'Wattage': item.wattage || 'Unknown',
+          'DCR Status': item.isDcrEligible ? 'DCR' : 'Non-DCR'
+        };
+        let gt = 0;
+        visibleWarehouses.forEach(wh => {
+          const q = item.inventory[wh.id]?.qty || 0;
+          row[wh.name] = q;
+          gt += q;
+        });
+        row['Grand Total'] = gt;
+        return row;
+      });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Solar Panel Stock");
+      XLSX.writeFile(wb, `KAMNA_Solar_Panel_Stock_${new Date().getTime()}.xlsx`);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    if (isScreenshotting) return;
+    setIsScreenshotting(true);
+    try {
+      const { generateStockScreenshotPDF } = await import('./current-stock/screenshot');
+      const filters = [];
+      if (selectedWarehouses.length) filters.push(`Warehouses: ${selectedWarehouses.length}`);
+      if (selectedBrands.length) filters.push(`Brands: ${selectedBrands.length}`);
+      if (selectedDcr.length) filters.push(`DCR: ${selectedDcr.join(', ')}`);
+      if (selectedSeries.length) filters.push(`Series: ${selectedSeries.length}`);
+      if (selectedWattages.length) filters.push(`Wattages: ${selectedWattages.length}`);
+
+      const tables = [];
+      
+      const buildTableBody = (cols: PivotColumnDef[], pRows: PivotRowDef[]) => {
+        return pRows.map(r => {
+          const cells = cols.map(c => {
+             const cell = r.cells[c.id];
+             const v = typeof cell === 'number' ? cell : (cell?.value || 0);
+             return { val: v, bg: [255, 255, 255] as [number, number, number], text: [50, 50, 50] as [number, number, number] };
+          });
+          return {
+             isGroupHeader: r.isGroupHeader,
+             isGrandTotal: r.isGrandTotal,
+             label: r.label,
+             cells
+          };
+        });
+      };
+
+      if (hasDcrData) {
+         tables.push({
+           title: 'DCR Solar Panel Stock',
+           head: [['Series / SKU', ...dcrCols.map(c => c.label)]],
+           body: buildTableBody(dcrCols, buildMatrixRows('DCR', dcrWarehouses, true)).map(r => {
+             const rowArr: any[] = [];
+             
+             let cellBg = [255,255,255];
+             let textColor = [50,50,50];
+             let fontStyle = 'normal';
+             if (r.isGroupHeader) { cellBg = [241,245,249]; textColor = [30,41,59]; fontStyle = 'bold'; }
+             else if (r.isGrandTotal) { cellBg = [26,39,102]; textColor = [255,255,255]; fontStyle = 'bold'; }
+
+             rowArr.push({ content: r.isGroupHeader || r.isGrandTotal ? r.label : `   ${r.label}`, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' } });
+             
+             if (r.isGroupHeader) {
+               r.cells.forEach(() => rowArr.push({ content: '', styles: { fillColor: cellBg } }));
+             } else {
+               r.cells.forEach((c: any) => {
+                 let content = '—';
+                 if (c.val > 0) content = c.val.toLocaleString();
+                 rowArr.push({ content, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'center' } });
+               });
+             }
+             return rowArr;
+           })
+         });
+      }
+      
+      if (hasNonDcrData) {
+         tables.push({
+           title: 'Non-DCR Solar Panel Stock',
+           head: [['Series / SKU', ...nonDcrCols.map(c => c.label)]],
+           body: buildTableBody(nonDcrCols, buildMatrixRows('Non-DCR', nonDcrWarehouses, true)).map(r => {
+             const rowArr: any[] = [];
+             let cellBg = [255,255,255];
+             let textColor = [50,50,50];
+             let fontStyle = 'normal';
+             if (r.isGroupHeader) { cellBg = [241,245,249]; textColor = [30,41,59]; fontStyle = 'bold'; }
+             else if (r.isGrandTotal) { cellBg = [26,39,102]; textColor = [255,255,255]; fontStyle = 'bold'; }
+
+             rowArr.push({ content: r.isGroupHeader || r.isGrandTotal ? r.label : `   ${r.label}`, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' } });
+             
+             if (r.isGroupHeader) {
+               r.cells.forEach(() => rowArr.push({ content: '', styles: { fillColor: cellBg } }));
+             } else {
+               r.cells.forEach((c: any) => {
+                 let content = '—';
+                 if (c.val > 0) content = c.val.toLocaleString();
+                 rowArr.push({ content, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'center' } });
+               });
+             }
+             return rowArr;
+           })
+         });
+      }
+
+      await generateStockScreenshotPDF({
+        title: 'KAMNA ERP — Solar Panel Stock',
+        filters,
+        tables,
+        filename: `KAMNA_SolarPanelStock_${new Date().getTime()}.pdf`
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsScreenshotting(false);
+    }
+  };
+
   if (isExportMode) {
     return (
       <div className="bg-white">
@@ -794,56 +875,51 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
   }
 
   return (
-    <div className="h-[calc(100vh-64px)] overflow-hidden flex bg-[#f8f9fb]">
-      <CurrentStockSidebar activeView="solar" />
-      <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden relative">
-        <div className="shrink-0 bg-white border-b border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
-                Solar Panel Stock
-              </h1>
-              <p className="text-sm text-gray-500 mt-1">Real-time DCR and Non-DCR matrix view.</p>
-            </div>
-            <div className="text-sm text-gray-500 font-medium">As of {formatStockDate(new Date())}</div>
-          </div>
-          <div className="px-6 py-3 flex items-center gap-3 flex-wrap relative z-[100] overflow-visible">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-              <input
-                type="text" placeholder="Search SKU..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-4 py-1.5 h-8 border border-gray-200 rounded-md text-[13px] w-64 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-gray-50/50"
-              />
-            </div>
-            <div className="h-4 w-px bg-gray-200 mx-1 shrink-0" />
-            <MultiSelectFilter label="Warehouses" options={operationalWarehouses} selected={selectedWarehouses} onToggle={(id) => toggle(setSelectedWarehouses, id)} wideMenu />
-            <MultiSelectFilter label="Brands" options={availableBrands} selected={selectedBrands} onToggle={(id) => toggle(setSelectedBrands, id)} />
-            <MultiSelectFilter label="DCR Status" options={[{id:'DCR',name:'DCR'},{id:'Non-DCR',name:'Non-DCR'}]} selected={selectedDcr} onToggle={(id) => toggle(setSelectedDcr, id)} />
-            <MultiSelectFilter label="Series" options={availableSeries.map(s => ({ id: s, name: s }))} selected={selectedSeries} onToggle={(id) => toggle(setSelectedSeries, id)} wideMenu />
-            <MultiSelectFilter label="Wattage" options={availableWattages.map(w => ({ id: w, name: formatWattageDisplay(w) }))} selected={selectedWattages} onToggle={(id) => toggle(setSelectedWattages, id)} />
-            
-            {(debouncedSearch || selectedWarehouses.length > 0 || selectedBrands.length > 0 || selectedDcr.length > 0 || selectedSeries.length > 0 || selectedWattages.length > 0) && (
-              <button 
-                onClick={() => {
-                  setSearchQuery(''); setDebouncedSearch('');
-                  setSelectedWarehouses([]); setSelectedBrands([]); setSelectedDcr([]);
-                  setSelectedSeries([]); setSelectedWattages([]);
-                }}
-                className="ml-auto text-[13px] text-blue-600 font-medium hover:text-blue-800"
-              >
-                Clear All
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 relative">
-          {!hasAnyData ? (
-            <div className="h-64 flex flex-col items-center justify-center bg-white rounded-lg border border-gray-200 border-dashed">
-              <Box size={40} className="text-gray-300 mb-3" />
-              <p className="text-gray-500 font-medium text-[15px]">No Solar Panel stock found</p>
-              <p className="text-gray-400 text-[13px] mt-1">Try adjusting your filters or search terms.</p>
-            </div>
-          ) : (
+    <StockPageShell sidebar={<CurrentStockSidebar activeView="solar" />}>
+      <StockHeader
+        icon={Box}
+        title="Solar Panel Stock"
+        subtitle="Real-time DCR and Non-DCR matrix view."
+        itemCount={filteredItems.length}
+        date={formatStockDate(new Date())}
+        onExportRaw={handleExportRawData}
+        onScreenshot={handleExportPDF}
+        isExporting={isExporting}
+        isScreenshotting={isScreenshotting}
+      />
+      
+      <StockFilterBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search product or SKU…"
+      >
+        <MultiSelectFilter label="Warehouses" options={operationalWarehouses.map(w => ({ id: w.id, name: w.name }))} selected={selectedWarehouses} onToggle={(id) => toggle(setSelectedWarehouses, id)} wideMenu />
+        <MultiSelectFilter label="Brands" options={availableBrands} selected={selectedBrands} onToggle={(id) => toggle(setSelectedBrands, id)} />
+        <MultiSelectFilter label="DCR Status" options={[{id:'DCR',name:'DCR'},{id:'Non-DCR',name:'Non-DCR'}]} selected={selectedDcr} onToggle={(id) => toggle(setSelectedDcr, id)} />
+        <MultiSelectFilter label="Series" options={availableSeries.map(s => ({ id: s, name: s }))} selected={selectedSeries} onToggle={(id) => toggle(setSelectedSeries, id)} wideMenu />
+        <MultiSelectFilter label="Wattage" options={availableWattages.map(w => ({ id: w, name: formatWattageDisplay(w) }))} selected={selectedWattages} onToggle={(id) => toggle(setSelectedWattages, id)} />
+        {(debouncedSearch || selectedWarehouses.length > 0 || selectedBrands.length > 0 || selectedDcr.length > 0 || selectedSeries.length > 0 || selectedWattages.length > 0) && (
+          <button 
+            onClick={() => {
+              setSearchQuery(''); setDebouncedSearch('');
+              setSelectedWarehouses([]); setSelectedBrands([]); setSelectedDcr([]);
+              setSelectedSeries([]); setSelectedWattages([]);
+            }}
+            className="ml-auto text-[13px] text-blue-600 font-medium hover:text-blue-800"
+          >
+            Clear All
+          </button>
+        )}
+      </StockFilterBar>
+
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 relative">
+        {!hasAnyData ? (
+          <StockEmptyState 
+            icon={Box} 
+            title="No Solar Panel stock found" 
+            message="Try adjusting your filters or search terms." 
+          />
+        ) : (
             <div className="space-y-6 max-w-full pb-10">
               {hasDcrData && (
                 <PivotTable
@@ -860,7 +936,6 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </StockPageShell>
   );
 }

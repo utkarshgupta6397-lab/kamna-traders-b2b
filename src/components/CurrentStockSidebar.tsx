@@ -1,15 +1,14 @@
 import React from 'react';
-import { Box } from 'lucide-react';
+import { Sun, Zap, Battery, Layers } from 'lucide-react';
 import Link from 'next/link';
 
 interface CurrentStockSidebarProps {
-  activeView: 'solar' | 'wire' | 'multi' | 'advanced';
+  activeView: 'solar' | 'wire' | 'multi' | 'inverter';
 }
 
 export default function CurrentStockSidebar({ activeView }: CurrentStockSidebarProps) {
   const isSolar = activeView === 'solar';
   const isMulti = activeView === 'multi';
-  const isAdvanced = activeView === 'advanced';
 
   return (
     <div className="w-56 flex-shrink-0">
@@ -27,7 +26,7 @@ export default function CurrentStockSidebar({ activeView }: CurrentStockSidebarP
               >
                 {isSolar && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#1A2766]" />}
                 <div className={`flex items-center gap-2.5 ${isSolar ? 'pl-1' : ''}`}>
-                  <Box size={16} className={isSolar ? '' : 'text-gray-400 group-hover:text-gray-600'} />
+                  <Sun size={16} className={isSolar ? '' : 'text-gray-400 group-hover:text-gray-600'} />
                   <span>Solar Panel Stock</span>
                 </div>
               </Link>
@@ -39,32 +38,32 @@ export default function CurrentStockSidebar({ activeView }: CurrentStockSidebarP
               >
                 {activeView === 'wire' && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#1A2766]" />}
                 <div className={`flex items-center gap-2.5 ${activeView === 'wire' ? 'pl-1' : ''}`}>
-                  <Box size={16} className={activeView === 'wire' ? '' : 'text-gray-400 group-hover:text-gray-600'} />
+                  <Zap size={16} className={activeView === 'wire' ? '' : 'text-gray-400 group-hover:text-gray-600'} />
                   <span>Wire & Cable Stock</span>
                 </div>
               </Link>
               
-              {/* Multi-Warehouse View */}
+              {/* Inverter Stock View */}
+              <Link 
+                href="/staff/dashboard/operations/current-stock?view=inverter" 
+                className={`flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors border border-transparent text-left ${activeView === 'inverter' ? 'bg-[#1A2766]/5 text-[#1A2766] relative overflow-hidden' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 group'}`}
+              >
+                {activeView === 'inverter' && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#1A2766]" />}
+                <div className={`flex items-center gap-2.5 ${activeView === 'inverter' ? 'pl-1' : ''}`}>
+                  <Battery size={16} className={activeView === 'inverter' ? '' : 'text-gray-400 group-hover:text-gray-600'} />
+                  <span>Inverter Stock</span>
+                </div>
+              </Link>
+              
+              {/* All Stock View (formerly Multi-Warehouse View) */}
               <Link 
                 href="/staff/dashboard/operations/current-stock?view=multi" 
                 className={`flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors border border-transparent text-left ${isMulti ? 'bg-[#1A2766]/5 text-[#1A2766] relative overflow-hidden' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 group'}`}
               >
                 {isMulti && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#1A2766]" />}
                 <div className={`flex items-center gap-2.5 ${isMulti ? 'pl-1' : ''}`}>
-                  <Box size={16} className={isMulti ? '' : 'text-gray-400 group-hover:text-gray-600'} />
-                  <span>Multi-Warehouse View</span>
-                </div>
-              </Link>
-              
-              {/* Advanced View */}
-              <Link 
-                href="/staff/dashboard/operations/current-stock?view=advanced" 
-                className={`flex items-center justify-between w-full px-2.5 py-2 text-sm font-medium rounded-lg transition-colors border border-transparent text-left ${isAdvanced ? 'bg-[#1A2766]/5 text-[#1A2766] relative overflow-hidden' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 group'}`}
-              >
-                {isAdvanced && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#1A2766]" />}
-                <div className={`flex items-center gap-2.5 ${isAdvanced ? 'pl-1' : ''}`}>
-                  <Box size={16} className={isAdvanced ? '' : 'text-gray-400 group-hover:text-gray-600'} />
-                  <span>Advanced View</span>
+                  <Layers size={16} className={isMulti ? '' : 'text-gray-400 group-hover:text-gray-600'} />
+                  <span>All Stock View</span>
                 </div>
               </Link>
               

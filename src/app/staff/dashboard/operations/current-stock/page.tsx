@@ -3,7 +3,6 @@ import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { calculateConsumptionDenominator } from '@/lib/inventory/consumption';
 import CurrentStockClient from '@/components/CurrentStockClient';
-import AdvancedStockClient from '@/components/AdvancedStockClient';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -17,19 +16,10 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
     return <div className="p-20 text-center font-bold text-red-600 bg-red-50 rounded-2xl border-2 border-red-200">SAFE MODE ACTIVE: Heavy dashboard components disabled to prevent overheating. <a href="?" className="underline ml-2">Exit Safe Mode</a></div>;
   }
   
-  const isAdvanced = sp.view === 'advanced';
   const isMulti = sp.view === 'multi';
   const isWire = sp.view === 'wire';
-  const isSolar = !isAdvanced && !isMulti && !isWire;
-
-  if (isAdvanced) {
-    const warehouses = await prisma.warehouse.findMany({
-      where: { active: true },
-      select: { id: true, name: true, isSystemWarehouse: true },
-      orderBy: { name: 'asc' }
-    });
-    return <AdvancedStockClient warehouses={warehouses} />;
-  }
+  const isInverter = sp.view === 'inverter';
+  const isSolar = !isMulti && !isWire && !isInverter;
 
   // --- CPD/DOI PRE-CALCULATION ---
   const thirtyDaysAgo = new Date();
@@ -42,7 +32,8 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
 
   const productSearchOptions = isWire 
     ? { categoryName: 'Wire & Cables' } 
-    : isSolar ? { categoryName: 'Solar Panel' } : {};
+    : isSolar ? { categoryName: 'Solar Panel' } 
+    : isInverter ? { categoryName: 'Inverter' } : {};
 
   const [warehouses, categories, brands, items, recentSales, thresholds] = await Promise.all([
     prisma.warehouse.findMany({ 
@@ -182,6 +173,19 @@ export default async function CurrentStockPage({ searchParams }: { searchParams:
     const WireCableStockClient = (await import('@/components/WireCableStockClient')).default;
     return (
       <WireCableStockClient
+        warehouses={warehouses}
+        categories={categories}
+        brands={brands}
+        items={items}
+        canSync={!!session.canRunSkuSync}
+      />
+    );
+  }
+
+  if (isInverter) {
+    const InverterStockClient = (await import('@/components/InverterStockClient')).default;
+    return (
+      <InverterStockClient
         warehouses={warehouses}
         categories={categories}
         brands={brands}

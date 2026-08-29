@@ -21,23 +21,32 @@ export function getSharedHeatmapStyle(
   if (isGrandTotal) {
     return { backgroundColor: '#1A2766', color: '#ffffff', fontWeight: 700 };
   }
-  if (isZeroOrEmpty || val === 0 || maxVal === 0) {
-    return { backgroundColor: 'transparent', color: '#9CA3AF' };
+  if (isZeroOrEmpty || val <= 0 || maxVal <= 0) {
+    return { backgroundColor: '#FFFFFF', color: '#9CA3AF' };
   }
   
   const ratio = Math.min(1, Math.max(0, val / maxVal));
   
-  if (ratio < 0.2) {
-    return { backgroundColor: 'rgb(241, 245, 249)', color: '#334155' }; // slate-100
+  if (ratio <= 0) {
+    return { backgroundColor: '#FFFFFF', color: '#9CA3AF' };
   }
-  if (ratio < 0.5) {
-    return { backgroundColor: 'rgb(219, 234, 254)', color: '#1e40af' }; // blue-100
+  if (ratio <= 0.20) {
+    return { backgroundColor: '#F0FDF4', color: '#166534', fontWeight: 500 }; // Very Light Green
   }
-  if (ratio < 0.8) {
-    return { backgroundColor: 'rgb(191, 219, 254)', color: '#1e3a8a' }; // blue-200
+  if (ratio <= 0.40) {
+    return { backgroundColor: '#BBF7D0', color: '#166534', fontWeight: 500 }; // Light Green
+  }
+  if (ratio <= 0.60) {
+    return { backgroundColor: '#22C55E', color: '#FFFFFF', fontWeight: 600 }; // Green
+  }
+  if (ratio <= 0.75) {
+    return { backgroundColor: '#FDE68A', color: '#92400E', fontWeight: 600 }; // Yellow
+  }
+  if (ratio <= 0.90) {
+    return { backgroundColor: '#FDBA74', color: '#9A3412', fontWeight: 600 }; // Orange
   }
   
-  return { backgroundColor: 'rgb(147, 197, 253)', color: '#1e3a8a', fontWeight: 600 }; // blue-300
+  return { backgroundColor: '#EF4444', color: '#FFFFFF', fontWeight: 700 }; // Red
 }
 
 export function StockPageShell({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {

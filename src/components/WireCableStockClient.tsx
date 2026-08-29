@@ -189,10 +189,10 @@ function PivotTable({ title, mode, columns, rows, onCellClick }: {
         <h2 className="font-bold text-gray-800 text-[13px] tracking-wide uppercase">{title}</h2>
       </div>
       <div className="relative bg-white pivot-scroll-container overflow-x-auto overflow-y-auto max-h-[560px]">
-        <table className="text-sm text-left border-collapse" style={{ minWidth: "100%" }}>
+        <table className="text-sm text-left border-collapse" style={{ width: "100%", minWidth: "max-content" }}>
           <thead>
             <tr className="bg-[#f8f9fb]">
-              <th className="px-4 py-3 font-bold text-[12px] text-gray-700 uppercase tracking-wider border-b-2 border-gray-300 border-r border-gray-200 bg-[#f8f9fb] h-[42px]" style={{ ...LS(50), top: 0, minWidth: '240px', width: 'auto' }}>
+              <th className="px-4 py-3 font-bold text-[12px] text-gray-700 uppercase tracking-wider border-b-2 border-gray-300 border-r border-gray-200 bg-[#f8f9fb] h-[42px]" style={{ ...LS(50), top: 0, minWidth: '240px', maxWidth: '350px', whiteSpace: 'normal', wordBreak: 'break-word', width: 'auto' }}>
                 Wire Type / Brand / Width
               </th>
               {columns.map(c => {
@@ -700,13 +700,8 @@ export default function WireCableStockClient({ warehouses, items }: Props) {
                 styles = { fillColor: cellBg, textColor, fontStyle, halign: 'center' };
               } else {
                 const rawStyle = getStyle(val, false, !!c.isGrandTotal);
-                let outBg = cellBg;
-                let outText = textColor;
-                if (rawStyle.backgroundColor && typeof rawStyle.backgroundColor === 'string') {
-                  const m = rawStyle.backgroundColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-                  if (m) outBg = [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
-                }
-                if (rawStyle.color === '#fff') outText = [255, 255, 255];
+                const outBg = rawStyle.backgroundColor || cellBg;
+                const outText = rawStyle.color || textColor;
                 styles = { fillColor: outBg, textColor: outText, fontStyle: c.isGrandTotal ? 'bold' : 'normal', halign: 'center' };
               }
               rowData.push({ content, styles });

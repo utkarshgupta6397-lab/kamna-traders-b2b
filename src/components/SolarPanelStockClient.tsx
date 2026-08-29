@@ -154,7 +154,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, isExportMod
             <tr className="bg-[#f8f9fb]">
               <th
                 className="px-3 py-2.5 font-bold text-[11px] text-gray-600 uppercase tracking-wide border-b-2 border-b-gray-300 border-r border-r-gray-200 bg-[#f8f9fb] text-left"
-                style={{ ...LS(40), whiteSpace: isExportMode ? 'normal' : 'nowrap', width: 'auto' }}
+                style={{ ...LS(40), minWidth: '240px', maxWidth: '350px', whiteSpace: 'normal', wordBreak: 'break-word', width: 'auto' }}
                 rowSpan={hasSubCols ? 2 : 1}
               >
                 {firstColLabel}

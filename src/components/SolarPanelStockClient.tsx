@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Search, Box, ChevronDown, ChevronRight, Check, AlertTriangle, ExternalLink
 } from 'lucide-react';
@@ -350,28 +350,48 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, isExportMod
 const MultiSelectFilter = ({ label, options, selected, onToggle, prefix, wideMenu = false }: {
   label: string; options: { id: string; name: string }[]; selected: string[];
   onToggle: (id: string) => void; prefix?: React.ReactNode; wideMenu?: boolean;
-}) => (
-  <div className="relative group shrink-0">
-    <button className="flex items-center gap-1.5 text-[13px] font-medium border border-gray-200 text-gray-700 rounded-md h-8 px-3 bg-white hover:bg-gray-50 focus:outline-none transition-colors whitespace-nowrap">
-      {prefix}
-      <span>{selected.length > 0 ? `${selected.length} ${label}` : `All ${label}`}</span>
-      <ChevronDown size={14} className="text-gray-400" />
-    </button>
-    <div className="absolute left-0 mt-1 z-[200] bg-white border border-gray-200 rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all"
-      style={{ minWidth: wideMenu ? '300px' : '192px', maxWidth: '360px' }}>
-      <div className="p-1 max-h-64 overflow-auto">
-        {options.map(opt => (
-          <button key={opt.id} onClick={() => onToggle(opt.id)} className="w-full flex items-start gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 rounded text-left">
-            <div className={`w-4 h-4 border rounded shrink-0 flex items-center justify-center mt-0.5 ${selected.includes(opt.id) ? 'bg-[#1A2766] border-[#1A2766]' : 'bg-white border-gray-300'}`}>
-              {selected.includes(opt.id) && <Check size={10} className="text-white" />}
-            </div>
-            <span className="leading-snug break-words">{opt.name}</span>
-          </button>
-        ))}
-      </div>
+}) => {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-1.5 text-[13px] font-medium border border-gray-200 text-gray-700 rounded-md h-8 px-3 bg-white hover:bg-gray-50 focus:outline-none transition-colors whitespace-nowrap"
+      >
+        {prefix}
+        <span>{selected.length > 0 ? `${selected.length} ${label}` : `All ${label}`}</span>
+        <ChevronDown size={14} className="text-gray-400" />
+      </button>
+      {isOpen && (
+        <div className="absolute left-0 mt-1 z-[200] bg-white border border-gray-200 rounded-md shadow-lg transition-all"
+          style={{ minWidth: wideMenu ? '300px' : '192px', maxWidth: '360px' }}>
+          <div className="p-1 max-h-64 overflow-auto">
+            {options.map(opt => (
+              <button key={opt.id} onClick={() => onToggle(opt.id)} className="w-full flex items-start gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 rounded text-left">
+                <div className={`w-4 h-4 border rounded shrink-0 flex items-center justify-center mt-0.5 ${selected.includes(opt.id) ? 'bg-[#1A2766] border-[#1A2766]' : 'bg-white border-gray-300'}`}>
+                  {selected.includes(opt.id) && <Check size={10} className="text-white" />}
+                </div>
+                <span className="leading-snug break-words">{opt.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -787,7 +807,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
             </div>
             <div className="text-sm text-gray-500 font-medium">As of {formatStockDate(new Date())}</div>
           </div>
-          <div className="px-6 py-3 flex items-center gap-3 flex-wrap relative z-30 overflow-visible">
+          <div className="px-6 py-3 flex items-center gap-3 flex-wrap relative z-[100] overflow-visible">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
               <input

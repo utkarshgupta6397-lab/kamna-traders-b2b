@@ -63,13 +63,62 @@ function formatWattageDisplay(raw: string | null | undefined): string {
   return v;
 }
 
+
 // ─── Mobile heatmap ───────────────────────────────────────────────────────────
 
-function getMobileHeatmapStyle(val: number, maxVal: number): React.CSSProperties {
-  if (val <= 0 || maxVal <= 0) return {};
-  const ratio = Math.min(1, val / maxVal);
-  const opacity = Math.round((0.06 + ratio * 0.16) * 100) / 100;
-  return { backgroundColor: `rgba(99,102,241,${opacity})` };
+function getMobileHeatmapStyle(val: number, values: number[]): React.CSSProperties {
+  if (val <= 0 || values.length === 0) return {};
+  
+  const getRankRatio = (n: number): number => {
+    if (values.length === 1) return 1;
+    let left = 0, right = values.length - 1;
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2);
+      if (values[mid] === n) {
+        let start = mid;
+        while (start > 0 && values[start - 1] === n) start--;
+        let end = mid;
+        while (end < values.length - 1 && values[end + 1] === n) end++;
+        return ((start + end) / 2) / (values.length - 1);
+      } else if (values[mid] < n) {
+        left = mid + 1;
+      } else {
+        right = mid - 1;
+      }
+    }
+    return left / values.length;
+  };
+
+  const ratio = getRankRatio(val);
+  const heatColors = [
+    { r: 254, g: 226, b: 226 }, // Red 100
+    { r: 254, g: 215, b: 170 }, // Orange 200
+    { r: 254, g: 240, b: 138 }, // Yellow 200
+    { r: 187, g: 247, b: 208 }, // Green 200
+    { r: 74,  g: 222, b: 128 }, // Green 400
+  ];
+
+  const steps = heatColors.length - 1;
+  const scaled = ratio * steps;
+  const idx = Math.floor(scaled);
+  let r, g, b;
+  if (idx >= steps) {
+    r = heatColors[steps].r; g = heatColors[steps].g; b = heatColors[steps].b;
+  } else {
+    const t = scaled - idx;
+    const c1 = heatColors[idx];
+    const c2 = heatColors[idx + 1];
+    r = Math.round(c1.r + (c2.r - c1.r) * t);
+    g = Math.round(c1.g + (c2.g - c1.g) * t);
+    b = Math.round(c1.b + (c2.b - c1.b) * t);
+  }
+
+  const isDark = (r * 0.299 + g * 0.587 + b * 0.114) < 150;
+  return { 
+    backgroundColor: `rgb(${r},${g},${b})`, 
+    color: isDark ? '#fff' : '#0f172a',
+    fontWeight: ratio > 0.4 ? 600 : 500
+  };
 }
 
 // ─── Overflow menu ────────────────────────────────────────────────────────────
@@ -155,10 +204,10 @@ interface WattageCardProps {
   wattage: string;
   grandTotal: number;
   warehouseEntries: { wh: Warehouse; qty: number }[];
-  maxWhQty: number;
+  scaleValues: number[];
 }
 
-function WattageCard({ wattage, grandTotal, warehouseEntries, maxWhQty }: WattageCardProps) {
+function WattageCard({ wattage, grandTotal, warehouseEntries, scaleValues }: WattageCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const visibleWarehouses = warehouseEntries.filter(
@@ -197,7 +246,7 @@ function WattageCard({ wattage, grandTotal, warehouseEntries, maxWhQty }: Wattag
             <div className="px-4 py-3 text-[13px] text-slate-400 italic">No warehouse data</div>
           ) : (
             visibleWarehouses.map(({ wh, qty }) => {
-              const heatStyle = getMobileHeatmapStyle(qty, maxWhQty);
+              const heatStyle = getMobileHeatmapStyle(qty, scaleValues);
               return (
                 <div
                   key={wh.id}
@@ -349,8 +398,8 @@ export default function MobileSolarPanelStockClient({ warehouses, categories, br
   );
 
   // ── Single-pass grouped data ────────────────────────────────────────────────
-  // Shape: Map< 'DCR'|'Non-DCR', Map< series, Map< wattage, { whQtys, gt, wattageNum } > > >
-  type WattageEntry = { whQtys: Record<string, number>; gt: number; wattageNum: number };
+  // Shape: Map< 'DCR'|'Non-DCR', Map< series, Map< childKey, { whQtys, gt, wattageNum, label } > > >
+  type WattageEntry = { whQtys: Record<string, number>; gt: number; wattageNum: number; label: string };
   type GroupedData = Map<'DCR' | 'Non-DCR', Map<string, Map<string, WattageEntry>>>;
 
   const groupedData = useMemo<GroupedData>(() => {
@@ -358,16 +407,26 @@ export default function MobileSolarPanelStockClient({ warehouses, categories, br
 
     filteredItems.forEach(item => {
       const classification: 'DCR' | 'Non-DCR' = item.isDcrEligible ? 'DCR' : 'Non-DCR';
-      const series = item.parentProductName?.trim() || '(No Series)';
-      const wattage = item.wattage?.trim() || 'Unknown';
-      const wattageNum = wattage === 'Unknown' ? Infinity : (parseFloat(wattage) || Infinity);
+      const series = item.parentProductName?.trim() || '(NO SERIES)';
+      
+      let childKey: string, label: string, wattageNum: number;
+      if (series === '(NO SERIES)') {
+        childKey = item.sku || item.id;
+        label = item.name;
+        wattageNum = 0;
+      } else {
+        const wattage = item.wattage?.trim() || 'Unknown';
+        childKey = wattage;
+        label = formatWattageDisplay(wattage);
+        wattageNum = wattage === 'Unknown' ? Infinity : (parseFloat(wattage) || Infinity);
+      }
 
       const classMap = root.get(classification)!;
       if (!classMap.has(series)) classMap.set(series, new Map());
       const seriesMap = classMap.get(series)!;
 
-      if (!seriesMap.has(wattage)) seriesMap.set(wattage, { whQtys: {}, gt: 0, wattageNum });
-      const entry = seriesMap.get(wattage)!;
+      if (!seriesMap.has(childKey)) seriesMap.set(childKey, { whQtys: {}, gt: 0, wattageNum, label });
+      const entry = seriesMap.get(childKey)!;
 
       relevantWarehouses.forEach(wh => {
         const qty = Math.max(0, item.inventory[wh.id]?.qty || 0);
@@ -381,8 +440,8 @@ export default function MobileSolarPanelStockClient({ warehouses, categories, br
     // Prune zero-stock wattages and empty series
     for (const classMap of root.values()) {
       for (const [series, seriesMap] of classMap.entries()) {
-        for (const [wattage, entry] of seriesMap.entries()) {
-          if (entry.gt === 0) seriesMap.delete(wattage);
+        for (const [childKey, entry] of seriesMap.entries()) {
+          if (entry.gt === 0) seriesMap.delete(childKey);
         }
         if (seriesMap.size === 0) classMap.delete(series);
       }
@@ -404,19 +463,32 @@ export default function MobileSolarPanelStockClient({ warehouses, categories, br
     return sum;
   }, [groupedData]);
 
-  // Max per-warehouse qty (for heatmap scale)
-  const maxWhQty = useMemo(() => {
-    let max = 0;
-    for (const classMap of groupedData.values()) {
-      for (const seriesMap of classMap.values()) {
-        for (const entry of seriesMap.values()) {
-          for (const qty of Object.values(entry.whQtys)) {
-            if (qty > max) max = qty;
-          }
+
+  // ── Heatmap Data ────────────────────────────────────────────────────────────
+  const dcrValues = useMemo(() => {
+    const vals: number[] = [];
+    const classMap = groupedData.get('DCR')!;
+    for (const seriesMap of classMap.values()) {
+      for (const entry of seriesMap.values()) {
+        for (const qty of Object.values(entry.whQtys)) {
+          if (qty > 0) vals.push(qty);
         }
       }
     }
-    return max;
+    return vals.sort((a, b) => a - b);
+  }, [groupedData]);
+
+  const nonDcrValues = useMemo(() => {
+    const vals: number[] = [];
+    const classMap = groupedData.get('Non-DCR')!;
+    for (const seriesMap of classMap.values()) {
+      for (const entry of seriesMap.values()) {
+        for (const qty of Object.values(entry.whQtys)) {
+          if (qty > 0) vals.push(qty);
+        }
+      }
+    }
+    return vals.sort((a, b) => a - b);
   }, [groupedData]);
 
   // ── Match count for filter sheet ────────────────────────────────────────────
@@ -446,10 +518,10 @@ export default function MobileSolarPanelStockClient({ warehouses, categories, br
     matching.forEach(item => {
       const hasStock = draftWhs.some(wh => (item.inventory[wh.id]?.qty || 0) > 0);
       if (hasStock) {
-        const series = item.parentProductName?.trim() || '(No Series)';
-        const wattage = item.wattage?.trim() || 'Unknown';
+        const series = item.parentProductName?.trim() || '(NO SERIES)';
+        const childKey = series === '(NO SERIES)' ? (item.sku || item.id) : (item.wattage?.trim() || 'Unknown');
         const classification = item.isDcrEligible ? 'DCR' : 'Non-DCR';
-        uniqueCards.add(`${classification}|${series}|${wattage}`);
+        uniqueCards.add(`${classification}|${series}|${childKey}`);
       }
     });
     return uniqueCards.size;
@@ -466,8 +538,8 @@ export default function MobileSolarPanelStockClient({ warehouses, categories, br
           SKU: item.sku || item.id,
           'Product Name': item.name,
           Brand: item.brand ?? 'Unbranded',
-          Series: item.parentProductName ?? 'Unknown',
-          Wattage: formatWattageDisplay(item.wattage),
+          Series: item.parentProductName ?? '(NO SERIES)',
+          Wattage: !item.parentProductName ? item.name : formatWattageDisplay(item.wattage),
           'DCR Status': item.isDcrEligible ? 'DCR' : 'Non-DCR',
         };
         let totalQty = 0;
@@ -535,9 +607,9 @@ export default function MobileSolarPanelStockClient({ warehouses, categories, br
 
           Array.from(seriesMap.entries())
             .sort(([, a], [, b]) => a.wattageNum - b.wattageNum)
-            .forEach(([wattage, entry]) => {
+            .forEach(([childKey, entry]) => {
               const labelCell = {
-                content: `   ${formatWattageDisplay(wattage)}`,
+                content: `   ${entry.label}`,
                 styles: { fillColor: [255, 255, 255], textColor: [50, 50, 50], halign: 'left' },
               };
               const whCells = relevantWarehouses.map(wh => ({
@@ -589,6 +661,7 @@ export default function MobileSolarPanelStockClient({ warehouses, categories, br
     if (classMap.size === 0) return null;
 
     const sectionLabel = classification === 'DCR' ? 'DCR Stock' : 'Non-DCR Stock';
+    const scaleValues = classification === 'DCR' ? dcrValues : nonDcrValues;
     const sectionColor = classification === 'DCR'
       ? 'text-green-700 bg-green-50 border-green-200'
       : 'text-slate-600 bg-slate-100 border-slate-200';
@@ -624,18 +697,18 @@ export default function MobileSolarPanelStockClient({ warehouses, categories, br
 
               {/* Wattage cards */}
               <div className="flex flex-col gap-2.5">
-                {sortedWattages.map(([wattage, entry]) => {
+                {sortedWattages.map(([childKey, entry]) => {
                   const warehouseEntries = relevantWarehouses.map(wh => ({
                     wh,
                     qty: entry.whQtys[wh.id] || 0,
                   }));
                   return (
                     <WattageCard
-                      key={`${classification}|${series}|${wattage}`}
-                      wattage={wattage}
+                      key={`${classification}|${series}|${childKey}`}
+                      wattage={entry.label}
                       grandTotal={entry.gt}
                       warehouseEntries={warehouseEntries}
-                      maxWhQty={maxWhQty}
+                      scaleValues={scaleValues}
                     />
                   );
                 })}

@@ -1,6 +1,45 @@
 import React, { ReactNode } from 'react';
 import { Download, Camera, Loader2, X, Search, Box } from 'lucide-react';
 
+export const STOCK_TABLE_CONFIG = {
+  // Shared presentation widths
+  WAREHOUSE_COL_WIDTH: 88,
+  GRAND_TOTAL_COL_WIDTH: 96,
+  // Shared PDF config
+  PDF_WAREHOUSE_WIDTH: 18,
+  PDF_GRAND_TOTAL_WIDTH: 22,
+  PDF_FIRST_COL_MIN_WIDTH: 60,
+};
+
+// ─── Shared Heatmap Utility ──────────────────────────────────────────────────
+export function getSharedHeatmapStyle(
+  val: number,
+  maxVal: number,
+  isGrandTotal: boolean = false,
+  isZeroOrEmpty: boolean = false
+): React.CSSProperties {
+  if (isGrandTotal) {
+    return { backgroundColor: '#1A2766', color: '#ffffff', fontWeight: 700 };
+  }
+  if (isZeroOrEmpty || val === 0 || maxVal === 0) {
+    return { backgroundColor: 'transparent', color: '#9CA3AF' };
+  }
+  
+  const ratio = Math.min(1, Math.max(0, val / maxVal));
+  
+  if (ratio < 0.2) {
+    return { backgroundColor: 'rgb(241, 245, 249)', color: '#334155' }; // slate-100
+  }
+  if (ratio < 0.5) {
+    return { backgroundColor: 'rgb(219, 234, 254)', color: '#1e40af' }; // blue-100
+  }
+  if (ratio < 0.8) {
+    return { backgroundColor: 'rgb(191, 219, 254)', color: '#1e3a8a' }; // blue-200
+  }
+  
+  return { backgroundColor: 'rgb(147, 197, 253)', color: '#1e3a8a', fontWeight: 600 }; // blue-300
+}
+
 export function StockPageShell({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {
   return (
     <div className="flex h-[calc(100vh-64px)] gap-5 bg-[#F8F9FB] p-5 pt-0">

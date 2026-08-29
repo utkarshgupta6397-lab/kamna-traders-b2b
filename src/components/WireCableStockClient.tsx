@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Search, Box, ChevronDown, Check, AlertTriangle, X, Download } from 'lucide-react';
 import CurrentStockSidebar from './CurrentStockSidebar';
 import { formatStockDate } from '@/lib/date-utils';
-import { StockPageShell, StockHeader, StockFilterBar, StockEmptyState } from './CurrentStockShared';
+import { StockPageShell, StockHeader, StockFilterBar, StockEmptyState, STOCK_TABLE_CONFIG, getSharedHeatmapStyle } from './CurrentStockShared';
 
 // Types
 interface Warehouse { id: string; name: string; isSystemWarehouse?: boolean; }
@@ -147,15 +147,10 @@ function normalizeColor(color: string | null | undefined): string {
   return c.charAt(0).toUpperCase() + c.slice(1);
 }
 
-const heatmapColors = [
-  { r: 236, g: 253, b: 245 }, { r: 167, g: 243, b: 208 }, { r: 253, g: 230, b: 138 },
-  { r: 251, g: 146, b: 60 }, { r: 239, g: 68, b: 68 }
-];
-
 function buildHeatmap(rows: PivotRowDef[]) {
-  let maxBody = 0, maxGtCol = 0;
+  let maxBody = 0;
+  let maxGtCol = 0;
   rows.forEach(row => {
-    if (row.isGroupHeader) return;
     Object.entries(row.cells).forEach(([colId, cell]) => {
       const val = cell.value;
       if (!isNaN(val) && val > 0) {
@@ -167,30 +162,10 @@ function buildHeatmap(rows: PivotRowDef[]) {
   });
 
   const getStyle = (val: number, isGTRow: boolean, isGTCol: boolean): React.CSSProperties => {
-    if (val <= 0) return {};
-    if (isGTRow) {
-      const ratio = Math.min(1, val / (maxGtCol || 1));
-      const add = Math.round(ratio * 14);
-      return { backgroundColor: `rgb(${26+add},${39+add},${102+add})`, color: '#fff' };
+    if (isGTRow || isGTCol) {
+      return getSharedHeatmapStyle(val, isGTCol ? maxGtCol : maxBody, true, false);
     }
-    const ratio = Math.min(1, Math.max(0, val / (isGTCol ? (maxGtCol || 1) : (maxBody || 1))));
-    const steps = heatmapColors.length - 1;
-    const scaled = ratio * steps;
-    const idx = Math.floor(scaled);
-    let r, g, b;
-    if (idx >= steps) {
-      r = heatmapColors[steps].r; g = heatmapColors[steps].g; b = heatmapColors[steps].b;
-    } else {
-      const t = scaled - idx;
-      const c1 = heatmapColors[idx];
-      const c2 = heatmapColors[idx + 1];
-      r = Math.round(c1.r + (c2.r - c1.r) * t);
-      g = Math.round(c1.g + (c2.g - c1.g) * t);
-      b = Math.round(c1.b + (c2.b - c1.b) * t);
-    }
-    if (isGTCol) { r = Math.round(r * 0.95); g = Math.round(g * 0.95); b = Math.round(b * 0.95); }
-    const isDark = (r * 0.299 + g * 0.587 + b * 0.114) < 150;
-    return { backgroundColor: `rgb(${r},${g},${b})`, color: isDark ? '#fff' : '#0f172a', fontWeight: ratio > 0.4 ? 600 : 500 };
+    return getSharedHeatmapStyle(val, maxBody, false, false);
   };
   return { getStyle };
 }
@@ -209,22 +184,22 @@ function PivotTable({ title, mode, columns, rows, onCellClick }: {
   const displayUnit = mode === 'bundle' ? 'bdls' : 'mtr';
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col mb-6 overflow-hidden">
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col mb-6 overflow-hidden max-w-[100%]">
       <div className="px-5 py-3 border-b border-gray-100 bg-[#f8f9fb]">
         <h2 className="font-bold text-gray-800 text-[13px] tracking-wide uppercase">{title}</h2>
       </div>
       <div className="relative bg-white pivot-scroll-container overflow-x-auto overflow-y-auto max-h-[560px]">
-        <table className="text-sm text-left w-full border-collapse" style={{ minWidth: "max-content" }}>
+        <table className="text-sm text-left border-collapse" style={{ minWidth: "100%" }}>
           <thead>
             <tr className="bg-[#f8f9fb]">
-              <th className="px-4 py-3 font-bold text-[12px] text-gray-700 uppercase tracking-wider border-b-2 border-gray-300 border-r border-gray-200 bg-[#f8f9fb] h-[42px]" style={{ ...LS(50), top: 0 }}>
+              <th className="px-4 py-3 font-bold text-[12px] text-gray-700 uppercase tracking-wider border-b-2 border-gray-300 border-r border-gray-200 bg-[#f8f9fb] h-[42px]" style={{ ...LS(50), top: 0, minWidth: '240px', width: 'auto' }}>
                 Wire Type / Brand / Width
               </th>
               {columns.map(c => {
                 const isGT = !!c.isGrandTotal;
                 return (
-                  <th key={c.id} className={`px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-center border-b-2 ${isGT ? 'text-white border-white/20 border-l-4 border-l-white/30' : 'text-gray-700 border-gray-300 border-l border-gray-200'}`}
-                    style={isGT ? { ...RS(50), backgroundColor: GT_BG, minWidth: 100, top: 0, height: '42px' } : { position: "sticky", top: 0, zIndex: 50, backgroundColor: "#EEF2FF", minWidth: 120, height: '42px' }}>
+                  <th key={c.id} className={`px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-center border-b-2 ${isGT ? 'text-white border-white/20 border-l-4 border-l-white/30' : 'text-gray-700 border-gray-300 border-l border-gray-200'}`}
+                    style={isGT ? { ...RS(50), backgroundColor: GT_BG, width: STOCK_TABLE_CONFIG.GRAND_TOTAL_COL_WIDTH, minWidth: STOCK_TABLE_CONFIG.GRAND_TOTAL_COL_WIDTH, top: 0, height: '42px' } : { position: "sticky", top: 0, zIndex: 40, backgroundColor: "#EEF2FF", width: STOCK_TABLE_CONFIG.WAREHOUSE_COL_WIDTH, minWidth: STOCK_TABLE_CONFIG.WAREHOUSE_COL_WIDTH, height: '42px' }}>
                     {c.label}
                   </th>
                 );
@@ -672,140 +647,90 @@ export default function WireCableStockClient({ warehouses, items }: Props) {
 
   const handleExportPDF = async () => {
     try {
-      const { default: jsPDF } = await import('jspdf');
-      const { default: autoTable } = await import('jspdf-autotable');
+      const { generateStockScreenshotPDF } = await import('./current-stock/screenshot');
       
-      const doc = new jsPDF({ orientation: 'landscape', format: 'a4' });
-      
-      doc.setFontSize(16);
-      doc.setTextColor(20, 30, 80);
-      doc.text('KAMNA ERP — Wire & Cables Stock', 14, 15);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100);
-      doc.text(`Generated: ${formatStockDate(new Date())}`, 14, 22);
-
       const filterParts = [];
       if (selectedWarehouses.length) filterParts.push(`Warehouses: ${selectedWarehouses.length}`);
       if (selectedWireTypes.length) filterParts.push(`Types: ${selectedWireTypes.join(', ')}`);
       if (selectedBrands.length) filterParts.push(`Brands: ${selectedBrands.join(', ')}`);
       if (selectedWidths.length) filterParts.push(`Widths: ${selectedWidths.join(', ')}`);
       if (selectedColors.length) filterParts.push(`Colors: ${selectedColors.join(', ')}`);
-      const filterStr = filterParts.length ? filterParts.join(' | ') : 'All data (no filters)';
-      doc.text(`Filters: ${filterStr}`, 14, 28);
+      
+      const tables: any[] = [];
 
-      let currentY = 38;
-
-      const renderTable = (title: string, columns: PivotColumnDef[], rows: PivotRowDef[]) => {
-        if (currentY > 170) {
-          doc.addPage();
-          currentY = 15;
-        }
-
-        doc.setFontSize(12);
-        doc.setTextColor(40, 40, 40);
-        doc.text(title, 14, currentY);
-        currentY += 6;
-
+      const renderTableConfig = (title: string, columns: PivotColumnDef[], rows: PivotRowDef[]) => {
         const head = [['Wire Type / Brand / Width', 'UOM', ...columns.map(c => c.label)]];
         const { getStyle } = buildHeatmap(rows);
 
         const body = rows.map(row => {
-          const rowData: Record<string, unknown>[] = [];
-          const isType = row.depth === 0;
-          const isBrand = row.depth === 1;
-          const isWidth = row.depth === 2;
+          const rowData: any[] = [];
           
-          let labelStr = row.label;
-          if (isBrand) labelStr = `   ${row.label}`;
-          if (isWidth) labelStr = `      ${row.label}`;
-          
-          let cellBg: [number, number, number] = [255, 255, 255];
-          let textColor: [number, number, number] = [50, 50, 50];
-          let fontStyle: 'normal' | 'bold' = 'normal';
+          let cellBg = [255, 255, 255];
+          let textColor = [50, 50, 50];
+          let fontStyle = 'normal';
+          let labelText = row.label;
+          let uomText = '—';
 
           if (row.isGroupHeader) {
-            cellBg = isType ? [241, 245, 249] : [248, 250, 252];
-            fontStyle = 'bold';
-            textColor = isType ? [30, 41, 59] : [71, 85, 105];
+            cellBg = [241, 245, 249]; textColor = [30, 41, 59]; fontStyle = 'bold';
+            uomText = '';
           } else if (row.isGrandTotal) {
-            cellBg = [26, 39, 102];
-            textColor = [255, 255, 255];
-            fontStyle = 'bold';
+            cellBg = [26, 39, 102]; textColor = [255, 255, 255]; fontStyle = 'bold';
+            uomText = '';
+          } else {
+            labelText = `   ${row.label}`;
+            uomText = title.includes('BUNDLE') ? 'bdls' : 'mtr';
           }
 
-          rowData.push({
-            content: labelStr,
-            styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' }
-          });
-          
-          rowData.push({
-            content: row.isGroupHeader || row.isGrandTotal ? '' : (row.uom || '—'),
-            styles: { fillColor: cellBg, textColor: row.isGroupHeader ? cellBg : textColor, fontStyle, halign: 'center' }
-          });
+          rowData.push({ content: labelText, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' } });
+          rowData.push({ content: uomText, styles: { fillColor: cellBg, textColor: row.isGroupHeader ? cellBg : textColor, fontStyle, halign: 'center' } });
 
-          columns.forEach(col => {
-            const cell = row.cells[col.id];
-            const val = cell?.value || 0;
-            
-            let content = '—';
-            if (val > 0) {
-              content = val.toLocaleString(undefined, { maximumFractionDigits: 2 });
-              if (cell?.hasNA) content += ' *';
-            }
-
-            if (row.isGroupHeader) {
+          if (row.isGroupHeader) {
+            columns.forEach(() => {
               rowData.push({ content: '', styles: { fillColor: cellBg } });
-              return;
-            }
-
-            const style = getStyle(val, !!row.isGrandTotal, !!col.isGrandTotal);
-            let outBg = cellBg;
-            let outText = textColor;
-            let outFont = fontStyle;
-
-            if (style.backgroundColor && typeof style.backgroundColor === 'string') {
-               const match = style.backgroundColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-               if (match) {
-                 outBg = [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10)];
-               }
-            }
-            if (style.color === '#fff') outText = [255, 255, 255];
-            if (style.fontWeight === 600) outFont = 'bold';
-
-            rowData.push({
-              content,
-              styles: { fillColor: outBg, textColor: outText, fontStyle: outFont, halign: 'center' }
             });
-          });
-          
+          } else {
+            columns.forEach(c => {
+              const val = row.cells[c.id]?.value || 0;
+              let content = '—';
+              if (val > 0) content = val.toLocaleString();
+              
+              let styles = {};
+              if (row.isGrandTotal) {
+                styles = { fillColor: cellBg, textColor, fontStyle, halign: 'center' };
+              } else {
+                const rawStyle = getStyle(val, false, !!c.isGrandTotal);
+                let outBg = cellBg;
+                let outText = textColor;
+                if (rawStyle.backgroundColor && typeof rawStyle.backgroundColor === 'string') {
+                  const m = rawStyle.backgroundColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+                  if (m) outBg = [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
+                }
+                if (rawStyle.color === '#fff') outText = [255, 255, 255];
+                styles = { fillColor: outBg, textColor: outText, fontStyle: c.isGrandTotal ? 'bold' : 'normal', halign: 'center' };
+              }
+              rowData.push({ content, styles });
+            });
+          }
           return rowData;
         });
-
-        autoTable(doc, {
-          startY: currentY,
-          head,
-          body,
-          theme: 'grid',
-          styles: { fontSize: 7, cellPadding: 2, lineWidth: 0.1, lineColor: [220, 220, 220] },
-          headStyles: { fillColor: [248, 249, 251], textColor: [80, 80, 80], fontStyle: 'bold', halign: 'center' },
-          columnStyles: { 0: { cellWidth: 50, halign: 'left' }, 1: { cellWidth: 15, halign: 'center' } },
-          showHead: 'everyPage',
-          margin: { top: 15, right: 14, bottom: 15, left: 14 }
-        });
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        currentY = (doc as any).lastAutoTable.finalY + 15;
+        
+        tables.push({ title, head, body });
       };
 
-      renderTable('PHYSICAL STOCK — MTR', pivotCols, physicalRows);
-      renderTable('BUNDLE STOCK — BDLS', pivotCols, bundleRows);
-      renderTable('COLOR STOCK — MTR', colorPivotCols, colorRows);
-      
-      doc.save('Wire_Cable_Stock.pdf');
-    } catch (error) {
-      console.error('Failed to generate PDF:', error);
-      alert('Failed to generate PDF. Please try again.');
+      if (physicalRows.length > 0) renderTableConfig('PHYSICAL STOCK — MTR', pivotCols, physicalRows);
+      if (bundleRows.length > 0) renderTableConfig('BUNDLE STOCK — BDLS', pivotCols, bundleRows);
+      if (colorRows.length > 0) renderTableConfig('COLOR STOCK — MTR', colorPivotCols, colorRows);
+
+      await generateStockScreenshotPDF({
+        title: 'KAMNA ERP — Wire & Cables Stock',
+        filters: filterParts,
+        tables,
+        filename: `KAMNA_WireCablesStock_${new Date().getTime()}.pdf`
+      });
+
+    } catch (err) {
+      console.error(err);
     }
   };
 

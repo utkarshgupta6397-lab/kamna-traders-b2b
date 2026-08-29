@@ -1,4 +1,6 @@
+
 'use client';
+import { getSharedHeatmapStyle } from "@/components/CurrentStockShared";
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Search, SlidersHorizontal, ChevronDown, Check, AlertTriangle } from 'lucide-react';

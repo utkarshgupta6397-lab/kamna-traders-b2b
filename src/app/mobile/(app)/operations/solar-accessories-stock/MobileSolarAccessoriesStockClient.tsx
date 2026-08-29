@@ -1,4 +1,6 @@
+
 'use client';
+import { getSharedHeatmapStyle } from "@/components/CurrentStockShared";
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
@@ -51,18 +53,6 @@ function formatQty(val: number | null | undefined, unit?: string): string {
   if (val === null || val === undefined || val <= 0) return '—';
   return unit ? `${val} ${unit}` : `${val}`;
 }
-
-// ---------------------------------------------------------------------------
-// Subtle mobile heatmap
-// ---------------------------------------------------------------------------
-
-function getMobileHeatmapStyle(val: number, maxVal: number): React.CSSProperties {
-  if (val <= 0 || maxVal <= 0) return {};
-  const ratio = Math.min(1, val / maxVal);
-  const opacity = Math.round((0.06 + ratio * 0.16) * 100) / 100;
-  return { backgroundColor: `rgba(99,102,241,${opacity})` };
-}
-
 // ---------------------------------------------------------------------------
 // Overflow menu (three-dot) for actions
 // ---------------------------------------------------------------------------
@@ -308,7 +298,7 @@ function ProductRow({ name, sku, unit, warehouseEntries, grandTotal, maxWhQty }:
       {expanded && nonZeroEntries.length > 0 && (
         <div className="bg-slate-50/50">
           {nonZeroEntries.map(({ wh, qty }) => {
-            const heatStyle = getMobileHeatmapStyle(qty, maxWhQty);
+            const heatStyle = getSharedHeatmapStyle(qty, maxWhQty);
             return (
               <div
                 key={wh.id}

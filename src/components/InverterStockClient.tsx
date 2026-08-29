@@ -5,7 +5,7 @@ import { Search, Box, ChevronDown, Check, Camera, Loader2, Download, X } from 'l
 import CurrentStockSidebar from './CurrentStockSidebar';
 import { formatStockDate } from '@/lib/date-utils';
 import toast from 'react-hot-toast';
-import { StockPageShell, StockHeader, StockFilterBar, StockEmptyState } from './CurrentStockShared';
+import { StockPageShell, StockHeader, StockFilterBar, StockEmptyState, STOCK_TABLE_CONFIG, getSharedHeatmapStyle } from './CurrentStockShared';
 
 // Types
 interface Warehouse { id: string; name: string; isSystemWarehouse?: boolean; }
@@ -72,36 +72,11 @@ function formatCapacityDisplay(normalizedValue: string): string {
   return `${normalizedValue} kW`;
 }
 
-const heatmapColors = [
-  { r: 236, g: 253, b: 245 }, { r: 167, g: 243, b: 208 }, { r: 253, g: 230, b: 138 },
-  { r: 251, g: 146, b: 60 }, { r: 239, g: 68, b: 68 }
-];
-
 function getHeatmapStyle(val: number, maxVal: number, isGTCol: boolean, isGTRow: boolean): React.CSSProperties {
-  if (val <= 0) return {};
-  if (isGTRow) {
-    const ratio = Math.min(1, val / (maxVal || 1));
-    const add = Math.round(ratio * 14);
-    return { backgroundColor: `rgb(${26+add},${39+add},${102+add})`, color: '#fff' };
+  if (isGTRow || isGTCol) {
+    return getSharedHeatmapStyle(val, maxVal, true, false);
   }
-  const ratio = Math.min(1, Math.max(0, val / (maxVal || 1)));
-  const steps = heatmapColors.length - 1;
-  const scaled = ratio * steps;
-  const idx = Math.floor(scaled);
-  let r, g, b;
-  if (idx >= steps) {
-    r = heatmapColors[steps].r; g = heatmapColors[steps].g; b = heatmapColors[steps].b;
-  } else {
-    const t = scaled - idx;
-    const c1 = heatmapColors[idx];
-    const c2 = heatmapColors[idx + 1];
-    r = Math.round(c1.r + (c2.r - c1.r) * t);
-    g = Math.round(c1.g + (c2.g - c1.g) * t);
-    b = Math.round(c1.b + (c2.b - c1.b) * t);
-  }
-  if (isGTCol) { r = Math.round(r * 0.95); g = Math.round(g * 0.95); b = Math.round(b * 0.95); }
-  const isDark = (r * 0.299 + g * 0.587 + b * 0.114) < 150;
-  return { backgroundColor: `rgb(${r},${g},${b})`, color: isDark ? '#fff' : '#0f172a', fontWeight: ratio > 0.4 ? 600 : 500 };
+  return getSharedHeatmapStyle(val, maxVal, false, false);
 }
 
 const MultiSelectFilter = ({ label, options, selected, onToggle, wideMenu = false }: {
@@ -458,15 +433,15 @@ export default function InverterStockClient({ warehouses, items }: Props) {
               <table className="text-[13px] text-left border-collapse" style={{ minWidth: "100%" }}>
                 <thead>
                   <tr className="bg-[#f8f9fb]">
-                    <th className="px-4 py-3 font-bold text-[12px] text-gray-700 uppercase tracking-wider border-b-2 border-gray-300 border-r border-gray-200 bg-[#f8f9fb] h-[42px]" style={{ position: 'sticky', left: 0, top: 0, zIndex: 50 }}>
+                    <th className="px-4 py-3 font-bold text-[12px] text-gray-700 uppercase tracking-wider border-b-2 border-gray-300 border-r border-gray-200 bg-[#f8f9fb] h-[42px]" style={{ position: 'sticky', left: 0, top: 0, zIndex: 50, minWidth: '240px', width: 'auto' }}>
                       Brand / Capacity / Config
                     </th>
                     {displayedWarehouses.map(wh => (
-                      <th key={wh.id} className="px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-center border-b-2 text-gray-700 border-gray-300 border-l border-gray-200" style={{ position: "sticky", top: 0, zIndex: 40, backgroundColor: "#EEF2FF", minWidth: 72, width: 80, height: '42px' }}>
+                      <th key={wh.id} className="px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-center border-b-2 text-gray-700 border-gray-300 border-l border-gray-200" style={{ position: "sticky", top: 0, zIndex: 40, backgroundColor: "#EEF2FF", minWidth: STOCK_TABLE_CONFIG.WAREHOUSE_COL_WIDTH, width: STOCK_TABLE_CONFIG.WAREHOUSE_COL_WIDTH, height: '42px' }}>
                         {wh.name}
                       </th>
                     ))}
-                    <th className="px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-center border-b-2 text-white border-white/20 border-l-4 border-l-white/30" style={{ position: "sticky", right: 0, top: 0, zIndex: 50, backgroundColor: "#1A2766", minWidth: 80, width: 88, height: '42px' }}>
+                    <th className="px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-center border-b-2 text-white border-white/20 border-l-4 border-l-white/30" style={{ position: "sticky", right: 0, top: 0, zIndex: 50, backgroundColor: "#1A2766", minWidth: STOCK_TABLE_CONFIG.GRAND_TOTAL_COL_WIDTH, width: STOCK_TABLE_CONFIG.GRAND_TOTAL_COL_WIDTH, height: '42px' }}>
                       Grand Total
                     </th>
                   </tr>

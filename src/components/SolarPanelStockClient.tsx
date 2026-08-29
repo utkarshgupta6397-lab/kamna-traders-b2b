@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import CurrentStockSidebar from './CurrentStockSidebar';
 import { formatStockDate } from '@/lib/date-utils';
-import { StockPageShell, StockHeader, StockFilterBar, StockEmptyState } from './CurrentStockShared';
+import { StockPageShell, StockHeader, StockFilterBar, StockEmptyState, STOCK_TABLE_CONFIG, getSharedHeatmapStyle } from './CurrentStockShared';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -63,116 +63,25 @@ function formatWattageDisplay(raw: string | null | undefined): string {
 // ─── Heatmap ─────────────────────────────────────────────────────────────────
 
 function buildHeatmap(rows: PivotRowDef[]) {
-  const whValues: number[] = [];
-  const gtValues: number[] = [];
-
-  rows.forEach(row => {
-    if (row.isGrandTotal) return;
-    Object.entries(row.cells).forEach(([colId, cell]) => {
-      const val = typeof cell === 'number' ? cell : cell?.value;
-      const n = Number(val);
-      if (!isNaN(n) && n > 0) {
-        if (colId === 'GT' || colId.startsWith('GT_')) {
-          gtValues.push(n);
-        } else {
-          whValues.push(n);
-        }
-      }
+  let maxV = 0, maxGT = 0;
+  rows.forEach(r => {
+    if (r.isGroupHeader || r.isGrandTotal) return;
+    Object.entries(r.cells).forEach(([colId, cellObj]) => {
+      const val = typeof cellObj === 'number' ? cellObj : (cellObj?.value || 0);
+      if (colId === 'GT' || colId.startsWith('GT_')) maxGT = Math.max(maxGT, val);
+      else maxV = Math.max(maxV, val);
     });
   });
 
-  whValues.sort((a, b) => a - b);
-  gtValues.sort((a, b) => a - b);
-
-  const getRankRatio = (n: number, values: number[]): number => {
-    if (values.length === 0 || n <= 0) return 0;
-    if (values.length === 1) return 1;
-    
-    let left = 0, right = values.length - 1;
-    while (left <= right) {
-      const mid = Math.floor((left + right) / 2);
-      if (values[mid] === n) {
-        let start = mid;
-        while (start > 0 && values[start - 1] === n) start--;
-        let end = mid;
-        while (end < values.length - 1 && values[end + 1] === n) end++;
-        return ((start + end) / 2) / (values.length - 1);
-      } else if (values[mid] < n) {
-        left = mid + 1;
-      } else {
-        right = mid - 1;
-      }
+  const getStyle = (val: number, isGtRow: boolean, isGtCol: boolean): React.CSSProperties => {
+    if (isGtRow || isGtCol) {
+      return getSharedHeatmapStyle(val, isGtCol ? maxGT : maxV, true, false);
     }
-    return left / values.length;
-  };
-
-  const getInterpolatedColor = (ratio: number, colors: {r:number,g:number,b:number}[]) => {
-    const steps = colors.length - 1;
-    const scaled = ratio * steps;
-    const idx = Math.floor(scaled);
-    let r, g, b;
-    if (idx >= steps) {
-      r = colors[steps].r; g = colors[steps].g; b = colors[steps].b;
-    } else {
-      const t = scaled - idx;
-      const c1 = colors[idx];
-      const c2 = colors[idx + 1];
-      r = Math.round(c1.r + (c2.r - c1.r) * t);
-      g = Math.round(c1.g + (c2.g - c1.g) * t);
-      b = Math.round(c1.b + (c2.b - c1.b) * t);
-    }
-    return { r, g, b };
-  };
-
-  const getStyle = (val: number, isGTRow: boolean, isGTCol: boolean): React.CSSProperties => {
-    const n = Number(val) || 0;
-    
-    if (isGTRow) {
-      return { backgroundColor: '#1e2b6d', color: '#fff' };
-    }
-    
-    if (n <= 0) {
-      if (isGTCol) return { backgroundColor: '#f8fafc', color: '#94a3b8' };
-      return {};
-    }
-
-    if (isGTCol) {
-      const ratio = getRankRatio(n, gtValues);
-      const heatColors = [
-        { r: 255, g: 255, b: 255 }, // White
-        { r: 254, g: 226, b: 226 }, // Red 100
-        { r: 252, g: 165, b: 165 }, // Red 300
-        { r: 239, g: 68,  b: 68 },  // Red 500
-      ];
-      const { r, g, b } = getInterpolatedColor(ratio, heatColors);
-      const isDark = (r * 0.299 + g * 0.587 + b * 0.114) < 150;
-      return { 
-        backgroundColor: `rgb(${r},${g},${b})`, 
-        color: isDark ? '#fff' : '#0f172a', 
-        fontWeight: ratio > 0.4 ? 700 : 600 
-      };
-    }
-
-    // Warehouse cells
-    const ratio = getRankRatio(n, whValues);
-    const heatColors = [
-      { r: 255, g: 255, b: 255 }, // White / Blank
-      { r: 187, g: 247, b: 208 }, // Light Green (Green 200)
-      { r: 74,  g: 222, b: 128 }, // Green 400
-      { r: 251, g: 146, b: 60 },  // Orange 400
-      { r: 239, g: 68,  b: 68 },  // Red 500
-    ];
-    
-    const { r, g, b } = getInterpolatedColor(ratio, heatColors);
-    const isDark = (r * 0.299 + g * 0.587 + b * 0.114) < 150;
-    return { 
-      backgroundColor: `rgb(${r},${g},${b})`, 
-      color: isDark ? '#fff' : '#0f172a', 
-      fontWeight: ratio > 0.4 ? 600 : 500 
-    };
+    return getSharedHeatmapStyle(val, maxV, false, false);
   };
   return { getStyle };
 }
+
 // ─── PivotTable component ─────────────────────────────────────────────────────
 
 function PivotTable({ title, subtitle, firstColLabel, columns, rows, isExportMode }: PivotTableProps) {
@@ -182,10 +91,25 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, isExportMod
     const isGT = !!col.isGrandTotal;
     if (col.subColumns?.length) {
       col.subColumns.forEach((sc, si) => {
-        flatLeaves.push({ id: `${col.id}_${sc.id}`, label: sc.label, width: sc.isTotal ? 85 : 70, isGrandTotal: isGT, isTotal: !!sc.isTotal, parentId: col.id, isFirstInGroup: si === 0 });
+        flatLeaves.push({ 
+          id: `${col.id}_${sc.id}`, 
+          label: sc.label, 
+          width: STOCK_TABLE_CONFIG.WAREHOUSE_COL_WIDTH, 
+          isGrandTotal: isGT, 
+          isTotal: !!sc.isTotal, 
+          parentId: col.id, 
+          isFirstInGroup: si === 0 
+        });
       });
     } else {
-      flatLeaves.push({ id: col.id, label: col.label, width: isGT ? 85 : 72, isGrandTotal: isGT, isTotal: false, isFirstInGroup: true });
+      flatLeaves.push({ 
+        id: col.id, 
+        label: col.label, 
+        width: isGT ? STOCK_TABLE_CONFIG.GRAND_TOTAL_COL_WIDTH : STOCK_TABLE_CONFIG.WAREHOUSE_COL_WIDTH, 
+        isGrandTotal: isGT, 
+        isTotal: false, 
+        isFirstInGroup: true 
+      });
     }
   });
 
@@ -825,9 +749,6 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
              const v = typeof cell === 'number' ? cell : (cell?.value || 0);
              return { val: v, bg: [255, 255, 255] as [number, number, number], text: [50, 50, 50] as [number, number, number] };
           });
-          const gtCell = r.cells['GT'];
-          const gtVal = typeof gtCell === 'number' ? gtCell : (gtCell?.value || 0);
-          cells.push({ val: gtVal, bg: [255, 255, 255] as [number, number, number], text: [50, 50, 50] as [number, number, number] });
           return {
              isGroupHeader: r.isGroupHeader,
              isGrandTotal: r.isGrandTotal,
@@ -840,7 +761,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
       if (hasDcrData) {
          tables.push({
            title: 'DCR Solar Panel Stock',
-           head: [['Series / SKU', '', ...dcrCols.map(c => c.label), 'Grand Total']],
+           head: [['Series / SKU', ...dcrCols.map(c => c.label)]],
            body: buildTableBody(dcrCols, dcrRows).map(r => {
              const rowArr: any[] = [];
              
@@ -851,12 +772,11 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
              else if (r.isGrandTotal) { cellBg = [26,39,102]; textColor = [255,255,255]; fontStyle = 'bold'; }
 
              rowArr.push({ content: r.isGroupHeader || r.isGrandTotal ? r.label : `   ${r.label}`, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' } });
-             rowArr.push({ content: '—', styles: { fillColor: cellBg, textColor: r.isGroupHeader ? cellBg : textColor, fontStyle, halign: 'center' } }); // UOM filler
              
              if (r.isGroupHeader) {
                r.cells.forEach(() => rowArr.push({ content: '', styles: { fillColor: cellBg } }));
              } else {
-               r.cells.forEach(c => {
+               r.cells.forEach((c: any) => {
                  let content = '—';
                  if (c.val > 0) content = c.val.toLocaleString();
                  rowArr.push({ content, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'center' } });
@@ -870,7 +790,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
       if (hasNonDcrData) {
          tables.push({
            title: 'Non-DCR Solar Panel Stock',
-           head: [['Series / SKU', '', ...nonDcrCols.map(c => c.label), 'Grand Total']],
+           head: [['Series / SKU', ...nonDcrCols.map(c => c.label)]],
            body: buildTableBody(nonDcrCols, nonDcrRows).map(r => {
              const rowArr: any[] = [];
              let cellBg = [255,255,255];
@@ -880,12 +800,11 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
              else if (r.isGrandTotal) { cellBg = [26,39,102]; textColor = [255,255,255]; fontStyle = 'bold'; }
 
              rowArr.push({ content: r.isGroupHeader || r.isGrandTotal ? r.label : `   ${r.label}`, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'left' } });
-             rowArr.push({ content: '—', styles: { fillColor: cellBg, textColor: r.isGroupHeader ? cellBg : textColor, fontStyle, halign: 'center' } });
              
              if (r.isGroupHeader) {
                r.cells.forEach(() => rowArr.push({ content: '', styles: { fillColor: cellBg } }));
              } else {
-               r.cells.forEach(c => {
+               r.cells.forEach((c: any) => {
                  let content = '—';
                  if (c.val > 0) content = c.val.toLocaleString();
                  rowArr.push({ content, styles: { fillColor: cellBg, textColor, fontStyle, halign: 'center' } });

@@ -700,8 +700,8 @@ export default function WireCableStockClient({ warehouses, items }: Props) {
                 styles = { fillColor: cellBg, textColor, fontStyle, halign: 'center' };
               } else {
                 const rawStyle = getStyle(val, false, !!c.isGrandTotal);
-                const outBg = rawStyle.backgroundColor || cellBg;
-                const outText = rawStyle.color || textColor;
+                const outBg = (rawStyle as any).pdfFillColor || cellBg;
+                const outText = (rawStyle as any).pdfTextColor || textColor;
                 styles = { fillColor: outBg, textColor: outText, fontStyle: c.isGrandTotal ? 'bold' : 'normal', halign: 'center' };
               }
               rowData.push({ content, styles });

@@ -12,41 +12,47 @@ export const STOCK_TABLE_CONFIG = {
 };
 
 // ─── Shared Heatmap Utility ──────────────────────────────────────────────────
+export interface HeatmapStyleResult extends React.CSSProperties {
+  pdfFillColor?: [number, number, number];
+  pdfTextColor?: [number, number, number];
+}
+
 export function getSharedHeatmapStyle(
+
   val: number,
   maxVal: number,
   isGrandTotal: boolean = false,
   isZeroOrEmpty: boolean = false
-): React.CSSProperties {
+): HeatmapStyleResult {
   if (isGrandTotal) {
-    return { backgroundColor: '#1A2766', color: '#ffffff', fontWeight: 700 };
+    return { backgroundColor: '#1A2766', color: '#ffffff', fontWeight: 700, pdfFillColor: [26, 39, 102], pdfTextColor: [255, 255, 255] };
   }
   if (isZeroOrEmpty || val <= 0 || maxVal <= 0) {
-    return { backgroundColor: '#FFFFFF', color: '#9CA3AF' };
+    return { backgroundColor: '#FFFFFF', color: '#9CA3AF', pdfFillColor: [255, 255, 255], pdfTextColor: [156, 163, 175] };
   }
   
   const ratio = Math.min(1, Math.max(0, val / maxVal));
   
   if (ratio <= 0) {
-    return { backgroundColor: '#FFFFFF', color: '#9CA3AF' };
+    return { backgroundColor: '#FFFFFF', color: '#9CA3AF', pdfFillColor: [255, 255, 255], pdfTextColor: [156, 163, 175] };
   }
   if (ratio <= 0.20) {
-    return { backgroundColor: '#F0FDF4', color: '#166534', fontWeight: 500 }; // Very Light Green
+    return { backgroundColor: '#F0FDF4', color: '#166534', fontWeight: 500, pdfFillColor: [240, 253, 244], pdfTextColor: [22, 101, 52] }; // Very Light Green
   }
   if (ratio <= 0.40) {
-    return { backgroundColor: '#BBF7D0', color: '#166534', fontWeight: 500 }; // Light Green
+    return { backgroundColor: '#BBF7D0', color: '#166534', fontWeight: 500, pdfFillColor: [187, 247, 208], pdfTextColor: [22, 101, 52] }; // Light Green
   }
   if (ratio <= 0.60) {
-    return { backgroundColor: '#22C55E', color: '#FFFFFF', fontWeight: 600 }; // Green
+    return { backgroundColor: '#22C55E', color: '#FFFFFF', fontWeight: 600, pdfFillColor: [34, 197, 94], pdfTextColor: [255, 255, 255] }; // Green
   }
   if (ratio <= 0.75) {
-    return { backgroundColor: '#FDE68A', color: '#92400E', fontWeight: 600 }; // Yellow
+    return { backgroundColor: '#FDE68A', color: '#92400E', fontWeight: 600, pdfFillColor: [253, 230, 138], pdfTextColor: [146, 64, 14] }; // Yellow
   }
   if (ratio <= 0.90) {
-    return { backgroundColor: '#FDBA74', color: '#9A3412', fontWeight: 600 }; // Orange
+    return { backgroundColor: '#FDBA74', color: '#9A3412', fontWeight: 600, pdfFillColor: [253, 186, 116], pdfTextColor: [154, 52, 18] }; // Orange
   }
   
-  return { backgroundColor: '#EF4444', color: '#FFFFFF', fontWeight: 700 }; // Red
+  return { backgroundColor: '#EF4444', color: '#FFFFFF', fontWeight: 700, pdfFillColor: [239, 68, 68], pdfTextColor: [255, 255, 255] }; // Red
 }
 
 export function StockPageShell({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {

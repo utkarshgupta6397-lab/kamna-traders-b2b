@@ -1,6 +1,5 @@
 
 'use client';
-import { getSharedHeatmapStyle } from "@/components/CurrentStockShared";
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
@@ -8,6 +7,7 @@ import {
   SlidersHorizontal,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   X,
   MoreVertical,
   Download,
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatStockDate } from '@/lib/date-utils';
+import { MobileInverterFilterSheet, FilterState } from './MobileInverterFilterSheet';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,7 +54,7 @@ interface Props {
 }
 
 // ---------------------------------------------------------------------------
-// Capacity normalizer  (exact copy from InverterStockClient.tsx)
+// Capacity normalizer (exact copy from InverterStockClient.tsx)
 // ---------------------------------------------------------------------------
 
 function normalizeCapacity(cap: string | null | undefined): {
@@ -89,11 +90,6 @@ function normalizeCapacity(cap: string | null | undefined): {
   return { value: val.toUpperCase(), num: Infinity, unit: '' };
 }
 
-/**
- * Given the already-normalized capacity value string (e.g. "5", "5 kW", "Unknown"),
- * returns a safe display string that always ends with " kW" for purely numeric values.
- * Never appends kW twice. Preserves "Unknown" and other non-numeric labels.
- */
 function formatCapacityDisplay(normalizedValue: string): string {
   if (!normalizedValue || normalizedValue === 'Unknown') return normalizedValue;
   if (/[a-zA-Z]/.test(normalizedValue)) return normalizedValue;
@@ -101,33 +97,34 @@ function formatCapacityDisplay(normalizedValue: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Badge component
+// Grid-type tab order
 // ---------------------------------------------------------------------------
 
-const Badge = ({
-  children,
-  color = 'blue',
-}: {
-  children: React.ReactNode;
-  color?: 'blue' | 'purple' | 'amber' | 'gray';
-}) => {
-  const colors = {
-    blue: 'bg-blue-50 text-blue-700 border-blue-200',
-    purple: 'bg-purple-50 text-purple-700 border-purple-200',
-    amber: 'bg-amber-50 text-amber-700 border-amber-200',
-    gray: 'bg-slate-100 text-slate-500 border-slate-200',
-  };
+const GRID_TABS = ['On-Grid', 'Hybrid', 'Off-Grid'] as const;
+type GridTab = typeof GRID_TABS[number];
+
+// ---------------------------------------------------------------------------
+// Phase badge
+// ---------------------------------------------------------------------------
+
+function PhaseBadge({ phase }: { phase: string }) {
+  if (!phase || phase === 'Unknown') return null;
+  const isThree = phase.toLowerCase().includes('three') || phase === '3';
   return (
     <span
-      className={`px-1.5 py-0.5 text-[10px] font-semibold border rounded-sm whitespace-nowrap ${colors[color]}`}
+      className={`px-1.5 py-0.5 text-[10px] font-semibold border rounded-sm whitespace-nowrap ${
+        isThree
+          ? 'bg-purple-50 text-purple-700 border-purple-200'
+          : 'bg-blue-50 text-blue-700 border-blue-200'
+      }`}
     >
-      {children}
+      {phase}
     </span>
   );
-};
+}
 
 // ---------------------------------------------------------------------------
-// Overflow menu (three-dot) for actions
+// Overflow menu
 // ---------------------------------------------------------------------------
 
 interface OverflowMenuProps {
@@ -154,10 +151,10 @@ function OverflowMenu({ onRawData, onScreenshot, isExporting, isScreenshotting }
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(v => !v)}
-        className="p-2 rounded-full text-white/80 active:bg-white/10 transition-colors"
+        className="w-10 h-10 rounded-xl border border-slate-200 bg-white text-slate-600 flex items-center justify-center shrink-0 active:bg-slate-50 transition-colors"
         aria-label="More actions"
       >
-        <MoreVertical size={22} strokeWidth={2.5} />
+        <MoreVertical size={18} />
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-[200] w-48">
@@ -191,47 +188,167 @@ function OverflowMenu({ onRawData, onScreenshot, isExporting, isScreenshotting }
   );
 }
 
-import { MobileInverterFilterSheet, FilterState } from './MobileInverterFilterSheet';
-
 // ---------------------------------------------------------------------------
-// Config card (one per Brand + Capacity + Type + Phase combination)
+// Warehouse distribution bottom sheet
 // ---------------------------------------------------------------------------
 
-interface ConfigCardProps {
+interface DrilldownEntry {
   capacity: string;
-  invType: string;
   phase: string;
+  brand: string;
   grandTotal: number;
   warehouseEntries: { wh: Warehouse; qty: number }[];
-  maxWhQty: number;
 }
 
-function ConfigCard({
-  capacity,
-  invType,
-  phase,
-  grandTotal,
-  warehouseEntries,
-  maxWhQty,
-}: ConfigCardProps) {
-  const [expanded, setExpanded] = useState(false);
+function WarehouseSheet({
+  data,
+  onClose,
+}: {
+  data: DrilldownEntry | null;
+  onClose: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [renderData, setRenderData] = useState<DrilldownEntry | null>(null);
+
+  useEffect(() => {
+    if (data) {
+      setRenderData(data);
+      requestAnimationFrame(() => setIsOpen(true));
+    } else {
+      setIsOpen(false);
+    }
+  }, [data]);
+
+  const handleClose = () => {
+    setIsOpen(false);
+    setTimeout(onClose, 300);
+  };
+
+  if (!renderData && !isOpen) return null;
+  const d = renderData || data!;
+  const activeEntries = d.warehouseEntries.filter(e => e.qty > 0);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      {/* Card header — always visible */}
+    <div
+      className={`fixed inset-0 z-[100] flex flex-col justify-end bg-black/40 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+      onClick={handleClose}
+    >
+      <div
+        className={`bg-[#F8F9FB] w-full max-h-[85dvh] rounded-t-2xl shadow-xl flex flex-col transition-transform duration-300 pb-[env(safe-area-inset-bottom)] ${isOpen ? 'translate-y-0' : 'translate-y-full'}`}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="bg-white rounded-t-2xl px-5 pt-4 pb-4 border-b border-slate-200 shrink-0 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <h3 className="font-black text-slate-900 text-[18px] tracking-tight leading-snug break-words">
+                {formatCapacityDisplay(d.capacity)}
+              </h3>
+              <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                <span className="text-[12px] font-semibold text-slate-500">{d.brand}</span>
+                {d.phase && d.phase !== 'Unknown' && (
+                  <PhaseBadge phase={d.phase} />
+                )}
+              </div>
+              <div className="flex items-baseline gap-1.5 mt-2">
+                <span className="font-black text-[#1A2766] text-[20px] leading-none">{d.grandTotal.toLocaleString()}</span>
+                <span className="text-[11px] font-bold text-slate-400 uppercase">pcs total</span>
+              </div>
+            </div>
+            <button
+              onClick={handleClose}
+              className="p-2 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-500 transition-colors shrink-0 -mr-1 mt-0.5"
+            >
+              <X size={20} strokeWidth={2.5} />
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0">
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">
+            Warehouse Stock
+          </div>
+          {activeEntries.length === 0 ? (
+            <div className="text-center text-slate-400 text-[13px] py-8">No warehouse data</div>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {activeEntries.map(({ wh, qty }) => (
+                <div
+                  key={wh.id}
+                  className="bg-white rounded-[14px] border border-slate-200 shadow-sm flex items-center justify-between px-4 py-3"
+                >
+                  <span className="font-semibold text-[14px] text-slate-700 flex-1 min-w-0 pr-4 break-words leading-snug">
+                    {wh.name}
+                  </span>
+                  <div className="flex items-baseline gap-1 shrink-0">
+                    <span className="font-black text-[18px] text-slate-900 leading-none">{qty.toLocaleString()}</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">pcs</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="bg-white border-t border-slate-200 px-5 py-4 shrink-0 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
+          <div className="flex justify-between items-center">
+            <span className="font-bold text-slate-600 text-[13px] uppercase tracking-wider">Total</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="font-black text-[#1A2766] text-[20px] leading-none">{d.grandTotal.toLocaleString()}</span>
+              <span className="text-[11px] font-bold text-slate-400 uppercase">pcs</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Brand expandable card header
+// ---------------------------------------------------------------------------
+
+interface BrandSectionProps {
+  brand: string;
+  brandTotal: number;
+  combos: Array<{
+    cap: string;
+    capNum: number;
+    phase: string;
+    gt: number;
+    cells: Record<string, number>;
+  }>;
+  relevantWarehouses: Warehouse[];
+  defaultExpanded: boolean;
+  onRowTap: (entry: DrilldownEntry) => void;
+}
+
+function BrandSection({
+  brand,
+  brandTotal,
+  combos,
+  relevantWarehouses,
+  defaultExpanded,
+  onRowTap,
+}: BrandSectionProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+
+  return (
+    <div className="mb-3">
+      {/* Brand card header */}
       <button
         onClick={() => setExpanded(v => !v)}
-        className="w-full flex items-center justify-between px-4 py-3.5 active:bg-slate-50 transition-colors text-left"
+        className="w-full bg-white rounded-[14px] border border-slate-200 shadow-sm flex items-center justify-between px-4 py-3 active:bg-slate-50 transition-colors"
       >
-        <div className="flex items-center gap-2 flex-wrap min-w-0 flex-1 mr-3">
-          <span className="font-bold text-[15px] text-slate-900 whitespace-nowrap">{formatCapacityDisplay(capacity)}</span>
-          <Badge color={invType === 'Unknown' ? 'gray' : 'blue'}>{invType}</Badge>
-          <Badge color={phase === 'Unknown' ? 'gray' : 'purple'}>{phase}</Badge>
-        </div>
+        <span className="font-black text-[15px] text-slate-900 flex-1 text-left leading-snug break-words min-w-0 pr-3">
+          {brand}
+        </span>
         <div className="flex items-center gap-2.5 shrink-0">
-          {/* Grand Total chip */}
-          <div className="bg-[#1A2766] text-white rounded-xl px-2.5 py-1 flex items-center">
-            <span className="text-[14px] font-black leading-none">{grandTotal}</span>
+          <div className="bg-[#1A2766] text-white rounded-xl px-2.5 py-1 flex items-center gap-1">
+            <span className="text-[14px] font-black leading-none">{brandTotal.toLocaleString()}</span>
+            <span className="text-[9px] font-bold opacity-70 uppercase">pcs</span>
           </div>
           {expanded ? (
             <ChevronUp size={18} className="text-slate-400" />
@@ -241,35 +358,48 @@ function ConfigCard({
         </div>
       </button>
 
-      {/* Expanded warehouse list */}
+      {/* Capacity/Model rows */}
       {expanded && (
-        <div className="border-t border-slate-100">
-          {warehouseEntries
-            .filter(({ qty }) => qty !== null && qty !== undefined && qty !== 0)
-            .map(({ wh, qty }) => {
-              const heatStyle = getSharedHeatmapStyle(qty, maxWhQty);
-              return (
-                <div
-                  key={wh.id}
-                className="flex items-center justify-between px-4 py-2.5 border-b border-slate-50 last:border-0"
-                style={heatStyle}
+        <div className="mt-1.5 ml-2 flex flex-col gap-1.5">
+          {combos.map(entry => {
+            const warehouseEntries = relevantWarehouses.map(wh => ({
+              wh,
+              qty: entry.cells[wh.id] || 0,
+            }));
+            return (
+              <button
+                key={`${entry.cap}|${entry.phase}`}
+                onClick={() =>
+                  onRowTap({
+                    capacity: entry.cap,
+                    phase: entry.phase,
+                    brand,
+                    grandTotal: entry.gt,
+                    warehouseEntries,
+                  })
+                }
+                className="w-full bg-white rounded-[12px] border border-slate-100 flex items-center justify-between px-4 py-3 active:bg-blue-50/40 transition-colors text-left"
               >
-                <span className="text-[13px] text-slate-600 font-medium leading-snug flex-1 min-w-0 pr-2">
-                  {wh.name}
-                </span>
-                <span className="text-[14px] font-bold shrink-0 text-slate-800">
-                  {qty}
-                </span>
-              </div>
+                <div className="flex-1 min-w-0 pr-3">
+                  <div className="font-bold text-[14px] text-slate-800 break-words leading-snug">
+                    {formatCapacityDisplay(entry.cap)}
+                  </div>
+                  {entry.phase && entry.phase !== 'Unknown' && (
+                    <div className="mt-1">
+                      <PhaseBadge phase={entry.phase} />
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-baseline gap-1 text-right">
+                    <span className="font-black text-[16px] text-slate-900">{entry.gt.toLocaleString()}</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">pcs</span>
+                  </div>
+                  <ChevronRight size={16} className="text-slate-300" />
+                </div>
+              </button>
             );
           })}
-          {/* Grand Total row */}
-          <div className="flex items-center justify-between px-4 py-3 bg-[#1A2766]">
-            <span className="text-[12px] font-bold text-white/80 uppercase tracking-wider">
-              Grand Total
-            </span>
-            <span className="text-[15px] font-black text-white">{grandTotal}</span>
-          </div>
         </div>
       )}
     </div>
@@ -277,21 +407,16 @@ function ConfigCard({
 }
 
 // ---------------------------------------------------------------------------
-// Main client component
+// Main component
 // ---------------------------------------------------------------------------
 
 export default function MobileInverterStockClient({ warehouses, items }: Props) {
-  // Search
+  // ── State ──────────────────────────────────────────────────────────────────
+  const [activeGridTab, setActiveGridTab] = useState<GridTab>('On-Grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(searchQuery), 200);
-    return () => clearTimeout(t);
-  }, [searchQuery]);
-
-  // Filters
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [drilldown, setDrilldown] = useState<DrilldownEntry | null>(null);
   const [appliedFilters, setAppliedFilters] = useState<FilterState>({
     warehouses: [],
     brands: [],
@@ -299,15 +424,16 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
     phases: [],
     capacities: [],
   });
+  const [isExporting, setIsExporting] = useState(false);
+  const [isScreenshotting, setIsScreenshotting] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery), 200);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   const clearAll = useCallback(() => {
-    setAppliedFilters({
-      warehouses: [],
-      brands: [],
-      types: [],
-      phases: [],
-      capacities: [],
-    });
+    setAppliedFilters({ warehouses: [], brands: [], types: [], phases: [], capacities: [] });
   }, []);
 
   const activeFilterCount =
@@ -317,15 +443,7 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
     appliedFilters.phases.length +
     appliedFilters.capacities.length;
 
-  // Actions
-  const [isExporting, setIsExporting] = useState(false);
-  const [isScreenshotting, setIsScreenshotting] = useState(false);
-
-  // ---------------------------------------------------------------------------
-  // Derived data
-  // ---------------------------------------------------------------------------
-
-  // Normalise each SKU — Core attribute is never read here
+  // ── Processed items ────────────────────────────────────────────────────────
   const processedItems = useMemo(
     () =>
       items.map(item => {
@@ -342,27 +460,23 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
     [items]
   );
 
-  // Derive valid warehouses dynamically
+  // ── Available warehouses ───────────────────────────────────────────────────
   const availableWarehouses = useMemo(() => {
     const valid = warehouses.filter(w => w.id && w.name && w.name.trim() !== '' && !w.isSystemWarehouse);
     const whMap = new Map<string, Warehouse>();
     valid.forEach(w => whMap.set(w.id, w));
-
     const activeWhIds = new Set<string>();
     processedItems.forEach(item => {
       Object.entries(item.inventory).forEach(([whId, inv]) => {
-        if (inv.qty > 0 && whMap.has(whId)) {
-          activeWhIds.add(whId);
-        }
+        if (inv.qty > 0 && whMap.has(whId)) activeWhIds.add(whId);
       });
     });
-
     return Array.from(activeWhIds)
       .map(id => whMap.get(id)!)
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [processedItems, warehouses]);
 
-  // Available filter options
+  // ── Filter options ─────────────────────────────────────────────────────────
   const availableBrands = useMemo(
     () =>
       Array.from(new Set(processedItems.map(i => i.brandVal)))
@@ -397,7 +511,7 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
       .map(([name]) => ({ id: name, name }));
   }, [processedItems]);
 
-  // Active warehouse scope
+  // ── Visible warehouses ─────────────────────────────────────────────────────
   const visibleWarehouses = useMemo(
     () =>
       appliedFilters.warehouses.length > 0
@@ -406,26 +520,26 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
     [availableWarehouses, appliedFilters.warehouses]
   );
 
-  // Filtered SKU list
+  // ── Filtered items: apply grid tab + search + filters ─────────────────────
   const filteredItems = useMemo(() => {
     const q = debouncedSearch.toLowerCase().trim();
     return processedItems.filter(item => {
+      // Grid tab filter — primary classification
+      if (item.invType !== activeGridTab) return false;
       if (q && !item.name.toLowerCase().includes(q) && !(item.sku || item.id).toLowerCase().includes(q))
         return false;
       if (appliedFilters.brands.length > 0 && !appliedFilters.brands.includes(item.brandVal)) return false;
+      // types filter is now redundant when the tab is the source of truth, but
+      // we keep it so existing filter state doesn't break anything.
       if (appliedFilters.types.length > 0 && !appliedFilters.types.includes(item.invType)) return false;
       if (appliedFilters.phases.length > 0 && !appliedFilters.phases.includes(item.phase)) return false;
       if (appliedFilters.capacities.length > 0 && !appliedFilters.capacities.includes(item.normalizedCapacity))
         return false;
       return true;
     });
-  }, [
-    processedItems,
-    debouncedSearch,
-    appliedFilters,
-  ]);
+  }, [processedItems, activeGridTab, debouncedSearch, appliedFilters]);
 
-  // Warehouses that actually have stock in the filtered set
+  // ── Relevant warehouses ────────────────────────────────────────────────────
   const relevantWarehouses = useMemo(
     () =>
       visibleWarehouses.filter(wh =>
@@ -434,17 +548,13 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
     [filteredItems, visibleWarehouses]
   );
 
-  // ---------------------------------------------------------------------------
-  // Grouping: Brand → Map<"cap|type|phase" → aggregated card data>
-  // ---------------------------------------------------------------------------
-
+  // ── Grouping: Brand → [cap|phase → CardEntry] ─────────────────────────────
   const groupedData = useMemo(() => {
     type CardEntry = {
-      cells: Record<string, number>; // warehouseId → qty
+      cells: Record<string, number>;
       gt: number;
       cap: string;
       capNum: number;
-      invType: string;
       phase: string;
     };
 
@@ -452,7 +562,7 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
 
     filteredItems.forEach(item => {
       const brand = item.brandVal;
-      const key = `${item.normalizedCapacity}|${item.invType}|${item.phase}`;
+      const key = `${item.normalizedCapacity}|${item.phase}`;
 
       if (!root.has(brand)) root.set(brand, new Map());
       const brandMap = root.get(brand)!;
@@ -463,7 +573,6 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
           gt: 0,
           cap: item.normalizedCapacity,
           capNum: item.capacityNum,
-          invType: item.invType,
           phase: item.phase,
         });
       }
@@ -479,7 +588,7 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
       });
     });
 
-    // Prune brands/cards with zero grand total
+    // Prune zeros
     for (const [brand, brandMap] of root.entries()) {
       for (const [key, entry] of brandMap.entries()) {
         if (entry.gt === 0) brandMap.delete(key);
@@ -490,19 +599,28 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
     return root;
   }, [filteredItems, relevantWarehouses]);
 
-  // Calculate matching items count for filter sheet draft
+  // ── KPIs ───────────────────────────────────────────────────────────────────
+  const totalStock = useMemo(() => {
+    let sum = 0;
+    for (const brandMap of groupedData.values()) {
+      for (const entry of brandMap.values()) sum += entry.gt;
+    }
+    return sum;
+  }, [groupedData]);
+
+  const activeSkuCount = filteredItems.length;
+
+  // ── Get-match-count for filter sheet ──────────────────────────────────────
   const getMatchCount = useCallback((draft: FilterState) => {
+    const q = debouncedSearch.toLowerCase().trim();
     const matching = processedItems.filter(item => {
-      if (debouncedSearch) {
-        const q = debouncedSearch.toLowerCase().trim();
-        if (!item.name.toLowerCase().includes(q) && !(item.sku || item.id).toLowerCase().includes(q))
-          return false;
-      }
+      if (item.invType !== activeGridTab) return false;
+      if (q && !item.name.toLowerCase().includes(q) && !(item.sku || item.id).toLowerCase().includes(q))
+        return false;
       if (draft.brands.length > 0 && !draft.brands.includes(item.brandVal)) return false;
       if (draft.types.length > 0 && !draft.types.includes(item.invType)) return false;
       if (draft.phases.length > 0 && !draft.phases.includes(item.phase)) return false;
-      if (draft.capacities.length > 0 && !draft.capacities.includes(item.normalizedCapacity))
-        return false;
+      if (draft.capacities.length > 0 && !draft.capacities.includes(item.normalizedCapacity)) return false;
       return true;
     });
 
@@ -512,50 +630,15 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
 
     const uniqueCards = new Set<string>();
     matching.forEach(item => {
-      let hasStock = false;
-      for (const wh of draftVisibleWhs) {
-        if ((item.inventory[wh.id]?.qty || 0) > 0) {
-          hasStock = true;
-          break;
-        }
-      }
+      const hasStock = draftVisibleWhs.some(wh => (item.inventory[wh.id]?.qty || 0) > 0);
       if (hasStock) {
-        const key = `${item.brandVal}|${item.normalizedCapacity}|${item.invType}|${item.phase}`;
-        uniqueCards.add(key);
+        uniqueCards.add(`${item.brandVal}|${item.normalizedCapacity}|${item.phase}`);
       }
     });
-
     return uniqueCards.size;
-  }, [processedItems, debouncedSearch, availableWarehouses]);
+  }, [processedItems, activeGridTab, debouncedSearch, availableWarehouses]);
 
-  // Max per-warehouse qty across all cards (for heatmap scale)
-  const maxWhQty = useMemo(() => {
-    let max = 0;
-    for (const brandMap of groupedData.values()) {
-      for (const entry of brandMap.values()) {
-        for (const [whId, qty] of Object.entries(entry.cells)) {
-          if (whId !== 'GT' && qty > max) max = qty;
-        }
-      }
-    }
-    return max;
-  }, [groupedData]);
-
-  // Summary stats
-  const totalStock = useMemo(() => {
-    let sum = 0;
-    for (const brandMap of groupedData.values()) {
-      for (const entry of brandMap.values()) {
-        sum += entry.gt;
-      }
-    }
-    return sum;
-  }, [groupedData]);
-
-  // ---------------------------------------------------------------------------
-  // Actions
-  // ---------------------------------------------------------------------------
-
+  // ── Export: raw data ───────────────────────────────────────────────────────
   const handleExportRawData = useCallback(async () => {
     if (isExporting) return;
     setIsExporting(true);
@@ -595,6 +678,7 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
     }
   }, [filteredItems, relevantWarehouses, isExporting]);
 
+  // ── Export: PDF ────────────────────────────────────────────────────────────
   const handleScreenshot = useCallback(async () => {
     if (isScreenshotting) return;
     setIsScreenshotting(true);
@@ -606,52 +690,25 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
 
       doc.setFontSize(16);
       doc.setTextColor(26, 39, 102);
-      doc.text('KAMNA ERP — Inverter Stock', 14, 15);
-
+      doc.text(`KAMNA ERP — Inverter Stock (${activeGridTab})`, 14, 15);
       doc.setFontSize(9);
       doc.setTextColor(100);
       doc.text(`Generated: ${formatStockDate(new Date())}`, 14, 22);
 
-      const filterParts: string[] = [];
-      if (appliedFilters.warehouses.length) filterParts.push(`Warehouses: ${appliedFilters.warehouses.length}`);
-      if (appliedFilters.brands.length) filterParts.push(`Brands: ${appliedFilters.brands.join(', ')}`);
-      if (appliedFilters.types.length) filterParts.push(`Types: ${appliedFilters.types.join(', ')}`);
-      if (appliedFilters.phases.length) filterParts.push(`Phases: ${appliedFilters.phases.join(', ')}`);
-      if (appliedFilters.capacities.length) filterParts.push(`Capacities: ${appliedFilters.capacities.length}`);
-      doc.text(
-        `Filters: ${filterParts.length ? filterParts.join(' | ') : 'All data (no filters)'}`,
-        14,
-        28
-      );
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const body: any[][] = [];
       const sortedBrands = Array.from(groupedData.keys()).sort();
       sortedBrands.forEach(brand => {
         const brandMap = groupedData.get(brand)!;
-        // Brand header row
-        body.push([
-          {
-            content: brand.toUpperCase(),
-            colSpan: relevantWarehouses.length + 2,
-            styles: {
-              fillColor: [241, 245, 249],
-              textColor: [30, 41, 59],
-              fontStyle: 'bold',
-              halign: 'left',
-            },
-          },
-        ]);
+        body.push([{
+          content: brand.toUpperCase(),
+          colSpan: relevantWarehouses.length + 2,
+          styles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: 'bold', halign: 'left' },
+        }]);
 
-        const combos = Array.from(brandMap.values()).sort((a, b) => {
-          if (a.capNum !== b.capNum) return a.capNum - b.capNum;
-          if (a.invType !== b.invType) return a.invType.localeCompare(b.invType);
-          return a.phase.localeCompare(b.phase);
-        });
-
+        const combos = Array.from(brandMap.values()).sort((a, b) => a.capNum - b.capNum || a.phase.localeCompare(b.phase));
         combos.forEach(entry => {
           const labelCell = {
-            content: `   ${entry.cap}\n   ${entry.invType} | ${entry.phase}`,
+            content: `   ${formatCapacityDisplay(entry.cap)}\n   ${entry.phase}`,
             styles: { fillColor: [255, 255, 255], textColor: [50, 50, 50], halign: 'left' },
           };
           const whCells = relevantWarehouses.map(wh => ({
@@ -660,31 +717,19 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
           }));
           const gtCell = {
             content: String(entry.gt),
-            styles: {
-              fillColor: [230, 234, 255],
-              textColor: [26, 39, 102],
-              fontStyle: 'bold',
-              halign: 'center',
-            },
+            styles: { fillColor: [230, 234, 255], textColor: [26, 39, 102], fontStyle: 'bold', halign: 'center' },
           };
           body.push([labelCell, ...whCells, gtCell]);
         });
       });
 
       autoTable(doc, {
-        startY: 34,
-        head: [
-          ['Configuration', ...relevantWarehouses.map(w => w.name), 'Grand Total'],
-        ],
+        startY: 28,
+        head: [['Configuration', ...relevantWarehouses.map(w => w.name), 'Grand Total']],
         body,
         theme: 'grid',
         styles: { fontSize: 7, cellPadding: 2, lineWidth: 0.1, lineColor: [220, 220, 220] },
-        headStyles: {
-          fillColor: [248, 249, 251],
-          textColor: [80, 80, 80],
-          fontStyle: 'bold',
-          halign: 'center',
-        },
+        headStyles: { fillColor: [248, 249, 251], textColor: [80, 80, 80], fontStyle: 'bold', halign: 'center' },
         columnStyles: { 0: { cellWidth: 55, halign: 'left' } },
         showHead: 'everyPage',
         margin: { top: 15, right: 10, bottom: 15, left: 10 },
@@ -698,112 +743,107 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
     } finally {
       setIsScreenshotting(false);
     }
-  }, [
-    groupedData,
-    relevantWarehouses,
-    appliedFilters,
-    isScreenshotting,
-  ]);
+  }, [groupedData, relevantWarehouses, activeGridTab, isScreenshotting]);
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
-
-  const sortedBrands = useMemo(
-    () => Array.from(groupedData.keys()).sort(),
-    [groupedData]
-  );
-
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const sortedBrands = useMemo(() => Array.from(groupedData.keys()).sort(), [groupedData]);
   const isEmpty = sortedBrands.length === 0;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-[#F8F9FB]">
 
-      {/* Sticky action bar */}
-      <div className="bg-[#1A2766] px-3 pt-1 pb-2 shrink-0 flex items-center justify-between">
-        {/* Summary chips */}
-        <div className="flex items-center gap-2">
-          <div className="flex flex-col items-center bg-white/10 rounded-xl px-2.5 py-1.5">
-            <span className="text-[10px] font-bold text-white/60 uppercase tracking-wider leading-none">
-              SKUs
-            </span>
-            <span className="text-[14px] font-black text-white leading-none mt-0.5">
-              {filteredItems.length}
-            </span>
-          </div>
-          <div className="flex flex-col items-center bg-white/10 rounded-xl px-2.5 py-1.5">
-            <span className="text-[10px] font-bold text-white/60 uppercase tracking-wider leading-none">
-              Stock
-            </span>
-            <span className="text-[14px] font-black text-white leading-none mt-0.5">
-              {totalStock.toLocaleString()}
-            </span>
-          </div>
-          <div className="flex flex-col items-center bg-white/10 rounded-xl px-2.5 py-1.5">
-            <span className="text-[10px] font-bold text-white/60 uppercase tracking-wider leading-none">
-              WH
-            </span>
-            <span className="text-[14px] font-black text-white leading-none mt-0.5">
-              {relevantWarehouses.length}
-            </span>
+      {/* KPI cards — Wire & Cable style */}
+      <div className="grid grid-cols-3 gap-2 p-3 pb-0 shrink-0">
+        <div className="bg-white rounded-[14px] p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-center">
+          <div className="text-[10px] font-bold text-slate-400 tracking-wider uppercase mb-1">Active SKUs</div>
+          <div className="text-lg font-black text-slate-800 leading-none">{activeSkuCount}</div>
+        </div>
+        <div className="bg-white rounded-[14px] p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-center">
+          <div className="text-[10px] font-bold text-slate-400 tracking-wider uppercase mb-1">Total Stock</div>
+          <div className="text-lg font-black text-blue-600 leading-none">
+            {totalStock.toLocaleString()}
+            <span className="text-[10px] font-bold ml-1 text-blue-400">pcs</span>
           </div>
         </div>
-
-        {/* Overflow menu */}
-        <OverflowMenu
-          onRawData={handleExportRawData}
-          onScreenshot={handleScreenshot}
-          isExporting={isExporting}
-          isScreenshotting={isScreenshotting}
-        />
+        <div className="bg-white rounded-[14px] p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-center">
+          <div className="text-[10px] font-bold text-slate-400 tracking-wider uppercase mb-1">Warehouses</div>
+          <div className="text-lg font-black text-slate-800 leading-none">{relevantWarehouses.length}</div>
+        </div>
       </div>
 
-      {/* Search + Filters row */}
-      <div className="px-3 pt-3 pb-2 flex gap-2 shrink-0">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <input
-            type="text"
-            placeholder="Search product or SKU…"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-9 bg-white border border-slate-200 text-slate-800 text-[13px] rounded-xl h-10 focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] transition-shadow"
-          />
-          {searchQuery && (
+      {/* Grid-type segmented control */}
+      <div className="px-3 pt-3 pb-2 shrink-0">
+        <div className="bg-white rounded-xl border border-slate-200 p-1 flex">
+          {GRID_TABS.map(tab => (
             <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 active:opacity-60"
+              key={tab}
+              onClick={() => setActiveGridTab(tab)}
+              className={`flex-1 py-2 text-[12px] font-bold rounded-lg transition-all ${
+                activeGridTab === tab
+                  ? 'bg-[#1A2766] text-white shadow-sm'
+                  : 'text-slate-500 hover:bg-slate-50'
+              }`}
             >
-              <X size={14} />
+              {tab}
             </button>
-          )}
+          ))}
         </div>
-        <button
-          onClick={() => setFiltersOpen(true)}
-          className={`relative w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 transition-colors ${
-            activeFilterCount > 0
-              ? 'bg-[#1A2766]/10 border-[#1A2766]/30 text-[#1A2766]'
-              : 'bg-white border-slate-200 text-slate-600'
-          }`}
-          aria-label="Open filters"
-        >
-          <SlidersHorizontal size={18} />
-          {activeFilterCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 bg-[#1A2766] text-white text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 leading-none">
-              {activeFilterCount}
-            </span>
-          )}
-        </button>
       </div>
 
-      {/* Main scrollable list */}
-      <div className="flex-1 overflow-y-auto px-3 pb-[env(safe-area-inset-bottom)] pb-6">
+      {/* Search + Filter + Menu */}
+      <div className="px-3 pb-3 shrink-0">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="Search product or SKU…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-9 bg-white border border-slate-200 text-slate-800 text-[13px] rounded-xl h-10 focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] transition-shadow"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 active:opacity-60"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setFiltersOpen(true)}
+            className={`relative w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 transition-colors ${
+              activeFilterCount > 0
+                ? 'bg-[#1A2766]/10 border-[#1A2766]/30 text-[#1A2766]'
+                : 'bg-white border-slate-200 text-slate-600'
+            }`}
+            aria-label="Open filters"
+          >
+            <SlidersHorizontal size={18} />
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-[#1A2766] text-white text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 leading-none">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+          <OverflowMenu
+            onRawData={handleExportRawData}
+            onScreenshot={handleScreenshot}
+            isExporting={isExporting}
+            isScreenshotting={isScreenshotting}
+          />
+        </div>
+      </div>
+
+      {/* Brand sections list */}
+      <div className="flex-1 overflow-y-auto px-3 pb-6 pb-[env(safe-area-inset-bottom)] min-h-0">
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center gap-3 text-slate-400 py-16 text-center">
             <AlertTriangle size={36} className="text-slate-300" />
             <div>
               <div className="text-[15px] font-bold text-slate-600 mb-1">
-                No inverter stock found
+                No {activeGridTab} inverter stock found
               </div>
               <p className="text-[13px]">Try adjusting your search or filters.</p>
             </div>
@@ -817,45 +857,22 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
             )}
           </div>
         ) : (
-          sortedBrands.map(brand => {
+          sortedBrands.map((brand, idx) => {
             const brandMap = groupedData.get(brand)!;
-            const combos = Array.from(brandMap.values()).sort((a, b) => {
-              if (a.capNum !== b.capNum) return a.capNum - b.capNum;
-              if (a.invType !== b.invType) return a.invType.localeCompare(b.invType);
-              return a.phase.localeCompare(b.phase);
-            });
-
+            const brandTotal = Array.from(brandMap.values()).reduce((s, e) => s + e.gt, 0);
+            const combos = Array.from(brandMap.values()).sort(
+              (a, b) => a.capNum - b.capNum || a.phase.localeCompare(b.phase)
+            );
             return (
-              <div key={brand} className="mb-5">
-                {/* Brand section heading — always expanded (non-collapsible) */}
-                <div className="flex items-center gap-2 mb-2 px-1">
-                  <div className="h-px flex-1 bg-slate-200" />
-                  <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">
-                    {brand}
-                  </span>
-                  <div className="h-px flex-1 bg-slate-200" />
-                </div>
-
-                <div className="flex flex-col gap-2.5">
-                  {combos.map(entry => {
-                    const warehouseEntries = relevantWarehouses.map(wh => ({
-                      wh,
-                      qty: entry.cells[wh.id] || 0,
-                    }));
-                    return (
-                      <ConfigCard
-                        key={`${entry.cap}|${entry.invType}|${entry.phase}`}
-                        capacity={entry.cap}
-                        invType={entry.invType}
-                        phase={entry.phase}
-                        grandTotal={entry.gt}
-                        warehouseEntries={warehouseEntries}
-                        maxWhQty={maxWhQty}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
+              <BrandSection
+                key={brand}
+                brand={brand}
+                brandTotal={brandTotal}
+                combos={combos}
+                relevantWarehouses={relevantWarehouses}
+                defaultExpanded={idx === 0}
+                onRowTap={setDrilldown}
+              />
             );
           })
         )}
@@ -879,6 +896,9 @@ export default function MobileInverterStockClient({ warehouses, items }: Props) 
         }}
         getMatchCount={getMatchCount}
       />
+
+      {/* Warehouse distribution bottom sheet */}
+      <WarehouseSheet data={drilldown} onClose={() => setDrilldown(null)} />
     </div>
   );
 }

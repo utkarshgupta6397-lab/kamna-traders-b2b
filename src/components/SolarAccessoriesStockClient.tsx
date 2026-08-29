@@ -122,7 +122,7 @@ export default function SolarAccessoriesStockClient({ warehouses, items }: Props
     }
   };
 
-  const { matrixRows, maxBody, maxGt } = useMemo(() => {
+  const buildMatrixRows = (forceExpand: boolean = false) => {
     const root = new Map<string, { products: SkuItem[], cells: Record<string, number>, units: Set<string> }>();
     const colTotals: Record<string, number> = {};
     const allUnits = new Set<string>();
@@ -166,7 +166,7 @@ export default function SolarAccessoriesStockClient({ warehouses, items }: Props
       const catData = root.get(catName)!;
       if ((catData.cells['GT'] || 0) === 0) return;
 
-      const isExpanded = expandedCategories.has(catName);
+      const isExpanded = forceExpand || expandedCategories.has(catName);
 
       rows.push({
         id: `cat_${catName}`,
@@ -215,7 +215,9 @@ export default function SolarAccessoriesStockClient({ warehouses, items }: Props
     });
     
     return { matrixRows: rows, maxBody: maxB, maxGt: maxG };
-  }, [filteredItems, meaningfulWarehouses, expandedCategories]);
+  };
+
+  const { matrixRows, maxBody, maxGt } = useMemo(() => buildMatrixRows(), [filteredItems, meaningfulWarehouses, expandedCategories]);
 
   const [isScreenshotting, setIsScreenshotting] = useState(false);
 
@@ -229,7 +231,8 @@ export default function SolarAccessoriesStockClient({ warehouses, items }: Props
       const formatQty = (v: number, unit?: string) => unit ? `${v} ${unit}` : `${v}`;
       const head = [['Category / Product Name', ...meaningfulWarehouses.map(w => w.name), 'Grand Total']];
       
-      const body = matrixRows.map(row => {
+      const { matrixRows: exportRows } = buildMatrixRows(true);
+      const body = exportRows.map(row => {
         const rowData: any[] = [];
         let labelStr = row.label;
         let cellBg = [255, 255, 255];

@@ -39,6 +39,7 @@ export interface PivotColumnDef {
 export interface PivotRowDef {
   id: string; label: string; isGroupHeader?: boolean; isGrandTotal?: boolean;
   isExpanded?: boolean;
+  parentId?: string;
   onToggle?: () => void;
   href?: string;
   cells: Record<string, PivotCellDef | number>;
@@ -63,21 +64,38 @@ function formatWattageDisplay(raw: string | null | undefined): string {
 // ─── Heatmap ─────────────────────────────────────────────────────────────────
 
 function buildHeatmap(rows: PivotRowDef[]) {
-  let maxV = 0, maxGT = 0;
+  let maxGroupV = 0, maxGT = 0;
+  const childMaxMap: Record<string, number> = {};
+
   rows.forEach(r => {
-    if (r.isGroupHeader || r.isGrandTotal) return;
     Object.entries(r.cells).forEach(([colId, cellObj]) => {
       const val = typeof cellObj === 'number' ? cellObj : (cellObj?.value || 0);
-      if (colId === 'GT' || colId.startsWith('GT_')) maxGT = Math.max(maxGT, val);
-      else maxV = Math.max(maxV, val);
+      if (colId === 'GT' || colId.startsWith('GT_')) {
+        maxGT = Math.max(maxGT, val);
+      } else {
+        if (r.isGroupHeader) {
+          maxGroupV = Math.max(maxGroupV, val);
+        } else if (!r.isGrandTotal && r.parentId) {
+          childMaxMap[r.parentId] = Math.max(childMaxMap[r.parentId] || 0, val);
+        }
+      }
     });
   });
 
-  const getStyle = (val: number, isGtRow: boolean, isGtCol: boolean): React.CSSProperties => {
-    if (isGtRow || isGtCol) {
-      return getSharedHeatmapStyle(val, isGtCol ? maxGT : maxV, true, false);
+  const getStyle = (row: PivotRowDef, colId: string, val: number, isGtCol: boolean): React.CSSProperties => {
+    if (row.isGrandTotal || isGtCol) {
+      return getSharedHeatmapStyle(val, isGtCol ? maxGT : maxGroupV, true, false);
     }
-    return getSharedHeatmapStyle(val, maxV, false, false);
+    if (row.isGroupHeader) {
+      if (row.isExpanded) {
+        return { backgroundColor: '#F8FAFC', color: '#334155', fontWeight: 600 };
+      }
+      return getSharedHeatmapStyle(val, maxGroupV, false, false);
+    }
+    if (row.parentId) {
+      return getSharedHeatmapStyle(val, childMaxMap[row.parentId] || 1, false, false);
+    }
+    return getSharedHeatmapStyle(val, maxGroupV, false, false);
   };
   return { getStyle };
 }
@@ -214,7 +232,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, isExportMod
                     {flatLeaves.map((leaf, idx) => {
                       const cellData = row.cells?.[leaf.id];
                       const val = typeof cellData === 'number' ? cellData : cellData?.value || 0;
-                      const cs = getStyle(val, false, leaf.isGrandTotal);
+                      const cs = getStyle(row, leaf.id, val, leaf.isGrandTotal);
                       
                       return (
                         <td key={idx} className={`px-2 py-1.5 text-center text-[13px] font-bold ${groupBorder(leaf)}`}
@@ -248,7 +266,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, isExportMod
                   {flatLeaves.map((leaf, idx) => {
                     const cellData = row.cells[leaf.id];
                     const val = typeof cellData === 'number' ? cellData : cellData?.value || 0;
-                    const cs = getStyle(val, !!row.isGrandTotal, leaf.isGrandTotal);
+                    const cs = getStyle(row, leaf.id, val, leaf.isGrandTotal);
 
                     return (
                       <td key={idx}
@@ -578,7 +596,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
   }, [groupedData, visibleWarehouses]);
 
   // ── Row builder ─────────────────────────────────────────────────────────────
-  const buildMatrixRows = (classification: 'DCR' | 'Non-DCR', activeWhs: Warehouse[]): PivotRowDef[] => {
+  const buildMatrixRows = (classification: 'DCR' | 'Non-DCR', activeWhs: Warehouse[], forceExpand: boolean = false): PivotRowDef[] => {
     const classMap = groupedData.get(classification)!;
     const result: PivotRowDef[] = [];
     let gtTotal = 0;
@@ -610,7 +628,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
       });
 
       const groupId = `group_${classification}_${series}`;
-      const isExpanded = isExportMode || expandedGroups.has(groupId);
+      const isExpanded = forceExpand || isExportMode || expandedGroups.has(groupId);
       
       const seriesCells: Record<string, PivotCellDef> = {};
       activeWhs.forEach(wh => {
@@ -648,6 +666,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
 
           result.push({
             id: `row_${classification}_${series}_child_${childKey}`,
+            parentId: groupId,
             label: entry.label,
             href: entry.href,
             cells,
@@ -762,7 +781,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
          tables.push({
            title: 'DCR Solar Panel Stock',
            head: [['Series / SKU', ...dcrCols.map(c => c.label)]],
-           body: buildTableBody(dcrCols, dcrRows).map(r => {
+           body: buildTableBody(dcrCols, buildMatrixRows('DCR', dcrWarehouses, true)).map(r => {
              const rowArr: any[] = [];
              
              let cellBg = [255,255,255];
@@ -791,7 +810,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
          tables.push({
            title: 'Non-DCR Solar Panel Stock',
            head: [['Series / SKU', ...nonDcrCols.map(c => c.label)]],
-           body: buildTableBody(nonDcrCols, nonDcrRows).map(r => {
+           body: buildTableBody(nonDcrCols, buildMatrixRows('Non-DCR', nonDcrWarehouses, true)).map(r => {
              const rowArr: any[] = [];
              let cellBg = [255,255,255];
              let textColor = [50,50,50];

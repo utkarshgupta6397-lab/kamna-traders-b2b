@@ -67,8 +67,12 @@ function OverflowMenu({ onRawData, onScreenshot, isExporting, isScreenshotting }
 
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen(v => !v)} className="p-2 rounded-full text-white/80 active:bg-white/10 transition-colors" aria-label="More actions">
-        <MoreVertical size={22} strokeWidth={2.5} />
+      <button 
+        onClick={() => setOpen(v => !v)} 
+        className="w-10 h-10 rounded-xl border border-slate-200 bg-white text-slate-600 flex items-center justify-center shrink-0 active:bg-slate-50 transition-colors" 
+        aria-label="More actions"
+      >
+        <MoreVertical size={18} />
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-[200] w-48">
@@ -358,25 +362,6 @@ export default function MobileSolarPanelStockClient({ warehouses, brands, items 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-[#F8F9FB]">
 
-      {/* Sticky action bar */}
-      <div className="bg-[#1A2766] px-3 pt-1 pb-2 shrink-0 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="flex flex-col items-center bg-white/10 rounded-xl px-2.5 py-1.5">
-            <span className="text-[10px] font-bold text-white/60 uppercase tracking-wider leading-none">SKUs</span>
-            <span className="text-[14px] font-black text-white leading-none mt-0.5">{tabSkuCount}</span>
-          </div>
-          <div className="flex flex-col items-center bg-white/10 rounded-xl px-2.5 py-1.5">
-            <span className="text-[10px] font-bold text-white/60 uppercase tracking-wider leading-none">Stock</span>
-            <span className="text-[14px] font-black text-white leading-none mt-0.5">{tabTotalStock.toLocaleString()}</span>
-          </div>
-          <div className="flex flex-col items-center bg-white/10 rounded-xl px-2.5 py-1.5">
-            <span className="text-[10px] font-bold text-white/60 uppercase tracking-wider leading-none">WH</span>
-            <span className="text-[14px] font-black text-white leading-none mt-0.5">{tabWhCount}</span>
-          </div>
-        </div>
-        <OverflowMenu onRawData={handleExportRawData} onScreenshot={handleScreenshot} isExporting={isExporting} isScreenshotting={isScreenshotting} />
-      </div>
-
       {/* KPI cards — Wire & Cable style */}
       <div className="grid grid-cols-3 gap-2 p-3 pb-0 shrink-0">
         <div className="bg-white rounded-[14px] p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-center">
@@ -414,7 +399,7 @@ export default function MobileSolarPanelStockClient({ warehouses, brands, items 
         </div>
       </div>
 
-      {/* Search + Filter */}
+      {/* Search + Filter + Actions */}
       <div className="px-3 pb-3 shrink-0">
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -443,6 +428,7 @@ export default function MobileSolarPanelStockClient({ warehouses, brands, items 
               </span>
             )}
           </button>
+          <OverflowMenu onRawData={handleExportRawData} onScreenshot={handleScreenshot} isExporting={isExporting} isScreenshotting={isScreenshotting} />
         </div>
       </div>
 

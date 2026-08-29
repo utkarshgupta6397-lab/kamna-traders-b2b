@@ -16,6 +16,8 @@ interface SkuItem {
   wireWidth?: string | null;
   wireColor?: string | null;
   bundleLength?: string | null;
+  sku?: string;
+  parentProductName?: string | null;
 }
 interface Props {
   warehouses: Warehouse[]; categories: Record<string, unknown>[]; brands: Brand[];
@@ -318,6 +320,71 @@ export default function WireCableStockClient({ warehouses, items }: Props) {
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
 
   const [modalData, setModalData] = useState<ColorBreakdownModalProps['data']>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportRawData = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const XLSX = await import('xlsx');
+      
+      const rows = items.map(item => {
+        const row: Record<string, string | number> = {
+          'SKU': item.sku || item.id,
+          'Product Name': item.name,
+          'Parent Product / Product Family': item.parentProductName || '',
+          'Wire Type / Category': item.categoryName || 'Unknown',
+          'Brand': item.brand || 'Unknown',
+          'Wire Width': normalizeWidth(item.wireWidth),
+          'Wire Color': normalizeColor(item.wireColor),
+          'Bundle Length': item.bundleLength || 'Unknown'
+        };
+        
+        let totalMtr = 0;
+        let totalBdls = 0;
+        const bSize = parseFloat(item.bundleLength || '0');
+        const hasValidBundle = !isNaN(bSize) && bSize > 0;
+        
+        // Use all operational warehouses instead of only visible ones
+        const opsWarehouses = warehouses.filter(w => !w.isSystemWarehouse);
+
+        // Physical Stock columns
+        opsWarehouses.forEach(wh => {
+          const qty = Math.max(0, item.inventory[wh.id]?.qty || 0);
+          row[`${wh.name} — Physical Stock (MTR)`] = qty;
+          totalMtr += qty;
+        });
+        row['Grand Total — Physical Stock (MTR)'] = totalMtr;
+        
+        // Bundle Stock columns
+        opsWarehouses.forEach(wh => {
+          const qty = Math.max(0, item.inventory[wh.id]?.qty || 0);
+          let bdlVal: string | number = 'N/A';
+          if (hasValidBundle) {
+            // Replicate the page's calculation logic exactly
+            bdlVal = Number((qty / bSize).toFixed(2));
+            totalBdls += bdlVal;
+          }
+          row[`${wh.name} — Bundle Stock (BDLS)`] = bdlVal;
+        });
+        
+        row['Grand Total — Bundle Stock (BDLS)'] = hasValidBundle ? Number(totalBdls.toFixed(2)) : 'N/A';
+        
+        return row;
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Raw Data");
+      
+      const dateStr = new Date().toISOString().split('T')[0];
+      XLSX.writeFile(workbook, `wire-cable-stock-raw-data-${dateStr}.xlsx`);
+    } catch (e) {
+      console.error('Export failed', e);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery), 200);
@@ -738,7 +805,7 @@ export default function WireCableStockClient({ warehouses, items }: Props) {
           <div className="text-[10px] text-gray-400 font-medium">Last updated: {formatStockDate(new Date())}</div>
         </div>
 
-        <div className="px-4 py-2.5 border-b border-gray-100 bg-white flex flex-wrap items-center gap-2 shrink-0">
+        <div className="px-4 py-2.5 border-b border-gray-100 bg-white flex flex-wrap items-center gap-2 shrink-0 relative z-10">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input type="text" placeholder="Search product or SKU…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
@@ -750,10 +817,16 @@ export default function WireCableStockClient({ warehouses, items }: Props) {
           <MultiSelectFilter label="Widths" options={availableWidths} selected={selectedWidths} onToggle={id => toggle(setSelectedWidths, id)} />
           <MultiSelectFilter label="Colors" options={availableColors} selected={selectedColors} onToggle={id => toggle(setSelectedColors, id)} />
           
-          <button onClick={handleExportPDF} className="ml-auto flex items-center gap-2 px-4 py-1.5 bg-[#1A2766] text-white text-[13px] font-semibold rounded-md shadow-sm hover:bg-[#1A2766]/90 transition-colors h-8">
-            <Download size={14} />
-            Screenshot
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button onClick={handleExportRawData} disabled={isExporting} className="flex items-center gap-2 px-4 py-1.5 bg-white border border-gray-300 text-gray-700 text-[13px] font-semibold rounded-md shadow-sm hover:bg-gray-50 transition-colors h-8 disabled:opacity-50 disabled:cursor-not-allowed">
+              <Download size={14} />
+              {isExporting ? 'Exporting...' : 'Raw Data'}
+            </button>
+            <button onClick={handleExportPDF} className="flex items-center gap-2 px-4 py-1.5 bg-[#1A2766] text-white text-[13px] font-semibold rounded-md shadow-sm hover:bg-[#1A2766]/90 transition-colors h-8">
+              <Download size={14} />
+              Screenshot
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 bg-[#f7f8fb] min-h-0 relative">

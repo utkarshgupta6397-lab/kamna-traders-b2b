@@ -4,15 +4,15 @@ import dynamic from 'next/dynamic';
 const PdfViewer = dynamic(() => import('./PdfViewer'), { ssr: false });
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
-  Search, Box, ChevronDown, Check, Loader2, AlertTriangle, ExternalLink, X, Camera
+  Search, Box, ChevronDown, ChevronRight, Check, Loader2, AlertTriangle, ExternalLink, X, Camera
 } from 'lucide-react';
 import CurrentStockSidebar from './CurrentStockSidebar';
 import { formatStockDate } from '@/lib/date-utils';
 
-import { jsPDF } from 'jspdf';
 import toast from 'react-hot-toast';
 
-// Types
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 interface Warehouse { id: string; name: string; isSystemWarehouse?: boolean; }
 interface Brand { id: string; name: string; }
 interface SkuInventory { [warehouseId: string]: { qty: number; isOos: boolean; } }
@@ -52,6 +52,8 @@ export interface PivotColumnDef {
 }
 export interface PivotRowDef {
   id: string; label: string; isGroupHeader?: boolean; isGrandTotal?: boolean;
+  isExpanded?: boolean;
+  onToggle?: () => void;
   href?: string;
   cells: Record<string, PivotCellDef | number>;
 }
@@ -66,13 +68,28 @@ interface PivotTableProps {
   reportId?: string;
 }
 
-// Heatmap — Google Charts colorful interpolation
+// ─── Wattage formatter ───────────────────────────────────────────────────────
+
+/**
+ * Returns a display string with a W suffix for plain-numeric wattage values.
+ * Never appends W twice. Preserves unknown/non-numeric labels.
+ */
+function formatWattageDisplay(raw: string | null | undefined): string {
+  if (!raw || raw.trim() === '') return 'Unknown';
+  const v = raw.trim();
+  if (/^[\d.]+$/.test(v)) return `${v} W`;          // plain number → append W
+  if (/\bW$/i.test(v)) return v;                     // already ends with unit
+  return v;                                           // non-numeric label
+}
+
+// ─── Heatmap ─────────────────────────────────────────────────────────────────
+
 const colors = [
-  { r: 236, g: 253, b: 245 }, // 0.0 - Very light mint/cyan (neutral-ish for lowest positive)
-  { r: 167, g: 243, b: 208 }, // 0.25 - Light green
-  { r: 253, g: 230, b: 138 }, // 0.50 - Yellow
-  { r: 251, g: 146, b: 60 },  // 0.75 - Orange
-  { r: 239, g: 68, b: 68 }    // 1.0 - Red
+  { r: 236, g: 253, b: 245 },
+  { r: 167, g: 243, b: 208 },
+  { r: 253, g: 230, b: 138 },
+  { r: 251, g: 146, b: 60 },
+  { r: 239, g: 68,  b: 68  },
 ];
 
 function buildHeatmap(rows: PivotRowDef[]) {
@@ -133,9 +150,10 @@ function buildHeatmap(rows: PivotRowDef[]) {
 
 function isDrilldownMatch(cellDim: SolarPanelDrilldown | undefined, active: SolarPanelDrilldown | null) {
   if (!active || !cellDim) return false;
-  // If active exists, and cellDim matches all active keys exactly (or superset)
   return Object.keys(active).every(k => (active as any)[k] === (cellDim as any)[k]);
 }
+
+// ─── PivotTable component ─────────────────────────────────────────────────────
 
 function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrilldown, onCellClick, headerRight, containerRef, isExportMode }: PivotTableProps) {
   type Leaf = { id: string; label: string; width: number; isGrandTotal: boolean; isTotal: boolean; parentId?: string; isFirstInGroup: boolean; rightOffset?: number; };
@@ -147,7 +165,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrill
         flatLeaves.push({ id: `${col.id}_${sc.id}`, label: sc.label, width: sc.isTotal ? 85 : 70, isGrandTotal: isGT, isTotal: !!sc.isTotal, parentId: col.id, isFirstInGroup: si === 0 });
       });
     } else {
-      flatLeaves.push({ id: col.id, label: col.label, width: isGT ? 85 : 75, isGrandTotal: isGT, isTotal: false, isFirstInGroup: true });
+      flatLeaves.push({ id: col.id, label: col.label, width: isGT ? 85 : 72, isGrandTotal: isGT, isTotal: false, isFirstInGroup: true });
     }
   });
 
@@ -184,9 +202,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrill
               <col style={{ width: "23%" }} />
               {flatLeaves.map((leaf, idx) => {
                 let p = "5%";
-                if (leaf.label === 'DCR') p = "5%";
-                else if (leaf.label === 'Non-DCR') p = "6.6%";
-                else if (leaf.isTotal) p = "7%";
+                if (leaf.isTotal) p = "7%";
                 return <col key={`col_${idx}`} style={{ width: p }} />;
               })}
             </colgroup>
@@ -245,13 +261,26 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrill
                 return (
                   <tr key={row.id} className="bg-slate-50/80 border-b border-slate-200">
                     <td className="px-3 py-2 font-bold text-[12px] text-slate-700 uppercase tracking-wide border-r border-slate-200 bg-slate-50/80" style={LS(20)}>
-                      {row.label}
+                      <div className={`flex items-center gap-1.5 ${row.onToggle ? 'cursor-pointer hover:text-blue-700 select-none' : ''}`} onClick={row.onToggle}>
+                        {row.onToggle && (
+                          row.isExpanded ? <ChevronDown size={15} className="text-slate-400 shrink-0" /> : <ChevronRight size={15} className="text-slate-400 shrink-0" />
+                        )}
+                        <span className="truncate">{row.label}</span>
+                      </div>
                     </td>
-                    {flatLeaves.map((leaf, idx) => (
-                      <td key={idx} className={groupBorder(leaf)}
-                        style={leaf.isGrandTotal ? { ...RS(leaf.rightOffset!, 15), backgroundColor: '#ECEEF8', width: isExportMode ? 'auto' : leaf.width, minWidth: isExportMode ? 'auto' : leaf.width } : { backgroundColor: '#f8f9fb' }}
-                      />
-                    ))}
+                    {flatLeaves.map((leaf, idx) => {
+                      const cellData = row.cells?.[leaf.id];
+                      const val = typeof cellData === 'number' ? cellData : cellData?.value || 0;
+                      const cs = getStyle(val, false, leaf.isGrandTotal);
+                      
+                      return (
+                        <td key={idx} className={`px-2 py-1.5 text-center text-[13px] font-bold ${groupBorder(leaf)}`}
+                          style={leaf.isGrandTotal ? { ...RS(leaf.rightOffset!, 15), ...cs, width: isExportMode ? 'auto' : leaf.width, minWidth: isExportMode ? 'auto' : leaf.width } : { ...cs, width: isExportMode ? 'auto' : leaf.width, minWidth: isExportMode ? 'auto' : leaf.width }}
+                        >
+                          {val === 0 ? <span className="opacity-40">—</span> : val.toLocaleString()}
+                        </td>
+                      );
+                    })}
                   </tr>
                 );
               }
@@ -259,7 +288,7 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrill
               return (
                 <tr key={row.id} className={`border-b border-gray-100 transition-all ${row.isGrandTotal ? 'font-bold text-[12px] text-white' : 'hover:brightness-95 group'} ${isAlt ? 'bg-[#fcfdfd]' : 'bg-white'}`} style={row.isGrandTotal && !isExportMode ? { position: "sticky", bottom: 0, zIndex: 30 } : {}}>
                   <td
-                    className={`px-3 py-1.5 font-medium border-r border-gray-200 transition-colors ${row.isGrandTotal ? 'text-[11px] font-black uppercase tracking-wider border-t-2 border-t-white/10 border-r border-r-white/20' : `text-[13px] text-gray-700 ${isAlt ? 'bg-[#fcfdfd]' : 'bg-white'} ${row.id.includes('_child_') ? 'pl-7 text-gray-600 text-[12px]' : ''}`}`}
+                    className={`px-3 py-1.5 font-medium border-r border-gray-200 transition-colors ${row.isGrandTotal ? 'text-[11px] font-black uppercase tracking-wider border-t-2 border-t-white/10 border-r border-r-white/20' : `text-[13px] text-gray-700 ${isAlt ? 'bg-[#fcfdfd]' : 'bg-white'} ${row.id.includes('_child_') ? 'pl-8 text-gray-600 text-[12px]' : ''}`}`}
                     style={row.isGrandTotal ? { ...LS(40), backgroundColor: GT_BG, color: '#fff', whiteSpace: isExportMode ? 'normal' : 'nowrap' } : { ...LS(20), whiteSpace: isExportMode ? 'normal' : 'nowrap' }}
                   >
                     <div className="flex items-center gap-1.5" title={row.label}>
@@ -313,6 +342,8 @@ function PivotTable({ title, subtitle, firstColLabel, columns, rows, activeDrill
   );
 }
 
+// ─── MultiSelectFilter ────────────────────────────────────────────────────────
+
 const MultiSelectFilter = ({ label, options, selected, onToggle, prefix, wideMenu = false }: {
   label: string; options: { id: string; name: string }[]; selected: string[];
   onToggle: (id: string) => void; prefix?: React.ReactNode; wideMenu?: boolean;
@@ -339,13 +370,13 @@ const MultiSelectFilter = ({ label, options, selected, onToggle, prefix, wideMen
   </div>
 );
 
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function SolarPanelStockClient({ warehouses, categories, brands, items, isExportMode = false, autoCapture = false, onCaptured, onCaptureError }: Props) {
-  const pivot1Ref = useRef<HTMLDivElement>(null);
-  const pivot2Ref = useRef<HTMLDivElement>(null);
-  const pivot3Ref = useRef<HTMLDivElement>(null);
-  const pivot4Ref = useRef<HTMLDivElement>(null);
+  const dcrRef  = useRef<HTMLDivElement>(null);
+  const nonDcrRef = useRef<HTMLDivElement>(null);
   
-  // Global Filters
+  // ── Filter state ────────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedWarehouses, setSelectedWarehouses] = useState<string[]>([]);
@@ -355,8 +386,10 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
   const [selectedWattages, setSelectedWattages] = useState<string[]>([]);
   const [exportingReportId, setExportingReportId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
-  // Shared Drilldown State
+  // ── Drilldown state ─────────────────────────────────────────────────────────
   const [activeDrilldown, setActiveDrilldown] = useState<SolarPanelDrilldown | null>(null);
 
   useEffect(() => {
@@ -364,45 +397,81 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
     return () => clearTimeout(t);
   }, [searchQuery]);
 
-  // If ANY global filter changes, clear the active drilldown.
   useEffect(() => setActiveDrilldown(null), [debouncedSearch, selectedWarehouses, selectedBrands, selectedDcr, selectedSeries, selectedWattages]);
 
   const solarCategory = categories.find(c => c.name.toLowerCase() === 'solar panel');
-  const isFixtureMode = process.env.NODE_ENV === 'development' && warehouses.filter(w => !w.isSystemWarehouse).length < 5;
-  const operationalWarehouses = useMemo(() => {
-    if (isFixtureMode) {
-      return [
-        { id: 'WH001', name: 'Main Solar Warehouse' },
-        { id: 'mock_delhi', name: 'Delhi Warehouse' },
-        { id: 'mock_meerut', name: 'Meerut Warehouse' },
-        { id: 'mock_lucknow', name: 'Lucknow Warehouse' },
-        { id: 'mock_noida', name: 'Noida Warehouse' },
-      ];
-    }
-    return warehouses.filter(w => !w.isSystemWarehouse);
-  }, [warehouses, isFixtureMode]);
 
+  const operationalWarehouses = useMemo(() => {
+    let whs = warehouses.filter(w => !w.isSystemWarehouse);
+    if (process.env.NODE_ENV === 'development' && whs.length < 4) {
+      const mockWhs = [
+        { id: 'mock_budh_vihar', name: 'Budh Vihar' },
+        { id: 'mock_mohanpuri', name: 'Mohanpuri' },
+        { id: 'mock_rithani', name: 'Rithani' },
+        { id: 'mock_main', name: 'Main Solar Warehouse' },
+      ];
+      whs = [...whs, ...mockWhs.slice(0, 4 - whs.length)];
+    }
+    return whs;
+  }, [warehouses]);
+  
+  // Seed richer test items if in development mode
+  const effectiveItemsSource = useMemo(() => {
+    if (process.env.NODE_ENV === 'development') {
+      const mockItems: SkuItem[] = [];
+      const testSeries = [
+        { name: 'TEST_SP_SERIES_TEST_BRAND_1', isDcr: true, wattages: ['405', '410', '415', '425', '430', '440', '455', '460', '465', '475', '485', '490'] },
+        { name: 'TEST_SP_SERIES_TEST_BRAND_2', isDcr: true, wattages: ['535', '540', '545', '550', '555'] },
+        { name: 'ADANI BIFACIAL SERIES', isDcr: true, wattages: ['450', '500', '550'] },
+        { name: 'HAVELLS TOPCON SERIES', isDcr: true, wattages: ['550', '580', '600'] },
+        { name: 'WAAREE EXPERT SERIES', isDcr: false, wattages: ['540', '545', '550'] },
+        { name: 'VIKRAM SOLAR PRO', isDcr: false, wattages: ['400', '450'] }
+      ];
+      testSeries.forEach((series, sIdx) => {
+        series.wattages.forEach((w, wIdx) => {
+          mockItems.push({
+            id: `mock_${sIdx}_${wIdx}`,
+            name: `${series.name} ${w}W Panel`,
+            brandId: 'brand_1',
+            brand: 'Test Brand',
+            categoryId: 'cat_1',
+            categoryName: 'Solar Panel',
+            isDcrEligible: series.isDcr,
+            wattage: w,
+            parentProductId: `series_${sIdx}`,
+            parentProductName: series.name,
+            inventory: {} // computed in getQty
+          });
+        });
+      });
+      return [...items, ...mockItems];
+    }
+    return items;
+  }, [items]);
+
+  // ── Filter option derivation ────────────────────────────────────────────────
   const availableBrands = useMemo(() => {
     const m = new Map<string, string>();
-    items.forEach(item => { if (item.brandId && item.brand) m.set(item.brandId, item.brand); });
+    effectiveItemsSource.forEach(item => { if (item.brandId && item.brand) m.set(item.brandId, item.brand); });
     return Array.from(m.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [items]);
+  }, [effectiveItemsSource]);
 
   const availableSeries = useMemo(() => {
     const s = new Set<string>();
-    items.forEach(i => { if (i.parentProductName) s.add(i.parentProductName); });
+    effectiveItemsSource.forEach(i => { if (i.parentProductName) s.add(i.parentProductName); });
     return Array.from(s).sort();
-  }, [items]);
+  }, [effectiveItemsSource]);
 
   const availableWattages = useMemo(() => {
     const s = new Set<string>();
-    items.forEach(i => { if (i.wattage) s.add(i.wattage); });
+    effectiveItemsSource.forEach(i => { if (i.wattage) s.add(i.wattage); });
     return Array.from(s).sort((a, b) => (parseInt(a) || 0) - (parseInt(b) || 0));
-  }, [items]);
+  }, [effectiveItemsSource]);
 
+  // ── Filtered items ──────────────────────────────────────────────────────────
   const filteredItems = useMemo(() => {
     const q = debouncedSearch.toLowerCase().trim();
-    return items.filter(item => {
+    return effectiveItemsSource.filter(item => {
       if (q && !item.name.toLowerCase().includes(q) && !item.id.toLowerCase().includes(q)) return false;
       if (selectedBrands.length > 0 && (!item.brandId || !selectedBrands.includes(item.brandId))) return false;
       const dcrStatus = item.isDcrEligible ? 'DCR' : 'Non-DCR';
@@ -411,9 +480,9 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
       if (selectedWattages.length > 0 && (!item.wattage || !selectedWattages.includes(item.wattage))) return false;
       return true;
     });
-  }, [items, debouncedSearch, selectedBrands, selectedDcr, selectedSeries, selectedWattages]);
+  }, [effectiveItemsSource, debouncedSearch, selectedBrands, selectedDcr, selectedSeries, selectedWattages]);
 
-  // Effective items (filteredItems + Drilldown)
+  // Effective items — filtered + drilldown
   const effectiveItems = useMemo(() => {
     if (!activeDrilldown) return filteredItems;
     return filteredItems.filter(item => {
@@ -432,19 +501,24 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
   const toggle = (set: React.Dispatch<React.SetStateAction<string[]>>, val: string) =>
     set(prev => prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val]);
 
-  // Respects warehouse drilldown without collapsing columns
+  // Fixture-mode quantity resolver
   const getQty = (item: SkuItem, whId: string): number => {
     if (activeDrilldown?.warehouseId && activeDrilldown.warehouseId !== whId) return 0;
-    
-    if (isFixtureMode) {
+    if (process.env.NODE_ENV === 'development' && item.id.startsWith('mock_')) {
+      const whIndex = operationalWarehouses.findIndex(w => w.id === whId);
+      if (whIndex === -1) return 0;
+      
       const hash = Array.from(item.id).reduce((acc, c) => acc + c.charCodeAt(0), 0);
-      let base = 0;
-      if (whId === 'WH001') base = (hash % 12) * (item.isDcrEligible ? 8 : 20);
-      else if (whId === 'mock_delhi') base = (hash % 10) * (item.isDcrEligible ? 5 : 15);
-      else if (whId === 'mock_meerut') base = (hash % 8) * (item.isDcrEligible ? 4 : 12);
-      else if (whId === 'mock_lucknow') base = (hash % 5) * (item.isDcrEligible ? 3 : 8);
-      else if (whId === 'mock_noida') base = (hash % 3) * (item.isDcrEligible ? 1 : 4);
-      if (hash % 7 === 0 && whId !== 'WH001') return 0;
+      const multipliers = [8, 7, 5, 4, 6, 3, 2];
+      const modulos = [15, 11, 9, 7, 13, 8, 5];
+      
+      const mult = multipliers[whIndex % multipliers.length];
+      const mod = modulos[whIndex % modulos.length];
+      
+      let base = (hash % mod) * mult;
+      
+      // Introduce zero stock cases dynamically based on hash + whIndex
+      if ((hash + whIndex) % 6 === 0) return 0;
       return base;
     }
     return Math.max(0, item.inventory[whId]?.qty || 0);
@@ -461,259 +535,154 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
 
   const handleCellClick = (dim: SolarPanelDrilldown) => setActiveDrilldown(dim);
 
-  const whDcrCols: PivotColumnDef[] = meaningfulWarehouses.map(wh => ({
-    id: wh.id, label: wh.name, isWarehouseGroup: true,
-    subColumns: [{ id: 'DCR', label: 'DCR' }, { id: 'Non-DCR', label: 'Non-DCR' }],
-  }));
-  const gtDcrCol: PivotColumnDef = {
-    id: 'GT', label: 'Grand Total', isGrandTotal: true,
-    subColumns: [{ id: 'DCR', label: 'DCR' }, { id: 'Non-DCR', label: 'Non-DCR' }, { id: 'Total', label: 'Total', isTotal: true }],
-  };
-  const cols12: PivotColumnDef[] = [...whDcrCols, gtDcrCol];
+  // ── Column set: one column per warehouse + Grand Total ──────────────────────
+  const matrixCols: PivotColumnDef[] = useMemo(() => [
+    ...meaningfulWarehouses.map(wh => ({ id: wh.id, label: wh.name })),
+    { id: 'GT', label: 'Grand Total', isGrandTotal: true },
+  ], [meaningfulWarehouses]);
 
-  // Pivot 1: Brand + Wattage
-  const pivot1Rows = useMemo<PivotRowDef[]>(() => {
-    const bm = new Map<string, { brandId: string|null; totalDcr: number; totalNonDcr: number; wattages: Map<string, { data: Record<string, PivotCellDef>; totalDcr: number; totalNonDcr: number }>; }>();
-    let gtDcr = 0, gtNonDcr = 0;
-    const colTotals: Record<string, number> = {};
-    
+  // ── Single-pass grouped data ────────────────────────────────────────────────
+  // Shape: Map< 'DCR'|'Non-DCR',  Map< series, Map< wattage, { whQtys, gt, wattageNum } > > >
+  type WattageEntry = { whQtys: Record<string, number>; gt: number; wattageNum: number; };
+  type GroupedData = Map<'DCR' | 'Non-DCR', Map<string, Map<string, WattageEntry>>>;
+
+  const groupedData = useMemo<GroupedData>(() => {
+    const root: GroupedData = new Map([['DCR', new Map()], ['Non-DCR', new Map()]]);
+
     effectiveItems.forEach(item => {
-      const brand = item.brand || 'Unbranded';
+      const classification: 'DCR' | 'Non-DCR' = item.isDcrEligible ? 'DCR' : 'Non-DCR';
+      const series = item.parentProductName?.trim() || '(No Series)';
       const wattage = item.wattage?.trim() || 'Unknown';
-      const isDcr = !!item.isDcrEligible;
-      if (!bm.has(brand)) bm.set(brand, { brandId: item.brandId || null, totalDcr: 0, totalNonDcr: 0, wattages: new Map() });
-      const b = bm.get(brand)!;
-      if (!b.wattages.has(wattage)) b.wattages.set(wattage, { data: {}, totalDcr: 0, totalNonDcr: 0 });
-      const w = b.wattages.get(wattage)!;
+      const wattageNum = wattage === 'Unknown' ? Infinity : (parseFloat(wattage) || Infinity);
+
+      const classMap = root.get(classification)!;
+      if (!classMap.has(series)) classMap.set(series, new Map());
+      const seriesMap = classMap.get(series)!;
+
+      if (!seriesMap.has(wattage)) seriesMap.set(wattage, { whQtys: {}, gt: 0, wattageNum });
+      const entry = seriesMap.get(wattage)!;
+
       meaningfulWarehouses.forEach(wh => {
         const qty = getQty(item, wh.id);
         if (qty > 0) {
-          const ck = `${wh.id}_${isDcr ? 'DCR' : 'Non-DCR'}`;
-          const currentCell = w.data[ck];
-          w.data[ck] = { 
-            value: (currentCell?.value || 0) + qty, 
-            dimensions: { brandId: brand, wattage, warehouseId: wh.id, dcrStatus: isDcr ? 'DCR' : 'Non-DCR' } 
-          };
-          if (isDcr) { w.totalDcr += qty; b.totalDcr += qty; gtDcr += qty; }
-          else { w.totalNonDcr += qty; b.totalNonDcr += qty; gtNonDcr += qty; }
-          colTotals[ck] = (colTotals[ck] || 0) + qty;
+          entry.whQtys[wh.id] = (entry.whQtys[wh.id] || 0) + qty;
+          entry.gt += qty;
         }
       });
     });
+
+    return root;
+  }, [effectiveItems, meaningfulWarehouses, activeDrilldown]);
+
+  // ── Row builder ─────────────────────────────────────────────────────────────
+  const buildMatrixRows = (classification: 'DCR' | 'Non-DCR'): PivotRowDef[] => {
+    const classMap = groupedData.get(classification)!;
     const result: PivotRowDef[] = [];
-    Array.from(bm.entries()).sort((a, b) => a[0].localeCompare(b[0])).forEach(([brand, bObj]) => {
-      const validWattages = Array.from(bObj.wattages.entries())
-        .filter(([w, wObj]) => (wObj.totalDcr + wObj.totalNonDcr) > 0)
-        .sort((a, b) => { if (a[0] === 'Unknown') return 1; if (b[0] === 'Unknown') return -1; return (parseInt(a[0]) || 0) - (parseInt(b[0]) || 0); });
+    let gtTotal = 0;
+    const gtWhQtys: Record<string, number> = {};
+
+    const sortedSeries = Array.from(classMap.keys()).sort((a, b) => a.localeCompare(b));
+
+    sortedSeries.forEach(series => {
+      const seriesMap = classMap.get(series)!;
+
+      // Compute series grand total and prune zero wattages
+      const validWattages = Array.from(seriesMap.entries())
+        .filter(([, entry]) => entry.gt > 0)
+        .sort(([, a], [, b]) => a.wattageNum - b.wattageNum);
+
+      if (validWattages.length === 0) return; // skip empty series
+
+      let seriesTotalQty = 0;
+      const seriesWhQtys: Record<string, number> = {};
+
+      validWattages.forEach(([, entry]) => {
+        seriesTotalQty += entry.gt;
+        meaningfulWarehouses.forEach(wh => {
+          const q = entry.whQtys[wh.id] || 0;
+          if (q > 0) seriesWhQtys[wh.id] = (seriesWhQtys[wh.id] || 0) + q;
+        });
+      });
+
+      const groupId = `group_${classification}_${series}`;
+      const isExpanded = isExportMode || expandedGroups.has(groupId);
       
-      if (validWattages.length === 0) return;
-      
-      result.push({ id: `group_${brand}`, label: brand, isGroupHeader: true, cells: {} });
-      validWattages.forEach(([watt, wObj]) => {
-          let href;
-          if (watt !== 'Unknown' && solarCategory?.id) {
-            href = `/staff/dashboard/catalog-pricing/products?categoryId=${solarCategory.id}&search=${encodeURIComponent(watt)}`;
-            if (bObj.brandId) href += `&brandId=${bObj.brandId}`;
+      const seriesCells: Record<string, PivotCellDef> = {};
+      meaningfulWarehouses.forEach(wh => {
+        const q = seriesWhQtys[wh.id] || 0;
+        seriesCells[wh.id] = { value: q };
+      });
+      seriesCells['GT'] = { value: seriesTotalQty };
+
+      // Series group header row
+      result.push({
+        id: groupId,
+        label: series,
+        isGroupHeader: true,
+        isExpanded,
+        onToggle: () => {
+          setExpandedGroups(prev => {
+            const next = new Set(prev);
+            if (next.has(groupId)) next.delete(groupId);
+            else next.add(groupId);
+            return next;
+          });
+        },
+        cells: seriesCells,
+      });
+
+      // Wattage child rows (only if expanded or in export mode)
+      if (isExpanded) {
+        validWattages.forEach(([wattage, entry]) => {
+          let href: string | undefined;
+          if (wattage !== 'Unknown' && solarCategory?.id) {
+            href = `/staff/dashboard/catalog-pricing/products?categoryId=${solarCategory.id}&search=${encodeURIComponent(wattage)}`;
           }
-          result.push({ 
-            id: `row_${brand}_child_${watt}`, 
-            label: watt, 
+
+          const cells: Record<string, PivotCellDef> = {};
+          meaningfulWarehouses.forEach(wh => {
+            const qty = entry.whQtys[wh.id] || 0;
+            cells[wh.id] = { value: qty, dimensions: { seriesId: series, wattage, warehouseId: wh.id, dcrStatus: classification } };
+            // accumulate grand total row qtys
+            if (qty > 0) gtWhQtys[wh.id] = (gtWhQtys[wh.id] || 0) + qty;
+          });
+          cells['GT'] = { value: entry.gt, dimensions: { seriesId: series, wattage, dcrStatus: classification } };
+          gtTotal += entry.gt;
+
+          result.push({
+            id: `row_${classification}_${series}_child_${wattage}`,
+            label: formatWattageDisplay(wattage),
             href,
-            cells: { 
-              ...wObj.data, 
-              'GT_DCR': { value: wObj.totalDcr, dimensions: { brandId: brand, wattage: watt, dcrStatus: 'DCR' } }, 
-              'GT_Non-DCR': { value: wObj.totalNonDcr, dimensions: { brandId: brand, wattage: watt, dcrStatus: 'Non-DCR' } }, 
-              'GT_Total': { value: wObj.totalDcr + wObj.totalNonDcr, dimensions: { brandId: brand, wattage: watt } } 
-            } 
+            cells,
           });
         });
-    });
-    
-    const gtRowCells: Record<string, PivotCellDef> = {};
-    Object.keys(colTotals).forEach(ck => {
-      const parts = ck.split('_');
-      gtRowCells[ck] = { value: colTotals[ck], dimensions: { warehouseId: parts[0], dcrStatus: parts[1] as 'DCR'|'Non-DCR' } };
-    });
-    gtRowCells['GT_DCR'] = { value: gtDcr, dimensions: { dcrStatus: 'DCR' } };
-    gtRowCells['GT_Non-DCR'] = { value: gtNonDcr, dimensions: { dcrStatus: 'Non-DCR' } };
-    gtRowCells['GT_Total'] = { value: gtDcr + gtNonDcr, dimensions: {} };
-
-    result.push({ id: 'gt_row', label: 'Grand Total', isGrandTotal: true, cells: gtRowCells });
-    return result;
-  }, [effectiveItems, meaningfulWarehouses, solarCategory]);
-
-  // Pivot 2: Product Series
-  const pivot2Rows = useMemo<PivotRowDef[]>(() => {
-    const sm = new Map<string, { data: Record<string, PivotCellDef>; totalDcr: number; totalNonDcr: number }>();
-    let gtDcr = 0, gtNonDcr = 0;
-    const ct: Record<string, number> = {};
-    effectiveItems.forEach(item => {
-      if (!item.parentProductName) return;
-      const series = item.parentProductName;
-      if (!sm.has(series)) sm.set(series, { data: {}, totalDcr: 0, totalNonDcr: 0 });
-      const s = sm.get(series)!;
-      const isDcr = !!item.isDcrEligible;
-      meaningfulWarehouses.forEach(wh => {
-        const qty = getQty(item, wh.id);
-        if (qty > 0) {
-          const ck = `${wh.id}_${isDcr ? 'DCR' : 'Non-DCR'}`;
-          const currentCell = s.data[ck];
-          s.data[ck] = {
-            value: (currentCell?.value || 0) + qty,
-            dimensions: { seriesId: series, warehouseId: wh.id, dcrStatus: isDcr ? 'DCR' : 'Non-DCR' }
-          };
-          if (isDcr) { s.totalDcr += qty; gtDcr += qty; } else { s.totalNonDcr += qty; gtNonDcr += qty; }
-          ct[ck] = (ct[ck] || 0) + qty;
-        }
-      });
-    });
-    const result: PivotRowDef[] = Array.from(sm.entries()).filter(([s, sObj]) => (sObj.totalDcr + sObj.totalNonDcr) > 0).sort((a, b) => a[0].localeCompare(b[0])).map(([series, sObj]) => ({
-      id: `series_${series}`, label: series, 
-      cells: { 
-        ...sObj.data, 
-        'GT_DCR': { value: sObj.totalDcr, dimensions: { seriesId: series, dcrStatus: 'DCR' } }, 
-        'GT_Non-DCR': { value: sObj.totalNonDcr, dimensions: { seriesId: series, dcrStatus: 'Non-DCR' } }, 
-        'GT_Total': { value: sObj.totalDcr + sObj.totalNonDcr, dimensions: { seriesId: series } } 
-      }
-    }));
-    
-    const gtRowCells: Record<string, PivotCellDef> = {};
-    Object.keys(ct).forEach(ck => {
-      const parts = ck.split('_');
-      gtRowCells[ck] = { value: ct[ck], dimensions: { warehouseId: parts[0], dcrStatus: parts[1] as 'DCR'|'Non-DCR' } };
-    });
-    gtRowCells['GT_DCR'] = { value: gtDcr, dimensions: { dcrStatus: 'DCR' } };
-    gtRowCells['GT_Non-DCR'] = { value: gtNonDcr, dimensions: { dcrStatus: 'Non-DCR' } };
-    gtRowCells['GT_Total'] = { value: gtDcr + gtNonDcr, dimensions: {} };
-
-    result.push({ id: 'gt_row', label: 'Grand Total', isGrandTotal: true, cells: gtRowCells });
-    return result;
-  }, [effectiveItems, meaningfulWarehouses]);
-
-  // Pivot 3: Brand x Warehouse
-  const pivot3Cols: PivotColumnDef[] = [...meaningfulWarehouses.map(wh => ({ id: wh.id, label: wh.name })), { id: 'GT', label: 'Grand Total', isGrandTotal: true }];
-  const pivot3Rows = useMemo<PivotRowDef[]>(() => {
-    const bm = new Map<string, { data: Record<string, PivotCellDef>; total: number }>();
-    let total = 0; const ct: Record<string, number> = {};
-    effectiveItems.forEach(item => {
-      const brand = item.brand || 'Unbranded';
-      if (!bm.has(brand)) bm.set(brand, { data: {}, total: 0 });
-      const b = bm.get(brand)!;
-      meaningfulWarehouses.forEach(wh => {
-        const qty = getQty(item, wh.id);
-        if (qty > 0) { 
-          const current = b.data[wh.id];
-          b.data[wh.id] = { value: (current?.value || 0) + qty, dimensions: { brandId: brand, warehouseId: wh.id } }; 
-          b.total += qty; ct[wh.id] = (ct[wh.id] || 0) + qty; total += qty; 
-        }
-      });
-    });
-    const result: PivotRowDef[] = Array.from(bm.entries()).filter(([b, bObj]) => bObj.total > 0).sort((a, b) => a[0].localeCompare(b[0])).map(([brand, bObj]) => ({ 
-      id: `b_${brand}`, label: brand, cells: { ...bObj.data, 'GT': { value: bObj.total, dimensions: { brandId: brand } } } 
-    }));
-
-    const gtRowCells: Record<string, PivotCellDef> = {};
-    Object.keys(ct).forEach(whId => { gtRowCells[whId] = { value: ct[whId], dimensions: { warehouseId: whId } }; });
-    gtRowCells['GT'] = { value: total, dimensions: {} };
-
-    result.push({ id: 'gt_row', label: 'Grand Total', isGrandTotal: true, cells: gtRowCells });
-    return result;
-  }, [effectiveItems, meaningfulWarehouses]);
-
-  // Pivot 4: Summary (New Orientation: Y = DCR/Non-DCR/Total, X = Warehouses)
-  const pivot4Cols: PivotColumnDef[] = [
-    ...meaningfulWarehouses.map(wh => ({ id: wh.id, label: wh.name, isWarehouseGroup: true })),
-    { id: 'GT', label: 'Grand Total', isGrandTotal: true }
-  ];
-  const pivot4Rows = useMemo<PivotRowDef[]>(() => {
-    const dcrCells: Record<string, PivotCellDef> = {};
-    const nonDcrCells: Record<string, PivotCellDef> = {};
-    const totalCells: Record<string, PivotCellDef> = {};
-    let gtDcr = 0, gtNonDcr = 0;
-    
-    effectiveItems.forEach(item => {
-      const isDcr = !!item.isDcrEligible;
-      meaningfulWarehouses.forEach(wh => {
-        const qty = getQty(item, wh.id);
-        if (qty > 0) {
-          if (isDcr) { 
-            const curr = dcrCells[wh.id];
-            dcrCells[wh.id] = { value: (curr?.value || 0) + qty, dimensions: { warehouseId: wh.id, dcrStatus: 'DCR' } }; 
-            gtDcr += qty; 
-          } else { 
-            const curr = nonDcrCells[wh.id];
-            nonDcrCells[wh.id] = { value: (curr?.value || 0) + qty, dimensions: { warehouseId: wh.id, dcrStatus: 'Non-DCR' } }; 
-            gtNonDcr += qty; 
-          }
-          const currT = totalCells[wh.id];
-          totalCells[wh.id] = { value: (currT?.value || 0) + qty, dimensions: { warehouseId: wh.id } };
-        }
-      });
-    });
-    dcrCells['GT'] = { value: gtDcr, dimensions: { dcrStatus: 'DCR' } }; 
-    nonDcrCells['GT'] = { value: gtNonDcr, dimensions: { dcrStatus: 'Non-DCR' } }; 
-    totalCells['GT'] = { value: gtDcr + gtNonDcr, dimensions: {} };
-    
-    const rows: PivotRowDef[] = [];
-    if (gtDcr > 0) rows.push({ id: 'r_dcr', label: 'DCR', cells: dcrCells });
-    if (gtNonDcr > 0) rows.push({ id: 'r_nondcr', label: 'Non-DCR', cells: nonDcrCells });
-    rows.push({ id: 'r_total', label: 'TOTAL', isGrandTotal: true, cells: totalCells });
-    return rows;
-  }, [effectiveItems, meaningfulWarehouses]);
-
-
-  
-  // Safely chunks rows to prevent cutting across pages and repeats headers
-  const paginateRows = (rows: PivotRowDef[], maxRowsPerPage: number) => {
-    const chunks: PivotRowDef[][] = [];
-    let currentChunk: PivotRowDef[] = [];
-    let currentGroupHeader: PivotRowDef | null = null;
-
-    const pushChunk = () => {
-      if (currentChunk.length > 0) {
-        chunks.push([...currentChunk]);
-        currentChunk = [];
-      }
-    };
-
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-
-      if (row.isGrandTotal) {
-        if (currentChunk.length >= maxRowsPerPage - 1) pushChunk();
-        currentChunk.push(row);
-        continue;
-      }
-
-      if (row.isGroupHeader) {
-        currentGroupHeader = row;
-        let groupSize = 1;
-        for (let j = i + 1; j < rows.length; j++) {
-          if (rows[j].isGroupHeader || rows[j].isGrandTotal) break;
-          groupSize++;
-        }
-
-        if (currentChunk.length > 0 && currentChunk.length + groupSize > maxRowsPerPage && groupSize <= maxRowsPerPage) {
-           pushChunk();
-        } else if (currentChunk.length >= maxRowsPerPage) {
-           pushChunk();
-        }
-        currentChunk.push(row);
       } else {
-        if (currentChunk.length >= maxRowsPerPage) {
-          pushChunk();
-          if (currentGroupHeader) {
-            // Repeat the exact header for seamless continuity
-            currentChunk.push({ ...currentGroupHeader, id: `${currentGroupHeader.id}_cont`, label: `${currentGroupHeader.label} (Continued)` });
-          }
-        }
-        currentChunk.push(row);
+        // Even if collapsed, we must accumulate the grand total row numbers
+        validWattages.forEach(([, entry]) => {
+          meaningfulWarehouses.forEach(wh => {
+            const qty = entry.whQtys[wh.id] || 0;
+            if (qty > 0) gtWhQtys[wh.id] = (gtWhQtys[wh.id] || 0) + qty;
+          });
+          gtTotal += entry.gt;
+        });
       }
-    }
-    pushChunk();
-    return chunks;
+    });
+
+    // Grand total row
+    const gtCells: Record<string, PivotCellDef> = {};
+    meaningfulWarehouses.forEach(wh => {
+      gtCells[wh.id] = { value: gtWhQtys[wh.id] || 0, dimensions: { warehouseId: wh.id, dcrStatus: classification } };
+    });
+    gtCells['GT'] = { value: gtTotal, dimensions: { dcrStatus: classification } };
+    result.push({ id: `gt_${classification}`, label: 'Grand Total', isGrandTotal: true, cells: gtCells });
+
+    return result;
   };
 
+  const dcrRows  = useMemo(() => buildMatrixRows('DCR'),     [groupedData, meaningfulWarehouses, expandedGroups, isExportMode]);
+  const nonDcrRows = useMemo(() => buildMatrixRows('Non-DCR'), [groupedData, meaningfulWarehouses, expandedGroups, isExportMode]);
+
+  // ── Screenshot / export ─────────────────────────────────────────────────────
   const handleTakeScreenshot = async (reportId: string) => {
     setExportingReportId(reportId);
     const tid = toast.loading('Generating PDF report...');
@@ -722,7 +691,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
       if (!res.ok) throw new Error(await res.text());
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      setPreviewImage(url); // We'll reuse previewImage state to store the PDF url!
+      setPreviewImage(url);
       toast.success('Report generated', { id: tid });
       if (onCaptured) onCaptured(url);
     } catch (err: any) {
@@ -753,6 +722,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
     </button>
   );
 
+  // ── Drilldown bar ───────────────────────────────────────────────────────────
   const renderDrilldownBar = () => {
     if (!activeDrilldown) return null;
     const chips: { label: string; key: keyof SolarPanelDrilldown }[] = [];
@@ -764,7 +734,6 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
       chips.push({ label: `Warehouse: ${wName}`, key: 'warehouseId' });
     }
     if (activeDrilldown.dcrStatus) chips.push({ label: activeDrilldown.dcrStatus, key: 'dcrStatus' });
-
     if (chips.length === 0) return null;
 
     return (
@@ -791,31 +760,29 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
     );
   };
 
+  // ── Export mode ─────────────────────────────────────────────────────────────
   if (isExportMode) {
     return (
       <div style={{ width: "100%", backgroundColor: "#fff", padding: 0 }}>
-        {/* PAGE 1: Product Series Breakdown */}
         <div className="print-page-break-after">
           <PivotTable 
-            title="Product Series Breakdown" 
-            subtitle="Rows: Product Series (Parent Products)  |  Columns: Warehouse → DCR / Non-DCR" 
-            firstColLabel="Product Series" 
-            columns={cols12} 
-            rows={pivot2Rows} 
+            title="DCR Stock" 
+            subtitle="Solar Panel DCR Inventory  |  Rows: Series → Wattage  |  Columns: Warehouse + Grand Total" 
+            firstColLabel="Series / Wattage" 
+            columns={matrixCols} 
+            rows={dcrRows} 
             activeDrilldown={activeDrilldown}
             onCellClick={handleCellClick}
             isExportMode={true}
           />
         </div>
-
-        {/* PAGE 2+: Brand & Wattage Breakdown */}
         <div>
           <PivotTable 
-            title="Brand & Wattage Breakdown" 
-            subtitle="Rows: Brand → Wattage  |  Columns: Warehouse → DCR / Non-DCR  |  Grand Total pinned right" 
-            firstColLabel="Brand / Wattage" 
-            columns={cols12} 
-            rows={pivot1Rows} 
+            title="Non-DCR Stock" 
+            subtitle="Solar Panel Non-DCR Inventory  |  Rows: Series → Wattage  |  Columns: Warehouse + Grand Total" 
+            firstColLabel="Series / Wattage" 
+            columns={matrixCols} 
+            rows={nonDcrRows} 
             activeDrilldown={activeDrilldown}
             onCellClick={handleCellClick}
             isExportMode={true}
@@ -825,11 +792,19 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
     );
   }
 
+  // ── Main render ─────────────────────────────────────────────────────────────
+
+  // Determine which tables have data (using group headers since child rows are collapsed by default)
+  const hasDcrData    = dcrRows.some(r => r.isGroupHeader);
+  const hasNonDcrData = nonDcrRows.some(r => r.isGroupHeader);
+  const hasAnyData    = hasDcrData || hasNonDcrData;
+
   return (
     <div className="flex h-full gap-5">
       {previewImage && <PdfViewer url={previewImage} onClose={() => setPreviewImage(null)} />}
       <CurrentStockSidebar activeView="solar" />
       <div className="flex-1 flex flex-col h-full min-w-0 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        {/* Header */}
         <div className="px-5 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between shrink-0 rounded-t-lg">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-[#1A2766]/10 flex items-center justify-center">
@@ -845,6 +820,7 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
           </div>
         </div>
 
+        {/* Filters */}
         <div className="px-4 py-2.5 border-b border-gray-100 bg-white flex flex-wrap items-center gap-2 shrink-0">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
@@ -855,13 +831,14 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
           <MultiSelectFilter label="Brands" options={availableBrands} selected={selectedBrands} onToggle={id => toggle(setSelectedBrands, id)} />
           <MultiSelectFilter label="DCR Status" options={[{ id: 'DCR', name: 'DCR' }, { id: 'Non-DCR', name: 'Non-DCR' }]} selected={selectedDcr} onToggle={id => toggle(setSelectedDcr, id)} />
           <MultiSelectFilter label="Series" options={availableSeries.map(s => ({ id: s, name: s }))} selected={selectedSeries} onToggle={id => toggle(setSelectedSeries, id)} wideMenu />
-          <MultiSelectFilter label="Wattage" options={availableWattages.map(w => ({ id: w, name: `${w}W` }))} selected={selectedWattages} onToggle={id => toggle(setSelectedWattages, id)} />
+          <MultiSelectFilter label="Wattage" options={availableWattages.map(w => ({ id: w, name: `${w} W` }))} selected={selectedWattages} onToggle={id => toggle(setSelectedWattages, id)} />
         </div>
 
         {renderDrilldownBar()}
 
+        {/* Tables */}
         <div className="flex-1 overflow-y-auto p-5 bg-[#f7f8fb] min-h-0 relative">
-          {(!meaningfulWarehouses.length || effectiveItems.length === 0) ? (
+          {(!meaningfulWarehouses.length || !hasAnyData) ? (
             <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-400">
               <AlertTriangle size={32} className="text-amber-400" />
               <div className="text-lg font-semibold text-gray-700">No Solar Panel stock found</div>
@@ -869,50 +846,32 @@ export default function SolarPanelStockClient({ warehouses, categories, brands, 
             </div>
           ) : (
             <div className="flex flex-col max-w-full">
-              <PivotTable 
-                containerRef={pivot1Ref}
-                title="Brand & Wattage Breakdown" 
-                subtitle="Rows: Brand → Wattage  |  Columns: Warehouse → DCR / Non-DCR  |  Grand Total pinned right" 
-                firstColLabel="Brand / Wattage" 
-                columns={cols12} 
-                rows={pivot1Rows} 
-                activeDrilldown={activeDrilldown}
-                onCellClick={handleCellClick}
-                headerRight={renderScreenshotBtn('brand-wattage-breakdown')}
-              />
-              <PivotTable 
-                title="Product Series Breakdown" 
-                subtitle="Rows: Product Series (Parent Products)  |  Columns: Warehouse → DCR / Non-DCR" 
-                firstColLabel="Product Series" 
-                columns={cols12} 
-                rows={pivot2Rows} 
-                activeDrilldown={activeDrilldown}
-                onCellClick={handleCellClick}
-                containerRef={pivot2Ref}
-                headerRight={renderScreenshotBtn('product-series-breakdown')}
-              />
-              <PivotTable 
-                title="Brand × Warehouse Stock" 
-                subtitle="Rows: Brand  |  Columns: Warehouse total  |  Grand Total pinned right" 
-                firstColLabel="Brand" 
-                columns={pivot3Cols} 
-                rows={pivot3Rows} 
-                activeDrilldown={activeDrilldown}
-                onCellClick={handleCellClick}
-                containerRef={pivot3Ref}
-                headerRight={renderScreenshotBtn('brand-warehouse-stock')}
-              />
-              <PivotTable 
-                title="Total Panels Summary" 
-                subtitle="Summary: all panels per Warehouse by DCR / Non-DCR / Total" 
-                firstColLabel="Metric" 
-                columns={pivot4Cols} 
-                rows={pivot4Rows} 
-                activeDrilldown={activeDrilldown}
-                onCellClick={handleCellClick}
-                containerRef={pivot4Ref}
-                headerRight={renderScreenshotBtn('total-panels-summary')}
-              />
+              {hasDcrData && (
+                <PivotTable 
+                  containerRef={dcrRef}
+                  title="DCR Stock" 
+                  subtitle="Solar Panel DCR Inventory  |  Rows: Series → Wattage  |  Columns: Warehouse + Grand Total" 
+                  firstColLabel="Series / Wattage" 
+                  columns={matrixCols} 
+                  rows={dcrRows} 
+                  activeDrilldown={activeDrilldown}
+                  onCellClick={handleCellClick}
+                  headerRight={renderScreenshotBtn('dcr-stock')}
+                />
+              )}
+              {hasNonDcrData && (
+                <PivotTable 
+                  containerRef={nonDcrRef}
+                  title="Non-DCR Stock" 
+                  subtitle="Solar Panel Non-DCR Inventory  |  Rows: Series → Wattage  |  Columns: Warehouse + Grand Total" 
+                  firstColLabel="Series / Wattage" 
+                  columns={matrixCols} 
+                  rows={nonDcrRows} 
+                  activeDrilldown={activeDrilldown}
+                  onCellClick={handleCellClick}
+                  headerRight={renderScreenshotBtn('non-dcr-stock')}
+                />
+              )}
             </div>
           )}
         </div>

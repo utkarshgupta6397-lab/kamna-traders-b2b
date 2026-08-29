@@ -1,6 +1,6 @@
 import { getSession } from '@/lib/auth';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, Package, Zap } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Package, Zap, Wrench } from 'lucide-react';
 
 export default async function MobileOperationsPage() {
   await getSession(); // just ensures we have it
@@ -55,6 +55,19 @@ export default async function MobileOperationsPage() {
               </div>
               <div className="flex flex-col gap-0.5">
                 <div className="font-bold text-slate-800 text-[15px]">Inverter Stock</div>
+                <div className="text-[12px] text-slate-500 font-medium">View Current Stock</div>
+              </div>
+            </div>
+            <ChevronRight size={20} className="text-slate-300" />
+          </Link>
+
+          <Link href="/mobile/operations/solar-accessories-stock" className="flex items-center justify-between bg-white p-4 rounded-[16px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 active:scale-[0.98] transition-transform">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100/50">
+                <Wrench size={22} strokeWidth={2.5} />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <div className="font-bold text-slate-800 text-[15px]">Solar Accessories</div>
                 <div className="text-[12px] text-slate-500 font-medium">View Current Stock</div>
               </div>
             </div>

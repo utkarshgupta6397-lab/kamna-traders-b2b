@@ -58,6 +58,19 @@ function normalizeCapacity(cap: string | null | undefined): { value: string, num
   return { value: val.toUpperCase(), num: Infinity, unit: '' };
 }
 
+/**
+ * Given the already-normalized capacity value string (e.g. "5", "5 kW", "Unknown"),
+ * returns a safe display string that always ends with " kW" for purely numeric values.
+ * Never appends kW twice. Preserves "Unknown" and other non-numeric labels.
+ */
+function formatCapacityDisplay(normalizedValue: string): string {
+  if (!normalizedValue || normalizedValue === 'Unknown') return normalizedValue;
+  // Already has a unit suffix (kW, kWp, kVA, VA, W, MW, kWh …) → return as-is
+  if (/[a-zA-Z]/.test(normalizedValue)) return normalizedValue;
+  // Pure number — append kW
+  return `${normalizedValue} kW`;
+}
+
 const heatmapColors = [
   { r: 236, g: 253, b: 245 }, { r: 167, g: 243, b: 208 }, { r: 253, g: 230, b: 138 },
   { r: 251, g: 146, b: 60 }, { r: 239, g: 68, b: 68 }
@@ -269,7 +282,7 @@ export default function InverterStockClient({ warehouses, items }: Props) {
            rowData.push({ content: 'Grand Total', styles: { fillColor: [26, 39, 102], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'left' } });
         } else {
            const sub = [row.invType, row.phase].filter(x => x && x !== 'Unknown').join(' | ');
-           labelStr = `   ${row.label}${sub ? `\n   (${sub})` : ''}`;
+           labelStr = `   ${formatCapacityDisplay(row.label)}${sub ? `\n   (${sub})` : ''}`;
            rowData.push({ content: labelStr, styles: { fillColor: [255, 255, 255], textColor: [50, 50, 50], halign: 'left' } });
         }
 
@@ -471,11 +484,11 @@ export default function InverterStockClient({ warehouses, items }: Props) {
                       Brand / Capacity / Config
                     </th>
                     {displayedWarehouses.map(wh => (
-                      <th key={wh.id} className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-center border-b-2 text-gray-700 border-gray-300 border-l border-gray-200" style={{ position: "sticky", top: 0, zIndex: 40, backgroundColor: "#EEF2FF", minWidth: 120, height: '42px' }}>
+                      <th key={wh.id} className="px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-center border-b-2 text-gray-700 border-gray-300 border-l border-gray-200" style={{ position: "sticky", top: 0, zIndex: 40, backgroundColor: "#EEF2FF", minWidth: 72, width: 80, height: '42px' }}>
                         {wh.name}
                       </th>
                     ))}
-                    <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-center border-b-2 text-white border-white/20 border-l-4 border-l-white/30" style={{ position: "sticky", right: 0, top: 0, zIndex: 50, backgroundColor: "#1A2766", minWidth: 100, height: '42px' }}>
+                    <th className="px-2 py-3 text-[11px] font-bold uppercase tracking-wider text-center border-b-2 text-white border-white/20 border-l-4 border-l-white/30" style={{ position: "sticky", right: 0, top: 0, zIndex: 50, backgroundColor: "#1A2766", minWidth: 80, width: 88, height: '42px' }}>
                       Grand Total
                     </th>
                   </tr>
@@ -504,26 +517,25 @@ export default function InverterStockClient({ warehouses, items }: Props) {
                             <span className="truncate">{row.label}</span>
                           ) : (
                             <div className="flex flex-row items-center gap-1.5 whitespace-nowrap">
-                              <span className="font-semibold text-gray-900 mr-1">{row.label}</span>
+                              <span className="font-semibold text-gray-900 mr-1">{formatCapacityDisplay(row.label)}</span>
                               {row.invType && <Badge color={row.invType === 'Unknown' ? 'gray' : 'blue'}>{row.invType}</Badge>}
                               {row.phase && <Badge color={row.phase === 'Unknown' ? 'gray' : 'purple'}>{row.phase}</Badge>}
                             </div>
                           )}
                         </td>
-                        
                         {displayedWarehouses.map(col => {
                           const val = row.cells[col.id] || 0;
                           const cs = getHeatmapStyle(val, maxBody, false, !!isGT);
                           
                           return (
-                            <td key={col.id} className={`px-3 py-2 text-center transition-all ${isGT ? 'border-t-2 border-white/10 py-3 border-l border-white/10' : 'border-l border-gray-100'}`} style={cs}>
+                            <td key={col.id} className={`px-2 py-2 text-center transition-all ${isGT ? 'border-t-2 border-white/10 py-3 border-l border-white/10' : 'border-l border-gray-100'}`} style={cs}>
                               {val === 0 ? <span className={isGT ? "opacity-40" : "text-gray-300 select-none"}>—</span> : <span className="whitespace-nowrap font-semibold">{val}</span>}
                             </td>
                           );
                         })}
-                        
+                         
                         {/* Grand Total Column */}
-                        <td className={`px-3 py-2 text-center transition-all ${isGT ? 'border-t-2 border-white/10 py-3 border-l-4 border-l-white/30' : 'border-l border-gray-100'}`} style={isGT ? { position: 'sticky', right: 0, backgroundColor: '#1A2766', color: '#fff' } : { position: 'sticky', right: 0, ...getHeatmapStyle(row.cells['GT'] || 0, maxGt, true, false) }}>
+                        <td className={`px-2 py-2 text-center transition-all ${isGT ? 'border-t-2 border-white/10 py-3 border-l-4 border-l-white/30' : 'border-l border-gray-100'}`} style={isGT ? { position: 'sticky', right: 0, backgroundColor: '#1A2766', color: '#fff' } : { position: 'sticky', right: 0, ...getHeatmapStyle(row.cells['GT'] || 0, maxGt, true, false) }}>
                           {(row.cells['GT'] || 0) === 0 ? <span className={isGT ? "opacity-40" : "text-gray-300 select-none"}>—</span> : <span className="whitespace-nowrap font-bold">{(row.cells['GT'] || 0)}</span>}
                         </td>
                       </tr>

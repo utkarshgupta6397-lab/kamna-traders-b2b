@@ -87,6 +87,17 @@ function normalizeCapacity(cap: string | null | undefined): {
   return { value: val.toUpperCase(), num: Infinity, unit: '' };
 }
 
+/**
+ * Given the already-normalized capacity value string (e.g. "5", "5 kW", "Unknown"),
+ * returns a safe display string that always ends with " kW" for purely numeric values.
+ * Never appends kW twice. Preserves "Unknown" and other non-numeric labels.
+ */
+function formatCapacityDisplay(normalizedValue: string): string {
+  if (!normalizedValue || normalizedValue === 'Unknown') return normalizedValue;
+  if (/[a-zA-Z]/.test(normalizedValue)) return normalizedValue;
+  return `${normalizedValue} kW`;
+}
+
 // ---------------------------------------------------------------------------
 // Subtle mobile heatmap  (intensity-only, no aggressive desktop saturation)
 // ---------------------------------------------------------------------------
@@ -223,7 +234,7 @@ function ConfigCard({
         className="w-full flex items-center justify-between px-4 py-3.5 active:bg-slate-50 transition-colors text-left"
       >
         <div className="flex items-center gap-2 flex-wrap min-w-0 flex-1 mr-3">
-          <span className="font-bold text-[15px] text-slate-900 whitespace-nowrap">{capacity}</span>
+          <span className="font-bold text-[15px] text-slate-900 whitespace-nowrap">{formatCapacityDisplay(capacity)}</span>
           <Badge color={invType === 'Unknown' ? 'gray' : 'blue'}>{invType}</Badge>
           <Badge color={phase === 'Unknown' ? 'gray' : 'purple'}>{phase}</Badge>
         </div>

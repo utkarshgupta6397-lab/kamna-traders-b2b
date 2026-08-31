@@ -9,5 +9,14 @@ export default function HideDevUI() {
     };
   }, []);
 
-  return null;
+  return (
+    <style dangerouslySetInnerHTML={{ __html: `
+      html, body {
+        height: 100%;
+        height: 100dvh;
+        overflow: hidden;
+        position: relative;
+      }
+    ` }} />
+  );
 }

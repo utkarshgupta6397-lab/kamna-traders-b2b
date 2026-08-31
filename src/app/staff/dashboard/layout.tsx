@@ -56,6 +56,11 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
                 <MessageSquare size={16} /><span className="hidden md:inline text-xs">Communications</span>
               </Link>
             )}
+            {(session.dispatch_view || session.role === 'ADMIN') && (
+              <Link href="/staff/dashboard/dispatch" className="flex items-center gap-1.5 hover:text-white transition-colors">
+                <Truck size={16} /><span className="hidden md:inline text-xs">Dispatch</span>
+              </Link>
+            )}
 
             <Link href="/staff/settings" className="flex items-center gap-1.5 hover:text-white transition-colors">
               <Settings size={16} /><span className="hidden md:inline text-xs">Settings</span>

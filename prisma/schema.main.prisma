@@ -26,6 +26,7 @@ model User {
   canManageUnlimitedSkus      Boolean @default(false)
   canManageTransfers          Boolean @default(false)
   canDeleteTransfers          Boolean @default(false)
+  dispatch_view               Boolean @default(false)
   accountsAccess              Boolean @default(false) // Deprecated
   accounts_customer_statement Boolean @default(false)
   accounts_transactions       Boolean @default(false)
@@ -672,4 +673,23 @@ model DcrSerialHistory {
   serial           DcrSerial   @relation(fields: [serialId], references: [id], onDelete: Cascade)
 
   @@index([serialId])
+}
+
+
+model IncomingSoRequest {
+  id            String   @id @default(cuid())
+  salesorder_id String
+  status        String   @default("RECEIVED")
+  error_message String?
+  received_at   DateTime @default(now())
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+}
+
+model IntegrationConfig {
+  id         String   @id @default(cuid())
+  key        String   @unique
+  value      String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 }

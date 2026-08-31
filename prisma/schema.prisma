@@ -26,6 +26,7 @@ model User {
   canManageUnlimitedSkus       Boolean @default(false)
   canManageTransfers           Boolean @default(false)
   canDeleteTransfers           Boolean @default(false)
+  dispatch_view                Boolean @default(false)
   accountsAccess               Boolean @default(false) // Deprecated
   accounts_customer_statement  Boolean @default(false)
   accounts_invoice_processor   Boolean @default(false)
@@ -1704,4 +1705,41 @@ model InventoryConfig {
   leadTimeDays Float    @default(3)
   safetyFactor Float    @default(1.5)
   updatedAt    DateTime @updatedAt
+}
+
+
+model IncomingSoRequest {
+  id            String   @id @default(cuid())
+  salesorder_id String
+  status        String   @default("RECEIVED")
+  error_message String?
+  received_at   DateTime @default(now())
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+}
+
+model IntegrationConfig {
+  id         String   @id @default(cuid())
+  key        String   @unique
+  value      String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+}
+model DispatchIncomingOrder {
+  id                    String   @id @default(cuid())
+  zohoSalesorderId      String   @unique
+  salesorderNumber      String?
+  customerName          String?
+  total                 Float?
+  totalItems            Int?
+  totalTax              Float?
+  detailsStatus         String   @default("PENDING")
+  detailsFetchedAt      DateTime?
+  detailsFetchError     String?
+  currencyCode          String?  @default("INR")
+  status                String   @default("NEW")
+  zohoDetailsJson       Json?
+  receivedAt            DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }

@@ -10,6 +10,11 @@ const datasourceUrl = getDatabaseUrl() || process.env.DATABASE_URL;
  * Ensures only one instance of Prisma is created across the entire application lifecycle.
  * In production, this maximizes connection reuse during serverless warm starts.
  */
+// Force reload of PrismaClient in dev to pick up new generated schema
+if (process.env.NODE_ENV !== 'production') {
+  delete (globalForPrisma as any).prisma;
+}
+
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({

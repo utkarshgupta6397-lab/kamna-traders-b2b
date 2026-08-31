@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   distDir: process.env.NEXT_BUILD_DIR || '.next',
   output: "standalone",
-  allowedDevOrigins: ['localhost', 'localhost:3002', '192.168.1.23', '192.168.1.23:3000', '192.168.1.25', '192.168.1.25:3002'],
+  allowedDevOrigins: ['localhost', '127.0.0.1', '127.0.0.1:3000', 'localhost:3002', '192.168.1.23', '192.168.1.23:3000', '192.168.1.25', '192.168.1.25:3002', 'toward-dimensions-seeks-belts.trycloudflare.com'],
   async redirects() {
     return [
       {

@@ -42,6 +42,7 @@ export async function GET() {
           solar_orders_docs_progress: true,
           solar_orders_master_edit: true,
           workflow_edits: true,
+          dispatch_view: true,
           communications_view: true,
           communications_templates: true,
           whatsapp_integration: true,

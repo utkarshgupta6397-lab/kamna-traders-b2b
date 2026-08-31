@@ -3,7 +3,7 @@
  * Simplified to focus only on critical operational requirements.
  */
 
-export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_invoice_processor' | 'accounts_transactions' | 'accounts_summary_view' | 'accounts_reports_salesman' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval' | 'solar_orders_docs_progress' | 'solar_orders_master_edit' | 'workflow_edits' | 'communications_view' | 'communications_templates' | 'whatsapp_integration' | 'holdQueueReviewEnabled' | 'holdQueueReviewLimit'
+export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSkuSync' | 'canManageZoneMappings' | 'canManageUnlimitedSkus' | 'canManageTransfers' | 'canDeleteTransfers' | 'accountsAccess' | 'accounts_customer_statement' | 'accounts_invoice_processor' | 'accounts_transactions' | 'accounts_summary_view' | 'accounts_reports_salesman' | 'stock_alerts_manage' | 'accounts_recovery_manage' | 'release_statement_queue' | 'dcr_management' | 'dcr_serial_mapping_override' | 'dcr_hold_release' | 'solar_orders_view' | 'solar_orders_create' | 'solar_orders_approval' | 'solar_orders_docs_progress' | 'solar_orders_master_edit' | 'workflow_edits' | 'communications_view' | 'communications_templates' | 'whatsapp_integration' | 'holdQueueReviewEnabled' | 'holdQueueReviewLimit' | 'dispatch_view'
   | 'catalog_brands_create' | 'catalog_brands_modify' | 'catalog_brands_approve'
   | 'catalog_manufacturers_create' | 'catalog_manufacturers_modify' | 'catalog_manufacturers_approve'
   | 'catalog_categories_create' | 'catalog_categories_modify' | 'catalog_categories_approve'
@@ -145,6 +145,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'workflow_edits',
     label: 'WORKFLOW EDITS',
     description: 'Ability to edit and rollback completed workflow stages in Documentation and Installation flows.'
+  },
+  {
+    key: 'dispatch_view',
+    label: 'Dispatch',
+    description: 'Controls whether the Dispatch module is visible and accessible to the user.'
   },
   {
     key: 'communications_view',
@@ -299,6 +304,7 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'solar_orders_docs_progress',
   'solar_orders_master_edit',
   'workflow_edits',
+  'dispatch_view',
   'communications_view',
   'communications_templates',
   'whatsapp_integration',

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { format } from 'date-fns';
 import { Search, RefreshCw, Inbox, FileDown, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -8,10 +9,13 @@ interface DispatchIncomingOrder {
   id: string;
   zohoSalesorderId: string;
   salesorderNumber: string | null;
+  customerId: string | null;
   customerName: string | null;
+  customerGst: string | null;
   total: number | null;
   currencyCode: string | null;
   totalItems: number | null;
+  totalUniqueRows: number | null;
   totalTax: number | null;
   status: string;
   receivedAt: string;
@@ -144,7 +148,31 @@ export default function IncomingQueueClient() {
 
     connectSSE();
 
-    return () => {
+  
+  const handleManualFetch = async (id: string) => {
+    try {
+      setFetchingIds(prev => new Set(prev).add(id));
+      const response = await fetch(`/api/dispatch/incoming-queue/${id}/fetch`, {
+        method: 'POST'
+      });
+      if (!response.ok) throw new Error('Failed to fetch details');
+      
+      const result = await response.json();
+      const updatedOrder = result.order;
+      setOrders(prev => prev.map(o => o.id === id ? updatedOrder : o));
+      toast.success('Order details fetched successfully');
+    } catch (err: any) {
+      toast.error(err.message || 'Fetch failed');
+    } finally {
+      setFetchingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  return () => {
       isUnmounted = true;
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (eventSource) {
@@ -260,16 +288,14 @@ export default function IncomingQueueClient() {
               <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">Customer</th>
               <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 text-right">Amount</th>
               <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 text-right">Total Items</th>
-              <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 text-right">Tax</th>
               <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">Received At</th>
               <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">Status</th>
-              <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200 text-right">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
             {filteredOrders.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                   {loading ? (
                     <div className="flex items-center justify-center gap-2">
                       <RefreshCw size={16} className="animate-spin text-gray-400" />
@@ -297,28 +323,62 @@ export default function IncomingQueueClient() {
                   className={`hover:bg-gray-50/50 transition-colors duration-1000 ${highlightedRow === order.id ? 'bg-blue-50' : ''}`}
                 >
                   <td className="px-6 py-4">
-                    <div className="font-bold text-gray-900">{order.salesorderNumber || order.zohoSalesorderId}</div>
+                    {order.salesorderNumber ? (
+                      <a href={`https://books.zoho.in/app#/salesorders/${order.zohoSalesorderId}`} target="_blank" rel="noreferrer" className="font-bold text-[#1A2766] hover:underline cursor-pointer">
+                        {order.salesorderNumber}
+                      </a>
+                    ) : (
+                      <div className="font-bold text-gray-900">{order.zohoSalesorderId}</div>
+                    )}
                     <div className="text-xs text-gray-400 font-mono mt-0.5">ID: {order.zohoSalesorderId}</div>
                   </td>
-                  <td className="px-6 py-4 font-medium text-gray-700">
-                    {order.customerName || <span className="text-gray-400 italic">Unknown Customer</span>}
+                  <td className="px-6 py-4">
+                    {order.customerName ? (
+                      <a href={`https://books.zoho.in/app#/contacts/${order.customerId || ''}`} target="_blank" rel="noreferrer" className="font-medium text-[#1A2766] hover:underline cursor-pointer">
+                        {order.customerName}
+                      </a>
+                    ) : (
+                      <span className="text-gray-400 italic">Unknown Customer</span>
+                    )}
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {order.customerGst ? `GST: ${order.customerGst}` : 'GST: —'}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 text-right font-medium text-gray-900">
-                    {order.total !== null ? formatCurrency(order.total, order.currencyCode || 'INR') : '—'}
+                  <td className="px-6 py-4 text-right">
+                    <div className="font-medium text-gray-900">
+                      {order.total !== null ? formatCurrency(order.total, order.currencyCode || 'INR') : '—'}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      Tax: {order.totalTax !== null ? formatCurrency(order.totalTax, order.currencyCode || 'INR') : '—'}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 text-right font-medium text-gray-900">
-                    {order.totalItems !== null ? order.totalItems : '—'}
+                  <td className="px-6 py-4 text-right">
+                    <div className="font-medium text-gray-900">
+                      {order.totalItems !== null ? order.totalItems : '—'}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      Unique Rows: {order.totalUniqueRows !== null ? order.totalUniqueRows : '—'}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 text-right font-medium text-gray-900">
-                    {order.totalTax !== null ? formatCurrency(order.totalTax, order.currencyCode || 'INR') : '—'}
-                  </td>
-                  <td className="px-6 py-4 text-xs text-gray-500">
-                    {new Date(order.receivedAt).toLocaleString()}
+                  <td className="px-6 py-4 text-xs text-gray-500 whitespace-nowrap">
+                    {format(new Date(order.receivedAt), 'dd-MMM-yyyy hh:mm a')}
                   </td>
                   <td className="px-6 py-4">
-                    <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide">
-                      {order.status}
-                    </span>
+                    <div className="flex flex-col gap-2 items-start">
+                      <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide">
+                        {order.status}
+                      </span>
+                      {(!order.detailsStatus || order.detailsStatus === 'PENDING' || order.detailsStatus === 'FAILED') && (
+                        <button
+                          onClick={() => handleFetchDetails(order.id)}
+                          disabled={fetchingIds.has(order.id)}
+                          className="flex items-center gap-1.5 px-2 py-1 bg-white border border-gray-200 rounded-md text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 mt-1"
+                        >
+                          <RefreshCw size={12} className={fetchingIds.has(order.id) ? 'animate-spin text-blue-600' : 'text-gray-400'} />
+                          {fetchingIds.has(order.id) ? 'Fetching...' : 'Fetch Details'}
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))

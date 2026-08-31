@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getZohoOrgId, getZohoTokens } from '@/lib/zoho-auth';
 import { getSession } from '@/lib/auth';
 
-export async function GET(request: Request, { params }: { params: { salesorder_id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ salesorder_id: string }> }) {
   try {
     const session = await getSession();
     if (!session || session.role !== 'ADMIN') {

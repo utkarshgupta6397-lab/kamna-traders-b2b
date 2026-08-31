@@ -1730,8 +1730,11 @@ model DispatchIncomingOrder {
   zohoSalesorderId      String   @unique
   salesorderNumber      String?
   customerName          String?
+  customerGst           String?
+  customerId            String?
   total                 Float?
   totalItems            Int?
+  totalUniqueRows       Int?
   totalTax              Float?
   detailsStatus         String   @default("PENDING")
   detailsFetchedAt      DateTime?

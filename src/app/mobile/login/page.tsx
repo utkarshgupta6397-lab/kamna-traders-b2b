@@ -63,7 +63,7 @@ function MobileLoginContent() {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-[#F8F9FB] font-sans selection:bg-blue-100 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+    <div className="flex-1 flex flex-col bg-[#F8F9FB] font-sans selection:bg-blue-100 overflow-y-auto pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <div className="flex-1 flex flex-col px-5 pt-[10vh] max-w-[430px] mx-auto w-full">
         
         {/* Logo */}

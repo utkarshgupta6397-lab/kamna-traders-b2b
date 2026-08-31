@@ -43,15 +43,7 @@ export default function IncomingQueueClient() {
   // Keep a reference to currently known IDs to prevent duplicate alerts
   const knownIdsRef = useRef<Set<string>>(new Set());
 
-  // Audio object initialization (created lazily to respect browser policies if needed)
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      audioRef.current = new Audio('/sounds/dispatch-bell.wav');
-    }
-  }, []);
-
+  
   const fetchInitialData = async () => {
     setLoading(true);
     try {
@@ -117,28 +109,7 @@ export default function IncomingQueueClient() {
               setHighlightedRow(order.id);
               setTimeout(() => setHighlightedRow(null), 3000);
 
-              // Notification
-              const soNum = order.salesorderNumber || order.zohoSalesorderId;
-              toast.success(`New Sales Order Received\n${soNum} has been pushed to Dispatch.`, {
-                duration: 5000,
-                icon: '📥',
-              });
-
-              // Play sound
-              if (audioRef.current) {
-                audioRef.current.play().catch(e => {
-                  console.warn('Audio play restricted by browser:', e);
-                });
-                
-                // Play second time after a short natural gap
-                setTimeout(() => {
-                  if (audioRef.current) {
-                    audioRef.current.currentTime = 0;
-                    audioRef.current.play().catch(e => console.warn('Second audio play restricted:', e));
-                  }
-                }, 800); // 800ms gap
-              }
-            }
+                          }
           }
         } catch (err) {
           console.error('[SSE] Message parse error:', err);

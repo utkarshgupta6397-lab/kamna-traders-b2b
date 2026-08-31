@@ -3,7 +3,7 @@
 import { getSharedHeatmapStyle } from "@/components/CurrentStockShared";
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, SlidersHorizontal, ChevronDown, Check, AlertTriangle } from 'lucide-react';
+import { Search, SlidersHorizontal, ChevronDown, ChevronRight, Check, AlertTriangle } from 'lucide-react';
 import MobileWireCableDrilldownSheet, { MobileWireCableDrilldownData } from './MobileWireCableDrilldownSheet';
 
 interface Warehouse { id: string; name: string; isSystemWarehouse?: boolean; }
@@ -53,7 +53,8 @@ const NativeSelect = ({ label, value, options, onChange }: { label: string, valu
 );
 
 export default function MobileWireCableStockClient({ warehouses, items }: Props) {
-  const [measurementUnit, setMeasurementUnit] = useState<'mtr' | 'bdls'>('mtr');
+  const [activeCategory, setActiveCategory] = useState<'AC Wire' | 'DC Wire'>('AC Wire');
+  const [expandedBrands, setExpandedBrands] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   
@@ -65,6 +66,15 @@ export default function MobileWireCableStockClient({ warehouses, items }: Props)
   const [selectedColor, setSelectedColor] = useState('');
 
   const [drilldownData, setDrilldownData] = useState<MobileWireCableDrilldownData | null>(null);
+
+  const toggleBrand = (brand: string) => {
+    setExpandedBrands(prev => {
+      const next = new Set(prev);
+      if (next.has(brand)) next.delete(brand);
+      else next.add(brand);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery), 200);
@@ -235,7 +245,7 @@ export default function MobileWireCableStockClient({ warehouses, items }: Props)
     });
   };
 
-  const displayUnit = measurementUnit === 'bdls' ? 'bdls' : 'mtr';
+  
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-[#F8F9FB]">
@@ -249,8 +259,8 @@ export default function MobileWireCableStockClient({ warehouses, items }: Props)
         <div className="bg-white rounded-[14px] p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-center">
           <div className="text-[10px] font-bold text-slate-400 tracking-wider uppercase mb-1 line-clamp-1">Total Stock</div>
           <div className="text-lg font-black text-blue-600 leading-none">
-            {measurementUnit === 'bdls' ? totalBundle.toLocaleString(undefined, { maximumFractionDigits: 1 }) : totalPhysical.toLocaleString(undefined, { maximumFractionDigits: 1 })}
-            <span className="text-[10px] font-bold ml-1 text-blue-400">{displayUnit}</span>
+            {totalPhysical.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            <span className="text-[10px] font-bold ml-1 text-blue-400">MTR</span>
           </div>
         </div>
         <div className="bg-white rounded-[14px] p-3 shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-center">
@@ -263,16 +273,16 @@ export default function MobileWireCableStockClient({ warehouses, items }: Props)
       <div className="px-3 pb-3 shrink-0">
         <div className="bg-white rounded-xl border border-slate-200 p-1 flex">
           <button
-            onClick={() => setMeasurementUnit('mtr')}
-            className={`flex-1 py-2 text-[12px] font-bold rounded-lg transition-all ${measurementUnit === 'mtr' ? 'bg-[#1A2766] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+            onClick={() => setActiveCategory('AC Wire')}
+            className={`flex-1 py-2 text-[12px] font-bold rounded-lg transition-all ${activeCategory === 'AC Wire' ? 'bg-[#1A2766] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
           >
-            Physical Stock (MTR)
+            AC Wire
           </button>
           <button
-            onClick={() => setMeasurementUnit('bdls')}
-            className={`flex-1 py-2 text-[12px] font-bold rounded-lg transition-all ${measurementUnit === 'bdls' ? 'bg-[#1A2766] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+            onClick={() => setActiveCategory('DC Wire')}
+            className={`flex-1 py-2 text-[12px] font-bold rounded-lg transition-all ${activeCategory === 'DC Wire' ? 'bg-[#1A2766] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
           >
-            Bundle Stock (BDLS)
+            DC Wire
           </button>
         </div>
       </div>
@@ -320,98 +330,115 @@ export default function MobileWireCableStockClient({ warehouses, items }: Props)
 
       {/* Main Table */}
       <div className="flex-1 overflow-y-auto bg-white rounded-t-2xl shadow-[0_-4px_12px_rgba(0,0,0,0.02)] border-t border-slate-200 relative min-h-0">
-        {(!meaningfulWarehouses.length || filteredItems.length === 0) ? (
+        {(!meaningfulWarehouses.length || filteredItems.length === 0 || !tableData.has(activeCategory) || tableData.get(activeCategory)!.size === 0) ? (
           <div className="h-full flex flex-col items-center justify-center gap-3 text-slate-400 p-6 text-center">
             <AlertTriangle size={36} className="text-slate-300" />
             <div>
-              <div className="text-[15px] font-bold text-slate-600 mb-1">No wire stock found</div>
+              <div className="text-[15px] font-bold text-slate-600 mb-1">No {activeCategory} stock found</div>
               <p className="text-[13px]">Try adjusting your filters to see more results.</p>
             </div>
           </div>
         ) : (
-          <table className="w-full text-left border-collapse">
-            <thead className="sticky top-0 z-40 bg-white">
+          <table className="w-full text-left border-collapse pb-[env(safe-area-inset-bottom)]">
+            <thead className="sticky top-0 z-40 bg-white shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
               <tr className="h-[42px]">
-                <th className="px-4 bg-slate-50 border-b border-slate-200 font-bold text-[11px] text-slate-500 uppercase tracking-wider w-[60%]">
-                  Wire Type / Brand / Width
+                <th className="px-4 bg-slate-50 border-b border-slate-200 font-bold text-[11px] text-slate-500 uppercase tracking-wider w-[55%]">
+                  Brand / Width
                 </th>
-                <th className="px-4 bg-slate-50 border-b border-slate-200 font-bold text-[11px] text-slate-500 uppercase tracking-wider text-right w-[40%]">
+                <th className="px-4 bg-slate-50 border-b border-slate-200 font-bold text-[11px] text-slate-500 uppercase tracking-wider text-right w-[45%]">
                   Total Stock
                 </th>
               </tr>
             </thead>
-            {Array.from(tableData.keys()).sort().map((type, tIdx, tArr) => {
-              const typeMap = tableData.get(type)!;
-              const isLastType = tIdx === tArr.length - 1;
-              return (
-                <tbody key={`type_${type}`} className={isLastType ? "pb-[env(safe-area-inset-bottom)]" : ""}>
-                  {/* Sub-category Header */}
-                  <tr>
-                    <td colSpan={2} className="bg-slate-100 border-b border-slate-200 px-4 h-[38px]">
-                      <span className="font-bold text-[13px] text-slate-800 uppercase tracking-wider">{type}</span>
-                    </td>
-                  </tr>
-                  
-                  {Array.from(typeMap.keys()).sort().map(brand => {
-                    const brandMap = typeMap.get(brand)!;
-                    return (
-                      <React.Fragment key={`brand_${type}_${brand}`}>
-                        {/* Brand Header */}
-                        <tr>
-                          <td colSpan={2} className="bg-slate-50 border-b border-slate-100 px-4 h-[32px]">
-                            <div className="pl-3 border-l-2 border-slate-300 h-full flex items-center">
-                              <span className="font-bold text-[12px] text-slate-600 uppercase tracking-wider leading-none">{brand}</span>
+            <tbody>
+              {Array.from(tableData.get(activeCategory)!.keys()).sort().map((brand) => {
+                const brandMap = tableData.get(activeCategory)!.get(brand)!;
+                const isExpanded = expandedBrands.has(brand);
+                
+                let brandTotalPhysical = 0;
+                let brandTotalBundle = 0;
+                for (const wObj of Array.from(brandMap.values())) {
+                  brandTotalPhysical += wObj.physical;
+                  brandTotalBundle += wObj.bundle;
+                }
+                
+                return (
+                  <React.Fragment key={`brand_${activeCategory}_${brand}`}>
+                    <tr
+                      onClick={() => toggleBrand(brand)}
+                      className="active:bg-slate-50 transition-colors cursor-pointer border-b border-slate-100 bg-white"
+                    >
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-6 h-6 rounded flex items-center justify-center transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
+                            <ChevronRight size={16} className="text-slate-400" />
+                          </div>
+                          <span className="font-bold text-[14px] text-slate-800 leading-snug">{brand}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5 text-right">
+                        <div className="flex flex-col items-end justify-center">
+                          <div className="flex items-baseline gap-1">
+                            <span className="font-black text-[15px] text-slate-900">{brandTotalPhysical.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                            <span className="text-[10px] text-slate-500 font-bold uppercase">MTR</span>
+                          </div>
+                          <div className="flex items-baseline gap-1">
+                            <span className="font-semibold text-[12px] text-slate-400">{brandTotalBundle.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                            <span className="text-[9px] text-slate-400 font-semibold uppercase">BDLS</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                    
+                    {isExpanded && Array.from(brandMap.keys()).sort((a,b) => (parseFloat(a) || 0) - (parseFloat(b) || 0)).map((width, wIdx, arr) => {
+                      const wObj = brandMap.get(width)!;
+                      if (wObj.physical === 0) return null;
+                      const isLastWidth = wIdx === arr.length - 1;
+                      const label = wObj.bundleSizeStr ? `${width} (${wObj.bundleSizeStr.toUpperCase()})` : width;
+                      
+                      return (
+                        <tr 
+                          key={`row_${activeCategory}_${brand}_${width}`} 
+                          onClick={() => handleRowClick(activeCategory, brand, width, wObj)}
+                          className={`active:bg-blue-50/50 transition-colors cursor-pointer bg-slate-50/50 ${isLastWidth ? 'border-b border-slate-200' : 'border-b border-slate-100'}`}
+                        >
+                          <td className="px-4 py-3 pl-[3.25rem]">
+                            <span className="font-semibold text-[13px] text-slate-700">
+                              {label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex flex-col items-end justify-center">
+                              <div className="flex items-baseline gap-1">
+                                <span className="font-bold text-[14px] text-slate-900">{wObj.physical.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                                <span className="text-[9px] text-slate-500 font-bold uppercase">MTR</span>
+                              </div>
+                              <div className="flex items-baseline gap-1">
+                                {wObj.hasNA ? (
+                                  <span className="text-red-400 font-bold text-[11px]">N/A</span>
+                                ) : (
+                                  <>
+                                    <span className="font-semibold text-[11px] text-slate-400">{wObj.bundle.toLocaleString(undefined, { maximumFractionDigits: 1 })}</span>
+                                    <span className="text-[8px] text-slate-400 font-semibold uppercase">BDLS</span>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </td>
                         </tr>
-                        
-                        {Array.from(brandMap.keys()).sort((a,b) => (parseFloat(a) || 0) - (parseFloat(b) || 0)).map((width, wIdx, arr) => {
-                          const wObj = brandMap.get(width)!;
-                          if (wObj.physical === 0) return null;
-                          const isLast = wIdx === arr.length - 1;
-                          
-                          return (
-                            <tr 
-                              key={`row_${type}_${brand}_${width}`} 
-                              onClick={() => handleRowClick(type, brand, width, wObj)}
-                              className={`active:bg-blue-50/50 transition-colors ${!isLast ? 'border-b border-slate-100' : ''} bg-white`}
-                            >
-                              <td className="px-4 py-3 pl-8">
-                                <div className="flex flex-col">
-                                  <span className="font-semibold text-[13px] text-slate-800">
-                                    {width}
-                                  </span>
-                                  {measurementUnit === 'bdls' && wObj.bundleSizeStr && (
-                                    <span className="text-[10px] text-slate-400 font-medium">{wObj.bundleSizeStr}</span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 text-right">
-                                {measurementUnit === 'bdls' && wObj.hasNA ? (
-                                  <span className="text-red-400 font-bold text-[13px]">N/A</span>
-                                ) : (
-                                  <span className="font-bold text-[14px] text-slate-900">
-                                    {(measurementUnit === 'bdls' ? wObj.bundle : wObj.physical).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                    <span className="text-[10px] text-slate-400 ml-1 font-semibold uppercase">{displayUnit}</span>
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              );
-            })}
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
           </table>
         )}
       </div>
 
       <MobileWireCableDrilldownSheet
         data={drilldownData}
-        mode={measurementUnit}
+        mode="mtr"
         onClose={() => setDrilldownData(null)}
       />
     </div>

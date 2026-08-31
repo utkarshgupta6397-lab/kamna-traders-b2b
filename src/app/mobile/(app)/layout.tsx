@@ -10,8 +10,10 @@ export default async function MobileAppLayout({ children }: { children: React.Re
   }
 
   return (
-    <div className="flex-1 flex flex-col pb-[calc(60px+env(safe-area-inset-bottom))] relative">
-      {children}
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-[#F8F9FB] relative w-full">
+      <div className="flex-1 overflow-y-auto flex flex-col relative w-full">
+        {children}
+      </div>
       <BottomNav />
     </div>
   );

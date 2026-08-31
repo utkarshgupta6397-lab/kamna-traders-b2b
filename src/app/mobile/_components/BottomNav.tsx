@@ -10,7 +10,7 @@ export default function BottomNav() {
   if (!pathname) return null;
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+    <nav className="shrink-0 bg-white border-t border-slate-200 z-40" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <div className="flex items-center justify-around h-[60px] max-w-[430px] mx-auto">
         <Link 
           href="/mobile"

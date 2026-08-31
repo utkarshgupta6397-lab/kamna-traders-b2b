@@ -29,7 +29,7 @@ export const viewport: Viewport = {
 
 export default function MobileRootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-[#F8F9FB] text-slate-900 font-sans selection:bg-blue-100">
+    <div className="flex-1 w-full flex flex-col bg-[#F8F9FB] text-slate-900 font-sans selection:bg-blue-100 overflow-hidden relative">
       <HideDevUI />
       {children}
       <InstallBanner />

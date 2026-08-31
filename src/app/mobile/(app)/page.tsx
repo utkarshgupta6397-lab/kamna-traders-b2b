@@ -35,7 +35,7 @@ export default async function MobileHome() {
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" fill="#ffffff" stroke="#1A2766" />
                 <path d="M3.27 6.96 12 12.01l8.73-5.05" stroke="#2563eb" />
                 <path d="M12 22.08V12" stroke="#2563eb" />
-                <path d="m7.5 4.21 8.5 4.9" stroke="#16a34a" strokeWidth="2" opacity="0.8"/>
+                <path d="m7.5 4.21 8.5 4.9" stroke="#16a34a" strokeWidth="2" opacity="0.8" />
               </svg>
             </div>
             <span className="font-bold text-[#1A2766] text-[16px] tracking-tight">

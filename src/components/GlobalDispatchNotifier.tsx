@@ -87,8 +87,7 @@ export default function GlobalDispatchNotifier() {
         }
       };
 
-      eventSource.onerror = (err) => {
-        console.error('[GlobalDispatchNotifier] SSE Error:', err);
+      eventSource.onerror = () => {
         if (eventSource) {
           eventSource.close();
         }

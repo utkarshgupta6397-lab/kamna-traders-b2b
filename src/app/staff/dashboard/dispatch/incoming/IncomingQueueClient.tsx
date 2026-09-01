@@ -83,12 +83,12 @@ export default function IncomingQueueClient() {
         setSseConnected(true);
       };
 
-      eventSource.onerror = (err) => {
-        console.error('[SSE] Error:', err);
+      eventSource.onerror = () => {
         setSseConnected(false);
         eventSource.close();
-        // Reconnect after 5s
-        reconnectTimeout = setTimeout(connectSSE, 5000);
+        if (!isUnmounted) {
+          reconnectTimeout = setTimeout(connectSSE, 5000);
+        }
       };
 
       eventSource.onmessage = (event) => {

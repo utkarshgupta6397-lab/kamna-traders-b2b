@@ -1,8 +1,6 @@
 import { prisma } from '@/lib/db';
 import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
 import { getZohoOrgId, getZohoTokens } from '@/lib/zoho-auth';
-import { buildZohoCustomFieldsPayload } from '@/lib/zoho-custom-fields';
-import { lockZohoSalesOrder } from '@/lib/zoho-sales-order-lock';
 
 export async function enrichSalesOrder(salesorderId: string, dbId: string, requestId: string) {
   try {
@@ -79,11 +77,6 @@ export async function enrichSalesOrder(salesorderId: string, dbId: string, reque
 
 
     console.log(`[INCOMING SO][${requestId}] Final database update successful.`);
-    
-    // Kick off lock workflow asynchronously (does not block enrichment flow)
-    lockZohoSalesOrder(dbId, salesorderId).catch(err => {
-      console.error(`[INCOMING SO][${requestId}] Uncaught error in lock workflow:`, err);
-    });
     
     // Emit update event so UI re-renders with enriched data
     dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, updated);

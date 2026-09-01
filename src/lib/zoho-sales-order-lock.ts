@@ -1,7 +1,6 @@
 import { prisma } from '@/lib/db';
 import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
 import { getZohoOrgId, getZohoTokens } from '@/lib/zoho-auth';
-import { buildZohoCustomFieldsPayload, getSalesOrderCustomFieldsMetadata } from '@/lib/zoho-custom-fields';
 
 export async function lockZohoSalesOrder(dbId: string, salesorderId: string) {
   try {
@@ -19,64 +18,10 @@ export async function lockZohoSalesOrder(dbId: string, salesorderId: string) {
     const accessToken = await getZohoTokens();
     const apiBase = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
-    // 2. Build Payload
-    const customFieldsToUpdate = { cf_is_locked: true };
-    const cfPayload = await buildZohoCustomFieldsPayload(customFieldsToUpdate);
+    // (The previous cf_is_locked PUT update logic was intentionally removed here)
+    // Going forward, locking happens natively. This function now only verifies the lock status.
     
-    if (cfPayload.length === 0) {
-      throw new Error("Could not resolve custom field ID for cf_is_locked.");
-    }
-
-    const payloadObj = { custom_fields: cfPayload };
-
-    // 3. Perform PUT
-    const putUrl = `${apiBase}/books/v3/salesorders/${salesorderId}?organization_id=${orgId}`;
-    const putResponse = await fetch(putUrl, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Zoho-oauthtoken ${accessToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(payloadObj)
-    });
-
-    const putStatus = putResponse.status;
-    let putJson = null;
-    let putError = null;
-
-    try {
-      putJson = await putResponse.json();
-    } catch (e) {
-      putError = await putResponse.text().catch(() => 'Failed to parse PUT response');
-    }
-
-    if (!putResponse.ok && !putError) {
-      putError = putJson?.message || `HTTP ${putStatus}`;
-    }
-
-    // Update with PUT results
-    let updatedRecord = await prisma.dispatchIncomingOrder.update({
-      where: { id: dbId },
-      data: {
-        zohoLockRequestJson: payloadObj,
-        zohoLockPutResponseJson: putJson || putError,
-        zohoLockHttpStatus: putStatus,
-      }
-    });
-
-    let lockStatusBeforeVerification = 'PENDING';
-    if (!putResponse.ok) {
-      lockStatusBeforeVerification = 'FAILED';
-      updatedRecord = await prisma.dispatchIncomingOrder.update({
-        where: { id: dbId },
-        data: {
-          zohoLockError: putError || 'PUT operation failed.'
-        }
-      });
-    }
-
-    // 4. Perform VERIFICATION GET
+    // 2. Perform VERIFICATION GET
     const getUrl = `${apiBase}/books/v3/salesorders/${salesorderId}?organization_id=${orgId}`;
     const getResponse = await fetch(getUrl, {
       headers: {
@@ -84,6 +29,8 @@ export async function lockZohoSalesOrder(dbId: string, salesorderId: string) {
         'Accept': 'application/json'
       }
     });
+
+    let updatedRecord = await prisma.dispatchIncomingOrder.findUnique({ where: { id: dbId } });
 
     if (!getResponse.ok) {
       const getErr = await getResponse.text().catch(() => '');
@@ -101,21 +48,13 @@ export async function lockZohoSalesOrder(dbId: string, salesorderId: string) {
     const getJson = await getResponse.json();
     const verifiedOrder = getJson.salesorder;
     
-    // Resolve CF metadata again to know exactly which ID to check
-    const metadata = await getSalesOrderCustomFieldsMetadata();
-    const fieldMeta = metadata.find(f => f.placeholder === 'cf_is_locked' || f.label === 'cf_is_locked' || f.label === 'Is Locked');
-    
-    let isLocked = false;
-    if (verifiedOrder?.custom_fields && fieldMeta) {
-      const fieldData = verifiedOrder.custom_fields.find((f: any) => f.customfield_id === fieldMeta.customfield_id);
-      if (fieldData) {
-        // Zoho booleans might be true, "true", etc.
-        isLocked = fieldData.value === true || fieldData.value === 'true';
-      }
-    }
+    // UI/DB Dependency Flag: The UI and database still track zohoLockStatus.
+    // Since we must not guess at a replacement lock-status source (like 'is_locked' or 'is_closed'),
+    // we default to false and report this dependency to the user.
+    let isLocked = false; 
 
     const finalStatus = isLocked ? 'SUCCESS' : 'VERIFICATION_FAILED';
-    const finalError = isLocked ? null : 'PUT succeeded but verification GET returned cf_is_locked false or missing.';
+    const finalError = isLocked ? null : 'Native lock verification logic is not yet mapped to a specific Zoho Books response field.';
 
     updatedRecord = await prisma.dispatchIncomingOrder.update({
       where: { id: dbId },

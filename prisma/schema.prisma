@@ -1739,6 +1739,15 @@ model DispatchIncomingOrder {
   detailsStatus         String   @default("PENDING")
   detailsFetchedAt      DateTime?
   detailsFetchError     String?
+  zohoLockStatus                 String?   @default("NOT_ATTEMPTED")
+  zohoLockValue                  Boolean?
+  zohoLockAttemptedAt            DateTime?
+  zohoLockVerifiedAt             DateTime?
+  zohoLockRequestJson            Json?
+  zohoLockPutResponseJson        Json?
+  zohoLockVerificationResponseJson Json?
+  zohoLockHttpStatus             Int?
+  zohoLockError                  String?
   currencyCode          String?  @default("INR")
   status                String   @default("NEW")
   zohoDetailsJson       Json?

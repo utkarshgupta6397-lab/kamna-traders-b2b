@@ -11,21 +11,33 @@ export default function GlobalDispatchNotifier() {
   useEffect(() => {
     // Only run on client
     if (typeof window !== 'undefined') {
-      audioRef.current = new Audio('/sounds/dispatch-bell.wav');
+      const audio = new Audio('/sounds/dispatch-bell.wav');
+      audioRef.current = audio;
       // Pre-load audio
-      audioRef.current.load();
+      audio.load();
       
       // Auto-unlock audio on first interaction
       const handleInteraction = () => {
-        isEnabledRef.current = true;
+        if (!isEnabledRef.current) {
+          // Explicitly unlock audio on user interaction by playing and immediately pausing
+          audio.play().then(() => {
+            audio.pause();
+            audio.currentTime = 0;
+            isEnabledRef.current = true;
+            console.log('[GlobalDispatchNotifier] Audio unlocked successfully.');
+          }).catch(err => {
+            console.warn('[GlobalDispatchNotifier] Silent unlock failed:', err);
+          });
+        }
+        
         document.removeEventListener('click', handleInteraction);
         document.removeEventListener('keydown', handleInteraction);
         document.removeEventListener('touchstart', handleInteraction);
       };
       
-      document.addEventListener('click', handleInteraction);
-      document.addEventListener('keydown', handleInteraction);
-      document.addEventListener('touchstart', handleInteraction);
+      document.addEventListener('click', handleInteraction, { once: true });
+      document.addEventListener('keydown', handleInteraction, { once: true });
+      document.addEventListener('touchstart', handleInteraction, { once: true });
       
       return () => {
         document.removeEventListener('click', handleInteraction);

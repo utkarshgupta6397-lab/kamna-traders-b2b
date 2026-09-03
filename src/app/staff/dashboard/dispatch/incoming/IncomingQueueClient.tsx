@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Search, RefreshCw, Inbox, AlertTriangle, ArrowLeftCircle, X, Loader2, RotateCcw } from 'lucide-react';
+import { Search, RefreshCw, Inbox, AlertTriangle, ArrowLeftCircle, X, Loader2, RotateCcw, ChevronUp, ChevronDown, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -27,6 +27,7 @@ interface DispatchIncomingOrder {
 }
 
 type QueueFilter = 'new' | 'sent_back' | 'all';
+type SortKey = 'index' | 'salesOrder' | 'customer' | 'amount' | 'items' | 'waiting' | 'status';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -75,6 +76,11 @@ export default function IncomingQueueClient() {
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const [fetchingIds, setFetchingIds] = useState<Set<string>>(new Set());
 
+  // Pagination & Sorting state
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'waiting', direction: 'asc' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number | 'all'>(10);
+
   // Send Back modal state
   const [sendBackModalOrder, setSendBackModalOrder] = useState<DispatchIncomingOrder | null>(null);
   const [sendBackComment, setSendBackComment] = useState('');
@@ -92,6 +98,11 @@ export default function IncomingQueueClient() {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  // Reset pagination on search or tab change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, queueFilter]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
@@ -228,11 +239,13 @@ export default function IncomingQueueClient() {
     };
   }, []);
 
-  // ── Derived data ─────────────────────────────────────────────────────────
+  // ── Derived data pipeline ────────────────────────────────────────────────
 
+  // 1. Tab Counts
   const newCount = useMemo(() => orders.filter(o => o.status === 'NEW').length, [orders]);
   const sentBackCount = useMemo(() => orders.filter(o => o.status === 'SENT_BACK_TO_OPS').length, [orders]);
 
+  // 2. Filter
   const filteredOrders = useMemo(() => {
     let base = orders;
     if (queueFilter === 'new') base = orders.filter(o => o.status === 'NEW');
@@ -248,7 +261,67 @@ export default function IncomingQueueClient() {
     );
   }, [orders, queueFilter, searchQuery]);
 
-  // ── Tab helper ───────────────────────────────────────────────────────────
+  // 3. Sort
+  const sortedOrders = useMemo(() => {
+    const sorted = [...filteredOrders];
+    sorted.sort((a, b) => {
+      let valA: any = null;
+      let valB: any = null;
+      
+      switch (sortConfig.key) {
+        case 'index':
+        case 'waiting':
+          // Min waiting time means maximum timestamp (newest). 
+          // Ascending waiting = smallest waiting = largest baseTs.
+          valA = new Date(a.activatedAt ?? a.receivedAt).getTime();
+          valB = new Date(b.activatedAt ?? b.receivedAt).getTime();
+          // We invert the return for waiting so 'asc' means smallest elapsed (newest first)
+          return sortConfig.direction === 'asc' ? (valB - valA) : (valA - valB);
+        case 'salesOrder':
+          valA = (a.salesorderNumber || a.zohoSalesorderId).toLowerCase();
+          valB = (b.salesorderNumber || b.zohoSalesorderId).toLowerCase();
+          break;
+        case 'customer':
+          valA = (a.customerName || 'unknown').toLowerCase();
+          valB = (b.customerName || 'unknown').toLowerCase();
+          break;
+        case 'amount':
+          valA = a.total ?? 0;
+          valB = b.total ?? 0;
+          break;
+        case 'items':
+          valA = a.totalItems ?? 0;
+          valB = b.totalItems ?? 0;
+          break;
+        case 'status':
+          valA = getStatusLabel(a.status).toLowerCase();
+          valB = getStatusLabel(b.status).toLowerCase();
+          break;
+      }
+      
+      if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0; 
+    });
+    return sorted;
+  }, [filteredOrders, sortConfig]);
+
+  // 4. Pagination
+  const totalPages = pageSize === 'all' ? 1 : Math.ceil(sortedOrders.length / (pageSize as number)) || 1;
+  
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(Math.max(1, totalPages));
+    }
+  }, [totalPages, currentPage]);
+
+  const paginatedOrders = useMemo(() => {
+    if (pageSize === 'all') return sortedOrders;
+    const start = (currentPage - 1) * pageSize;
+    return sortedOrders.slice(start, start + pageSize);
+  }, [sortedOrders, currentPage, pageSize]);
+
+  // ── UI Components ────────────────────────────────────────────────────────
 
   const tabClass = (active: boolean) =>
     `py-3 px-1 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
@@ -257,7 +330,31 @@ export default function IncomingQueueClient() {
         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
     }`;
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  const SortableHeader = ({ label, sortKey, align = 'left' }: { label: string; sortKey: SortKey; align?: 'left' | 'right' | 'center' }) => {
+    const isActive = sortConfig.key === sortKey;
+    return (
+      <th
+        className={`px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 cursor-pointer hover:bg-gray-100/50 transition-colors select-none group ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'}`}
+        onClick={() => {
+          setSortConfig(prev => ({
+            key: sortKey,
+            direction: prev.key === sortKey && prev.direction === 'asc' ? 'desc' : 'asc'
+          }));
+        }}
+      >
+        <div className={`flex items-center gap-1.5 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''}`}>
+          {label}
+          <div className="flex-shrink-0 w-3">
+            {isActive ? (
+              sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-[#1A2766]" /> : <ChevronDown size={12} className="text-[#1A2766]" />
+            ) : (
+              <ArrowUpDown size={12} className="text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+            )}
+          </div>
+        </div>
+      </th>
+    );
+  };
 
   return (
     <div className="flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -282,28 +379,8 @@ export default function IncomingQueueClient() {
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 gap-4 px-6 py-4 border-b border-gray-100 bg-white">
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-          <div className="flex items-center justify-between text-blue-600 mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Total Received</span>
-            <Inbox size={14} />
-          </div>
-          <span className="text-2xl font-black text-blue-900">{orders.length}</span>
-          <p className="text-[10px] text-blue-500 mt-0.5">Cumulative · all cycles</p>
-        </div>
-        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
-          <div className="flex items-center justify-between text-emerald-700 mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Awaiting Action</span>
-            <AlertTriangle size={14} />
-          </div>
-          <span className="text-2xl font-black text-emerald-900">{newCount}</span>
-          <p className="text-[10px] text-emerald-600 mt-0.5">Active · requires processing</p>
-        </div>
-      </div>
-
       {/* Queue filter tabs */}
-      <div className="px-6 border-b border-gray-100">
+      <div className="px-6 border-b border-gray-100 bg-white">
         <div className="flex gap-6 -mb-px">
           <button onClick={() => setQueueFilter('new')} className={tabClass(queueFilter === 'new')}>
             Active
@@ -354,18 +431,20 @@ export default function IncomingQueueClient() {
         <table className="w-full text-left border-collapse text-sm">
           <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
             <tr>
-              <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200">Sales Order</th>
-              <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200">Customer</th>
-              <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 text-right">Amount</th>
-              <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 text-right">Items</th>
-              <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200">Waiting</th>
-              <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200">Status</th>
+              <SortableHeader label="#" sortKey="index" align="center" />
+              <SortableHeader label="Sales Order" sortKey="salesOrder" />
+              <SortableHeader label="Customer" sortKey="customer" />
+              <SortableHeader label="Amount" sortKey="amount" align="right" />
+              <SortableHeader label="Items" sortKey="items" align="right" />
+              <SortableHeader label="Waiting" sortKey="waiting" />
+              <SortableHeader label="Status" sortKey="status" />
+              <th className="px-4 py-3 border-b border-gray-200 w-16"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
-            {filteredOrders.length === 0 ? (
+            {paginatedOrders.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
+                <td colSpan={8} className="px-6 py-12 text-center text-gray-400">
                   {loading ? (
                     <div className="flex items-center justify-center gap-2">
                       <RefreshCw size={15} className="animate-spin text-gray-300" />
@@ -380,14 +459,16 @@ export default function IncomingQueueClient() {
                       <p className="text-xs text-gray-400 mt-1">Sales Orders pushed from Zoho Books will appear here automatically.</p>
                     </div>
                   ) : (
-                    <span className="text-sm">No results match your search.</span>
+                    <span className="text-sm">No results match your search or filters.</span>
                   )}
                 </td>
               </tr>
             ) : (
-              filteredOrders.map(order => {
+              paginatedOrders.map((order, idx) => {
+                // Determine global index for this sorted/filtered row
+                const globalIndex = pageSize === 'all' ? idx + 1 : ((currentPage - 1) * pageSize) + idx + 1;
+                
                 // Derive elapsed from activatedAt (current billing cycle start).
-                // Falls back to receivedAt for any legacy rows that pre-date this field.
                 const baseTs = order.activatedAt ?? order.receivedAt;
                 const elapsedSec = Math.floor((now - new Date(baseTs).getTime()) / 1000);
                 const needsDetailsFetch =
@@ -400,6 +481,11 @@ export default function IncomingQueueClient() {
                       highlightedRow === order.id ? 'bg-blue-50' : ''
                     }`}
                   >
+                    {/* # Index */}
+                    <td className="px-4 py-3 text-center text-xs font-mono text-gray-400 w-12">
+                      {globalIndex}
+                    </td>
+
                     {/* Sales Order */}
                     <td className="px-4 py-3">
                       {order.salesorderNumber ? (
@@ -470,22 +556,24 @@ export default function IncomingQueueClient() {
                       </div>
                     </td>
 
-                    {/* Status + compact action icons */}
+                    {/* Status */}
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap ${
-                            order.status === 'NEW'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : order.status === 'SENT_BACK_TO_OPS'
-                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                              : 'bg-gray-100 text-gray-600 border border-gray-200'
-                          }`}
-                        >
-                          {getStatusLabel(order.status)}
-                        </span>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide whitespace-nowrap ${
+                          order.status === 'NEW'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : order.status === 'SENT_BACK_TO_OPS'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-gray-100 text-gray-600 border border-gray-200'
+                        }`}
+                      >
+                        {getStatusLabel(order.status)}
+                      </span>
+                    </td>
 
-                        {/* Compact icon-only action buttons */}
+                    {/* Actions */}
+                    <td className="px-4 py-3 text-right w-16">
+                      <div className="flex items-center justify-end gap-1.5">
                         {needsDetailsFetch && (
                           <button
                             onClick={() => handleFetchDetails(order.id)}
@@ -516,6 +604,63 @@ export default function IncomingQueueClient() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Pagination Controls */}
+      <div className="px-6 py-3 border-t border-gray-100 bg-white flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-600">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <label htmlFor="pageSize" className="font-medium">Rows per page:</label>
+            <select
+              id="pageSize"
+              value={pageSize}
+              onChange={(e) => {
+                const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
+                setPageSize(val);
+                setCurrentPage(1); // Reset to page 1 when page size changes
+              }}
+              className="bg-gray-50 border border-gray-200 text-gray-700 rounded py-1 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#1A2766]"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+          {sortedOrders.length > 0 && (
+            <span className="hidden sm:inline">
+              Showing {pageSize === 'all' ? 1 : ((currentPage - 1) * pageSize) + 1}-
+              {pageSize === 'all' ? sortedOrders.length : Math.min(currentPage * pageSize, sortedOrders.length)} of {sortedOrders.length}
+            </span>
+          )}
+        </div>
+        
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="p-1.5 rounded text-gray-500 hover:bg-gray-100 disabled:opacity-30 transition-colors flex items-center justify-center"
+            title="Previous Page"
+            aria-label="Previous Page"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          
+          <span className="px-3 text-xs font-medium tabular-nums">
+            Page {currentPage} of {totalPages}
+          </span>
+          
+          <button
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages || totalPages === 1}
+            className="p-1.5 rounded text-gray-500 hover:bg-gray-100 disabled:opacity-30 transition-colors flex items-center justify-center"
+            title="Next Page"
+            aria-label="Next Page"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
       </div>
 
       {/* Send Back Modal — behavior unchanged */}

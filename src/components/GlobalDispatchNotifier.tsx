@@ -52,12 +52,13 @@ export default function GlobalDispatchNotifier() {
           if (data.type === 'new_order' && data.order) {
             const order = data.order;
             
-            // Deduplicate: Don't notify for the same ID twice in this session
-            if (knownIdsRef.current.has(order.zohoSalesorderId)) {
+            // Deduplicate: Don't notify for the same ID twice in this session unless it's a repush
+            const dedupeKey = order._isRePush ? `${order.zohoSalesorderId}_${order._rePushTimestamp}` : order.zohoSalesorderId;
+            if (knownIdsRef.current.has(dedupeKey)) {
               return;
             }
             
-            knownIdsRef.current.add(order.zohoSalesorderId);
+            knownIdsRef.current.add(dedupeKey);
 
             // Toast Notification
             const soNum = order.salesorderNumber || order.zohoSalesorderId;

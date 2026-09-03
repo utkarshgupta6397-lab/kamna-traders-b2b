@@ -145,17 +145,18 @@ export default function IncomingQueueClient() {
             const order: DispatchIncomingOrder = data.order;
             
             // Check for duplicates
-            if (!knownIdsRef.current.has(order.zohoSalesorderId)) {
-              knownIdsRef.current.add(order.zohoSalesorderId);
+            const dedupeKey = (order as any)._isRePush ? `${order.zohoSalesorderId}_${(order as any)._rePushTimestamp}` : order.zohoSalesorderId;
+            if (!knownIdsRef.current.has(dedupeKey)) {
+              knownIdsRef.current.add(dedupeKey);
               
-              // Add to state at the top
-              setOrders(prev => [order, ...prev]);
+              // Add to state at the top (and remove old instance if it's a repush)
+              setOrders(prev => [order, ...prev.filter(o => o.id !== order.id)]);
               
               // Highlight
               setHighlightedRow(order.id);
               setTimeout(() => setHighlightedRow(null), 3000);
 
-                          }
+            }
           }
         } catch (err) {
           console.error('[SSE] Message parse error:', err);

@@ -99,8 +99,29 @@ export async function POST(request: Request) {
 
       // FIRE AND FORGET ENRICHMENT
       enrichSalesOrder(cleanId, dispatchOrder.id, requestId).catch(console.error);
-
-      // Returns removed to allow locking logic to execute synchronously
+    } else {
+      console.log(`[INCOMING SO][${requestId}] Existing record found. Retrying enrichment.`);
+      
+      const isRePush = dispatchOrder.status === 'SENT_BACK_TO_OPS';
+      
+      if (isRePush) {
+        dispatchOrder = await prisma.dispatchIncomingOrder.update({
+          where: { zohoSalesorderId: cleanId },
+          data: { status: 'NEW', updatedAt: new Date() }
+        });
+        
+        // Emit as a "new" order again so the frontend plays the sound and highlights it
+        const repushEventOrder = { ...dispatchOrder, _isRePush: true, _rePushTimestamp: Date.now() };
+        dispatchEventEmitter.emit(DISPATCH_EVENTS.NEW_INCOMING_ORDER, repushEventOrder);
+      } else {
+        dispatchOrder = await prisma.dispatchIncomingOrder.update({
+          where: { zohoSalesorderId: cleanId },
+          data: { updatedAt: new Date() }
+        });
+      }
+      
+      // Always re-trigger enrichment to heal incomplete records or refresh data
+      enrichSalesOrder(cleanId, dispatchOrder.id, requestId).catch(console.error);
     }
 
     // === LOCK ZOHO SALES ORDER ===

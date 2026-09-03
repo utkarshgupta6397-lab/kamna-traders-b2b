@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Search, RefreshCw, Inbox, AlertTriangle, ArrowLeftCircle, X, Loader2, RotateCcw, ChevronUp, ChevronDown, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, RefreshCw, Inbox, AlertTriangle, Undo2, X, Loader2, ChevronUp, ChevronDown, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -84,6 +84,7 @@ export default function IncomingQueueClient() {
   // Send Back modal state
   const [sendBackModalOrder, setSendBackModalOrder] = useState<DispatchIncomingOrder | null>(null);
   const [sendBackComment, setSendBackComment] = useState('');
+  const [sendBackStep, setSendBackStep] = useState<1 | 2>(1);
   const [submittingSendBack, setSubmittingSendBack] = useState(false);
   const [sendBackError, setSendBackError] = useState<string | null>(null);
 
@@ -104,20 +105,41 @@ export default function IncomingQueueClient() {
     setCurrentPage(1);
   }, [searchQuery, queueFilter]);
 
+  // Handle Escape Key for Modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && sendBackModalOrder && !submittingSendBack) {
+        setSendBackModalOrder(null);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [sendBackModalOrder, submittingSendBack]);
+
   // ── Handlers ─────────────────────────────────────────────────────────────
 
   const handleOpenSendBackModal = (order: DispatchIncomingOrder) => {
     setSendBackModalOrder(order);
     setSendBackComment('');
     setSendBackError(null);
+    setSendBackStep(1);
+  };
+
+  const handleCloseSendBackModal = () => {
+    if (submittingSendBack) return;
+    setSendBackModalOrder(null);
   };
 
   const handleSendBack = async () => {
     if (!sendBackModalOrder) return;
+    
+    // Safety check - shouldn't happen due to UI validation
     if (!sendBackComment.trim()) {
       setSendBackError('Reason / Comments are required.');
+      setSendBackStep(1);
       return;
     }
+    
     setSubmittingSendBack(true);
     setSendBackError(null);
     try {
@@ -127,11 +149,14 @@ export default function IncomingQueueClient() {
         body: JSON.stringify({ comment: sendBackComment }),
       });
       const data = await res.json();
+      
       if (!res.ok || !data.success) {
-        setSendBackError(data.message || data.error || 'Failed to send back to Operations.');
+        setSendBackError(data.message || data.error || 'Failed to send the Sales Order back. Please try again.');
         if (data.details) console.error('Send Back Details:', data.details);
       } else {
+        toast.success('Sales Order sent back to Operations Team successfully.');
         setSendBackModalOrder(null);
+        
         // Optimistically update local status so the row moves to Sent Back tab immediately
         setOrders(prev =>
           prev.map(o =>
@@ -593,7 +618,7 @@ export default function IncomingQueueClient() {
                             aria-label="Send Back to Operations Team"
                             className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors"
                           >
-                            <RotateCcw size={12} />
+                            <Undo2 size={12} />
                           </button>
                         )}
                       </div>
@@ -663,17 +688,18 @@ export default function IncomingQueueClient() {
         </div>
       </div>
 
-      {/* Send Back Modal — behavior unchanged */}
+      {/* Send Back Double Confirmation Modal */}
       {sendBackModalOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg flex flex-col overflow-hidden">
+            {/* Header */}
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-red-50/30">
               <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                <ArrowLeftCircle size={18} className="text-red-600" />
-                Send Sales Order Back for Editing?
+                <Undo2 size={18} className="text-red-600" />
+                {sendBackStep === 1 ? 'Send Back to Operations?' : 'Confirm Send Back'}
               </h3>
               <button
-                onClick={() => !submittingSendBack && setSendBackModalOrder(null)}
+                onClick={handleCloseSendBackModal}
                 disabled={submittingSendBack}
                 className="text-gray-400 hover:text-gray-700 transition-colors disabled:opacity-50"
               >
@@ -682,25 +708,51 @@ export default function IncomingQueueClient() {
             </div>
 
             <div className="p-6">
-              <p className="text-sm text-gray-600 mb-4">
-                This will release the Sales Order{' '}
-                <span className="font-bold text-gray-900">
-                  {sendBackModalOrder.salesorderNumber || sendBackModalOrder.zohoSalesorderId}
-                </span>{' '}
-                for correction and send it back to the Operations team.
-              </p>
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
-                  Reason / Comments <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 min-h-[100px]"
-                  placeholder="Explain why this order is being sent back…"
-                  value={sendBackComment}
-                  onChange={e => setSendBackComment(e.target.value)}
-                  disabled={submittingSendBack}
-                />
-              </div>
+              {sendBackStep === 1 ? (
+                <>
+                  <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg flex flex-col gap-1">
+                    <div className="text-sm font-semibold text-gray-900">
+                      Order: {sendBackModalOrder.salesorderNumber || sendBackModalOrder.zohoSalesorderId}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      Customer: {sendBackModalOrder.customerName || 'Unknown'}
+                    </div>
+                  </div>
+
+                  <p className="text-sm font-medium text-gray-800 mb-2">This action will return the order to the Operations Team:</p>
+                  <ul className="list-disc pl-5 text-sm text-gray-600 mb-4 space-y-1">
+                    <li>The Sales Order will be moved back to the 'Edit Required' status in Zoho Books.</li>
+                    <li>The cf_is_locked field will be updated to false.</li>
+                    <li>The order will no longer remain active in the current billing workflow.</li>
+                    <li>ERP users may need to process the order again after it is pushed back.</li>
+                  </ul>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Reason / Comments <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 min-h-[80px]"
+                      placeholder="Explain why this order is being sent back..."
+                      value={sendBackComment}
+                      onChange={e => setSendBackComment(e.target.value)}
+                      disabled={submittingSendBack}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-4 text-center">
+                  <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4">
+                    <AlertTriangle size={32} />
+                  </div>
+                  <h4 className="text-lg font-bold text-gray-900 mb-2">Are you sure?</h4>
+                  <p className="text-sm text-gray-600 mb-2">
+                    Are you sure you want to send Sales Order <span className="font-bold">{sendBackModalOrder.salesorderNumber || sendBackModalOrder.zohoSalesorderId}</span> back to the Operations Team?
+                  </p>
+                  <p className="text-xs text-red-500 font-medium">This action will interrupt the current billing workflow.</p>
+                </div>
+              )}
+
               {sendBackError && (
                 <div className="mt-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg flex items-start gap-2">
                   <AlertTriangle size={15} className="mt-0.5 flex-shrink-0" />
@@ -710,21 +762,50 @@ export default function IncomingQueueClient() {
             </div>
 
             <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
-              <button
-                onClick={() => setSendBackModalOrder(null)}
-                disabled={submittingSendBack}
-                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSendBack}
-                disabled={submittingSendBack || !sendBackComment.trim()}
-                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
-              >
-                {submittingSendBack ? <Loader2 size={15} className="animate-spin" /> : <ArrowLeftCircle size={15} />}
-                Send Back to Operations Team
-              </button>
+              {sendBackStep === 1 ? (
+                <>
+                  <button
+                    onClick={handleCloseSendBackModal}
+                    className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => setSendBackStep(2)}
+                    disabled={!sendBackComment.trim()}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+                  >
+                    Continue
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setSendBackStep(1)}
+                    disabled={submittingSendBack}
+                    className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  >
+                    Go Back
+                  </button>
+                  <button
+                    onClick={handleSendBack}
+                    disabled={submittingSendBack}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+                  >
+                    {submittingSendBack ? (
+                      <>
+                        <Loader2 size={15} className="animate-spin" />
+                        Sending Back...
+                      </>
+                    ) : (
+                      <>
+                        <Undo2 size={15} />
+                        Yes, Send Back
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

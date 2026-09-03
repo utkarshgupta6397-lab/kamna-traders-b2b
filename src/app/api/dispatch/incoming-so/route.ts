@@ -85,12 +85,13 @@ export async function POST(request: Request) {
 
     if (!dispatchOrder) {
       console.log(`[INCOMING SO][${requestId}] Incoming record created`);
-      
-      // PERSIST FIRST
+      const now = new Date();
+      // PERSIST FIRST — activatedAt marks the start of this billing cycle
       dispatchOrder = await prisma.dispatchIncomingOrder.create({
         data: {
           zohoSalesorderId: cleanId,
-          status: 'NEW'
+          status: 'NEW',
+          activatedAt: now,
         }
       });
       
@@ -105,9 +106,11 @@ export async function POST(request: Request) {
       const isRePush = dispatchOrder.status === 'SENT_BACK_TO_OPS';
       
       if (isRePush) {
+        // Reset activatedAt to now so the elapsed timer restarts for the new cycle
+        const now = new Date();
         dispatchOrder = await prisma.dispatchIncomingOrder.update({
           where: { zohoSalesorderId: cleanId },
-          data: { status: 'NEW', updatedAt: new Date() }
+          data: { status: 'NEW', updatedAt: now, activatedAt: now }
         });
         
         // Emit as a "new" order again so the frontend plays the sound and highlights it

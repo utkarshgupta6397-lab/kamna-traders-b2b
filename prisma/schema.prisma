@@ -1573,6 +1573,7 @@ model DispatchIncomingOrder {
   zohoLockValue                    Boolean?
   zohoLockVerificationResponseJson Json?
   zohoLockVerifiedAt               DateTime?
+  activatedAt                      DateTime  @default(now())
 }
 
 enum ZohoProductSyncStatus {

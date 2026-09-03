@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Search, RefreshCw, Inbox, FileDown, AlertTriangle } from 'lucide-react';
+import { Search, RefreshCw, Inbox, FileDown, AlertTriangle, ArrowLeftCircle, X, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface DispatchIncomingOrder {
@@ -39,11 +39,57 @@ export default function IncomingQueueClient() {
   const [sseConnected, setSseConnected] = useState(false);
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const [fetchingIds, setFetchingIds] = useState<Set<string>>(new Set());
+  const [sendBackModalOrder, setSendBackModalOrder] = useState<DispatchIncomingOrder | null>(null);
+  const [sendBackComment, setSendBackComment] = useState('');
+  const [submittingSendBack, setSubmittingSendBack] = useState(false);
+  const [sendBackError, setSendBackError] = useState<string | null>(null);
 
   // Keep a reference to currently known IDs to prevent duplicate alerts
   const knownIdsRef = useRef<Set<string>>(new Set());
 
   
+
+  const handleOpenSendBackModal = (order: DispatchIncomingOrder) => {
+    setSendBackModalOrder(order);
+    setSendBackComment('');
+    setSendBackError(null);
+  };
+
+  const handleSendBack = async () => {
+    if (!sendBackModalOrder) return;
+    if (!sendBackComment.trim()) {
+      setSendBackError('Reason / Comments are required.');
+      return;
+    }
+    
+    setSubmittingSendBack(true);
+    setSendBackError(null);
+    
+    try {
+      const res = await fetch(`/api/dispatch/incoming-orders/${sendBackModalOrder.id}/send-back`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment: sendBackComment })
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok || !data.success) {
+        setSendBackError(data.message || data.error || 'Failed to send back to Operations.');
+        if (data.details) {
+          console.error('Send Back Details:', data.details);
+        }
+      } else {
+        setSendBackModalOrder(null);
+        // Let SSE or initial fetch handle the status update, or manually update
+      }
+    } catch (err: any) {
+      setSendBackError(err.message || 'Network error.');
+    } finally {
+      setSubmittingSendBack(false);
+    }
+  };
+
   const fetchInitialData = async () => {
     setLoading(true);
     try {
@@ -349,6 +395,16 @@ export default function IncomingQueueClient() {
                           {fetchingIds.has(order.id) ? 'Fetching...' : 'Fetch Details'}
                         </button>
                       )}
+                      
+                      {order.status === 'NEW' && (
+                        <button
+                          onClick={() => handleOpenSendBackModal(order)}
+                          className="flex items-center gap-1.5 px-2 py-1 bg-white border border-red-200 rounded-md text-xs font-medium text-red-700 hover:bg-red-50 transition-colors mt-1"
+                        >
+                          <ArrowLeftCircle size={12} className="text-red-500" />
+                          Send Back to Operations Team
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -357,6 +413,70 @@ export default function IncomingQueueClient() {
           </tbody>
         </table>
       </div>
+
+      {sendBackModalOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg flex flex-col overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-red-50/30">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <ArrowLeftCircle size={18} className="text-red-600" />
+                Send Sales Order Back for Editing?
+              </h3>
+              <button 
+                onClick={() => !submittingSendBack && setSendBackModalOrder(null)}
+                disabled={submittingSendBack}
+                className="text-gray-400 hover:text-gray-700 transition-colors disabled:opacity-50"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <p className="text-sm text-gray-600 mb-4">
+                This will release the Sales Order <span className="font-bold text-gray-900">{sendBackModalOrder.salesorderNumber || sendBackModalOrder.zohoSalesorderId}</span> for correction and send it back to the Operations team.
+              </p>
+              
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700">
+                  Reason / Comments <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 min-h-[100px]"
+                  placeholder="Explain why this order is being sent back..."
+                  value={sendBackComment}
+                  onChange={(e) => setSendBackComment(e.target.value)}
+                  disabled={submittingSendBack}
+                />
+              </div>
+              
+              {sendBackError && (
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg flex items-start gap-2">
+                  <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+                  <div>{sendBackError}</div>
+                </div>
+              )}
+            </div>
+            
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+              <button 
+                onClick={() => setSendBackModalOrder(null)}
+                disabled={submittingSendBack}
+                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSendBack}
+                disabled={submittingSendBack || !sendBackComment.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {submittingSendBack ? <Loader2 size={16} className="animate-spin" /> : <ArrowLeftCircle size={16} />}
+                Send Back to Operations Team
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

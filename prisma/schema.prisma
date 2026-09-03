@@ -9,147 +9,134 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  mobile    String   @unique
-  role      String   @default("STAFF")
-  active    Boolean  @default(true)
-  pin       String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Permissions Matrix
-  canManageCarts               Boolean @default(false)
-  canAdjustInventory           Boolean @default(false)
-  canRunSkuSync                Boolean @default(false)
-  canManageZoneMappings        Boolean @default(false)
-  canManageUnlimitedSkus       Boolean @default(false)
-  canManageTransfers           Boolean @default(false)
-  canDeleteTransfers           Boolean @default(false)
-  dispatch_view                Boolean @default(false)
-  accountsAccess               Boolean @default(false) // Deprecated
-  accounts_customer_statement  Boolean @default(false)
-  accounts_invoice_processor   Boolean @default(false)
-  accounts_transactions        Boolean @default(false)
-  accounts_summary_view        Boolean @default(false)
-  accounts_reports_salesman    Boolean @default(false)
-  stock_alerts_manage          Boolean @default(false)
-  accounts_recovery_manage     Boolean @default(false)
-  release_statement_queue      Boolean @default(false)
-  dcr_management               Boolean @default(false)
-  dcr_purchase_receive         Boolean @default(false)
-  dcr_purchase_dcr_receive     Boolean @default(false)
-  dcr_serial_search            Boolean @default(false)
-  dcr_serial_mapping_override  Boolean @default(false)
-  dcr_hold_release             Boolean @default(false)
-  dcr_issue_customer_dcr       Boolean @default(false)
-  solar_orders_view            Boolean @default(false)
-  solar_orders_create          Boolean @default(false)
-  solar_orders_approval        Boolean @default(false)
-  solar_orders_docs_progress   Boolean @default(false)
-  solar_orders_edit_order_date Boolean @default(false)
-  solar_orders_master_edit     Boolean @default(false)
-  workflow_edits               Boolean @default(false)
-  communications_view          Boolean @default(false)
-  communications_templates     Boolean @default(false)
-  whatsapp_integration         Boolean @default(false)
-  holdQueueReviewEnabled       Boolean @default(false)
-  holdQueueReviewLimit         Float?
-
-  // Master Data Permissions Matrix
-  catalog_product_attributes_create  Boolean @default(false)
-  catalog_product_attributes_modify  Boolean @default(false)
-  catalog_product_attributes_archive Boolean @default(false)
-  catalog_brands_create              Boolean @default(false)
-  catalog_brands_modify              Boolean @default(false)
-  catalog_brands_approve             Boolean @default(false)
-  catalog_manufacturers_create       Boolean @default(false)
-  catalog_manufacturers_modify       Boolean @default(false)
-  catalog_manufacturers_approve      Boolean @default(false)
-  catalog_categories_create          Boolean @default(false)
-  catalog_categories_modify          Boolean @default(false)
-  catalog_categories_approve         Boolean @default(false)
-  catalog_taxrates_create            Boolean @default(false)
-  catalog_taxrates_modify            Boolean @default(false)
-  catalog_taxrates_approve           Boolean @default(false)
-  catalog_units_create               Boolean @default(false)
-  catalog_units_modify               Boolean @default(false)
-  catalog_units_approve              Boolean @default(false)
-  catalog_hsncodes_create            Boolean @default(false)
-  catalog_hsncodes_modify            Boolean @default(false)
-  catalog_hsncodes_approve           Boolean @default(false)
-  catalog_products_create            Boolean @default(false)
-  catalog_products_modify            Boolean @default(false)
-  catalog_products_approve           Boolean @default(false)
-  catalog_products_archive           Boolean @default(false)
-  system_productMigration            Boolean @default(false)
-
-  sessions            ActiveSession[]
-  carts               Cart[]
-  inventoryHistory    InventoryHistory[]
-  zoneMappingsUpdated WarehouseInventory[] @relation("ZoneMappingUpdatedBy")
-  updatedSkus         Sku[]                @relation("SkuUnlimitedUpdatedBy")
-  cartsHeld           Cart[]               @relation("CartHeldBy")
-  cartsResumed        Cart[]               @relation("CartResumedBy")
-  cartHistory         CartHistory[]        @relation("CartHistoryByUser")
-  transfersCreated    Transfer[]           @relation("TransferCreatedBy")
-  transfersDispatched Transfer[]           @relation("TransferDispatchedBy")
-  transfersReceived   Transfer[]           @relation("TransferReceivedBy")
-
-  printerId     String?
-  printer       Printer?       @relation(fields: [printerId], references: [id])
-  qzCertificate QzCertificate?
-
-  // Solar Orders Relations
-  solarOrdersCreated   SolarOrder[]         @relation("SolarOrderCreatedBy")
-  solarOrdersApproved  SolarOrder[]         @relation("SolarOrderApprovedBy")
-  solarOrdersCancelled SolarOrder[]         @relation("SolarOrderCancelledBy")
-  solarOrdersCalled    SolarOrder[]         @relation("SolarOrderCallingExecutive")
-  solarOrdersSold      SolarOrder[]         @relation("SolarOrderSalesman")
-  solarOrdersSubmitted SolarOrder[]         @relation("SolarOrderSubmittedBy")
-  solarOrdersRejected  SolarOrder[]         @relation("SolarOrderRejectedBy")
-  solarStepsCompleted  SolarWorkflowStep[]  @relation("SolarStepCompletedBy")
-  solarFilesUploaded   SolarOrderFile[]     @relation("SolarFileUploadedBy")
-  solarFilesDeleted    SolarOrderFile[]     @relation("SolarFileDeletedBy")
-  solarActivityLogs    SolarActivityLog[]   @relation("SolarActivityActor")
-  projectChatMessages  ProjectChatMessage[] @relation("ProjectChatCreatedBy")
-
-  tasksAssigned    SolarTask[]         @relation("TaskAssignedTo")
-  tasksCreated     SolarTask[]         @relation("TaskCreatedBy")
-  tasksCompleted   SolarTask[]         @relation("TaskCompletedBy")
-  taskFollowUps    SolarTaskFollowUp[]
-  solarDiscussions SolarDiscussion[]
-
-  // Communications Module
-  communicationsCreated  Communication[]   @relation("CommunicationCreatedBy")
-  communicationsAssigned Communication[]   @relation("CommunicationAssignedTo")
-  whatsappTests          WhatsAppTestLog[]
-
-  // Master Data Relations
-  brandsCreated            Brand[]             @relation("BrandCreatedBy")
-  brandsUpdated            Brand[]             @relation("BrandUpdatedBy")
-  brandsApproved           Brand[]             @relation("BrandApprovedBy")
-  categoriesCreated        Category[]          @relation("CategoryCreatedBy")
-  categoriesUpdated        Category[]          @relation("CategoryUpdatedBy")
-  categoriesApproved       Category[]          @relation("CategoryApprovedBy")
-  manufacturersCreated     Manufacturer[]      @relation("ManufacturerCreatedBy")
-  manufacturersUpdated     Manufacturer[]      @relation("ManufacturerUpdatedBy")
-  manufacturersApproved    Manufacturer[]      @relation("ManufacturerApprovedBy")
-  taxRatesCreated          TaxRate[]           @relation("TaxRateCreatedBy")
-  taxRatesUpdated          TaxRate[]           @relation("TaxRateUpdatedBy")
-  taxRatesApproved         TaxRate[]           @relation("TaxRateApprovedBy")
-  unitsCreated             UnitOfMeasurement[] @relation("UnitCreatedBy")
-  unitsUpdated             UnitOfMeasurement[] @relation("UnitUpdatedBy")
-  unitsApproved            UnitOfMeasurement[] @relation("UnitApprovedBy")
-  hsnCodesCreated          HsnCode[]           @relation("HsnCreatedBy")
-  hsnCodesUpdated          HsnCode[]           @relation("HsnUpdatedBy")
-  hsnCodesApproved         HsnCode[]           @relation("HsnApprovedBy")
-  productsCreated          Product[]           @relation("ProductCreatedBy")
-  productsUpdated          Product[]           @relation("ProductUpdatedBy")
-  productsApproved         Product[]           @relation("ProductApprovedBy")
-  productAttributesCreated ProductAttribute[]  @relation("AttributeCreatedBy")
-  productAttributesUpdated ProductAttribute[]  @relation("AttributeUpdatedBy")
-  masterDataHistory        MasterDataHistory[] @relation("MasterHistoryPerformedBy")
+  id                                 String               @id @default(cuid())
+  name                               String
+  mobile                             String               @unique
+  role                               String               @default("STAFF")
+  active                             Boolean              @default(true)
+  pin                                String?
+  createdAt                          DateTime             @default(now())
+  updatedAt                          DateTime             @updatedAt
+  accountsAccess                     Boolean              @default(false)
+  accounts_customer_statement        Boolean              @default(false)
+  accounts_transactions              Boolean              @default(false)
+  canAdjustInventory                 Boolean              @default(false)
+  canDeleteTransfers                 Boolean              @default(false)
+  canManageCarts                     Boolean              @default(false)
+  canManageTransfers                 Boolean              @default(false)
+  canManageUnlimitedSkus             Boolean              @default(false)
+  canManageZoneMappings              Boolean              @default(false)
+  canRunSkuSync                      Boolean              @default(false)
+  printerId                          String?
+  accounts_recovery_manage           Boolean              @default(false)
+  accounts_summary_view              Boolean              @default(false)
+  release_statement_queue            Boolean              @default(false)
+  stock_alerts_manage                Boolean              @default(false)
+  dcr_management                     Boolean              @default(false)
+  dcr_purchase_dcr_receive           Boolean              @default(false)
+  dcr_purchase_receive               Boolean              @default(false)
+  dcr_hold_release                   Boolean              @default(false)
+  dcr_issue_customer_dcr             Boolean              @default(false)
+  dcr_serial_mapping_override        Boolean              @default(false)
+  dcr_serial_search                  Boolean              @default(false)
+  solar_orders_create                Boolean              @default(false)
+  solar_orders_view                  Boolean              @default(false)
+  solar_orders_approval              Boolean              @default(false)
+  solar_orders_docs_progress         Boolean              @default(false)
+  solar_orders_edit_order_date       Boolean              @default(false)
+  solar_orders_master_edit           Boolean              @default(false)
+  workflow_edits                     Boolean              @default(false)
+  accounts_invoice_processor         Boolean              @default(false)
+  communications_view                Boolean              @default(false)
+  whatsapp_integration               Boolean              @default(false)
+  communications_templates           Boolean              @default(false)
+  accounts_reports_salesman          Boolean              @default(false)
+  holdQueueReviewEnabled             Boolean              @default(false)
+  holdQueueReviewLimit               Float?
+  catalog_brands_approve             Boolean              @default(false)
+  catalog_brands_create              Boolean              @default(false)
+  catalog_brands_modify              Boolean              @default(false)
+  catalog_categories_approve         Boolean              @default(false)
+  catalog_categories_create          Boolean              @default(false)
+  catalog_categories_modify          Boolean              @default(false)
+  catalog_hsncodes_approve           Boolean              @default(false)
+  catalog_hsncodes_create            Boolean              @default(false)
+  catalog_hsncodes_modify            Boolean              @default(false)
+  catalog_manufacturers_approve      Boolean              @default(false)
+  catalog_manufacturers_create       Boolean              @default(false)
+  catalog_manufacturers_modify       Boolean              @default(false)
+  catalog_taxrates_approve           Boolean              @default(false)
+  catalog_taxrates_create            Boolean              @default(false)
+  catalog_taxrates_modify            Boolean              @default(false)
+  catalog_units_approve              Boolean              @default(false)
+  catalog_units_create               Boolean              @default(false)
+  catalog_units_modify               Boolean              @default(false)
+  catalog_products_approve           Boolean              @default(false)
+  catalog_products_create            Boolean              @default(false)
+  catalog_products_modify            Boolean              @default(false)
+  catalog_products_archive           Boolean              @default(false)
+  system_productMigration            Boolean              @default(false)
+  catalog_product_attributes_archive Boolean              @default(false)
+  catalog_product_attributes_create  Boolean              @default(false)
+  catalog_product_attributes_modify  Boolean              @default(false)
+  dispatch_view                      Boolean              @default(false)
+  sessions                           ActiveSession[]
+  brandsApproved                     Brand[]              @relation("BrandApprovedBy")
+  brandsCreated                      Brand[]              @relation("BrandCreatedBy")
+  brandsUpdated                      Brand[]              @relation("BrandUpdatedBy")
+  cartsHeld                          Cart[]               @relation("CartHeldBy")
+  cartsResumed                       Cart[]               @relation("CartResumedBy")
+  carts                              Cart[]
+  cartHistory                        CartHistory[]        @relation("CartHistoryByUser")
+  categoriesApproved                 Category[]           @relation("CategoryApprovedBy")
+  categoriesCreated                  Category[]           @relation("CategoryCreatedBy")
+  categoriesUpdated                  Category[]           @relation("CategoryUpdatedBy")
+  communicationsAssigned             Communication[]      @relation("CommunicationAssignedTo")
+  communicationsCreated              Communication[]      @relation("CommunicationCreatedBy")
+  hsnCodesApproved                   HsnCode[]            @relation("HsnApprovedBy")
+  hsnCodesCreated                    HsnCode[]            @relation("HsnCreatedBy")
+  hsnCodesUpdated                    HsnCode[]            @relation("HsnUpdatedBy")
+  inventoryHistory                   InventoryHistory[]
+  manufacturersApproved              Manufacturer[]       @relation("ManufacturerApprovedBy")
+  manufacturersCreated               Manufacturer[]       @relation("ManufacturerCreatedBy")
+  manufacturersUpdated               Manufacturer[]       @relation("ManufacturerUpdatedBy")
+  masterDataHistory                  MasterDataHistory[]  @relation("MasterHistoryPerformedBy")
+  productsApproved                   Product[]            @relation("ProductApprovedBy")
+  productsCreated                    Product[]            @relation("ProductCreatedBy")
+  productsUpdated                    Product[]            @relation("ProductUpdatedBy")
+  productAttributesCreated           ProductAttribute[]   @relation("AttributeCreatedBy")
+  productAttributesUpdated           ProductAttribute[]   @relation("AttributeUpdatedBy")
+  projectChatMessages                ProjectChatMessage[] @relation("ProjectChatCreatedBy")
+  qzCertificate                      QzCertificate?
+  updatedSkus                        Sku[]                @relation("SkuUnlimitedUpdatedBy")
+  solarActivityLogs                  SolarActivityLog[]   @relation("SolarActivityActor")
+  solarDiscussions                   SolarDiscussion[]
+  solarOrdersApproved                SolarOrder[]         @relation("SolarOrderApprovedBy")
+  solarOrdersCalled                  SolarOrder[]         @relation("SolarOrderCallingExecutive")
+  solarOrdersCancelled               SolarOrder[]         @relation("SolarOrderCancelledBy")
+  solarOrdersCreated                 SolarOrder[]         @relation("SolarOrderCreatedBy")
+  solarOrdersRejected                SolarOrder[]         @relation("SolarOrderRejectedBy")
+  solarOrdersSold                    SolarOrder[]         @relation("SolarOrderSalesman")
+  solarOrdersSubmitted               SolarOrder[]         @relation("SolarOrderSubmittedBy")
+  solarFilesDeleted                  SolarOrderFile[]     @relation("SolarFileDeletedBy")
+  solarFilesUploaded                 SolarOrderFile[]     @relation("SolarFileUploadedBy")
+  tasksAssigned                      SolarTask[]          @relation("TaskAssignedTo")
+  tasksCompleted                     SolarTask[]          @relation("TaskCompletedBy")
+  tasksCreated                       SolarTask[]          @relation("TaskCreatedBy")
+  taskFollowUps                      SolarTaskFollowUp[]
+  solarStepsCompleted                SolarWorkflowStep[]  @relation("SolarStepCompletedBy")
+  taxRatesApproved                   TaxRate[]            @relation("TaxRateApprovedBy")
+  taxRatesCreated                    TaxRate[]            @relation("TaxRateCreatedBy")
+  taxRatesUpdated                    TaxRate[]            @relation("TaxRateUpdatedBy")
+  transfersCreated                   Transfer[]           @relation("TransferCreatedBy")
+  transfersDispatched                Transfer[]           @relation("TransferDispatchedBy")
+  transfersReceived                  Transfer[]           @relation("TransferReceivedBy")
+  unitsApproved                      UnitOfMeasurement[]  @relation("UnitApprovedBy")
+  unitsCreated                       UnitOfMeasurement[]  @relation("UnitCreatedBy")
+  unitsUpdated                       UnitOfMeasurement[]  @relation("UnitUpdatedBy")
+  printer                            Printer?             @relation(fields: [printerId], references: [id])
+  zoneMappingsUpdated                WarehouseInventory[] @relation("ZoneMappingUpdatedBy")
+  whatsappTests                      WhatsAppTestLog[]
 }
 
 model Warehouse {
@@ -157,38 +144,38 @@ model Warehouse {
   name              String
   address           String?
   active            Boolean               @default(true)
-  printZonalSlips   Boolean               @default(true) // Deprecated
-  isSystemWarehouse Boolean               @default(false)
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
+  isSystemWarehouse Boolean               @default(false)
+  printZonalSlips   Boolean               @default(true)
   carts             Cart[]
   inventoryHistory  InventoryHistory[]
-  inventory         WarehouseInventory[]
-  transfersSent     Transfer[]            @relation("SourceWarehouse")
-  transfersReceived Transfer[]            @relation("DestinationWarehouse")
   stockAlerts       StockAlertThreshold[]
+  transfersReceived Transfer[]            @relation("DestinationWarehouse")
+  transfersSent     Transfer[]            @relation("SourceWarehouse")
+  inventory         WarehouseInventory[]
 }
 
 model Brand {
   id           String              @id @default(cuid())
-  code         String?             @unique
   name         String              @unique
-  description  String?
-  status       String              @default("Draft")
-  remarks      String?
   active       Boolean             @default(true)
-  createdById  String?
-  updatedById  String?
-  approvedById String?
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
   approvedAt   DateTime?
-  skus         Sku[]
+  approvedById String?
+  code         String?             @unique
+  createdById  String?
+  description  String?
+  remarks      String?
+  status       String              @default("Draft")
+  updatedById  String?
+  approvedBy   User?               @relation("BrandApprovedBy", fields: [approvedById], references: [id])
   createdBy    User?               @relation("BrandCreatedBy", fields: [createdById], references: [id])
   updatedBy    User?               @relation("BrandUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy   User?               @relation("BrandApprovedBy", fields: [approvedById], references: [id])
   history      MasterDataHistory[] @relation("BrandHistory")
   products     Product[]
+  skus         Sku[]
 
   @@index([status])
   @@index([createdAt])
@@ -196,28 +183,28 @@ model Brand {
 
 model Category {
   id                String                     @id @default(cuid())
-  code              String?                    @unique
   name              String                     @unique
-  description       String?
-  status            String                     @default("Draft")
-  remarks           String?
   active            Boolean                    @default(true)
   parentId          String?
-  createdById       String?
-  updatedById       String?
-  approvedById      String?
   createdAt         DateTime                   @default(now())
   updatedAt         DateTime                   @updatedAt
   approvedAt        DateTime?
+  approvedById      String?
+  code              String?                    @unique
+  createdById       String?
+  description       String?
+  remarks           String?
+  status            String                     @default("Draft")
+  updatedById       String?
+  approvedBy        User?                      @relation("CategoryApprovedBy", fields: [approvedById], references: [id])
+  createdBy         User?                      @relation("CategoryCreatedBy", fields: [createdById], references: [id])
   parent            Category?                  @relation("SubCategories", fields: [parentId], references: [id])
   children          Category[]                 @relation("SubCategories")
-  skus              Sku[]
-  createdBy         User?                      @relation("CategoryCreatedBy", fields: [createdById], references: [id])
   updatedBy         User?                      @relation("CategoryUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy        User?                      @relation("CategoryApprovedBy", fields: [approvedById], references: [id])
   history           MasterDataHistory[]        @relation("CategoryHistory")
   products          Product[]
   productAttributes ProductAttributeCategory[]
+  skus              Sku[]
 
   @@index([status])
   @@index([createdAt])
@@ -237,9 +224,9 @@ model Manufacturer {
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
   approvedAt   DateTime?
+  approvedBy   User?               @relation("ManufacturerApprovedBy", fields: [approvedById], references: [id])
   createdBy    User?               @relation("ManufacturerCreatedBy", fields: [createdById], references: [id])
   updatedBy    User?               @relation("ManufacturerUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy   User?               @relation("ManufacturerApprovedBy", fields: [approvedById], references: [id])
   history      MasterDataHistory[] @relation("ManufacturerHistory")
   products     Product[]
 
@@ -252,8 +239,6 @@ model TaxRate {
   code                String?             @unique
   name                String              @unique
   description         String?
-  zohoBooksIntraTaxId String?
-  zohoBooksInterTaxId String?
   percentage          Float               @default(0.0)
   taxType             String              @default("GST")
   status              String              @default("Draft")
@@ -265,12 +250,14 @@ model TaxRate {
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   approvedAt          DateTime?
+  zohoBooksIntraTaxId String?
+  zohoBooksInterTaxId String?
+  defaultHsnCodes     HsnCode[]           @relation("HsnDefaultGstRate")
+  history             MasterDataHistory[] @relation("TaxRateHistory")
+  products            Product[]
+  approvedBy          User?               @relation("TaxRateApprovedBy", fields: [approvedById], references: [id])
   createdBy           User?               @relation("TaxRateCreatedBy", fields: [createdById], references: [id])
   updatedBy           User?               @relation("TaxRateUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy          User?               @relation("TaxRateApprovedBy", fields: [approvedById], references: [id])
-  history             MasterDataHistory[] @relation("TaxRateHistory")
-  defaultHsnCodes     HsnCode[]           @relation("HsnDefaultGstRate")
-  products            Product[]
 
   @@index([status])
   @@index([createdAt])
@@ -282,7 +269,6 @@ model UnitOfMeasurement {
   name              String              @unique
   description       String?
   abbreviation      String?
-  zohoBooksUnitName String?
   status            String              @default("Draft")
   remarks           String?
   isActive          Boolean             @default(true)
@@ -292,11 +278,12 @@ model UnitOfMeasurement {
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   approvedAt        DateTime?
-  createdBy         User?               @relation("UnitCreatedBy", fields: [createdById], references: [id])
-  updatedBy         User?               @relation("UnitUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy        User?               @relation("UnitApprovedBy", fields: [approvedById], references: [id])
+  zohoBooksUnitName String?
   history           MasterDataHistory[] @relation("UnitHistory")
   products          Product[]
+  approvedBy        User?               @relation("UnitApprovedBy", fields: [approvedById], references: [id])
+  createdBy         User?               @relation("UnitCreatedBy", fields: [createdById], references: [id])
+  updatedBy         User?               @relation("UnitUpdatedBy", fields: [updatedById], references: [id])
 
   @@index([status])
   @@index([createdAt])
@@ -307,7 +294,6 @@ model HsnCode {
   code             String              @unique
   name             String
   description      String?
-  defaultGstRateId String?
   status           String              @default("Draft")
   remarks          String?
   isActive         Boolean             @default(true)
@@ -317,10 +303,11 @@ model HsnCode {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   approvedAt       DateTime?
-  createdBy        User?               @relation("HsnCreatedBy", fields: [createdById], references: [id])
-  updatedBy        User?               @relation("HsnUpdatedBy", fields: [updatedById], references: [id])
+  defaultGstRateId String?
   approvedBy       User?               @relation("HsnApprovedBy", fields: [approvedById], references: [id])
+  createdBy        User?               @relation("HsnCreatedBy", fields: [createdById], references: [id])
   defaultGstRate   TaxRate?            @relation("HsnDefaultGstRate", fields: [defaultGstRateId], references: [id])
+  updatedBy        User?               @relation("HsnUpdatedBy", fields: [updatedById], references: [id])
   history          MasterDataHistory[] @relation("HsnHistory")
   products         Product[]
 
@@ -332,47 +319,46 @@ model GovernmentHsnHelper {
   id          String @id @default(cuid())
   code        String @unique
   description String
-  level       String // "Chapter", "Heading", "Sub-heading", "Tariff Item"
+  level       String
 
   @@index([code])
 }
 
 model MasterDataHistory {
-  id            String   @id @default(cuid())
-  entityType    String // "Brand" | "Manufacturer" | "Category" | "TaxRate" | "UnitOfMeasurement" | "HsnCode" | "Product"
-  entityId      String
-  action        String // "CREATED" | "UPDATED" | "SUBMITTED" | "APPROVED" | "DECLINED" | "ARCHIVED" | "RESTORED"
-  fieldName     String?
-  previousValue String?
-  newValue      String?
-  remarks       String?
-  performedById String
-  performedAt   DateTime @default(now())
-  performedBy   User     @relation("MasterHistoryPerformedBy", fields: [performedById], references: [id])
-
-  brand               Brand?             @relation("BrandHistory", fields: [brandId], references: [id], onDelete: Cascade)
+  id                  String             @id @default(cuid())
+  entityType          String
+  entityId            String
+  action              String
+  fieldName           String?
+  previousValue       String?
+  newValue            String?
+  remarks             String?
+  performedById       String
+  performedAt         DateTime           @default(now())
   brandId             String?
-  category            Category?          @relation("CategoryHistory", fields: [categoryId], references: [id], onDelete: Cascade)
   categoryId          String?
-  manufacturer        Manufacturer?      @relation("ManufacturerHistory", fields: [manufacturerId], references: [id], onDelete: Cascade)
   manufacturerId      String?
-  taxRate             TaxRate?           @relation("TaxRateHistory", fields: [taxRateId], references: [id], onDelete: Cascade)
   taxRateId           String?
-  unitOfMeasurement   UnitOfMeasurement? @relation("UnitHistory", fields: [unitOfMeasurementId], references: [id], onDelete: Cascade)
   unitOfMeasurementId String?
-  hsnCode             HsnCode?           @relation("HsnHistory", fields: [hsnCodeId], references: [id], onDelete: Cascade)
   hsnCodeId           String?
-  product             Product?           @relation("ProductHistory", fields: [productId], references: [id], onDelete: Cascade)
   productId           String?
-  productAttribute    ProductAttribute?  @relation("ProductAttributeHistory", fields: [productAttributeId], references: [id], onDelete: Cascade)
   productAttributeId  String?
+  brand               Brand?             @relation("BrandHistory", fields: [brandId], references: [id], onDelete: Cascade)
+  category            Category?          @relation("CategoryHistory", fields: [categoryId], references: [id], onDelete: Cascade)
+  hsnCode             HsnCode?           @relation("HsnHistory", fields: [hsnCodeId], references: [id], onDelete: Cascade)
+  manufacturer        Manufacturer?      @relation("ManufacturerHistory", fields: [manufacturerId], references: [id], onDelete: Cascade)
+  performedBy         User               @relation("MasterHistoryPerformedBy", fields: [performedById], references: [id])
+  productAttribute    ProductAttribute?  @relation("ProductAttributeHistory", fields: [productAttributeId], references: [id], onDelete: Cascade)
+  product             Product?           @relation("ProductHistory", fields: [productId], references: [id], onDelete: Cascade)
+  taxRate             TaxRate?           @relation("TaxRateHistory", fields: [taxRateId], references: [id], onDelete: Cascade)
+  unitOfMeasurement   UnitOfMeasurement? @relation("UnitHistory", fields: [unitOfMeasurementId], references: [id], onDelete: Cascade)
 
   @@index([entityType, entityId])
   @@index([performedAt])
 }
 
 model MasterDataSequence {
-  entityName String @id // "Brand" | "Manufacturer" | "Category" | "TaxRate" | "UnitOfMeasurement" | "HsnCode"
+  entityName String @id
   nextVal    Int    @default(10000)
 }
 
@@ -387,23 +373,23 @@ model Sku {
   gstPercent     Float                 @default(0.0)
   hsnCode        String?
   description    String?
-  caseSize       Int                   @default(1)
-  lastSyncedAt   DateTime?
-  zohoBookItemId String?               @unique // String to prevent JS precision corruption
-  zohoBooksId2   String?
   categoryId     String?
   isActive       Boolean               @default(true)
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
+  caseSize       Int                   @default(1)
+  lastSyncedAt   DateTime?
+  zohoBookItemId String?               @unique
   isUnlimited    Boolean               @default(false)
   updatedById    String?
+  zohoBooksId2   String?
   cartItems      CartItem[]
   brand          Brand?                @relation(fields: [brandId], references: [id])
   category       Category?             @relation(fields: [categoryId], references: [id])
   updatedBy      User?                 @relation("SkuUnlimitedUpdatedBy", fields: [updatedById], references: [id])
-  inventory      WarehouseInventory[]
-  transferItems  TransferItem[]
   stockAlerts    StockAlertThreshold[]
+  transferItems  TransferItem[]
+  inventory      WarehouseInventory[]
 
   @@index([categoryId])
   @@index([brandId])
@@ -412,59 +398,49 @@ model Sku {
   @@index([zohoBooksId2])
 }
 
-enum ZohoProductSyncStatus {
-  NEVER_SYNCED
-  SYNCING
-  SYNCED
-  SYNC_FAILED
-}
-
 model Product {
-  id              String    @id @default(cuid())
-  code            String    @unique
-  name            String
-  description     String?
-  type            String    @default("Goods")
-  brandId         String?
-  manufacturerId  String?
-  categoryId      String?
-  hsnCodeId       String?
-  taxRateId       String?
-  unitId          String?
-  status          String    @default("Draft")
-  remarks         String?
-  isActive        Boolean   @default(true)
-  createdById     String?
-  updatedById     String?
-  approvedById    String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  approvedAt      DateTime?
-  incentiveTag    String?
-  thumbnailBase64 String?   @db.Text
-
-  catalogType           String  @default("PRODUCT") // PRODUCT or PRODUCT_FAMILY
-  isVariantProduct      Boolean @default(false)
+  id                    String                  @id @default(cuid())
+  code                  String                  @unique
+  name                  String
+  description           String?
+  brandId               String?
+  manufacturerId        String?
+  categoryId            String?
+  hsnCodeId             String?
+  taxRateId             String?
+  unitId                String?
+  status                String                  @default("Draft")
+  remarks               String?
+  isActive              Boolean                 @default(true)
+  createdById           String?
+  updatedById           String?
+  approvedById          String?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  approvedAt            DateTime?
+  type                  String                  @default("Goods")
+  incentiveTag          String?
+  thumbnailBase64       String?
+  isVariantProduct      Boolean                 @default(false)
   parentProductId       String?
   variantAttributeId    String?
   variantAttributeValue String?
-
-  variants        ProductVariant[]
-  brand           Brand?                  @relation(fields: [brandId], references: [id])
-  manufacturer    Manufacturer?           @relation(fields: [manufacturerId], references: [id])
-  category        Category?               @relation(fields: [categoryId], references: [id])
-  hsnCode         HsnCode?                @relation(fields: [hsnCodeId], references: [id])
-  taxRate         TaxRate?                @relation(fields: [taxRateId], references: [id])
-  unit            UnitOfMeasurement?      @relation(fields: [unitId], references: [id])
-  createdBy       User?                   @relation("ProductCreatedBy", fields: [createdById], references: [id])
-  updatedBy       User?                   @relation("ProductUpdatedBy", fields: [updatedById], references: [id])
-  approvedBy      User?                   @relation("ProductApprovedBy", fields: [approvedById], references: [id])
-  history         MasterDataHistory[]     @relation("ProductHistory")
-  attributeValues ProductAttributeValue[]
-
-  parentProduct    Product?          @relation("ProductFamily", fields: [parentProductId], references: [id])
-  variantProducts  Product[]         @relation("ProductFamily")
-  variantAttribute ProductAttribute? @relation("ProductVariantAttribute", fields: [variantAttributeId], references: [id])
+  catalogType           String                  @default("PRODUCT")
+  history               MasterDataHistory[]     @relation("ProductHistory")
+  approvedBy            User?                   @relation("ProductApprovedBy", fields: [approvedById], references: [id])
+  brand                 Brand?                  @relation(fields: [brandId], references: [id])
+  category              Category?               @relation(fields: [categoryId], references: [id])
+  createdBy             User?                   @relation("ProductCreatedBy", fields: [createdById], references: [id])
+  hsnCode               HsnCode?                @relation(fields: [hsnCodeId], references: [id])
+  manufacturer          Manufacturer?           @relation(fields: [manufacturerId], references: [id])
+  parentProduct         Product?                @relation("ProductFamily", fields: [parentProductId], references: [id])
+  variantProducts       Product[]               @relation("ProductFamily")
+  taxRate               TaxRate?                @relation(fields: [taxRateId], references: [id])
+  unit                  UnitOfMeasurement?      @relation(fields: [unitId], references: [id])
+  updatedBy             User?                   @relation("ProductUpdatedBy", fields: [updatedById], references: [id])
+  variantAttribute      ProductAttribute?       @relation("ProductVariantAttribute", fields: [variantAttributeId], references: [id])
+  attributeValues       ProductAttributeValue[]
+  variants              ProductVariant[]
 
   @@index([status])
   @@index([brandId])
@@ -489,13 +465,12 @@ model ProductVariant {
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
   zohoBookItemId    String?               @unique
-  zohoSyncStatus    ZohoProductSyncStatus @default(NEVER_SYNCED)
   zohoLastSyncAt    DateTime?
-  zohoLastSyncError String?               @db.Text
+  zohoLastSyncError String?
   zohoSyncHash      String?
-
-  product      Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
-  zohoSyncLogs ZohoProductSyncLog[]
+  zohoSyncStatus    ZohoProductSyncStatus @default(NEVER_SYNCED)
+  product           Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  zohoSyncLogs      ZohoProductSyncLog[]
 
   @@index([productId])
   @@index([sku])
@@ -512,12 +487,12 @@ model ZohoProductSyncLog {
   status          String
   startedAt       DateTime
   completedAt     DateTime?
-  durationMs      Int?
   requestPayload  Json?
   responsePayload Json?
-  timeline        Json?
-  apiError        String?        @db.Text
+  apiError        String?
   createdAt       DateTime       @default(now())
+  durationMs      Int?
+  timeline        Json?
   variant         ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
   @@index([variantId])
@@ -535,15 +510,14 @@ model WarehouseInventory {
   updatedAt   DateTime  @updatedAt
   updatedById String?
   sku         Sku       @relation(fields: [skuId], references: [id])
-  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
   updatedBy   User?     @relation("ZoneMappingUpdatedBy", fields: [updatedById], references: [id])
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
 
   @@unique([warehouseId, skuId])
 }
 
 model Cart {
   id                   String        @id
-  status               String        @default("COMPLETED")
   warehouseId          String
   customerName         String
   notes                String?
@@ -551,28 +525,29 @@ model Cart {
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
   dispatchSlipNumber   String?       @unique
-  zohoSalesorderId     String?
-  zohoSalesorderNumber String?
-  zohoSyncStatus       String?       @default("PENDING")
-  zohoSyncStep         String?       @default("INITIATED")
-  zohoSyncError        String?
-  zohoLastSyncAt       DateTime?
-  zohoResponseTimeMs   Int?
-  zohoPayload          Json?
-  zohoResponse         Json?
-  zohoExecutionTrace   Json?
   deletedAt            DateTime?
   heldAt               DateTime?
   heldById             String?
+  holdReason           String?
   resumedAt            DateTime?
   resumedById          String?
-  holdReason           String?
-  staff                User          @relation(fields: [staffId], references: [id])
-  warehouse            Warehouse     @relation(fields: [warehouseId], references: [id])
-  items                CartItem[]
+  status               String        @default("COMPLETED")
+  zohoExecutionTrace   Json?
+  zohoLastSyncAt       DateTime?
+  zohoPayload          Json?
+  zohoResponse         Json?
+  zohoResponseTimeMs   Int?
+  zohoSalesorderId     String?
+  zohoSalesorderNumber String?
+  zohoSyncError        String?
+  zohoSyncStatus       String?       @default("PENDING")
+  zohoSyncStep         String?       @default("INITIATED")
   heldBy               User?         @relation("CartHeldBy", fields: [heldById], references: [id])
   resumedBy            User?         @relation("CartResumedBy", fields: [resumedById], references: [id])
+  staff                User          @relation(fields: [staffId], references: [id])
+  warehouse            Warehouse     @relation(fields: [warehouseId], references: [id])
   history              CartHistory[] @relation("CartHistoryByCart")
+  items                CartItem[]
 }
 
 model CartItem {
@@ -621,17 +596,17 @@ model SkuSyncLog {
   id             String    @id @default(cuid())
   startedAt      DateTime  @default(now())
   completedAt    DateTime?
-  trigger        String    @default("CRON") // "CRON" | "USER"
-  syncLimit      Int?      @default(0)
   totalReceived  Int       @default(0)
-  processedCount Int       @default(0)
   createdCount   Int       @default(0)
   updatedCount   Int       @default(0)
-  skippedCount   Int       @default(0)
   failedCount    Int       @default(0)
-  metadata       Json? // Raw API request/response metadata
-  logs           Json? // Backwards compatibility for errors
-  executionTrace Json? // Detailed per-SKU logs
+  logs           Json?
+  executionTrace Json?
+  metadata       Json?
+  processedCount Int       @default(0)
+  skippedCount   Int       @default(0)
+  syncLimit      Int?      @default(0)
+  trigger        String    @default("CRON")
 }
 
 model SkuIdentityRegistry {
@@ -671,13 +646,12 @@ model CartHistory {
   id        String   @id @default(cuid())
   cartId    String
   userId    String
-  action    String // "CREATED" | "COMPLETED" | "HOLD" | "RESUME" | "PRINTED" | "DELETED" | "EDITED"
+  action    String
   remarks   String?
-  metadata  Json? // Structured change details for edits (added/removed/updated items)
+  metadata  Json?
   createdAt DateTime @default(now())
-
-  cart Cart @relation("CartHistoryByCart", fields: [cartId], references: [id], onDelete: Cascade)
-  user User @relation("CartHistoryByUser", fields: [userId], references: [id])
+  cart      Cart     @relation("CartHistoryByCart", fields: [cartId], references: [id], onDelete: Cascade)
+  user      User     @relation("CartHistoryByUser", fields: [userId], references: [id])
 
   @@index([cartId])
   @@index([createdAt])
@@ -688,10 +662,10 @@ model ZohoToken {
   accessToken   String
   refreshToken  String
   expiresAt     DateTime
-  scopeVersion  Int      @default(1)
-  grantedScopes String?
-  dataCenter    String?
   updatedAt     DateTime @updatedAt
+  dataCenter    String?
+  grantedScopes String?
+  scopeVersion  Int      @default(1)
 }
 
 model ActiveSession {
@@ -713,62 +687,46 @@ model ActiveSession {
 }
 
 model Transfer {
-  id                     String         @id @default(cuid())
-  transferNumber         String         @unique
+  id                     String            @id @default(cuid())
+  transferNumber         String            @unique
   sourceWarehouseId      String
   destinationWarehouseId String
-  status                 TransferStatus @default(INITIATED)
+  status                 TransferStatus    @default(INITIATED)
   responsiblePerson      String
   remarks                String?
   createdById            String
   dispatchedById         String?
-  createdAt              DateTime       @default(now())
+  createdAt              DateTime          @default(now())
   dispatchedAt           DateTime?
   mergedIntoTransferId   String?
   parentTransferId       String?
-  isAutoGenerated        Boolean        @default(false)
+  isAutoGenerated        Boolean           @default(false)
   receivedById           String?
   receivedAt             DateTime?
-
-  // Relations
-  sourceWarehouse      Warehouse         @relation("SourceWarehouse", fields: [sourceWarehouseId], references: [id])
-  destinationWarehouse Warehouse         @relation("DestinationWarehouse", fields: [destinationWarehouseId], references: [id])
-  createdBy            User              @relation("TransferCreatedBy", fields: [createdById], references: [id])
-  dispatchedBy         User?             @relation("TransferDispatchedBy", fields: [dispatchedById], references: [id])
-  receivedBy           User?             @relation("TransferReceivedBy", fields: [receivedById], references: [id])
-  mergedIntoTransfer   Transfer?         @relation("TransferMergedInto", fields: [mergedIntoTransferId], references: [id])
-  mergedTransfers      Transfer[]        @relation("TransferMergedInto")
-  parentTransfer       Transfer?         @relation("TransferHierarchy", fields: [parentTransferId], references: [id])
-  childTransfers       Transfer[]        @relation("TransferHierarchy")
-  items                TransferItem[]
-  history              TransferHistory[]
+  createdBy              User              @relation("TransferCreatedBy", fields: [createdById], references: [id])
+  destinationWarehouse   Warehouse         @relation("DestinationWarehouse", fields: [destinationWarehouseId], references: [id])
+  dispatchedBy           User?             @relation("TransferDispatchedBy", fields: [dispatchedById], references: [id])
+  mergedIntoTransfer     Transfer?         @relation("TransferMergedInto", fields: [mergedIntoTransferId], references: [id])
+  mergedTransfers        Transfer[]        @relation("TransferMergedInto")
+  parentTransfer         Transfer?         @relation("TransferHierarchy", fields: [parentTransferId], references: [id])
+  childTransfers         Transfer[]        @relation("TransferHierarchy")
+  receivedBy             User?             @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+  sourceWarehouse        Warehouse         @relation("SourceWarehouse", fields: [sourceWarehouseId], references: [id])
+  history                TransferHistory[]
+  items                  TransferItem[]
 }
 
 model TransferItem {
-  id            String @id @default(cuid())
+  id            String   @id @default(cuid())
   transferId    String
   skuId         String
   requestedQty  Int
   dispatchedQty Int
   balanceQty    Int
-  receivedQty   Int    @default(0)
-  shortQty      Int    @default(0)
-
-  // Relations
-  transfer Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
-  sku      Sku      @relation(fields: [skuId], references: [id])
-}
-
-enum TransferStatus {
-  INITIATED
-  PARTIALLY_DISPATCHED
-  IN_TRANSIT
-  PARTIALLY_RECEIVED
-  COMPLETED
-  CANCELLED
-  MERGED
-  DISPATCHED_PARTIAL_CLOSED
-  SHORT_CLOSED
+  receivedQty   Int      @default(0)
+  shortQty      Int      @default(0)
+  sku           Sku      @relation(fields: [skuId], references: [id])
+  transfer      Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
 }
 
 model TransferHistory {
@@ -778,14 +736,9 @@ model TransferHistory {
   metadata    String?
   performedBy String
   timestamp   DateTime @default(now())
-
-  // Relations
-  transfer Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  transfer    Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
 }
 
-// ─── Printer Management ───────────────────────────────────────────────────────
-// Phase 1: Centralized printer registry. No warehouse mapping yet.
-// Phase 2: Add warehouseId FK, printerType, agentUrl fields.
 model Printer {
   id          String   @id @default(cuid())
   name        String
@@ -814,172 +767,147 @@ model InvoiceSummaryCache {
   apiCallsUsed  Int
   refreshedBy   String
   invoiceCount  Int
-  summary       Json // Stores all KPI metrics
-  distributions Json // Stores payment distributions
-  rows          Json // Stores the invoice rows for the table
+  summary       Json
+  distributions Json
+  rows          Json
 }
 
 model CustomerStatementTask {
-  id           String @id @default(cuid())
-  customerId   String
-  customerName String
-
-  status String // OPEN | RELEASED
-
-  flaggedByUserId String
-  flaggedByName   String
-  flaggedAt       DateTime @default(now())
-
+  id               String    @id @default(cuid())
+  customerId       String
+  customerName     String
+  status           String
+  flaggedByUserId  String
+  flaggedByName    String
+  flaggedAt        DateTime  @default(now())
   releasedByUserId String?
   releasedByName   String?
   releasedAt       DateTime?
-
-  notes String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 model StockAlertThreshold {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   warehouseId String
   skuId       String
   minimumQty  Int
-  isEnabled   Boolean  @default(true)
+  isEnabled   Boolean   @default(true)
   createdById String?
   updatedById String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
-  sku       Sku       @relation(fields: [skuId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  sku         Sku       @relation(fields: [skuId], references: [id])
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
 
   @@unique([warehouseId, skuId])
 }
 
 model RecoveryInvoiceTask {
-  id            String @id @default(cuid())
-  invoiceId     String // Zoho invoice ID
-  invoiceNumber String
-  customerId    String // Zoho customer ID  
-  customerName  String
-
-  status String // ACTIVE | RELEASED | RESOLVED
-
-  requiresReminder   Boolean   @default(false)
-  reminderSent       Boolean   @default(false)
-  reminderCount      Int       @default(0)
-  reminderSentAt     DateTime?
-  reminderSentById   String?
-  reminderSentByName String?
-
-  flagCount       Int      @default(1)
-  flaggedByUserId String
-  flaggedByName   String
-  flaggedAt       DateTime @default(now())
-
-  releasedByUserId String?
-  releasedByName   String?
-  releasedAt       DateTime?
-
-  resolvedByUserId String?
-  resolvedByName   String?
-  resolvedAt       DateTime?
-  resolvedReason   String? // "AUTO_RESOLVED" | "MANUAL"
-
+  id                     String    @id @default(cuid())
+  invoiceId              String
+  invoiceNumber          String
+  customerId             String
+  customerName           String
+  status                 String
+  requiresReminder       Boolean   @default(false)
+  reminderSent           Boolean   @default(false)
+  reminderCount          Int       @default(0)
+  reminderSentAt         DateTime?
+  reminderSentById       String?
+  reminderSentByName     String?
+  flagCount              Int       @default(1)
+  flaggedByUserId        String
+  flaggedByName          String
+  flaggedAt              DateTime  @default(now())
+  releasedByUserId       String?
+  releasedByName         String?
+  releasedAt             DateTime?
+  resolvedByUserId       String?
+  resolvedByName         String?
+  resolvedAt             DateTime?
+  resolvedReason         String?
   lastKnownPendingAmount Float?
   lastKnownInvoiceStatus String?
   lastSyncedAt           DateTime?
-
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  notes                  String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   @@index([invoiceId])
   @@index([customerId])
   @@index([status])
 }
 
-enum DcrImportSource {
-  ZOHO_SYNC
-  MANUAL
-}
-
-// ─── DCR Module Phase 1 ───────────────────────────────────────────────────────
-
 model Customer {
-  id        String  @id // Zoho contact/customer ID
-  name      String
-  gstNumber String? // Stores fetched GST number or 'NOT_AVAILABLE' if not found
-  status    String  @default("active")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  netOutstandingBalance Float?
-  balanceUpdatedAt      DateTime?
-  balanceSyncStatus     String?
+  id                    String       @id
+  name                  String
+  gstNumber             String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  status                String       @default("active")
   balanceSyncError      String?
-
-  dcrInvoices DcrInvoice[]
+  balanceSyncStatus     String?
+  balanceUpdatedAt      DateTime?
+  netOutstandingBalance Float?
+  dcrInvoices           DcrInvoice[]
 }
 
 model DcrInvoice {
-  id                   String          @id @default(cuid())
-  zohoInvoiceId        String          @unique
+  id                   String                @id @default(cuid())
+  zohoInvoiceId        String                @unique
   invoiceNumber        String
   customerId           String
   customerName         String
   invoiceDate          DateTime
   invoiceStatus        String
   invoiceTotal         Float
-  outstandingAmount    Float?
-  outstandingUpdatedAt DateTime?
-  locationId           String?
-  locationName         String?
-  dcrStatus            String          @default("NEW") // NEW, UNDER_REVIEW, DCR_IDENTIFIED, PENDING_SERIALS
-  syncedAt             DateTime        @default(now())
+  dcrStatus            String                @default("NEW")
+  syncedAt             DateTime              @default(now())
   reviewedAt           DateTime?
-  archived             Boolean         @default(false)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  archived             Boolean               @default(false)
   processedAt          DateTime?
   processingReason     String?
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
-  importSource         DcrImportSource @default(ZOHO_SYNC)
-  importedBy           String?
+  locationId           String?
+  locationName         String?
+  outstandingAmount    Float?
+  outstandingUpdatedAt DateTime?
+  importSource         DcrImportSource       @default(ZOHO_SYNC)
   importedAt           DateTime?
-
-  items             DcrInvoiceItem[]
-  serialAllocations DcrSerialAllocation[]
-  customer          Customer?             @relation(fields: [customerId], references: [id])
+  importedBy           String?
+  customer             Customer              @relation(fields: [customerId], references: [id])
+  items                DcrInvoiceItem[]
+  serialAllocations    DcrSerialAllocation[]
 
   @@index([dcrStatus])
   @@index([zohoInvoiceId])
 }
 
 model DcrInvoiceItem {
-  id             String   @id @default(cuid())
-  dcrInvoiceId   String
-  itemId         String?
-  itemName       String
-  sku            String?
-  quantity       Int
-  rate           Float?
-  amount         Float?
-  description    String?
-  source         String   @default("ZOHO") // ZOHO or MANUAL
-  selectedForDCR Boolean  @default(false)
-  remarks        String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
+  id                String                @id @default(cuid())
+  dcrInvoiceId      String
+  itemId            String?
+  itemName          String
+  sku               String?
+  quantity          Int
+  source            String                @default("ZOHO")
+  selectedForDCR    Boolean               @default(false)
+  remarks           String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  amount            Float?
+  description       String?
+  rate              Float?
   invoice           DcrInvoice            @relation(fields: [dcrInvoiceId], references: [id], onDelete: Cascade)
   serialAllocations DcrSerialAllocation[]
 }
 
 model DcrAuditLog {
   id         String   @id @default(cuid())
-  entityType String // e.g. "INVOICE", "ITEM"
+  entityType String
   entityId   String
   action     String
   userId     String
@@ -990,188 +918,156 @@ model DcrAuditLog {
 model ZohoApiLog {
   id        String   @id @default(cuid())
   endpoint  String
-  module    String // e.g. "DCR", "SYNC"
+  module    String
   userId    String?
   timestamp DateTime @default(now())
 }
 
 model DcrSerialAllocation {
-  id           String   @id @default(cuid())
+  id           String         @id @default(cuid())
   invoiceId    String
-  skuId        String // References DcrInvoiceItem.id
-  serialNumber String   @unique
-  allocatedAt  DateTime @default(now())
+  skuId        String
+  serialNumber String         @unique
+  allocatedAt  DateTime       @default(now())
   allocatedBy  String
-
-  invoice     DcrInvoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  invoiceItem DcrInvoiceItem @relation(fields: [skuId], references: [id], onDelete: Cascade)
-
-  serial DcrSerial? @relation(fields: [serialNumber], references: [serialNumber], onDelete: Restrict)
+  invoice      DcrInvoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  serial       DcrSerial      @relation(fields: [serialNumber], references: [serialNumber])
+  invoiceItem  DcrInvoiceItem @relation(fields: [skuId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
   @@index([skuId])
   @@index([serialNumber])
 }
 
-enum SerialStatus {
-  AVAILABLE
-  ALLOCATED
-  PARTIALLY_ALLOCATED
-  HOLD
-  READY_TO_ISSUE
-  ISSUED
-  RETURNED
-}
-
 model DcrSerial {
-  id                  String       @id @default(cuid())
-  serialNumber        String       @unique
+  id                  String               @id @default(cuid())
+  serialNumber        String               @unique
   skuId               String?
-  serialSource        String       @default("MANUAL_ENTRY")
-  status              SerialStatus @default(AVAILABLE)
-  purchaseReceived    Boolean      @default(false)
-  vendorName          String?
-  billNumber          String?
-  vendorDcrStatus     String       @default("NOT_RECEIVED")
+  status              SerialStatus         @default(AVAILABLE)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  serialSource        String               @default("MANUAL_ENTRY")
+  skuLocked           Boolean              @default(true)
   vendorDcrReceivedAt DateTime?
   vendorDcrReceivedBy String?
-  skuLocked           Boolean      @default(true)
-  isDeleted           Boolean      @default(false)
+  vendorDcrStatus     String               @default("NOT_RECEIVED")
+  billNumber          String?
+  purchaseReceived    Boolean              @default(false)
+  vendorName          String?
+  deleteReason        String?
   deletedAt           DateTime?
   deletedBy           String?
-  deleteReason        String?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
-
-  history     DcrSerialHistory[]
-  allocations DcrSerialAllocation[]
-  tag         SerialTag?
+  isDeleted           Boolean              @default(false)
+  allocations         DcrSerialAllocation?
+  history             DcrSerialHistory[]
+  tag                 SerialTag?
 
   @@index([skuId])
 }
 
 model SerialTag {
-  id        String   @id @default(cuid())
-  serialId  String   @unique
-  tag       String   @db.VarChar(256)
+  id        String    @id @default(cuid())
+  serialId  String    @unique
+  tag       String    @db.VarChar(256)
   createdBy String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  serial DcrSerial @relation(fields: [serialId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  serial    DcrSerial @relation(fields: [serialId], references: [id], onDelete: Cascade)
 
   @@index([serialId])
 }
 
 model DcrSerialHistory {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   serialId         String
   eventType        String
   eventDescription String
-  createdAt        DateTime @default(now())
+  createdAt        DateTime  @default(now())
   userId           String
-
-  serial DcrSerial @relation(fields: [serialId], references: [id], onDelete: Cascade)
+  serial           DcrSerial @relation(fields: [serialId], references: [id], onDelete: Cascade)
 
   @@index([serialId])
 }
 
-// ─── Solar Orders Module Phase 1 ──────────────────────────────────────────────
-
 model SubVendor {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
+  id          String       @id @default(cuid())
+  name        String       @unique
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
   solarOrders SolarOrder[] @relation("SolarOrderSubVendor")
 }
 
 model SolarOrder {
-  id                    String     @id @default(cuid())
-  orderNumber           String     @unique
-  orderDate             DateTime   @default(now())
-  applicationNumber     String?    @unique
-  status                String     @default("DRAFT") // DRAFT, PENDING_APPROVAL, APPROVED, EXECUTION, COMPLETED, CANCELLED
+  id                    String               @id @default(cuid())
+  orderNumber           String               @unique
+  orderDate             DateTime             @default(now())
+  status                String               @default("DRAFT")
   customerName          String
   phoneNumber           String
-  whatsappEnabled       Boolean    @default(false)
-  leadSource            String // WALK_IN, REFERRAL, ONLINE, EXHIBITION, OTHER
+  whatsappEnabled       Boolean              @default(false)
+  leadSource            String
   referralCustomerId    String?
   referralName          String?
   callingExecutiveId    String?
   salesmanId            String?
-  subVendorId           String?
-  subVendor             SubVendor? @relation("SolarOrderSubVendor", fields: [subVendorId], references: [id])
-  otherLeadSource       String?
-  loanCustomer          Boolean    @default(false)
+  loanCustomer          Boolean              @default(false)
   totalOrderAmount      Float
-  receivedAmount        Float      @default(0)
-  fileChargePaid        Boolean    @default(false)
-  fileChargeAmount      Float?
-  pendingAmount         Float      @default(0)
   systemSize            Float
-  systemType            String // ON_GRID, OFF_GRID, HYBRID
+  systemType            String
   zohoBooksCustomerId   String?
   zohoBooksCustomerName String?
   remarks               String?
-
-  // Cancellation Fields
-  isCancelled           Boolean   @default(false)
+  cancellationReason    String?
+  createdById           String
+  approvedById          String?
+  approvedAt            DateTime?
+  completedAt           DateTime?
   cancelledAt           DateTime?
   cancelledById         String?
-  cancellationReason    String?
-  cancellationRemarks   String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  subVendorId           String?
+  rejectedAt            DateTime?
+  rejectedById          String?
+  rejectionRemarks      String?
+  submittedAt           DateTime?
+  submittedById         String?
+  pendingAmount         Float                @default(0)
+  receivedAmount        Float                @default(0)
   floorNumber           Int?
+  lastPaymentSyncAt     DateTime?
+  applicationNumber     String?              @unique
+  installationDate      DateTime?
   customerEmail         String?
   loanAnnualIncome      Float?
   loanQuotationAmount   Float?
   loanApplicationNumber String?
-
-  editCount    Int       @default(0)
-  lastEditedAt DateTime?
-  lastEditedBy String?
-
-  createdById   String
-  approvedById  String?
-  approvedAt    DateTime?
-  submittedById String?
-
-  lastPaymentSyncAt DateTime?
-  submittedAt       DateTime?
-  rejectedById      String?
-  rejectedAt        DateTime?
-  rejectionRemarks  String?
-  completedAt       DateTime?
-  installationDate  DateTime? // Scheduled installation date (drag-and-drop calendar)
-  // Future-ready fields (not stored yet):
-  // assignedInstallerId String?
-  // vehicleId           String?
-  // installationTeamId  String?
-  // timeSlot            String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  callingExecutive User? @relation("SolarOrderCallingExecutive", fields: [callingExecutiveId], references: [id])
-  salesman         User? @relation("SolarOrderSalesman", fields: [salesmanId], references: [id])
-  createdBy        User  @relation("SolarOrderCreatedBy", fields: [createdById], references: [id])
-  approvedBy       User? @relation("SolarOrderApprovedBy", fields: [approvedById], references: [id])
-  submittedBy      User? @relation("SolarOrderSubmittedBy", fields: [submittedById], references: [id])
-  rejectedBy       User? @relation("SolarOrderRejectedBy", fields: [rejectedById], references: [id])
-  cancelledBy      User? @relation("SolarOrderCancelledBy", fields: [cancelledById], references: [id])
-
-  workflowSteps SolarWorkflowStep[]
-  files         SolarOrderFile[]
-  activityLogs  SolarActivityLog[]
-  payments      SolarOrderPayment[]
-  panels        SolarOrderPanel[]
-  inverters     SolarOrderInverter[]
-  chatMessages  ProjectChatMessage[]
-  tasks         SolarTask[]
-  discussions   SolarDiscussion[]
+  editCount             Int                  @default(0)
+  lastEditedAt          DateTime?
+  lastEditedBy          String?
+  fileChargePaid        Boolean              @default(false)
+  otherLeadSource       String?
+  fileChargeAmount      Float?
+  cancellationRemarks   String?
+  isCancelled           Boolean              @default(false)
+  chatMessages          ProjectChatMessage[]
+  activityLogs          SolarActivityLog[]
+  discussions           SolarDiscussion[]
+  approvedBy            User?                @relation("SolarOrderApprovedBy", fields: [approvedById], references: [id])
+  callingExecutive      User?                @relation("SolarOrderCallingExecutive", fields: [callingExecutiveId], references: [id])
+  cancelledBy           User?                @relation("SolarOrderCancelledBy", fields: [cancelledById], references: [id])
+  createdBy             User                 @relation("SolarOrderCreatedBy", fields: [createdById], references: [id])
+  rejectedBy            User?                @relation("SolarOrderRejectedBy", fields: [rejectedById], references: [id])
+  salesman              User?                @relation("SolarOrderSalesman", fields: [salesmanId], references: [id])
+  subVendor             SubVendor?           @relation("SolarOrderSubVendor", fields: [subVendorId], references: [id])
+  submittedBy           User?                @relation("SolarOrderSubmittedBy", fields: [submittedById], references: [id])
+  files                 SolarOrderFile[]
+  inverters             SolarOrderInverter[]
+  panels                SolarOrderPanel[]
+  payments              SolarOrderPayment[]
+  tasks                 SolarTask[]
+  workflowSteps         SolarWorkflowStep[]
 
   @@index([status])
   @@index([createdById])
@@ -1186,33 +1082,29 @@ model SolarOrder {
 }
 
 model SolarWorkflowStep {
-  id            String    @id @default(cuid())
-  solarOrderId  String
-  workflowType  String // DOCUMENTATION, INSTALLATION
-  stepKey       String
-  stepIndex     Int
-  status        String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, BLOCKED, SKIPPED
-  blockedReason String?
-  notes         String?
-  completedById String?
-  completedAt   DateTime?
-  startedAt     DateTime?
-  metadata      Json?
-
-  wifiSsid                String?
+  id                      String     @id @default(cuid())
+  solarOrderId            String
+  workflowType            String
+  stepKey                 String
+  stepIndex               Int
+  status                  String     @default("PENDING")
+  blockedReason           String?
+  notes                   String?
+  completedById           String?
+  completedAt             DateTime?
+  startedAt               DateTime?
+  metadata                Json?
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
+  editCount               Int        @default(0)
+  lastEditedAt            DateTime?
+  lastEditedBy            String?
   wifiPassword            String?
-  wifiNotApplicableReason String?
+  wifiSsid                String?
   wifiNotApplicableNotes  String?
-
-  editCount    Int       @default(0)
-  lastEditedAt DateTime?
-  lastEditedBy String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  solarOrder  SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
-  completedBy User?      @relation("SolarStepCompletedBy", fields: [completedById], references: [id])
+  wifiNotApplicableReason String?
+  completedBy             User?      @relation("SolarStepCompletedBy", fields: [completedById], references: [id])
+  solarOrder              SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
 
   @@unique([solarOrderId, stepKey])
   @@index([solarOrderId])
@@ -1222,45 +1114,40 @@ model SolarWorkflowStep {
 }
 
 model SolarOrderFile {
-  id            String  @id @default(cuid())
+  id            String     @id @default(cuid())
   solarOrderId  String
   fileName      String
   fileUrl       String
   fileType      String
   fileSizeBytes Int?
-  fileCategory  String // SITE_IMAGE, DOCUMENTATION, ROOFTOP_PHOTO, OTHER
-  documentType  String? // e.g., 'CANCELLED_CHEQUE', 'ELECTRICITY_BILL'
+  fileCategory  String
+  uploadedById  String
+  isDeleted     Boolean    @default(false)
+  deletedAt     DateTime?
+  deletedById   String?
+  createdAt     DateTime   @default(now())
+  documentType  String?
   metadata      Json?
-
-  uploadedById String
-  isDeleted    Boolean   @default(false)
-  deletedAt    DateTime?
-  deletedById  String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
-  uploadedBy User       @relation("SolarFileUploadedBy", fields: [uploadedById], references: [id])
-  deletedBy  User?      @relation("SolarFileDeletedBy", fields: [deletedById], references: [id])
+  updatedAt     DateTime   @updatedAt
+  deletedBy     User?      @relation("SolarFileDeletedBy", fields: [deletedById], references: [id])
+  solarOrder    SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  uploadedBy    User       @relation("SolarFileUploadedBy", fields: [uploadedById], references: [id])
 
   @@index([solarOrderId])
   @@index([fileCategory])
 }
 
 model SolarActivityLog {
-  id           String @id @default(cuid())
+  id           String     @id @default(cuid())
   solarOrderId String
   eventType    String
   actorId      String
   actorName    String
   description  String
   metadata     Json?
-
-  createdAt DateTime @default(now())
-
-  solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
-  actor      User       @relation("SolarActivityActor", fields: [actorId], references: [id])
+  createdAt    DateTime   @default(now())
+  actor        User       @relation("SolarActivityActor", fields: [actorId], references: [id])
+  solarOrder   SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
 
   @@index([solarOrderId])
   @@index([eventType])
@@ -1268,25 +1155,23 @@ model SolarActivityLog {
 }
 
 model SolarOrderPanel {
-  id           String @id @default(cuid())
+  id           String     @id @default(cuid())
   solarOrderId String
   description  String
   quantity     Int
   orderIndex   Int
-
-  solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  solarOrder   SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
 
   @@index([solarOrderId])
 }
 
 model SolarOrderInverter {
-  id           String @id @default(cuid())
+  id           String     @id @default(cuid())
   solarOrderId String
   description  String
   quantity     Int
   orderIndex   Int
-
-  solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  solarOrder   SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
 
   @@index([solarOrderId])
 }
@@ -1305,63 +1190,56 @@ model City {
 }
 
 model SolarOrderPayment {
-  id           String   @id @default(cuid())
+  id           String     @id @default(cuid())
   solarOrderId String
   amount       Float
-  paymentDate  DateTime @default(now())
-  paymentMode  String // CASH, BANK_TRANSFER, CHEQUE, UPI
+  paymentDate  DateTime   @default(now())
+  paymentMode  String
   referenceNo  String?
   remarks      String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  solarOrder   SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
 
   @@index([solarOrderId])
   @@index([paymentDate])
 }
 
 model ProjectChatMessage {
-  id           String   @id @default(cuid())
+  id           String     @id @default(cuid())
   solarOrderId String
-  message      String   @db.Text
+  message      String
   createdById  String
-  isDeleted    Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
-  createdBy  User       @relation("ProjectChatCreatedBy", fields: [createdById], references: [id])
+  isDeleted    Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  createdBy    User       @relation("ProjectChatCreatedBy", fields: [createdById], references: [id])
+  solarOrder   SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
 
   @@index([solarOrderId])
   @@index([createdAt])
 }
 
-// ─── Solar Tasks & Follow-up Module ──────────────────────────────────────────
-
 model SolarTask {
-  id            String    @id @default(cuid())
+  id            String              @id @default(cuid())
   solarOrderId  String
   title         String
   description   String?
   assignedToId  String
   dueDate       DateTime
-  dueTime       String? // Optional "14:30"
-  status        String    @default("PENDING") // PENDING, COMPLETED
+  dueTime       String?
+  status        String              @default("PENDING")
   createdById   String
   completedById String?
   completedAt   DateTime?
-  latestUpdate  String? // Quick denormalized cache of last follow-up text
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  solarOrder  SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
-  assignedTo  User       @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
-  createdBy   User       @relation("TaskCreatedBy", fields: [createdById], references: [id])
-  completedBy User?      @relation("TaskCompletedBy", fields: [completedById], references: [id])
-
-  followUps SolarTaskFollowUp[]
+  latestUpdate  String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  assignedTo    User                @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+  completedBy   User?               @relation("TaskCompletedBy", fields: [completedById], references: [id])
+  createdBy     User                @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  solarOrder    SolarOrder          @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  followUps     SolarTaskFollowUp[]
 
   @@index([solarOrderId])
   @@index([assignedToId])
@@ -1372,119 +1250,78 @@ model SolarTaskFollowUp {
   id               String    @id @default(cuid())
   taskId           String
   userId           String
-  comment          String    @db.Text
+  comment          String
   nextFollowUpDate DateTime?
-
-  createdAt DateTime @default(now())
-
-  task SolarTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user User      @relation(fields: [userId], references: [id])
+  createdAt        DateTime  @default(now())
+  task             SolarTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user             User      @relation(fields: [userId], references: [id])
 
   @@index([taskId])
 }
 
 model SolarDiscussion {
-  id           String @id @default(cuid())
+  id           String     @id @default(cuid())
   solarOrderId String
   userId       String
-  comment      String @db.Text
-
-  createdAt DateTime @default(now())
-
-  solarOrder SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
-  user       User       @relation(fields: [userId], references: [id])
+  comment      String
+  createdAt    DateTime   @default(now())
+  solarOrder   SolarOrder @relation(fields: [solarOrderId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id])
 
   @@index([solarOrderId])
 }
 
-// ─── Communications Module Phase 1 ───────────────────────────────────────────
-
-enum CommunicationChannel {
-  WHATSAPP
-  SMS
-  EMAIL
-  SYSTEM
-}
-
-enum CommunicationDirection {
-  OUTGOING
-  INCOMING
-}
-
-enum CommunicationType {
-  INVOICE
-  DCR
-  PAYMENT
-  ORDER
-  GENERAL
-  CUSTOM
-}
-
-enum CommunicationStatus {
-  DRAFT
-  QUEUED
-  API_ACCEPTED
-  SENT
-  DELIVERED
-  READ
-  FAILED
-}
-
 model Communication {
-  id                String                 @id @default(cuid())
+  id                String                    @id @default(cuid())
   customerId        String
-  customerName      String?
   solarOrderId      String?
   invoiceId         String?
   dcrInvoiceId      String?
-  relatedRecord     String?
   channel           CommunicationChannel
   direction         CommunicationDirection
   type              CommunicationType
   status            CommunicationStatus
   subject           String?
-  body              String                 @db.Text
-  fromAddress       String?
-  fromName          String?
-  toAddress         String?
+  body              String
   templateId        String?
-  templateName      String?
-  templateLanguage  String?
-  templateCategory  String?
-  variablesJson     Json?
-  headerType        String?
-  headerMediaUrl    String?
-  footer            String?
-  buttonsJson       Json?
-  providerName      String?
   providerMessageId String?
-  conversationId    String?
-  pricingCategory   String?
-  pricingCost       Float?
-  errorCode         String?
-  providerResponse  Json?
-  retryCount        Int                    @default(0)
-  metadata          Json?
-
   createdById       String
   assignedToUserId  String?
-  relatedRecordType String?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  failedAt          DateTime?
+  errorMessage      String?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  customerName      String?
+  fromAddress       String?
+  metadata          Json?
+  providerResponse  Json?
+  relatedRecord     String?
+  retryCount        Int                       @default(0)
+  templateName      String?
+  toAddress         String?
+  apiAcceptedAt     DateTime?
+  buttonsJson       Json?
+  conversationId    String?
+  errorCode         String?
+  footer            String?
+  fromName          String?
+  headerMediaUrl    String?
+  headerType        String?
+  pricingCategory   String?
+  pricingCost       Float?
+  providerName      String?
   relatedRecordId   String?
-
-  apiAcceptedAt DateTime?
-  sentAt        DateTime?
-  deliveredAt   DateTime?
-  readAt        DateTime?
-  failedAt      DateTime?
-  errorMessage  String?   @db.Text
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  createdBy   User                      @relation("CommunicationCreatedBy", fields: [createdById], references: [id])
-  assignedTo  User?                     @relation("CommunicationAssignedTo", fields: [assignedToUserId], references: [id])
-  attachments CommunicationAttachment[]
-  timeline    CommunicationTimeline[]
+  relatedRecordType String?
+  templateCategory  String?
+  templateLanguage  String?
+  variablesJson     Json?
+  assignedTo        User?                     @relation("CommunicationAssignedTo", fields: [assignedToUserId], references: [id])
+  createdBy         User                      @relation("CommunicationCreatedBy", fields: [createdById], references: [id])
+  attachments       CommunicationAttachment[]
+  timeline          CommunicationTimeline[]
 
   @@index([customerId])
   @@index([status])
@@ -1494,16 +1331,14 @@ model Communication {
 }
 
 model CommunicationAttachment {
-  id              String @id @default(cuid())
+  id              String        @id @default(cuid())
   communicationId String
   fileName        String
   mimeType        String
   url             String
   size            Int?
-
-  createdAt DateTime @default(now())
-
-  communication Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  communication   Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
 
   @@index([communicationId])
 }
@@ -1525,40 +1360,34 @@ model IncomingWebhook {
 }
 
 model CommunicationTimeline {
-  id               String   @id @default(cuid())
+  id               String        @id @default(cuid())
   communicationId  String
   status           String
   timestamp        DateTime
   providerResponse Json?
-  createdAt        DateTime @default(now())
-
-  communication Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
+  createdAt        DateTime      @default(now())
+  communication    Communication @relation(fields: [communicationId], references: [id], onDelete: Cascade)
 
   @@index([communicationId])
 }
 
-// ─── WhatsApp Integration Module ─────────────────────────────────────────────
-
 model WhatsAppConfiguration {
-  id                   String  @id @default("singleton")
+  id                   String    @id @default("singleton")
   appId                String
   encryptedAccessToken String
   phoneNumberId        String
   businessAccountId    String
   apiVersion           String
   webhookVerifyToken   String
-  integrationEnabled   Boolean @default(false)
-
-  // Connection Test Data
-  businessName       String?
-  displayPhoneNumber String?
-  verifiedName       String?
-  connectionStatus   String    @default("NOT_TESTED") // NOT_TESTED, CONNECTED, FAILED
-  lastConnectionTest DateTime?
-  testPhoneNumber    String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  integrationEnabled   Boolean   @default(false)
+  businessName         String?
+  displayPhoneNumber   String?
+  verifiedName         String?
+  connectionStatus     String    @default("NOT_TESTED")
+  lastConnectionTest   DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  testPhoneNumber      String?
 }
 
 model WhatsAppMessageLog {
@@ -1567,7 +1396,7 @@ model WhatsAppMessageLog {
   templateName String
   language     String
   messageId    String?
-  status       String   @default("PENDING") // PENDING, SENT, FAILED
+  status       String   @default("PENDING")
   responseJson Json?
   errorMessage String?
   createdAt    DateTime @default(now())
@@ -1601,23 +1430,20 @@ model WhatsAppTestLog {
   variablesUsed  Json?
   mediaGenerated Boolean  @default(false)
   metaMessageId  String?
-  status         String // SUCCESS, FAILED
+  status         String
   response       Json?
   sentAt         DateTime @default(now())
-
-  adminUser User @relation(fields: [adminUserId], references: [id])
+  adminUser      User     @relation(fields: [adminUserId], references: [id])
 
   @@index([templateId])
   @@index([adminUserId])
 }
 
-// ─── Gateway Integration Module ─────────────────────────────────────────────
-
 model GatewayConfiguration {
   id                 String    @id @default("singleton")
   gatewayUrl         String
   apiToken           String
-  connectionStatus   String    @default("NOT_TESTED") // NOT_TESTED, CONNECTED, FAILED
+  connectionStatus   String    @default("NOT_TESTED")
   lastConnectionTest DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -1639,61 +1465,54 @@ model GatewayMessageLog {
   createdAt         DateTime @default(now())
 }
 
-// ─── Product Attributes Module ──────────────────────────────────────────────
-
 model ProductAttribute {
-  id            String  @id @default(cuid())
-  attributeCode String  @unique
-  attributeName String  @unique
-  description   String?
-  dataType      String // Text, Long Text, Number, Decimal, Dropdown, Multi Select, Boolean, Date
-  mandatory     Boolean @default(false)
-  minValue      Float?
-  maxValue      Float?
-  prefix        String?
-  suffix        String?
-  placeholder   String?
-  status        String  @default("Active")
-  options       Json? // Stores options for Dropdown/Multi Select
-
-  createdById String?
-  updatedById String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  createdBy User? @relation("AttributeCreatedBy", fields: [createdById], references: [id])
-  updatedBy User? @relation("AttributeUpdatedBy", fields: [updatedById], references: [id])
-
-  categories      ProductAttributeCategory[]
-  productValues   ProductAttributeValue[]
+  id              String                     @id @default(cuid())
+  attributeCode   String                     @unique
+  attributeName   String                     @unique
+  description     String?
+  dataType        String
+  mandatory       Boolean                    @default(false)
+  minValue        Float?
+  maxValue        Float?
+  prefix          String?
+  suffix          String?
+  placeholder     String?
+  status          String                     @default("Active")
+  options         Json?
+  createdById     String?
+  updatedById     String?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
   history         MasterDataHistory[]        @relation("ProductAttributeHistory")
   variantProducts Product[]                  @relation("ProductVariantAttribute")
+  createdBy       User?                      @relation("AttributeCreatedBy", fields: [createdById], references: [id])
+  updatedBy       User?                      @relation("AttributeUpdatedBy", fields: [updatedById], references: [id])
+  categories      ProductAttributeCategory[]
+  productValues   ProductAttributeValue[]
 
   @@index([status])
   @@index([dataType])
 }
 
 model ProductAttributeCategory {
-  id            String  @id @default(cuid())
+  id            String           @id @default(cuid())
   attributeId   String
   categoryId    String
   subcategoryId String?
-
-  attribute ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
-  category  Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  attribute     ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  category      Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@index([attributeId])
   @@index([categoryId])
 }
 
 model ProductAttributeValue {
-  id          String @id @default(cuid())
+  id          String           @id @default(cuid())
   productId   String
   attributeId String
-  value       String @db.Text
-
-  product   Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
-  attribute ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  value       String
+  attribute   ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  product     Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([productId, attributeId])
   @@index([productId])
@@ -1706,7 +1525,6 @@ model InventoryConfig {
   safetyFactor Float    @default(1.5)
   updatedAt    DateTime @updatedAt
 }
-
 
 model IncomingSoRequest {
   id            String   @id @default(cuid())
@@ -1725,33 +1543,99 @@ model IntegrationConfig {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 }
+
 model DispatchIncomingOrder {
-  id                    String   @id @default(cuid())
-  zohoSalesorderId      String   @unique
-  salesorderNumber      String?
-  customerName          String?
-  customerGst           String?
-  customerId            String?
-  total                 Float?
-  totalItems            Int?
-  totalUniqueRows       Int?
-  totalTax              Float?
-  detailsStatus         String   @default("PENDING")
-  detailsFetchedAt      DateTime?
-  detailsFetchError     String?
-  zohoLockStatus                 String?   @default("NOT_ATTEMPTED")
-  zohoLockValue                  Boolean?
-  zohoLockAttemptedAt            DateTime?
-  zohoLockVerifiedAt             DateTime?
-  zohoLockRequestJson            Json?
-  zohoLockPutResponseJson        Json?
+  id                               String    @id @default(cuid())
+  zohoSalesorderId                 String    @unique
+  salesorderNumber                 String?
+  customerName                     String?
+  total                            Float?
+  currencyCode                     String?   @default("INR")
+  status                           String    @default("NEW")
+  zohoDetailsJson                  Json?
+  receivedAt                       DateTime  @default(now())
+  createdAt                        DateTime  @default(now())
+  updatedAt                        DateTime  @updatedAt
+  totalItems                       Int?
+  totalTax                         Float?
+  detailsFetchError                String?
+  detailsFetchedAt                 DateTime?
+  detailsStatus                    String    @default("PENDING")
+  customerGst                      String?
+  customerId                       String?
+  totalUniqueRows                  Int?
+  zohoLockAttemptedAt              DateTime?
+  zohoLockError                    String?
+  zohoLockHttpStatus               Int?
+  zohoLockPutResponseJson          Json?
+  zohoLockRequestJson              Json?
+  zohoLockStatus                   String?   @default("NOT_ATTEMPTED")
+  zohoLockValue                    Boolean?
   zohoLockVerificationResponseJson Json?
-  zohoLockHttpStatus             Int?
-  zohoLockError                  String?
-  currencyCode          String?  @default("INR")
-  status                String   @default("NEW")
-  zohoDetailsJson       Json?
-  receivedAt            DateTime @default(now())
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  zohoLockVerifiedAt               DateTime?
+}
+
+enum ZohoProductSyncStatus {
+  NEVER_SYNCED
+  SYNCING
+  SYNCED
+  SYNC_FAILED
+}
+
+enum TransferStatus {
+  INITIATED
+  PARTIALLY_DISPATCHED
+  IN_TRANSIT
+  PARTIALLY_RECEIVED
+  COMPLETED
+  CANCELLED
+  MERGED
+  DISPATCHED_PARTIAL_CLOSED
+  SHORT_CLOSED
+}
+
+enum DcrImportSource {
+  ZOHO_SYNC
+  MANUAL
+}
+
+enum SerialStatus {
+  AVAILABLE
+  ALLOCATED
+  PARTIALLY_ALLOCATED
+  HOLD
+  READY_TO_ISSUE
+  ISSUED
+  RETURNED
+}
+
+enum CommunicationChannel {
+  WHATSAPP
+  SMS
+  EMAIL
+  SYSTEM
+}
+
+enum CommunicationDirection {
+  OUTGOING
+  INCOMING
+}
+
+enum CommunicationType {
+  INVOICE
+  DCR
+  PAYMENT
+  ORDER
+  GENERAL
+  CUSTOM
+}
+
+enum CommunicationStatus {
+  DRAFT
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  API_ACCEPTED
 }

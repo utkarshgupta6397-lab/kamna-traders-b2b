@@ -17,6 +17,10 @@ export async function GET() {
 
   try {
     const orders = await prisma.dispatchIncomingOrder.findMany({
+      include: {
+        preDispatchWorkflow: true,
+        truckUpload: true,
+      },
       orderBy: { receivedAt: 'desc' },
       take: 200,
     });

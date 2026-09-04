@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -25,25 +26,41 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const wf = order.preDispatchWorkflow;
+    const isTruckRequired = (order.total ?? 0) > 50000;
 
-    if (wf.rateReviewStatus !== 'COMPLETED' || wf.paymentStatus !== 'COMPLETED' || wf.truckDetailsStatus !== 'COMPLETED') {
+    if (wf.rateReviewStatus !== 'COMPLETED' || wf.paymentStatus !== 'COMPLETED' || (isTruckRequired && wf.truckDetailsStatus !== 'COMPLETED')) {
       return NextResponse.json({ error: 'Previous steps including Truck Details must be completed' }, { status: 400 });
     }
 
-    const updated = await prisma.preDispatchWorkflow.update({
-      where: { id: wf.id },
-      data: {
-        readyForInvoiceStatus: 'COMPLETED',
-        billingVerified,
-        shippingVerified,
-        warehouseVerified,
-        readyCompletedBy: session.userId,
-        readyCompletedAt: new Date(),
-        currentStep: Math.max(wf.currentStep, 4)
-      }
+    const completedAt = new Date();
+
+    const [updatedWf, updatedOrder] = await prisma.$transaction([
+      prisma.preDispatchWorkflow.update({
+        where: { id: wf.id },
+        data: {
+          readyForInvoiceStatus: 'COMPLETED',
+          billingVerified,
+          shippingVerified,
+          warehouseVerified,
+          readyCompletedBy: session.userId,
+          readyCompletedAt: completedAt,
+          currentStep: Math.max(wf.currentStep, 4)
+        }
+      }),
+      prisma.dispatchIncomingOrder.update({
+        where: { id },
+        data: {
+          updatedAt: completedAt
+        }
+      })
+    ]);
+
+    dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, {
+      ...updatedOrder,
+      preDispatchWorkflow: updatedWf
     });
 
-    return NextResponse.json({ success: true, data: updated });
+    return NextResponse.json({ success: true, data: updatedWf });
 
   } catch (error: any) {
     console.error('[Ready For Invoice Error]', error);

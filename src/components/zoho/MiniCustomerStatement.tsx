@@ -1,12 +1,15 @@
 'use client';
 
 import React from 'react';
-import { FileText, Loader2, ExternalLink, AlertCircle, Check } from 'lucide-react';
+import { FileText, Loader2, ExternalLink, AlertCircle, Check, RefreshCw } from 'lucide-react';
 
 interface MiniCustomerStatementProps {
   customerId: string;
   statementData: any | null;
   statementLoading: boolean;
+  orderTotal?: number;
+  onRefresh?: () => Promise<void> | void;
+  refreshing?: boolean;
 }
 
 // Helpers
@@ -87,37 +90,75 @@ function fmtDateTime(iso: string) {
   return `${datePart} ${timePart}`;
 }
 
-export default function MiniCustomerStatement({ customerId, statementData, statementLoading }: MiniCustomerStatementProps) {
+export default function MiniCustomerStatement({
+  customerId,
+  statementData,
+  statementLoading,
+  orderTotal = 0,
+  onRefresh,
+  refreshing = false,
+}: MiniCustomerStatementProps) {
   return (
     <div className="flex flex-col bg-gray-50 h-full">
-      <div className="p-5 border-b border-gray-200 bg-white flex justify-between items-center flex-shrink-0">
-        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-          <FileText className="text-[#1A2766]" size={20} />
-          Customer Statement Snapshot
+      <div className="px-5 py-3.5 border-b border-gray-200 bg-white flex justify-between items-center flex-shrink-0">
+        <h3 className="text-base font-bold text-gray-800 flex items-center gap-2">
+          <FileText className="text-[#1A2766]" size={18} />
+          <span>Customer Statement Snapshot</span>
+          <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">
+            Recent Transactions
+          </span>
         </h3>
-        <a href={`/staff/dashboard/accounts?customerId=${customerId}`} target="_blank" rel="noreferrer" className="text-xs font-semibold bg-gray-100 px-3 py-1.5 rounded text-gray-700 flex items-center gap-1.5 hover:bg-gray-200 transition-colors">
-          Full Statement <ExternalLink size={12} />
-        </a>
+        <div className="flex items-center gap-2">
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={() => onRefresh()}
+              disabled={refreshing || statementLoading}
+              title="Refresh Statement Data"
+              className="text-xs font-semibold bg-blue-50 border border-blue-200 text-[#1A2766] hover:bg-blue-100 px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={refreshing || statementLoading ? 'animate-spin' : ''} />
+              <span>Refresh Statement</span>
+            </button>
+          )}
+          <a
+            href={`/staff/dashboard/accounts?customerId=${customerId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs font-semibold bg-gray-100 border border-gray-200 px-3 py-1.5 rounded text-gray-700 flex items-center gap-1.5 hover:bg-gray-200 transition-colors"
+          >
+            Full Statement <ExternalLink size={12} />
+          </a>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto bg-white">
-        {statementLoading ? (
+      <div className="flex-1 min-h-0 overflow-hidden bg-white flex flex-col">
+        {statementLoading && !statementData ? (
           <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4 py-12">
             <Loader2 className="w-8 h-8 animate-spin text-[#1A2766]" />
             <p className="text-sm font-medium">Fetching live ledger from Zoho...</p>
           </div>
         ) : statementData ? (() => {
-          const visibleTxs = statementData.transactions.slice(-10);
-          const openingBal = visibleTxs.length > 0
-            ? visibleTxs[0].balanceAfter - visibleTxs[0].netEffect
+          // Full transactions list used for all balance calculations
+          const allTxs = Array.isArray(statementData.transactions) ? statementData.transactions : [];
+          
+          // Display only the latest / most recent 12 chronological transactions
+          const visibleTxs = allTxs.length > 12 ? allTxs.slice(-12) : allTxs;
+          
+          const openingBal = allTxs.length > 0
+            ? allTxs[0].balanceAfter - allTxs[0].netEffect
             : statementData.closingBalance;
           const openingPres = getOpeningBalancePresentation(openingBal);
           const closingPres = getOpeningBalancePresentation(statementData.closingBalance);
+
+          // PV-001: Adjusted Closing Balance = Closing Balance - Current Sales Order Total Amount
+          const adjustedClosingBal = (statementData.closingBalance ?? 0) - orderTotal;
+          const adjustedPres = getOpeningBalancePresentation(adjustedClosingBal);
           
           return (
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col h-full min-h-0 flex-1 overflow-hidden">
               {/* Ledger Table */}
-              <div className="flex-1 overflow-x-auto">
+              <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto">
                 <table className="w-full text-sm relative" style={{ fontVariantNumeric: 'tabular-nums' }}>
                   <thead className="sticky top-0 bg-gray-50 text-[10px] uppercase text-gray-500 font-bold border-b border-gray-200 z-10 shadow-sm">
                     <tr>
@@ -229,21 +270,46 @@ export default function MiniCustomerStatement({ customerId, statementData, state
                 </table>
               </div>
 
-              {/* Footer Summary */}
-              <div className="bg-gray-50 border-t border-gray-200 p-4 shrink-0 mt-auto">
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 max-w-lg ml-auto">
-                  <div className="text-right">
-                    <p className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Opening Balance</p>
-                    <p className={`text-sm font-bold ${openingPres.isCredit ? 'text-emerald-600' : 'text-gray-900'}`}>
+              {/* Footer Financial Summary: Opening Balance -> Closing Balance -> SO Amount -> Adjusted Closing Balance */}
+              <div className="bg-gray-50 border-t border-gray-200 px-4 py-3 shrink-0 mt-auto">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-left">
+                    <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Opening Balance</p>
+                    <p className={`text-xs font-bold tabular-nums ${openingPres.isCredit ? 'text-emerald-600' : 'text-gray-800'}`}>
                       {openingPres.amount}
                     </p>
                   </div>
-                  <div className="hidden sm:block w-px h-8 bg-gray-300"></div>
-                  <div className="text-right">
-                    <p className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Closing Balance</p>
-                    <p className={`text-xl font-black ${closingPres.isCredit ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {closingPres.amount}
-                    </p>
+
+                  <div className="flex items-center gap-3 sm:gap-4 ml-auto">
+                    {/* Current Closing Balance */}
+                    <div className="text-right">
+                      <p className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Closing Balance</p>
+                      <p className={`text-sm sm:text-base font-black tabular-nums ${closingPres.isCredit ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {closingPres.amount}
+                      </p>
+                    </div>
+
+                    <span className="text-gray-400 font-bold text-sm">−</span>
+
+                    {/* Current SO Amount */}
+                    <div className="text-right">
+                      <p className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Order Amount</p>
+                      <p className="text-sm sm:text-base font-black text-gray-900 tabular-nums">
+                        {fmt(orderTotal)}
+                      </p>
+                    </div>
+
+                    <span className="text-gray-400 font-bold text-sm">=</span>
+
+                    {/* Adjusted Closing Balance */}
+                    <div className="text-right pl-1 sm:pl-2 border-l border-gray-300">
+                      <p className="text-[10px] uppercase font-bold text-[#1A2766] tracking-wider">Adjusted Balance</p>
+                      <div className="flex items-center justify-end gap-1">
+                        <p className={`text-base sm:text-lg font-black tabular-nums ${adjustedPres.isCredit ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {adjustedPres.amount}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

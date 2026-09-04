@@ -23,6 +23,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { playTruckHornSound } from '@/lib/hooks/useAudioNotification';
 
 interface EligibleOrder {
   id: string;
@@ -303,6 +304,9 @@ export default function MobileDispatchClient() {
         throw new Error(json.error || 'Failed to upload truck photo');
       }
 
+      // Play soft truck horn on confirmed successful upload
+      playTruckHornSound();
+
       toast.success('Truck photo submitted successfully!');
       handleCloseCapture();
       setActiveTab('today');
@@ -571,28 +575,11 @@ export default function MobileDispatchClient() {
 
       {/* ── Camera Capture Modal / Viewfinder ───────────────────────────────── */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 bg-black flex flex-col font-sans select-none">
-          {/* Top Bar */}
-          <div className="p-4 flex items-center justify-between text-white bg-black/60 backdrop-blur-sm z-20">
-            <div>
-              <div className="font-bold text-[15px]">{selectedOrder.salesorderNumber}</div>
-              <div className="text-xs text-white/70 truncate max-w-[240px]">
-                {selectedOrder.customerName}
-              </div>
-            </div>
-            <button
-              onClick={handleCloseCapture}
-              disabled={submitting}
-              className="p-2 rounded-full bg-white/20 active:bg-white/30 text-white"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          {/* Camera Viewfinder / Preview Area */}
-          <div className="flex-1 relative overflow-hidden bg-black flex items-center justify-center">
+        <div className="fixed inset-0 h-[100dvh] w-full z-50 bg-black font-sans select-none overflow-hidden">
+          {/* Camera Viewfinder / Preview Area (Full-screen background behind status bar & home bar) */}
+          <div className="absolute inset-0 z-0 bg-black flex items-center justify-center overflow-hidden">
             {cameraError ? (
-              <div className="p-6 text-center max-w-[320px] text-white">
+              <div className="p-6 text-center max-w-[320px] text-white relative z-20">
                 <div className="w-14 h-14 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center mx-auto mb-4">
                   <ShieldAlert size={32} />
                 </div>
@@ -609,85 +596,114 @@ export default function MobileDispatchClient() {
               </div>
             ) : capturedPreviewUrl ? (
               /* Static Preview Mode */
-              <div className="w-full h-full flex flex-col items-center justify-center p-2 relative">
+              <div className="w-full h-full flex items-center justify-center p-4">
                 <img
                   src={capturedPreviewUrl}
                   alt="Truck preview"
-                  className="max-h-full max-w-full object-contain rounded-xl shadow-2xl"
+                  className="max-h-full max-w-full object-contain rounded-2xl shadow-2xl"
                 />
-                <div className="absolute top-4 bg-black/60 px-3 py-1 rounded-full text-white text-xs font-semibold backdrop-blur-sm">
-                  Review Photo
-                </div>
               </div>
             ) : (
               /* Live Camera Viewfinder */
-              <div className="w-full h-full relative flex items-center justify-center">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                />
-
-                {/* Target Framing Box */}
-                <div className="absolute inset-x-8 inset-y-24 border-2 border-white/60 rounded-2xl pointer-events-none flex flex-col justify-between p-3">
-                  <div className="text-center text-white/90 text-xs font-semibold bg-black/40 px-3 py-1 rounded-full self-center backdrop-blur-sm">
-                    Center the truck number plate
-                  </div>
-                  <div className="flex justify-between items-end text-[11px] text-white/70">
-                    <span>Live View</span>
-                    <span>Rear Camera</span>
-                  </div>
-                </div>
-              </div>
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
             )}
           </div>
 
-          {/* Bottom Action Bar */}
-          <div className="p-6 bg-black/80 backdrop-blur-md text-white flex items-center justify-center gap-6 z-20 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-            {capturedPreviewUrl ? (
-              /* Retake and Submit Controls */
-              <div className="flex items-center justify-between w-full max-w-[360px] gap-4">
-                <button
-                  onClick={handleRetake}
-                  disabled={submitting}
-                  className="flex-1 py-3.5 px-4 rounded-2xl bg-white/20 text-white font-bold text-sm flex items-center justify-center gap-2 active:bg-white/30 transition-all disabled:opacity-50"
-                >
-                  <RotateCcw size={16} />
-                  <span>Retake</span>
-                </button>
+          {/* Camera Overlay (Top controls, framing guide, bottom capture bar) */}
+          <div className="absolute inset-0 z-10 flex flex-col justify-between pointer-events-none">
+            {/* Top Bar / Controls (Positioned safely below status bar / Dynamic Island / notch) */}
+            <div className="w-full pt-[max(16px,calc(env(safe-area-inset-top)+8px))] pb-4 px-4 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex items-center justify-between text-white pointer-events-auto">
+              <div className="min-w-0 pr-3">
+                <div className="font-bold text-[16px] tracking-tight truncate drop-shadow-sm">
+                  {selectedOrder.salesorderNumber}
+                </div>
+                <div className="text-xs text-white/80 truncate max-w-[260px] drop-shadow-sm">
+                  {selectedOrder.customerName}
+                </div>
+              </div>
+              <button
+                onClick={handleCloseCapture}
+                disabled={submitting}
+                className="p-2.5 rounded-full bg-black/40 hover:bg-black/60 active:bg-white/30 text-white backdrop-blur-md transition-all shrink-0 border border-white/10"
+                aria-label="Close Camera"
+              >
+                <X size={20} />
+              </button>
+            </div>
 
-                <button
-                  onClick={handleSubmitPhoto}
-                  disabled={submitting}
-                  className="flex-1 py-3.5 px-4 rounded-2xl bg-[#2563eb] text-white font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg shadow-blue-500/30"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />
-                      <span>Saving...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload size={16} />
-                      <span>Submit Photo</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            ) : cameraActive && !cameraError ? (
-              /* Shutter Button (Live Camera Only) */
-              <div className="flex flex-col items-center gap-2">
-                <button
-                  onClick={captureFrame}
-                  className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center p-1 active:scale-95 transition-transform"
-                >
-                  <div className="w-full h-full bg-white rounded-full" />
-                </button>
-                <span className="text-[11px] text-white/70 font-medium">Tap to Capture</span>
-              </div>
-            ) : null}
+            {/* Target Framing Guide / Review Badge */}
+            <div className="flex-1 flex items-center justify-center p-6 pointer-events-none">
+              {capturedPreviewUrl ? (
+                <div className="bg-black/60 px-4 py-1.5 rounded-full text-white text-xs font-semibold backdrop-blur-md border border-white/10 self-start mt-2">
+                  Review Photo
+                </div>
+              ) : cameraActive && !cameraError ? (
+                <div className="w-full max-w-[360px] aspect-[16/10] border-2 border-dashed border-white/75 rounded-2xl flex flex-col justify-between p-3.5 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]">
+                  <div className="text-center text-white text-xs font-semibold bg-black/50 px-3 py-1 rounded-full self-center backdrop-blur-sm border border-white/15">
+                    Center the truck number plate
+                  </div>
+                  <div className="flex justify-between items-end text-[11px] font-medium text-white/80">
+                    <span className="bg-black/40 px-2 py-0.5 rounded-md backdrop-blur-sm">Live View</span>
+                    <span className="bg-black/40 px-2 py-0.5 rounded-md backdrop-blur-sm">Rear Camera</span>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {/* Bottom Action Bar (Positioned safely above home gesture indicator) */}
+            <div className="w-full pt-4 pb-[max(20px,calc(env(safe-area-inset-bottom)+12px))] px-6 bg-gradient-to-t from-black/90 via-black/50 to-transparent flex items-center justify-center text-white pointer-events-auto">
+              {capturedPreviewUrl ? (
+                /* Retake and Submit Controls */
+                <div className="flex items-center justify-between w-full max-w-[360px] gap-4">
+                  <button
+                    onClick={handleRetake}
+                    disabled={submitting}
+                    className="flex-1 py-3.5 px-4 rounded-2xl bg-white/20 text-white font-bold text-sm flex items-center justify-center gap-2 active:bg-white/30 transition-all disabled:opacity-50 backdrop-blur-md border border-white/10"
+                  >
+                    <RotateCcw size={16} />
+                    <span>Retake</span>
+                  </button>
+
+                  <button
+                    onClick={handleSubmitPhoto}
+                    disabled={submitting}
+                    className="flex-1 py-3.5 px-4 rounded-2xl bg-[#2563eb] text-white font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg shadow-blue-500/30"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={16} />
+                        <span>Submit Photo</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              ) : cameraActive && !cameraError ? (
+                /* Shutter Button (Live Camera Only) */
+                <div className="flex flex-col items-center gap-2">
+                  <button
+                    onClick={captureFrame}
+                    className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center p-1 active:scale-95 transition-transform shadow-lg"
+                    aria-label="Take Photo"
+                  >
+                    <div className="w-full h-full bg-white rounded-full active:bg-white/80 transition-colors" />
+                  </button>
+                  <span className="text-[11px] text-white/80 font-medium drop-shadow-sm">
+                    Tap to Capture
+                  </span>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       )}

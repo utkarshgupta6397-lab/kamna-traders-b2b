@@ -138,8 +138,9 @@ export async function POST(
       });
 
       // Update or create PreDispatchWorkflow for workflow compatibility
+      let wf;
       if (order.preDispatchWorkflow) {
-        await tx.preDispatchWorkflow.update({
+        wf = await tx.preDispatchWorkflow.update({
           where: { id: order.preDispatchWorkflow.id },
           data: {
             truckDetailsStatus: 'COMPLETED',
@@ -150,7 +151,7 @@ export async function POST(
           },
         });
       } else {
-        await tx.preDispatchWorkflow.create({
+        wf = await tx.preDispatchWorkflow.create({
           data: {
             dispatchOrderId: order.id,
             salesorderId: order.zohoSalesorderId,
@@ -163,32 +164,42 @@ export async function POST(
         });
       }
 
-      return upload;
+      const freshOrder = await tx.dispatchIncomingOrder.update({
+        where: { id: order.id },
+        data: { updatedAt: new Date() },
+      });
+
+      return { upload, wf, freshOrder };
     });
 
     // 6. Broadcast Realtime Event to Desktop Clients
     const eventPayload = {
-      uploadId: result.id,
+      uploadId: result.upload.id,
       salesOrderId: order.id,
       salesOrderNumber: order.salesorderNumber || order.zohoSalesorderId,
       customerName: order.customerName || 'Customer',
       total: order.total,
-      imageUrl: `/api/dispatch/truck-image/${result.id}`,
-      uploadedAt: result.uploadedAt,
+      imageUrl: `/api/dispatch/truck-image/${result.upload.id}`,
+      uploadedAt: result.upload.uploadedAt,
       uploadedByUserName: userName,
     };
 
     dispatchEventEmitter.emit(DISPATCH_EVENTS.TRUCK_IMAGE_UPLOADED, eventPayload);
+    dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, {
+      ...result.freshOrder,
+      preDispatchWorkflow: result.wf,
+      truckUpload: result.upload,
+    });
 
     return NextResponse.json({
       success: true,
       message: 'Truck image uploaded successfully.',
       data: {
-        id: result.id,
-        salesOrderId: result.salesOrderId,
-        salesOrderNumber: result.salesOrderNumber,
-        imageUrl: `/api/dispatch/truck-image/${result.id}`,
-        uploadedAt: result.uploadedAt,
+        id: result.upload.id,
+        salesOrderId: result.upload.salesOrderId,
+        salesOrderNumber: result.upload.salesOrderNumber,
+        imageUrl: `/api/dispatch/truck-image/${result.upload.id}`,
+        uploadedAt: result.upload.uploadedAt,
       },
     });
   } catch (error: any) {

@@ -51,6 +51,30 @@ export default function GlobalDispatchNotifier() {
     let eventSource: EventSource | null = null;
     let reconnectTimeout: NodeJS.Timeout;
     let isUnmounted = false;
+    let baselineLoaded = false;
+
+    // 1. Establish baseline from existing queue so existing rows never play bell sound
+    const initBaselineAndSSE = async () => {
+      try {
+        const res = await fetch('/api/dispatch/incoming-queue');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.data)) {
+            json.data.forEach((o: any) => {
+              if (o.zohoSalesorderId) knownIdsRef.current.add(o.zohoSalesorderId);
+              if (o.id) knownIdsRef.current.add(o.id);
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[GlobalDispatchNotifier] Baseline fetch failed:', err);
+      } finally {
+        baselineLoaded = true;
+        if (!isUnmounted) {
+          connectSSE();
+        }
+      }
+    };
 
     const connectSSE = () => {
       if (isUnmounted) return;
@@ -66,11 +90,13 @@ export default function GlobalDispatchNotifier() {
             
             // Deduplicate: Don't notify for the same ID twice in this session unless it's a repush
             const dedupeKey = order._isRePush ? `${order.zohoSalesorderId}_${order._rePushTimestamp}` : order.zohoSalesorderId;
-            if (knownIdsRef.current.has(dedupeKey)) {
+            if (knownIdsRef.current.has(dedupeKey) || knownIdsRef.current.has(order.zohoSalesorderId)) {
               return;
             }
             
             knownIdsRef.current.add(dedupeKey);
+            if (order.zohoSalesorderId) knownIdsRef.current.add(order.zohoSalesorderId);
+            if (order.id) knownIdsRef.current.add(order.id);
 
             // Toast Notification
             const soNum = order.salesorderNumber || order.zohoSalesorderId;
@@ -134,7 +160,7 @@ export default function GlobalDispatchNotifier() {
       };
     };
 
-    connectSSE();
+    initBaselineAndSSE();
 
     return () => {
       isUnmounted = true;

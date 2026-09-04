@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -51,18 +52,30 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: 'Cannot complete: Not all items are verified.' }, { status: 400 });
       }
 
-      const updated = await prisma.preDispatchWorkflow.update({
-        where: { id: order.preDispatchWorkflow.id },
-        data: {
-          rateReviewStatus: 'COMPLETED',
-          rateReviewCompletedBy: session.userId,
-          rateReviewCompletedAt: new Date(),
-          rateReviewAudit: audit,
-          currentStep: Math.max(order.preDispatchWorkflow.currentStep, 2),
-          overallStatus: 'IN_PROGRESS'
-        }
+      const [updatedWf, updatedOrder] = await prisma.$transaction([
+        prisma.preDispatchWorkflow.update({
+          where: { id: order.preDispatchWorkflow.id },
+          data: {
+            rateReviewStatus: 'COMPLETED',
+            rateReviewCompletedBy: session.userId,
+            rateReviewCompletedAt: new Date(),
+            rateReviewAudit: audit,
+            currentStep: Math.max(order.preDispatchWorkflow.currentStep, 2),
+            overallStatus: 'IN_PROGRESS'
+          }
+        }),
+        prisma.dispatchIncomingOrder.update({
+          where: { id },
+          data: { updatedAt: new Date() }
+        })
+      ]);
+
+      dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, {
+        ...updatedOrder,
+        preDispatchWorkflow: updatedWf
       });
-      return NextResponse.json({ success: true, data: updated });
+
+      return NextResponse.json({ success: true, data: updatedWf });
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });

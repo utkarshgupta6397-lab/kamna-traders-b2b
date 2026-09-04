@@ -6,10 +6,11 @@ import React from 'react';
 export default function DispatchLayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isReviewPage = pathname.includes('/review');
+  const isIncomingPage = pathname.startsWith('/staff/dashboard/dispatch/incoming');
 
-  if (isReviewPage) {
+  if (isReviewPage || isIncomingPage) {
     return (
-      <div className="flex-1 flex flex-col min-w-0 h-[calc(100vh-140px)]">
+      <div className="flex-1 flex flex-col min-w-0 h-full min-h-0 w-full">
         {children}
       </div>
     );
@@ -24,3 +25,4 @@ export default function DispatchLayoutShell({ children }: { children: React.Reac
     </div>
   );
 }
+

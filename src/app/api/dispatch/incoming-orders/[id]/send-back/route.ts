@@ -41,6 +41,34 @@ export async function POST(
       return NextResponse.json({ error: 'Order is already sent back.' }, { status: 400 });
     }
 
+    // Check if mock / test order (not in Zoho Books)
+    const isMockTestOrder =
+      order.zohoSalesorderId.startsWith('zoho_test_') ||
+      order.id.startsWith('test_') ||
+      process.env.NODE_ENV !== 'production' && order.zohoSalesorderId.includes('test');
+
+    if (isMockTestOrder) {
+      const updatedOrder = await prisma.dispatchIncomingOrder.update({
+        where: { id },
+        data: {
+          status: 'SENT_BACK_TO_OPS',
+          updatedAt: new Date()
+        },
+        include: {
+          preDispatchWorkflow: true,
+          truckUpload: true
+        }
+      });
+
+      dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, updatedOrder);
+
+      return NextResponse.json({
+        success: true,
+        status: 'SUCCESS',
+        message: 'Sales Order sent back to Operations successfully.'
+      });
+    }
+
     const orgId = getZohoOrgId();
     const accessToken = await getZohoTokens();
     if (!accessToken) {
@@ -55,6 +83,28 @@ export async function POST(
     });
     
     if (!getRes.ok) {
+      if (getRes.status === 404) {
+        // If order doesn't exist in Zoho (e.g. seeded/purged/test), still allow ERP send-back
+        const updatedOrder = await prisma.dispatchIncomingOrder.update({
+          where: { id },
+          data: {
+            status: 'SENT_BACK_TO_OPS',
+            updatedAt: new Date()
+          },
+          include: {
+            preDispatchWorkflow: true,
+            truckUpload: true
+          }
+        });
+
+        dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, updatedOrder);
+
+        return NextResponse.json({
+          success: true,
+          status: 'SUCCESS',
+          message: 'Sales Order not found in Zoho, but successfully marked as Sent Back in ERP.'
+        });
+      }
       return NextResponse.json({ error: `Failed to fetch Sales Order from Zoho: ${getRes.status}` }, { status: 502 });
     }
     
@@ -202,8 +252,13 @@ export async function POST(
     const updatedOrder = await prisma.dispatchIncomingOrder.update({
       where: { id },
       data: {
-        status: 'SENT_BACK_TO_OPS'
-      }
+        status: 'SENT_BACK_TO_OPS',
+        updatedAt: new Date(),
+      },
+      include: {
+        preDispatchWorkflow: true,
+        truckUpload: true,
+      },
     });
 
     dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, updatedOrder);

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -36,18 +37,29 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       });
     }
 
-    const updated = await prisma.preDispatchWorkflow.update({
-      where: { id: wf.id },
-      data: {
-        truckDetailsStatus: 'COMPLETED',
-        truckPhotoUrl: photoUrl,
-        truckUploadedBy: session.userId,
-        truckUploadedAt: new Date(),
-        overallStatus: 'IN_PROGRESS'
-      }
+    const [updatedWf, updatedOrder] = await prisma.$transaction([
+      prisma.preDispatchWorkflow.update({
+        where: { id: wf.id },
+        data: {
+          truckDetailsStatus: 'COMPLETED',
+          truckPhotoUrl: photoUrl,
+          truckUploadedBy: session.userId,
+          truckUploadedAt: new Date(),
+          overallStatus: 'IN_PROGRESS'
+        }
+      }),
+      prisma.dispatchIncomingOrder.update({
+        where: { id: order.id },
+        data: { updatedAt: new Date() }
+      })
+    ]);
+
+    dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, {
+      ...updatedOrder,
+      preDispatchWorkflow: updatedWf
     });
 
-    return NextResponse.json({ success: true, data: updated });
+    return NextResponse.json({ success: true, data: updatedWf });
 
   } catch (error: any) {
     console.error('[Truck Details Error]', error);

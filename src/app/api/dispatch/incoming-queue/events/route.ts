@@ -39,13 +39,19 @@ export async function GET(request: Request) {
         sendEvent({ type: 'update_order', order });
       };
 
+      const onTruckUpload = (data: any) => {
+        sendEvent({ type: 'truck_upload', data });
+      };
+
       dispatchEventEmitter.on(DISPATCH_EVENTS.NEW_INCOMING_ORDER, onNewOrder);
       dispatchEventEmitter.on(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, onUpdateOrder);
+      dispatchEventEmitter.on(DISPATCH_EVENTS.TRUCK_IMAGE_UPLOADED, onTruckUpload);
 
       request.signal.addEventListener('abort', () => {
         clearInterval(heartbeat);
         dispatchEventEmitter.off(DISPATCH_EVENTS.NEW_INCOMING_ORDER, onNewOrder);
         dispatchEventEmitter.off(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, onUpdateOrder);
+        dispatchEventEmitter.off(DISPATCH_EVENTS.TRUCK_IMAGE_UPLOADED, onTruckUpload);
         controller.close();
       });
     },

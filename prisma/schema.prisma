@@ -1546,6 +1546,7 @@ model IntegrationConfig {
 
 model DispatchIncomingOrder {
   preDispatchWorkflow            PreDispatchWorkflow?
+  truckUpload                    DispatchTruckUpload?
   id                               String    @id @default(cuid())
   zohoSalesorderId                 String    @unique
   salesorderNumber                 String?
@@ -1685,4 +1686,21 @@ model PreDispatchWorkflow {
   updatedAt             DateTime @updatedAt
 
   dispatchOrder         DispatchIncomingOrder @relation(fields: [dispatchOrderId], references: [id], onDelete: Cascade)
+}
+
+model DispatchTruckUpload {
+  id                 String   @id @default(cuid())
+  salesOrderId       String   @unique
+  salesOrderNumber   String?
+  imagePath          String
+  imageFilename      String
+  imageMimeType      String
+  imageSizeBytes     Int
+  uploadedByUserId   String
+  uploadedByUserName String?
+  uploadedAt         DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  dispatchOrder      DispatchIncomingOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
 }

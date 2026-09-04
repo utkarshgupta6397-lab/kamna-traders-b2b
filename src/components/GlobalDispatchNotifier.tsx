@@ -95,6 +95,30 @@ export default function GlobalDispatchNotifier() {
               }, 800);
             }
           }
+
+          if (data.type === 'truck_upload' && data.data) {
+            const upload = data.data;
+            const dedupeKey = `truck_${upload.uploadId || upload.salesOrderId}`;
+            if (knownIdsRef.current.has(dedupeKey)) {
+              return;
+            }
+            knownIdsRef.current.add(dedupeKey);
+
+            const soNum = upload.salesOrderNumber || 'Sales Order';
+            const cust = upload.customerName ? ` - ${upload.customerName}` : '';
+            toast.success(`Truck Details Uploaded: ${soNum}${cust}`, {
+              duration: 6000,
+              icon: '🚚',
+            });
+
+            // Play notification sound once
+            if (audioRef.current) {
+              audioRef.current.currentTime = 0;
+              audioRef.current.play().catch(err => {
+                console.warn('[GlobalDispatchNotifier] Truck audio play restricted by browser:', err);
+              });
+            }
+          }
         } catch (err) {
           console.error('[GlobalDispatchNotifier] Message parse error:', err);
         }

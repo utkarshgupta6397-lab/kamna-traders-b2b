@@ -58,6 +58,23 @@ export default async function MobileHome() {
               Accounts
             </span>
           </Link>
+
+          <Link
+            href="/mobile/dispatch"
+            className="flex flex-col items-center justify-center aspect-square bg-white p-4 rounded-[24px] shadow-[0_2px_12px_rgba(0,0,0,0.03)] border border-slate-100 active:scale-[0.96] active:bg-slate-50 transition-all"
+          >
+            <div className="w-[64px] h-[64px] rounded-[20px] bg-[#F8F9FB] flex items-center justify-center mb-3">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="1" y="3" width="14" height="13" rx="2" fill="#ffffff" stroke="#1A2766" />
+                <polygon points="15 8 19 8 22 11 22 16 15 16 15 8" fill="#dbeafe" stroke="#2563eb" />
+                <circle cx="5.5" cy="18.5" r="2.5" fill="#ffffff" stroke="#1A2766" />
+                <circle cx="18.5" cy="18.5" r="2.5" fill="#16a34a" stroke="#16a34a" />
+              </svg>
+            </div>
+            <span className="font-bold text-[#1A2766] text-[16px] tracking-tight">
+              Dispatch
+            </span>
+          </Link>
         </div>
       </main>
     </div>

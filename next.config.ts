@@ -15,10 +15,30 @@ function getLanIps() {
   return ips;
 }
 
+const configuredOrigins = process.env.ALLOWED_DEV_ORIGINS
+  ? process.env.ALLOWED_DEV_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+  : [];
+
 const nextConfig: NextConfig = {
   distDir: process.env.NEXT_BUILD_DIR || '.next',
   output: "standalone",
-  allowedDevOrigins: ['localhost', 'localhost:3002', '192.168.1.23', '192.168.1.23:3000', '192.168.1.25', '192.168.1.25:3002', ...getLanIps()],
+  allowedDevOrigins: [
+    'localhost',
+    'localhost:3000',
+    'localhost:3002',
+    '127.0.0.1',
+    '127.0.0.1:3000',
+    'dev.kamna-erp.bid',
+    '*.kamna-erp.bid',
+    'kamna-erp.bid',
+    '*.trycloudflare.com',
+    '192.168.1.23',
+    '192.168.1.23:3000',
+    '192.168.1.25',
+    '192.168.1.25:3002',
+    ...getLanIps(),
+    ...configuredOrigins,
+  ],
   async redirects() {
     return [
       {
@@ -55,7 +75,10 @@ const nextConfig: NextConfig = {
   },
   /* config options here */
   experimental: {
-    optimizePackageImports: ['lucide-react', 'date-fns', 'echarts', 'recharts']
+    optimizePackageImports: ['lucide-react', 'date-fns', 'echarts', 'recharts'],
+    serverActions: {
+      allowedOrigins: ['dev.kamna-erp.bid', '*.kamna-erp.bid', 'kamna-erp.bid', '*.trycloudflare.com'],
+    },
   },
   turbopack: {},
   // Ensure markdown and logs don't trigger HMR/rebuild loops

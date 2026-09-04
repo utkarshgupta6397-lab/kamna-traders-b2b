@@ -66,3 +66,8 @@ body {
     transform: none !important;
   }
 }
+
+/* Suppress Next.js floating N indicator in mobile PWA views */
+body.mobile-active nextjs-portal {
+  display: none !important;
+}

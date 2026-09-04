@@ -36,8 +36,8 @@ export async function GET(req: Request) {
               }
             }
           },
-          orderBy: { allocatedAt: 'desc' },
-          take: 1
+          
+          
         }
       }
     });

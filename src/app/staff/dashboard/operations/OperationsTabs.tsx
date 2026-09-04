@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ShoppingCart, History, Package, ArrowLeftRight } from 'lucide-react';
+import { ShoppingCart, History, Package, ArrowLeftRight, Truck } from 'lucide-react';
 
 interface OperationsTabsProps {
   canManageTransfers: boolean;
@@ -18,6 +18,8 @@ export default function OperationsTabs({
   let activeTab = 'current-stock';
   if (pathname.includes('/operations/carts')) {
     activeTab = 'carts';
+  } else if (pathname.includes('/operations/dispatch')) {
+    activeTab = 'dispatch';
   } else if (pathname.includes('/operations/inventory-history')) {
     activeTab = 'inventory-history';
   } else if (pathname.includes('/operations/transfers')) {
@@ -39,6 +41,10 @@ export default function OperationsTabs({
         <Link href="/staff/dashboard/operations/carts" className={tabCls('carts')}>
           <ShoppingCart size={16} strokeWidth={1.8} />
           Carts
+        </Link>
+        <Link href="/staff/dashboard/operations/dispatch" className={tabCls('dispatch')}>
+          <Truck size={16} strokeWidth={1.8} />
+          Dispatch
         </Link>
         <Link href="/staff/dashboard/operations/inventory-history" className={tabCls('inventory-history')}>
           <History size={16} strokeWidth={1.8} />

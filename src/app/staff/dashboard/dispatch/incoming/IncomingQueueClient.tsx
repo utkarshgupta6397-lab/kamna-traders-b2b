@@ -597,7 +597,7 @@ export default function IncomingQueueClient() {
                     </td>
 
                     {/* Actions */}
-                    <td className="px-4 py-3 text-right w-16">
+                    <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         {needsDetailsFetch && (
                           <button
@@ -612,14 +612,22 @@ export default function IncomingQueueClient() {
                         )}
 
                         {order.status === 'NEW' && (
-                          <button
-                            onClick={() => handleOpenSendBackModal(order)}
-                            title="Send Back to Operations Team"
-                            aria-label="Send Back to Operations Team"
-                            className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors"
-                          >
-                            <Undo2 size={12} />
-                          </button>
+                          <>
+                            <a
+                              href={`/staff/dashboard/dispatch/incoming/${order.id}/review`}
+                              className="px-2 py-1 text-xs font-bold text-white bg-[#1A2766] rounded hover:bg-blue-900 transition-colors"
+                            >
+                              Review
+                            </a>
+                            <button
+                              onClick={() => handleOpenSendBackModal(order)}
+                              title="Send Back to Operations Team"
+                              aria-label="Send Back to Operations Team"
+                              className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors"
+                            >
+                              <Undo2 size={12} />
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>

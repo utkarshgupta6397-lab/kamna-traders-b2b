@@ -1545,6 +1545,7 @@ model IntegrationConfig {
 }
 
 model DispatchIncomingOrder {
+  preDispatchWorkflow            PreDispatchWorkflow?
   id                               String    @id @default(cuid())
   zohoSalesorderId                 String    @unique
   salesorderNumber                 String?
@@ -1639,4 +1640,49 @@ enum CommunicationStatus {
   READ
   FAILED
   API_ACCEPTED
+}
+
+
+model PreDispatchWorkflow {
+  id                    String   @id @default(cuid())
+  dispatchOrderId       String   @unique
+  salesorderId          String   @unique
+  currentStep           Int      @default(1)
+  overallStatus         String   @default("NOT_STARTED")
+  
+  rateReviewStatus      String   @default("NOT_STARTED")
+  rateReviewCompletedBy String?
+  rateReviewCompletedAt DateTime?
+  rateReviewAudit       Json?
+
+  paymentStatus         String   @default("NOT_STARTED")
+  paymentDecision       String?
+  paymentNote           String?
+  paymentCompletedBy    String?
+  paymentCompletedAt    DateTime?
+  paymentAudit          Json?
+
+  truckDetailsStatus    String   @default("NOT_STARTED")
+  truckPhotoUrl         String?
+  truckUploadedBy       String?
+  truckUploadedAt       DateTime?
+
+  readyForInvoiceStatus String   @default("NOT_STARTED")
+  billingVerified       Boolean  @default(false)
+  shippingVerified      Boolean  @default(false)
+  warehouseVerified     Boolean  @default(false)
+  readyCompletedBy      String?
+  readyCompletedAt      DateTime?
+
+  invoiceConfirmStatus  String   @default("NOT_STARTED")
+  mappedInvoiceId       String?
+  mappedInvoiceNumber   String?
+  mappingMethod         String?
+  invoiceConfirmBy      String?
+  invoiceConfirmAt      DateTime?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  dispatchOrder         DispatchIncomingOrder @relation(fields: [dispatchOrderId], references: [id], onDelete: Cascade)
 }

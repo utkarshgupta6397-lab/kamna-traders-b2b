@@ -293,3 +293,14 @@ export async function cleanupStaleSessions() {
     console.error('[Session] Cleanup failed:', err);
   }
 }
+
+export async function updateSessionLastSeen(sessionToken: string) {
+  try {
+    await prisma.activeSession.update({
+      where: { sessionToken },
+      data: { lastSeenAt: new Date() },
+    });
+  } catch (err) {
+    console.error('[Session] Update lastSeenAt failed:', err);
+  }
+}

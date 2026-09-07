@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, RefreshCw, Copy, Check, Clock, ShieldAlert, Wifi, Code2, AlertTriangle, FileDown, X } from 'lucide-react';
+import { Search, RefreshCw, Copy, Check, Clock, ShieldAlert, Wifi, Code2, AlertTriangle, FileDown, X, KeyRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface RequestLog {
@@ -13,16 +13,21 @@ interface RequestLog {
 }
 
 export default function IncomingSOClient({ endpoint: initialEndpoint, apiKey: initialApiKey, hasValidPublicUrl: initialHasValidUrl, isProduction, initialBaseUrl }: { endpoint: string, apiKey: string, hasValidPublicUrl: boolean, isProduction: boolean, initialBaseUrl: string }) {
-  
+
   const [currentEndpoint, setCurrentEndpoint] = useState(initialEndpoint);
   const [currentApiKey, setCurrentApiKey] = useState(initialApiKey);
   const [currentHasValidUrl, setCurrentHasValidUrl] = useState(initialHasValidUrl);
-  
+
   const [editMode, setEditMode] = useState(false);
   const [formBaseUrl, setFormBaseUrl] = useState(initialBaseUrl);
   const [formApiKey, setFormApiKey] = useState(initialApiKey === 'NOT_CONFIGURED' ? '' : initialApiKey);
   const [saving, setSaving] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+
+  // Generation & Rotation states
+  const [keyConfirmModalOpen, setKeyConfirmModalOpen] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [generatingKey, setGeneratingKey] = useState(false);
 
   const handleSaveConfig = async () => {
     // Validation
@@ -67,12 +72,12 @@ export default function IncomingSOClient({ endpoint: initialEndpoint, apiKey: in
       if (!res2.ok) throw new Error(data2.error || 'Failed to save API Key');
 
       toast.success('Configuration saved successfully');
-      
+
       const newUrl = data1.value;
       const newKey = data2.value;
-      
+
       setCurrentApiKey(newKey);
-      
+
       if (newUrl) {
         setCurrentEndpoint(newUrl + '/api/dispatch/incoming-so');
         setCurrentHasValidUrl(true);
@@ -80,12 +85,40 @@ export default function IncomingSOClient({ endpoint: initialEndpoint, apiKey: in
         setCurrentEndpoint('https://CONFIGURE_INCOMING_SO_PUBLIC_BASE_URL/api/dispatch/incoming-so');
         setCurrentHasValidUrl(false);
       }
-      
+
       setEditMode(false);
     } catch (err: any) {
       toast.error(err.message || 'Failed to save configuration');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleGenerateApiKey = async () => {
+    setGeneratingKey(true);
+    try {
+      const res = await fetch('/api/admin/incoming-so/settings/generate-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ regenerate: isRegenerating })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to generate API Key');
+      }
+
+      setCurrentApiKey(data.key);
+      setFormApiKey(data.key);
+      setShowApiKey(true); // Automatically reveal the new key for copy
+      toast.success(data.message || 'API Key generated successfully');
+      setKeyConfirmModalOpen(false);
+      // Reset test status if previously failed
+      setTestStatus('Not Tested');
+      setTestMessage('');
+    } catch (err: any) {
+      toast.error(err.message || 'An error occurred generating the API key');
+    } finally {
+      setGeneratingKey(false);
     }
   };
 
@@ -123,7 +156,7 @@ export default function IncomingSOClient({ endpoint: initialEndpoint, apiKey: in
         },
         body: JSON.stringify({ test_connection: true })
       });
-      
+
       const data = await res.json().catch(() => null);
       if (res.ok && data?.success) {
         setTestStatus('Connected');
@@ -164,7 +197,7 @@ export default function IncomingSOClient({ endpoint: initialEndpoint, apiKey: in
     try {
       const res = await fetch(`/api/admin/incoming-so/${salesorder_id}/zoho-details`);
       const data = await res.json();
-      
+
       if (res.ok && data.success) {
         setSoDetails(data.data);
         setDrawerOpen(true);
@@ -242,17 +275,17 @@ return result;`;
   }, [logs, searchQuery]);
 
   const totalReceived = logs.filter(l => l.status === 'RECEIVED').length;
-  
+
   const todayReceived = logs.filter(l => {
     if (l.status !== 'RECEIVED') return false;
     const d = new Date(l.received_at);
     const today = new Date();
     return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
   }).length;
-  
+
   const lastReceivedLog = logs.find(l => l.status === 'RECEIVED');
-  const lastReceivedText = lastReceivedLog 
-    ? new Date(lastReceivedLog.received_at).toLocaleString() 
+  const lastReceivedText = lastReceivedLog
+    ? new Date(lastReceivedLog.received_at).toLocaleString()
     : 'No requests yet';
 
   const connectionActive = totalReceived > 0;
@@ -268,7 +301,7 @@ return result;`;
           </div>
           <span className="text-2xl font-black text-gray-900">{totalReceived}</span>
         </div>
-        
+
         <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col justify-between shadow-sm">
           <div className="flex items-center justify-between text-gray-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider">Today</span>
@@ -276,7 +309,7 @@ return result;`;
           </div>
           <span className="text-2xl font-black text-blue-600">{todayReceived}</span>
         </div>
-        
+
         <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col justify-between shadow-sm">
           <div className="flex items-center justify-between text-gray-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider">Last Received</span>
@@ -308,7 +341,7 @@ return result;`;
           <div>
             <h3 className="text-sm font-bold text-amber-900">Action Required: Public API URL not configured</h3>
             <p className="text-sm text-amber-700 mt-1">
-              Zoho Books operates in the cloud and cannot send requests directly to a local development machine. 
+              Zoho Books operates in the cloud and cannot send requests directly to a local development machine.
               To receive Incoming Sales Orders, you must configure a publicly reachable HTTPS URL for this ERP deployment.
             </p>
             <p className="text-xs font-mono text-amber-800 bg-amber-100 px-2 py-1 rounded inline-block mt-3 border border-amber-200">
@@ -318,7 +351,7 @@ return result;`;
         </div>
       )}
 
-      
+
       {/* API Connection Panel */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
         <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
@@ -343,13 +376,13 @@ return result;`;
             <span className="text-xs bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full font-bold uppercase">Sensitive</span>
           </div>
         </div>
-        
+
         {editMode ? (
           <div className="p-5 space-y-4 bg-gray-50 border-b border-gray-100">
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Public Base URL</label>
-              <input 
-                type="url" 
+              <input
+                type="url"
                 value={formBaseUrl}
                 onChange={(e) => setFormBaseUrl(e.target.value)}
                 placeholder="https://your-public-tunnel.trycloudflare.com"
@@ -359,8 +392,8 @@ return result;`;
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Incoming SO API Key</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={formApiKey}
                 onChange={(e) => setFormApiKey(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
@@ -383,13 +416,13 @@ return result;`;
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Incoming SO API Endpoint</label>
                 <div className="flex">
-                  <input 
-                    type="text" 
-                    readOnly 
-                    value={currentHasValidUrl ? currentEndpoint : 'Awaiting configuration...'} 
+                  <input
+                    type="text"
+                    readOnly
+                    value={currentHasValidUrl ? currentEndpoint : 'Awaiting configuration...'}
                     className={`flex-1 border border-gray-200 rounded-l-lg px-3 py-2 text-sm font-mono focus:outline-none ${!currentHasValidUrl ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-gray-50 text-gray-700'}`}
                   />
-                  <button 
+                  <button
                     onClick={() => handleCopy(currentEndpoint, 'Endpoint')}
                     className="bg-gray-100 hover:bg-gray-200 border border-l-0 border-gray-200 rounded-r-lg px-3 flex items-center justify-center transition-colors text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Copy Endpoint"
@@ -399,35 +432,84 @@ return result;`;
                   </button>
                 </div>
               </div>
-              
+
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1 flex items-center justify-between">
-                  <span className="flex items-center gap-1"><ShieldAlert size={12} className="text-red-500" /> API Key</span>
-                  <button onClick={() => setShowApiKey(!showApiKey)} className="text-[10px] text-blue-600 font-medium">{showApiKey ? 'Hide' : 'Reveal'}</button>
-                </label>
-                <div className="flex">
-                  <input 
-                    type={showApiKey ? 'text' : 'password'} 
-                    readOnly 
-                    value={currentApiKey === 'NOT_CONFIGURED' ? 'Missing Configuration' : currentApiKey} 
-                    className="flex-1 bg-gray-50 border border-gray-200 rounded-l-lg px-3 py-2 text-sm text-gray-700 font-mono focus:outline-none"
-                  />
-                  <button 
-                    onClick={() => handleCopy(currentApiKey, 'API Key')}
-                    className="bg-gray-100 hover:bg-gray-200 border border-l-0 border-gray-200 rounded-r-lg px-3 flex items-center justify-center transition-colors text-gray-600"
-                    disabled={currentApiKey === 'NOT_CONFIGURED'}
-                    title="Copy API Key"
-                  >
-                    {copiedField === 'API Key' ? <Check size={16} className="text-emerald-600" /> : <Copy size={16} />}
-                  </button>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-gray-500 uppercase flex items-center gap-1">
+                    <ShieldAlert size={12} className={currentApiKey === 'NOT_CONFIGURED' ? 'text-amber-500' : 'text-emerald-500'} /> API Key
+                  </label>
+                  {currentApiKey !== 'NOT_CONFIGURED' && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        className="text-[11px] font-medium text-blue-600 hover:text-blue-800 transition-colors"
+                      >
+                        {showApiKey ? 'Hide' : 'Reveal'}
+                      </button>
+                      <span className="text-gray-300">|</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsRegenerating(true);
+                          setKeyConfirmModalOpen(true);
+                        }}
+                        className="text-[11px] font-medium text-amber-700 hover:text-amber-900 transition-colors flex items-center gap-1"
+                      >
+                        <RefreshCw size={10} />
+                        Regenerate
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <p className="text-[10px] text-gray-400 mt-1">Provide this to the Zoho Books Deluge script as the X-API-Key header.</p>
+
+                {currentApiKey === 'NOT_CONFIGURED' ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-semibold text-amber-900">No API key configured</div>
+                      <div className="text-[10px] text-amber-700 mt-0.5">Generate a secure credential to allow Zoho Books to authenticate.</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsRegenerating(false);
+                        setKeyConfirmModalOpen(true);
+                      }}
+                      className="bg-amber-600 hover:bg-amber-700 text-white text-xs px-3 py-1.5 rounded-lg font-medium shadow-sm transition-colors flex items-center gap-1.5 flex-shrink-0 ml-3"
+                    >
+                      <KeyRound size={13} />
+                      Generate API Key
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex">
+                      <input
+                        type={showApiKey ? 'text' : 'password'}
+                        readOnly
+                        value={currentApiKey}
+                        className="flex-1 bg-gray-50 border border-gray-200 rounded-l-lg px-3 py-2 text-sm text-gray-700 font-mono focus:outline-none select-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(currentApiKey, 'API Key')}
+                        className="bg-gray-100 hover:bg-gray-200 border border-l-0 border-gray-200 rounded-r-lg px-3 flex items-center justify-center transition-colors text-gray-600"
+                        title="Copy API Key"
+                      >
+                        {copiedField === 'API Key' ? <Check size={16} className="text-emerald-600" /> : <Copy size={16} />}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      Use this API key as the <span className="font-mono font-bold text-gray-700">X-API-Key</span> header in the Zoho Books Deluge script.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Test Connection Section */}
               <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <button 
+                  <button
                     onClick={handleTestConnection}
                     disabled={testStatus === 'Testing' || !currentHasValidUrl || currentApiKey === 'NOT_CONFIGURED'}
                     className="text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
@@ -440,7 +522,7 @@ return result;`;
                       testStatus === 'Testing' ? 'text-gray-500' :
                       testStatus === 'Connected' ? 'text-emerald-600' : 'text-red-600'
                     }`}>
-                      {testStatus === 'Connected' ? <Check size={12} /> : 
+                      {testStatus === 'Connected' ? <Check size={12} /> :
                        testStatus === 'Connection Failed' ? <AlertTriangle size={12} /> : null}
                       {testStatus}
                     </span>
@@ -457,7 +539,7 @@ return result;`;
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs font-bold text-gray-500 uppercase">Zoho Books Deluge Setup</label>
-              <button 
+              <button
                 onClick={() => handleCopy(delugeSnippet, 'Deluge Script')}
                 className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 uppercase bg-blue-50 px-2 py-0.5 rounded-full transition-colors disabled:opacity-50"
                 disabled={!currentHasValidUrl}
@@ -488,7 +570,7 @@ return result;`;
                 className="w-full pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-[#1A2766]/30 focus:border-[#1A2766]"
               />
             </div>
-            <button 
+            <button
               onClick={fetchLogs}
               disabled={loading}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 transition-colors"
@@ -652,6 +734,59 @@ return result;`;
               ) : (
                 <div className="flex items-center justify-center h-full text-gray-400">No details available</div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Generate / Regenerate API Key */}
+      {keyConfirmModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className={`p-2 rounded-full flex-shrink-0 ${isRegenerating ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
+                {isRegenerating ? <RefreshCw size={20} /> : <KeyRound size={20} />}
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-gray-900">
+                  {isRegenerating ? 'Regenerate API Key?' : 'Generate Incoming SO API Key?'}
+                </h3>
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  {isRegenerating ? (
+                    <>
+                      This will <strong className="text-amber-900 font-semibold">immediately invalidate the current API key</strong>. Any Zoho Books integration using the old key will stop working until the new key is updated in Zoho Books.
+                    </>
+                  ) : (
+                    <>
+                      This key will authenticate Zoho Books requests to the ERP. Once generated, you must copy it into your Zoho Books Deluge script header.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={generatingKey}
+                onClick={() => setKeyConfirmModalOpen(false)}
+                className="px-4 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={generatingKey}
+                onClick={handleGenerateApiKey}
+                className={`px-4 py-2 text-xs font-medium text-white rounded-lg shadow-sm transition-colors flex items-center gap-1.5 disabled:opacity-50 ${
+                  isRegenerating
+                    ? 'bg-amber-600 hover:bg-amber-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                {generatingKey && <RefreshCw size={12} className="animate-spin" />}
+                {isRegenerating ? 'Regenerate' : 'Generate API Key'}
+              </button>
             </div>
           </div>
         </div>

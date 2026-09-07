@@ -58,3 +58,8 @@ dev.log
 .env*.local
 public/downloads/*
 
+certificates
+
+# Local storage uploads
+storage/*
+!storage/**/.gitkeep

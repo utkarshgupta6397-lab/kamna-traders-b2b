@@ -6,16 +6,25 @@
 export function validateOrigin(request: Request): boolean {
   const origin = request.headers.get('origin');
   const referer = request.headers.get('referer');
-  const host = request.headers.get('host') || request.headers.get('x-forwarded-host');
+  const host = request.headers.get('host');
+  const forwardedHost = request.headers.get('x-forwarded-host');
 
-  if (!host) {
+  if (!host && !forwardedHost) {
     return true; // Be lenient if host cannot be determined
   }
+
+  const isMatchingHost = (targetHost: string) => {
+    if (host && targetHost.toLowerCase() === host.toLowerCase()) return true;
+    if (forwardedHost && targetHost.toLowerCase() === forwardedHost.toLowerCase()) return true;
+    if (host && targetHost.split(':')[0].toLowerCase() === host.split(':')[0].toLowerCase()) return true;
+    if (forwardedHost && targetHost.split(':')[0].toLowerCase() === forwardedHost.split(':')[0].toLowerCase()) return true;
+    return false;
+  };
 
   if (origin) {
     try {
       const originUrl = new URL(origin);
-      if (originUrl.host !== host) {
+      if (!isMatchingHost(originUrl.host)) {
         return false;
       }
     } catch {
@@ -24,7 +33,7 @@ export function validateOrigin(request: Request): boolean {
   } else if (referer) {
     try {
       const refererUrl = new URL(referer);
-      if (refererUrl.host !== host) {
+      if (!isMatchingHost(refererUrl.host)) {
         return false;
       }
     } catch {

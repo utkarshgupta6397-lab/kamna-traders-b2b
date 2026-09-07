@@ -102,75 +102,197 @@ export async function validateSession(sessionToken: string): Promise<{
   const startTotal = performance.now();
   
   // 2. DB Lookup (Strict indexed lookup)
-  const session = await prisma.activeSession.findUnique({
-    where: { sessionToken },
-    select: { 
-      userId: true, 
-      deviceType: true,
-      user: {
-        select: {
-          name: true,
-          role: true,
-          canManageCarts: true,
-          canAdjustInventory: true,
-          canRunSkuSync: true,
-          canManageZoneMappings: true,
-          canManageUnlimitedSkus: true,
-          canManageTransfers: true,
-          canDeleteTransfers: true,
-          accountsAccess: true,
-          accounts_customer_statement: true,
-          accounts_invoice_processor: true,
-          accounts_transactions: true,
-          accounts_summary_view: true,
-          accounts_reports_salesman: true,
-          stock_alerts_manage: true,
-          accounts_recovery_manage: true,
-          release_statement_queue: true,
-          dcr_management: true,
-          dcr_serial_mapping_override: true,
-          dcr_hold_release: true,
-          solar_orders_view: true,
-          solar_orders_create: true,
-          solar_orders_approval: true,
-          solar_orders_docs_progress: true,
-          solar_orders_master_edit: true,
-          workflow_edits: true,
-          communications_view: true,
-          communications_templates: true,
-          whatsapp_integration: true,
-          holdQueueReviewEnabled: true,
-          holdQueueReviewLimit: true,
-          catalog_brands_create: true,
-          catalog_brands_modify: true,
-          catalog_brands_approve: true,
-          catalog_manufacturers_create: true,
-          catalog_manufacturers_modify: true,
-          catalog_manufacturers_approve: true,
-          catalog_categories_create: true,
-          catalog_categories_modify: true,
-          catalog_categories_approve: true,
-          catalog_product_attributes_create: true,
-          catalog_product_attributes_modify: true,
-          catalog_product_attributes_archive: true,
-          catalog_taxrates_create: true,
-          catalog_taxrates_modify: true,
-          catalog_taxrates_approve: true,
-          catalog_units_create: true,
-          catalog_units_modify: true,
-          catalog_units_approve: true,
-          catalog_hsncodes_create: true,
-          catalog_hsncodes_modify: true,
-          catalog_hsncodes_approve: true,
-          catalog_products_create: true,
-          catalog_products_modify: true,
-          catalog_products_approve: true,
-          catalog_products_archive: true,
-          system_productMigration: true,
+  let session: any = null;
+  try {
+    session = await prisma.activeSession.findUnique({
+      where: { sessionToken },
+      select: { 
+        userId: true, 
+        deviceType: true,
+        user: {
+          select: {
+            name: true,
+            role: true,
+            canManageCarts: true,
+            canAdjustInventory: true,
+            canRunSkuSync: true,
+            canManageZoneMappings: true,
+            canManageUnlimitedSkus: true,
+            canManageTransfers: true,
+            canDeleteTransfers: true,
+            accountsAccess: true,
+            accounts_customer_statement: true,
+            accounts_invoice_processor: true,
+            accounts_transactions: true,
+            accounts_summary_view: true,
+            accounts_reports_salesman: true,
+            stock_alerts_manage: true,
+            accounts_recovery_manage: true,
+            release_statement_queue: true,
+            dcr_management: true,
+            dcr_serial_mapping_override: true,
+            dcr_hold_release: true,
+            solar_orders_view: true,
+            solar_orders_create: true,
+            solar_orders_approval: true,
+            solar_orders_docs_progress: true,
+            solar_orders_master_edit: true,
+            workflow_edits: true,
+            dispatch_view: true,
+            dispatch_rate_review: true,
+            dispatch_payment_verification: true,
+            dispatch_truck_details: true,
+            dispatch_ready_for_invoice: true,
+            dispatch_invoice_confirmation: true,
+            dispatch_workflow_override: true,
+            dispatch_inventory_deduction: true,
+            dispatch_receiving_upload: true,
+            dispatch_checked_by: true,
+            mobile_stock_management: true,
+            mobile_stock_management_solar_panel: true,
+            mobile_stock_management_wire_cables: true,
+            mobile_stock_management_inverter: true,
+            mobile_stock_management_solar_accessories: true,
+            mobile_accounts: true,
+            mobile_accounts_customer_statement: true,
+            mobile_accounts_customer_dcr_lookup: true,
+            mobile_dispatch: true,
+            communications_view: true,
+            communications_templates: true,
+            whatsapp_integration: true,
+            holdQueueReviewEnabled: true,
+            holdQueueReviewLimit: true,
+            catalog_brands_create: true,
+            catalog_brands_modify: true,
+            catalog_brands_approve: true,
+            catalog_manufacturers_create: true,
+            catalog_manufacturers_modify: true,
+            catalog_manufacturers_approve: true,
+            catalog_categories_create: true,
+            catalog_categories_modify: true,
+            catalog_categories_approve: true,
+            catalog_product_attributes_create: true,
+            catalog_product_attributes_modify: true,
+            catalog_product_attributes_archive: true,
+            catalog_taxrates_create: true,
+            catalog_taxrates_modify: true,
+            catalog_taxrates_approve: true,
+            catalog_units_create: true,
+            catalog_units_modify: true,
+            catalog_units_approve: true,
+            catalog_hsncodes_create: true,
+            catalog_hsncodes_modify: true,
+            catalog_hsncodes_approve: true,
+            catalog_products_create: true,
+            catalog_products_modify: true,
+            catalog_products_approve: true,
+            catalog_products_archive: true,
+            system_productMigration: true,
+          }
         }
       }
+    });
+  } catch (err: any) {
+    console.warn('[Session] activeSession.findUnique fallback (dev server DMMF):', err?.message);
+    const fallback = await prisma.activeSession.findUnique({
+      where: { sessionToken },
+      select: {
+        userId: true,
+        deviceType: true,
+        user: {
+          select: {
+            name: true,
+            role: true,
+            canManageCarts: true,
+            canAdjustInventory: true,
+            canRunSkuSync: true,
+            canManageZoneMappings: true,
+            canManageUnlimitedSkus: true,
+            canManageTransfers: true,
+            canDeleteTransfers: true,
+            accountsAccess: true,
+            accounts_customer_statement: true,
+            accounts_invoice_processor: true,
+            accounts_transactions: true,
+            accounts_summary_view: true,
+            accounts_reports_salesman: true,
+            stock_alerts_manage: true,
+            accounts_recovery_manage: true,
+            release_statement_queue: true,
+            dcr_management: true,
+            dcr_serial_mapping_override: true,
+            dcr_hold_release: true,
+            solar_orders_view: true,
+            solar_orders_create: true,
+            solar_orders_approval: true,
+            solar_orders_docs_progress: true,
+            solar_orders_master_edit: true,
+            workflow_edits: true,
+            dispatch_view: true,
+            dispatch_rate_review: true,
+            dispatch_payment_verification: true,
+            dispatch_truck_details: true,
+            dispatch_ready_for_invoice: true,
+            dispatch_invoice_confirmation: true,
+            dispatch_workflow_override: true,
+            dispatch_inventory_deduction: true,
+            dispatch_receiving_upload: true,
+            dispatch_checked_by: true,
+            communications_view: true,
+            communications_templates: true,
+            whatsapp_integration: true,
+            holdQueueReviewEnabled: true,
+            holdQueueReviewLimit: true,
+            catalog_brands_create: true,
+            catalog_brands_modify: true,
+            catalog_brands_approve: true,
+            catalog_manufacturers_create: true,
+            catalog_manufacturers_modify: true,
+            catalog_manufacturers_approve: true,
+            catalog_categories_create: true,
+            catalog_categories_modify: true,
+            catalog_categories_approve: true,
+            catalog_product_attributes_create: true,
+            catalog_product_attributes_modify: true,
+            catalog_product_attributes_archive: true,
+            catalog_taxrates_create: true,
+            catalog_taxrates_modify: true,
+            catalog_taxrates_approve: true,
+            catalog_units_create: true,
+            catalog_units_modify: true,
+            catalog_units_approve: true,
+            catalog_hsncodes_create: true,
+            catalog_hsncodes_modify: true,
+            catalog_hsncodes_approve: true,
+            catalog_products_create: true,
+            catalog_products_modify: true,
+            catalog_products_approve: true,
+            catalog_products_archive: true,
+            system_productMigration: true,
+          }
+        }
+      }
+    });
+
+    if (fallback && fallback.user) {
+      try {
+        const rawUser = await prisma.$queryRawUnsafe<any[]>(
+          `SELECT "mobile_stock_management", "mobile_stock_management_solar_panel", "mobile_stock_management_wire_cables",
+                  "mobile_stock_management_inverter", "mobile_stock_management_solar_accessories",
+                  "mobile_accounts", "mobile_accounts_customer_statement", "mobile_accounts_customer_dcr_lookup",
+                  "mobile_dispatch"
+           FROM "User" WHERE "id" = $1 LIMIT 1`,
+          fallback.userId
+        );
+        if (rawUser && rawUser[0]) {
+          Object.assign(fallback.user, rawUser[0]);
+        }
+      } catch (rawErr: any) {
+        console.warn('[Session] Could not fetch raw mobile permissions:', rawErr?.message);
+      }
+      session = fallback;
     }
-  });
+  }
 
   if (session?.user) {
     const isUserAdmin = session.user.role === 'ADMIN';
@@ -201,6 +323,16 @@ export async function validateSession(sessionToken: string): Promise<{
       userObj.solar_orders_docs_progress = true;
       userObj.solar_orders_master_edit = true;
       userObj.workflow_edits = true;
+      userObj.dispatch_view = true;
+      userObj.dispatch_rate_review = true;
+      userObj.dispatch_payment_verification = true;
+      userObj.dispatch_truck_details = true;
+      userObj.dispatch_ready_for_invoice = true;
+      userObj.dispatch_invoice_confirmation = true;
+      userObj.dispatch_workflow_override = true;
+      userObj.dispatch_inventory_deduction = true;
+      userObj.dispatch_receiving_upload = true;
+      userObj.dispatch_checked_by = true;
       userObj.communications_view = true;
       userObj.communications_templates = true;
       userObj.whatsapp_integration = true;
@@ -211,6 +343,15 @@ export async function validateSession(sessionToken: string): Promise<{
       userObj.catalog_products_approve = true;
       userObj.catalog_products_archive = true;
       userObj.system_productMigration = true;
+      userObj.mobile_stock_management = true;
+      userObj.mobile_stock_management_solar_panel = true;
+      userObj.mobile_stock_management_wire_cables = true;
+      userObj.mobile_stock_management_inverter = true;
+      userObj.mobile_stock_management_solar_accessories = true;
+      userObj.mobile_accounts = true;
+      userObj.mobile_accounts_customer_statement = true;
+      userObj.mobile_accounts_customer_dcr_lookup = true;
+      userObj.mobile_dispatch = true;
     }
 
     const masterPerms = [

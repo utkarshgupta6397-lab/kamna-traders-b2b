@@ -176,7 +176,7 @@ export async function PATCH(req: Request) {
           where: { serialNumber: serial.serialNumber }
         });
         
-        const invoiceIds = Array.from(new Set(serial.allocations.map((a: any) => a.invoiceId)));
+        const invoiceIds = Array.from(new Set(serial.allocations.map(a => a.invoiceId)));
         for (const invId of invoiceIds) {
           const invoice = await tx.dcrInvoice.findUnique({
             where: { id: invId as string },
@@ -225,7 +225,7 @@ export async function PATCH(req: Request) {
       });
 
       if (correctionType === 'UNDO_ISSUE' && serial.allocations && serial.allocations.length > 0) {
-        const invoiceIds = Array.from(new Set(serial.allocations.map((a: any) => a.invoiceId)));
+        const invoiceIds = Array.from(new Set(serial.allocations.map(a => a.invoiceId)));
         for (const invId of invoiceIds) {
           const invoice = await tx.dcrInvoice.findUnique({
             where: { id: invId as string },

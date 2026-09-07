@@ -35,10 +35,13 @@ export async function createSession(params: {
   
   const domain = process.env.COOKIE_DOMAIN || undefined;
   
+  const isSecure = process.env.NODE_ENV === 'production' && 
+    process.env.NEXT_PUBLIC_APP_URL?.startsWith('https://');
+
   cookieStore.set('session', jwt, { 
     expires, 
     httpOnly: true, 
-    secure: process.env.NODE_ENV === 'production' || !!process.env.HTTPS_LOCAL, 
+    secure: !!isSecure || !!process.env.HTTPS_LOCAL, 
     sameSite: 'lax',
     domain
   });
@@ -137,6 +140,25 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.catalog_products_approve = true;
       merged.catalog_products_archive = true;
       merged.system_productMigration = true;
+      merged.dispatch_view = true;
+      merged.dispatch_rate_review = true;
+      merged.dispatch_payment_verification = true;
+      merged.dispatch_truck_details = true;
+      merged.dispatch_ready_for_invoice = true;
+      merged.dispatch_invoice_confirmation = true;
+      merged.dispatch_workflow_override = true;
+      merged.dispatch_inventory_deduction = true;
+      merged.dispatch_receiving_upload = true;
+      merged.dispatch_checked_by = true;
+      merged.mobile_stock_management = true;
+      merged.mobile_stock_management_solar_panel = true;
+      merged.mobile_stock_management_wire_cables = true;
+      merged.mobile_stock_management_inverter = true;
+      merged.mobile_stock_management_solar_accessories = true;
+      merged.mobile_accounts = true;
+      merged.mobile_accounts_customer_statement = true;
+      merged.mobile_accounts_customer_dcr_lookup = true;
+      merged.mobile_dispatch = true;
     }
 
     console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);

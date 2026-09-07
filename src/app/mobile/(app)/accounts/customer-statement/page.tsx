@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
 import MobileCustomerStatementClient from './MobileCustomerStatementClient';
 import StatementHeader from './StatementHeader';
+import { hasMobileFeatureAccess } from '@/lib/mobile-auth';
 
 export const metadata = {
   title: 'Customer Statement | Kamna B2B ERP',
@@ -11,10 +12,10 @@ export default async function MobileCustomerStatementPage({ searchParams }: { se
   const session = await getSession();
   
   if (!session) {
-    redirect('/mobile/login');
+    redirect('/login');
   }
   
-  if (session.role !== 'ADMIN' && !session.accounts_customer_statement) {
+  if (!hasMobileFeatureAccess(session, 'mobile_accounts', 'mobile_accounts_customer_statement')) {
     redirect('/mobile/accounts');
   }
 

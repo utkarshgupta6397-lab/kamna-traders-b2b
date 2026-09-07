@@ -14,7 +14,8 @@ function MobileLoginContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const isValid = mobile.length === 10 && pin.length === 6;
+  const isValid = /^\d{10}$/.test(mobile) && /^\d{6}$/.test(pin);
+  const canSubmit = isValid && !loading;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,7 +25,7 @@ function MobileLoginContent() {
     let currentPin = pin;
     
     if (!isValid) {
-      const form = e.target as HTMLFormElement;
+      const form = e.currentTarget as HTMLFormElement;
       const mInput = form.querySelector('#mobile') as HTMLInputElement;
       const pInput = form.querySelector('#pin') as HTMLInputElement;
       if (mInput && pInput) {
@@ -33,7 +34,10 @@ function MobileLoginContent() {
       }
     }
     
-    if (currentMobile.length !== 10 || currentPin.length !== 6) return;
+    if (currentMobile.length !== 10 || currentPin.length !== 6) {
+      setError('Please enter a valid 10-digit mobile number and 6-digit PIN.');
+      return;
+    }
     
     setLoading(true);
     setError('');
@@ -104,6 +108,7 @@ function MobileLoginContent() {
                   id="mobile"
                   type="tel"
                   inputMode="numeric"
+                  maxLength={10}
                   value={mobile}
                   onChange={(e) => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
                   placeholder="10-digit number"
@@ -139,7 +144,7 @@ function MobileLoginContent() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={!canSubmit}
               className="w-full bg-[#1A2766] text-white font-bold text-[15px] py-[18px] rounded-[16px] shadow-[0_4px_14px_rgba(26,39,102,0.15)] active:scale-[0.98] transition-all disabled:opacity-50 disabled:shadow-none disabled:active:scale-100 flex items-center justify-center gap-2 mt-2"
             >
               {loading ? <div className="w-5 h-5 rounded-full border-[2.5px] border-white/30 border-t-white animate-spin" /> : 'Sign In'}

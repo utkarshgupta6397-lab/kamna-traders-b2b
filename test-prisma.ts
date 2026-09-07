@@ -1,8 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 async function main() {
-  const id = 'cmpwc0fb50001uafnpj6hvd6z';
-  const user = await prisma.user.findUnique({ where: { id } });
-  console.log(user ? "Found" : "Not Found");
+  const orders = await prisma.dispatchIncomingOrder.findMany();
+  console.log(orders);
 }
-main().catch(console.error).finally(() => prisma.$disconnect());
+main().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });

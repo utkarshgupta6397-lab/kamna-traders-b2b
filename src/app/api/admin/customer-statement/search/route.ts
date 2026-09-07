@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
 import { ensureCustomerExists } from '@/lib/dcr-customer-sync';
+import { hasMobileFeatureAccess } from '@/lib/mobile-auth';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
@@ -48,7 +49,13 @@ async function searchZohoCustomer(query: string) {
 export async function GET(req: Request) {
   try {
     const session = await getSession();
-    if (!session || (session.role !== 'ADMIN' && !session.accounts_customer_statement)) {
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const isDesktopAllowed = session.role === 'ADMIN' || Boolean(session.accounts_customer_statement);
+    const isMobileAllowed = hasMobileFeatureAccess(session, 'mobile_accounts', 'mobile_accounts_customer_statement');
+    if (!isDesktopAllowed && !isMobileAllowed) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

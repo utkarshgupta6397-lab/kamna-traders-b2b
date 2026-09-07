@@ -32,10 +32,13 @@ export async function POST() {
     const cookieStore = await cookies();
     const domain = process.env.COOKIE_DOMAIN || undefined;
     
+    const isSecure = process.env.NODE_ENV === 'production' && 
+      process.env.NEXT_PUBLIC_APP_URL?.startsWith('https://');
+
     cookieStore.set('session', jwt, { 
       expires, 
       httpOnly: true, 
-      secure: process.env.NODE_ENV === 'production' || !!process.env.HTTPS_LOCAL, 
+      secure: !!isSecure || !!process.env.HTTPS_LOCAL, 
       sameSite: 'lax',
       domain
     });

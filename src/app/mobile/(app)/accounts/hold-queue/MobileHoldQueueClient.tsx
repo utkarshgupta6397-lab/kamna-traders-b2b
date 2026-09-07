@@ -563,7 +563,34 @@ export default function MobileHoldQueueClient() {
         <div className="flex flex-col gap-3 pb-6">
           {loading ? (
             [1, 2, 3].map(i => (
-              <div key={i} className="bg-white h-24 rounded-xl border border-slate-200 animate-pulse" />
+              <div
+                key={i}
+                className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col gap-3 animate-pulse"
+                aria-busy="true"
+              >
+                <div className="flex justify-between items-start">
+                  <div className="flex flex-col gap-1.5 flex-1 mr-2">
+                    <div className="h-4 w-3/4 bg-slate-200 rounded-md" />
+                    <div className="h-3 w-24 bg-slate-100 rounded" />
+                  </div>
+                  <div className="h-4 w-10 bg-slate-100 rounded-full" />
+                </div>
+                <div className="grid grid-cols-3 gap-2 py-2 border-y border-slate-100">
+                  <div className="flex flex-col gap-1">
+                    <div className="h-2.5 w-12 bg-slate-100 rounded" />
+                    <div className="h-4 w-16 bg-slate-200 rounded font-bold" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <div className="h-2.5 w-10 bg-slate-100 rounded" />
+                    <div className="h-4 w-12 bg-slate-200 rounded" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <div className="h-2.5 w-12 bg-slate-100 rounded" />
+                    <div className="h-4 w-10 bg-slate-200 rounded" />
+                  </div>
+                </div>
+                <div className="h-9 w-full bg-slate-100 rounded-lg" />
+              </div>
             ))
           ) : renderedCustomers.length === 0 ? (
             <div className="text-center p-8 bg-white border border-slate-200 rounded-xl text-slate-500 text-sm">

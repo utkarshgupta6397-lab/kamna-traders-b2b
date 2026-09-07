@@ -88,6 +88,11 @@ export async function getZohoTokens(): Promise<string | null> {
 
   if (!tokenRecord) return null;
 
+  if (tokenRecord.scopeVersion < CURRENT_SCOPE_VERSION) {
+    console.warn(`[ZohoAuth] Token scope version ${tokenRecord.scopeVersion} is older than required ${CURRENT_SCOPE_VERSION}. Forcing re-authorization.`);
+    return null;
+  }
+
   const now = new Date();
   // Buffer of 5 minutes
   if (tokenRecord.expiresAt.getTime() - now.getTime() > 5 * 60 * 1000) {
@@ -215,7 +220,7 @@ export async function exchangeAuthCode(code: string): Promise<{ success: boolean
   }
 }
 
-export const CURRENT_SCOPE_VERSION = 5;
+export const CURRENT_SCOPE_VERSION = 6;
 
 // All OAuth Scopes used by Kamna ERP for Zoho Books integration
 const ZOHO_OAUTH_SCOPES = [
@@ -232,6 +237,7 @@ const ZOHO_OAUTH_SCOPES = [
   'ZohoBooks.estimates.CREATE',
   'ZohoBooks.salesorders.READ',
   'ZohoBooks.salesorders.CREATE',
+  'ZohoBooks.salesorders.UPDATE',
   'ZohoBooks.invoices.READ',
   'ZohoBooks.invoices.CREATE',
   'ZohoBooks.customerpayments.READ',

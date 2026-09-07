@@ -1,9 +1,10 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { Package, Users, Warehouse, Tags, Database, LayoutDashboard, LogOut, Bookmark, RefreshCw, Terminal, Printer, Shield, Lock, FileText, Briefcase, MessageCircle, Server, Wrench, Webhook } from 'lucide-react';
+import { Package, Users, Warehouse, Tags, Database, LayoutDashboard, LogOut, Bookmark, RefreshCw, Terminal, Printer, Shield, Lock, FileText, Briefcase, MessageCircle, Server, Wrench, Webhook, DownloadCloud } from 'lucide-react';
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { Toaster } from 'react-hot-toast';
+import GlobalDispatchNotifier from '@/components/GlobalDispatchNotifier';
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -19,6 +20,7 @@ const navItems = [
   { href: '/admin/sku-sync', label: 'SKU Sync', icon: RefreshCw },
   { href: '/admin/catalog-sync', label: 'Catalog Maintenance', icon: RefreshCw },
   { href: '/admin/zoho-books', label: 'Zoho Books Sync', icon: Database },
+  { href: '/admin/incoming-so', label: 'Incoming SO', icon: DownloadCloud },
   { href: '/admin/zoho-creator', label: 'Zoho Creator', icon: Webhook },
   { href: '/admin/inventory', label: 'Inventory', icon: Database },
   { href: '/admin/zoho-debug', label: 'Zoho Debug', icon: Terminal },
@@ -47,6 +49,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div className="flex h-screen bg-[#f8f9fb]">
       <Toaster position="top-right" />
+      <GlobalDispatchNotifier />
       {/* Sidebar */}
       <div className="w-60 bg-[#1A2766] flex flex-col flex-shrink-0">
         {/* Logo */}

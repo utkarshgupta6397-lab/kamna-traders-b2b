@@ -1,6 +1,6 @@
 'use client';
 import React, { useState } from 'react';
-import { Loader2, CheckCircle2, AlertTriangle, Building2, MapPin, Warehouse, ShieldAlert } from 'lucide-react';
+import { Loader2, CheckCircle2, AlertTriangle, Building2, MapPin, Warehouse, ShieldAlert, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface AddressData {
@@ -20,11 +20,13 @@ export default function ReadyForInvoiceStep({
   workflow,
   meta,
   onRefresh,
+  hasPermission = true,
 }: {
   order: any;
   workflow: any;
   meta?: any;
   onRefresh: () => void;
+  hasPermission?: boolean;
 }) {
   const [billingVerified, setBillingVerified] = useState(false);
   const [shippingVerified, setShippingVerified] = useState(false);
@@ -129,6 +131,13 @@ export default function ReadyForInvoiceStep({
       </div>
 
       <div className="p-6 space-y-6">
+        {!hasPermission && (
+          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 font-medium flex items-center gap-2.5">
+            <Lock size={16} className="text-amber-600 shrink-0" />
+            <span>You have read-only access to Ready For Invoice. <strong>Ready for Invoice permission</strong> is required to verify details and complete this step.</span>
+          </div>
+        )}
+
         {/* Prominent Address Mismatch Caution Banner */}
         {isAddressMismatch && (
           <div className="p-4 rounded-xl bg-amber-50 border-2 border-amber-300 shadow-sm flex items-start gap-3.5 animate-in fade-in duration-200">
@@ -204,12 +213,12 @@ export default function ReadyForInvoiceStep({
               <input
                 type="checkbox"
                 id="chk-billing"
-                disabled={!hasBillingData}
+                disabled={!hasBillingData || !hasPermission}
                 checked={billingVerified}
                 onChange={(e) => setBillingVerified(e.target.checked)}
                 className="w-5 h-5 text-[#1A2766] rounded border-gray-300 focus:ring-[#1A2766] cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
               />
-              <label htmlFor="chk-billing" className={`text-xs font-bold select-none cursor-pointer ${billingVerified ? 'text-emerald-700' : 'text-gray-800'} ${!hasBillingData ? 'opacity-40 cursor-not-allowed' : ''}`}>
+              <label htmlFor="chk-billing" className={`text-xs font-bold select-none cursor-pointer ${billingVerified ? 'text-emerald-700' : 'text-gray-800'} ${!hasBillingData || !hasPermission ? 'opacity-40 cursor-not-allowed' : ''}`}>
                 Verify Billing Address matches customer ledger
               </label>
             </div>
@@ -269,12 +278,12 @@ export default function ReadyForInvoiceStep({
               <input
                 type="checkbox"
                 id="chk-shipping"
-                disabled={!hasShippingData}
+                disabled={!hasShippingData || !hasPermission}
                 checked={shippingVerified}
                 onChange={(e) => setShippingVerified(e.target.checked)}
                 className="w-5 h-5 text-[#1A2766] rounded border-gray-300 focus:ring-[#1A2766] cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
               />
-              <label htmlFor="chk-shipping" className={`text-xs font-bold select-none cursor-pointer ${shippingVerified ? 'text-emerald-700' : 'text-gray-800'} ${!hasShippingData ? 'opacity-40 cursor-not-allowed' : ''}`}>
+              <label htmlFor="chk-shipping" className={`text-xs font-bold select-none cursor-pointer ${shippingVerified ? 'text-emerald-700' : 'text-gray-800'} ${!hasShippingData || !hasPermission ? 'opacity-40 cursor-not-allowed' : ''}`}>
                 Verify Shipping Destination is confirmed for dispatch
               </label>
             </div>
@@ -324,12 +333,12 @@ export default function ReadyForInvoiceStep({
               <input
                 type="checkbox"
                 id="chk-warehouse"
-                disabled={!hasWarehouseData}
+                disabled={!hasWarehouseData || !hasPermission}
                 checked={warehouseVerified}
                 onChange={(e) => setWarehouseVerified(e.target.checked)}
                 className="w-5 h-5 text-[#1A2766] rounded border-gray-300 focus:ring-[#1A2766] cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
               />
-              <label htmlFor="chk-warehouse" className={`text-xs font-bold select-none cursor-pointer ${warehouseVerified ? 'text-emerald-700' : 'text-gray-800'} ${!hasWarehouseData ? 'opacity-40 cursor-not-allowed' : ''}`}>
+              <label htmlFor="chk-warehouse" className={`text-xs font-bold select-none cursor-pointer ${warehouseVerified ? 'text-emerald-700' : 'text-gray-800'} ${!hasWarehouseData || !hasPermission ? 'opacity-40 cursor-not-allowed' : ''}`}>
                 Verify Dispatch Warehouse
               </label>
             </div>
@@ -351,14 +360,21 @@ export default function ReadyForInvoiceStep({
           )}
         </div>
 
-        <button
-          onClick={handleComplete}
-          disabled={!isAllVerified || submitting || !hasBillingData || !hasShippingData || !hasWarehouseData}
-          className="w-full sm:w-auto bg-[#1A2766] text-white px-6 py-2.5 rounded-lg font-bold hover:bg-blue-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm text-sm"
-        >
-          {submitting && <Loader2 size={16} className="animate-spin" />}
-          Complete Ready For Invoice
-        </button>
+        <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto">
+          {!hasPermission && (
+            <span className="text-[11px] text-amber-700 font-bold flex items-center gap-1">
+              <Lock size={12} /> Ready for Invoice permission required
+            </span>
+          )}
+          <button
+            onClick={handleComplete}
+            disabled={!isAllVerified || submitting || !hasBillingData || !hasShippingData || !hasWarehouseData || !hasPermission}
+            className="w-full sm:w-auto bg-[#1A2766] text-white px-6 py-2.5 rounded-lg font-bold hover:bg-blue-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm text-sm"
+          >
+            {submitting && <Loader2 size={16} className="animate-spin" />}
+            Complete Ready For Invoice
+          </button>
+        </div>
       </div>
     </div>
   );

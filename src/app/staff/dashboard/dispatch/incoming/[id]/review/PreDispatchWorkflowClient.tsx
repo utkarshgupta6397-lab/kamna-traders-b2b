@@ -78,7 +78,23 @@ function formatDate(dateString: string | Date) {
   return `${day}-${month}-${year}`;
 }
 
-export default function PreDispatchWorkflowClient({ id }: { id: string }) {
+export interface PreDispatchPermissions {
+  isAdmin?: boolean;
+  canRateReview?: boolean;
+  canPaymentVerify?: boolean;
+  canTruckDetails?: boolean;
+  canReadyForInvoice?: boolean;
+  canInvoiceConfirm?: boolean;
+  canWorkflowOverride?: boolean;
+}
+
+export default function PreDispatchWorkflowClient({
+  id,
+  permissions,
+}: {
+  id: string;
+  permissions?: PreDispatchPermissions;
+}) {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -292,10 +308,10 @@ export default function PreDispatchWorkflowClient({ id }: { id: string }) {
           )}
 
           <div className="flex-1 flex flex-col relative w-full h-full min-h-0">
-            {currentStep === 1 && <RateReviewStep order={order} workflow={workflow} onRefresh={fetchWorkflow} />}
-            {currentStep === 2 && canAccessStep(2) && <div className="p-4 sm:p-5 flex-1 min-h-0 flex flex-col h-full"><PaymentVerificationStep order={order} workflow={workflow} onRefresh={fetchWorkflow} /></div>}
-            {currentStep === 3 && canAccessStep(3) && <div className="p-6"><ReadyForInvoiceStep order={order} workflow={workflow} meta={data} onRefresh={fetchWorkflow} /></div>}
-            {currentStep === 4 && canAccessStep(4) && <div className="p-6"><InvoiceConfirmationStep order={order} workflow={workflow} onRefresh={fetchWorkflow} /></div>}
+            {currentStep === 1 && <RateReviewStep order={order} workflow={workflow} onRefresh={fetchWorkflow} hasPermission={permissions?.canRateReview ?? true} />}
+            {currentStep === 2 && canAccessStep(2) && <div className="p-4 sm:p-5 flex-1 min-h-0 flex flex-col h-full"><PaymentVerificationStep order={order} workflow={workflow} onRefresh={fetchWorkflow} hasPermission={permissions?.canPaymentVerify ?? true} /></div>}
+            {currentStep === 3 && canAccessStep(3) && <div className="p-6"><ReadyForInvoiceStep order={order} workflow={workflow} meta={data} onRefresh={fetchWorkflow} hasPermission={permissions?.canReadyForInvoice ?? true} /></div>}
+            {currentStep === 4 && canAccessStep(4) && <div className="p-6"><InvoiceConfirmationStep order={order} workflow={workflow} onRefresh={fetchWorkflow} hasPermission={permissions?.canInvoiceConfirm ?? true} /></div>}
             
             {workflow.overallStatus === 'PRE_DISPATCH_COMPLETED' && (
                <div className="flex flex-col items-center justify-center p-12 text-center h-full">

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Loader2, Edit2, X, Check } from 'lucide-react';
+import { CheckCircle2, Loader2, Edit2, X, Check, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const formatINR = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val);
@@ -17,7 +17,17 @@ function getSolarWattage(item: any): number | null {
   return null;
 }
 
-export default function RateReviewStep({ order, workflow, onRefresh }: { order: any, workflow: any, onRefresh: () => void }) {
+export default function RateReviewStep({
+  order,
+  workflow,
+  onRefresh,
+  hasPermission = true,
+}: {
+  order: any;
+  workflow: any;
+  onRefresh: () => void;
+  hasPermission?: boolean;
+}) {
   const lineItems = order.zohoDetailsJson?.line_items || [];
   
   const initialAudit = workflow.rateReviewAudit || { items: {} };
@@ -154,6 +164,13 @@ export default function RateReviewStep({ order, workflow, onRefresh }: { order: 
         </div>
       )}
 
+      {isEditable && !hasPermission && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center gap-2.5 text-xs text-amber-800 font-medium shrink-0">
+          <Lock size={15} className="text-amber-600 shrink-0" />
+          <span>You have read-only access to Rate Review. <strong>Rate Review permission</strong> is required to verify rates and complete this step.</span>
+        </div>
+      )}
+
       {/* LEDGER TABLE */}
       <div className="overflow-x-auto flex-1 border-b border-gray-200">
         <table className="w-full text-sm whitespace-nowrap">
@@ -240,7 +257,7 @@ export default function RateReviewStep({ order, workflow, onRefresh }: { order: 
                     ) : (
                       <div className="flex items-center justify-end gap-1.5">
                         {isVerified ? (
-                          isEditable ? (
+                          isEditable && hasPermission ? (
                             <button 
                               onClick={() => handleUnverify(item.item_id)} 
                               className="group flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider bg-emerald-100 border border-emerald-300 text-emerald-800 px-2 py-1 rounded shadow-sm hover:bg-red-50 hover:border-red-300 hover:text-red-700 transition-colors"
@@ -255,7 +272,7 @@ export default function RateReviewStep({ order, workflow, onRefresh }: { order: 
                           )
                         ) : (
                           <>
-                            {isEditable && (
+                            {isEditable && hasPermission && (
                               <button 
                                 onClick={() => { setEditingItem(item.item_id); setEditRate(item.rate); }} 
                                 className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-gray-600 bg-white border border-gray-300 px-2 py-1 rounded shadow-sm hover:bg-gray-50 hover:text-[#1A2766] transition-colors"
@@ -265,8 +282,8 @@ export default function RateReviewStep({ order, workflow, onRefresh }: { order: 
                             )}
                             <button 
                               onClick={() => handleVerify(item.item_id, item)} 
-                              disabled={!isEditable}
-                              className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider bg-white border border-gray-300 text-gray-700 px-2 py-1 rounded shadow-sm hover:bg-[#1A2766] hover:border-[#1A2766] hover:text-white transition-colors disabled:opacity-50"
+                              disabled={!isEditable || !hasPermission}
+                              className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider bg-white border border-gray-300 text-gray-700 px-2 py-1 rounded shadow-sm hover:bg-[#1A2766] hover:border-[#1A2766] hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               <Check size={12} /> Verify
                             </button>
@@ -312,18 +329,25 @@ export default function RateReviewStep({ order, workflow, onRefresh }: { order: 
             </div>
 
             {isEditable && (
-              <button
-                onClick={handleComplete}
-                disabled={!isAllVerified || submittingComplete}
-                className={`px-8 py-3.5 rounded-md font-bold transition-all shadow-sm flex items-center gap-2 text-sm
-                  ${isAllVerified 
-                    ? 'bg-[#1A2766] text-white hover:bg-blue-900 hover:shadow-md' 
-                    : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
-                  }`}
-              >
-                {submittingComplete && <Loader2 size={16} className="animate-spin" />}
-                {ctaText}
-              </button>
+              <div className="flex flex-col items-end gap-1.5">
+                {!hasPermission && (
+                  <span className="text-[11px] text-amber-700 font-bold flex items-center gap-1">
+                    <Lock size={12} /> Rate Review permission required
+                  </span>
+                )}
+                <button
+                  onClick={handleComplete}
+                  disabled={!isAllVerified || submittingComplete || !hasPermission}
+                  className={`px-8 py-3.5 rounded-md font-bold transition-all shadow-sm flex items-center gap-2 text-sm
+                    ${isAllVerified && hasPermission
+                      ? 'bg-[#1A2766] text-white hover:bg-blue-900 hover:shadow-md' 
+                      : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+                    }`}
+                >
+                  {submittingComplete && <Loader2 size={16} className="animate-spin" />}
+                  {ctaText}
+                </button>
+              </div>
             )}
           </div>
         </div>

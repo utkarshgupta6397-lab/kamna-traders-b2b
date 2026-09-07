@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { playTruckHornSound } from '@/lib/hooks/useAudioNotification';
+import MobileImagePreview from '@/components/mobile/MobileImagePreview';
 
 interface EligibleOrder {
   id: string;
@@ -78,11 +79,22 @@ function formatUploadTime(iso: string) {
 }
 
 export default function MobileDispatchClient() {
-  const [activeTab, setActiveTab] = useState<'upload' | 'today'>('upload');
+  const [activeTab, setActiveTab] = useState<string>('upload');
   const [eligibleOrders, setEligibleOrders] = useState<EligibleOrder[]>([]);
   const [todayUploads, setTodayUploads] = useState<TodayUpload[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Fullscreen Image Preview Modal State
+  const [previewImage, setPreviewImage] = useState<{
+    isOpen: boolean;
+    url: string | null;
+    title?: string;
+    subtitle?: string;
+  }>({
+    isOpen: false,
+    url: null,
+  });
 
   // Camera & Modal State
   const [selectedOrder, setSelectedOrder] = useState<EligibleOrder | null>(null);
@@ -346,38 +358,44 @@ export default function MobileDispatchClient() {
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex px-4 border-t border-white/10 bg-[#162154]">
-          <button
-            onClick={() => setActiveTab('upload')}
-            className={`py-3 px-3 text-[13px] font-bold tracking-wide transition-all border-b-2 flex items-center gap-1.5 ${
-              activeTab === 'upload'
-                ? 'text-white border-white'
-                : 'text-white/60 border-transparent hover:text-white/80'
-            }`}
-          >
-            <span>Upload Truck Number</span>
-            {eligibleOrders.length > 0 && (
-              <span className="text-[10px] bg-blue-500/30 text-blue-200 px-1.5 py-0.5 rounded-full font-semibold">
-                {eligibleOrders.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('today')}
-            className={`py-3 px-3 text-[13px] font-bold tracking-wide transition-all border-b-2 flex items-center gap-1.5 ${
-              activeTab === 'today'
-                ? 'text-white border-white'
-                : 'text-white/60 border-transparent hover:text-white/80'
-            }`}
-          >
-            <span>Today&apos;s Uploaded</span>
-            {todayUploads.length > 0 && (
-              <span className="text-[10px] bg-emerald-500/30 text-emerald-200 px-1.5 py-0.5 rounded-full font-semibold">
-                {todayUploads.length}
-              </span>
-            )}
-          </button>
+        {/* Scalable Tab Navigation */}
+        <div className="flex px-2 border-t border-white/10 bg-[#162154] overflow-x-auto no-scrollbar">
+          {[
+            {
+              id: 'upload',
+              label: 'Upload Truck Photo',
+              count: eligibleOrders.length,
+              countColor: 'bg-blue-500/30 text-blue-200 border-blue-400/30',
+            },
+            {
+              id: 'today',
+              label: "Today's Uploaded",
+              count: todayUploads.length,
+              countColor: 'bg-emerald-500/30 text-emerald-200 border-emerald-400/30',
+            },
+          ].map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`py-3 px-3 text-[13px] font-bold tracking-wide transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                  isActive
+                    ? 'text-white border-white'
+                    : 'text-white/60 border-transparent hover:text-white/80'
+                }`}
+              >
+                <span>{tab.label}</span>
+                {tab.count > 0 && (
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold border ${tab.countColor}`}
+                  >
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </header>
 
@@ -410,8 +428,8 @@ export default function MobileDispatchClient() {
                     <CheckCircle2 size={24} />
                   </div>
                   <h4 className="font-bold text-slate-800 text-[15px]">All Caught Up</h4>
-                  <p className="text-xs text-slate-500 mt-1 max-w-[240px] mx-auto">
-                    No active sales orders over ₹50,000 are currently awaiting truck number capture.
+                  <p className="text-xs text-slate-500 mt-1 max-w-[260px] mx-auto">
+                    No active sales orders over ₹50,000 are currently awaiting truck photo capture.
                   </p>
                 </div>
               ) : (
@@ -530,14 +548,33 @@ export default function MobileDispatchClient() {
                         key={up.id}
                         className="bg-white rounded-[18px] p-3 border border-slate-200/70 shadow-sm flex items-center gap-3.5"
                       >
-                        {/* Photo Thumbnail */}
-                        <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 relative">
+                        {/* Photo Thumbnail with preview click and visual indicator */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPreviewImage({
+                              isOpen: true,
+                              url: up.imageUrl,
+                              title: up.salesOrderNumber,
+                              subtitle: `${up.customerName} • ${formatINR(up.total)}`,
+                            });
+                          }}
+                          className="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 relative group active:scale-95 transition-transform focus:outline-none focus:ring-2 focus:ring-[#1A2766]/30 cursor-pointer"
+                          title="Tap to preview truck photo"
+                          aria-label={`Preview truck photo for ${up.salesOrderNumber}`}
+                        >
                           <img
                             src={up.imageUrl}
                             alt={`Truck for ${up.salesOrderNumber}`}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                           />
-                        </div>
+                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity flex items-center justify-center">
+                            <span className="p-1 rounded-full bg-black/60 text-white shadow-sm">
+                              <Camera size={12} />
+                            </span>
+                          </div>
+                        </button>
 
                         {/* Info */}
                         <div className="flex-1 min-w-0">
@@ -707,6 +744,15 @@ export default function MobileDispatchClient() {
           </div>
         </div>
       )}
+
+      {/* ── Fullscreen Truck Photo Preview Modal ────────────────────────────── */}
+      <MobileImagePreview
+        isOpen={previewImage.isOpen}
+        onClose={() => setPreviewImage({ isOpen: false, url: null })}
+        imageUrl={previewImage.url}
+        title={previewImage.title}
+        subtitle={previewImage.subtitle}
+      />
     </div>
   );
 }

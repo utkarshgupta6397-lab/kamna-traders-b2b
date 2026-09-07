@@ -137,6 +137,15 @@ export async function validateSession(sessionToken: string): Promise<{
           solar_orders_master_edit: true,
           workflow_edits: true,
           dispatch_view: true,
+          dispatch_rate_review: true,
+          dispatch_payment_verification: true,
+          dispatch_truck_details: true,
+          dispatch_ready_for_invoice: true,
+          dispatch_invoice_confirmation: true,
+          dispatch_workflow_override: true,
+          dispatch_inventory_deduction: true,
+          dispatch_receiving_upload: true,
+          dispatch_checked_by: true,
           communications_view: true,
           communications_templates: true,
           whatsapp_integration: true,
@@ -203,6 +212,15 @@ export async function validateSession(sessionToken: string): Promise<{
       userObj.solar_orders_master_edit = true;
       userObj.workflow_edits = true;
       userObj.dispatch_view = true;
+      userObj.dispatch_rate_review = true;
+      userObj.dispatch_payment_verification = true;
+      userObj.dispatch_truck_details = true;
+      userObj.dispatch_ready_for_invoice = true;
+      userObj.dispatch_invoice_confirmation = true;
+      userObj.dispatch_workflow_override = true;
+      userObj.dispatch_inventory_deduction = true;
+      userObj.dispatch_receiving_upload = true;
+      userObj.dispatch_checked_by = true;
       userObj.communications_view = true;
       userObj.communications_templates = true;
       userObj.whatsapp_integration = true;

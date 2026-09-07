@@ -1,10 +1,20 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { Loader2, CheckCircle2 } from 'lucide-react';
+import { Loader2, CheckCircle2, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import MiniCustomerStatement from '@/components/zoho/MiniCustomerStatement';
 
-export default function PaymentVerificationStep({ order, workflow, onRefresh }: { order: any, workflow: any, onRefresh: () => void }) {
+export default function PaymentVerificationStep({
+  order,
+  workflow,
+  onRefresh,
+  hasPermission = true,
+}: {
+  order: any;
+  workflow: any;
+  onRefresh: () => void;
+  hasPermission?: boolean;
+}) {
   const [statementData, setStatementData] = useState<any>(null);
   const [statementLoading, setStatementLoading] = useState(true);
   const [statementRefreshing, setStatementRefreshing] = useState(false);
@@ -115,13 +125,28 @@ export default function PaymentVerificationStep({ order, workflow, onRefresh }: 
         <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm flex flex-col flex-1 h-full overflow-hidden">
           {/* Scrollable inputs area */}
           <div className="flex-1 overflow-y-auto pr-1 space-y-5">
+            {!hasPermission && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 font-medium flex items-center gap-2">
+                <Lock size={15} className="text-amber-600 shrink-0" />
+                <span>You have read-only access to Payment Verification. <strong>Payment Verification permission</strong> is required to submit a decision.</span>
+              </div>
+            )}
+
             <div>
               <h3 className="text-sm font-bold text-gray-800 mb-3 uppercase tracking-wider">Payment Decision</h3>
               
               <div className="space-y-2.5">
                 {['Complete Payment', 'Partial Payment', 'Without Payment'].map(opt => (
-                  <label key={opt} className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${decision === opt ? 'border-[#1A2766] bg-blue-50/50' : 'border-gray-200 hover:bg-gray-50'}`}>
-                    <input type="radio" name="paymentDecision" value={opt} checked={decision === opt} onChange={() => setDecision(opt)} className="w-4 h-4 text-[#1A2766]" />
+                  <label key={opt} className={`flex items-center gap-3 p-3 border rounded-lg transition-colors ${decision === opt ? 'border-[#1A2766] bg-blue-50/50' : 'border-gray-200 hover:bg-gray-50'} ${!hasPermission ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}>
+                    <input 
+                      type="radio" 
+                      name="paymentDecision" 
+                      value={opt} 
+                      checked={decision === opt} 
+                      onChange={() => hasPermission && setDecision(opt)} 
+                      disabled={!hasPermission}
+                      className="w-4 h-4 text-[#1A2766] disabled:cursor-not-allowed" 
+                    />
                     <span className="font-medium text-gray-800 text-sm">{opt}</span>
                   </label>
                 ))}
@@ -133,17 +158,23 @@ export default function PaymentVerificationStep({ order, workflow, onRefresh }: 
               <textarea 
                 value={note}
                 onChange={e => setNote(e.target.value)}
-                placeholder="Enter details or reference (optional)..."
-                className="w-full p-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1A2766] focus:border-transparent outline-none min-h-[90px] resize-y"
+                disabled={!hasPermission}
+                placeholder={hasPermission ? "Enter details or reference (optional)..." : "Payment Verification permission required to add notes"}
+                className="w-full p-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#1A2766] focus:border-transparent outline-none min-h-[90px] resize-y disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-500"
               />
             </div>
           </div>
           
           {/* Sticky anchored action button at bottom */}
-          <div className="pt-4 border-t border-gray-100 mt-4 shrink-0">
+          <div className="pt-4 border-t border-gray-100 mt-4 shrink-0 flex flex-col gap-1.5">
+            {!hasPermission && (
+              <span className="text-[11px] text-amber-700 font-bold flex items-center justify-center gap-1">
+                <Lock size={12} /> Payment Verification permission required
+              </span>
+            )}
             <button
               onClick={handleComplete}
-              disabled={!decision || submitting}
+              disabled={!decision || submitting || !hasPermission}
               className="w-full bg-[#1A2766] text-white px-4 py-3 rounded-lg font-bold hover:bg-blue-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm text-sm"
             >
               {submitting && <Loader2 size={16} className="animate-spin" />}

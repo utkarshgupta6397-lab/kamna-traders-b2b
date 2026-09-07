@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Shield, Users, Lock, Loader2, Info, Check, Tags, PackageCheck, Truck } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { GENERAL_PERMISSIONS, CATALOG_MODULES, PermissionKey } from '@/lib/permissions';
+import { GENERAL_PERMISSIONS, CATALOG_MODULES, DISPATCH_PERMISSION_GROUPS, PermissionKey } from '@/lib/permissions';
 
 interface User {
   id: string;
@@ -494,7 +494,7 @@ export default function UserPermissionsPage() {
             <div className="flex items-center gap-2">
               <Info size={14} className="text-blue-600 flex-shrink-0" />
               <span>
-                Displaying only staff members with <strong>Dispatch</strong> module access enabled.
+                Displaying staff members with <strong>Dispatch</strong> module access enabled. Configure granular workflow permissions for eligible users.
               </span>
             </div>
             <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-100 px-2 py-0.5 rounded-md">
@@ -505,26 +505,63 @@ export default function UserPermissionsPage() {
           <div className="overflow-x-auto max-h-[calc(100vh-270px)]">
             <table className="w-full border-collapse relative">
               <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm text-center">
+                {/* Upper Group Header */}
                 <tr>
-                  <th className="py-2 px-2.5 text-left border-b border-gray-200 min-w-[200px] bg-gray-50/95 backdrop-blur-sm sticky left-0 z-20 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                  <th rowSpan={2} className="py-2 px-2.5 text-left border-b border-gray-200 min-w-[200px] bg-gray-50/95 backdrop-blur-sm sticky left-0 z-20 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                     <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">User Details</span>
                   </th>
-                  <th className="py-2 px-1 text-center border-b border-gray-200 min-w-[120px] bg-gray-50/95 backdrop-blur-sm">
+                  <th rowSpan={2} className="py-2 px-1 text-center border-b border-r border-gray-200 min-w-[90px] bg-blue-50/80">
                     <span className="text-[10px] font-black text-[#1A2766] uppercase tracking-tight">
                       Dispatch Access
                     </span>
                   </th>
+                  {DISPATCH_PERMISSION_GROUPS.map(g => (
+                    <th key={g.groupKey} colSpan={g.permissions.length} className={`py-1.5 px-1 border-b border-r border-gray-200 text-center ${g.groupKey === 'post_dispatch' ? 'bg-slate-100/70 text-gray-500' : 'bg-gray-100/80 text-[#1A2766]'}`}>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span className="text-[11px] font-black uppercase tracking-wider">
+                          {g.groupName}
+                        </span>
+                        {g.groupKey === 'post_dispatch' && (
+                          <span className="text-[9px] font-bold uppercase tracking-tight px-1.5 py-0.2 rounded bg-gray-200 text-gray-600">
+                            Coming Soon
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+                {/* Lower Action Subheader */}
+                <tr className="bg-gray-50/90 border-b border-gray-200">
+                  {DISPATCH_PERMISSION_GROUPS.map(g => (
+                    <React.Fragment key={`${g.groupKey}-headers`}>
+                      {g.permissions.map((p, idx) => (
+                        <th
+                          key={p.key}
+                          className={`py-1 px-1 text-[9px] font-bold uppercase tracking-wider border-b min-w-[80px] ${
+                            idx === g.permissions.length - 1 ? 'border-r' : ''
+                          } ${p.disabled ? 'text-gray-400 bg-gray-50/40' : 'text-gray-600'}`}
+                          title={p.description || p.label}
+                        >
+                          <div className="flex items-center justify-center gap-0.5">
+                            <span>{p.label}</span>
+                            {p.description && (
+                              <Info size={9} className="text-gray-300" />
+                            )}
+                          </div>
+                        </th>
+                      ))}
+                    </React.Fragment>
+                  ))}
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-gray-100 text-gray-700">
                 {filteredUsers.map((user) => {
                   const isAdmin = user.role === 'ADMIN';
-                  const isUpdating = updatingId === `${user.id}-dispatch_view`;
-                  const hasPermission = !!user.dispatch_view;
 
                   return (
                     <tr key={user.id} className="hover:bg-blue-50/20 transition-colors group">
+                      {/* User Cell */}
                       <td className="py-1.5 px-2.5 border-b border-gray-100 sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                         <div className="flex items-center gap-2">
                           <div className="w-6 h-6 rounded-full bg-[#1A2766] text-white flex items-center justify-center font-bold text-[10px] shadow-sm flex-shrink-0">
@@ -544,11 +581,12 @@ export default function UserPermissionsPage() {
                         </div>
                       </td>
 
-                      <td className="py-1.5 px-1 border-b border-gray-100 text-center">
+                      {/* Parent Dispatch Access Column */}
+                      <td className="py-1.5 px-1 border-b border-r border-gray-200 text-center bg-blue-50/20">
                         {isAdmin ? (
-                          <div className="flex items-center justify-center gap-0.5 text-amber-600 bg-amber-50 py-0.5 px-1.5 rounded-full mx-auto w-fit border border-amber-100">
+                          <div className="flex items-center justify-center gap-0.5 text-amber-600 bg-amber-50 py-0.5 px-1 rounded-full mx-auto w-fit border border-amber-100">
                             <Check size={10} strokeWidth={3} />
-                            <span className="text-[8px] font-black uppercase tracking-wider">Full Access</span>
+                            <span className="text-[8px] font-black uppercase tracking-wider">Full</span>
                           </div>
                         ) : (
                           <div className="flex items-center justify-center">
@@ -556,12 +594,12 @@ export default function UserPermissionsPage() {
                               <input
                                 type="checkbox"
                                 className="sr-only peer"
-                                checked={hasPermission}
-                                onChange={() => handleToggle(user.id, 'dispatch_view', hasPermission)}
-                                disabled={isUpdating}
+                                checked={!!user.dispatch_view}
+                                onChange={() => handleToggle(user.id, 'dispatch_view', !!user.dispatch_view)}
+                                disabled={updatingId === `${user.id}-dispatch_view`}
                               />
                               <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-3 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
-                              {isUpdating && (
+                              {updatingId === `${user.id}-dispatch_view` && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded-full">
                                   <Loader2 size={10} className="animate-spin text-[#1A2766]" />
                                 </div>
@@ -570,6 +608,58 @@ export default function UserPermissionsPage() {
                           </div>
                         )}
                       </td>
+
+                      {/* Granular Permission Columns grouped by section */}
+                      {DISPATCH_PERMISSION_GROUPS.map(g => (
+                        <React.Fragment key={g.groupKey}>
+                          {g.permissions.map((p, pIdx) => {
+                            const isUpdating = updatingId === `${user.id}-${p.key}`;
+                            const hasPermission = !!user[p.key];
+                            const isLastInGroup = pIdx === g.permissions.length - 1;
+
+                            return (
+                              <td
+                                key={p.key}
+                                className={`py-1.5 px-1 border-b border-gray-100 text-center ${
+                                  isLastInGroup ? 'border-r border-gray-200' : ''
+                                } ${p.disabled ? 'bg-gray-50/50' : ''}`}
+                              >
+                                {isAdmin ? (
+                                  <div className="flex items-center justify-center text-amber-600 font-bold text-[10px]">
+                                    <Check size={12} strokeWidth={3} />
+                                  </div>
+                                ) : p.disabled ? (
+                                  <div className="flex items-center justify-center" title="Post-Dispatch workflow is currently in development">
+                                    <div className="w-7 h-4 bg-gray-100 rounded-full border border-gray-200 relative opacity-50 cursor-not-allowed">
+                                      <div className="w-3 h-3 bg-gray-300 rounded-full absolute top-[1px] left-[2px]"></div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-center">
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        className="sr-only peer"
+                                        checked={hasPermission}
+                                        onChange={() => handleToggle(user.id, p.key, hasPermission)}
+                                        disabled={isUpdating || !user.dispatch_view}
+                                      />
+                                      <div className={`w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-3 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500 ${
+                                        !user.dispatch_view ? 'opacity-40 cursor-not-allowed' : ''
+                                      }`}></div>
+                                      {isUpdating && (
+                                        <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded-full">
+                                          <Loader2 size={10} className="animate-spin text-[#1A2766]" />
+                                        </div>
+                                      )}
+                                    </label>
+                                  </div>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </React.Fragment>
+                      ))}
                     </tr>
                   );
                 })}

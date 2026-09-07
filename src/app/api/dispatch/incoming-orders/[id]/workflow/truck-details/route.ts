@@ -2,10 +2,15 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
+import { canCompleteDispatchStep, dispatchForbiddenResponse } from '@/lib/dispatch-auth';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  if (!canCompleteDispatchStep(session, 'truck-details')) {
+    return NextResponse.json(dispatchForbiddenResponse('Truck Details'), { status: 403 });
+  }
 
   try {
     const { id } = await params;

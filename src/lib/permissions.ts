@@ -12,7 +12,10 @@ export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSku
   | 'catalog_units_create' | 'catalog_units_modify' | 'catalog_units_approve'
   | 'catalog_hsncodes_create' | 'catalog_hsncodes_modify' | 'catalog_hsncodes_approve'
   | 'catalog_products_create' | 'catalog_products_modify' | 'catalog_products_approve' | 'catalog_products_archive'
-  | 'system_productMigration';
+  | 'system_productMigration'
+  | 'dispatch_rate_review' | 'dispatch_payment_verification' | 'dispatch_truck_details'
+  | 'dispatch_ready_for_invoice' | 'dispatch_invoice_confirmation' | 'dispatch_workflow_override'
+  | 'dispatch_inventory_deduction' | 'dispatch_receiving_upload' | 'dispatch_checked_by';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -152,6 +155,51 @@ export const PERMISSIONS: PermissionDefinition[] = [
     description: 'Controls whether the Dispatch module is visible and accessible to the user.'
   },
   {
+    key: 'dispatch_rate_review',
+    label: 'Rate Review',
+    description: 'Ability to complete Rate Review in Pre-Dispatch'
+  },
+  {
+    key: 'dispatch_payment_verification',
+    label: 'Payment Verification',
+    description: 'Ability to complete Payment Verification in Pre-Dispatch'
+  },
+  {
+    key: 'dispatch_truck_details',
+    label: 'Truck Details',
+    description: 'Ability to complete Truck Details in Pre-Dispatch'
+  },
+  {
+    key: 'dispatch_ready_for_invoice',
+    label: 'Ready for Invoice',
+    description: 'Ability to complete Ready for Invoice in Pre-Dispatch'
+  },
+  {
+    key: 'dispatch_invoice_confirmation',
+    label: 'Invoice Confirmation',
+    description: 'Ability to complete Invoice Confirmation in Pre-Dispatch'
+  },
+  {
+    key: 'dispatch_workflow_override',
+    label: 'Workflow Override / Reopen',
+    description: 'Ability to reopen or override completed Dispatch workflow steps'
+  },
+  {
+    key: 'dispatch_inventory_deduction',
+    label: 'Inventory Deduction',
+    description: 'Ability to perform Post-Dispatch inventory deduction'
+  },
+  {
+    key: 'dispatch_receiving_upload',
+    label: 'Receiving Upload',
+    description: 'Ability to upload Post-Dispatch receiving documents'
+  },
+  {
+    key: 'dispatch_checked_by',
+    label: 'Checked By / At',
+    description: 'Ability to perform Post-Dispatch physical check'
+  },
+  {
     key: 'communications_view',
     label: 'COMMUNICATIONS',
     description: 'Centralized view of all customer communications.',
@@ -275,8 +323,71 @@ const catalogPermissionKeySet = new Set<string>([
   'catalog_products_create', 'catalog_products_modify', 'catalog_products_approve', 'catalog_products_archive',
 ]);
 
-// General permissions shown in Main Matrix Tab (excludes Catalog module granular permissions)
-export const GENERAL_PERMISSIONS = PERMISSIONS.filter(p => !catalogPermissionKeySet.has(p.key));
+export interface DispatchPermissionItem {
+  key: PermissionKey;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+}
+
+export interface DispatchPermissionGroup {
+  groupKey: string;
+  groupName: string;
+  permissions: DispatchPermissionItem[];
+}
+
+export const DISPATCH_PERMISSION_GROUPS: DispatchPermissionGroup[] = [
+  {
+    groupKey: 'pre_dispatch',
+    groupName: 'Pre-Dispatch',
+    permissions: [
+      { key: 'dispatch_rate_review', label: 'Rate Review', description: 'Ability to complete Rate Review in Pre-Dispatch' },
+      { key: 'dispatch_payment_verification', label: 'Payment Verification', description: 'Ability to complete Payment Verification in Pre-Dispatch' },
+      { key: 'dispatch_truck_details', label: 'Truck Details', description: 'Ability to complete Truck Details in Pre-Dispatch' },
+      { key: 'dispatch_ready_for_invoice', label: 'Ready for Invoice', description: 'Ability to complete Ready for Invoice in Pre-Dispatch' },
+      { key: 'dispatch_invoice_confirmation', label: 'Invoice Confirmation', description: 'Ability to complete Invoice Confirmation in Pre-Dispatch' },
+    ]
+  },
+  {
+    groupKey: 'workflow_control',
+    groupName: 'Workflow Control',
+    permissions: [
+      { key: 'dispatch_workflow_override', label: 'Override / Reopen', description: 'Ability to reopen or override completed Dispatch workflow steps' },
+    ]
+  },
+  {
+    groupKey: 'post_dispatch',
+    groupName: 'Post-Dispatch',
+    permissions: [
+      { key: 'dispatch_inventory_deduction', label: 'Inv. Deduction', description: 'Coming Soon - Post-Dispatch Inventory Deduction', disabled: true },
+      { key: 'dispatch_receiving_upload', label: 'Receiving Upload', description: 'Coming Soon - Post-Dispatch Receiving Upload', disabled: true },
+      { key: 'dispatch_checked_by', label: 'Checked By', description: 'Coming Soon - Post-Dispatch Physical Check', disabled: true },
+    ]
+  }
+];
+
+export const DISPATCH_STEP_PERMISSION_MAP: Record<string, PermissionKey> = {
+  'rate-review': 'dispatch_rate_review',
+  'payment-verification': 'dispatch_payment_verification',
+  'truck-details': 'dispatch_truck_details',
+  'ready-for-invoice': 'dispatch_ready_for_invoice',
+  'invoice-confirmation': 'dispatch_invoice_confirmation',
+};
+
+export const dispatchPermissionKeySet = new Set<string>([
+  'dispatch_rate_review',
+  'dispatch_payment_verification',
+  'dispatch_truck_details',
+  'dispatch_ready_for_invoice',
+  'dispatch_invoice_confirmation',
+  'dispatch_workflow_override',
+  'dispatch_inventory_deduction',
+  'dispatch_receiving_upload',
+  'dispatch_checked_by',
+]);
+
+// General permissions shown in Main Matrix Tab (excludes Catalog & Dispatch granular permissions)
+export const GENERAL_PERMISSIONS = PERMISSIONS.filter(p => !catalogPermissionKeySet.has(p.key) && !dispatchPermissionKeySet.has(p.key));
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'canManageCarts',
@@ -336,4 +447,13 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'catalog_products_approve',
   'catalog_products_archive',
   'system_productMigration',
+  'dispatch_rate_review',
+  'dispatch_payment_verification',
+  'dispatch_truck_details',
+  'dispatch_ready_for_invoice',
+  'dispatch_invoice_confirmation',
+  'dispatch_workflow_override',
+  'dispatch_inventory_deduction',
+  'dispatch_receiving_upload',
+  'dispatch_checked_by',
 ];

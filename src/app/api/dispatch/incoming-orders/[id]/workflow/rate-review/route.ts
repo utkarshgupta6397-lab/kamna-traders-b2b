@@ -2,10 +2,15 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
+import { canCompleteDispatchStep, dispatchForbiddenResponse } from '@/lib/dispatch-auth';
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  if (!canCompleteDispatchStep(session, 'rate-review')) {
+    return NextResponse.json(dispatchForbiddenResponse('Rate Review'), { status: 403 });
+  }
 
   try {
     const { id } = await params;

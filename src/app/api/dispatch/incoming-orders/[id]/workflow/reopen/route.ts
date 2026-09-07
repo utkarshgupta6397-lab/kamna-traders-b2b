@@ -2,12 +2,17 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
+import { canOverrideDispatchWorkflow, dispatchForbiddenResponse } from '@/lib/dispatch-auth';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  if (!canOverrideDispatchWorkflow(session)) {
+    return NextResponse.json(dispatchForbiddenResponse('Workflow Override / Reopen'), { status: 403 });
+  }
 
   try {
     const { id } = await params;

@@ -140,6 +140,16 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.catalog_products_approve = true;
       merged.catalog_products_archive = true;
       merged.system_productMigration = true;
+      merged.dispatch_view = true;
+      merged.dispatch_rate_review = true;
+      merged.dispatch_payment_verification = true;
+      merged.dispatch_truck_details = true;
+      merged.dispatch_ready_for_invoice = true;
+      merged.dispatch_invoice_confirmation = true;
+      merged.dispatch_workflow_override = true;
+      merged.dispatch_inventory_deduction = true;
+      merged.dispatch_receiving_upload = true;
+      merged.dispatch_checked_by = true;
     }
 
     console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);

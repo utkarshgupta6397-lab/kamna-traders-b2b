@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { hasDispatchAccess } from '@/lib/dispatch-auth';
 
 function resolveWarehouse(details: any): { id: string | null; name: string | null } {
   if (!details || typeof details !== 'object') return { id: null, name: null };
@@ -36,6 +37,7 @@ function resolveWarehouse(details: any): { id: string | null; name: string | nul
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!hasDispatchAccess(session)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const { id } = await params;
   

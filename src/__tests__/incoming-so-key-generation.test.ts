@@ -1,45 +1,41 @@
 import crypto from 'crypto';
+import assert from 'assert';
 
-describe('Incoming SO Key Generation Security & Entropy Tests', () => {
-  it('should generate at least 256 bits of cryptographic entropy', () => {
-    // 32 bytes = 256 bits = 64 hex characters
-    const key = crypto.randomBytes(32).toString('hex');
-    expect(key).toHaveLength(64);
-    expect(/^[0-9a-f]{64}$/.test(key)).toBe(true);
-  });
+console.log('\n--- Incoming SO Key Generation Security Tests ---');
 
-  it('should produce unique keys on consecutive calls (unpredictable & non-deterministic)', () => {
-    const keys = new Set<string>();
-    for (let i = 0; i < 50; i++) {
-      const key = crypto.randomBytes(32).toString('hex');
-      expect(keys.has(key)).toBe(false);
-      keys.add(key);
-    }
-    expect(keys.size).toBe(50);
-  });
+// Test 1: Entropy & Key Length
+const key = crypto.randomBytes(32).toString('hex');
+assert.strictEqual(key.length, 64, 'Key must be exactly 64 hex characters (32 bytes = 256 bits)');
+assert.strictEqual(/^[0-9a-f]{64}$/.test(key), true, 'Key must be lowercase hex');
+console.log('✓ PASS: Cryptographic entropy test (256 bits)');
 
-  it('audit details must not include the actual secret', () => {
-    const generatedKey = crypto.randomBytes(32).toString('hex');
-    const auditDetails = JSON.stringify({
-      keyLength: generatedKey.length,
-      targetKey: 'INCOMING_SO_API_KEY',
-      performedAt: new Date().toISOString()
-    });
+// Test 2: Unpredictability across 100 consecutive generations
+const keys = new Set<string>();
+for (let i = 0; i < 100; i++) {
+  const k = crypto.randomBytes(32).toString('hex');
+  assert.strictEqual(keys.has(k), false, 'Generated keys must be unique');
+  keys.add(k);
+}
+assert.strictEqual(keys.size, 100);
+console.log('✓ PASS: Uniqueness and non-determinism test (100 unique iterations)');
 
-    expect(auditDetails).not.toContain(generatedKey);
-    expect(JSON.parse(auditDetails)).toEqual({
-      keyLength: 64,
-      targetKey: 'INCOMING_SO_API_KEY',
-      performedAt: expect.any(String)
-    });
-  });
+// Test 3: Audit log payload sanitization (Never log the secret)
+const testKey = crypto.randomBytes(32).toString('hex');
+const auditLogDetails = JSON.stringify({
+  keyLength: testKey.length,
+  targetKey: 'INCOMING_SO_API_KEY',
+  performedAt: new Date().toISOString()
+});
+assert.strictEqual(auditLogDetails.includes(testKey), false, 'Audit log details must never contain the key secret');
+const parsed = JSON.parse(auditLogDetails);
+assert.strictEqual(parsed.keyLength, 64);
+assert.strictEqual(parsed.targetKey, 'INCOMING_SO_API_KEY');
+console.log('✓ PASS: Audit logging sanitization test (secret not exposed)');
 
-  it('deluge snippet should properly interpolate current API key and endpoint', () => {
-    const testApiKey = 'a'.repeat(64);
-    const testEndpoint = 'https://kamnatraders.com/api/dispatch/incoming-so';
-
-    const delugeSnippet = `headerMap = Map();
-headerMap.put("X-API-Key", "${testApiKey}");
+// Test 4: Deluge snippet template interpolation
+const testEndpoint = 'https://kamnatraders.com/api/dispatch/incoming-so';
+const delugeSnippet = `headerMap = Map();
+headerMap.put("X-API-Key", "${testKey}");
 headerMap.put("Content-Type", "application/json");
 
 response = invokeurl
@@ -48,8 +44,9 @@ response = invokeurl
     type :POST
 ];`;
 
-    expect(delugeSnippet).toContain(`headerMap.put("X-API-Key", "${testApiKey}");`);
-    expect(delugeSnippet).toContain(`url :"${testEndpoint}"`);
-    expect(delugeSnippet).toContain('type :POST');
-  });
-});
+assert.strictEqual(delugeSnippet.includes(`headerMap.put("X-API-Key", "${testKey}");`), true);
+assert.strictEqual(delugeSnippet.includes(`url :"${testEndpoint}"`), true);
+assert.strictEqual(delugeSnippet.includes('type :POST'), true);
+console.log('✓ PASS: Deluge snippet code generation test');
+
+console.log('All 4 test suites passed successfully! ✅\n');

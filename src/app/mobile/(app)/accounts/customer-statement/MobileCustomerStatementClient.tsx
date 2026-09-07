@@ -517,6 +517,8 @@ export default function MobileCustomerStatementClient({ userName }: { userName: 
             </div>
           </div>
         )}
+      </div>
+
       {loading && (
         <div className="space-y-3 animate-pulse" aria-busy="true">
           {/* Quick Filter Pills Skeleton */}

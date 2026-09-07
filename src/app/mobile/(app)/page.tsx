@@ -1,3 +1,4 @@
+import { getSession } from '@/lib/auth';
 import { hasMobilePermission } from '@/lib/mobile-auth';
 import Link from 'next/link';
 

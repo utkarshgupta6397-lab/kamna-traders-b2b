@@ -1,3 +1,4 @@
+import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft, Users, ChevronRight, Activity, FileText } from 'lucide-react';

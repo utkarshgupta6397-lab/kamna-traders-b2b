@@ -1,15 +1,21 @@
 import { getSession } from '@/lib/auth';
+import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import MobileWireCableStockClient from './MobileWireCableStockClient';
 import { prisma } from '@/lib/db';
+import { hasMobileFeatureAccess } from '@/lib/mobile-auth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default async function MobileWireCableStockPage() {
   const session = await getSession();
-  if (!session) return null;
+  if (!session) redirect('/login');
+
+  if (!hasMobileFeatureAccess(session, 'mobile_stock_management', 'mobile_stock_management_wire_cables')) {
+    redirect('/mobile/operations');
+  }
 
   const productSearchOptions = { categoryName: 'Wire & Cables' };
 

@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Shield, Users, Lock, Loader2, Info, Check, Tags, PackageCheck, Truck } from 'lucide-react';
+import { Search, Shield, Users, Lock, Loader2, Info, Check, Tags, PackageCheck, Truck, Smartphone } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { GENERAL_PERMISSIONS, CATALOG_MODULES, DISPATCH_PERMISSION_GROUPS, PermissionKey } from '@/lib/permissions';
+import { GENERAL_PERMISSIONS, CATALOG_MODULES, DISPATCH_PERMISSION_GROUPS, MOBILE_PERMISSION_SECTIONS, PermissionKey } from '@/lib/permissions';
 
 interface User {
   id: string;
@@ -22,7 +22,7 @@ interface User {
 export default function UserPermissionsPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'general' | 'catalog' | 'dispatch'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'catalog' | 'dispatch' | 'mobile'>('general');
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'ADMIN' | 'STAFF'>('ALL');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -95,12 +95,16 @@ export default function UserPermissionsPage() {
   const stats = useMemo(() => {
     const catalogEnabledUsers = users.filter(u => u.role === 'ADMIN' || u.accountsAccess);
     const dispatchEnabledUsers = users.filter(u => u.role === 'ADMIN' || u.dispatch_view);
+    const mobileEnabledUsers = users.filter(
+      u => u.role === 'ADMIN' || u.mobile_stock_management || u.mobile_accounts || u.mobile_dispatch
+    );
     return {
       total: users.length,
       admins: users.filter(u => u.role === 'ADMIN').length,
       staff: users.filter(u => u.role === 'STAFF').length,
       catalogUsers: catalogEnabledUsers.length,
       dispatchUsers: dispatchEnabledUsers.length,
+      mobileUsers: mobileEnabledUsers.length,
     };
   }, [users]);
 
@@ -180,15 +184,31 @@ export default function UserPermissionsPage() {
             {stats.dispatchUsers}
           </span>
         </button>
+
+        <button
+          onClick={() => setActiveTab('mobile')}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold transition-all border-b-2 -mb-px ${
+            activeTab === 'mobile'
+              ? 'border-[#1A2766] text-[#1A2766]'
+              : 'border-transparent text-gray-500 hover:text-gray-900'
+          }`}
+        >
+          <Smartphone size={14} />
+          Mobile Permissions
+          <span className="ml-1 px-1.5 py-0.2 rounded-full bg-indigo-100 text-indigo-800 text-[10px]">
+            {stats.mobileUsers}
+          </span>
+        </button>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
           { label: 'Total Users', value: stats.total, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
           { label: 'Admin', value: stats.admins, icon: Shield, color: 'text-amber-600', bg: 'bg-amber-50' },
           { label: 'Staff', value: stats.staff, icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50' },
           { label: 'Catalog Enabled', value: stats.catalogUsers, icon: PackageCheck, color: 'text-purple-600', bg: 'bg-purple-50' },
+          { label: 'Mobile Enabled', value: stats.mobileUsers, icon: Smartphone, color: 'text-indigo-600', bg: 'bg-indigo-50' },
         ].map((card) => (
           <div key={card.label} className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 flex items-center gap-2">
             <div className={`p-1.5 rounded-lg ${card.bg} ${card.color}`}>
@@ -678,6 +698,227 @@ export default function UserPermissionsPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* TAB 4: MOBILE PERMISSIONS MATRIX */}
+      {activeTab === 'mobile' && (
+        <div className="space-y-3">
+          {/* Informational Callout */}
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-start gap-2.5 text-xs text-purple-900 shadow-sm">
+            <Info size={16} className="text-purple-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold">Hold Queue Architecture Note:</span> Hold Queue uses existing Accounts/Desktop permissions (<code className="bg-purple-100 px-1 py-0.5 rounded font-mono text-[11px]">dcr_hold_release</code>, <code className="bg-purple-100 px-1 py-0.5 rounded font-mono text-[11px]">holdQueueReviewEnabled</code>, <code className="bg-purple-100 px-1 py-0.5 rounded font-mono text-[11px]">holdQueueReviewLimit</code>).
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="overflow-x-auto max-h-[calc(100vh-280px)]">
+              <table className="w-full border-collapse relative">
+                <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
+                  {/* Top Level Section Headers */}
+                  <tr className="border-b border-gray-200">
+                    <th
+                      rowSpan={2}
+                      className="py-2 px-2.5 text-left border-b border-gray-200 min-w-[200px] bg-gray-50/95 backdrop-blur-sm sticky left-0 z-20 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]"
+                    >
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                        User Details
+                      </span>
+                    </th>
+                    {MOBILE_PERMISSION_SECTIONS.map((sec) => {
+                      const colSpan = 1 + sec.children.length;
+                      const isStock = sec.sectionKey === 'stock_management';
+                      const isAccounts = sec.sectionKey === 'accounts';
+                      const headerBg = isStock
+                        ? 'bg-amber-50/70 text-amber-900'
+                        : isAccounts
+                        ? 'bg-purple-50/70 text-purple-900'
+                        : 'bg-blue-50/70 text-blue-900';
+
+                      return (
+                        <th
+                          key={sec.sectionKey}
+                          colSpan={colSpan}
+                          className={`py-1.5 px-2 border-b text-center border-r border-gray-200 ${headerBg}`}
+                        >
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className="text-[11px] font-black uppercase tracking-wider">
+                              {sec.sectionTitle}
+                            </span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-white/70 border border-current">
+                              {colSpan === 1 ? 'Parent' : `Parent + ${sec.children.length} Children`}
+                            </span>
+                          </div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+
+                  {/* Sub-header Columns */}
+                  <tr className="bg-gray-50/90 border-b border-gray-200">
+                    {MOBILE_PERMISSION_SECTIONS.map((sec) => (
+                      <React.Fragment key={`${sec.sectionKey}-cols`}>
+                        {/* Parent Toggle Column */}
+                        <th
+                          className="py-1 px-1.5 text-[9px] font-black uppercase tracking-wider border-b border-r border-gray-200 text-gray-800 bg-gray-100/70 min-w-[105px]"
+                          title={sec.parentDescription}
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span className="text-[#1A2766]">● Module Access</span>
+                            <Info size={9} className="text-gray-400" />
+                          </div>
+                        </th>
+                        {/* Child Columns */}
+                        {sec.children.map((child, cIdx) => (
+                          <th
+                            key={child.key}
+                            className={`py-1 px-1.5 text-[9px] font-bold uppercase tracking-wider border-b text-gray-600 min-w-[95px] ${
+                              cIdx === sec.children.length - 1 ? 'border-r border-gray-200' : ''
+                            }`}
+                            title={child.description}
+                          >
+                            <div className="flex items-center justify-center gap-0.5">
+                              <span>↳ {child.label}</span>
+                              <Info size={9} className="text-gray-300" />
+                            </div>
+                          </th>
+                        ))}
+                      </React.Fragment>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-gray-100 text-gray-700">
+                  {filteredUsers.map((user) => {
+                    const isAdmin = user.role === 'ADMIN';
+
+                    return (
+                      <tr key={user.id} className="hover:bg-blue-50/20 transition-colors group">
+                        {/* User Cell */}
+                        <td className="py-1.5 px-2.5 border-b border-gray-100 sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-[#1A2766] text-white flex items-center justify-center font-bold text-[10px] shadow-sm flex-shrink-0">
+                              {user.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                            </div>
+                            <div className="truncate">
+                              <p className="text-xs font-bold text-gray-900 truncate" title={user.name}>{user.name}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[10px] font-mono text-gray-400">{formatPhone(user.mobile)}</span>
+                                <span className={`text-[8px] px-1 py-0.2 rounded-full font-bold uppercase tracking-tighter ${
+                                  isAdmin ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
+                                }`}>
+                                  {user.role}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Mobile Sections Columns */}
+                        {MOBILE_PERMISSION_SECTIONS.map((sec) => {
+                          const parentKey = sec.parentKey;
+                          const hasParent = Boolean(user[parentKey]);
+                          const isParentUpdating = updatingId === `${user.id}-${parentKey}`;
+
+                          return (
+                            <React.Fragment key={`${user.id}-${sec.sectionKey}`}>
+                              {/* Parent Column */}
+                              <td className="py-1.5 px-1 border-b border-r border-gray-200 text-center bg-gray-50/30">
+                                {isAdmin ? (
+                                  <div className="flex items-center justify-center gap-0.5 text-amber-600 bg-amber-50 py-0.5 px-1 rounded-full mx-auto w-fit border border-amber-100">
+                                    <Check size={10} strokeWidth={3} />
+                                    <span className="text-[8px] font-black uppercase tracking-wider">Full</span>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-center">
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        className="sr-only peer"
+                                        checked={hasParent}
+                                        onChange={() => handleToggle(user.id, parentKey, hasParent)}
+                                        disabled={isParentUpdating}
+                                      />
+                                      <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-3 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-[#1A2766]"></div>
+                                      {isParentUpdating && (
+                                        <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded-full">
+                                          <Loader2 size={10} className="animate-spin text-[#1A2766]" />
+                                        </div>
+                                      )}
+                                    </label>
+                                  </div>
+                                )}
+                              </td>
+
+                              {/* Children Columns */}
+                              {sec.children.map((child, cIdx) => {
+                                const childKey = child.key;
+                                const hasChild = Boolean(user[childKey]);
+                                const isChildUpdating = updatingId === `${user.id}-${childKey}`;
+                                const isChildDisabled = !hasParent;
+                                const isLastInSec = cIdx === sec.children.length - 1;
+
+                                return (
+                                  <td
+                                    key={childKey}
+                                    className={`py-1.5 px-1 border-b border-gray-100 text-center ${
+                                      isLastInSec ? 'border-r border-gray-200' : ''
+                                    }`}
+                                  >
+                                    {isAdmin ? (
+                                      <div className="flex items-center justify-center text-amber-600 font-bold text-[10px]">
+                                        <Check size={12} strokeWidth={3} />
+                                      </div>
+                                    ) : (
+                                      <div
+                                        className="flex items-center justify-center"
+                                        title={isChildDisabled ? `Enable ${sec.parentLabel} parent access first` : ''}
+                                      >
+                                        <label className={`relative inline-flex items-center ${isChildDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                                          <input
+                                            type="checkbox"
+                                            className="sr-only peer"
+                                            checked={hasChild}
+                                            onChange={() => handleToggle(user.id, childKey, hasChild)}
+                                            disabled={isChildUpdating || isChildDisabled}
+                                          />
+                                          <div className={`w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-3 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500 ${
+                                            isChildDisabled ? 'opacity-30' : ''
+                                          }`}></div>
+                                          {isChildUpdating && (
+                                            <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded-full">
+                                              <Loader2 size={10} className="animate-spin text-[#1A2766]" />
+                                            </div>
+                                          )}
+                                        </label>
+                                      </div>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {filteredUsers.length === 0 && (
+              <div className="p-12 text-center flex flex-col items-center gap-2">
+                <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center">
+                  <Smartphone size={20} />
+                </div>
+                <div>
+                  <p className="text-gray-900 font-bold text-xs">No users found</p>
+                  <p className="text-[11px] text-gray-500">Try adjusting your search query or role filter.</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

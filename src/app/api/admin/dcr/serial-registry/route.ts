@@ -1,13 +1,20 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { hasMobileFeatureAccess } from '@/lib/mobile-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   try {
     const session = await getSession();
-    if (!session || (!session.dcr_management && session.role !== 'ADMIN')) {
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const isDesktopAllowed = session.role === 'ADMIN' || Boolean(session.dcr_management);
+    const isMobileAllowed = hasMobileFeatureAccess(session, 'mobile_accounts', 'mobile_accounts_customer_dcr_lookup');
+    if (!isDesktopAllowed && !isMobileAllowed) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

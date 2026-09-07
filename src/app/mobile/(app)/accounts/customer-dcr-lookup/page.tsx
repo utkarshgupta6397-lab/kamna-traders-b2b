@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import MobileCustomerLookupClient from './MobileCustomerLookupClient';
+import { hasMobileFeatureAccess } from '@/lib/mobile-auth';
 
 export const metadata = {
   title: 'Customer DCR Lookup | Kamna B2B ERP',
@@ -12,10 +13,10 @@ export default async function MobileCustomerLookupPage() {
   const session = await getSession();
   
   if (!session) {
-    redirect('/api/auth/login');
+    redirect('/login');
   }
   
-  if (session.role !== 'ADMIN' && !session.dcr_management && !session.accounts_customer_statement) {
+  if (!hasMobileFeatureAccess(session, 'mobile_accounts', 'mobile_accounts_customer_dcr_lookup')) {
     redirect('/mobile/accounts');
   }
 

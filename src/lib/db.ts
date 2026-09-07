@@ -1,7 +1,16 @@
 import { PrismaClient } from '@prisma/client';
 import { getDatabaseUrl } from './database-url';
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+const CURRENT_SCHEMA_TAG = '2026-09-07-mobile-perms-v2';
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient; __prisma_schema_tag?: string };
+
+// Invalidate stale PrismaClient instance cached across dev server reloads
+if (globalForPrisma.prisma && globalForPrisma.__prisma_schema_tag !== CURRENT_SCHEMA_TAG) {
+  try {
+    globalForPrisma.prisma.$disconnect();
+  } catch {}
+  delete globalForPrisma.prisma;
+}
 
 const datasourceUrl = getDatabaseUrl() || process.env.DATABASE_URL;
 
@@ -20,6 +29,7 @@ export const prisma =
 
 // Always attach to global in all environments to prevent churn
 globalForPrisma.prisma = prisma;
+globalForPrisma.__prisma_schema_tag = CURRENT_SCHEMA_TAG;
 
 /**
  * Idempotent Database Initialization

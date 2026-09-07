@@ -15,7 +15,10 @@ export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSku
   | 'system_productMigration'
   | 'dispatch_rate_review' | 'dispatch_payment_verification' | 'dispatch_truck_details'
   | 'dispatch_ready_for_invoice' | 'dispatch_invoice_confirmation' | 'dispatch_workflow_override'
-  | 'dispatch_inventory_deduction' | 'dispatch_receiving_upload' | 'dispatch_checked_by';
+  | 'dispatch_inventory_deduction' | 'dispatch_receiving_upload' | 'dispatch_checked_by'
+  | 'mobile_stock_management' | 'mobile_stock_management_solar_panel' | 'mobile_stock_management_wire_cables' | 'mobile_stock_management_inverter' | 'mobile_stock_management_solar_accessories'
+  | 'mobile_accounts' | 'mobile_accounts_customer_statement' | 'mobile_accounts_customer_dcr_lookup'
+  | 'mobile_dispatch';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -240,7 +243,17 @@ export const PERMISSIONS: PermissionDefinition[] = [
   { key: 'catalog_products_modify', label: 'Modify Products', description: 'Allows editing existing Products.' },
   { key: 'catalog_products_approve', label: 'Approve Products', description: 'Allows approving Product records.' },
   { key: 'catalog_products_archive', label: 'Archive Products', description: 'Allows archiving and restoring Products.' },
-  { key: 'system_productMigration', label: 'Run Product Migration', description: 'Allows execution of the one-time legacy SKU → Product migration utility.' }
+  { key: 'system_productMigration', label: 'Run Product Migration', description: 'Allows execution of the one-time legacy SKU → Product migration utility.' },
+  // Mobile Dedicated Permissions
+  { key: 'mobile_stock_management', label: 'Mobile Stock Management', description: 'Controls whether Stock Management is visible and accessible on mobile.' },
+  { key: 'mobile_stock_management_solar_panel', label: 'Mobile Solar Panel Stock', description: 'Allows viewing Solar Panel stock on mobile.' },
+  { key: 'mobile_stock_management_wire_cables', label: 'Mobile Wire & Cables Stock', description: 'Allows viewing Wire & Cables stock on mobile.' },
+  { key: 'mobile_stock_management_inverter', label: 'Mobile Inverter Stock', description: 'Allows viewing Inverter stock on mobile.' },
+  { key: 'mobile_stock_management_solar_accessories', label: 'Mobile Solar Accessories Stock', description: 'Allows viewing Solar Accessories stock on mobile.' },
+  { key: 'mobile_accounts', label: 'Mobile Accounts', description: 'Controls whether Accounts is visible and accessible on mobile.' },
+  { key: 'mobile_accounts_customer_statement', label: 'Mobile Customer Statement', description: 'Allows viewing Customer Statements on mobile.' },
+  { key: 'mobile_accounts_customer_dcr_lookup', label: 'Mobile Customer DCR Lookup', description: 'Allows viewing Customer DCR status on mobile.' },
+  { key: 'mobile_dispatch', label: 'Mobile Dispatch', description: 'Allows capturing and viewing truck dispatch photos on mobile.' },
 ];
 
 export interface CatalogModulePermissionGroup {
@@ -386,8 +399,76 @@ export const dispatchPermissionKeySet = new Set<string>([
   'dispatch_checked_by',
 ]);
 
-// General permissions shown in Main Matrix Tab (excludes Catalog & Dispatch granular permissions)
-export const GENERAL_PERMISSIONS = PERMISSIONS.filter(p => !catalogPermissionKeySet.has(p.key) && !dispatchPermissionKeySet.has(p.key));
+export interface MobilePermissionItem {
+  key: PermissionKey;
+  label: string;
+  description?: string;
+  isParent?: boolean;
+  parentKey?: PermissionKey;
+}
+
+export interface MobilePermissionSection {
+  sectionKey: string;
+  sectionTitle: string;
+  parentKey: PermissionKey;
+  parentLabel: string;
+  parentDescription: string;
+  children: MobilePermissionItem[];
+  infoNote?: string;
+}
+
+export const MOBILE_PERMISSION_SECTIONS: MobilePermissionSection[] = [
+  {
+    sectionKey: 'stock_management',
+    sectionTitle: 'Stock Management',
+    parentKey: 'mobile_stock_management',
+    parentLabel: 'Stock Management',
+    parentDescription: 'Controls whether the Stock Management module is visible and accessible on mobile.',
+    children: [
+      { key: 'mobile_stock_management_solar_panel', label: 'Solar Panel Stock', description: 'Access to Solar Panel Stock view on mobile', parentKey: 'mobile_stock_management' },
+      { key: 'mobile_stock_management_wire_cables', label: 'Wire & Cables Stock', description: 'Access to Wire & Cables Stock view on mobile', parentKey: 'mobile_stock_management' },
+      { key: 'mobile_stock_management_inverter', label: 'Inverter Stock', description: 'Access to Inverter Stock view on mobile', parentKey: 'mobile_stock_management' },
+      { key: 'mobile_stock_management_solar_accessories', label: 'Solar Accessories', description: 'Access to Solar Accessories view on mobile', parentKey: 'mobile_stock_management' },
+    ],
+  },
+  {
+    sectionKey: 'accounts',
+    sectionTitle: 'Accounts',
+    parentKey: 'mobile_accounts',
+    parentLabel: 'Accounts',
+    parentDescription: 'Controls whether the Accounts module is visible and accessible on mobile.',
+    children: [
+      { key: 'mobile_accounts_customer_statement', label: 'Customer Statement', description: 'Access to Customer Statement lookup and ledger view on mobile', parentKey: 'mobile_accounts' },
+      { key: 'mobile_accounts_customer_dcr_lookup', label: 'Customer DCR Lookup', description: 'Access to Customer DCR Lookup on mobile', parentKey: 'mobile_accounts' },
+    ],
+    infoNote: 'Hold Queue uses existing Accounts/Desktop permissions (dcr_hold_release, holdQueueReviewEnabled, holdQueueReviewLimit).',
+  },
+  {
+    sectionKey: 'dispatch',
+    sectionTitle: 'Dispatch',
+    parentKey: 'mobile_dispatch',
+    parentLabel: 'Mobile Dispatch',
+    parentDescription: 'Controls access to the Mobile Dispatch truck photo capture and review flow.',
+    children: [],
+  },
+];
+
+export const mobilePermissionKeySet = new Set<string>([
+  'mobile_stock_management',
+  'mobile_stock_management_solar_panel',
+  'mobile_stock_management_wire_cables',
+  'mobile_stock_management_inverter',
+  'mobile_stock_management_solar_accessories',
+  'mobile_accounts',
+  'mobile_accounts_customer_statement',
+  'mobile_accounts_customer_dcr_lookup',
+  'mobile_dispatch',
+]);
+
+// General permissions shown in Main Matrix Tab (excludes Catalog, Dispatch, and Mobile granular permissions)
+export const GENERAL_PERMISSIONS = PERMISSIONS.filter(
+  p => !catalogPermissionKeySet.has(p.key) && !dispatchPermissionKeySet.has(p.key) && !mobilePermissionKeySet.has(p.key)
+);
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'canManageCarts',
@@ -456,4 +537,13 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'dispatch_inventory_deduction',
   'dispatch_receiving_upload',
   'dispatch_checked_by',
+  'mobile_stock_management',
+  'mobile_stock_management_solar_panel',
+  'mobile_stock_management_wire_cables',
+  'mobile_stock_management_inverter',
+  'mobile_stock_management_solar_accessories',
+  'mobile_accounts',
+  'mobile_accounts_customer_statement',
+  'mobile_accounts_customer_dcr_lookup',
+  'mobile_dispatch',
 ];

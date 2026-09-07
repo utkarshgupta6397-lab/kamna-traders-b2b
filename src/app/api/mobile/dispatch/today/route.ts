@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { hasMobilePermission } from '@/lib/mobile-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,8 +24,8 @@ function getIstDayBounds(referenceDate = new Date()): { startUtc: Date; endUtc: 
 
 export async function GET() {
   const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session || !hasMobilePermission(session, 'mobile_dispatch')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   try {

@@ -16,6 +16,11 @@ export async function GET(
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
+  const isAllowed = session.role === 'ADMIN' || Boolean(session.mobile_dispatch) || Boolean(session.dispatch_view) || Boolean(session.dispatch_truck_details);
+  if (!isAllowed) {
+    return new NextResponse('Forbidden', { status: 403 });
+  }
+
   const { uploadId } = await params;
   if (!uploadId) {
     return new NextResponse('Bad Request', { status: 400 });

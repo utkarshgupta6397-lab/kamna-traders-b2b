@@ -1,15 +1,21 @@
 import { getSession } from '@/lib/auth';
+import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import MobileSolarPanelStockClient from './MobileSolarPanelStockClient';
 import { prisma } from '@/lib/db';
+import { hasMobileFeatureAccess } from '@/lib/mobile-auth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default async function MobileSolarPanelStockPage() {
   const session = await getSession();
-  if (!session) return null;
+  if (!session) redirect('/login');
+
+  if (!hasMobileFeatureAccess(session, 'mobile_stock_management', 'mobile_stock_management_solar_panel')) {
+    redirect('/mobile/operations');
+  }
 
   const productSearchOptions = { categoryName: 'Solar Panel' };
 
@@ -49,7 +55,6 @@ export default async function MobileSolarPanelStockPage() {
           categories={categories} 
           brands={brands} 
           items={items} 
-          canSync={!!session.canRunSkuSync}
         />
       </main>
     </div>

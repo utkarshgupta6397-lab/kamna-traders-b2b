@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { getCache, setCache } from '@/lib/cache';
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
 import { isVoidInvoice } from '@/lib/dcr-utils';
+import { hasMobileFeatureAccess } from '@/lib/mobile-auth';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
@@ -74,7 +75,13 @@ async function fetchZohoContactBalance(customerId: string): Promise<number> {
 export async function GET(req: Request, { params }: { params: Promise<{ customerId: string }> }) {
   try {
     const session = await getSession();
-    if (!session || (!session.dcr_management && session.role !== 'ADMIN')) {
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const isDesktopAllowed = session.role === 'ADMIN' || Boolean(session.dcr_management);
+    const isMobileAllowed = hasMobileFeatureAccess(session, 'mobile_accounts', 'mobile_accounts_customer_dcr_lookup');
+    if (!isDesktopAllowed && !isMobileAllowed) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

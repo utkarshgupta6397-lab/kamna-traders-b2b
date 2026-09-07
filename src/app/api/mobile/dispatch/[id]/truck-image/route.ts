@@ -5,6 +5,7 @@ import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
+import { hasMobilePermission } from '@/lib/mobile-auth';
 
 export const maxDuration = 60;
 
@@ -16,8 +17,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session || !hasMobilePermission(session, 'mobile_dispatch')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const { id: orderId } = await params;

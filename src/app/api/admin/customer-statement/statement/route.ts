@@ -1,12 +1,19 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { getCustomerStatement } from '@/lib/zoho/customer-statement';
+import { hasMobileFeatureAccess } from '@/lib/mobile-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const session = await getSession();
-  if (!session || (session.role !== 'ADMIN' && !session.accounts_customer_statement)) {
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const isDesktopAllowed = session.role === 'ADMIN' || Boolean(session.accounts_customer_statement);
+  const isMobileAllowed = hasMobileFeatureAccess(session, 'mobile_accounts', 'mobile_accounts_customer_statement');
+  if (!isDesktopAllowed && !isMobileAllowed) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

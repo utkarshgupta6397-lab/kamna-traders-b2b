@@ -445,10 +445,15 @@ export default function MobileCustomerLookupClient() {
               <div className="flex flex-col gap-3 pb-8">
                 {isFetchingSummary ? (
                   [1, 2, 3].map((i) => (
-                    <div key={i} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-                      <div className="h-4 w-32 bg-slate-200 rounded animate-pulse mb-2" />
-                      <div className="h-3 w-24 bg-slate-100 rounded animate-pulse mb-4" />
-                      <div className="h-6 w-full bg-slate-50 rounded animate-pulse" />
+                    <div key={i} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm animate-pulse" aria-busy="true">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex flex-col gap-1.5 flex-1 mr-2">
+                          <div className="h-4 w-28 bg-slate-200 rounded" />
+                          <div className="h-3 w-32 bg-slate-100 rounded" />
+                        </div>
+                        <div className="h-4 w-16 bg-slate-200 rounded" />
+                      </div>
+                      <div className="h-6 w-full bg-slate-50 rounded mt-2" />
                     </div>
                   ))
                 ) : filteredInvoices.length === 0 ? (

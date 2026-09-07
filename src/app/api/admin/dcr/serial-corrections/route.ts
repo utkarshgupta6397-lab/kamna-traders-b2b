@@ -171,12 +171,12 @@ export async function PATCH(req: Request) {
         }
       }
 
-      if (correctionType === 'DELETE_SERIAL' && serial.allocations && serial.allocations) {
+      if (correctionType === 'DELETE_SERIAL' && serial.allocations && serial.allocations.length > 0) {
         await tx.dcrSerialAllocation.deleteMany({
           where: { serialNumber: serial.serialNumber }
         });
         
-        const invoiceIds = Array.from(new Set([serial.allocations.invoiceId]));
+        const invoiceIds = Array.from(new Set(serial.allocations.map(a => a.invoiceId)));
         for (const invId of invoiceIds) {
           const invoice = await tx.dcrInvoice.findUnique({
             where: { id: invId as string },
@@ -224,8 +224,8 @@ export async function PATCH(req: Request) {
         }
       });
 
-      if (correctionType === 'UNDO_ISSUE' && serial.allocations && serial.allocations) {
-        const invoiceIds = Array.from(new Set([serial.allocations.invoiceId]));
+      if (correctionType === 'UNDO_ISSUE' && serial.allocations && serial.allocations.length > 0) {
+        const invoiceIds = Array.from(new Set(serial.allocations.map(a => a.invoiceId)));
         for (const invId of invoiceIds) {
           const invoice = await tx.dcrInvoice.findUnique({
             where: { id: invId as string },

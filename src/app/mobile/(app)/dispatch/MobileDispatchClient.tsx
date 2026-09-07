@@ -25,6 +25,7 @@ import {
 import toast from 'react-hot-toast';
 import { playTruckHornSound } from '@/lib/hooks/useAudioNotification';
 import MobileImagePreview from '@/components/mobile/MobileImagePreview';
+import MobileTruckImageThumbnail from '@/components/mobile/MobileTruckImageThumbnail';
 
 interface EligibleOrder {
   id: string;
@@ -402,9 +403,26 @@ export default function MobileDispatchClient() {
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto px-4 py-5 max-w-[430px] mx-auto w-full pb-20">
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-            <Loader2 size={36} className="animate-spin text-[#1A2766] mb-3" />
-            <span className="text-sm font-semibold text-slate-600">Loading dispatch orders...</span>
+          <div className="space-y-3.5 animate-pulse" aria-busy="true">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="bg-white rounded-[20px] p-4 border border-slate-200/80 shadow-[0_2px_10px_rgba(0,0,0,0.03)] flex flex-col gap-3"
+              >
+                <div className="flex items-start justify-between border-b border-slate-100 pb-2.5">
+                  <div className="flex flex-col gap-1.5">
+                    <div className="h-5 w-28 bg-slate-200 rounded-md" />
+                    <div className="h-3 w-20 bg-slate-100 rounded" />
+                  </div>
+                  <div className="h-5 w-20 bg-slate-200 rounded-md" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <div className="h-4 w-3/4 bg-slate-200 rounded" />
+                  <div className="h-3 w-1/2 bg-slate-100 rounded" />
+                </div>
+                <div className="w-full h-11 bg-slate-100 rounded-[14px] mt-1" />
+              </div>
+            ))}
           </div>
         ) : (
           <div className="space-y-6">
@@ -549,10 +567,10 @@ export default function MobileDispatchClient() {
                         className="bg-white rounded-[18px] p-3 border border-slate-200/70 shadow-sm flex items-center gap-3.5"
                       >
                         {/* Photo Thumbnail with preview click and visual indicator */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
+                        <MobileTruckImageThumbnail
+                          imageUrl={up.imageUrl}
+                          alt={`Truck for ${up.salesOrderNumber}`}
+                          onClick={() => {
                             setPreviewImage({
                               isOpen: true,
                               url: up.imageUrl,
@@ -560,21 +578,7 @@ export default function MobileDispatchClient() {
                               subtitle: `${up.customerName} • ${formatINR(up.total)}`,
                             });
                           }}
-                          className="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 relative group active:scale-95 transition-transform focus:outline-none focus:ring-2 focus:ring-[#1A2766]/30 cursor-pointer"
-                          title="Tap to preview truck photo"
-                          aria-label={`Preview truck photo for ${up.salesOrderNumber}`}
-                        >
-                          <img
-                            src={up.imageUrl}
-                            alt={`Truck for ${up.salesOrderNumber}`}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                          />
-                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity flex items-center justify-center">
-                            <span className="p-1 rounded-full bg-black/60 text-white shadow-sm">
-                              <Camera size={12} />
-                            </span>
-                          </div>
-                        </button>
+                        />
 
                         {/* Info */}
                         <div className="flex-1 min-w-0">

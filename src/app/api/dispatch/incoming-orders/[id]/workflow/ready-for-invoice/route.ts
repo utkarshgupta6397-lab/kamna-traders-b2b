@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
 import { canCompleteDispatchStep, dispatchForbiddenResponse } from '@/lib/dispatch-auth';
+import { recordDispatchWorkflowHistory } from '@/lib/dispatch-history';
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -39,8 +40,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     const completedAt = new Date();
 
-    const [updatedWf, updatedOrder] = await prisma.$transaction([
-      prisma.preDispatchWorkflow.update({
+    const [updatedWf, updatedOrder] = await prisma.$transaction(async (tx) => {
+      const updatedW = await tx.preDispatchWorkflow.update({
         where: { id: wf.id },
         data: {
           readyForInvoiceStatus: 'COMPLETED',
@@ -51,14 +52,27 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           readyCompletedAt: completedAt,
           currentStep: Math.max(wf.currentStep, 4)
         }
-      }),
-      prisma.dispatchIncomingOrder.update({
+      });
+
+      const updatedO = await tx.dispatchIncomingOrder.update({
         where: { id },
         data: {
           updatedAt: completedAt
         }
-      })
-    ]);
+      });
+
+      await recordDispatchWorkflowHistory(tx, {
+        dispatchOrderId: id,
+        userId: session.userId,
+        userName: session.name,
+        action: 'Completed Ready for Invoice',
+        fromStage: 'Ready for Invoice',
+        toStage: 'Invoice Confirmation',
+        metadata: { billingVerified, shippingVerified, warehouseVerified }
+      });
+
+      return [updatedW, updatedO];
+    });
 
     dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, {
       ...updatedOrder,

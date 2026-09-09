@@ -15,6 +15,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     canReadyForInvoice: isAdmin || Boolean(session?.dispatch_ready_for_invoice),
     canInvoiceConfirm: isAdmin || Boolean(session?.dispatch_invoice_confirmation),
     canWorkflowOverride: isAdmin || Boolean(session?.dispatch_workflow_override),
+    canForceArchive: isAdmin || Boolean(session?.dispatch_force_archive),
   };
 
   return <PreDispatchWorkflowClient id={id} permissions={permissions} />;

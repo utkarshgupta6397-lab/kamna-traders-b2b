@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { getZohoOrgId, getZohoTokens } from '@/lib/zoho-auth';
 import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
+import { recordDispatchWorkflowHistory } from '@/lib/dispatch-history';
 
 export async function POST(
   request: Request,
@@ -29,7 +30,8 @@ export async function POST(
     }
 
     const order = await prisma.dispatchIncomingOrder.findUnique({
-      where: { id }
+      where: { id },
+      include: { preDispatchWorkflow: true }
     });
 
     if (!order) {
@@ -47,17 +49,41 @@ export async function POST(
       order.id.startsWith('test_') ||
       process.env.NODE_ENV !== 'production' && order.zohoSalesorderId.includes('test');
 
+    const getStageName = () => {
+      const wf = order.preDispatchWorkflow;
+      if (!wf || wf.rateReviewStatus !== 'COMPLETED') return 'Rate Review';
+      if (wf.paymentStatus !== 'COMPLETED') return 'Payment Verification';
+      const isTruckRequired = (order.total ?? 0) > 50000;
+      if (isTruckRequired && wf.truckDetailsStatus !== 'COMPLETED') return 'Truck Details';
+      if (wf.readyForInvoiceStatus !== 'COMPLETED') return 'Ready for Invoice';
+      return 'Invoice Confirmation';
+    };
+
     if (isMockTestOrder) {
-      const updatedOrder = await prisma.dispatchIncomingOrder.update({
-        where: { id },
-        data: {
-          status: 'SENT_BACK_TO_OPS',
-          updatedAt: new Date()
-        },
-        include: {
-          preDispatchWorkflow: true,
-          truckUpload: true
-        }
+      const updatedOrder = await prisma.$transaction(async (tx) => {
+        const ord = await tx.dispatchIncomingOrder.update({
+          where: { id },
+          data: {
+            status: 'SENT_BACK_TO_OPS',
+            updatedAt: new Date()
+          },
+          include: {
+            preDispatchWorkflow: true,
+            truckUpload: true
+          }
+        });
+
+        await recordDispatchWorkflowHistory(tx, {
+          dispatchOrderId: id,
+          userId: session.userId,
+          userName: session.name,
+          action: 'Sent Back to Ops',
+          fromStage: getStageName(),
+          toStage: 'Sent Back to Ops',
+          metadata: { comment: comment.trim() }
+        });
+
+        return ord;
       });
 
       dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, updatedOrder);
@@ -85,16 +111,30 @@ export async function POST(
     if (!getRes.ok) {
       if (getRes.status === 404) {
         // If order doesn't exist in Zoho (e.g. seeded/purged/test), still allow ERP send-back
-        const updatedOrder = await prisma.dispatchIncomingOrder.update({
-          where: { id },
-          data: {
-            status: 'SENT_BACK_TO_OPS',
-            updatedAt: new Date()
-          },
-          include: {
-            preDispatchWorkflow: true,
-            truckUpload: true
-          }
+        const updatedOrder = await prisma.$transaction(async (tx) => {
+          const ord = await tx.dispatchIncomingOrder.update({
+            where: { id },
+            data: {
+              status: 'SENT_BACK_TO_OPS',
+              updatedAt: new Date()
+            },
+            include: {
+              preDispatchWorkflow: true,
+              truckUpload: true
+            }
+          });
+
+          await recordDispatchWorkflowHistory(tx, {
+            dispatchOrderId: id,
+            userId: session.userId,
+            userName: session.name,
+            action: 'Sent Back to Ops',
+            fromStage: getStageName(),
+            toStage: 'Sent Back to Ops',
+            metadata: { comment: comment.trim(), zohoStatus: 404 }
+          });
+
+          return ord;
         });
 
         dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, updatedOrder);
@@ -249,16 +289,30 @@ export async function POST(
     }
 
     // 6. Update local ERP DB state
-    const updatedOrder = await prisma.dispatchIncomingOrder.update({
-      where: { id },
-      data: {
-        status: 'SENT_BACK_TO_OPS',
-        updatedAt: new Date(),
-      },
-      include: {
-        preDispatchWorkflow: true,
-        truckUpload: true,
-      },
+    const updatedOrder = await prisma.$transaction(async (tx) => {
+      const ord = await tx.dispatchIncomingOrder.update({
+        where: { id },
+        data: {
+          status: 'SENT_BACK_TO_OPS',
+          updatedAt: new Date(),
+        },
+        include: {
+          preDispatchWorkflow: true,
+          truckUpload: true,
+        },
+      });
+
+      await recordDispatchWorkflowHistory(tx, {
+        dispatchOrderId: id,
+        userId: session.userId,
+        userName: session.name,
+        action: 'Sent Back to Ops',
+        fromStage: getStageName(),
+        toStage: 'Sent Back to Ops',
+        metadata: { comment: comment.trim() }
+      });
+
+      return ord;
     });
 
     dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, updatedOrder);

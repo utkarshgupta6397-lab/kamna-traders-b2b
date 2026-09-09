@@ -14,7 +14,7 @@ export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSku
   | 'catalog_products_create' | 'catalog_products_modify' | 'catalog_products_approve' | 'catalog_products_archive'
   | 'system_productMigration'
   | 'dispatch_rate_review' | 'dispatch_payment_verification' | 'dispatch_truck_details'
-  | 'dispatch_ready_for_invoice' | 'dispatch_invoice_confirmation' | 'dispatch_workflow_override'
+  | 'dispatch_ready_for_invoice' | 'dispatch_invoice_confirmation' | 'dispatch_workflow_override' | 'dispatch_force_archive'
   | 'dispatch_inventory_deduction' | 'dispatch_receiving_upload' | 'dispatch_checked_by'
   | 'mobile_stock_management' | 'mobile_stock_management_solar_panel' | 'mobile_stock_management_wire_cables' | 'mobile_stock_management_inverter' | 'mobile_stock_management_solar_accessories'
   | 'mobile_accounts' | 'mobile_accounts_customer_statement' | 'mobile_accounts_customer_dcr_lookup'
@@ -186,6 +186,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'dispatch_workflow_override',
     label: 'Workflow Override / Reopen',
     description: 'Ability to reopen or override completed Dispatch workflow steps'
+  },
+  {
+    key: 'dispatch_force_archive',
+    label: 'Force Archive',
+    description: 'Ability to force archive a dispatch order from any workflow stage'
   },
   {
     key: 'dispatch_inventory_deduction',
@@ -366,6 +371,7 @@ export const DISPATCH_PERMISSION_GROUPS: DispatchPermissionGroup[] = [
     groupName: 'Workflow Control',
     permissions: [
       { key: 'dispatch_workflow_override', label: 'Override / Reopen', description: 'Ability to reopen or override completed Dispatch workflow steps' },
+      { key: 'dispatch_force_archive', label: 'Force Archive', description: 'Ability to force archive a dispatch order from any workflow stage' },
     ]
   },
   {
@@ -394,6 +400,7 @@ export const dispatchPermissionKeySet = new Set<string>([
   'dispatch_ready_for_invoice',
   'dispatch_invoice_confirmation',
   'dispatch_workflow_override',
+  'dispatch_force_archive',
   'dispatch_inventory_deduction',
   'dispatch_receiving_upload',
   'dispatch_checked_by',
@@ -534,6 +541,7 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'dispatch_ready_for_invoice',
   'dispatch_invoice_confirmation',
   'dispatch_workflow_override',
+  'dispatch_force_archive',
   'dispatch_inventory_deduction',
   'dispatch_receiving_upload',
   'dispatch_checked_by',

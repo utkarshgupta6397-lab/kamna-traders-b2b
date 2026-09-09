@@ -13,22 +13,32 @@ export async function GET(request: Request) {
 
   const stream = new ReadableStream({
     start(controller) {
-      const sendEvent = (data: any) => {
+      const sendRaw = (text: string) => {
         try {
-          const payload = `data: ${JSON.stringify(data)}\n\n`;
-          controller.enqueue(new TextEncoder().encode(payload));
+          controller.enqueue(new TextEncoder().encode(text));
         } catch (err) {
-          console.error('[SSE] Error sending event', err);
+          console.error('[SSE] Error sending text', err);
         }
       };
 
-      // Send initial connection heartbeat
+      const sendEvent = (data: any) => {
+        sendRaw(`data: ${JSON.stringify(data)}\n\n`);
+      };
+
+      // 1. Send SSE retry hint for browsers (10s retry)
+      sendRaw('retry: 10000\n\n');
+
+      // 2. Send 2KB initial comment padding to immediately force Nginx / reverse proxies
+      // to flush response headers and stream chunks to the client without buffering.
+      sendRaw(`: ${' '.repeat(2048)}\n\n`);
+
+      // 3. Send initial connected event
       sendEvent({ type: 'connected' });
 
-      // Keep connection alive with heartbeat every 30s
+      // 4. Keep connection alive with heartbeat every 15s (prevents intermediate proxy timeouts)
       const heartbeat = setInterval(() => {
-        sendEvent({ type: 'ping' });
-      }, 30000);
+        sendRaw(': ping\n\n');
+      }, 15000);
 
       // Listener for new orders
       const onNewOrder = (order: any) => {
@@ -59,9 +69,10 @@ export async function GET(request: Request) {
 
   return new NextResponse(stream, {
     headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform, private',
       'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no', // Disables proxy buffering in Nginx
     },
   });
 }

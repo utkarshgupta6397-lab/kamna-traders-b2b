@@ -49,6 +49,7 @@ export async function GET() {
           dispatch_ready_for_invoice: true,
           dispatch_invoice_confirmation: true,
           dispatch_workflow_override: true,
+          dispatch_force_archive: true,
           dispatch_inventory_deduction: true,
           dispatch_receiving_upload: true,
           dispatch_checked_by: true,

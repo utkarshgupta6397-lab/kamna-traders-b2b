@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
 import { canCompleteDispatchStep, dispatchForbiddenResponse } from '@/lib/dispatch-auth';
+import { recordDispatchWorkflowHistory } from '@/lib/dispatch-history';
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -30,9 +31,15 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Rate Review must be completed first' }, { status: 400 });
     }
 
-    const [updatedWf, updatedOrder] = await prisma.$transaction([
-      prisma.preDispatchWorkflow.update({
-        where: { id: order.preDispatchWorkflow.id },
+    const wasAlreadyCompleted = order.preDispatchWorkflow.paymentStatus === 'COMPLETED';
+    const prevDecision = order.preDispatchWorkflow.paymentDecision;
+    const orderTotal = Number(order.total || 0);
+    const isTruckRequired = orderTotal > 50000;
+    const nextStage = isTruckRequired ? 'Truck Details' : 'Ready for Invoice';
+
+    const [updatedWf, updatedOrder] = await prisma.$transaction(async (tx) => {
+      const wf = await tx.preDispatchWorkflow.update({
+        where: { id: order.preDispatchWorkflow!.id },
         data: {
           paymentStatus: 'COMPLETED',
           paymentDecision: decision,
@@ -40,15 +47,47 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           paymentCompletedBy: session.userId,
           paymentCompletedAt: new Date(),
           paymentAudit: audit,
-          currentStep: Math.max(order.preDispatchWorkflow.currentStep, 3),
+          currentStep: Math.max(order.preDispatchWorkflow!.currentStep, 3),
           overallStatus: 'IN_PROGRESS'
         }
-      }),
-      prisma.dispatchIncomingOrder.update({
+      });
+
+      const ord = await tx.dispatchIncomingOrder.update({
         where: { id },
         data: { updatedAt: new Date() }
-      })
-    ]);
+      });
+
+      if (wasAlreadyCompleted) {
+        await recordDispatchWorkflowHistory(tx, {
+          dispatchOrderId: id,
+          userId: session.userId,
+          userName: session.name,
+          action: 'Payment Verification Edited',
+          fromStage: 'Payment Verification',
+          toStage: 'Payment Verification',
+          metadata: {
+            previousDecision: prevDecision,
+            newDecision: decision,
+            note: note || undefined,
+          }
+        });
+      } else {
+        await recordDispatchWorkflowHistory(tx, {
+          dispatchOrderId: id,
+          userId: session.userId,
+          userName: session.name,
+          action: 'Completed Payment Verification',
+          fromStage: 'Payment Verification',
+          toStage: nextStage,
+          metadata: {
+            decision,
+            note: note || undefined,
+          }
+        });
+      }
+
+      return [wf, ord];
+    });
 
     dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, {
       ...updatedOrder,

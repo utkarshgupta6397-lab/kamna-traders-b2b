@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
 import { canCompleteDispatchStep, dispatchForbiddenResponse } from '@/lib/dispatch-auth';
+import { recordDispatchWorkflowHistory } from '@/lib/dispatch-history';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -42,8 +43,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       });
     }
 
-    const [updatedWf, updatedOrder] = await prisma.$transaction([
-      prisma.preDispatchWorkflow.update({
+    const [updatedWf, updatedOrder] = await prisma.$transaction(async (tx) => {
+      const updatedW = await tx.preDispatchWorkflow.update({
         where: { id: wf.id },
         data: {
           truckDetailsStatus: 'COMPLETED',
@@ -52,12 +53,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           truckUploadedAt: new Date(),
           overallStatus: 'IN_PROGRESS'
         }
-      }),
-      prisma.dispatchIncomingOrder.update({
+      });
+
+      const updatedO = await tx.dispatchIncomingOrder.update({
         where: { id: order.id },
         data: { updatedAt: new Date() }
-      })
-    ]);
+      });
+
+      await recordDispatchWorkflowHistory(tx, {
+        dispatchOrderId: order.id,
+        userId: session.userId,
+        userName: session.name,
+        action: 'Completed Truck Details',
+        fromStage: 'Truck Details',
+        toStage: 'Ready for Invoice',
+        metadata: { photoUrl }
+      });
+
+      return [updatedW, updatedO];
+    });
 
     dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, {
       ...updatedOrder,

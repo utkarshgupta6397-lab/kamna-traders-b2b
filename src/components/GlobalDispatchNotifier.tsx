@@ -1,12 +1,18 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import toast from 'react-hot-toast';
 
 export default function GlobalDispatchNotifier() {
+  const pathname = usePathname();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const knownIdsRef = useRef<Set<string>>(new Set());
   const isEnabledRef = useRef(false);
+
+  // If user is already on the Dispatch Incoming page, that page directly manages
+  // its own SSE connection, table updates, and user alerts.
+  const isDispatchPage = pathname?.startsWith('/staff/dashboard/dispatch/incoming');
 
   useEffect(() => {
     // Only run on client
@@ -48,10 +54,14 @@ export default function GlobalDispatchNotifier() {
   }, []);
 
   useEffect(() => {
+    // If the user is on the Dispatch Incoming page, that page already handles
+    // its own SSE stream, notifications, and queue state.
+    if (isDispatchPage) return;
+
     let eventSource: EventSource | null = null;
-    let reconnectTimeout: NodeJS.Timeout;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
     let isUnmounted = false;
-    let baselineLoaded = false;
+    let reconnectAttempts = 0;
 
     // 1. Establish baseline from existing queue so existing rows never play bell sound
     const initBaselineAndSSE = async () => {
@@ -69,7 +79,6 @@ export default function GlobalDispatchNotifier() {
       } catch (err) {
         console.warn('[GlobalDispatchNotifier] Baseline fetch failed:', err);
       } finally {
-        baselineLoaded = true;
         if (!isUnmounted) {
           connectSSE();
         }
@@ -78,8 +87,16 @@ export default function GlobalDispatchNotifier() {
 
     const connectSSE = () => {
       if (isUnmounted) return;
+      if (eventSource) {
+        try { eventSource.close(); } catch {}
+        eventSource = null;
+      }
       
       eventSource = new EventSource('/api/dispatch/incoming-queue/events');
+
+      eventSource.onopen = () => {
+        reconnectAttempts = 0;
+      };
 
       eventSource.onmessage = (e) => {
         try {
@@ -152,10 +169,14 @@ export default function GlobalDispatchNotifier() {
 
       eventSource.onerror = () => {
         if (eventSource) {
-          eventSource.close();
+          try { eventSource.close(); } catch {}
+          eventSource = null;
         }
         if (!isUnmounted) {
-          reconnectTimeout = setTimeout(connectSSE, 5000);
+          reconnectAttempts++;
+          const delay = Math.min(30000, 3000 * Math.pow(1.5, Math.min(reconnectAttempts, 6)));
+          if (reconnectTimeout) clearTimeout(reconnectTimeout);
+          reconnectTimeout = setTimeout(connectSSE, delay);
         }
       };
     };
@@ -166,10 +187,10 @@ export default function GlobalDispatchNotifier() {
       isUnmounted = true;
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (eventSource) {
-        eventSource.close();
+        try { eventSource.close(); } catch {}
       }
     };
-  }, []);
+  }, [isDispatchPage]);
 
   return null;
 }

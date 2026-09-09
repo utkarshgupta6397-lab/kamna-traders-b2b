@@ -49,6 +49,17 @@ export function canOverrideDispatchWorkflow(session: Session): boolean {
 }
 
 /**
+ * Checks if user can force archive dispatch orders from any workflow stage.
+ * Admin always has access. Staff must have dispatch_view and dispatch_force_archive.
+ */
+export function canForceArchiveDispatch(session: Session): boolean {
+  if (!session) return false;
+  if (session.role === 'ADMIN') return true;
+  if (!session.dispatch_view) return false;
+  return !!session.dispatch_force_archive;
+}
+
+/**
  * Helper to generate a standardized 403 Forbidden error response payload.
  */
 export function dispatchForbiddenResponse(stepName?: string) {

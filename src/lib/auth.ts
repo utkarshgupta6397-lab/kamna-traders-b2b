@@ -147,6 +147,7 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.dispatch_ready_for_invoice = true;
       merged.dispatch_invoice_confirmation = true;
       merged.dispatch_workflow_override = true;
+      merged.dispatch_force_archive = true;
       merged.dispatch_inventory_deduction = true;
       merged.dispatch_receiving_upload = true;
       merged.dispatch_checked_by = true;

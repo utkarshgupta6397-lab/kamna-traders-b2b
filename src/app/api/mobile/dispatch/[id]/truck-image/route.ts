@@ -6,6 +6,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { hasMobilePermission } from '@/lib/mobile-auth';
+import { recordDispatchWorkflowHistory } from '@/lib/dispatch-history';
 
 export const maxDuration = 60;
 
@@ -168,6 +169,20 @@ export async function POST(
       const freshOrder = await tx.dispatchIncomingOrder.update({
         where: { id: order.id },
         data: { updatedAt: new Date() },
+      });
+
+      await recordDispatchWorkflowHistory(tx, {
+        dispatchOrderId: order.id,
+        userId: session.userId,
+        userName,
+        action: 'Completed Truck Details',
+        fromStage: 'Truck Details',
+        toStage: 'Ready for Invoice',
+        metadata: {
+          imageFilename: filename,
+          imageSizeBytes: buffer.length,
+          source: 'mobile_dispatch'
+        }
       });
 
       return { upload, wf, freshOrder };

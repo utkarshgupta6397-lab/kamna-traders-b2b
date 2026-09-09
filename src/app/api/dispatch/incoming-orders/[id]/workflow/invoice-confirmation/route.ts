@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth';
 import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
 import { fetchInvoicesByCustomerId, searchInvoiceByNumber, fetchInvoiceById } from '@/lib/zoho/invoices';
 import { canCompleteDispatchStep, dispatchForbiddenResponse } from '@/lib/dispatch-auth';
+import { recordDispatchWorkflowHistory } from '@/lib/dispatch-history';
 
 export const dynamic = 'force-dynamic';
 
@@ -318,8 +319,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     const confirmedAt = new Date();
 
-    const [updatedWf, updatedOrder] = await prisma.$transaction([
-      prisma.preDispatchWorkflow.update({
+    const [updatedWf, updatedOrder] = await prisma.$transaction(async (tx) => {
+      const updatedW = await tx.preDispatchWorkflow.update({
         where: { id: wf.id },
         data: {
           invoiceConfirmStatus: 'COMPLETED',
@@ -331,15 +332,32 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           currentStep: 5,
           overallStatus: 'PRE_DISPATCH_COMPLETED'
         }
-      }),
-      prisma.dispatchIncomingOrder.update({
+      });
+
+      const updatedO = await tx.dispatchIncomingOrder.update({
         where: { id },
         data: {
           status: 'ARCHIVED',
           updatedAt: confirmedAt
         }
-      })
-    ]);
+      });
+
+      await recordDispatchWorkflowHistory(tx, {
+        dispatchOrderId: id,
+        userId: session.userId,
+        userName: session.name,
+        action: 'Completed Invoice Confirmation',
+        fromStage: 'Invoice Confirmation',
+        toStage: 'Archived',
+        metadata: {
+          invoiceNumber,
+          invoiceId: invoiceId || null,
+          mappingMethod: mappingMethod || 'MANUAL'
+        }
+      });
+
+      return [updatedW, updatedO];
+    });
 
     // Broadcast update so all active dispatch queue tables reflect archived status and stop timers
     dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, {

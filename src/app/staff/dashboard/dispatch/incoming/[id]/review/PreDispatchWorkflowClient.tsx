@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { CheckCircle2, ArrowLeft, Lock, RefreshCw, Loader2, ExternalLink, CircleAlert, ZoomIn, X, Truck } from 'lucide-react';
+import { CheckCircle2, ArrowLeft, Lock, RefreshCw, Loader2, ExternalLink, CircleAlert, ZoomIn, X, Truck, Archive, History } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
+import { WorkflowHistoryModal } from '@/components/dispatch/WorkflowHistoryModal';
 import RateReviewStep from './RateReviewStep';
 import PaymentVerificationStep from './PaymentVerificationStep';
 import ReadyForInvoiceStep from './ReadyForInvoiceStep';
@@ -86,6 +87,7 @@ export interface PreDispatchPermissions {
   canReadyForInvoice?: boolean;
   canInvoiceConfirm?: boolean;
   canWorkflowOverride?: boolean;
+  canForceArchive?: boolean;
 }
 
 export default function PreDispatchWorkflowClient({
@@ -99,15 +101,22 @@ export default function PreDispatchWorkflowClient({
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [viewStep, setViewStep] = useState<number | null>(null);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   // Close preview on ESC
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setPreviewOpen(false);
+      if (e.key === 'Escape') {
+        setPreviewOpen(false);
+        if (!archiving) setShowArchiveConfirm(false);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [archiving]);
 
   const fetchWorkflow = async () => {
     try {
@@ -115,10 +124,31 @@ export default function PreDispatchWorkflowClient({
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || 'Failed to load workflow');
       setData(json.data);
+      setViewStep(null);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForceArchive = async () => {
+    setArchiving(true);
+    try {
+      const res = await fetch(`/api/dispatch/incoming-orders/${id}/archive`, {
+        method: 'POST',
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Failed to archive order');
+      }
+      toast.success('Order force-archived successfully');
+      setShowArchiveConfirm(false);
+      fetchWorkflow();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setArchiving(false);
     }
   };
 
@@ -142,6 +172,7 @@ export default function PreDispatchWorkflowClient({
   ];
 
   const currentStep = workflow.currentStep;
+  const activeStep = viewStep ?? currentStep;
   const isTruckCompleted = workflow.truckDetailsStatus === 'COMPLETED';
   const orderTotal = Number(order.zohoDetailsJson?.total || order.total || 0);
   const isTruckRequired = orderTotal > 50000;
@@ -173,7 +204,12 @@ export default function PreDispatchWorkflowClient({
         <div className="flex flex-col gap-1.5 min-w-0">
           {/* ROW 1 */}
           <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 text-sm">
-            <button onClick={() => router.push('/staff/dashboard/dispatch/incoming')} className="flex items-center gap-1.5 font-semibold text-gray-500 hover:text-gray-900 transition-colors">
+            <button 
+              onClick={() => router.push('/staff/dashboard/dispatch/incoming')} 
+              title="Back to Incoming Orders Queue"
+              aria-label="Back to Incoming Orders Queue"
+              className="flex items-center gap-1.5 font-semibold text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
+            >
               <ArrowLeft size={16} /> <span className="hidden sm:inline">Back</span>
             </button>
             <div className="h-4 w-px bg-gray-300" />
@@ -259,6 +295,33 @@ export default function PreDispatchWorkflowClient({
               completedAt={workflow?.invoiceConfirmAt || (workflow?.overallStatus === 'PRE_DISPATCH_COMPLETED' ? workflow?.readyCompletedAt || workflow?.updatedAt : null)}
             />
           </div>
+
+          <div className="h-9 w-px bg-gray-200 hidden sm:block" />
+
+          {/* Action buttons: History & Force Archive */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setHistoryModalOpen(true)}
+              title="View Workflow Audit History"
+              className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+            >
+              <History size={14} className="text-gray-500" />
+              <span className="hidden md:inline">History</span>
+            </button>
+
+            {permissions?.canForceArchive && workflow?.overallStatus !== 'PRE_DISPATCH_COMPLETED' && order.status !== 'ARCHIVED' && (
+              <button
+                type="button"
+                onClick={() => setShowArchiveConfirm(true)}
+                title="Force Archive Order (Requires special permission)"
+                className="px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+              >
+                <Archive size={14} className="text-amber-700" />
+                <span className="hidden md:inline">Force Archive</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -266,13 +329,25 @@ export default function PreDispatchWorkflowClient({
         {/* HORIZONTAL STEPPER */}
         <div className="bg-white border-b border-gray-200 px-6 py-3 flex-shrink-0 flex items-center justify-between">
           {steps.map((s, idx) => {
-            const active = currentStep === s.id;
+            const active = activeStep === s.id;
             const completed = s.id < currentStep || (s.id === currentStep && s.status === 'COMPLETED');
             const blocked = !canAccessStep(s.id);
+            const isClickable = canAccessStep(s.id) && s.id !== activeStep;
             
             return (
               <React.Fragment key={s.id}>
-                <div className={`flex flex-col items-center gap-1.5 w-32 ${blocked ? 'opacity-50' : ''}`}>
+                <button
+                  type="button"
+                  disabled={blocked}
+                  onClick={() => {
+                    if (canAccessStep(s.id)) {
+                      setViewStep(s.id === currentStep ? null : s.id);
+                    }
+                  }}
+                  title={blocked ? 'Step locked' : `Navigate to ${s.title}`}
+                  aria-label={`Step ${s.id}: ${s.title}${completed ? ' (Completed)' : active ? ' (Active)' : blocked ? ' (Locked)' : ''}`}
+                  className={`flex flex-col items-center gap-1.5 w-32 transition-all ${blocked ? 'opacity-50 cursor-not-allowed' : isClickable ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
+                >
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs transition-colors
                     ${completed ? 'bg-emerald-500 text-white' : active ? 'bg-[#1A2766] text-white ring-4 ring-blue-50' : 'bg-gray-100 text-gray-400 border border-gray-200'}`}>
                     {completed ? <CheckCircle2 size={14} strokeWidth={3} /> : blocked ? <Lock size={12} /> : s.id}
@@ -281,7 +356,7 @@ export default function PreDispatchWorkflowClient({
                     ${completed ? 'text-emerald-700' : active ? 'text-[#1A2766]' : 'text-gray-500'}`}>
                     {s.title}
                   </span>
-                </div>
+                </button>
                 {idx < steps.length - 1 && (
                   <div className={`flex-1 h-0.5 mx-2 rounded-full ${s.id < currentStep ? 'bg-emerald-500' : 'bg-gray-100'}`} />
                 )}
@@ -289,6 +364,22 @@ export default function PreDispatchWorkflowClient({
             );
           })}
         </div>
+
+        {/* Previous Step Read-Only Banner */}
+        {viewStep && viewStep < currentStep && (
+          <div className="bg-blue-50 border-b border-blue-200 px-6 py-2 flex items-center justify-between text-xs text-blue-900 font-medium shrink-0 shadow-sm">
+            <span className="flex items-center gap-1.5">
+              Viewing previously completed <strong>{steps.find(s => s.id === viewStep)?.title}</strong> (read-only).
+            </span>
+            <button
+              type="button"
+              onClick={() => setViewStep(null)}
+              className="inline-flex items-center gap-1 font-bold text-[#1A2766] hover:underline cursor-pointer"
+            >
+              Return to {steps.find(s => s.id === currentStep)?.title} &rarr;
+            </button>
+          </div>
+        )}
 
         {/* WORKFLOW CONTENT */}
         <div className="flex-1 min-h-0 flex flex-col bg-gray-50">
@@ -308,10 +399,20 @@ export default function PreDispatchWorkflowClient({
           )}
 
           <div className="flex-1 flex flex-col relative w-full h-full min-h-0">
-            {currentStep === 1 && <RateReviewStep order={order} workflow={workflow} onRefresh={fetchWorkflow} hasPermission={permissions?.canRateReview ?? true} />}
-            {currentStep === 2 && canAccessStep(2) && <div className="p-4 sm:p-5 flex-1 min-h-0 flex flex-col h-full"><PaymentVerificationStep order={order} workflow={workflow} onRefresh={fetchWorkflow} hasPermission={permissions?.canPaymentVerify ?? true} /></div>}
-            {currentStep === 3 && canAccessStep(3) && <div className="p-6"><ReadyForInvoiceStep order={order} workflow={workflow} meta={data} onRefresh={fetchWorkflow} hasPermission={permissions?.canReadyForInvoice ?? true} /></div>}
-            {currentStep === 4 && canAccessStep(4) && <div className="p-6"><InvoiceConfirmationStep order={order} workflow={workflow} onRefresh={fetchWorkflow} hasPermission={permissions?.canInvoiceConfirm ?? true} /></div>}
+            {activeStep === 1 && <RateReviewStep order={order} workflow={workflow} onRefresh={fetchWorkflow} hasPermission={permissions?.canRateReview ?? true} />}
+            {activeStep === 2 && canAccessStep(2) && (
+              <div className="p-4 sm:p-5 flex-1 min-h-0 flex flex-col h-full">
+                <PaymentVerificationStep 
+                  order={order} 
+                  workflow={workflow} 
+                  onRefresh={fetchWorkflow} 
+                  onPreviousStep={() => setViewStep(1)}
+                  hasPermission={permissions?.canPaymentVerify ?? true} 
+                />
+              </div>
+            )}
+            {activeStep === 3 && canAccessStep(3) && <div className="p-6"><ReadyForInvoiceStep order={order} workflow={workflow} meta={data} onRefresh={fetchWorkflow} hasPermission={permissions?.canReadyForInvoice ?? true} /></div>}
+            {activeStep === 4 && canAccessStep(4) && <div className="p-6"><InvoiceConfirmationStep order={order} workflow={workflow} onRefresh={fetchWorkflow} hasPermission={permissions?.canInvoiceConfirm ?? true} /></div>}
             
             {workflow.overallStatus === 'PRE_DISPATCH_COMPLETED' && (
                <div className="flex flex-col items-center justify-center p-12 text-center h-full">
@@ -393,6 +494,57 @@ export default function PreDispatchWorkflowClient({
           </div>
         </div>
       )}
+
+      {/* Force Archive Confirmation Modal */}
+      {showArchiveConfirm && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden border border-gray-200">
+            <div className="p-6">
+              <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mb-4">
+                <Archive size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Force Archive Order?</h3>
+              <p className="text-sm text-gray-600 mb-2">
+                This will move Sales Order <strong className="text-gray-900">#{order.salesorderNumber || order.zohoSalesorderId}</strong> directly to Archived status, regardless of its current workflow progress.
+              </p>
+              <p className="text-xs text-amber-800 bg-amber-50 p-2.5 rounded-lg border border-amber-200">
+                This action is audited and cannot be undone. All future edits will be disabled.
+              </p>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowArchiveConfirm(false)}
+                disabled={archiving}
+                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-100 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleForceArchive}
+                disabled={archiving}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors disabled:opacity-50 cursor-pointer shadow-sm"
+              >
+                {archiving && <Loader2 size={15} className="animate-spin" />}
+                {archiving ? 'Archiving...' : 'Confirm Force Archive'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Workflow History Modal */}
+      <WorkflowHistoryModal
+        orderId={order.id}
+        orderNumber={order.salesorderNumber || order.zohoSalesorderId}
+        isOpen={historyModalOpen}
+        onClose={() => setHistoryModalOpen(false)}
+      />
     </div>
   );
 }

@@ -108,26 +108,28 @@ export default function MiniCustomerStatement({
             Recent Transactions
           </span>
         </h3>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {onRefresh && (
             <button
               type="button"
               onClick={() => onRefresh()}
               disabled={refreshing || statementLoading}
+              aria-label="Refresh Statement Data"
               title="Refresh Statement Data"
-              className="text-xs font-semibold bg-blue-50 border border-blue-200 text-[#1A2766] hover:bg-blue-100 px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              className="p-1.5 text-gray-600 hover:text-[#1A2766] hover:bg-blue-50 border border-gray-200 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center cursor-pointer"
             >
-              <RefreshCw size={12} className={refreshing || statementLoading ? 'animate-spin' : ''} />
-              <span>Refresh Statement</span>
+              <RefreshCw size={14} className={refreshing || statementLoading ? 'animate-spin text-[#1A2766]' : ''} />
             </button>
           )}
           <a
             href={`/staff/dashboard/accounts?customerId=${customerId}`}
             target="_blank"
             rel="noreferrer"
-            className="text-xs font-semibold bg-gray-100 border border-gray-200 px-3 py-1.5 rounded text-gray-700 flex items-center gap-1.5 hover:bg-gray-200 transition-colors"
+            aria-label="Open Full Statement in Accounts"
+            title="Open Full Statement in Accounts"
+            className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-gray-200 rounded-md transition-colors flex items-center justify-center"
           >
-            Full Statement <ExternalLink size={12} />
+            <ExternalLink size={14} />
           </a>
         </div>
       </div>
@@ -149,11 +151,11 @@ export default function MiniCustomerStatement({
             ? allTxs[0].balanceAfter - allTxs[0].netEffect
             : statementData.closingBalance;
           const openingPres = getOpeningBalancePresentation(openingBal);
-          const closingPres = getOpeningBalancePresentation(statementData.closingBalance);
-
-          // PV-001: Adjusted Closing Balance = Closing Balance - Current Sales Order Total Amount
-          const adjustedClosingBal = (statementData.closingBalance ?? 0) - orderTotal;
-          const adjustedPres = getOpeningBalancePresentation(adjustedClosingBal);
+          const rawClosingBalance = Number(statementData.closingBalance ?? 0);
+          const isAdvance = rawClosingBalance < 0;
+          const rawNetBalance = orderTotal + rawClosingBalance;
+          const isRemainingAdvance = rawNetBalance < 0;
+          const adjustedClosingBal = Math.abs(rawNetBalance);
           
           return (
             <div className="flex flex-col h-full min-h-0 flex-1 overflow-hidden">
@@ -270,7 +272,7 @@ export default function MiniCustomerStatement({
                 </table>
               </div>
 
-              {/* Footer Financial Summary: Opening Balance -> Closing Balance -> SO Amount -> Adjusted Closing Balance */}
+              {/* Footer Financial Summary: Opening Balance | Order Amount [+/-] Customer Balance = Adjusted Balance */}
               <div className="bg-gray-50 border-t border-gray-200 px-4 py-3 shrink-0 mt-auto">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="text-left">
@@ -281,16 +283,6 @@ export default function MiniCustomerStatement({
                   </div>
 
                   <div className="flex items-center gap-3 sm:gap-4 ml-auto">
-                    {/* Current Closing Balance */}
-                    <div className="text-right">
-                      <p className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Closing Balance</p>
-                      <p className={`text-sm sm:text-base font-black tabular-nums ${closingPres.isCredit ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {closingPres.amount}
-                      </p>
-                    </div>
-
-                    <span className="text-gray-400 font-bold text-sm">−</span>
-
                     {/* Current SO Amount */}
                     <div className="text-right">
                       <p className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Order Amount</p>
@@ -299,14 +291,41 @@ export default function MiniCustomerStatement({
                       </p>
                     </div>
 
-                    <span className="text-gray-400 font-bold text-sm">=</span>
+                    {/* Operator: − if customer has advance, + if customer has outstanding or zero balance */}
+                    <span 
+                      className="text-gray-400 font-bold text-sm select-none" 
+                      aria-label={isAdvance ? 'minus' : 'plus'}
+                      title={isAdvance ? 'Advance deducted from order' : 'Outstanding added to order'}
+                    >
+                      {isAdvance ? '−' : '+'}
+                    </span>
+
+                    {/* Customer Closing Balance */}
+                    <div className="text-right">
+                      <p className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">
+                        {isAdvance ? 'Advance Balance' : rawClosingBalance > 0 ? 'Outstanding Balance' : 'Closing Balance'}
+                      </p>
+                      <p 
+                        className={`text-sm sm:text-base font-black tabular-nums ${isAdvance ? 'text-emerald-600' : rawClosingBalance > 0 ? 'text-red-600' : 'text-gray-800'}`}
+                        title={isAdvance ? 'Customer has advance credit in ledger' : rawClosingBalance > 0 ? 'Customer has outstanding balance in ledger' : 'Customer account is settled'}
+                      >
+                        {fmt(rawClosingBalance)}
+                      </p>
+                    </div>
+
+                    <span className="text-gray-400 font-bold text-sm select-none" aria-label="equals">=</span>
 
                     {/* Adjusted Closing Balance */}
                     <div className="text-right pl-1 sm:pl-2 border-l border-gray-300">
-                      <p className="text-[10px] uppercase font-bold text-[#1A2766] tracking-wider">Adjusted Balance</p>
+                      <p className="text-[10px] uppercase font-bold text-[#1A2766] tracking-wider">
+                        {isRemainingAdvance ? 'Adjusted (Advance)' : isAdvance ? 'Adjusted (Net Due)' : 'Adjusted Balance'}
+                      </p>
                       <div className="flex items-center justify-end gap-1">
-                        <p className={`text-base sm:text-lg font-black tabular-nums ${adjustedPres.isCredit ? 'text-emerald-600' : 'text-red-600'}`}>
-                          {adjustedPres.amount}
+                        <p 
+                          className={`text-base sm:text-lg font-black tabular-nums ${isRemainingAdvance ? 'text-emerald-600' : rawNetBalance > 0 ? 'text-red-600' : 'text-gray-800'}`}
+                          title={isRemainingAdvance ? 'Remaining advance credit after this order' : 'Net amount due from customer including this order'}
+                        >
+                          {fmt(adjustedClosingBal)}
                         </p>
                       </div>
                     </div>

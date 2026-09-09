@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
 import { canOverrideDispatchWorkflow, dispatchForbiddenResponse } from '@/lib/dispatch-auth';
+import { recordDispatchWorkflowHistory } from '@/lib/dispatch-history';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
@@ -68,9 +69,32 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: 'Invalid step to reopen' }, { status: 400 });
     }
 
-    const updated = await prisma.preDispatchWorkflow.update({
-      where: { id: wf.id },
-      data: updates
+    const stepLabels: Record<string, string> = {
+      'rate-review': 'Rate Review',
+      'payment-verification': 'Payment Verification',
+      'ready-for-invoice': 'Ready for Invoice',
+      'invoice-confirmation': 'Invoice Confirmation',
+    };
+
+    const targetStepName = stepLabels[step] || step;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const up = await tx.preDispatchWorkflow.update({
+        where: { id: wf.id },
+        data: updates
+      });
+
+      await recordDispatchWorkflowHistory(tx, {
+        dispatchOrderId: id,
+        userId: session.userId,
+        userName: session.name,
+        action: `Reopened ${targetStepName}`,
+        fromStage: targetStepName,
+        toStage: targetStepName,
+        metadata: { step, reopenedAt: new Date().toISOString() }
+      });
+
+      return up;
     });
 
     return NextResponse.json({ success: true, data: updated });

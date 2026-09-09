@@ -17,9 +17,12 @@ import {
   ChevronRight,
   Truck,
   CheckCircle2,
-  FileCheck
+  FileCheck,
+  Archive,
+  History,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { WorkflowHistoryModal } from '@/components/dispatch/WorkflowHistoryModal';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -168,15 +171,69 @@ function formatElapsed(seconds: number): string {
   return remHrs > 0 ? `${days}d ${remHrs}h` : `${days}d`;
 }
 
+/**
+ * Isolated live timer badge. Re-renders only itself every 1s, preventing the
+ * parent table or full row components from thrashing and re-rendering.
+ */
+function LiveElapsedTimer({ baseTs }: { baseTs: string | Date }) {
+  const [elapsedSec, setElapsedSec] = useState(() => {
+    return Math.max(0, Math.floor((Date.now() - new Date(baseTs).getTime()) / 1000));
+  });
+
+  useEffect(() => {
+    const update = () => {
+      setElapsedSec(Math.max(0, Math.floor((Date.now() - new Date(baseTs).getTime()) / 1000)));
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [baseTs]);
+
+  return (
+    <div>
+      <div className="font-semibold text-gray-800 tabular-nums text-sm font-mono">
+        {formatElapsed(elapsedSec)}
+      </div>
+      <div className="text-[10px] text-gray-400 mt-0.5">
+        {format(new Date(baseTs), 'dd MMM · hh:mm a')}
+      </div>
+    </div>
+  );
+}
+
+function FrozenElapsedTimer({ baseTs, finishTs }: { baseTs: string | Date; finishTs: string | Date }) {
+  const elapsedSec = Math.max(0, Math.floor((new Date(finishTs).getTime() - new Date(baseTs).getTime()) / 1000));
+  return (
+    <div>
+      <div className="inline-flex items-center gap-1 text-emerald-700 font-semibold tabular-nums text-xs font-mono bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+        <CheckCircle2 size={12} className="text-emerald-600" />
+        {formatElapsed(elapsedSec)}
+      </div>
+      <div className="text-[10px] text-gray-400 mt-0.5">
+        Final Duration
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function IncomingQueueClient() {
+export interface IncomingQueuePermissions {
+  isAdmin?: boolean;
+  canForceArchive?: boolean;
+}
+
+export default function IncomingQueueClient({
+  permissions,
+}: {
+  permissions?: IncomingQueuePermissions;
+} = {}) {
   const [section, setSection] = useState<DispatchSection>('pre');
   const [orders, setOrders] = useState<DispatchIncomingOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('active');
-  const [sseConnected, setSseConnected] = useState(false);
+  const [sseStatus, setSseStatus] = useState<'connecting' | 'connected' | 'reconnecting'>('connecting');
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const [fetchingIds, setFetchingIds] = useState<Set<string>>(new Set());
 
@@ -192,17 +249,16 @@ export default function IncomingQueueClient() {
   const [submittingSendBack, setSubmittingSendBack] = useState(false);
   const [sendBackError, setSendBackError] = useState<string | null>(null);
 
-  // Live clock — single shared ticker; all rows derive elapsed time from this
-  const [now, setNow] = useState(() => Date.now());
+  // History Modal state
+  const [historyModalOrder, setHistoryModalOrder] = useState<DispatchIncomingOrder | null>(null);
+
+  // Force Archive Modal state
+  const [archiveModalOrder, setArchiveModalOrder] = useState<DispatchIncomingOrder | null>(null);
+  const [submittingArchive, setSubmittingArchive] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
 
   // Deduplication ref for SSE
   const knownIdsRef = useRef<Set<string>>(new Set());
-
-  // ── Single shared ticker ──────────────────────────────────────────────────
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
 
   // Reset pagination on search or tab change
   useEffect(() => {
@@ -274,6 +330,30 @@ export default function IncomingQueueClient() {
     }
   };
 
+  const handleForceArchive = async () => {
+    if (!archiveModalOrder) return;
+    setSubmittingArchive(true);
+    setArchiveError(null);
+    try {
+      const res = await fetch(`/api/dispatch/incoming-orders/${archiveModalOrder.id}/archive`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setArchiveError(data.error || 'Failed to force archive order.');
+      } else {
+        toast.success('Order force-archived successfully.');
+        setArchiveModalOrder(null);
+        // Refresh queue
+        fetchInitialData();
+      }
+    } catch (err: any) {
+      setArchiveError(err.message || 'Network error.');
+    } finally {
+      setSubmittingArchive(false);
+    }
+  };
+
   const fetchInitialData = async () => {
     setLoading(true);
     try {
@@ -319,24 +399,46 @@ export default function IncomingQueueClient() {
   useEffect(() => {
     fetchInitialData();
 
-    let eventSource: EventSource;
-    let reconnectTimeout: NodeJS.Timeout;
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
     let isUnmounted = false;
+    let reconnectAttempts = 0;
 
     const connectSSE = () => {
+      if (isUnmounted) return;
+      if (eventSource) {
+        try { eventSource.close(); } catch {}
+        eventSource = null;
+      }
+
       eventSource = new EventSource('/api/dispatch/incoming-queue/events');
 
-      eventSource.onopen = () => setSseConnected(true);
+      eventSource.onopen = () => {
+        setSseStatus('connected');
+        reconnectAttempts = 0;
+      };
 
       eventSource.onerror = () => {
-        setSseConnected(false);
-        eventSource.close();
-        if (!isUnmounted) reconnectTimeout = setTimeout(connectSSE, 5000);
+        setSseStatus('reconnecting');
+        if (eventSource) {
+          try { eventSource.close(); } catch {}
+          eventSource = null;
+        }
+        if (!isUnmounted) {
+          reconnectAttempts++;
+          const delay = Math.min(30000, 3000 * Math.pow(1.5, Math.min(reconnectAttempts, 6)));
+          if (reconnectTimeout) clearTimeout(reconnectTimeout);
+          reconnectTimeout = setTimeout(connectSSE, delay);
+        }
       };
 
       eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          if (data.type === 'connected') {
+            setSseStatus('connected');
+            return;
+          }
           if (data.type === 'new_order') {
             const order: DispatchIncomingOrder = data.order;
             const dedupeKey = (order as any)._isRePush
@@ -368,7 +470,9 @@ export default function IncomingQueueClient() {
     return () => {
       isUnmounted = true;
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      if (eventSource) eventSource.close();
+      if (eventSource) {
+        try { eventSource.close(); } catch {}
+      }
     };
   }, []);
 
@@ -464,12 +568,18 @@ export default function IncomingQueueClient() {
           const baseA = new Date(a.activatedAt ?? a.receivedAt).getTime();
           const baseB = new Date(b.activatedAt ?? b.receivedAt).getTime();
 
+          // For archived orders, duration is fixed between base and finish timestamp.
+          // For active orders, duration is (currentTime - base).
+          // Notice that (currentTime - baseA) - (currentTime - baseB) = baseB - baseA.
+          // By anchoring active orders to an identical reference epoch, we avoid needing
+          // a 1-second ticking clock in this sort comparator, preventing full table re-sorts.
+          const refTime = 10000000000000; // Constant distant future timestamp
           const finishA = isArchivedA
             ? new Date(a.preDispatchWorkflow?.invoiceConfirmAt || a.preDispatchWorkflow?.readyCompletedAt || a.updatedAt).getTime()
-            : now;
+            : refTime;
           const finishB = isArchivedB
             ? new Date(b.preDispatchWorkflow?.invoiceConfirmAt || b.preDispatchWorkflow?.readyCompletedAt || b.updatedAt).getTime()
-            : now;
+            : refTime;
 
           const diffA = Math.max(0, finishA - baseA);
           const diffB = Math.max(0, finishB - baseB);
@@ -503,7 +613,7 @@ export default function IncomingQueueClient() {
       return 0;
     });
     return sorted;
-  }, [filteredOrders, sortConfig, now]);
+  }, [filteredOrders, sortConfig]);
 
   // Pagination
   const totalPages = pageSize === 'all' ? 1 : Math.ceil(sortedOrders.length / (pageSize as number)) || 1;
@@ -574,10 +684,15 @@ export default function IncomingQueueClient() {
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               Dispatch Orders
-              {sseConnected ? (
+              {sseStatus === 'connected' ? (
                 <span className="flex items-center gap-1 text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   Live
+                </span>
+              ) : sseStatus === 'connecting' ? (
+                <span className="flex items-center gap-1 text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                  <Loader2 size={10} className="animate-spin text-blue-600" />
+                  Connecting...
                 </span>
               ) : (
                 <span className="flex items-center gap-1 text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
@@ -732,17 +847,6 @@ export default function IncomingQueueClient() {
                     const isArchived = getOrderStage(order) === 'archived';
                     const baseTs = order.activatedAt ?? order.receivedAt;
 
-                    let elapsedSec = 0;
-                    if (isArchived) {
-                      const finishTs =
-                        order.preDispatchWorkflow?.invoiceConfirmAt ||
-                        order.preDispatchWorkflow?.readyCompletedAt ||
-                        order.updatedAt;
-                      elapsedSec = Math.max(0, Math.floor((new Date(finishTs).getTime() - new Date(baseTs).getTime()) / 1000));
-                    } else {
-                      elapsedSec = Math.max(0, Math.floor((now - new Date(baseTs).getTime()) / 1000));
-                    }
-
                     const needsDetailsFetch =
                       !order.detailsStatus || order.detailsStatus === 'PENDING' || order.detailsStatus === 'FAILED';
                     const badge = getStageBadge(order);
@@ -822,24 +926,16 @@ export default function IncomingQueueClient() {
                         {/* Live Elapsed / Frozen Final Timer */}
                         <td className="px-4 py-3 whitespace-nowrap">
                           {isArchived ? (
-                            <div>
-                              <div className="inline-flex items-center gap-1 text-emerald-700 font-semibold tabular-nums text-xs font-mono bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                <CheckCircle2 size={12} className="text-emerald-600" />
-                                {formatElapsed(elapsedSec)}
-                              </div>
-                              <div className="text-[10px] text-gray-400 mt-0.5">
-                                Final Duration
-                              </div>
-                            </div>
+                            <FrozenElapsedTimer
+                              baseTs={baseTs}
+                              finishTs={
+                                order.preDispatchWorkflow?.invoiceConfirmAt ||
+                                order.preDispatchWorkflow?.readyCompletedAt ||
+                                order.updatedAt
+                              }
+                            />
                           ) : (
-                            <div>
-                              <div className="font-semibold text-gray-800 tabular-nums text-sm font-mono">
-                                {formatElapsed(elapsedSec)}
-                              </div>
-                              <div className="text-[10px] text-gray-400 mt-0.5">
-                                {format(new Date(baseTs), 'dd MMM · hh:mm a')}
-                              </div>
-                            </div>
+                            <LiveElapsedTimer baseTs={baseTs} />
                           )}
                         </td>
 
@@ -872,6 +968,33 @@ export default function IncomingQueueClient() {
                                 className="p-1 rounded text-gray-400 hover:text-[#1A2766] hover:bg-blue-50 border border-transparent hover:border-blue-100 transition-colors disabled:opacity-40"
                               >
                                 <RefreshCw size={12} className={fetchingIds.has(order.id) ? 'animate-spin text-blue-500' : ''} />
+                              </button>
+                            )}
+
+                            {/* Audit History button */}
+                            <button
+                              type="button"
+                              onClick={() => setHistoryModalOrder(order)}
+                              title="View Workflow History"
+                              aria-label="View Workflow History"
+                              className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 border border-transparent hover:border-gray-200 transition-colors"
+                            >
+                              <History size={13} />
+                            </button>
+
+                            {/* Force Archive button (conditional on permission) */}
+                            {permissions?.canForceArchive && !isArchived && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setArchiveModalOrder(order);
+                                  setArchiveError(null);
+                                }}
+                                title="Force Archive Order"
+                                aria-label="Force Archive Order"
+                                className="p-1 rounded text-amber-500 hover:text-amber-700 hover:bg-amber-50 border border-transparent hover:border-amber-200 transition-colors"
+                              >
+                                <Archive size={13} />
                               </button>
                             )}
 
@@ -1095,6 +1218,69 @@ export default function IncomingQueueClient() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Force Archive Modal */}
+      {archiveModalOrder && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden border border-gray-200">
+            <div className="p-6">
+              <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mb-4">
+                <Archive size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Force Archive Order?</h3>
+              <p className="text-sm text-gray-600 mb-2">
+                This will move Sales Order <strong className="text-gray-900">#{archiveModalOrder.salesorderNumber || archiveModalOrder.zohoSalesorderId}</strong> directly to Archived status, regardless of its current workflow progress.
+              </p>
+              <p className="text-xs text-amber-800 bg-amber-50 p-2.5 rounded-lg border border-amber-200">
+                This action is audited and cannot be undone. All future edits will be disabled.
+              </p>
+              {archiveError && (
+                <div className="mt-3 p-2.5 rounded bg-red-50 text-red-700 border border-red-200 text-xs">
+                  {archiveError}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!submittingArchive) {
+                    setArchiveModalOrder(null);
+                    setArchiveError(null);
+                  }
+                }}
+                disabled={submittingArchive}
+                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-100 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleForceArchive}
+                disabled={submittingArchive}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors disabled:opacity-50 cursor-pointer shadow-sm"
+              >
+                {submittingArchive && <Loader2 size={15} className="animate-spin" />}
+                {submittingArchive ? 'Archiving...' : 'Confirm Force Archive'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Workflow History Modal */}
+      {historyModalOrder && (
+        <WorkflowHistoryModal
+          orderId={historyModalOrder.id}
+          orderNumber={historyModalOrder.salesorderNumber || historyModalOrder.zohoSalesorderId}
+          isOpen={Boolean(historyModalOrder)}
+          onClose={() => setHistoryModalOrder(null)}
+        />
       )}
     </div>
   );

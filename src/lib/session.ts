@@ -145,6 +145,7 @@ export async function validateSession(sessionToken: string): Promise<{
             dispatch_ready_for_invoice: true,
             dispatch_invoice_confirmation: true,
             dispatch_workflow_override: true,
+            dispatch_force_archive: true,
             dispatch_inventory_deduction: true,
             dispatch_receiving_upload: true,
             dispatch_checked_by: true,
@@ -280,7 +281,7 @@ export async function validateSession(sessionToken: string): Promise<{
           `SELECT "mobile_stock_management", "mobile_stock_management_solar_panel", "mobile_stock_management_wire_cables",
                   "mobile_stock_management_inverter", "mobile_stock_management_solar_accessories",
                   "mobile_accounts", "mobile_accounts_customer_statement", "mobile_accounts_customer_dcr_lookup",
-                  "mobile_dispatch"
+                  "mobile_dispatch", "dispatch_force_archive"
            FROM "User" WHERE "id" = $1 LIMIT 1`,
           fallback.userId
         );
@@ -288,7 +289,7 @@ export async function validateSession(sessionToken: string): Promise<{
           Object.assign(fallback.user, rawUser[0]);
         }
       } catch (rawErr: any) {
-        console.warn('[Session] Could not fetch raw mobile permissions:', rawErr?.message);
+        console.warn('[Session] Could not fetch raw permissions:', rawErr?.message);
       }
       session = fallback;
     }
@@ -330,6 +331,7 @@ export async function validateSession(sessionToken: string): Promise<{
       userObj.dispatch_ready_for_invoice = true;
       userObj.dispatch_invoice_confirmation = true;
       userObj.dispatch_workflow_override = true;
+      userObj.dispatch_force_archive = true;
       userObj.dispatch_inventory_deduction = true;
       userObj.dispatch_receiving_upload = true;
       userObj.dispatch_checked_by = true;

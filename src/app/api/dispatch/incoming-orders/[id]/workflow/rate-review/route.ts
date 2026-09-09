@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
 import { canCompleteDispatchStep, dispatchForbiddenResponse } from '@/lib/dispatch-auth';
+import { recordDispatchWorkflowHistory } from '@/lib/dispatch-history';
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -57,23 +58,36 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: 'Cannot complete: Not all items are verified.' }, { status: 400 });
       }
 
-      const [updatedWf, updatedOrder] = await prisma.$transaction([
-        prisma.preDispatchWorkflow.update({
-          where: { id: order.preDispatchWorkflow.id },
+      const [updatedWf, updatedOrder] = await prisma.$transaction(async (tx) => {
+        const wf = await tx.preDispatchWorkflow.update({
+          where: { id: order.preDispatchWorkflow!.id },
           data: {
             rateReviewStatus: 'COMPLETED',
             rateReviewCompletedBy: session.userId,
             rateReviewCompletedAt: new Date(),
             rateReviewAudit: audit,
-            currentStep: Math.max(order.preDispatchWorkflow.currentStep, 2),
+            currentStep: Math.max(order.preDispatchWorkflow!.currentStep, 2),
             overallStatus: 'IN_PROGRESS'
           }
-        }),
-        prisma.dispatchIncomingOrder.update({
+        });
+
+        const ord = await tx.dispatchIncomingOrder.update({
           where: { id },
           data: { updatedAt: new Date() }
-        })
-      ]);
+        });
+
+        await recordDispatchWorkflowHistory(tx, {
+          dispatchOrderId: id,
+          userId: session.userId,
+          userName: session.name,
+          action: 'Completed Rate Review',
+          fromStage: 'Rate Review',
+          toStage: 'Payment Verification',
+          metadata: { totalItems: lineItems.length }
+        });
+
+        return [wf, ord];
+      });
 
       dispatchEventEmitter.emit(DISPATCH_EVENTS.UPDATE_INCOMING_ORDER, {
         ...updatedOrder,

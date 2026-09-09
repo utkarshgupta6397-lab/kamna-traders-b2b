@@ -149,6 +149,7 @@ export async function validateSession(sessionToken: string): Promise<{
             dispatch_inventory_deduction: true,
             dispatch_receiving_upload: true,
             dispatch_checked_by: true,
+            dispatch_post_dispatch: true,
             mobile_stock_management: true,
             mobile_stock_management_solar_panel: true,
             mobile_stock_management_wire_cables: true,
@@ -158,6 +159,11 @@ export async function validateSession(sessionToken: string): Promise<{
             mobile_accounts_customer_statement: true,
             mobile_accounts_customer_dcr_lookup: true,
             mobile_dispatch: true,
+            mobile_dispatch_post_dispatch: true,
+            mobile_dispatch_post_dispatch_receiving_upload: true,
+            mobile_dispatch_post_dispatch_receiving_verify: true,
+            mobile_dispatch_post_dispatch_checked_upload: true,
+            mobile_dispatch_post_dispatch_checked_verify: true,
             communications_view: true,
             communications_templates: true,
             whatsapp_integration: true,
@@ -239,6 +245,21 @@ export async function validateSession(sessionToken: string): Promise<{
             dispatch_inventory_deduction: true,
             dispatch_receiving_upload: true,
             dispatch_checked_by: true,
+            dispatch_post_dispatch: true,
+            mobile_stock_management: true,
+            mobile_stock_management_solar_panel: true,
+            mobile_stock_management_wire_cables: true,
+            mobile_stock_management_inverter: true,
+            mobile_stock_management_solar_accessories: true,
+            mobile_accounts: true,
+            mobile_accounts_customer_statement: true,
+            mobile_accounts_customer_dcr_lookup: true,
+            mobile_dispatch: true,
+            mobile_dispatch_post_dispatch: true,
+            mobile_dispatch_post_dispatch_receiving_upload: true,
+            mobile_dispatch_post_dispatch_receiving_verify: true,
+            mobile_dispatch_post_dispatch_checked_upload: true,
+            mobile_dispatch_post_dispatch_checked_verify: true,
             communications_view: true,
             communications_templates: true,
             whatsapp_integration: true,
@@ -281,7 +302,10 @@ export async function validateSession(sessionToken: string): Promise<{
           `SELECT "mobile_stock_management", "mobile_stock_management_solar_panel", "mobile_stock_management_wire_cables",
                   "mobile_stock_management_inverter", "mobile_stock_management_solar_accessories",
                   "mobile_accounts", "mobile_accounts_customer_statement", "mobile_accounts_customer_dcr_lookup",
-                  "mobile_dispatch", "dispatch_force_archive"
+                  "mobile_dispatch", "mobile_dispatch_post_dispatch",
+                  "mobile_dispatch_post_dispatch_receiving_upload", "mobile_dispatch_post_dispatch_receiving_verify",
+                  "mobile_dispatch_post_dispatch_checked_upload", "mobile_dispatch_post_dispatch_checked_verify",
+                  "dispatch_force_archive"
            FROM "User" WHERE "id" = $1 LIMIT 1`,
           fallback.userId
         );
@@ -335,6 +359,7 @@ export async function validateSession(sessionToken: string): Promise<{
       userObj.dispatch_inventory_deduction = true;
       userObj.dispatch_receiving_upload = true;
       userObj.dispatch_checked_by = true;
+      userObj.dispatch_post_dispatch = true;
       userObj.communications_view = true;
       userObj.communications_templates = true;
       userObj.whatsapp_integration = true;
@@ -354,6 +379,11 @@ export async function validateSession(sessionToken: string): Promise<{
       userObj.mobile_accounts_customer_statement = true;
       userObj.mobile_accounts_customer_dcr_lookup = true;
       userObj.mobile_dispatch = true;
+      userObj.mobile_dispatch_post_dispatch = true;
+      userObj.mobile_dispatch_post_dispatch_receiving_upload = true;
+      userObj.mobile_dispatch_post_dispatch_receiving_verify = true;
+      userObj.mobile_dispatch_post_dispatch_checked_upload = true;
+      userObj.mobile_dispatch_post_dispatch_checked_verify = true;
     }
 
     const masterPerms = [

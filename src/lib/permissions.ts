@@ -15,10 +15,15 @@ export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSku
   | 'system_productMigration'
   | 'dispatch_rate_review' | 'dispatch_payment_verification' | 'dispatch_truck_details'
   | 'dispatch_ready_for_invoice' | 'dispatch_invoice_confirmation' | 'dispatch_workflow_override' | 'dispatch_force_archive'
-  | 'dispatch_inventory_deduction' | 'dispatch_receiving_upload' | 'dispatch_checked_by'
+  | 'dispatch_inventory_deduction' | 'dispatch_receiving_upload' | 'dispatch_checked_by' | 'dispatch_post_dispatch'
   | 'mobile_stock_management' | 'mobile_stock_management_solar_panel' | 'mobile_stock_management_wire_cables' | 'mobile_stock_management_inverter' | 'mobile_stock_management_solar_accessories'
   | 'mobile_accounts' | 'mobile_accounts_customer_statement' | 'mobile_accounts_customer_dcr_lookup'
-  | 'mobile_dispatch';
+  | 'mobile_dispatch'
+  | 'mobile_dispatch_post_dispatch'
+  | 'mobile_dispatch_post_dispatch_receiving_upload'
+  | 'mobile_dispatch_post_dispatch_receiving_verify'
+  | 'mobile_dispatch_post_dispatch_checked_upload'
+  | 'mobile_dispatch_post_dispatch_checked_verify';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -193,6 +198,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     description: 'Ability to force archive a dispatch order from any workflow stage'
   },
   {
+    key: 'dispatch_post_dispatch',
+    label: 'Post-Dispatch Access',
+    description: 'Access to Post-Dispatch workspace on desktop'
+  },
+  {
     key: 'dispatch_inventory_deduction',
     label: 'Inventory Deduction',
     description: 'Ability to perform Post-Dispatch inventory deduction'
@@ -259,6 +269,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
   { key: 'mobile_accounts_customer_statement', label: 'Mobile Customer Statement', description: 'Allows viewing Customer Statements on mobile.' },
   { key: 'mobile_accounts_customer_dcr_lookup', label: 'Mobile Customer DCR Lookup', description: 'Allows viewing Customer DCR status on mobile.' },
   { key: 'mobile_dispatch', label: 'Mobile Dispatch', description: 'Allows capturing and viewing truck dispatch photos on mobile.' },
+  { key: 'mobile_dispatch_post_dispatch', label: 'Post-Dispatch Access', description: 'Access to Post-Dispatch invoice workflow on mobile' },
+  { key: 'mobile_dispatch_post_dispatch_receiving_upload', label: 'Post-Dispatch Receiving Upload', description: 'Ability to capture and upload customer receiving proof on mobile' },
+  { key: 'mobile_dispatch_post_dispatch_receiving_verify', label: 'Post-Dispatch Receiving Verify', description: 'Ability to verify, approve, or reject receiving submissions on mobile' },
+  { key: 'mobile_dispatch_post_dispatch_checked_upload', label: 'Post-Dispatch Checked By Upload', description: 'Ability to upload Checked By / At evidence on mobile' },
+  { key: 'mobile_dispatch_post_dispatch_checked_verify', label: 'Post-Dispatch Checked By Verify', description: 'Ability to verify, approve, or reject checked evidence on mobile' },
 ];
 
 export interface CatalogModulePermissionGroup {
@@ -378,9 +393,10 @@ export const DISPATCH_PERMISSION_GROUPS: DispatchPermissionGroup[] = [
     groupKey: 'post_dispatch',
     groupName: 'Post-Dispatch',
     permissions: [
-      { key: 'dispatch_inventory_deduction', label: 'Inv. Deduction', description: 'Coming Soon - Post-Dispatch Inventory Deduction', disabled: true },
-      { key: 'dispatch_receiving_upload', label: 'Receiving Upload', description: 'Coming Soon - Post-Dispatch Receiving Upload', disabled: true },
-      { key: 'dispatch_checked_by', label: 'Checked By', description: 'Coming Soon - Post-Dispatch Physical Check', disabled: true },
+      { key: 'dispatch_post_dispatch', label: 'Post-Dispatch Access', description: 'Access to Post-Dispatch workspace on desktop' },
+      { key: 'dispatch_receiving_upload', label: 'Receiving Upload', description: 'Upload customer receiving proof (desktop)' },
+      { key: 'dispatch_checked_by', label: 'Checked By', description: 'Upload Checked By / Physical check (desktop)' },
+      { key: 'dispatch_inventory_deduction', label: 'Inv. Deduction', description: 'Coming Soon - Inventory Deduction (Phase 2)', disabled: true },
     ]
   }
 ];
@@ -394,6 +410,7 @@ export const DISPATCH_STEP_PERMISSION_MAP: Record<string, PermissionKey> = {
 };
 
 export const dispatchPermissionKeySet = new Set<string>([
+  'dispatch_post_dispatch',
   'dispatch_rate_review',
   'dispatch_payment_verification',
   'dispatch_truck_details',
@@ -456,7 +473,13 @@ export const MOBILE_PERMISSION_SECTIONS: MobilePermissionSection[] = [
     parentKey: 'mobile_dispatch',
     parentLabel: 'Mobile Dispatch',
     parentDescription: 'Controls access to the Mobile Dispatch truck photo capture and review flow.',
-    children: [],
+    children: [
+      { key: 'mobile_dispatch_post_dispatch', label: 'Post-Dispatch', description: 'Access to Post-Dispatch workflows on mobile', parentKey: 'mobile_dispatch' },
+      { key: 'mobile_dispatch_post_dispatch_receiving_upload', label: 'Receiving Upload', description: 'Upload customer receiving proof', parentKey: 'mobile_dispatch_post_dispatch' },
+      { key: 'mobile_dispatch_post_dispatch_receiving_verify', label: 'Receiving Verification', description: 'Approve or reject customer receiving proof', parentKey: 'mobile_dispatch_post_dispatch' },
+      { key: 'mobile_dispatch_post_dispatch_checked_upload', label: 'Checked By Upload', description: 'Upload Checked By / Checked At evidence', parentKey: 'mobile_dispatch_post_dispatch' },
+      { key: 'mobile_dispatch_post_dispatch_checked_verify', label: 'Checked By Verification', description: 'Approve or reject Checked By evidence', parentKey: 'mobile_dispatch_post_dispatch' },
+    ],
   },
 ];
 
@@ -470,6 +493,11 @@ export const mobilePermissionKeySet = new Set<string>([
   'mobile_accounts_customer_statement',
   'mobile_accounts_customer_dcr_lookup',
   'mobile_dispatch',
+  'mobile_dispatch_post_dispatch',
+  'mobile_dispatch_post_dispatch_receiving_upload',
+  'mobile_dispatch_post_dispatch_receiving_verify',
+  'mobile_dispatch_post_dispatch_checked_upload',
+  'mobile_dispatch_post_dispatch_checked_verify',
 ]);
 
 // General permissions shown in Main Matrix Tab (excludes Catalog, Dispatch, and Mobile granular permissions)
@@ -545,6 +573,7 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'dispatch_inventory_deduction',
   'dispatch_receiving_upload',
   'dispatch_checked_by',
+  'dispatch_post_dispatch',
   'mobile_stock_management',
   'mobile_stock_management_solar_panel',
   'mobile_stock_management_wire_cables',
@@ -554,4 +583,9 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'mobile_accounts_customer_statement',
   'mobile_accounts_customer_dcr_lookup',
   'mobile_dispatch',
+  'mobile_dispatch_post_dispatch',
+  'mobile_dispatch_post_dispatch_receiving_upload',
+  'mobile_dispatch_post_dispatch_receiving_verify',
+  'mobile_dispatch_post_dispatch_checked_upload',
+  'mobile_dispatch_post_dispatch_checked_verify',
 ];

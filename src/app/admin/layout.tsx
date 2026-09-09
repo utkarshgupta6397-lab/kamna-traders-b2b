@@ -20,6 +20,7 @@ const navItems = [
   { href: '/admin/sku-sync', label: 'SKU Sync', icon: RefreshCw },
   { href: '/admin/catalog-sync', label: 'Catalog Maintenance', icon: RefreshCw },
   { href: '/admin/zoho-books', label: 'Zoho Books Sync', icon: Database },
+  { href: '/admin/post-dispatch', label: 'Post Dispatch', icon: Package },
   { href: '/admin/incoming-so', label: 'Incoming SO', icon: DownloadCloud },
   { href: '/admin/zoho-creator', label: 'Zoho Creator', icon: Webhook },
   { href: '/admin/inventory', label: 'Inventory', icon: Database },

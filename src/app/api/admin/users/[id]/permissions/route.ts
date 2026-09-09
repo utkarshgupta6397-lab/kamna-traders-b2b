@@ -24,20 +24,55 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid permission key' }, { status: 400 });
     }
 
+    // Build update payload with parent/child hierarchy support
+    const updateData: Record<string, boolean> = { [key]: Boolean(value) };
+    const postDispatchChildren = [
+      'mobile_dispatch_post_dispatch_receiving_upload',
+      'mobile_dispatch_post_dispatch_receiving_verify',
+      'mobile_dispatch_post_dispatch_checked_upload',
+      'mobile_dispatch_post_dispatch_checked_verify',
+    ];
+
+    if (Boolean(value)) {
+      if (postDispatchChildren.includes(key)) {
+        updateData.mobile_dispatch = true;
+        updateData.mobile_dispatch_post_dispatch = true;
+      } else if (key === 'mobile_dispatch_post_dispatch') {
+        updateData.mobile_dispatch = true;
+      } else if (['dispatch_post_dispatch', 'dispatch_receiving_upload', 'dispatch_checked_by'].includes(key)) {
+        updateData.dispatch_view = true;
+      }
+    } else {
+      if (key === 'mobile_dispatch') {
+        updateData.mobile_dispatch_post_dispatch = false;
+        postDispatchChildren.forEach((child) => {
+          updateData[child] = false;
+        });
+      } else if (key === 'mobile_dispatch_post_dispatch') {
+        postDispatchChildren.forEach((child) => {
+          updateData[child] = false;
+        });
+      } else if (key === 'dispatch_view') {
+        updateData.dispatch_post_dispatch = false;
+      }
+    }
+
     // Update user permission in DB (with raw SQL fallback for dev server cached Prisma Client instances)
     let updatedUser: any = null;
     try {
       updatedUser = await prisma.user.update({
         where: { id },
-        data: { [key]: value },
+        data: updateData,
       });
     } catch (dbErr: any) {
       console.warn(`[API] PATCH /api/admin/users/${id}/permissions update fallback (dev server DMMF):`, dbErr?.message || dbErr);
-      await prisma.$executeRawUnsafe(
-        `UPDATE "User" SET "${key}" = $1 WHERE "id" = $2`,
-        Boolean(value),
-        id
-      );
+      for (const [col, val] of Object.entries(updateData)) {
+        await prisma.$executeRawUnsafe(
+          `UPDATE "User" SET "${col}" = $1 WHERE "id" = $2`,
+          Boolean(val),
+          id
+        );
+      }
       const rows = await prisma.$queryRawUnsafe<any[]>(
         `SELECT * FROM "User" WHERE "id" = $1`,
         id

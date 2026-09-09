@@ -90,6 +90,7 @@ const requiredKeys = [
   'dispatch_inventory_deduction',
   'dispatch_receiving_upload',
   'dispatch_checked_by',
+  'dispatch_post_dispatch',
 ];
 
 for (const key of requiredKeys) {

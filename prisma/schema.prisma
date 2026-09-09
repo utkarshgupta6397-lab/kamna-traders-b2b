@@ -90,6 +90,7 @@ model User {
   dispatch_receiving_upload          Boolean              @default(false)
   dispatch_checked_by                Boolean              @default(false)
   dispatch_force_archive             Boolean              @default(false)
+  dispatch_post_dispatch             Boolean              @default(false)
   mobile_stock_management            Boolean              @default(false)
   mobile_stock_management_solar_panel Boolean             @default(false)
   mobile_stock_management_wire_cables Boolean             @default(false)
@@ -99,6 +100,11 @@ model User {
   mobile_accounts_customer_statement Boolean              @default(false)
   mobile_accounts_customer_dcr_lookup Boolean             @default(false)
   mobile_dispatch                    Boolean              @default(false)
+  mobile_dispatch_post_dispatch              Boolean              @default(false)
+  mobile_dispatch_post_dispatch_receiving_upload Boolean          @default(false)
+  mobile_dispatch_post_dispatch_receiving_verify Boolean          @default(false)
+  mobile_dispatch_post_dispatch_checked_upload   Boolean          @default(false)
+  mobile_dispatch_post_dispatch_checked_verify   Boolean          @default(false)
   sessions                           ActiveSession[]
   brandsApproved                     Brand[]              @relation("BrandApprovedBy")
   brandsCreated                      Brand[]              @relation("BrandCreatedBy")
@@ -1739,4 +1745,156 @@ model DispatchWorkflowHistory {
   dispatchOrder   DispatchIncomingOrder @relation(fields: [dispatchOrderId], references: [id], onDelete: Cascade)
 
   @@index([dispatchOrderId, createdAt])
+}
+
+model PostDispatchInvoice {
+  id                   String                    @id @default(cuid())
+  zohoInvoiceId        String                    @unique
+  invoiceNumber        String
+  customerId           String?
+  customerName         String
+  zohoStatus           String
+  erpStatus            String                    @default("Active")
+  erpSubStatus         String?
+  zohoCreatedTime      DateTime
+  timerStoppedAt       DateTime?
+  total                Float                     @default(0)
+  currencyCode         String                    @default("INR")
+  salesOrderId         String?
+  salesOrderNumber     String?
+  eInvoiceGenerated    Boolean                   @default(false)
+  eInvoiceIrn          String?
+  eInvoiceAckNo        String?
+  eInvoiceAckDate      String?
+  eInvoiceStatus       String?
+  lastZohoSync         DateTime                  @default(now())
+  zohoDetailsJson      Json?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+
+  lines                PostDispatchInvoiceLine[]
+  workflows            PostDispatchWorkflow[]
+  history              PostDispatchHistory[]
+
+  @@index([zohoStatus])
+  @@index([erpStatus])
+  @@index([invoiceNumber])
+  @@index([zohoInvoiceId])
+}
+
+model PostDispatchInvoiceLine {
+  id                   String              @id @default(cuid())
+  invoiceId            String
+  zohoLineItemId       String?
+  itemId               String?
+  itemName             String
+  description          String?
+  quantity             Float               @default(0)
+  rate                 Float               @default(0)
+  amount               Float               @default(0)
+  hsnCode              String?
+  taxPercent           Float?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  invoice              PostDispatchInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model PostDispatchWorkflow {
+  id                   String                    @id @default(cuid())
+  invoiceId            String
+  workflowType         String
+  status               String                    @default("PENDING")
+  currentSubmissionId  String?
+  completedAt          DateTime?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+
+  invoice              PostDispatchInvoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  submissions          PostDispatchSubmission[]
+
+  @@unique([invoiceId, workflowType])
+  @@index([invoiceId])
+  @@index([workflowType])
+  @@index([status])
+}
+
+model PostDispatchSubmission {
+  id                   String               @id @default(cuid())
+  workflowId           String
+  submissionNumber     Int                  @default(1)
+  status               String               @default("AWAITING_VERIFICATION")
+  receivingDetails     String?
+  checkedBy            String?
+  checkedAt            DateTime?
+  uploadedByUserId     String
+  uploadedByUserName   String?
+  uploadedAt           DateTime             @default(now())
+  verifiedByUserId     String?
+  verifiedByUserName   String?
+  verifiedAt           DateTime?
+  rejectionComment     String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  workflow             PostDispatchWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  files                PostDispatchFile[]
+
+  @@index([workflowId])
+  @@index([status])
+}
+
+model PostDispatchFile {
+  id                   String                 @id @default(cuid())
+  submissionId         String
+  fileName             String
+  filePath             String
+  mimeType             String
+  sizeBytes            Int
+  uploadedAt           DateTime               @default(now())
+  createdAt            DateTime               @default(now())
+
+  submission           PostDispatchSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+}
+
+model PostDispatchHistory {
+  id                   String               @id @default(cuid())
+  invoiceId            String
+  workflowType         String?
+  eventType            String
+  userId               String?
+  userName             String?
+  submissionId         String?
+  rejectionReason      String?
+  metadata             Json?
+  createdAt            DateTime             @default(now())
+
+  invoice              PostDispatchInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([createdAt])
+}
+
+model PostDispatchSyncLog {
+  id                   String    @id @default(cuid())
+  startedAt            DateTime  @default(now())
+  completedAt          DateTime?
+  trigger              String    @default("CRON")
+  status               String    @default("RUNNING")
+  invoicesDiscovered   Int       @default(0)
+  invoicesImported     Int       @default(0)
+  invoicesUpdated      Int       @default(0)
+  invoicesSkipped      Int       @default(0)
+  apiCallsTotal        Int       @default(0)
+  apiCallsInvoice      Int       @default(0)
+  apiCallsEInvoice     Int       @default(0)
+  errorMessage         String?
+  createdAt            DateTime  @default(now())
+
+  @@index([startedAt])
+  @@index([status])
 }

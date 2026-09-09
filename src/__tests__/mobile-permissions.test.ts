@@ -36,9 +36,14 @@ const EXPECTED_MOBILE_KEYS: PermissionKey[] = [
   'mobile_accounts_customer_statement',
   'mobile_accounts_customer_dcr_lookup',
   'mobile_dispatch',
+  'mobile_dispatch_post_dispatch',
+  'mobile_dispatch_post_dispatch_receiving_upload',
+  'mobile_dispatch_post_dispatch_receiving_verify',
+  'mobile_dispatch_post_dispatch_checked_upload',
+  'mobile_dispatch_post_dispatch_checked_verify',
 ];
 
-assert(EXPECTED_MOBILE_KEYS.length === 9, 'Exactly 9 dedicated mobile permission keys defined');
+assert(EXPECTED_MOBILE_KEYS.length === 14, 'Exactly 14 dedicated mobile permission keys defined');
 
 for (const key of EXPECTED_MOBILE_KEYS) {
   assert(ALL_PERMISSION_KEYS.includes(key), `${key} exists in ALL_PERMISSION_KEYS`);
@@ -51,7 +56,7 @@ assert(MOBILE_PERMISSION_SECTIONS.length === 3, 'MOBILE_PERMISSION_SECTIONS cont
 const [stockSec, accountsSec, dispatchSec] = MOBILE_PERMISSION_SECTIONS;
 assert(stockSec.sectionKey === 'stock_management' && stockSec.children.length === 4, 'Stock Management section has 4 children');
 assert(accountsSec.sectionKey === 'accounts' && accountsSec.children.length === 2, 'Accounts section has 2 children and infoNote');
-assert(dispatchSec.sectionKey === 'dispatch' && dispatchSec.children.length === 0, 'Dispatch section has 0 children (module parent only)');
+assert(dispatchSec.sectionKey === 'dispatch' && dispatchSec.children.length === 5, 'Dispatch section has 5 children (post-dispatch hierarchy)');
 
 console.log('\n--- 2. Central Authorization Helpers (hasMobilePermission & hasMobileFeatureAccess) ---');
 assert(hasMobilePermission(null, 'mobile_stock_management') === false, 'null session returns false for hasMobilePermission');

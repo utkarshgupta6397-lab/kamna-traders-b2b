@@ -26,6 +26,7 @@ import toast from 'react-hot-toast';
 import { playTruckHornSound } from '@/lib/hooks/useAudioNotification';
 import MobileImagePreview from '@/components/mobile/MobileImagePreview';
 import MobileTruckImageThumbnail from '@/components/mobile/MobileTruckImageThumbnail';
+import PostDispatchView from '@/components/dispatch/post-dispatch/PostDispatchView';
 
 interface EligibleOrder {
   id: string;
@@ -80,6 +81,7 @@ function formatUploadTime(iso: string) {
 }
 
 export default function MobileDispatchClient() {
+  const [dispatchMode, setDispatchMode] = useState<'PRE_DISPATCH' | 'POST_DISPATCH'>('PRE_DISPATCH');
   const [activeTab, setActiveTab] = useState<string>('upload');
   const [eligibleOrders, setEligibleOrders] = useState<EligibleOrder[]>([]);
   const [todayUploads, setTodayUploads] = useState<TodayUpload[]>([]);
@@ -359,49 +361,83 @@ export default function MobileDispatchClient() {
           </button>
         </div>
 
-        {/* Scalable Tab Navigation */}
-        <div className="flex px-2 border-t border-white/10 bg-[#162154] overflow-x-auto no-scrollbar">
-          {[
-            {
-              id: 'upload',
-              label: 'Upload Truck Photo',
-              count: eligibleOrders.length,
-              countColor: 'bg-blue-500/30 text-blue-200 border-blue-400/30',
-            },
-            {
-              id: 'today',
-              label: "Today's Uploaded",
-              count: todayUploads.length,
-              countColor: 'bg-emerald-500/30 text-emerald-200 border-emerald-400/30',
-            },
-          ].map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`py-3 px-3 text-[13px] font-bold tracking-wide transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
-                  isActive
-                    ? 'text-white border-white'
-                    : 'text-white/60 border-transparent hover:text-white/80'
-                }`}
-              >
-                <span>{tab.label}</span>
-                {tab.count > 0 && (
-                  <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold border ${tab.countColor}`}
-                  >
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        {/* Primary Segment Switcher: PRE DISPATCH / POST DISPATCH */}
+        <div className="px-3 pb-2.5">
+          <div className="flex p-1 bg-[#121b44] rounded-xl text-xs font-bold border border-white/10">
+            <button
+              type="button"
+              onClick={() => setDispatchMode('PRE_DISPATCH')}
+              className={`flex-1 py-2 rounded-lg transition-all text-center ${
+                dispatchMode === 'PRE_DISPATCH'
+                  ? 'bg-white text-[#1A2766] shadow-sm'
+                  : 'text-white/70 hover:text-white'
+              }`}
+            >
+              PRE DISPATCH
+            </button>
+            <button
+              type="button"
+              onClick={() => setDispatchMode('POST_DISPATCH')}
+              className={`flex-1 py-2 rounded-lg transition-all text-center ${
+                dispatchMode === 'POST_DISPATCH'
+                  ? 'bg-white text-[#1A2766] shadow-sm'
+                  : 'text-white/70 hover:text-white'
+              }`}
+            >
+              POST DISPATCH
+            </button>
+          </div>
         </div>
+
+        {/* Pre-Dispatch Sub-Tabs (only when PRE_DISPATCH mode active) */}
+        {dispatchMode === 'PRE_DISPATCH' && (
+          <div className="flex px-2 border-t border-white/10 bg-[#162154] overflow-x-auto no-scrollbar">
+            {[
+              {
+                id: 'upload',
+                label: 'Upload Truck Photo',
+                count: eligibleOrders.length,
+                countColor: 'bg-blue-500/30 text-blue-200 border-blue-400/30',
+              },
+              {
+                id: 'today',
+                label: "Today's Uploaded",
+                count: todayUploads.length,
+                countColor: 'bg-emerald-500/30 text-emerald-200 border-emerald-400/30',
+              },
+            ].map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`py-3 px-3 text-[13px] font-bold tracking-wide transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                    isActive
+                      ? 'text-white border-white'
+                      : 'text-white/60 border-transparent hover:text-white/80'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  {tab.count > 0 && (
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold border ${tab.countColor}`}
+                    >
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto px-4 py-5 max-w-[430px] mx-auto w-full pb-20">
+      {/* When POST DISPATCH is active */}
+      {dispatchMode === 'POST_DISPATCH' ? (
+        <PostDispatchView />
+      ) : (
+        /* Pre-Dispatch Content */
+        <main className="flex-1 overflow-y-auto px-4 py-5 max-w-[430px] mx-auto w-full pb-20">
         {loading ? (
           <div className="space-y-3.5 animate-pulse" aria-busy="true">
             {[1, 2, 3].map((i) => (
@@ -613,6 +649,7 @@ export default function MobileDispatchClient() {
           </div>
         )}
       </main>
+      )}
 
       {/* ── Camera Capture Modal / Viewfinder ───────────────────────────────── */}
       {selectedOrder && (

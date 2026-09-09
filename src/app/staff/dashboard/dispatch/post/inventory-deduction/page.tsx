@@ -1,53 +1,53 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Search, Filter, RefreshCw, PackageMinus } from 'lucide-react';
+import React from 'react';
+import { PackageMinus, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
 
 export default function Page() {
-  const [searchQuery, setSearchQuery] = useState('');
-
   return (
     <div className="flex flex-col h-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-5 border-b border-gray-100 bg-gray-50/50">
-        <h1 className="text-xl font-bold text-gray-900">Inventory Deduction</h1>
-        <p className="text-sm text-gray-500 mt-1">Process inventory allocation and warehouse deductions against invoices.</p>
-      </div>
-
-      {/* Controls Area */}
-      <div className="px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-gray-100">
-        <div className="relative w-full sm:w-96 flex-shrink-0">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-          <input
-            type="text"
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
-          />
-        </div>
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <button className="flex items-center gap-2 px-4 py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors w-full sm:w-auto justify-center">
-            <Filter size={16} />
-            <span>Filter</span>
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors w-full sm:w-auto justify-center">
-            <RefreshCw size={16} />
-            <span>Refresh</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Table Area (Empty State) */}
-      <div className="flex-1 overflow-auto bg-gray-50/30 flex items-center justify-center p-8">
-        <div className="flex flex-col items-center text-center max-w-md">
-          <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm border border-gray-100 mb-4">
-            <PackageMinus size={32} className="text-gray-400" />
+      <div className="px-6 py-5 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-gray-900">Inventory Deduction</h1>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
+              Phase 2 — Coming Soon
+            </span>
           </div>
-          <h3 className="text-lg font-bold text-gray-900">No invoices are awaiting inventory deduction.</h3>
-          <p className="text-sm text-gray-500 mt-2">
-            Items will appear here once they reach this stage of the workflow.
+          <p className="text-sm text-gray-500 mt-1">
+            Automated stock deduction module for completed dispatch shipments.
           </p>
+        </div>
+        <Link
+          href="/staff/dashboard/dispatch/incoming"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#1A2766] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+        >
+          <ArrowLeft size={14} />
+          Back to Dispatch
+        </Link>
+      </div>
+
+      {/* Notice Card */}
+      <div className="flex-1 overflow-auto bg-gray-50/30 flex items-center justify-center p-8">
+        <div className="flex flex-col items-center text-center max-w-md bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
+          <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center border border-amber-100 mb-4 text-amber-600">
+            <PackageMinus size={32} />
+          </div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 mb-2">
+            Scheduled for Phase 2
+          </div>
+          <h2 className="text-lg font-bold text-gray-900 mb-2">Inventory Deduction Module</h2>
+          <p className="text-xs text-gray-500 leading-relaxed mb-6">
+            Phase 1 implements Zoho Books invoice synchronization, receiving proof upload & verification, and physical checked-by audit workflows. Automated inventory deductions will be introduced in Phase 2.
+          </p>
+          <Link
+            href="/staff/dashboard/dispatch/incoming"
+            className="px-4 py-2 bg-[#1A2766] text-white text-xs font-bold rounded-lg hover:bg-blue-900 transition-colors shadow-sm"
+          >
+            Go to Active Workflows
+          </Link>
         </div>
       </div>
     </div>

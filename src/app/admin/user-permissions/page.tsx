@@ -49,7 +49,25 @@ export default function UserPermissionsPage() {
     const newValue = !currentValue;
     
     // Optimistic Update
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, [key]: newValue } : u));
+    const postDispatchChildren = [
+      'mobile_dispatch_post_dispatch_receiving_upload',
+      'mobile_dispatch_post_dispatch_receiving_verify',
+      'mobile_dispatch_post_dispatch_checked_upload',
+      'mobile_dispatch_post_dispatch_checked_verify',
+    ];
+
+    setUsers(prev => prev.map(u => {
+      if (u.id !== userId) return u;
+      const updated = { ...u, [key]: newValue };
+      if (newValue && postDispatchChildren.includes(key)) {
+        updated.mobile_dispatch = true;
+        updated.mobile_dispatch_post_dispatch = true;
+      }
+      if (newValue && ['dispatch_post_dispatch', 'dispatch_receiving_upload', 'dispatch_checked_by'].includes(key)) {
+        updated.dispatch_view = true;
+      }
+      return updated;
+    }));
     setUpdatingId(`${userId}-${key}`);
 
     try {
@@ -192,11 +210,12 @@ export default function UserPermissionsPage() {
               ? 'border-[#1A2766] text-[#1A2766]'
               : 'border-transparent text-gray-500 hover:text-gray-900'
           }`}
+          title={`${stats.mobileUsers} users have mobile access enabled`}
         >
           <Smartphone size={14} />
-          Mobile Permissions
-          <span className="ml-1 px-1.5 py-0.2 rounded-full bg-indigo-100 text-indigo-800 text-[10px]">
-            {stats.mobileUsers}
+          Mobile Access
+          <span className="ml-1 px-1.5 py-0.2 rounded-full bg-indigo-100 text-indigo-800 text-[10px]" title={`${stats.mobileUsers} users with mobile access`}>
+            {stats.mobileUsers} Users
           </span>
         </button>
       </div>
@@ -208,7 +227,7 @@ export default function UserPermissionsPage() {
           { label: 'Admin', value: stats.admins, icon: Shield, color: 'text-amber-600', bg: 'bg-amber-50' },
           { label: 'Staff', value: stats.staff, icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50' },
           { label: 'Catalog Enabled', value: stats.catalogUsers, icon: PackageCheck, color: 'text-purple-600', bg: 'bg-purple-50' },
-          { label: 'Mobile Enabled', value: stats.mobileUsers, icon: Smartphone, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+          { label: 'Mobile Enabled', value: `${stats.mobileUsers} Users`, icon: Smartphone, color: 'text-indigo-600', bg: 'bg-indigo-50' },
         ].map((card) => (
           <div key={card.label} className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 flex items-center gap-2">
             <div className={`p-1.5 rounded-lg ${card.bg} ${card.color}`}>
@@ -536,16 +555,11 @@ export default function UserPermissionsPage() {
                     </span>
                   </th>
                   {DISPATCH_PERMISSION_GROUPS.map(g => (
-                    <th key={g.groupKey} colSpan={g.permissions.length} className={`py-1.5 px-1 border-b border-r border-gray-200 text-center ${g.groupKey === 'post_dispatch' ? 'bg-slate-100/70 text-gray-500' : 'bg-gray-100/80 text-[#1A2766]'}`}>
+                    <th key={g.groupKey} colSpan={g.permissions.length} className="py-1.5 px-1 border-b border-r border-gray-200 text-center bg-gray-100/80 text-[#1A2766]">
                       <div className="flex items-center justify-center gap-1.5">
                         <span className="text-[11px] font-black uppercase tracking-wider">
                           {g.groupName}
                         </span>
-                        {g.groupKey === 'post_dispatch' && (
-                          <span className="text-[9px] font-bold uppercase tracking-tight px-1.5 py-0.2 rounded bg-gray-200 text-gray-600">
-                            Coming Soon
-                          </span>
-                        )}
                       </div>
                     </th>
                   ))}
@@ -564,6 +578,11 @@ export default function UserPermissionsPage() {
                         >
                           <div className="flex items-center justify-center gap-0.5">
                             <span>{p.label}</span>
+                            {p.disabled && (
+                              <span className="text-[7px] font-bold bg-amber-100 text-amber-800 px-1 py-0.2 rounded uppercase">
+                                Soon
+                              </span>
+                            )}
                             {p.description && (
                               <Info size={9} className="text-gray-300" />
                             )}
@@ -649,7 +668,7 @@ export default function UserPermissionsPage() {
                                     <Check size={12} strokeWidth={3} />
                                   </div>
                                 ) : p.disabled ? (
-                                  <div className="flex items-center justify-center" title="Post-Dispatch workflow is currently in development">
+                                  <div className="flex items-center justify-center" title={p.description || "Coming Soon - Inventory Deduction (Phase 2)"}>
                                     <div className="w-7 h-4 bg-gray-100 rounded-full border border-gray-200 relative opacity-50 cursor-not-allowed">
                                       <div className="w-3 h-3 bg-gray-300 rounded-full absolute top-[1px] left-[2px]"></div>
                                     </div>
@@ -713,6 +732,22 @@ export default function UserPermissionsPage() {
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            {/* Subheader Toolbar / Filter indicators */}
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-50/70 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                  Mobile Access & Feature Matrix
+                </span>
+                <span className="text-[10px] text-gray-400">|</span>
+                <span className="text-[10px] text-gray-500 font-medium">
+                  Manage mobile modules: Stock Management, Accounts, and Dispatch
+                </span>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-md">
+                {stats.mobileUsers} Users with Mobile Access
+              </span>
+            </div>
+
             <div className="overflow-x-auto max-h-[calc(100vh-280px)]">
               <table className="w-full border-collapse relative">
                 <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">

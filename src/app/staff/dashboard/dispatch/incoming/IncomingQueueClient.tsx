@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { WorkflowHistoryModal } from '@/components/dispatch/WorkflowHistoryModal';
+import DesktopPostDispatchView from './DesktopPostDispatchView';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -725,30 +726,13 @@ export default function IncomingQueueClient({
             }`}
           >
             <span>Post-Dispatch</span>
-            <span className="text-[9px] bg-amber-100 text-amber-800 font-semibold px-1.5 py-0.2 rounded">TBD</span>
           </button>
         </div>
       </div>
 
       {section === 'post' ? (
-        /* Post-Dispatch Empty State Card */
-        <div className="flex-1 flex flex-col items-center justify-center p-12 text-center bg-gray-50/40">
-          <div className="w-16 h-16 bg-blue-50 text-[#1A2766] rounded-2xl flex items-center justify-center mb-4 border border-blue-100 shadow-sm">
-            <Truck size={32} />
-          </div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 mb-2">
-            Coming Soon / TBD
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Post-Dispatch Operations</h2>
-          <p className="text-sm text-gray-500 max-w-md">
-            Vehicle departure tracking, gate-pass manifest, and e-way bill reconciliation modules are scheduled for the next release.
-          </p>
-          <button
-            onClick={() => setSection('pre')}
-            className="mt-6 px-4 py-2 bg-[#1A2766] text-white text-xs font-bold rounded-lg hover:bg-blue-900 transition-colors shadow-sm"
-          >
-            Return to Pre-Dispatch Queue
-          </button>
+        <div className="flex-1 overflow-auto bg-slate-50/50">
+          <DesktopPostDispatchView />
         </div>
       ) : (
         /* Pre-Dispatch Operational View */

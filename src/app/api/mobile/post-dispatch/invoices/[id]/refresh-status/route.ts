@@ -198,7 +198,12 @@ export async function POST(
     const endTime = updated.timerStoppedAt ? new Date(updated.timerStoppedAt).getTime() : now.getTime();
     const elapsedSeconds = Math.max(0, Math.floor((endTime - startTime) / 1000));
 
-    const isActionable = updated.zohoStatus.toLowerCase() === 'sent' && updated.erpStatus === 'Active';
+    const zohoStatusLower = updated.zohoStatus.toLowerCase();
+    const isActionable =
+      updated.erpStatus === 'Active' &&
+      zohoStatusLower !== 'draft' &&
+      zohoStatusLower !== 'void' &&
+      updated.erpSubStatus !== 'Void';
     const isConsumer = zohoDetail.gst_treatment
       ? isConsumerCustomer({ gstTreatment: zohoDetail.gst_treatment })
       : false;

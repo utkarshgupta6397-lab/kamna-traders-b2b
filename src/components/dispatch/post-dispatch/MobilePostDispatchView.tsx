@@ -127,7 +127,7 @@ export default function MobilePostDispatchView({
     }
     try {
       // Invoices (fetch active invoices)
-      const invRes = await fetch('/api/mobile/post-dispatch/invoices?tab=all');
+      const invRes = await fetch('/api/mobile/post-dispatch/invoices?tab=all&pageSize=all');
       if (invRes.ok) {
         const invData = await invRes.json();
         setInvoices(invData.invoices || []);
@@ -183,11 +183,13 @@ export default function MobilePostDispatchView({
   // ── Queue Counts (Actionable Operational Logic) ──────────────────────────
   // A. Pending Receiving Upload:
   // Invoices where receiving is PENDING or REWORK_REQUIRED (not COMPLETED, not AWAITING_VERIFICATION)
-  // and invoice is actionable (Sent, Active, not Void)
+  // Eligible: Active erpStatus, not draft/void zohoStatus, not Void erpSubStatus
   const receivingUploadInvoices = useMemo(() => {
     return warehouseFilteredInvoices.filter((inv) => {
       const zStatus = (inv.zohoStatus || '').toLowerCase();
-      if (!inv.isActionable || zStatus === 'draft' || zStatus === 'void') return false;
+      if (inv.erpStatus !== 'Active') return false;
+      if (zStatus === 'draft' || zStatus === 'void') return false;
+      if (inv.erpSubStatus === 'Void') return false;
       const rStatus = inv.workflowSummary?.receivingStatus;
       return rStatus === 'PENDING' || rStatus === 'REWORK_REQUIRED';
     });
@@ -195,11 +197,13 @@ export default function MobilePostDispatchView({
 
   // B. Pending Check Upload:
   // Invoices where physical check is PENDING or REWORK_REQUIRED (not COMPLETED, not AWAITING_VERIFICATION)
-  // and invoice is actionable (Sent, Active, not Void)
+  // Eligible: Active erpStatus, not draft/void zohoStatus, not Void erpSubStatus
   const checkedUploadInvoices = useMemo(() => {
     return warehouseFilteredInvoices.filter((inv) => {
       const zStatus = (inv.zohoStatus || '').toLowerCase();
-      if (!inv.isActionable || zStatus === 'draft' || zStatus === 'void') return false;
+      if (inv.erpStatus !== 'Active') return false;
+      if (zStatus === 'draft' || zStatus === 'void') return false;
+      if (inv.erpSubStatus === 'Void') return false;
       const cStatus = inv.workflowSummary?.checkedStatus;
       return cStatus === 'PENDING' || cStatus === 'REWORK_REQUIRED';
     });

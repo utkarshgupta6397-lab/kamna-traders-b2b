@@ -56,7 +56,12 @@ export async function GET(
     const endTime = invoice.timerStoppedAt ? new Date(invoice.timerStoppedAt).getTime() : now.getTime();
     const elapsedSeconds = Math.max(0, Math.floor((endTime - startTime) / 1000));
 
-    const isActionable = invoice.zohoStatus.toLowerCase() === 'sent' && invoice.erpStatus === 'Active';
+    const zohoStatusLower = invoice.zohoStatus.toLowerCase();
+    const isActionable =
+      invoice.erpStatus === 'Active' &&
+      zohoStatusLower !== 'draft' &&
+      zohoStatusLower !== 'void' &&
+      invoice.erpSubStatus !== 'Void';
     const isVoid = invoice.erpSubStatus === 'Void' || invoice.zohoStatus.toLowerCase() === 'void';
 
     const detailsJson = invoice.zohoDetailsJson as any;

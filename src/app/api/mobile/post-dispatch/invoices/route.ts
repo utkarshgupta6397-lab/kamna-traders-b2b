@@ -149,7 +149,12 @@ export async function GET(request: Request) {
       const checkedWf = inv.workflows.find((w) => w.workflowType === 'CHECKED');
       const inventoryWf = inv.workflows.find((w) => w.workflowType === 'INVENTORY_DEDUCTION');
       const completedCount = inv.workflows.filter((w) => w.status === 'COMPLETED').length;
-      const isActionable = inv.zohoStatus.toLowerCase() === 'sent' && inv.erpStatus === 'Active';
+      const zohoStatusLower = inv.zohoStatus.toLowerCase();
+      const isActionable =
+        inv.erpStatus === 'Active' &&
+        zohoStatusLower !== 'draft' &&
+        zohoStatusLower !== 'void' &&
+        inv.erpSubStatus !== 'Void';
 
       const detailsJson = inv.zohoDetailsJson as any;
       const isConsumer = detailsJson?.gst_treatment

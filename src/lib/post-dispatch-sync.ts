@@ -162,7 +162,78 @@ export async function logZohoApiCall(params: {
  * - E-Invoice
  * - Other
  */
-export async function getTodayPostDispatchApiUsage() {
+export const MANUAL_SYNC_COOLDOWN_SECONDS = 60;
+
+/**
+ * Checks the remaining cooldown (in seconds) for a user after a manual sync.
+ */
+export async function getUserManualSyncCooldown(userId: string): Promise<{
+  inCooldown: boolean;
+  remainingSeconds: number;
+}> {
+  if (!userId) {
+    return { inCooldown: false, remainingSeconds: 0 };
+  }
+
+  try {
+    const record = await prisma.integrationConfig.findUnique({
+      where: { key: `post_dispatch_manual_cooldown:${userId}` },
+    });
+
+    if (!record || !record.value) {
+      return { inCooldown: false, remainingSeconds: 0 };
+    }
+
+    const lastAcceptedTime = new Date(record.value).getTime();
+    if (isNaN(lastAcceptedTime)) {
+      return { inCooldown: false, remainingSeconds: 0 };
+    }
+
+    const elapsedSeconds = Math.floor((Date.now() - lastAcceptedTime) / 1000);
+    const remainingSeconds = Math.max(0, MANUAL_SYNC_COOLDOWN_SECONDS - elapsedSeconds);
+
+    return {
+      inCooldown: remainingSeconds > 0,
+      remainingSeconds,
+    };
+  } catch (error) {
+    console.error('[PostDispatchSync] Error checking user manual sync cooldown:', error);
+    return { inCooldown: false, remainingSeconds: 0 };
+  }
+}
+
+/**
+ * Records a successful manual sync acceptance timestamp for a user.
+ */
+export async function recordUserManualSyncCooldown(userId: string): Promise<void> {
+  if (!userId) return;
+
+  const nowIso = new Date().toISOString();
+  try {
+    await prisma.integrationConfig.upsert({
+      where: { key: `post_dispatch_manual_cooldown:${userId}` },
+      update: { value: nowIso },
+      create: {
+        key: `post_dispatch_manual_cooldown:${userId}`,
+        value: nowIso,
+      },
+    });
+  } catch (error) {
+    console.error('[PostDispatchSync] Error recording user manual sync cooldown:', error);
+  }
+}
+
+/**
+ * Retrieves today's Zoho API usage stats based on IST day boundaries.
+ * Accurately reports:
+ * - Total Calls
+ * - Invoice List Sync
+ * - Invoice Detail Fetch
+ * - E-Invoice
+ * - Other
+ * - Cooldown Remaining Seconds (for the requesting user)
+ */
+export async function getTodayPostDispatchApiUsage(userId?: string | null) {
   const { start, end } = getIstTodayRange();
 
   const [
@@ -173,6 +244,7 @@ export async function getTodayPostDispatchApiUsage() {
     einvoiceCalls,
     lastSyncLog,
     lastEInvoiceHistory,
+    cooldownInfo,
   ] = await Promise.all([
     prisma.zohoApiLog.count({
       where: {
@@ -212,6 +284,7 @@ export async function getTodayPostDispatchApiUsage() {
       where: { eventType: 'EINVOICE_CHECK_COMPLETED' },
       orderBy: { createdAt: 'desc' },
     }),
+    userId ? getUserManualSyncCooldown(userId) : Promise.resolve({ inCooldown: false, remainingSeconds: 0 }),
   ]);
 
   const effectiveListCalls = listCalls + legacyInvoiceCalls;
@@ -229,6 +302,7 @@ export async function getTodayPostDispatchApiUsage() {
     nextScheduledSync: getNextScheduledSyncTime(),
     lastEInvoiceCheck: lastEInvoiceHistory?.createdAt || null,
     nextScheduledEInvoiceCheck: getNextScheduledEInvoiceTime(),
+    cooldownRemainingSeconds: cooldownInfo.remainingSeconds,
   };
 }
 
@@ -319,14 +393,18 @@ export interface ZohoInvoiceListItem {
   gst_treatment?: string;
   e_invoice_details?: {
     status?: string;
+    formatted_status?: string;
     irn?: string;
+    inv_ref_num?: string;
     ack_no?: string;
     ack_number?: string;
     ack_date?: string;
   };
   einvoice_details?: {
     status?: string;
+    formatted_status?: string;
     irn?: string;
+    inv_ref_num?: string;
     ack_no?: string;
     ack_number?: string;
     ack_date?: string;
@@ -504,13 +582,14 @@ export async function runPostDispatchSync(options: {
 
       // Extract E-Invoice data available directly on list response
       const einvoiceObj = zohoInv.e_invoice_details || zohoInv.einvoice_details || null;
-      const eInvoiceGenerated = Boolean(
-        zohoInv.irn || (einvoiceObj && (einvoiceObj.status === 'GENERATED' || einvoiceObj.irn))
-      );
-      const eInvoiceIrn = zohoInv.irn || einvoiceObj?.irn || null;
+      const statusLower = (einvoiceObj?.status || '').toLowerCase();
+      const eInvoiceIrn = zohoInv.irn || einvoiceObj?.irn || einvoiceObj?.inv_ref_num || null;
       const eInvoiceAckNo = zohoInv.ack_no || einvoiceObj?.ack_no || einvoiceObj?.ack_number || null;
       const eInvoiceAckDate = zohoInv.ack_date || einvoiceObj?.ack_date || null;
-      const eInvoiceStatus = einvoiceObj?.status || (eInvoiceGenerated ? 'GENERATED' : 'NOT_GENERATED');
+      const eInvoiceGenerated = Boolean(
+        eInvoiceIrn || statusLower === 'pushed' || statusLower === 'generated'
+      );
+      const eInvoiceStatus = einvoiceObj?.formatted_status || einvoiceObj?.status || (eInvoiceGenerated ? 'Pushed' : 'Not Generated');
 
       if (!existing) {
         // --- NEW INVOICE IMPORT ---
@@ -995,16 +1074,16 @@ export async function runEInvoiceStatusCheck(options: {
         }
 
         const einvoiceObj = zohoInv.e_invoice_details || zohoInv.einvoice_details || null;
+        const statusLower = (einvoiceObj?.status || '').toLowerCase();
+        const eInvoiceIrn = zohoInv.irn || einvoiceObj?.irn || einvoiceObj?.inv_ref_num || null;
+        const eInvoiceAckNo = zohoInv.ack_no || einvoiceObj?.ack_no || einvoiceObj?.ack_number || null;
+        const eInvoiceAckDate = zohoInv.ack_date || einvoiceObj?.ack_date || null;
         const eInvoiceGenerated = Boolean(
-          zohoInv.irn || (einvoiceObj && (einvoiceObj.status === 'GENERATED' || einvoiceObj.irn))
+          eInvoiceIrn || statusLower === 'pushed' || statusLower === 'generated'
         );
+        const eInvoiceStatus = einvoiceObj?.formatted_status || einvoiceObj?.status || (eInvoiceGenerated ? 'Pushed' : 'Not Generated');
 
         if (eInvoiceGenerated) {
-          const eInvoiceIrn = zohoInv.irn || einvoiceObj?.irn || null;
-          const eInvoiceAckNo = zohoInv.ack_no || einvoiceObj?.ack_no || einvoiceObj?.ack_number || null;
-          const eInvoiceAckDate = zohoInv.ack_date || einvoiceObj?.ack_date || null;
-          const eInvoiceStatus = einvoiceObj?.status || 'GENERATED';
-
           await prisma.postDispatchInvoice.update({
             where: { id: inv.id },
             data: {

@@ -42,6 +42,16 @@ export default function AdminPostDispatchPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [usage, setUsage] = useState<any | null>(null);
+  const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
+
+  // 1-second countdown ticker when cooldown is active
+  useEffect(() => {
+    if (cooldownRemaining <= 0) return;
+    const interval = setInterval(() => {
+      setCooldownRemaining((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldownRemaining]);
 
   // Verification queue modal state
   const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
@@ -65,6 +75,9 @@ export default function AdminPostDispatchPage() {
       if (res.ok) {
         const data = await res.json();
         setUsage(data.usage);
+        if (typeof data.usage?.cooldownRemainingSeconds === 'number') {
+          setCooldownRemaining(data.usage.cooldownRemainingSeconds);
+        }
       }
     } catch (err) {
       console.error('[Admin PostDispatch Usage Error]', err);
@@ -96,15 +109,27 @@ export default function AdminPostDispatchPage() {
   }, [fetchInvoices]);
 
   const handleManualSync = async () => {
+    if (cooldownRemaining > 0 || syncing) return;
+
     setSyncing(true);
     try {
       const res = await fetch('/api/mobile/post-dispatch/sync', {
         method: 'POST',
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 429) {
+        const retryAfter = data.retry_after_seconds || 60;
+        setCooldownRemaining(retryAfter);
+        toast.error(data.message || `Please wait ${retryAfter} seconds before starting another manual sync.`);
+        return;
+      }
+
       if (!res.ok) {
         throw new Error(data.error || data.message || 'Sync failed');
       }
+
+      setCooldownRemaining(60);
       toast.success(data.message || 'Sync completed successfully!');
       await Promise.all([fetchInvoices(), fetchUsage()]);
     } catch (err: any) {
@@ -229,11 +254,17 @@ export default function AdminPostDispatchPage() {
         <button
           type="button"
           onClick={handleManualSync}
-          disabled={syncing}
-          className="px-4 py-2.5 rounded-xl bg-[#1A2766] hover:bg-[#141f52] text-white font-bold text-sm flex items-center gap-2 shadow-sm transition-all disabled:opacity-50"
+          disabled={syncing || cooldownRemaining > 0}
+          className="px-4 py-2.5 rounded-xl bg-[#1A2766] hover:bg-[#141f52] text-white font-bold text-sm flex items-center gap-2 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-          <span>{syncing ? 'Syncing Invoices...' : 'Sync Invoices'}</span>
+          <span>
+            {syncing
+              ? 'Syncing Invoices...'
+              : cooldownRemaining > 0
+              ? `Sync Invoices (${cooldownRemaining}s)`
+              : 'Sync Invoices'}
+          </span>
         </button>
       </div>
 

@@ -134,6 +134,26 @@ export default function CheckedUploadModal({
               Physical Check Evidence (Camera Only) *
             </label>
 
+            {/* Camera Framing Guidance Box */}
+            <div className="mb-3 p-3 rounded-2xl bg-purple-50/70 border border-purple-200/80 flex flex-col items-center text-center">
+              {/* Subtle Document Frame Outline */}
+              <div className="w-48 h-28 my-1 rounded-xl border-2 border-dashed border-purple-400/80 bg-white/60 flex flex-col items-center justify-center p-2 relative shadow-inner">
+                <div className="absolute top-1.5 left-1.5 w-3 h-3 border-t-2 border-l-2 border-purple-600" />
+                <div className="absolute top-1.5 right-1.5 w-3 h-3 border-t-2 border-r-2 border-purple-600" />
+                <div className="absolute bottom-1.5 left-1.5 w-3 h-3 border-b-2 border-l-2 border-purple-600" />
+                <div className="absolute bottom-1.5 right-1.5 w-3 h-3 border-b-2 border-r-2 border-purple-600" />
+                <Camera className="w-5 h-5 text-purple-500 mb-1" />
+                <span className="text-[11px] font-bold text-purple-900 tracking-tight">CHECK EVIDENCE</span>
+                <span className="text-[9px] text-purple-600 font-medium">DOCUMENT FRAME</span>
+              </div>
+              <p className="text-[12px] font-semibold text-purple-900 mt-1.5">
+                Capture the complete document clearly.
+              </p>
+              <p className="text-[11px] text-purple-700/80">
+                Fit all serial numbers and check details within the frame.
+              </p>
+            </div>
+
             <input
               ref={fileInputRef}
               type="file"
@@ -148,14 +168,14 @@ export default function CheckedUploadModal({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={submitting}
-              className="w-full py-4 px-4 rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/50 hover:bg-blue-50 text-blue-700 font-semibold flex flex-col items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
+              className="w-full py-3.5 px-4 rounded-2xl bg-[#1A2766] hover:bg-[#131d4d] active:scale-[0.98] text-white font-bold flex items-center justify-center gap-2 transition-all shadow-sm shadow-blue-950/20"
             >
-              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
-                <Camera className="w-5 h-5" />
-              </div>
-              <span className="text-sm font-bold">Capture Check Photo</span>
-              <span className="text-xs text-slate-500 font-normal">
-                {photos.length === 0 ? 'At least 1 photo required' : `${photos.length} photo(s) captured`}
+              <Camera className="w-4 h-4" />
+              <span className="text-sm">
+                {photos.length === 0 ? 'Open Camera & Capture' : 'Take Another Photo'}
+              </span>
+              <span className="text-[11px] font-normal text-purple-200">
+                ({photos.length} captured)
               </span>
             </button>
           </div>

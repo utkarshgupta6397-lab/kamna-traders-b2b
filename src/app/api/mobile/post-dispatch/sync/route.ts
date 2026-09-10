@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { hasPostDispatchAccess } from '@/lib/post-dispatch-auth';
-import { runPostDispatchSync } from '@/lib/post-dispatch-sync';
+import {
+  runPostDispatchSync,
+  getUserManualSyncCooldown,
+  recordUserManualSyncCooldown,
+} from '@/lib/post-dispatch-sync';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +22,24 @@ export async function POST(request: Request) {
     );
   }
 
+  const userId = session.userId || session.id;
+
+  // 1. SERVER-SIDE USER COOLDOWN CHECK
+  if (userId) {
+    const cooldown = await getUserManualSyncCooldown(userId);
+    if (cooldown.inCooldown) {
+      return NextResponse.json(
+        {
+          success: false,
+          reason: 'MANUAL_SYNC_COOLDOWN',
+          retry_after_seconds: cooldown.remainingSeconds,
+          message: `Please wait ${cooldown.remainingSeconds} seconds before starting another manual sync.`,
+        },
+        { status: 429 }
+      );
+    }
+  }
+
   try {
     let body: any = {};
     try {
@@ -28,10 +50,12 @@ export async function POST(request: Request) {
 
     const result = await runPostDispatchSync({
       trigger: 'MANUAL',
-      userId: session.userId || session.id,
+      userId,
       forceFullSync,
     });
 
+    // If sync was skipped because another sync is already in progress,
+    // do NOT consume the user's 60-second cooldown!
     if (!result.success && result.skippedReason) {
       return NextResponse.json(
         { success: false, message: result.skippedReason, inProgress: true },
@@ -46,10 +70,16 @@ export async function POST(request: Request) {
       );
     }
 
+    // 2. Sync was ACCEPTED and executed successfully -> Start 60-second cooldown
+    if (userId) {
+      await recordUserManualSyncCooldown(userId);
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Invoices synchronized successfully.',
       result,
+      cooldown_seconds: 60,
     });
   } catch (error: any) {
     console.error('[PostDispatch Sync API] Error:', error);
@@ -59,3 +89,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

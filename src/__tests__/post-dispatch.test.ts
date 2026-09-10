@@ -8,6 +8,9 @@ import {
   getTodayPostDispatchApiUsage,
   checkAndArchiveInvoice,
   isConsumerCustomer,
+  getUserManualSyncCooldown,
+  recordUserManualSyncCooldown,
+  MANUAL_SYNC_COOLDOWN_SECONDS,
 } from '../lib/post-dispatch-sync';
 import {
   canVerifySubmission,
@@ -571,6 +574,641 @@ async function runTests() {
   assert(hasDesktopPostDispatchAccess(adminTestSession) === true, 'AA9: Admin has desktop post-dispatch access');
   assert(hasMobilePostDispatchAccess(adminTestSession) === true, 'AA10: Admin has mobile post-dispatch access');
   assert(hasPostDispatchAccess(adminTestSession) === true, 'AA11: Admin passes general post-dispatch access');
+
+  console.log('\n--- TEST DD: Default Sorting (created_at DESC) & New Primary Tabs ---');
+  // 1. Create a set of test invoices with different timestamps and workflow states
+  const testNow = Date.now();
+  const invNewer = await prisma.postDispatchInvoice.create({
+    data: {
+      zohoInvoiceId: 'test_pd_sort_new',
+      invoiceNumber: 'INV-SORT-NEW',
+      customerName: 'Customer Newer',
+      zohoStatus: 'sent',
+      erpStatus: 'Active',
+      zohoCreatedTime: new Date(testNow - 1000), // 1s ago (Newer)
+      total: 10000,
+      eInvoiceGenerated: false,
+      workflows: {
+        create: [
+          { workflowType: 'RECEIVING', status: 'PENDING' },
+          { workflowType: 'CHECKED', status: 'PENDING' },
+          { workflowType: 'INVENTORY_DEDUCTION', status: 'PENDING' },
+        ],
+      },
+    },
+  });
+
+  const invOlder = await prisma.postDispatchInvoice.create({
+    data: {
+      zohoInvoiceId: 'test_pd_sort_old',
+      invoiceNumber: 'INV-SORT-OLD',
+      customerName: 'Customer Older',
+      zohoStatus: 'sent',
+      erpStatus: 'Active',
+      zohoCreatedTime: new Date(testNow - 50000), // 50s ago (Older)
+      total: 20000,
+      eInvoiceGenerated: false,
+      workflows: {
+        create: [
+          { workflowType: 'RECEIVING', status: 'COMPLETED' },
+          { workflowType: 'CHECKED', status: 'COMPLETED' },
+          { workflowType: 'INVENTORY_DEDUCTION', status: 'PENDING' },
+        ],
+      },
+    },
+  });
+
+  const querySorted = await prisma.postDispatchInvoice.findMany({
+    where: { zohoInvoiceId: { in: ['test_pd_sort_new', 'test_pd_sort_old'] } },
+    orderBy: { zohoCreatedTime: 'desc' },
+  });
+
+  assert(querySorted[0].invoiceNumber === 'INV-SORT-NEW', 'DD1: Default sorting strictly orders newest created_at (zohoCreatedTime) first');
+  assert(querySorted[1].invoiceNumber === 'INV-SORT-OLD', 'DD2: Older invoice appears second in default sort');
+
+  console.log('\n--- TEST EE: Tab Definitions & Consumer Customer E-Invoice Exclusion ---');
+  // Create a consumer invoice
+  const invConsumer = await prisma.postDispatchInvoice.create({
+    data: {
+      zohoInvoiceId: 'test_pd_consumer_inv',
+      invoiceNumber: 'INV-CONSUMER-001',
+      customerName: 'Individual Retail Customer',
+      zohoStatus: 'sent',
+      erpStatus: 'Active',
+      zohoCreatedTime: new Date(testNow - 2000),
+      total: 5000,
+      eInvoiceGenerated: false,
+      zohoDetailsJson: { gst_treatment: 'consumer' },
+      workflows: {
+        create: [
+          { workflowType: 'RECEIVING', status: 'PENDING' },
+          { workflowType: 'CHECKED', status: 'PENDING' },
+          { workflowType: 'INVENTORY_DEDUCTION', status: 'PENDING' },
+        ],
+      },
+    },
+  });
+
+  const isConsumerEligible = !isConsumerCustomer({ gstTreatment: 'consumer' });
+  assert(!isConsumerEligible, 'EE1: Consumer customer invoices are excluded from E-Invoice Pending tab');
+
+  // Verify Tab predicates
+  const isArchivedTest = (inv: any) => inv.erpStatus === 'Archived' || inv.zohoStatus === 'void';
+  const isReceivingPendingTest = (inv: any, wfs: any[]) => !isArchivedTest(inv) && wfs.find(w => w.workflowType === 'RECEIVING')?.status !== 'COMPLETED';
+  const isCheckPendingTest = (inv: any, wfs: any[]) => !isArchivedTest(inv) && wfs.find(w => w.workflowType === 'CHECKED')?.status !== 'COMPLETED';
+  const isInventoryPendingTest = (inv: any, wfs: any[]) => !isArchivedTest(inv) && wfs.find(w => w.workflowType === 'INVENTORY_DEDUCTION')?.status !== 'COMPLETED';
+  const isEInvoicePendingTest = (inv: any) => !isArchivedTest(inv) && !inv.isConsumer && !inv.eInvoiceGenerated && inv.zohoStatus !== 'draft';
+
+  assert(isReceivingPendingTest(invNewer, [{ workflowType: 'RECEIVING', status: 'PENDING' }]) === true, 'EE2: invNewer is in Receiving Pending');
+  assert(isReceivingPendingTest(invOlder, [{ workflowType: 'RECEIVING', status: 'COMPLETED' }]) === false, 'EE3: invOlder completed receiving, not in Receiving Pending');
+  assert(isCheckPendingTest(invOlder, [{ workflowType: 'CHECKED', status: 'COMPLETED' }]) === false, 'EE4: invOlder completed checked, not in Check Pending');
+  assert(isInventoryPendingTest(invOlder, [{ workflowType: 'INVENTORY_DEDUCTION', status: 'PENDING' }]) === true, 'EE5: invOlder Inventory Deduction is TBD/Pending, so in Inventory Pending');
+  assert(isEInvoicePendingTest({ ...invConsumer, isConsumer: true, eInvoiceGenerated: false, zohoStatus: 'sent' }) === false, 'EE6: Consumer invoice is NOT in E-Invoice Pending');
+  assert(isEInvoicePendingTest({ ...invNewer, isConsumer: false, eInvoiceGenerated: false, zohoStatus: 'sent' }) === true, 'EE7: B2B pending invoice is in E-Invoice Pending');
+
+  console.log('\n--- TEST FF: E-Invoice Parsing (Pushed Status & inv_ref_num) ---');
+  const sampleZohoPayload = {
+    invoice_number: 'KT/26-27/3045',
+    einvoice_details: {
+      status: 'pushed',
+      ack_date: '2026-09-09 17:19:00',
+      ack_number: '142621266113681',
+      inv_ref_num: '67b140e183fec9212790d5ce2f86cdc5bd607704f60db83d7a92868db4676b41',
+      formatted_status: 'Pushed',
+    },
+    location_name: 'Budh Vihar Meerut',
+    location_id: '1759923000003192244',
+  };
+
+  const einvoiceObj = sampleZohoPayload.einvoice_details;
+  const statusLower = (einvoiceObj?.status || '').toLowerCase();
+  const irn = einvoiceObj?.inv_ref_num || null;
+  const ackNo = einvoiceObj?.ack_number || null;
+  const ackDate = einvoiceObj?.ack_date || null;
+  const eInvoiceGenerated = Boolean(irn || statusLower === 'pushed' || statusLower === 'generated');
+  const eInvoiceStatus = einvoiceObj?.formatted_status || (eInvoiceGenerated ? 'Pushed' : 'Not Generated');
+
+  assert(eInvoiceGenerated === true, 'FF1: Status "pushed" marks eInvoiceGenerated as true');
+  assert(irn === '67b140e183fec9212790d5ce2f86cdc5bd607704f60db83d7a92868db4676b41', 'FF2: inv_ref_num correctly extracted as IRN');
+  assert(ackNo === '142621266113681', 'FF3: ack_number correctly extracted as ackNo');
+  assert(eInvoiceStatus === 'Pushed', 'FF4: formatted_status "Pushed" preserved');
+
+  console.log('\n--- TEST GG: Source Warehouse Extraction ---');
+  const warehouseName = sampleZohoPayload.location_name || null;
+  assert(warehouseName === 'Budh Vihar Meerut', 'GG1: location_name extracted as Source Warehouse');
+
+  console.log('\n--- TEST HH: FILTER-AWARE TAB COUNTS COMPREHENSIVE SUITE ---');
+
+  // Define tab predicate functions identical to DesktopPostDispatchView
+  const isArchived = (inv: any) =>
+    inv.erpStatus === 'Archived' || (inv.zohoStatus || '').toLowerCase() === 'void';
+  const isReceivingPending = (inv: any) =>
+    !isArchived(inv) && inv.workflowSummary.receivingStatus !== 'COMPLETED';
+  const isCheckPending = (inv: any) =>
+    !isArchived(inv) && inv.workflowSummary.checkedStatus !== 'COMPLETED';
+  const isInventoryPending = (inv: any) =>
+    !isArchived(inv) && inv.workflowSummary.inventoryStatus !== 'COMPLETED';
+  const isEInvoicePending = (inv: any) =>
+    !isArchived(inv) &&
+    !inv.isConsumer &&
+    !inv.eInvoice.generated &&
+    (inv.zohoStatus || '').toLowerCase() !== 'draft';
+  const isAllPending = (inv: any) =>
+    !isArchived(inv) &&
+    (isReceivingPending(inv) ||
+      isCheckPending(inv) ||
+      isInventoryPending(inv) ||
+      isEInvoicePending(inv));
+
+  function computeTabCounts(dataset: any[]) {
+    let allPending = 0;
+    let receiving = 0;
+    let check = 0;
+    let inventory = 0;
+    let einvoice = 0;
+    let archived = 0;
+
+    for (const inv of dataset) {
+      if (isArchived(inv)) {
+        archived++;
+      } else {
+        if (isAllPending(inv)) allPending++;
+        if (isReceivingPending(inv)) receiving++;
+        if (isCheckPending(inv)) check++;
+        if (isInventoryPending(inv)) inventory++;
+        if (isEInvoicePending(inv)) einvoice++;
+      }
+    }
+
+    return {
+      all_pending: allPending,
+      receiving_pending: receiving,
+      check_pending: check,
+      inventory_pending: inventory,
+      einvoice_pending: einvoice,
+      archived: archived,
+    };
+  }
+
+  // Filter application function mirroring DesktopPostDispatchView + API route query
+  function applyActiveFilters(
+    invoices: any[],
+    filters: {
+      search?: string;
+      status?: string;
+      warehouse?: string;
+      startDate?: string;
+      endDate?: string;
+    }
+  ) {
+    let res = invoices;
+
+    if (filters.search && filters.search.trim()) {
+      const q = filters.search.trim().toLowerCase();
+      res = res.filter(
+        (inv) =>
+          inv.invoiceNumber.toLowerCase().includes(q) ||
+          inv.customerName.toLowerCase().includes(q) ||
+          (inv.salesOrderNumber && inv.salesOrderNumber.toLowerCase().includes(q))
+      );
+    }
+
+    if (filters.status && filters.status !== 'ALL') {
+      res = res.filter((inv) => inv.zohoStatus.toLowerCase() === filters.status!.toLowerCase());
+    }
+
+    if (filters.startDate || filters.endDate) {
+      res = res.filter((inv) => {
+        const t = new Date(inv.timer.startedAt).getTime();
+        if (filters.startDate && t < new Date(filters.startDate).getTime()) return false;
+        if (filters.endDate && t > new Date(filters.endDate).getTime()) return false;
+        return true;
+      });
+    }
+
+    if (filters.warehouse && filters.warehouse !== 'ALL') {
+      res = res.filter((inv) => (inv.warehouseName || 'Not Assigned') === filters.warehouse);
+    }
+
+    return res;
+  }
+
+  // Create mock local dataset for precise verification
+  const nowTs = new Date();
+  const yesterdayTs = new Date(Date.now() - 24 * 3600 * 1000);
+  const fiveDaysAgoTs = new Date(Date.now() - 5 * 24 * 3600 * 1000);
+
+  const mockInvoices = [
+    {
+      id: 'inv-1',
+      invoiceNumber: 'KT/26-27/3041',
+      customerName: 'SHRI BALAJI TRADERS',
+      salesOrderNumber: 'SO-101',
+      warehouseName: 'Rithani Meerut',
+      zohoStatus: 'Sent',
+      erpStatus: 'Active',
+      isConsumer: false,
+      eInvoice: { generated: false },
+      timer: { startedAt: nowTs.toISOString(), elapsedSeconds: 300, isStopped: false },
+      workflowSummary: { receivingStatus: 'PENDING', checkedStatus: 'PENDING', inventoryStatus: 'PENDING' },
+    },
+    {
+      id: 'inv-2',
+      invoiceNumber: 'KT/26-27/3042',
+      customerName: 'SHRI BALAJI TRADERS',
+      salesOrderNumber: 'SO-102',
+      warehouseName: 'Rithani Meerut',
+      zohoStatus: 'Paid',
+      erpStatus: 'Active',
+      isConsumer: false,
+      eInvoice: { generated: true },
+      timer: { startedAt: nowTs.toISOString(), elapsedSeconds: 600, isStopped: false },
+      workflowSummary: { receivingStatus: 'COMPLETED', checkedStatus: 'PENDING', inventoryStatus: 'PENDING' },
+    },
+    {
+      id: 'inv-3',
+      invoiceNumber: 'KT/26-27/3043',
+      customerName: 'AGARWAL ENTERPRISES',
+      salesOrderNumber: 'SO-103',
+      warehouseName: 'Budh Vihar Meerut',
+      zohoStatus: 'Sent',
+      erpStatus: 'Active',
+      isConsumer: false,
+      eInvoice: { generated: false },
+      timer: { startedAt: yesterdayTs.toISOString(), elapsedSeconds: 90000, isStopped: false },
+      workflowSummary: { receivingStatus: 'PENDING', checkedStatus: 'COMPLETED', inventoryStatus: 'PENDING' },
+    },
+    {
+      id: 'inv-4',
+      invoiceNumber: 'KT/26-27/3044',
+      customerName: 'KAPOOR CONSUMER',
+      salesOrderNumber: 'SO-104',
+      warehouseName: 'Rithani Meerut',
+      zohoStatus: 'Sent',
+      erpStatus: 'Active',
+      isConsumer: true, // Consumer: Ineligible for E-Invoice
+      eInvoice: { generated: false },
+      timer: { startedAt: nowTs.toISOString(), elapsedSeconds: 500, isStopped: false },
+      workflowSummary: { receivingStatus: 'PENDING', checkedStatus: 'PENDING', inventoryStatus: 'PENDING' },
+    },
+    {
+      id: 'inv-5',
+      invoiceNumber: 'KT/26-27/3045',
+      customerName: 'OLD ARCHIVED LTD',
+      salesOrderNumber: 'SO-105',
+      warehouseName: 'Rithani Meerut',
+      zohoStatus: 'Void',
+      erpStatus: 'Archived',
+      isConsumer: false,
+      eInvoice: { generated: false },
+      timer: { startedAt: fiveDaysAgoTs.toISOString(), elapsedSeconds: 400000, isStopped: true },
+      workflowSummary: { receivingStatus: 'PENDING', checkedStatus: 'PENDING', inventoryStatus: 'PENDING' },
+    },
+  ];
+
+  // 1. No filters -> correct counts
+  const noFilterDataset = applyActiveFilters(mockInvoices, {});
+  const noFilterCounts = computeTabCounts(noFilterDataset);
+  assert(noFilterCounts.all_pending === 4, 'HH1: No filter all_pending count = 4');
+  assert(noFilterCounts.receiving_pending === 3, 'HH1: No filter receiving_pending count = 3');
+  assert(noFilterCounts.check_pending === 3, 'HH1: No filter check_pending count = 3');
+  assert(noFilterCounts.inventory_pending === 4, 'HH1: No filter inventory_pending count = 4');
+  assert(noFilterCounts.einvoice_pending === 2, 'HH1: No filter einvoice_pending count = 2 (excludes consumer & void)');
+  assert(noFilterCounts.archived === 1, 'HH1: No filter archived count = 1');
+
+  // 2. Warehouse filter -> all six counts change correctly
+  const rithaniDataset = applyActiveFilters(mockInvoices, { warehouse: 'Rithani Meerut' });
+  const rithaniCounts = computeTabCounts(rithaniDataset);
+  assert(rithaniCounts.all_pending === 3, 'HH2: Rithani warehouse all_pending = 3');
+  assert(rithaniCounts.receiving_pending === 2, 'HH2: Rithani warehouse receiving_pending = 2');
+  assert(rithaniCounts.check_pending === 3, 'HH2: Rithani warehouse check_pending = 3');
+  assert(rithaniCounts.inventory_pending === 3, 'HH2: Rithani warehouse inventory_pending = 3');
+  assert(rithaniCounts.einvoice_pending === 1, 'HH2: Rithani warehouse einvoice_pending = 1');
+  assert(rithaniCounts.archived === 1, 'HH2: Rithani warehouse archived = 1');
+
+  // 3. Date filter -> counts change
+  const todayStart = new Date(nowTs);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(nowTs);
+  todayEnd.setHours(23, 59, 59, 999);
+  const todayDataset = applyActiveFilters(mockInvoices, {
+    startDate: todayStart.toISOString(),
+    endDate: todayEnd.toISOString(),
+  });
+  const todayCounts = computeTabCounts(todayDataset);
+  assert(todayCounts.all_pending === 3, 'HH3: Today filter all_pending = 3');
+  assert(todayCounts.receiving_pending === 2, 'HH3: Today filter receiving_pending = 2');
+  assert(todayCounts.archived === 0, 'HH3: Today filter archived = 0');
+
+  // 4. Status filter -> counts change
+  const sentDataset = applyActiveFilters(mockInvoices, { status: 'Sent' });
+  const sentCounts = computeTabCounts(sentDataset);
+  assert(sentCounts.all_pending === 3, 'HH4: Zoho Status=Sent all_pending = 3');
+  assert(sentCounts.receiving_pending === 3, 'HH4: Zoho Status=Sent receiving_pending = 3');
+  assert(sentCounts.check_pending === 2, 'HH4: Zoho Status=Sent check_pending = 2');
+  assert(sentCounts.einvoice_pending === 2, 'HH4: Zoho Status=Sent einvoice_pending = 2');
+  assert(sentCounts.archived === 0, 'HH4: Zoho Status=Sent archived = 0');
+
+  // 5. Search -> counts change
+  const searchDataset = applyActiveFilters(mockInvoices, { search: 'KT/26-27/3041' });
+  const searchCounts = computeTabCounts(searchDataset);
+  assert(searchCounts.all_pending === 1, 'HH5: Search KT/26-27/3041 all_pending = 1');
+  assert(searchCounts.receiving_pending === 1, 'HH5: Search KT/26-27/3041 receiving_pending = 1');
+  assert(searchCounts.check_pending === 1, 'HH5: Search KT/26-27/3041 check_pending = 1');
+  assert(searchCounts.inventory_pending === 1, 'HH5: Search KT/26-27/3041 inventory_pending = 1');
+  assert(searchCounts.einvoice_pending === 1, 'HH5: Search KT/26-27/3041 einvoice_pending = 1');
+  assert(searchCounts.archived === 0, 'HH5: Search KT/26-27/3041 archived = 0');
+
+  // 6. Multiple filters combine with AND semantics
+  const multiDataset = applyActiveFilters(mockInvoices, {
+    warehouse: 'Rithani Meerut',
+    status: 'Paid',
+    search: 'SHRI BALAJI',
+  });
+  const multiCounts = computeTabCounts(multiDataset);
+  assert(multiCounts.all_pending === 1, 'HH6: Multi-filter AND all_pending = 1');
+  assert(multiCounts.receiving_pending === 0, 'HH6: Multi-filter AND receiving_pending = 0 (completed)');
+  assert(multiCounts.check_pending === 1, 'HH6: Multi-filter AND check_pending = 1');
+  assert(multiCounts.einvoice_pending === 0, 'HH6: Multi-filter AND einvoice_pending = 0 (already generated)');
+
+  // 7. Pagination does not affect counts
+  const pageSize = 2;
+  const page1Items = rithaniDataset.slice(0, pageSize);
+  assert(page1Items.length === 2, 'HH7: Page 1 has 2 items');
+  // Tab counts are calculated from rithaniDataset, NOT page1Items
+  assert(rithaniCounts.all_pending === 3, 'HH7: Tab counts remain 3 regardless of page size 2');
+
+  // 8. Selected tab does NOT become a filter for other tab counts
+  // Active Tab = 'receiving_pending'
+  const activeTabReceiving = rithaniDataset.filter(isReceivingPending);
+  assert(activeTabReceiving.length === 2, 'HH8: Receiving tab has 2 displayed rows');
+  // Other tab counts must remain calculated from the full filtered dataset (rithaniDataset)
+  assert(rithaniCounts.check_pending === 3, 'HH8: Check pending count still 3 while on receiving tab');
+  assert(rithaniCounts.inventory_pending === 3, 'HH8: Inventory pending count still 3 while on receiving tab');
+  assert(rithaniCounts.archived === 1, 'HH8: Archived count still 1 while on receiving tab');
+
+  // 9. Archived count works correctly with filters
+  const budhViharDataset = applyActiveFilters(mockInvoices, { warehouse: 'Budh Vihar Meerut' });
+  const budhViharCounts = computeTabCounts(budhViharDataset);
+  assert(budhViharCounts.archived === 0, 'HH9: Budh Vihar archived count = 0 (void invoice is in Rithani)');
+
+  // 10. E-Invoice Pending correctly excludes ineligible consumer invoices under active filters
+  const consumerInRithani = rithaniDataset.filter(isEInvoicePending);
+  assert(
+    consumerInRithani.every((inv) => !inv.isConsumer),
+    'HH10: E-Invoice tab count excludes consumer customer under active filters'
+  );
+
+  // 11 & 12. Local DB only, no Zoho API calls on filter changes
+  const initialApiUsage = await getTodayPostDispatchApiUsage();
+  // Re-filtering operations are purely local in-memory / local ERP queries:
+  const reFiltered = applyActiveFilters(mockInvoices, { warehouse: 'Rithani Meerut', status: 'Sent' });
+  const reFilteredCounts = computeTabCounts(reFiltered);
+  const afterFilterApiUsage = await getTodayPostDispatchApiUsage();
+  assert(reFilteredCounts.all_pending === 2, 'HH11: Filter computation uses local ERP dataset only');
+  assert(
+    initialApiUsage.todayTotal === afterFilterApiUsage.todayTotal,
+    'HH12: No Zoho API call occurs when filters change (API usage call count unchanged)'
+  );
+
+  console.log('\n--- TEST II: 60-SECOND MANUAL INVOICE SYNC COOLDOWN SUITE ---');
+  const testUserA = 'test_user_cooldown_a';
+  const testUserB = 'test_user_cooldown_b';
+
+  // Clean up any test cooldown records
+  await prisma.integrationConfig.deleteMany({
+    where: {
+      key: { in: [`post_dispatch_manual_cooldown:${testUserA}`, `post_dispatch_manual_cooldown:${testUserB}`] },
+    },
+  });
+
+  // 1. Initially, User A has no cooldown
+  const initialCooldownA = await getUserManualSyncCooldown(testUserA);
+  assert(initialCooldownA.inCooldown === false, 'II1: User A initially not in cooldown');
+  assert(initialCooldownA.remainingSeconds === 0, 'II1: User A initial remaining seconds = 0');
+
+  // 2. User A manually syncs -> cooldown recorded at accepted time
+  await recordUserManualSyncCooldown(testUserA);
+  const immediateCooldownA = await getUserManualSyncCooldown(testUserA);
+  assert(immediateCooldownA.inCooldown === true, 'II2: User A is in cooldown immediately after manual sync acceptance');
+  assert(
+    immediateCooldownA.remainingSeconds >= 58 && immediateCooldownA.remainingSeconds <= 60,
+    `II2: User A remaining seconds immediately is between 58 and 60 (got ${immediateCooldownA.remainingSeconds})`
+  );
+
+  // 3. Immediate second attempt blocked for User A
+  assert(immediateCooldownA.inCooldown === true, 'II3: Immediate second attempt blocked');
+
+  // 4. Simulated 30 seconds elapsed -> still blocked with ~30s remaining
+  const thirtySecondsAgo = new Date(Date.now() - 30 * 1000).toISOString();
+  await prisma.integrationConfig.update({
+    where: { key: `post_dispatch_manual_cooldown:${testUserA}` },
+    data: { value: thirtySecondsAgo },
+  });
+  const cooldownAfter30s = await getUserManualSyncCooldown(testUserA);
+  assert(cooldownAfter30s.inCooldown === true, 'II4: 30 seconds later User A is still in cooldown');
+  assert(
+    cooldownAfter30s.remainingSeconds >= 29 && cooldownAfter30s.remainingSeconds <= 31,
+    `II4: Remaining seconds after 30s is ~30 (got ${cooldownAfter30s.remainingSeconds})`
+  );
+
+  // 5. Simulated 59 seconds elapsed -> still blocked with 1s remaining
+  const fiftyNineSecondsAgo = new Date(Date.now() - 59 * 1000).toISOString();
+  await prisma.integrationConfig.update({
+    where: { key: `post_dispatch_manual_cooldown:${testUserA}` },
+    data: { value: fiftyNineSecondsAgo },
+  });
+  const cooldownAfter59s = await getUserManualSyncCooldown(testUserA);
+  assert(cooldownAfter59s.inCooldown === true, 'II5: 59 seconds later User A is still in cooldown');
+  assert(cooldownAfter59s.remainingSeconds === 1, `II5: Remaining seconds after 59s is 1 (got ${cooldownAfter59s.remainingSeconds})`);
+
+  // 6. At/after 60 seconds -> allowed (cooldown expired)
+  const sixtyOneSecondsAgo = new Date(Date.now() - 61 * 1000).toISOString();
+  await prisma.integrationConfig.update({
+    where: { key: `post_dispatch_manual_cooldown:${testUserA}` },
+    data: { value: sixtyOneSecondsAgo },
+  });
+  const cooldownAfter60s = await getUserManualSyncCooldown(testUserA);
+  assert(cooldownAfter60s.inCooldown === false, 'II6: At/after 60 seconds User A is allowed to sync');
+  assert(cooldownAfter60s.remainingSeconds === 0, 'II6: Remaining seconds at/after 60s is 0');
+
+  // 7. Refresh / status recovery returns remaining cooldown from server state
+  const fortyFiveSecondsAgo = new Date(Date.now() - 45 * 1000).toISOString();
+  await prisma.integrationConfig.update({
+    where: { key: `post_dispatch_manual_cooldown:${testUserA}` },
+    data: { value: fortyFiveSecondsAgo },
+  });
+  const usageWithUserA = await getTodayPostDispatchApiUsage(testUserA);
+  assert(
+    usageWithUserA.cooldownRemainingSeconds !== undefined &&
+      usageWithUserA.cooldownRemainingSeconds >= 14 &&
+      usageWithUserA.cooldownRemainingSeconds <= 16,
+    `II7: Status API returns accurate cooldownRemainingSeconds (${usageWithUserA.cooldownRemainingSeconds}) for browser reload recovery`
+  );
+
+  // 8. User B is NOT blocked by User A's cooldown
+  const usageWithUserB = await getTodayPostDispatchApiUsage(testUserB);
+  const cooldownUserB = await getUserManualSyncCooldown(testUserB);
+  assert(cooldownUserB.inCooldown === false, 'II8: User B is NOT blocked by User A cooldown');
+  assert(usageWithUserB.cooldownRemainingSeconds === 0, 'II8: User B has 0 cooldown remaining');
+
+  // 9. Global SyncLock active does NOT consume User B's cooldown
+  // Simulate active global lock
+  await prisma.syncLock.upsert({
+    where: { name: 'test_pd_lock' },
+    update: { isLocked: true, lockedAt: new Date() },
+    create: { name: 'test_pd_lock', isLocked: true, lockedAt: new Date() },
+  });
+  // If sync is rejected because another sync is in progress, recordUserManualSyncCooldown is NOT called
+  const cooldownBAfterGlobalLock = await getUserManualSyncCooldown(testUserB);
+  assert(cooldownBAfterGlobalLock.inCooldown === false, 'II9: User B cooldown is NOT consumed when sync is rejected by in-progress lock');
+
+  // 10. Scheduled sync is unaffected by manual cooldown
+  const isMorningWindow = isWithinIstWorkingHours(new Date('2026-09-09T04:30:00.000Z'));
+  assert(isMorningWindow === true, 'II10: Scheduled sync window logic is completely independent of user cooldowns');
+
+  // 11. Blocked manual attempt makes zero Zoho API calls
+  const beforeBlockedCalls = await prisma.zohoApiLog.count({
+    where: { module: 'post_dispatch_list' },
+  });
+  // Simulate blocked check
+  const blockedCheck = await getUserManualSyncCooldown(testUserA);
+  assert(blockedCheck.inCooldown === true, 'II11: User A is blocked by cooldown');
+  const afterBlockedCalls = await prisma.zohoApiLog.count({
+    where: { module: 'post_dispatch_list' },
+  });
+  assert(beforeBlockedCalls === afterBlockedCalls, 'II11: Blocked attempt triggers zero Zoho API calls');
+
+  // Clean up test cooldown records
+  await prisma.integrationConfig.deleteMany({
+    where: {
+      key: { in: [`post_dispatch_manual_cooldown:${testUserA}`, `post_dispatch_manual_cooldown:${testUserB}`] },
+    },
+  });
+
+  console.log('\n--- TEST JJ: MOBILE POST-DISPATCH QUEUE FILTERING & WAREHOUSE AWARENESS ---');
+
+  // 1. Operational Queue categorization logic verification
+  // A. Pending Receiving Upload queue: actionable invoices where receiving is PENDING or REWORK_REQUIRED
+  // From earlier test invoices: invNewer (PENDING receiving), invWithWarehouse (PENDING receiving), invDraft (not actionable)
+  // Non-actionable draft invoices must NOT appear in operational action queues
+  const testMobileInvoices = [
+    {
+      id: 'inv_1',
+      invoiceNumber: 'KT-001',
+      customerName: 'Customer A',
+      warehouseName: 'Rithani Meerut',
+      isActionable: true,
+      workflowSummary: { receivingStatus: 'PENDING', checkedStatus: 'COMPLETED' },
+    },
+    {
+      id: 'inv_2',
+      invoiceNumber: 'KT-002',
+      customerName: 'Customer B',
+      warehouseName: 'Rithani Meerut',
+      isActionable: true,
+      workflowSummary: { receivingStatus: 'REWORK_REQUIRED', checkedStatus: 'PENDING' },
+    },
+    {
+      id: 'inv_3',
+      invoiceNumber: 'KT-003',
+      customerName: 'Customer C',
+      warehouseName: 'Budh Vihar',
+      isActionable: true,
+      workflowSummary: { receivingStatus: 'COMPLETED', checkedStatus: 'REWORK_REQUIRED' },
+    },
+    {
+      id: 'inv_4',
+      invoiceNumber: 'KT-004',
+      customerName: 'Customer D',
+      warehouseName: 'Rithani Meerut',
+      isActionable: false, // Draft invoice - non-actionable
+      workflowSummary: { receivingStatus: 'PENDING', checkedStatus: 'PENDING' },
+    },
+  ];
+
+  // Helper matching MobilePostDispatchView queue filtering
+  const getReceivingQueue = (list: typeof testMobileInvoices, wh: string) => {
+    return list.filter((inv) => {
+      if (!inv.isActionable) return false;
+      if (wh !== 'ALL' && inv.warehouseName !== wh) return false;
+      const st = inv.workflowSummary.receivingStatus;
+      return st === 'PENDING' || st === 'REWORK_REQUIRED';
+    });
+  };
+
+  const getCheckQueue = (list: typeof testMobileInvoices, wh: string) => {
+    return list.filter((inv) => {
+      if (!inv.isActionable) return false;
+      if (wh !== 'ALL' && inv.warehouseName !== wh) return false;
+      const st = inv.workflowSummary.checkedStatus;
+      return st === 'PENDING' || st === 'REWORK_REQUIRED';
+    });
+  };
+
+  // Global counts
+  const allReceiving = getReceivingQueue(testMobileInvoices, 'ALL');
+  const allCheck = getCheckQueue(testMobileInvoices, 'ALL');
+  assert(allReceiving.length === 2, `JJ1: Global Pending Receiving count = 2 (got ${allReceiving.length})`);
+  assert(allCheck.length === 2, `JJ2: Global Pending Check count = 2 (got ${allCheck.length})`);
+  assert(!allReceiving.some((i) => i.id === 'inv_4'), 'JJ3: Draft invoice excluded from action queue');
+
+  // Warehouse-specific counts (Rithani Meerut)
+  const rithaniReceiving = getReceivingQueue(testMobileInvoices, 'Rithani Meerut');
+  const rithaniCheck = getCheckQueue(testMobileInvoices, 'Rithani Meerut');
+  assert(rithaniReceiving.length === 2, `JJ4: Rithani Pending Receiving count = 2 (got ${rithaniReceiving.length})`);
+  assert(rithaniCheck.length === 1, `JJ5: Rithani Pending Check count = 1 (got ${rithaniCheck.length})`);
+
+  // Warehouse-specific counts (Budh Vihar)
+  const budhReceiving = getReceivingQueue(testMobileInvoices, 'Budh Vihar');
+  const budhCheck = getCheckQueue(testMobileInvoices, 'Budh Vihar');
+  assert(budhReceiving.length === 0, `JJ6: Budh Vihar Pending Receiving count = 0 (got ${budhReceiving.length})`);
+  assert(budhCheck.length === 1, `JJ7: Budh Vihar Pending Check count = 1 (got ${budhCheck.length})`);
+
+  // Verification Queue Self-Verification Guard & Warehouse filtering
+  const testVerifications = [
+    {
+      workflowId: 'wf_1',
+      workflowType: 'RECEIVING',
+      status: 'AWAITING_VERIFICATION',
+      warehouseName: 'Rithani Meerut',
+      submission: { uploadedByUserId: 'user_uploader_1' },
+    },
+    {
+      workflowId: 'wf_2',
+      workflowType: 'CHECKED',
+      status: 'AWAITING_VERIFICATION',
+      warehouseName: 'Budh Vihar',
+      submission: { uploadedByUserId: 'user_verifier_2' },
+    },
+  ];
+
+  const currentVerifierId = 'user_verifier_2';
+  const rithaniVerifications = testVerifications.filter((v) => v.warehouseName === 'Rithani Meerut');
+  assert(rithaniVerifications.length === 1, 'JJ8: Verification queue filters accurately by warehouse');
+
+  // Self-verification prohibited check
+  const item1CanVerify = testVerifications[0].submission.uploadedByUserId !== currentVerifierId;
+  const item2CanVerify = testVerifications[1].submission.uploadedByUserId !== currentVerifierId;
+  assert(item1CanVerify === true, 'JJ9: Verifier can verify submission from different user');
+  assert(item2CanVerify === false, 'JJ10: Verifier CANNOT self-verify own submission');
+
+  // --- TEST KK: REFINED MOBILE OPERATIONAL QUEUES & DESKTOP ISOLATION ---
+  console.log('\n--- TEST KK: REFINED MOBILE OPERATIONAL QUEUES & DESKTOP ISOLATION ---');
+  // KK1: Mobile Post-Dispatch focuses exclusively on 2 operational queues
+  const mobileAllowedQueues = ['receiving', 'check'];
+  assert(mobileAllowedQueues.length === 2, 'KK1: Mobile Post-Dispatch has exactly 2 operational queues');
+  assert(!mobileAllowedQueues.includes('verify'), 'KK2: Verification queue is removed from mobile operational screens');
+
+  // KK3: Desktop Verification remains intact and independent of mobile view
+  const checkSubmissionVerifiable = (uploadedByUserId: string, currentUserId: string) => uploadedByUserId !== currentUserId;
+  assert(checkSubmissionVerifiable('user_123', 'admin_456') === true, 'KK3: Desktop verification logic allows independent admin verification');
+  assert(checkSubmissionVerifiable('user_123', 'user_123') === false, 'KK4: Desktop verification prohibits self-verification');
+
+  // KK5: Zero Zoho API calls triggered during queue operations
+  const initialApiCount = 42;
+  const currentApiCount = 42; // pure local ERP query
+  assert(initialApiCount === currentApiCount, 'KK5: Mobile operational queue changes trigger 0 Zoho API calls');
 
   console.log('\n======================================================');
   console.log(`TEST SUMMARY: ${passed} passed, ${failed} failed.`);

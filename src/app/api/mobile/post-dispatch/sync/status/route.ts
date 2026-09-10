@@ -19,7 +19,8 @@ export async function GET() {
   }
 
   try {
-    const usage = await getTodayPostDispatchApiUsage();
+    const userId = session.userId || session.id;
+    const usage = await getTodayPostDispatchApiUsage(userId);
     return NextResponse.json({ usage });
   } catch (error: any) {
     console.error('[PostDispatch Sync Status API] Error:', error);

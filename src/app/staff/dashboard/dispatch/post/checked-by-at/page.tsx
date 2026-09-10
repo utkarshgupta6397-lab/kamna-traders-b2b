@@ -11,7 +11,7 @@ export default function Page() {
         <p className="text-xs text-gray-500 mt-0.5">Upload supporting documents and record Checked By and Checked At details.</p>
       </div>
       <div className="flex-1 overflow-auto">
-        <DesktopPostDispatchView initialTab="pending" />
+        <DesktopPostDispatchView initialTab="check_pending" />
       </div>
     </div>
   );

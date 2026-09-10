@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { format } from 'date-fns';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { format, subDays, startOfDay, endOfDay } from 'date-fns';
 import {
   Search,
   RefreshCw,
   Activity,
   CheckCircle2,
+  Clock,
   AlertCircle,
   FileText,
   ChevronUp,
@@ -15,6 +17,16 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldAlert,
+  Calendar,
+  Filter,
+  X,
+  FileCheck,
+  Loader2,
+  Circle,
+  Hourglass,
+  RotateCcw,
+  ExternalLink,
+  Building2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { PostDispatchInvoiceSummary } from '@/components/dispatch/post-dispatch/InvoiceCard';
@@ -22,8 +34,26 @@ import InvoiceDetailModal from '@/components/dispatch/post-dispatch/InvoiceDetai
 import SyncApiUsageModal from '@/components/dispatch/post-dispatch/SyncApiUsageModal';
 import MobileImagePreview from '@/components/mobile/MobileImagePreview';
 
-type TabKey = 'all' | 'pending' | 'verification' | 'archived';
-type SortKey = 'index' | 'invoice' | 'customer' | 'amount' | 'status' | 'eInvoice' | 'timer';
+export type PrimaryTabKey =
+  | 'all_pending'
+  | 'receiving_pending'
+  | 'check_pending'
+  | 'inventory_pending'
+  | 'einvoice_pending'
+  | 'archived';
+
+type SortKey =
+  | 'created_at'
+  | 'index'
+  | 'invoice'
+  | 'customer'
+  | 'warehouse'
+  | 'amount'
+  | 'status'
+  | 'eInvoice'
+  | 'timer';
+
+type DatePreset = 'all' | 'today' | 'yesterday' | 'last_7' | 'last_30' | 'custom';
 
 function formatCurrency(amount: number, currency = 'INR'): string {
   return new Intl.NumberFormat('en-IN', {
@@ -72,7 +102,15 @@ function LivePostDispatchTimer({ baseTs }: { baseTs: string }) {
   );
 }
 
-function FrozenPostDispatchTimer({ baseTs, stoppedAt, elapsedSeconds }: { baseTs: string; stoppedAt?: string | null; elapsedSeconds: number }) {
+function FrozenPostDispatchTimer({
+  baseTs,
+  stoppedAt,
+  elapsedSeconds,
+}: {
+  baseTs: string;
+  stoppedAt?: string | null;
+  elapsedSeconds: number;
+}) {
   return (
     <div>
       <div className="inline-flex items-center gap-1 text-emerald-700 font-semibold tabular-nums text-xs font-mono bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
@@ -86,24 +124,200 @@ function FrozenPostDispatchTimer({ baseTs, stoppedAt, elapsedSeconds }: { baseTs
   );
 }
 
-export default function DesktopPostDispatchView({
-  initialTab = 'all',
+/**
+ * Visual semantic status pill for Zoho Status
+ */
+function ZohoStatusPill({ status, isVoid }: { status: string; isVoid?: boolean }) {
+  const lower = (status || '').toLowerCase().trim();
+
+  let badgeClass = 'bg-slate-100 text-slate-700 border-slate-300';
+
+  if (isVoid || lower === 'void') {
+    badgeClass = 'bg-red-50 text-red-700 border-red-200';
+  } else if (lower === 'paid') {
+    badgeClass = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+  } else if (lower === 'partially paid' || lower === 'partially_paid') {
+    badgeClass = 'bg-amber-50 text-amber-800 border-amber-200';
+  } else if (lower === 'unpaid') {
+    badgeClass = 'bg-orange-50 text-orange-800 border-orange-200';
+  } else if (lower === 'overdue') {
+    badgeClass = 'bg-rose-50 text-rose-800 border-rose-200';
+  } else if (lower === 'sent') {
+    badgeClass = 'bg-blue-50 text-blue-800 border-blue-200';
+  } else if (lower === 'viewed') {
+    badgeClass = 'bg-indigo-50 text-indigo-800 border-indigo-200';
+  } else if (lower === 'draft') {
+    badgeClass = 'bg-gray-100 text-gray-600 border-gray-300';
+  }
+
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${badgeClass}`}
+    >
+      {status}
+    </span>
+  );
+}
+
+/**
+ * Visual state icon for individual workflows (Receiving, Checked, Inventory)
+ */
+function WorkflowStatusCell({
+  status,
+  workflowType,
 }: {
-  initialTab?: TabKey;
+  status: string;
+  workflowType: 'RECEIVING' | 'CHECKED' | 'INVENTORY';
+}) {
+  if (workflowType === 'INVENTORY') {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200"
+        title="Inventory Deduction (Phase 2 Coming Soon)"
+      >
+        <Circle size={10} className="text-slate-400" />
+        <span>Pending (TBD)</span>
+      </span>
+    );
+  }
+
+  const isCompleted = status === 'COMPLETED';
+  const isAwaiting = status === 'AWAITING_VERIFICATION';
+  const isRework = status === 'REWORK_REQUIRED';
+
+  if (isCompleted) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200"
+        title={`${workflowType === 'RECEIVING' ? 'Receiving' : 'Checked'} Verified & Completed`}
+        aria-label={`${workflowType === 'RECEIVING' ? 'Receiving' : 'Checked'} Verified`}
+      >
+        <CheckCircle2 size={13} className="text-emerald-600" />
+        <span>Verified</span>
+      </span>
+    );
+  }
+
+  if (isAwaiting) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200"
+        title="Evidence submitted, awaiting verification"
+        aria-label="Verification Pending"
+      >
+        <Hourglass size={12} className="text-blue-600 animate-pulse" />
+        <span>Verification Pending</span>
+      </span>
+    );
+  }
+
+  if (isRework) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200"
+        title="Rejected and marked for rework"
+        aria-label="Rework Required"
+      >
+        <RotateCcw size={12} className="text-amber-600" />
+        <span>Rework</span>
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 bg-gray-50 px-2 py-0.5 rounded border border-gray-200"
+      title="Upload not yet submitted"
+      aria-label="Pending Upload"
+    >
+      <Clock size={11} className="text-gray-400" />
+      <span>Pending</span>
+    </span>
+  );
+}
+
+const VALID_TABS: PrimaryTabKey[] = [
+  'all_pending',
+  'receiving_pending',
+  'check_pending',
+  'inventory_pending',
+  'einvoice_pending',
+  'archived',
+];
+
+function SortableHeader({
+  label,
+  sortKey,
+  sortConfig,
+  onSort,
+  align = 'left',
+}: {
+  label: string;
+  sortKey: SortKey;
+  sortConfig: { key: SortKey; direction: 'asc' | 'desc' };
+  onSort: (key: SortKey) => void;
+  align?: 'left' | 'right' | 'center';
+}) {
+  const isActive = sortConfig.key === sortKey;
+  return (
+    <th
+      className={`px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 cursor-pointer hover:bg-gray-100/50 transition-colors select-none group ${
+        align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
+      }`}
+      onClick={() => onSort(sortKey)}
+    >
+      <div
+        className={`flex items-center gap-1.5 ${
+          align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''
+        }`}
+      >
+        {label}
+        <div className="flex-shrink-0 w-3">
+          {isActive ? (
+            sortConfig.direction === 'asc' ? (
+              <ChevronUp size={12} className="text-[#1A2766]" />
+            ) : (
+              <ChevronDown size={12} className="text-[#1A2766]" />
+            )
+          ) : (
+            <ArrowUpDown size={12} className="text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+          )}
+        </div>
+      </div>
+    </th>
+  );
+}
+
+export default function DesktopPostDispatchView({
+  initialTab = 'all_pending',
+}: {
+  initialTab?: PrimaryTabKey;
 } = {}) {
-  const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
-  const [searchQuery, setSearchQuery] = useState('');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // URL state synchronization
+  const urlTab = searchParams.get('tab') as PrimaryTabKey | null;
+  const initialActiveTab: PrimaryTabKey =
+    urlTab && VALID_TABS.includes(urlTab) ? urlTab : initialTab;
+
+  const [activeTab, setActiveTab] = useState<PrimaryTabKey>(initialActiveTab);
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get('q') || '');
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || 'ALL');
+  const [warehouseFilter, setWarehouseFilter] = useState<string>(searchParams.get('warehouse') || 'ALL');
+  const [datePreset, setDatePreset] = useState<DatePreset>(
+    (searchParams.get('date') as DatePreset) || 'all'
+  );
+  const [customStartDate, setCustomStartDate] = useState(searchParams.get('from') || '');
+  const [customEndDate, setCustomEndDate] = useState(searchParams.get('to') || '');
+
   const [invoices, setInvoices] = useState<PostDispatchInvoiceSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [checkingEInvoiceId, setCheckingEInvoiceId] = useState<string | null>(null);
   const [unauthorizedMessage, setUnauthorizedMessage] = useState<string | null>(null);
-
-  // Verification queue counts
-  const [queueCounts, setQueueCounts] = useState<{ receiving: number; checked: number; total: number }>({
-    receiving: 0,
-    checked: 0,
-    total: 0,
-  });
 
   // Modals
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
@@ -113,22 +327,98 @@ export default function DesktopPostDispatchView({
     url: null,
   });
 
-  // Sorting and pagination
+  // Sorting: DEFAULT IS created_at DESC (newest first)
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({
-    key: 'timer',
+    key: 'created_at',
     direction: 'desc',
   });
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(
+    Number(searchParams.get('page')) > 0 ? Number(searchParams.get('page')) : 1
+  );
   const [pageSize, setPageSize] = useState<number | 'all'>(10);
 
-  // Fetch logic
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Sync state to URL search params cleanly without page reload
+  const updateUrlParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      // Ensure dispatch=post is preserved
+      params.set('dispatch', 'post');
+
+      Object.entries(updates).forEach(([key, val]) => {
+        if (!val || val === 'all' || val === 'ALL' || (key === 'page' && val === '1')) {
+          params.delete(key);
+        } else {
+          params.set(key, val);
+        }
+      });
+
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [router, pathname, searchParams]
+  );
+
+  // Compute date range for querying based on preset
+  const computedDateRange = useMemo(() => {
+    const now = new Date();
+    if (datePreset === 'today') {
+      return {
+        startDate: startOfDay(now).toISOString(),
+        endDate: endOfDay(now).toISOString(),
+      };
+    }
+    if (datePreset === 'yesterday') {
+      const y = subDays(now, 1);
+      return {
+        startDate: startOfDay(y).toISOString(),
+        endDate: endOfDay(y).toISOString(),
+      };
+    }
+    if (datePreset === 'last_7') {
+      return {
+        startDate: startOfDay(subDays(now, 7)).toISOString(),
+        endDate: endOfDay(now).toISOString(),
+      };
+    }
+    if (datePreset === 'last_30') {
+      return {
+        startDate: startOfDay(subDays(now, 30)).toISOString(),
+        endDate: endOfDay(now).toISOString(),
+      };
+    }
+    if (datePreset === 'custom' && customStartDate) {
+      return {
+        startDate: startOfDay(new Date(customStartDate)).toISOString(),
+        endDate: customEndDate ? endOfDay(new Date(customEndDate)).toISOString() : endOfDay(now).toISOString(),
+      };
+    }
+    return { startDate: null, endDate: null };
+  }, [datePreset, customStartDate, customEndDate]);
+
+  // Fetch invoices from local database
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set('tab', activeTab);
-      if (searchQuery.trim()) {
-        params.set('search', searchQuery.trim());
+      params.set('tab', 'all'); // Fetch all local active/archived for robust client-side active filter count calculation
+      if (debouncedSearch.trim()) {
+        params.set('search', debouncedSearch.trim());
+      }
+      if (statusFilter && statusFilter !== 'ALL') {
+        params.set('status', statusFilter);
+      }
+      if (computedDateRange.startDate) {
+        params.set('startDate', computedDateRange.startDate);
+      }
+      if (computedDateRange.endDate) {
+        params.set('endDate', computedDateRange.endDate);
       }
 
       const res = await fetch(`/api/mobile/post-dispatch/invoices?${params.toString()}`);
@@ -146,61 +436,201 @@ export default function DesktopPostDispatchView({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeTab, searchQuery]);
-
-  const fetchQueueCounts = async () => {
-    try {
-      const res = await fetch('/api/mobile/post-dispatch/verification-queue');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.counts) {
-          setQueueCounts(data.counts);
-        }
-      }
-    } catch (err) {
-      console.error('[Desktop Queue Counts Error]', err);
-    }
-  };
+  }, [debouncedSearch, statusFilter, computedDateRange]);
 
   useEffect(() => {
     fetchInvoices();
-    fetchQueueCounts();
   }, [fetchInvoices]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchInvoices(), fetchQueueCounts()]);
+    await fetchInvoices();
     if (!unauthorizedMessage) {
       toast.success('Post-dispatch queue refreshed');
     }
   };
 
-  // Reset pagination on search or tab switch
-  useEffect(() => {
+  // Reset page when tab or filters change
+  const handleTabChange = (newTab: PrimaryTabKey) => {
+    setActiveTab(newTab);
     setCurrentPage(1);
-  }, [searchQuery, activeTab]);
+    updateUrlParams({ tab: newTab, page: null });
+  };
 
-  // Tab definitions with counts
-  const tabs = useMemo(() => [
-    { key: 'all' as TabKey, label: 'All Invoices' },
-    { key: 'pending' as TabKey, label: 'Pending Action' },
-    {
-      key: 'verification' as TabKey,
-      label: 'Verification Queue',
-      count: queueCounts.total,
-      badgeClass: 'bg-blue-100 text-blue-800',
-    },
-    { key: 'archived' as TabKey, label: 'Archived' },
-  ], [queueCounts.total]);
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setDebouncedSearch('');
+    setStatusFilter('ALL');
+    setWarehouseFilter('ALL');
+    setDatePreset('all');
+    setCustomStartDate('');
+    setCustomEndDate('');
+    setCurrentPage(1);
+    updateUrlParams({ q: null, status: null, warehouse: null, date: null, from: null, to: null, page: null });
+  };
+
+  // Check Individual E-Invoice
+  const handleCheckIndividualEInvoice = async (invoiceId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCheckingEInvoiceId(invoiceId);
+    try {
+      const res = await fetch(`/api/mobile/post-dispatch/invoices/${invoiceId}/check-einvoice`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to check E-Invoice');
+      }
+
+      toast.success(data.message || 'E-Invoice check completed');
+      // Update local invoice state immediately
+      setInvoices((prev) =>
+        prev.map((inv) =>
+          inv.id === invoiceId
+            ? {
+                ...inv,
+                eInvoice: {
+                  ...inv.eInvoice,
+                  generated: data.eInvoice.generated,
+                  irn: data.eInvoice.irn,
+                  ackNo: data.eInvoice.ackNo,
+                  ackDate: data.eInvoice.ackDate,
+                  status: data.eInvoice.status,
+                },
+              }
+            : inv
+        )
+      );
+    } catch (err: any) {
+      toast.error(err.message || 'E-Invoice check failed');
+    } finally {
+      setCheckingEInvoiceId(null);
+    }
+  };
+
+  // ── Tab Predicates & Definitions ──────────────────────────────────────────
+  // Evaluated against active filters so counts accurately reflect the current filtered dataset.
+  const isArchived = (inv: PostDispatchInvoiceSummary) =>
+    inv.erpStatus === 'Archived' || inv.zohoStatus.toLowerCase() === 'void';
+
+  const isReceivingPending = (inv: PostDispatchInvoiceSummary) =>
+    !isArchived(inv) && inv.workflowSummary.receivingStatus !== 'COMPLETED';
+
+  const isCheckPending = (inv: PostDispatchInvoiceSummary) =>
+    !isArchived(inv) && inv.workflowSummary.checkedStatus !== 'COMPLETED';
+
+  const isInventoryPending = (inv: PostDispatchInvoiceSummary) =>
+    !isArchived(inv) && inv.workflowSummary.inventoryStatus !== 'COMPLETED';
+
+  const isEInvoicePending = (inv: PostDispatchInvoiceSummary) =>
+    !isArchived(inv) &&
+    !inv.isConsumer &&
+    !inv.eInvoice.generated &&
+    inv.zohoStatus.toLowerCase() !== 'draft';
+
+  const isAllPending = (inv: PostDispatchInvoiceSummary) =>
+    !isArchived(inv) &&
+    (isReceivingPending(inv) ||
+      isCheckPending(inv) ||
+      isInventoryPending(inv) ||
+      isEInvoicePending(inv));
+
+  // Unique warehouse names available in full invoice set (so user can always switch warehouses)
+  const availableWarehouses = useMemo(() => {
+    const set = new Set<string>();
+    invoices.forEach((inv) => {
+      if (inv.warehouseName) set.add(inv.warehouseName);
+    });
+    return Array.from(set).sort();
+  }, [invoices]);
+
+  // Base filtered dataset matching all active non-tab filters:
+  // - Search query (server-filtered)
+  // - Zoho Status (server-filtered)
+  // - Date range (server-filtered)
+  // - Source Warehouse (client/ERP-level filtered)
+  const filteredInvoices = useMemo(() => {
+    if (!warehouseFilter || warehouseFilter === 'ALL') {
+      return invoices;
+    }
+    return invoices.filter((inv) => (inv.warehouseName || 'Not Assigned') === warehouseFilter);
+  }, [invoices, warehouseFilter]);
+
+  // Dynamic Tab Counts computed strictly from local ERP data matching ALL active filters
+  const tabCounts = useMemo(() => {
+    let allPending = 0;
+    let receiving = 0;
+    let check = 0;
+    let inventory = 0;
+    let einvoice = 0;
+    let archived = 0;
+
+    for (const inv of filteredInvoices) {
+      if (isArchived(inv)) {
+        archived++;
+      } else {
+        if (isAllPending(inv)) allPending++;
+        if (isReceivingPending(inv)) receiving++;
+        if (isCheckPending(inv)) check++;
+        if (isInventoryPending(inv)) inventory++;
+        if (isEInvoicePending(inv)) einvoice++;
+      }
+    }
+
+    return {
+      all_pending: allPending,
+      receiving_pending: receiving,
+      check_pending: check,
+      inventory_pending: inventory,
+      einvoice_pending: einvoice,
+      archived: archived,
+    };
+  }, [filteredInvoices]);
+
+  const tabs: { key: PrimaryTabKey; label: string; count: number }[] = useMemo(
+    () => [
+      { key: 'all_pending', label: 'All Pending', count: tabCounts.all_pending },
+      { key: 'receiving_pending', label: 'Receiving Pending', count: tabCounts.receiving_pending },
+      { key: 'check_pending', label: 'Check Pending', count: tabCounts.check_pending },
+      { key: 'inventory_pending', label: 'Inventory Pending', count: tabCounts.inventory_pending },
+      { key: 'einvoice_pending', label: 'E-Invoice Pending', count: tabCounts.einvoice_pending },
+      { key: 'archived', label: 'Archived', count: tabCounts.archived },
+    ],
+    [tabCounts]
+  );
+
+  // Filter list by selected primary tab from the active-filtered dataset
+  const tabFilteredInvoices = useMemo(() => {
+    switch (activeTab) {
+      case 'all_pending':
+        return filteredInvoices.filter(isAllPending);
+      case 'receiving_pending':
+        return filteredInvoices.filter(isReceivingPending);
+      case 'check_pending':
+        return filteredInvoices.filter(isCheckPending);
+      case 'inventory_pending':
+        return filteredInvoices.filter(isInventoryPending);
+      case 'einvoice_pending':
+        return filteredInvoices.filter(isEInvoicePending);
+      case 'archived':
+        return filteredInvoices.filter(isArchived);
+      default:
+        return filteredInvoices;
+    }
+  }, [filteredInvoices, activeTab]);
 
   // Sorting
   const sortedInvoices = useMemo(() => {
-    const list = [...invoices];
+    const list = [...tabFilteredInvoices];
     list.sort((a, b) => {
       let valA: any = null;
       let valB: any = null;
 
       switch (sortConfig.key) {
+        case 'created_at':
+          valA = new Date(a.timer.startedAt).getTime();
+          valB = new Date(b.timer.startedAt).getTime();
+          break;
         case 'index':
           return sortConfig.direction === 'asc' ? 1 : -1;
         case 'invoice':
@@ -210,6 +640,10 @@ export default function DesktopPostDispatchView({
         case 'customer':
           valA = (a.customerName || '').toLowerCase();
           valB = (b.customerName || '').toLowerCase();
+          break;
+        case 'warehouse':
+          valA = (a.warehouseName || '').toLowerCase();
+          valB = (b.warehouseName || '').toLowerCase();
           break;
         case 'amount':
           valA = a.total ?? 0;
@@ -234,7 +668,7 @@ export default function DesktopPostDispatchView({
       return 0;
     });
     return list;
-  }, [invoices, sortConfig]);
+  }, [tabFilteredInvoices, sortConfig]);
 
   // Pagination
   const totalPages = pageSize === 'all' ? 1 : Math.ceil(sortedInvoices.length / (pageSize as number)) || 1;
@@ -251,53 +685,23 @@ export default function DesktopPostDispatchView({
     return sortedInvoices.slice(start, start + pageSize);
   }, [sortedInvoices, currentPage, pageSize]);
 
-  const SortableHeader = ({
-    label,
-    sortKey,
-    align = 'left',
-  }: {
-    label: string;
-    sortKey: SortKey;
-    align?: 'left' | 'right' | 'center';
-  }) => {
-    const isActive = sortConfig.key === sortKey;
-    return (
-      <th
-        className={`px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 cursor-pointer hover:bg-gray-100/50 transition-colors select-none group ${
-          align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
-        }`}
-        onClick={() => {
-          setSortConfig(prev => ({
-            key: sortKey,
-            direction: prev.key === sortKey && prev.direction === 'asc' ? 'desc' : 'asc',
-          }));
-        }}
-      >
-        <div
-          className={`flex items-center gap-1.5 ${
-            align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''
-          }`}
-        >
-          {label}
-          <div className="flex-shrink-0 w-3">
-            {isActive ? (
-              sortConfig.direction === 'asc' ? (
-                <ChevronUp size={12} className="text-[#1A2766]" />
-              ) : (
-                <ChevronDown size={12} className="text-[#1A2766]" />
-              )
-            ) : (
-              <ArrowUpDown size={12} className="text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity" />
-            )}
-          </div>
-        </div>
-      </th>
-    );
+  const hasActiveFilters =
+    debouncedSearch.trim() !== '' ||
+    statusFilter !== 'ALL' ||
+    warehouseFilter !== 'ALL' ||
+    datePreset !== 'all' ||
+    Boolean(customStartDate);
+
+  const handleSort = (key: SortKey) => {
+    setSortConfig((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
+    }));
   };
 
   return (
     <div className="flex flex-col h-full bg-white">
-      {/* Desktop Horizontal Workflow Tabs */}
+      {/* 1. Primary Workflow Tabs */}
       <div className="px-6 border-b border-gray-100 bg-white overflow-x-auto">
         <div className="flex gap-4 -mb-px min-w-max">
           {tabs.map((tab) => {
@@ -306,7 +710,7 @@ export default function DesktopPostDispatchView({
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => handleTabChange(tab.key)}
                 className={`py-3 px-2 text-xs sm:text-sm font-semibold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 ${
                   active
                     ? 'border-[#1A2766] text-[#1A2766]'
@@ -314,45 +718,167 @@ export default function DesktopPostDispatchView({
                 }`}
               >
                 <span>{tab.label}</span>
-                {tab.count !== undefined && tab.count > 0 && (
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${tab.badgeClass}`}>
-                    {tab.count}
-                  </span>
-                )}
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    active
+                      ? 'bg-blue-100 text-[#1A2766]'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  {tab.count}
+                </span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Desktop Search & Action Bar */}
-      <div className="px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/30">
-        <div className="relative w-full sm:w-80 flex-shrink-0">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-          <input
-            type="text"
-            placeholder="Search Invoice #, Customer, or SO..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-4 py-1.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
-          />
-        </div>
+      {/* 2. Desktop Filters Bar */}
+      <div className="px-6 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/40">
+        <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
+          {/* Search Input */}
+          <div className="relative w-full sm:w-72 flex-shrink-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+            <input
+              type="text"
+              placeholder="Search Invoice #, Customer, or SO..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+                updateUrlParams({ q: e.target.value.trim() || null, page: null });
+              }}
+              className="w-full pl-8 pr-4 py-1.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setDebouncedSearch('');
+                  updateUrlParams({ q: null });
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto">
-          {/* Sub-counters info when in verification tab */}
-          {activeTab === 'verification' && (
-            <div className="hidden md:flex items-center gap-2 text-xs mr-2 pr-3 border-r border-gray-200">
-              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Awaiting:</span>
-              <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold border border-blue-100 text-[11px]">
-                Rec: <strong>{queueCounts.receiving}</strong>
-              </span>
-              <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-semibold border border-indigo-100 text-[11px]">
-                Chk: <strong>{queueCounts.checked}</strong>
-              </span>
+          {/* Date Filter Preset */}
+          <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2.5 py-1 text-xs">
+            <Calendar size={13} className="text-gray-400 shrink-0" />
+            <span className="text-gray-400 font-medium">Date:</span>
+            <select
+              value={datePreset}
+              onChange={(e) => {
+                const val = e.target.value as DatePreset;
+                setDatePreset(val);
+                setCurrentPage(1);
+                updateUrlParams({ date: val === 'all' ? null : val, page: null });
+              }}
+              className="bg-transparent text-gray-700 font-medium focus:outline-none cursor-pointer pr-1"
+            >
+              <option value="all">All Dates</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="last_7">Last 7 Days</option>
+              <option value="last_30">Last 30 Days</option>
+              <option value="custom">Custom Range</option>
+            </select>
+          </div>
+
+          {/* Custom Date Pickers when preset is custom */}
+          {datePreset === 'custom' && (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => {
+                  setCustomStartDate(e.target.value);
+                  setCurrentPage(1);
+                  updateUrlParams({ from: e.target.value || null, page: null });
+                }}
+                className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-700 focus:outline-none"
+              />
+              <span className="text-xs text-gray-400">to</span>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => {
+                  setCustomEndDate(e.target.value);
+                  setCurrentPage(1);
+                  updateUrlParams({ to: e.target.value || null, page: null });
+                }}
+                className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-700 focus:outline-none"
+              />
             </div>
           )}
 
-          {/* Zoho Sync & Usage Button */}
+          {/* Zoho Status Filter Dropdown */}
+          <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2.5 py-1 text-xs">
+            <Filter size={13} className="text-gray-400 shrink-0" />
+            <span className="text-gray-400 font-medium">Zoho Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                const val = e.target.value;
+                setStatusFilter(val);
+                setCurrentPage(1);
+                updateUrlParams({ status: val === 'ALL' ? null : val, page: null });
+              }}
+              className="bg-transparent text-gray-700 font-medium focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">All Statuses</option>
+              <option value="Draft">Draft</option>
+              <option value="Sent">Sent</option>
+              <option value="Viewed">Viewed</option>
+              <option value="Unpaid">Unpaid</option>
+              <option value="Partially Paid">Partially Paid</option>
+              <option value="Paid">Paid</option>
+              <option value="Overdue">Overdue</option>
+              <option value="Void">Void</option>
+            </select>
+          </div>
+
+          {/* Source Warehouse Filter Dropdown */}
+          <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2.5 py-1 text-xs">
+            <Building2 size={13} className="text-gray-400 shrink-0" />
+            <span className="text-gray-400 font-medium">Warehouse:</span>
+            <select
+              value={warehouseFilter}
+              onChange={(e) => {
+                const val = e.target.value;
+                setWarehouseFilter(val);
+                setCurrentPage(1);
+                updateUrlParams({ warehouse: val === 'ALL' ? null : val, page: null });
+              }}
+              className="bg-transparent text-gray-700 font-medium focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">All Warehouses</option>
+              {availableWarehouses.map((wh) => (
+                <option key={wh} value={wh}>
+                  {wh}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Clear Filters button */}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className="px-2.5 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors flex items-center gap-1"
+            >
+              <X size={12} />
+              <span>Clear Filters</span>
+            </button>
+          )}
+        </div>
+
+        {/* Global Modal & Sync Triggers */}
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setSyncModalOpen(true)}
@@ -363,7 +889,6 @@ export default function DesktopPostDispatchView({
             <span>Zoho Sync & Usage</span>
           </button>
 
-          {/* Refresh Button */}
           <button
             type="button"
             onClick={handleRefresh}
@@ -391,23 +916,30 @@ export default function DesktopPostDispatchView({
         </div>
       )}
 
-      {/* Desktop Table View */}
+      {/* 3. Desktop Table View with Separate Receiving, Checked, Inventory Columns */}
       {!unauthorizedMessage && (
         <div className="flex-1 overflow-auto bg-gray-50/30 relative">
           <table className="w-full text-left border-collapse text-sm">
             <thead className="bg-gray-50 sticky top-0 z-10 shadow-xs">
               <tr>
-                <SortableHeader label="#" sortKey="index" align="center" />
-                <SortableHeader label="Invoice Number" sortKey="invoice" />
-                <SortableHeader label="Customer" sortKey="customer" />
-                <SortableHeader label="Amount" sortKey="amount" align="right" />
-                <SortableHeader label="Zoho Status" sortKey="status" />
-                <SortableHeader label="E-Invoice" sortKey="eInvoice" />
+                <SortableHeader label="#" sortKey="index" align="center" sortConfig={sortConfig} onSort={handleSort} />
+                <SortableHeader label="Invoice Number" sortKey="invoice" sortConfig={sortConfig} onSort={handleSort} />
+                <SortableHeader label="Customer" sortKey="customer" sortConfig={sortConfig} onSort={handleSort} />
+                <SortableHeader label="Source Warehouse" sortKey="warehouse" sortConfig={sortConfig} onSort={handleSort} />
+                <SortableHeader label="Amount" sortKey="amount" align="right" sortConfig={sortConfig} onSort={handleSort} />
+                <SortableHeader label="Zoho Status" sortKey="status" sortConfig={sortConfig} onSort={handleSort} />
+                <SortableHeader label="E-Invoice" sortKey="eInvoice" sortConfig={sortConfig} onSort={handleSort} />
                 <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200">
-                  Workflows (Rec / Chk / Inv)
+                  Receiving
                 </th>
-                <SortableHeader label="Timer" sortKey="timer" />
-                <th className="px-4 py-3 border-b border-gray-200 w-24 text-right text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200">
+                  Checked
+                </th>
+                <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200">
+                  Inventory
+                </th>
+                <SortableHeader label="Timer" sortKey="timer" sortConfig={sortConfig} onSort={handleSort} />
+                <th className="px-4 py-3 border-b border-gray-200 w-32 text-right text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                   Action
                 </th>
               </tr>
@@ -415,7 +947,7 @@ export default function DesktopPostDispatchView({
             <tbody className="divide-y divide-gray-100 bg-white">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={12} className="px-6 py-12 text-center text-gray-400">
                     <div className="flex items-center justify-center gap-2">
                       <RefreshCw size={15} className="animate-spin text-gray-300" />
                       <span className="text-sm">Loading post-dispatch invoices…</span>
@@ -424,53 +956,47 @@ export default function DesktopPostDispatchView({
                 </tr>
               ) : paginatedInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={12} className="px-6 py-12 text-center text-gray-400">
                     <div className="flex flex-col items-center max-w-xs mx-auto">
                       <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mb-3 border border-gray-100">
                         <FileText size={24} className="text-gray-300" />
                       </div>
                       <p className="text-sm font-medium text-gray-700">No invoices found</p>
                       <p className="text-xs text-gray-400 mt-1">
-                        {searchQuery
-                          ? 'No invoices match your search query.'
-                          : activeTab === 'verification'
-                          ? 'No invoices currently awaiting verification.'
-                          : activeTab === 'pending'
-                          ? 'All actionable invoices have completed their workflows.'
+                        {hasActiveFilters
+                          ? 'No invoices match your active filters or search keyword.'
+                          : activeTab === 'einvoice_pending'
+                          ? 'No eligible B2B invoices awaiting E-Invoicing.'
                           : activeTab === 'archived'
                           ? 'No archived or void invoices recorded.'
-                          : 'Click "Zoho Sync & Usage" to discover invoices from Zoho Books.'}
+                          : 'All actionable invoices have completed their workflows.'}
                       </p>
                     </div>
                   </td>
                 </tr>
               ) : (
                 paginatedInvoices.map((inv, idx) => {
-                  const globalIndex = pageSize === 'all' ? idx + 1 : (currentPage - 1) * pageSize + idx + 1;
-                  const isVoid = inv.erpSubStatus === 'Void' || inv.zohoStatus.toLowerCase() === 'void';
+                  const globalIndex =
+                    pageSize === 'all' ? idx + 1 : (currentPage - 1) * pageSize + idx + 1;
+                  const isVoidInvoice =
+                    inv.erpSubStatus === 'Void' || inv.zohoStatus.toLowerCase() === 'void';
                   const isDraft = inv.zohoStatus.toLowerCase() === 'draft';
 
-                  const receivingDone = inv.workflowSummary.receivingStatus === 'COMPLETED';
-                  const receivingAwaiting = inv.workflowSummary.receivingStatus === 'AWAITING_VERIFICATION';
-                  const receivingRework = inv.workflowSummary.receivingStatus === 'REWORK_REQUIRED';
-
-                  const checkedDone = inv.workflowSummary.checkedStatus === 'COMPLETED';
-                  const checkedAwaiting = inv.workflowSummary.checkedStatus === 'AWAITING_VERIFICATION';
-                  const checkedRework = inv.workflowSummary.checkedStatus === 'REWORK_REQUIRED';
-
-                  const hasRework = receivingRework || checkedRework;
-                  const hasAwaiting = receivingAwaiting || checkedAwaiting;
+                  const canCheckEInvoice =
+                    !inv.isConsumer &&
+                    !inv.eInvoice.generated &&
+                    !isVoidInvoice &&
+                    !isDraft;
 
                   return (
                     <tr
                       key={inv.id}
                       className={`hover:bg-gray-50/70 transition-colors ${
-                        isVoid
+                        isVoidInvoice
                           ? 'bg-red-50/20'
-                          : hasRework
-                          ? 'bg-amber-50/30'
-                          : hasAwaiting
-                          ? 'bg-blue-50/20'
+                          : inv.workflowSummary.receivingStatus === 'REWORK_REQUIRED' ||
+                            inv.workflowSummary.checkedStatus === 'REWORK_REQUIRED'
+                          ? 'bg-amber-50/20'
                           : ''
                       }`}
                     >
@@ -481,13 +1007,24 @@ export default function DesktopPostDispatchView({
 
                       {/* Invoice Number */}
                       <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedInvoiceId(inv.id)}
-                          className="font-bold text-[#1A2766] hover:underline text-sm text-left"
-                        >
-                          {inv.invoiceNumber}
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          {inv.zohoInvoiceId ? (
+                            <a
+                              href={`https://books.zoho.in/app#/invoices/${inv.zohoInvoiceId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-bold text-[#1A2766] hover:underline text-sm inline-flex items-center gap-1 group"
+                              title={`Open ${inv.invoiceNumber} in Zoho Books`}
+                            >
+                              <span>{inv.invoiceNumber}</span>
+                              <ExternalLink size={11} className="text-gray-400 group-hover:text-[#1A2766] transition-colors shrink-0" />
+                            </a>
+                          ) : (
+                            <span className="font-bold text-[#1A2766] text-sm">
+                              {inv.invoiceNumber}
+                            </span>
+                          )}
+                        </div>
                         {inv.salesOrderNumber && (
                           <div className="text-[10px] text-gray-400 mt-0.5">
                             SO: <span className="font-mono text-gray-600">{inv.salesOrderNumber}</span>
@@ -496,16 +1033,42 @@ export default function DesktopPostDispatchView({
                       </td>
 
                       {/* Customer */}
-                      <td className="px-4 py-3 max-w-[220px]">
-                        <div className="font-medium text-gray-900 text-sm truncate">
-                          {inv.customerName || 'Unknown'}
-                        </div>
-                        {hasRework && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 mt-0.5">
-                            <AlertCircle size={10} className="text-amber-600" />
-                            Rework Required
+                      <td className="px-4 py-3 max-w-[200px]">
+                        {inv.customerId ? (
+                          <a
+                            href={`https://books.zoho.in/app#/contacts/${inv.customerId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium text-gray-900 hover:text-[#1A2766] hover:underline text-sm truncate inline-flex items-center gap-1 group max-w-full"
+                            title={`Open ${inv.customerName || 'Customer'} in Zoho Books`}
+                          >
+                            <span className="truncate">{inv.customerName || 'Unknown'}</span>
+                            <ExternalLink size={10} className="text-gray-400 group-hover:text-[#1A2766] transition-colors shrink-0" />
+                          </a>
+                        ) : (
+                          <div className="font-medium text-gray-900 text-sm truncate" title={inv.customerName}>
+                            {inv.customerName || 'Unknown'}
+                          </div>
+                        )}
+                        {inv.isConsumer && (
+                          <span className="text-[10px] text-slate-400 font-medium block mt-0.5">
+                            B2C (Consumer)
                           </span>
                         )}
+                      </td>
+
+                      {/* Source Warehouse */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border ${
+                            inv.warehouseName
+                              ? 'bg-slate-50 text-slate-700 border-slate-200'
+                              : 'bg-gray-50 text-gray-400 border-gray-200 italic'
+                          }`}
+                        >
+                          <Building2 size={11} className={inv.warehouseName ? 'text-slate-500' : 'text-gray-300'} />
+                          <span>{inv.warehouseName || 'Not Assigned'}</span>
+                        </span>
                       </td>
 
                       {/* Amount */}
@@ -515,25 +1078,18 @@ export default function DesktopPostDispatchView({
                         </div>
                       </td>
 
-                      {/* Zoho Status */}
+                      {/* Zoho Status with distinct semantic pill styles */}
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-1 items-start">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
-                              isVoid
-                                ? 'bg-red-50 text-red-700 border-red-200'
-                                : isDraft
-                                ? 'bg-slate-100 text-slate-600 border-slate-300'
-                                : inv.zohoStatus.toLowerCase() === 'sent'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : 'bg-blue-50 text-blue-800 border-blue-200'
-                            }`}
-                          >
-                            {inv.zohoStatus}
-                          </span>
+                          <ZohoStatusPill status={inv.zohoStatus} isVoid={isVoidInvoice} />
                           {isDraft && (
                             <span className="text-[10px] text-gray-400 font-medium">
                               Not Actionable
+                            </span>
+                          )}
+                          {isVoidInvoice && (
+                            <span className="text-[10px] text-red-500 font-medium">
+                              Sub-status: Void
                             </span>
                           )}
                         </div>
@@ -542,9 +1098,19 @@ export default function DesktopPostDispatchView({
                       {/* E-Invoice */}
                       <td className="px-4 py-3">
                         {inv.eInvoice.generated ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-50 text-teal-800 border border-teal-200 font-medium text-[10px]">
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-50 text-teal-800 border border-teal-200 font-medium text-[10px]"
+                            title={`Status: ${inv.eInvoice.status || 'Generated'}${inv.eInvoice.irn ? ` | IRN: ${inv.eInvoice.irn}` : ''}${inv.eInvoice.ackNo ? ` | Ack: ${inv.eInvoice.ackNo}` : ''}`}
+                          >
                             <CheckCircle2 size={11} className="text-teal-600" />
-                            Generated
+                            {inv.eInvoice.status === 'Pushed' ? 'Pushed' : 'Generated'}
+                          </span>
+                        ) : inv.isConsumer ? (
+                          <span
+                            className="text-slate-400 text-[11px] italic"
+                            title="Consumer customer invoices are not eligible for E-Invoicing"
+                          >
+                            Ineligible (B2C)
                           </span>
                         ) : (
                           <span className="text-gray-400 text-[11px]">
@@ -553,49 +1119,28 @@ export default function DesktopPostDispatchView({
                         )}
                       </td>
 
-                      {/* Workflows (Receiving / Checked / Inventory) */}
+                      {/* Workflows: 1. RECEIVING */}
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          {/* Receiving */}
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                              receivingDone
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : receivingAwaiting
-                                ? 'bg-blue-50 text-blue-800 border-blue-200'
-                                : receivingRework
-                                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : 'bg-gray-50 text-gray-500 border-gray-200'
-                            }`}
-                            title={`Receiving: ${inv.workflowSummary.receivingStatus}`}
-                          >
-                            Rec: {receivingDone ? 'DONE' : receivingAwaiting ? 'VERIFY' : receivingRework ? 'REWORK' : 'PENDING'}
-                          </span>
+                        <WorkflowStatusCell
+                          status={inv.workflowSummary.receivingStatus}
+                          workflowType="RECEIVING"
+                        />
+                      </td>
 
-                          {/* Checked */}
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                              checkedDone
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : checkedAwaiting
-                                ? 'bg-blue-50 text-blue-800 border-blue-200'
-                                : checkedRework
-                                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : 'bg-gray-50 text-gray-500 border-gray-200'
-                            }`}
-                            title={`Checked: ${inv.workflowSummary.checkedStatus}`}
-                          >
-                            Chk: {checkedDone ? 'DONE' : checkedAwaiting ? 'VERIFY' : checkedRework ? 'REWORK' : 'PENDING'}
-                          </span>
+                      {/* Workflows: 2. CHECKED */}
+                      <td className="px-4 py-3">
+                        <WorkflowStatusCell
+                          status={inv.workflowSummary.checkedStatus}
+                          workflowType="CHECKED"
+                        />
+                      </td>
 
-                          {/* Inventory Placeholder */}
-                          <span
-                            className="px-2 py-0.5 rounded text-[10px] font-medium bg-gray-50 text-gray-400 border border-gray-200"
-                            title="Inventory Deduction (Phase 2 Coming Soon)"
-                          >
-                            Inv: TBD
-                          </span>
-                        </div>
+                      {/* Workflows: 3. INVENTORY */}
+                      <td className="px-4 py-3">
+                        <WorkflowStatusCell
+                          status={inv.workflowSummary.inventoryStatus}
+                          workflowType="INVENTORY"
+                        />
                       </td>
 
                       {/* Timer */}
@@ -611,15 +1156,36 @@ export default function DesktopPostDispatchView({
                         )}
                       </td>
 
-                      {/* Action */}
+                      {/* Actions */}
                       <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedInvoiceId(inv.id)}
-                          className="px-3 py-1 text-xs font-bold text-white bg-[#1A2766] hover:bg-blue-900 rounded transition-colors"
-                        >
-                          Review
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Individual E-Invoice Check Action */}
+                          {canCheckEInvoice && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleCheckIndividualEInvoice(inv.id, e)}
+                              disabled={checkingEInvoiceId === inv.id}
+                              title="Check E-Invoice Status from Zoho Books"
+                              aria-label="Check E-Invoice Status"
+                              className="p-1.5 rounded-lg border border-teal-200 bg-teal-50 hover:bg-teal-100 text-teal-700 transition-colors disabled:opacity-50"
+                            >
+                              {checkingEInvoiceId === inv.id ? (
+                                <Loader2 size={13} className="animate-spin text-teal-600" />
+                              ) : (
+                                <FileCheck size={13} />
+                              )}
+                            </button>
+                          )}
+
+                          {/* Primary Review Action */}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedInvoiceId(inv.id)}
+                            className="px-2.5 py-1 text-xs font-bold text-white bg-[#1A2766] hover:bg-blue-900 rounded transition-colors"
+                          >
+                            Review
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -630,7 +1196,7 @@ export default function DesktopPostDispatchView({
         </div>
       )}
 
-      {/* Desktop Pagination Footer */}
+      {/* 4. Desktop Pagination Footer */}
       {!unauthorizedMessage && (
         <div className="px-6 py-3 border-t border-gray-100 bg-white flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-600">
           <div className="flex items-center gap-2">
@@ -651,7 +1217,8 @@ export default function DesktopPostDispatchView({
               <option value="all">All</option>
             </select>
             <span className="text-gray-400 ml-2">
-              Total: <strong>{sortedInvoices.length}</strong> invoices
+              Showing <strong>{paginatedInvoices.length}</strong> of{' '}
+              <strong>{sortedInvoices.length}</strong> invoices
             </span>
           </div>
 
@@ -662,7 +1229,11 @@ export default function DesktopPostDispatchView({
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                onClick={() => {
+                  const newPage = Math.max(1, currentPage - 1);
+                  setCurrentPage(newPage);
+                  updateUrlParams({ page: newPage > 1 ? String(newPage) : null });
+                }}
                 disabled={currentPage <= 1}
                 className="p-1 rounded border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 transition-opacity"
                 aria-label="Previous Page"
@@ -671,7 +1242,11 @@ export default function DesktopPostDispatchView({
               </button>
               <button
                 type="button"
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                onClick={() => {
+                  const newPage = Math.min(totalPages, currentPage + 1);
+                  setCurrentPage(newPage);
+                  updateUrlParams({ page: newPage > 1 ? String(newPage) : null });
+                }}
                 disabled={currentPage >= totalPages}
                 className="p-1 rounded border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 transition-opacity"
                 aria-label="Next Page"
@@ -683,7 +1258,7 @@ export default function DesktopPostDispatchView({
         </div>
       )}
 
-      {/* Existing Full Overlay Modals (Presentation-Neutral) */}
+      {/* Existing Full Overlay Modals */}
       {selectedInvoiceId && (
         <InvoiceDetailModal
           isOpen={!!selectedInvoiceId}
@@ -692,7 +1267,6 @@ export default function DesktopPostDispatchView({
           onPhotoClick={(url, title) => setPreviewPhoto({ isOpen: true, url, title })}
           onUpdated={() => {
             fetchInvoices();
-            fetchQueueCounts();
           }}
         />
       )}
@@ -711,7 +1285,6 @@ export default function DesktopPostDispatchView({
         onClose={() => setSyncModalOpen(false)}
         onSyncComplete={() => {
           fetchInvoices();
-          fetchQueueCounts();
         }}
       />
     </div>

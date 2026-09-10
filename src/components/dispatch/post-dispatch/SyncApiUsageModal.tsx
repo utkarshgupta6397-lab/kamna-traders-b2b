@@ -15,6 +15,7 @@ interface ApiUsageData {
   nextScheduledSync: string | null;
   lastEInvoiceCheck: string | null;
   nextScheduledEInvoiceCheck: string | null;
+  cooldownRemainingSeconds?: number;
 }
 
 interface SyncApiUsageModalProps {
@@ -31,6 +32,7 @@ export default function SyncApiUsageModal({
   const [usage, setUsage] = useState<ApiUsageData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
   const [checkingEInvoice, setCheckingEInvoice] = useState(false);
   const [eInvoiceReport, setEInvoiceReport] = useState<{
     eligible: number;
@@ -40,12 +42,24 @@ export default function SyncApiUsageModal({
   } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // 1-second countdown ticker when cooldown is active
+  useEffect(() => {
+    if (cooldownRemaining <= 0) return;
+    const interval = setInterval(() => {
+      setCooldownRemaining((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldownRemaining]);
+
   const fetchUsage = useCallback(async () => {
     try {
       const res = await fetch('/api/mobile/post-dispatch/sync/status');
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.usage) {
         setUsage(data.usage);
+        if (typeof data.usage.cooldownRemainingSeconds === 'number') {
+          setCooldownRemaining(data.usage.cooldownRemainingSeconds);
+        }
       } else if (res.status === 403) {
         setErrorMessage(data.error || 'Forbidden. Post-Dispatch access required.');
       } else {
@@ -87,17 +101,28 @@ export default function SyncApiUsageModal({
   if (!isOpen) return null;
 
   const handleManualSync = async () => {
+    if (cooldownRemaining > 0 || syncing) return;
+
     setSyncing(true);
     try {
       const res = await fetch('/api/mobile/post-dispatch/sync', {
         method: 'POST',
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 429) {
+        const retryAfter = data.retry_after_seconds || 60;
+        setCooldownRemaining(retryAfter);
+        toast.error(data.message || `Please wait ${retryAfter} seconds before starting another manual sync.`);
+        return;
+      }
 
       if (!res.ok) {
         throw new Error(data.error || data.message || 'Sync failed');
       }
 
+      // Sync accepted and completed -> start 60s cooldown
+      setCooldownRemaining(60);
       toast.success(data.message || 'Sync completed successfully!');
       await fetchUsage();
       await fetchEligibleEInvoiceCount();
@@ -347,11 +372,17 @@ export default function SyncApiUsageModal({
             <button
               type="button"
               onClick={handleManualSync}
-              disabled={syncing || checkingEInvoice || !!errorMessage}
-              className="flex-1 py-3 px-4 rounded-xl bg-[#1A2766] hover:bg-[#141f52] text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-900/10 disabled:opacity-50"
+              disabled={syncing || checkingEInvoice || !!errorMessage || cooldownRemaining > 0}
+              className="flex-1 py-3 px-4 rounded-xl bg-[#1A2766] hover:bg-[#141f52] text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-900/10 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-              <span>{syncing ? 'Syncing...' : 'Sync Invoices'}</span>
+              <span>
+                {syncing
+                  ? 'Syncing...'
+                  : cooldownRemaining > 0
+                  ? `Sync Invoices (${cooldownRemaining}s)`
+                  : 'Sync Invoices'}
+              </span>
             </button>
           </div>
       </div>

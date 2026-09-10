@@ -56,6 +56,9 @@ export async function GET() {
         // User cannot self-verify if they uploaded the submission
         const isSelfUploader = latestSub?.uploadedByUserId === currentUserId;
 
+        const invoiceDetails = w.invoice.zohoDetailsJson as any;
+        const warehouseName = (invoiceDetails?.location_name as string) || null;
+
         return {
           workflowId: w.id,
           workflowType: w.workflowType,
@@ -63,6 +66,7 @@ export async function GET() {
           invoiceId: w.invoice.id,
           invoiceNumber: w.invoice.invoiceNumber,
           customerName: w.invoice.customerName,
+          warehouseName,
           total: w.invoice.total,
           submission: latestSub
             ? {

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { format } from 'date-fns';
 import {
   Search,
@@ -229,7 +230,14 @@ export default function IncomingQueueClient({
 }: {
   permissions?: IncomingQueuePermissions;
 } = {}) {
-  const [section, setSection] = useState<DispatchSection>('pre');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const urlSection = searchParams.get('dispatch');
+  const initialSection: DispatchSection = urlSection === 'post' ? 'post' : 'pre';
+
+  const [section, setSection] = useState<DispatchSection>(initialSection);
   const [orders, setOrders] = useState<DispatchIncomingOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -708,7 +716,19 @@ export default function IncomingQueueClient({
         {/* Segmented Control: Pre-Dispatch vs Post-Dispatch */}
         <div className="flex items-center bg-gray-200/80 p-1 rounded-lg self-start md:self-auto">
           <button
-            onClick={() => setSection('pre')}
+            onClick={() => {
+              setSection('pre');
+              const params = new URLSearchParams(searchParams.toString());
+              params.delete('dispatch');
+              params.delete('tab');
+              params.delete('q');
+              params.delete('status');
+              params.delete('date');
+              params.delete('from');
+              params.delete('to');
+              params.delete('page');
+              router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ''}`, { scroll: false });
+            }}
             className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${
               section === 'pre'
                 ? 'bg-white text-[#1A2766] shadow-sm'
@@ -718,7 +738,12 @@ export default function IncomingQueueClient({
             Pre-Dispatch
           </button>
           <button
-            onClick={() => setSection('post')}
+            onClick={() => {
+              setSection('post');
+              const params = new URLSearchParams(searchParams.toString());
+              params.set('dispatch', 'post');
+              router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+            }}
             className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
               section === 'post'
                 ? 'bg-white text-[#1A2766] shadow-sm'

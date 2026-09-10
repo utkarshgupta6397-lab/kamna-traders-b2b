@@ -11,7 +11,7 @@ export default function Page() {
         <p className="text-xs text-gray-500 mt-0.5">Upload customer receiving proof against completed Dispatch invoices.</p>
       </div>
       <div className="flex-1 overflow-auto">
-        <DesktopPostDispatchView initialTab="pending" />
+        <DesktopPostDispatchView initialTab="receiving_pending" />
       </div>
     </div>
   );

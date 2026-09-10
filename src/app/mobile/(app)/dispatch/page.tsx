@@ -2,6 +2,7 @@ import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import MobileDispatchClient from './MobileDispatchClient';
 import { hasMobilePermission } from '@/lib/mobile-auth';
+import { hasMobilePostDispatchAccess, hasPostDispatchPermission } from '@/lib/post-dispatch-auth';
 
 export default async function MobileDispatchPage() {
   const session = await getSession();
@@ -14,5 +15,18 @@ export default async function MobileDispatchPage() {
     redirect('/mobile');
   }
 
-  return <MobileDispatchClient />;
+  const permissions = {
+    canPostDispatch: hasMobilePostDispatchAccess(session),
+    canReceivingUpload: hasPostDispatchPermission(session, 'mobile_dispatch_post_dispatch_receiving_upload'),
+    canReceivingVerify: hasPostDispatchPermission(session, 'mobile_dispatch_post_dispatch_receiving_verify'),
+    canCheckedUpload: hasPostDispatchPermission(session, 'mobile_dispatch_post_dispatch_checked_upload'),
+    canCheckedVerify: hasPostDispatchPermission(session, 'mobile_dispatch_post_dispatch_checked_verify'),
+  };
+
+  const user = {
+    id: (session.userId as string) || (session.id as string) || '',
+    name: (session.name as string) || 'Staff',
+  };
+
+  return <MobileDispatchClient permissions={permissions} user={user} />;
 }

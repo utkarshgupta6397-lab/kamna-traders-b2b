@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import {
   ChevronLeft,
   RefreshCw,
@@ -26,7 +27,7 @@ import toast from 'react-hot-toast';
 import { playTruckHornSound } from '@/lib/hooks/useAudioNotification';
 import MobileImagePreview from '@/components/mobile/MobileImagePreview';
 import MobileTruckImageThumbnail from '@/components/mobile/MobileTruckImageThumbnail';
-import PostDispatchView from '@/components/dispatch/post-dispatch/PostDispatchView';
+import MobilePostDispatchView from '@/components/dispatch/post-dispatch/MobilePostDispatchView';
 
 interface EligibleOrder {
   id: string;
@@ -80,13 +81,69 @@ function formatUploadTime(iso: string) {
   }
 }
 
-export default function MobileDispatchClient() {
-  const [dispatchMode, setDispatchMode] = useState<'PRE_DISPATCH' | 'POST_DISPATCH'>('PRE_DISPATCH');
+export interface MobileDispatchClientProps {
+  permissions?: {
+    canPostDispatch: boolean;
+    canReceivingUpload: boolean;
+    canReceivingVerify: boolean;
+    canCheckedUpload: boolean;
+    canCheckedVerify: boolean;
+  };
+  user?: {
+    id: string;
+    name: string;
+  };
+}
+
+export default function MobileDispatchClient({
+  permissions = {
+    canPostDispatch: true,
+    canReceivingUpload: true,
+    canReceivingVerify: true,
+    canCheckedUpload: true,
+    canCheckedVerify: true,
+  },
+  user = { id: '', name: 'Staff' },
+}: MobileDispatchClientProps = {}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // Read initial section from URL query param (?dispatch=post or ?dispatch=pre)
+  const urlDispatch = searchParams.get('dispatch');
+  const initialMode = urlDispatch === 'post' && permissions.canPostDispatch ? 'POST_DISPATCH' : 'PRE_DISPATCH';
+
+  const [dispatchMode, setDispatchMode] = useState<'PRE_DISPATCH' | 'POST_DISPATCH'>(initialMode);
+
+  // Sync state if URL changes
+  useEffect(() => {
+    if (urlDispatch === 'post' && permissions.canPostDispatch) {
+      setDispatchMode('POST_DISPATCH');
+    } else if (urlDispatch === 'pre') {
+      setDispatchMode('PRE_DISPATCH');
+    }
+  }, [urlDispatch, permissions.canPostDispatch]);
+
+  const handleSwitchMode = (mode: 'PRE_DISPATCH' | 'POST_DISPATCH') => {
+    setDispatchMode(mode);
+    const params = new URLSearchParams(searchParams.toString());
+    if (mode === 'POST_DISPATCH') {
+      params.set('dispatch', 'post');
+    } else {
+      params.delete('dispatch');
+      params.delete('queue');
+      params.delete('warehouse');
+    }
+    router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ''}`, { scroll: false });
+  };
+
   const [activeTab, setActiveTab] = useState<string>('upload');
   const [eligibleOrders, setEligibleOrders] = useState<EligibleOrder[]>([]);
   const [todayUploads, setTodayUploads] = useState<TodayUpload[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [postDispatchRefreshTrigger, setPostDispatchRefreshTrigger] = useState(0);
+  const [postDispatchRefreshing, setPostDispatchRefreshing] = useState(false);
 
   // Fullscreen Image Preview Modal State
   const [previewImage, setPreviewImage] = useState<{
@@ -352,42 +409,57 @@ export default function MobileDispatchClient() {
           </Link>
 
           <button
-            onClick={() => fetchData(true)}
-            disabled={refreshing}
+            onClick={() => {
+              if (dispatchMode === 'POST_DISPATCH') {
+                setPostDispatchRefreshTrigger((c) => c + 1);
+              } else {
+                fetchData(true);
+              }
+            }}
+            disabled={dispatchMode === 'POST_DISPATCH' ? postDispatchRefreshing : refreshing}
             className="p-2.5 rounded-full hover:bg-white/10 active:scale-95 transition-all text-white/90 disabled:opacity-50"
-            title="Refresh Orders"
+            title={dispatchMode === 'POST_DISPATCH' ? 'Refresh Post-Dispatch Data' : 'Refresh Orders'}
           >
-            <RefreshCw size={19} className={refreshing ? 'animate-spin text-white' : ''} />
+            <RefreshCw
+              size={19}
+              className={
+                (dispatchMode === 'POST_DISPATCH' ? postDispatchRefreshing : refreshing)
+                  ? 'animate-spin text-white'
+                  : ''
+              }
+            />
           </button>
         </div>
 
         {/* Primary Segment Switcher: PRE DISPATCH / POST DISPATCH */}
-        <div className="px-3 pb-2.5">
-          <div className="flex p-1 bg-[#121b44] rounded-xl text-xs font-bold border border-white/10">
-            <button
-              type="button"
-              onClick={() => setDispatchMode('PRE_DISPATCH')}
-              className={`flex-1 py-2 rounded-lg transition-all text-center ${
-                dispatchMode === 'PRE_DISPATCH'
-                  ? 'bg-white text-[#1A2766] shadow-sm'
-                  : 'text-white/70 hover:text-white'
-              }`}
-            >
-              PRE DISPATCH
-            </button>
-            <button
-              type="button"
-              onClick={() => setDispatchMode('POST_DISPATCH')}
-              className={`flex-1 py-2 rounded-lg transition-all text-center ${
-                dispatchMode === 'POST_DISPATCH'
-                  ? 'bg-white text-[#1A2766] shadow-sm'
-                  : 'text-white/70 hover:text-white'
-              }`}
-            >
-              POST DISPATCH
-            </button>
+        {permissions.canPostDispatch && (
+          <div className="px-3 pb-2.5">
+            <div className="flex p-1 bg-[#121b44] rounded-xl text-xs font-bold border border-white/10">
+              <button
+                type="button"
+                onClick={() => handleSwitchMode('PRE_DISPATCH')}
+                className={`flex-1 py-2 rounded-lg transition-all text-center ${
+                  dispatchMode === 'PRE_DISPATCH'
+                    ? 'bg-white text-[#1A2766] shadow-sm'
+                    : 'text-white/70 hover:text-white'
+                }`}
+              >
+                PRE DISPATCH
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSwitchMode('POST_DISPATCH')}
+                className={`flex-1 py-2 rounded-lg transition-all text-center ${
+                  dispatchMode === 'POST_DISPATCH'
+                    ? 'bg-white text-[#1A2766] shadow-sm'
+                    : 'text-white/70 hover:text-white'
+                }`}
+              >
+                POST DISPATCH
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Pre-Dispatch Sub-Tabs (only when PRE_DISPATCH mode active) */}
         {dispatchMode === 'PRE_DISPATCH' && (
@@ -434,7 +506,12 @@ export default function MobileDispatchClient() {
 
       {/* When POST DISPATCH is active */}
       {dispatchMode === 'POST_DISPATCH' ? (
-        <PostDispatchView />
+        <MobilePostDispatchView
+          permissions={permissions}
+          user={user}
+          refreshTrigger={postDispatchRefreshTrigger}
+          onRefreshStateChange={setPostDispatchRefreshing}
+        />
       ) : (
         /* Pre-Dispatch Content */
         <main className="flex-1 overflow-y-auto px-4 py-5 max-w-[430px] mx-auto w-full pb-20">

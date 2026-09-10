@@ -6,7 +6,10 @@ import { Clock, CheckCircle2, Circle, AlertCircle, Ban, ChevronRight } from 'luc
 export interface PostDispatchInvoiceSummary {
   id: string;
   invoiceNumber: string;
+  zohoInvoiceId?: string;
+  customerId?: string | null;
   customerName: string;
+  warehouseName?: string | null;
   total: number;
   currencyCode: string;
   salesOrderNumber?: string | null;
@@ -14,6 +17,7 @@ export interface PostDispatchInvoiceSummary {
   erpStatus: string;
   erpSubStatus?: string | null;
   isActionable: boolean;
+  isConsumer?: boolean;
   eInvoice: {
     generated: boolean;
     irn?: string | null;

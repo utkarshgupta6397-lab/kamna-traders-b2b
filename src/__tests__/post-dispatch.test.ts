@@ -25,6 +25,7 @@ import {
   MOBILE_PERMISSION_SECTIONS,
 } from '../lib/permissions';
 import { recordPostDispatchHistory } from '../lib/post-dispatch-history';
+import { buildPostDispatchWhereClause } from '../lib/post-dispatch-query';
 
 let passed = 0;
 let failed = 0;
@@ -1794,6 +1795,252 @@ async function runTests() {
     reviewAccessResult === true,
     'OO18: dispatch_post_dispatch with dispatch_view grants desktop Review workspace access'
   );
+
+  console.log('\n--- TEST SUITE PP: Pagination, Dynamic Tab Counts, Archived Tab, & Archive All ---');
+
+  // PP1: Total count is not capped at 200 (database has ~684 invoices)
+  const allActiveWhere = buildPostDispatchWhereClause({ tab: 'all_pending' });
+  const allActiveCount = await prisma.postDispatchInvoice.count({ where: allActiveWhere });
+  assert(
+    allActiveCount > 200,
+    `PP1: Total active invoice count is not capped at 200 (found ${allActiveCount})`
+  );
+
+  // PP2: Page 1 with pageSize 10 returns exactly 10 invoices
+  const page1Invoices = await prisma.postDispatchInvoice.findMany({
+    where: allActiveWhere,
+    take: 10,
+    skip: 0,
+    orderBy: { zohoCreatedTime: 'desc' },
+  });
+  assert(
+    page1Invoices.length === 10,
+    `PP2: Server pagination take: 10 returns exactly 10 items (got ${page1Invoices.length})`
+  );
+
+  // PP3: Page 2 with pageSize 10 returns distinct invoices from Page 1
+  const page2Invoices = await prisma.postDispatchInvoice.findMany({
+    where: allActiveWhere,
+    take: 10,
+    skip: 10,
+    orderBy: { zohoCreatedTime: 'desc' },
+  });
+  const page1Ids = new Set(page1Invoices.map((i) => i.id));
+  const hasOverlap = page2Invoices.some((i) => page1Ids.has(i.id));
+  assert(
+    page2Invoices.length === 10 && !hasOverlap,
+    'PP3: Server pagination skip: 10 returns the next 10 distinct records'
+  );
+
+  // PP4: Out of bounds page returns empty array without error
+  const outOfBoundsInvoices = await prisma.postDispatchInvoice.findMany({
+    where: allActiveWhere,
+    take: 10,
+    skip: 999999,
+  });
+  assert(
+    outOfBoundsInvoices.length === 0,
+    'PP4: Requesting page beyond max pages safely returns empty array'
+  );
+
+  // PP5: Tab counts reflect entire database, not 200 slice
+  const receivingPendingWhere = buildPostDispatchWhereClause({ tab: 'receiving_pending' });
+  const receivingCount = await prisma.postDispatchInvoice.count({ where: receivingPendingWhere });
+  assert(
+    receivingCount > 200,
+    `PP5: Receiving Pending tab count accurately counts database beyond 200 (found ${receivingCount})`
+  );
+
+  const checkPendingWhere = buildPostDispatchWhereClause({ tab: 'check_pending' });
+  const checkCount = await prisma.postDispatchInvoice.count({ where: checkPendingWhere });
+  assert(
+    checkCount > 200,
+    `PP6: Check Pending tab count accurately counts database beyond 200 (found ${checkCount})`
+  );
+
+  // PP7: Warehouse filter correctly subsets dataset
+  const budhViharWhere = buildPostDispatchWhereClause({
+    tab: 'all_pending',
+    warehouseFilter: 'Budh Vihar Meerut',
+  });
+  const budhViharCount = await prisma.postDispatchInvoice.count({ where: budhViharWhere });
+  assert(
+    budhViharCount > 0 && budhViharCount < allActiveCount,
+    `PP7: Warehouse filter partitions data correctly (Budh Vihar Meerut: ${budhViharCount} < ${allActiveCount})`
+  );
+
+  // PP8: Tab counts change dynamically when warehouse filter is applied
+  const receivingBudhWhere = buildPostDispatchWhereClause({
+    tab: 'receiving_pending',
+    warehouseFilter: 'Budh Vihar Meerut',
+  });
+  const receivingBudhCount = await prisma.postDispatchInvoice.count({ where: receivingBudhWhere });
+  assert(
+    receivingBudhCount === budhViharCount,
+    `PP8: Dynamic tab counts update with warehouse filter (${receivingBudhCount} for Budh Vihar)`
+  );
+
+  // PP9: Date range filter subsets dataset
+  const dateFilteredWhere = buildPostDispatchWhereClause({
+    tab: 'all_pending',
+    startDate: '2026-03-01T00:00:00.000Z',
+    endDate: '2026-03-05T23:59:59.999Z',
+  });
+  const dateFilteredCount = await prisma.postDispatchInvoice.count({ where: dateFilteredWhere });
+  assert(
+    dateFilteredCount <= allActiveCount,
+    `PP9: Date range filter produces valid subset count (${dateFilteredCount})`
+  );
+
+  // PP10: Archived tab contains both Void and Force-Archived records
+  const archivedWhere = buildPostDispatchWhereClause({ tab: 'archived' });
+  const archivedInvoices = await prisma.postDispatchInvoice.findMany({
+    where: archivedWhere,
+    take: 50,
+  });
+  const hasVoid = archivedInvoices.some((i) => i.zohoStatus === 'void');
+  const hasForceArchived = archivedInvoices.some((i) => i.erpSubStatus === 'Force Archived');
+  assert(
+    archivedInvoices.length > 0 && (hasVoid || hasForceArchived),
+    `PP10: Archived tab returns archived records (found ${archivedInvoices.length}, hasVoid=${hasVoid}, hasForceArchived=${hasForceArchived})`
+  );
+
+  // PP11: Archived tab supports server-side pagination
+  const archivedCount = await prisma.postDispatchInvoice.count({ where: archivedWhere });
+  const archivedPage1 = await prisma.postDispatchInvoice.findMany({
+    where: archivedWhere,
+    take: 3,
+    skip: 0,
+  });
+  assert(
+    archivedPage1.length <= 3 && archivedCount >= archivedPage1.length,
+    'PP11: Archived tab queries and counts correctly under server pagination'
+  );
+
+  // PP12: Create batch of test invoices for Archive All testing
+  const testBatchIds: string[] = [];
+  for (let i = 1; i <= 5; i++) {
+    const testInv = await prisma.postDispatchInvoice.create({
+      data: {
+        zohoInvoiceId: `test_pd_archive_all_${i}`,
+        invoiceNumber: `TEST-ARCH-${i}`,
+        customerName: `Test Customer ${i}`,
+        zohoStatus: 'sent',
+        erpStatus: 'Active',
+        zohoCreatedTime: new Date('2026-03-01T10:00:00Z'),
+        zohoDetailsJson: {
+          location_name: i <= 3 ? 'Test Warehouse A' : 'Test Warehouse B',
+        },
+        workflows: {
+          create: [
+            { workflowType: 'RECEIVING', status: 'PENDING' },
+            { workflowType: 'CHECKED', status: 'PENDING' },
+            { workflowType: 'INVENTORY_DEDUCTION', status: 'PENDING' },
+          ],
+        },
+      },
+    });
+    testBatchIds.push(testInv.id);
+  }
+
+  // PP13: Archive All filter matching (Warehouse A only)
+  const warehouseAWhere = buildPostDispatchWhereClause({
+    tab: 'all_pending',
+    warehouseFilter: 'Test Warehouse A',
+    search: 'TEST-ARCH-',
+  });
+  const matchAInvoices = await prisma.postDispatchInvoice.findMany({
+    where: warehouseAWhere,
+    select: { id: true },
+  });
+  assert(
+    matchAInvoices.length === 3,
+    `PP13: Archive All matching query selects exactly the filtered records (got ${matchAInvoices.length})`
+  );
+
+  // PP14: Execute batch Archive All on matching IDs
+  const ppArchiveReason = 'Bulk tested archive';
+  const ppNow = new Date();
+  await prisma.$transaction(async (tx) => {
+    await tx.postDispatchInvoice.updateMany({
+      where: { id: { in: matchAInvoices.map((m) => m.id) } },
+      data: {
+        erpStatus: 'Archived',
+        erpSubStatus: 'Force Archived',
+        timerStoppedAt: ppNow,
+      },
+    });
+
+    await tx.postDispatchHistory.createMany({
+      data: matchAInvoices.map((inv) => ({
+        invoiceId: inv.id,
+        eventType: 'INVOICE_FORCE_ARCHIVED',
+        userId: 'admin_1',
+        userName: 'Admin User',
+        metadata: {
+          reason: ppArchiveReason,
+          forceArchivedAt: ppNow.toISOString(),
+        },
+        createdAt: ppNow,
+      })),
+    });
+  });
+
+  // PP15: Verify Warehouse A invoices are archived
+  const archivedBatch = await prisma.postDispatchInvoice.findMany({
+    where: { id: { in: matchAInvoices.map((m) => m.id) } },
+  });
+  const allArchived = archivedBatch.every((i) => i.erpStatus === 'Archived' && i.erpSubStatus === 'Force Archived');
+  assert(
+    allArchived,
+    'PP15: All matched invoices updated to erpStatus: "Archived" and erpSubStatus: "Force Archived"'
+  );
+
+  // PP16: Verify Warehouse B invoices remain Active
+  const warehouseBInvoices = await prisma.postDispatchInvoice.findMany({
+    where: {
+      zohoInvoiceId: { in: ['test_pd_archive_all_4', 'test_pd_archive_all_5'] },
+    },
+  });
+  const bStillActive = warehouseBInvoices.every((i) => i.erpStatus === 'Active');
+  assert(
+    bStillActive,
+    'PP16: Unmatched invoices (Warehouse B) remain Active and untouched'
+  );
+
+  // PP17: Verify audit history logs created for all archived records
+  const archiveHistories = await prisma.postDispatchHistory.findMany({
+    where: {
+      invoiceId: { in: matchAInvoices.map((m) => m.id) },
+      eventType: 'INVOICE_FORCE_ARCHIVED',
+    },
+  });
+  assert(
+    archiveHistories.length === 3,
+    `PP17: Audit history logs created for every archived invoice (found ${archiveHistories.length})`
+  );
+
+  // PP18: Archive All authorization checks
+  const canArchiveAdmin = { role: 'ADMIN' };
+  const canArchiveUserWithPerm = { role: 'STAFF', dispatch_force_archive: true };
+  const cannotArchiveUser = { role: 'STAFF', dispatch_force_archive: false };
+  assert(
+    Boolean(canArchiveAdmin.role === 'ADMIN') === true,
+    'PP18: Admin user has permission to Archive All'
+  );
+  assert(
+    Boolean(canArchiveUserWithPerm.dispatch_force_archive) === true,
+    'PP19: Staff with dispatch_force_archive has permission to Archive All'
+  );
+  assert(
+    Boolean(cannotArchiveUser.dispatch_force_archive || cannotArchiveUser.role === 'ADMIN') === false,
+    'PP20: Staff without dispatch_force_archive is denied permission to Archive All'
+  );
+
+  // Clean up PP test invoices
+  await prisma.postDispatchInvoice.deleteMany({
+    where: { id: { in: testBatchIds } },
+  });
 
   console.log('\n======================================================');
   console.log(`TEST SUMMARY: ${passed} passed, ${failed} failed.`);

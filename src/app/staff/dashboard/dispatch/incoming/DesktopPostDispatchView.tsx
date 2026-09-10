@@ -370,6 +370,20 @@ export default function DesktopPostDispatchView({
 
   const [invoices, setInvoices] = useState<PostDispatchInvoiceSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalMatchingCount, setTotalMatchingCount] = useState<number>(0);
+  const [serverTotalPages, setServerTotalPages] = useState<number>(1);
+  const [availableWarehouses, setAvailableWarehouses] = useState<string[]>([]);
+
+  // Server-computed tab counts across the complete dataset for active filters
+  const [tabCounts, setTabCounts] = useState({
+    all_pending: 0,
+    verification_pending: 0,
+    receiving_pending: 0,
+    check_pending: 0,
+    inventory_pending: 0,
+    einvoice_pending: 0,
+    archived: 0,
+  });
 
   // Single shared 1-second clock for all live invoice timers on this page
   const nowMs = useSharedClock(1000);
@@ -381,6 +395,11 @@ export default function DesktopPostDispatchView({
   const [submittingArchive, setSubmittingArchive] = useState(false);
   const [archiveReason, setArchiveReason] = useState('');
   const [unauthorizedMessage, setUnauthorizedMessage] = useState<string | null>(null);
+
+  // Archive All Modal State
+  const [archiveAllModalOpen, setArchiveAllModalOpen] = useState(false);
+  const [archiveAllSubmitting, setArchiveAllSubmitting] = useState(false);
+  const [archiveAllReason, setArchiveAllReason] = useState('');
 
   // Modals
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
@@ -465,17 +484,23 @@ export default function DesktopPostDispatchView({
     return { startDate: null, endDate: null };
   }, [datePreset, customStartDate, customEndDate]);
 
-  // Fetch invoices from local database
+  // Fetch invoices from local database with server-side pagination & dynamic tab counts
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set('tab', 'all'); // Fetch all local active/archived for robust client-side active filter count calculation
+      params.set('tab', activeTab);
+      params.set('page', String(currentPage));
+      params.set('pageSize', String(pageSize));
+
       if (debouncedSearch.trim()) {
         params.set('search', debouncedSearch.trim());
       }
       if (statusFilter && statusFilter !== 'ALL') {
         params.set('status', statusFilter);
+      }
+      if (warehouseFilter && warehouseFilter !== 'ALL') {
+        params.set('warehouse', warehouseFilter);
       }
       if (computedDateRange.startDate) {
         params.set('startDate', computedDateRange.startDate);
@@ -488,6 +513,20 @@ export default function DesktopPostDispatchView({
       if (res.ok) {
         const data = await res.json();
         setInvoices(data.invoices || []);
+        if (data.pagination) {
+          setTotalMatchingCount(data.pagination.total ?? (data.invoices?.length || 0));
+          setServerTotalPages(data.pagination.totalPages ?? 1);
+          // If current page is beyond totalPages, adjust to last page
+          if (currentPage > data.pagination.totalPages && data.pagination.totalPages > 0) {
+            setCurrentPage(data.pagination.totalPages);
+          }
+        }
+        if (data.tabCounts) {
+          setTabCounts(data.tabCounts);
+        }
+        if (Array.isArray(data.availableWarehouses) && data.availableWarehouses.length > 0) {
+          setAvailableWarehouses(data.availableWarehouses);
+        }
         setUnauthorizedMessage(null);
       } else if (res.status === 403) {
         const data = await res.json().catch(() => ({}));
@@ -499,7 +538,7 @@ export default function DesktopPostDispatchView({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [debouncedSearch, statusFilter, computedDateRange]);
+  }, [activeTab, currentPage, pageSize, debouncedSearch, statusFilter, warehouseFilter, computedDateRange]);
 
   useEffect(() => {
     fetchInvoices();
@@ -598,7 +637,7 @@ export default function DesktopPostDispatchView({
     }
   };
 
-  // Confirm and execute Force Archive override
+  // Confirm and execute single Force Archive override
   const handleConfirmForceArchive = async () => {
     if (!forceArchiveInvoice) return;
     setSubmittingArchive(true);
@@ -617,15 +656,9 @@ export default function DesktopPostDispatchView({
       }
 
       toast.success(data.message || 'Invoice force-archived successfully');
-      if (data.invoice) {
-        setInvoices((prev) =>
-          prev.map((inv) =>
-            inv.id === forceArchiveInvoice.id ? { ...inv, ...data.invoice } : inv
-          )
-        );
-      }
       setForceArchiveInvoice(null);
       setArchiveReason('');
+      await fetchInvoices();
     } catch (err: any) {
       toast.error(err.message || 'Failed to force archive invoice');
     } finally {
@@ -633,94 +666,44 @@ export default function DesktopPostDispatchView({
     }
   };
 
-  // ── Tab Predicates & Definitions ──────────────────────────────────────────
-  // Evaluated against active filters so counts accurately reflect the current filtered dataset.
-  const isArchived = (inv: PostDispatchInvoiceSummary) =>
-    inv.erpStatus === 'Archived' || inv.zohoStatus.toLowerCase() === 'void';
+  // Confirm and execute bulk Archive All
+  const handleConfirmArchiveAll = async () => {
+    setArchiveAllSubmitting(true);
+    try {
+      const res = await fetch('/api/mobile/post-dispatch/archive-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filters: {
+            tab: activeTab,
+            search: debouncedSearch.trim() || null,
+            statusFilter: statusFilter !== 'ALL' ? statusFilter : null,
+            warehouseFilter: warehouseFilter !== 'ALL' ? warehouseFilter : null,
+            startDate: computedDateRange.startDate,
+            endDate: computedDateRange.endDate,
+          },
+          reason: archiveAllReason.trim() || 'Bulk administrative force archive',
+        }),
+      });
 
-  const isVerificationPending = (inv: PostDispatchInvoiceSummary) =>
-    !isArchived(inv) &&
-    (inv.workflowSummary.receivingStatus === 'AWAITING_VERIFICATION' ||
-      inv.workflowSummary.checkedStatus === 'AWAITING_VERIFICATION');
-
-  const isReceivingPending = (inv: PostDispatchInvoiceSummary) =>
-    !isArchived(inv) && inv.workflowSummary.receivingStatus !== 'COMPLETED';
-
-  const isCheckPending = (inv: PostDispatchInvoiceSummary) =>
-    !isArchived(inv) && inv.workflowSummary.checkedStatus !== 'COMPLETED';
-
-  const isInventoryPending = (inv: PostDispatchInvoiceSummary) =>
-    !isArchived(inv) && inv.workflowSummary.inventoryStatus !== 'COMPLETED';
-
-  const isEInvoicePending = (inv: PostDispatchInvoiceSummary) =>
-    !isArchived(inv) &&
-    !inv.isConsumer &&
-    !inv.eInvoice.generated &&
-    inv.zohoStatus.toLowerCase() !== 'draft';
-
-  const isAllPending = (inv: PostDispatchInvoiceSummary) =>
-    !isArchived(inv) &&
-    (isReceivingPending(inv) ||
-      isCheckPending(inv) ||
-      isInventoryPending(inv) ||
-      isEInvoicePending(inv));
-
-  // Unique warehouse names available in full invoice set (so user can always switch warehouses)
-  const availableWarehouses = useMemo(() => {
-    const set = new Set<string>();
-    invoices.forEach((inv) => {
-      if (inv.warehouseName) set.add(inv.warehouseName);
-    });
-    return Array.from(set).sort();
-  }, [invoices]);
-
-  // Base filtered dataset matching all active non-tab filters:
-  // - Search query (server-filtered)
-  // - Zoho Status (server-filtered)
-  // - Date range (server-filtered)
-  // - Source Warehouse (client/ERP-level filtered)
-  const filteredInvoices = useMemo(() => {
-    if (!warehouseFilter || warehouseFilter === 'ALL') {
-      return invoices;
-    }
-    return invoices.filter((inv) => (inv.warehouseName || 'Not Assigned') === warehouseFilter);
-  }, [invoices, warehouseFilter]);
-
-  // Dynamic Tab Counts computed strictly from local ERP data matching ALL active filters
-  // Note: Verification Pending counts UNIQUE invoices (COUNT(DISTINCT invoice_id))
-  const tabCounts = useMemo(() => {
-    let allPending = 0;
-    let verification = 0;
-    let receiving = 0;
-    let check = 0;
-    let inventory = 0;
-    let einvoice = 0;
-    let archived = 0;
-
-    for (const inv of filteredInvoices) {
-      if (isArchived(inv)) {
-        archived++;
-      } else {
-        if (isAllPending(inv)) allPending++;
-        if (isVerificationPending(inv)) verification++;
-        if (isReceivingPending(inv)) receiving++;
-        if (isCheckPending(inv)) check++;
-        if (isInventoryPending(inv)) inventory++;
-        if (isEInvoicePending(inv)) einvoice++;
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to archive invoices');
       }
+
+      toast.success(data.message || `Successfully archived ${data.count} invoices`);
+      setArchiveAllModalOpen(false);
+      setArchiveAllReason('');
+      setCurrentPage(1);
+      await fetchInvoices();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to execute Archive All');
+    } finally {
+      setArchiveAllSubmitting(false);
     }
+  };
 
-    return {
-      all_pending: allPending,
-      verification_pending: verification,
-      receiving_pending: receiving,
-      check_pending: check,
-      inventory_pending: inventory,
-      einvoice_pending: einvoice,
-      archived: archived,
-    };
-  }, [filteredInvoices]);
-
+  // Tab definitions populated directly from backend count queries
   const tabs: { key: PrimaryTabKey; label: string; count: number }[] = useMemo(
     () => [
       { key: 'all_pending', label: 'All Pending', count: tabCounts.all_pending },
@@ -734,27 +717,8 @@ export default function DesktopPostDispatchView({
     [tabCounts]
   );
 
-  // Filter list by selected primary tab from the active-filtered dataset
-  const tabFilteredInvoices = useMemo(() => {
-    switch (activeTab) {
-      case 'all_pending':
-        return filteredInvoices.filter(isAllPending);
-      case 'verification_pending':
-        return filteredInvoices.filter(isVerificationPending);
-      case 'receiving_pending':
-        return filteredInvoices.filter(isReceivingPending);
-      case 'check_pending':
-        return filteredInvoices.filter(isCheckPending);
-      case 'inventory_pending':
-        return filteredInvoices.filter(isInventoryPending);
-      case 'einvoice_pending':
-        return filteredInvoices.filter(isEInvoicePending);
-      case 'archived':
-        return filteredInvoices.filter(isArchived);
-      default:
-        return filteredInvoices;
-    }
-  }, [filteredInvoices, activeTab]);
+  // Invoices returned by API are already filtered by activeTab, search, status, warehouse, and date
+  const tabFilteredInvoices = invoices;
 
   // Sorting
   const sortedInvoices = useMemo(() => {
@@ -807,20 +771,9 @@ export default function DesktopPostDispatchView({
     return list;
   }, [tabFilteredInvoices, sortConfig]);
 
-  // Pagination
-  const totalPages = pageSize === 'all' ? 1 : Math.ceil(sortedInvoices.length / (pageSize as number)) || 1;
-
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(Math.max(1, totalPages));
-    }
-  }, [totalPages, currentPage]);
-
-  const paginatedInvoices = useMemo(() => {
-    if (pageSize === 'all') return sortedInvoices;
-    const start = (currentPage - 1) * pageSize;
-    return sortedInvoices.slice(start, start + pageSize);
-  }, [sortedInvoices, currentPage, pageSize]);
+  // Server-side Pagination: invoices from API are already page-sized
+  const totalPages = pageSize === 'all' ? 1 : serverTotalPages;
+  const paginatedInvoices = sortedInvoices;
 
   const hasActiveFilters =
     debouncedSearch.trim() !== '' ||
@@ -1025,6 +978,26 @@ export default function DesktopPostDispatchView({
             <Activity size={13} className="text-blue-600" />
             <span>Zoho Sync & Usage</span>
           </button>
+
+          {/* Archive All Button: Desktop only, visible only with canForceArchive permission */}
+          {canForceArchive && (
+            <button
+              type="button"
+              onClick={() => setArchiveAllModalOpen(true)}
+              disabled={loading || totalMatchingCount === 0 || activeTab === 'archived'}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 rounded-lg text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
+              title={
+                activeTab === 'archived'
+                  ? 'All invoices in this tab are already archived'
+                  : totalMatchingCount === 0
+                  ? 'No matching invoices to archive'
+                  : `Archive all ${totalMatchingCount} invoices matching current filters`
+              }
+            >
+              <Archive size={13} className="text-amber-700" />
+              <span>Archive All ({totalMatchingCount})</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -1422,8 +1395,14 @@ export default function DesktopPostDispatchView({
               <option value="all">All</option>
             </select>
             <span className="text-gray-400 ml-2">
-              Showing <strong>{paginatedInvoices.length}</strong> of{' '}
-              <strong>{sortedInvoices.length}</strong> invoices
+              {totalMatchingCount > 0 ? (
+                <>
+                  Showing <strong>{pageSize === 'all' ? `1–${totalMatchingCount}` : `${(currentPage - 1) * (pageSize as number) + 1}–${Math.min(currentPage * (pageSize as number), totalMatchingCount)}`}</strong> of{' '}
+                  <strong>{totalMatchingCount.toLocaleString('en-IN')}</strong> invoices
+                </>
+              ) : (
+                <>Showing <strong>0</strong> invoices</>
+              )}
             </span>
           </div>
 
@@ -1546,6 +1525,108 @@ export default function DesktopPostDispatchView({
               >
                 {submittingArchive && <Loader2 size={13} className="animate-spin" />}
                 <span>Force Archive</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Archive All Bulk Confirmation Modal */}
+      {archiveAllModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden border border-gray-200">
+            <div className="p-6">
+              <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mb-4">
+                <Archive size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-1">
+                Archive all matching invoices?
+              </h3>
+              <p className="text-sm text-gray-600 mb-4 leading-relaxed">
+                This will archive <strong className="text-gray-900 font-semibold">{totalMatchingCount.toLocaleString('en-IN')}</strong> active invoice(s) currently matching your active filters.
+              </p>
+
+              {/* Authoritative Filter Summary Display */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 mb-4 space-y-2 text-xs">
+                <div className="flex items-center justify-between text-slate-600">
+                  <span className="font-medium text-slate-500">Current Tab:</span>
+                  <span className="font-semibold text-slate-900 capitalize">
+                    {tabs.find((t) => t.key === activeTab)?.label || activeTab}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-slate-600">
+                  <span className="font-medium text-slate-500">Warehouse:</span>
+                  <span className="font-semibold text-slate-900">
+                    {warehouseFilter === 'ALL' ? 'All Warehouses' : warehouseFilter}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-slate-600">
+                  <span className="font-medium text-slate-500">Date Range:</span>
+                  <span className="font-semibold text-slate-900">
+                    {datePreset === 'all'
+                      ? 'All Dates'
+                      : computedDateRange.startDate && computedDateRange.endDate
+                      ? `${format(new Date(computedDateRange.startDate), 'dd MMM yyyy')} – ${format(new Date(computedDateRange.endDate), 'dd MMM yyyy')}`
+                      : datePreset}
+                  </span>
+                </div>
+                {debouncedSearch && (
+                  <div className="flex items-center justify-between text-slate-600">
+                    <span className="font-medium text-slate-500">Search:</span>
+                    <span className="font-semibold text-slate-900 font-mono">
+                      &quot;{debouncedSearch}&quot;
+                    </span>
+                  </div>
+                )}
+                <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between font-bold text-amber-900">
+                  <span>Invoices Affected:</span>
+                  <span className="text-sm font-mono">{totalMatchingCount.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 p-3 rounded-xl border border-amber-200/80 mb-4 text-xs text-amber-900 leading-relaxed">
+                <p className="font-semibold mb-1">Warning:</p>
+                <p>This action cannot be undone through the normal workflow. Invoices outside these filters will remain untouched.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Reason for Bulk Archive (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={archiveAllReason}
+                  onChange={(e) => setArchiveAllReason(e.target.value)}
+                  placeholder="e.g. Bulk historical reconciliation"
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setArchiveAllModalOpen(false);
+                  setArchiveAllReason('');
+                }}
+                disabled={archiveAllSubmitting}
+                className="px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmArchiveAll}
+                disabled={archiveAllSubmitting || totalMatchingCount === 0}
+                className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+              >
+                {archiveAllSubmitting && <Loader2 size={13} className="animate-spin" />}
+                <span>Archive {totalMatchingCount} Invoices</span>
               </button>
             </div>
           </div>

@@ -18,9 +18,7 @@ export default async function MobileDispatchPage() {
   const permissions = {
     canPostDispatch: hasMobilePostDispatchAccess(session),
     canReceivingUpload: hasPostDispatchPermission(session, 'mobile_dispatch_post_dispatch_receiving_upload'),
-    canReceivingVerify: hasPostDispatchPermission(session, 'mobile_dispatch_post_dispatch_receiving_verify'),
     canCheckedUpload: hasPostDispatchPermission(session, 'mobile_dispatch_post_dispatch_checked_upload'),
-    canCheckedVerify: hasPostDispatchPermission(session, 'mobile_dispatch_post_dispatch_checked_verify'),
   };
 
   const user = {

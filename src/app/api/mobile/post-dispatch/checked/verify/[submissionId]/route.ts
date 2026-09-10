@@ -52,7 +52,7 @@ export async function POST(
     const verifyCheck = canVerifySubmission(
       session,
       submission.uploadedByUserId,
-      'mobile_dispatch_post_dispatch_checked_verify'
+      'CHECKED'
     );
 
     if (!verifyCheck.allowed) {

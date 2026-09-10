@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { hasPostDispatchAccess } from '@/lib/post-dispatch-auth';
+import { hasDesktopPostDispatchReviewAccess, hasPostDispatchAccess } from '@/lib/post-dispatch-auth';
 import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
@@ -17,8 +17,13 @@ export async function GET(
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
-  // Verification of access: Admin or staff with post-dispatch permission
-  if (!hasPostDispatchAccess(session) && session.role !== 'ADMIN' && !session.dispatch_view) {
+  // Verification of access: Admin or staff with post-dispatch or review permission
+  const canAccess =
+    session.role === 'ADMIN' ||
+    hasPostDispatchAccess(session) ||
+    hasDesktopPostDispatchReviewAccess(session);
+
+  if (!canAccess) {
     return new NextResponse('Forbidden', { status: 403 });
   }
 

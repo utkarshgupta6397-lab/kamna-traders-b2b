@@ -13,6 +13,7 @@ export default async function IncomingQueuePage() {
   const permissions = {
     isAdmin,
     canForceArchive: isAdmin || Boolean(session?.dispatch_force_archive),
+    canReview: isAdmin || Boolean(session?.dispatch_post_dispatch_review || session?.dispatch_post_dispatch),
   };
 
   return <IncomingQueueClient permissions={permissions} />;

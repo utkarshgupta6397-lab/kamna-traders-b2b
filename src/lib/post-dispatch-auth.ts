@@ -71,9 +71,29 @@ export function hasPostDispatchPermission(session: Session, childKey: Permission
 }
 
 /**
- * Server-side validation: Uploader CANNOT self-verify.
+ * Checks if user has access to Post Dispatch Review workspace on desktop.
+ * Admin always has access.
+ * Staff requires dispatch_view AND (dispatch_post_dispatch OR legacy dispatch_post_dispatch_review).
  */
-export function canVerifySubmission(session: Session, uploadedByUserId: string, verifyPermissionKey: PermissionKey | string): {
+export function hasDesktopPostDispatchReviewAccess(session: Session): boolean {
+  if (!session) return false;
+  if (session.role === 'ADMIN') return true;
+  return Boolean(
+    session.dispatch_view &&
+      (session.dispatch_post_dispatch || session.dispatch_post_dispatch_review)
+  );
+}
+
+/**
+ * Server-side validation: Uploader CANNOT self-verify.
+ * Verification is strictly a DESKTOP operation requiring desktop verification permissions.
+ * Mobile users can never verify submissions.
+ */
+export function canVerifySubmission(
+  session: Session,
+  uploadedByUserId: string,
+  workflowTypeOrKey: 'RECEIVING' | 'CHECKED' | PermissionKey | string
+): {
   allowed: boolean;
   error?: string;
   statusCode?: number;
@@ -82,8 +102,27 @@ export function canVerifySubmission(session: Session, uploadedByUserId: string, 
     return { allowed: false, error: 'Unauthorized', statusCode: 401 };
   }
 
-  // Check permission hierarchy
-  if (!hasPostDispatchPermission(session, verifyPermissionKey)) {
+  // Resolve permission keys for the workflow (desktop only)
+  let hasPermission = false;
+  if (session.role === 'ADMIN') {
+    hasPermission = true;
+  } else if (workflowTypeOrKey === 'RECEIVING' || workflowTypeOrKey === 'dispatch_post_dispatch_receiving_verify') {
+    hasPermission = Boolean(
+      session.dispatch_view &&
+      session.dispatch_post_dispatch &&
+      session.dispatch_post_dispatch_receiving_verify
+    );
+  } else if (workflowTypeOrKey === 'CHECKED' || workflowTypeOrKey === 'dispatch_post_dispatch_checked_verify') {
+    hasPermission = Boolean(
+      session.dispatch_view &&
+      session.dispatch_post_dispatch &&
+      session.dispatch_post_dispatch_checked_verify
+    );
+  } else {
+    hasPermission = hasPostDispatchPermission(session, workflowTypeOrKey);
+  }
+
+  if (!hasPermission) {
     return {
       allowed: false,
       error: 'You do not have permission to verify this submission.',

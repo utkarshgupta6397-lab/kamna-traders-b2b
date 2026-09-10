@@ -49,11 +49,9 @@ export default function UserPermissionsPage() {
     const newValue = !currentValue;
     
     // Optimistic Update
-    const postDispatchChildren = [
+    const postDispatchChildren: PermissionKey[] = [
       'mobile_dispatch_post_dispatch_receiving_upload',
-      'mobile_dispatch_post_dispatch_receiving_verify',
       'mobile_dispatch_post_dispatch_checked_upload',
-      'mobile_dispatch_post_dispatch_checked_verify',
     ];
 
     setUsers(prev => prev.map(u => {
@@ -63,7 +61,19 @@ export default function UserPermissionsPage() {
         updated.mobile_dispatch = true;
         updated.mobile_dispatch_post_dispatch = true;
       }
-      if (newValue && ['dispatch_post_dispatch', 'dispatch_receiving_upload', 'dispatch_checked_by'].includes(key)) {
+      if (newValue && [
+        'dispatch_post_dispatch_receiving_verify',
+        'dispatch_post_dispatch_checked_verify',
+        'dispatch_force_archive'
+      ].includes(key)) {
+        updated.dispatch_view = true;
+        updated.dispatch_post_dispatch = true;
+      } else if (newValue && [
+        'dispatch_post_dispatch',
+        'dispatch_post_dispatch_review',
+        'dispatch_receiving_upload',
+        'dispatch_checked_by'
+      ].includes(key)) {
         updated.dispatch_view = true;
       }
       return updated;

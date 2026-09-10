@@ -150,8 +150,10 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.dispatch_force_archive = true;
       merged.dispatch_inventory_deduction = true;
       merged.dispatch_receiving_upload = true;
-      merged.dispatch_checked_by = true;
       merged.dispatch_post_dispatch = true;
+      merged.dispatch_post_dispatch_review = true;
+      merged.dispatch_post_dispatch_receiving_verify = true;
+      merged.dispatch_post_dispatch_checked_verify = true;
       merged.mobile_stock_management = true;
       merged.mobile_stock_management_solar_panel = true;
       merged.mobile_stock_management_wire_cables = true;

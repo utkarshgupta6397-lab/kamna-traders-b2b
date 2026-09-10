@@ -60,7 +60,7 @@ export async function GET(request: Request) {
       where.erpStatus = 'Active';
       where.eInvoiceGenerated = false;
       where.zohoStatus = { notIn: ['void', 'draft'] };
-    } else if (tab === 'verification') {
+    } else if (tab === 'verification' || tab === 'verification_pending') {
       where.erpStatus = 'Active';
       where.workflows = {
         some: {
@@ -124,6 +124,29 @@ export async function GET(request: Request) {
       take: 200,
     });
 
+    // Extract customer IDs to batch lookup local customer records for GSTIN if missing
+    const customerIds = Array.from(
+      new Set(
+        invoices
+          .map((inv) => inv.customerId)
+          .filter((cid): cid is string => Boolean(cid))
+      )
+    );
+
+    const localCustomers = customerIds.length > 0
+      ? await (prisma as any).customer.findMany({
+          where: { id: { in: customerIds } },
+          select: { id: true, gstNumber: true },
+        })
+      : [];
+
+    const customerGstMap = new Map<string, string>();
+    for (const c of localCustomers) {
+      if (c.gstNumber && c.gstNumber !== 'NOT_AVAILABLE') {
+        customerGstMap.set(c.id, c.gstNumber);
+      }
+    }
+
     const now = new Date();
 
     const formatted = invoices.map((inv) => {
@@ -151,12 +174,23 @@ export async function GET(request: Request) {
         : false;
       const warehouseName = (detailsJson?.location_name as string) || null;
 
+      // Extract GSTIN: check detailsJson first, then local customer table
+      let gstin: string | null = null;
+      if (detailsJson?.gst_no && String(detailsJson.gst_no).trim()) {
+        gstin = String(detailsJson.gst_no).trim();
+      } else if (detailsJson?.shipping_gst_no && String(detailsJson.shipping_gst_no).trim()) {
+        gstin = String(detailsJson.shipping_gst_no).trim();
+      } else if (inv.customerId && customerGstMap.has(inv.customerId)) {
+        gstin = customerGstMap.get(inv.customerId) || null;
+      }
+
       return {
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,
         zohoInvoiceId: inv.zohoInvoiceId,
         customerId: inv.customerId,
         customerName: inv.customerName,
+        gstin,
         warehouseName,
         total: inv.total,
         currencyCode: inv.currencyCode,

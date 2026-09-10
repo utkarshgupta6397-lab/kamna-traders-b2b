@@ -28,9 +28,7 @@ export async function PATCH(
     const updateData: Record<string, boolean> = { [key]: Boolean(value) };
     const postDispatchChildren = [
       'mobile_dispatch_post_dispatch_receiving_upload',
-      'mobile_dispatch_post_dispatch_receiving_verify',
       'mobile_dispatch_post_dispatch_checked_upload',
-      'mobile_dispatch_post_dispatch_checked_verify',
     ];
 
     if (Boolean(value)) {
@@ -39,7 +37,19 @@ export async function PATCH(
         updateData.mobile_dispatch_post_dispatch = true;
       } else if (key === 'mobile_dispatch_post_dispatch') {
         updateData.mobile_dispatch = true;
-      } else if (['dispatch_post_dispatch', 'dispatch_receiving_upload', 'dispatch_checked_by'].includes(key)) {
+      } else if ([
+        'dispatch_post_dispatch_receiving_verify',
+        'dispatch_post_dispatch_checked_verify',
+        'dispatch_force_archive'
+      ].includes(key)) {
+        updateData.dispatch_view = true;
+        updateData.dispatch_post_dispatch = true;
+      } else if ([
+        'dispatch_post_dispatch',
+        'dispatch_post_dispatch_review',
+        'dispatch_receiving_upload',
+        'dispatch_checked_by'
+      ].includes(key)) {
         updateData.dispatch_view = true;
       }
     } else {
@@ -54,6 +64,11 @@ export async function PATCH(
         });
       } else if (key === 'dispatch_view') {
         updateData.dispatch_post_dispatch = false;
+        updateData.dispatch_post_dispatch_receiving_verify = false;
+        updateData.dispatch_post_dispatch_checked_verify = false;
+      } else if (key === 'dispatch_post_dispatch') {
+        updateData.dispatch_post_dispatch_receiving_verify = false;
+        updateData.dispatch_post_dispatch_checked_verify = false;
       }
     }
 

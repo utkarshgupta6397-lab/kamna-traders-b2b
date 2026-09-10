@@ -53,7 +53,7 @@ export async function POST(
     const verifyCheck = canVerifySubmission(
       session,
       submission.uploadedByUserId,
-      'mobile_dispatch_post_dispatch_receiving_verify'
+      'RECEIVING'
     );
 
     if (!verifyCheck.allowed) {

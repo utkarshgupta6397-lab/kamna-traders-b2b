@@ -85,9 +85,7 @@ export interface MobileDispatchClientProps {
   permissions?: {
     canPostDispatch: boolean;
     canReceivingUpload: boolean;
-    canReceivingVerify: boolean;
     canCheckedUpload: boolean;
-    canCheckedVerify: boolean;
   };
   user?: {
     id: string;
@@ -99,9 +97,7 @@ export default function MobileDispatchClient({
   permissions = {
     canPostDispatch: true,
     canReceivingUpload: true,
-    canReceivingVerify: true,
     canCheckedUpload: true,
-    canCheckedVerify: true,
   },
   user = { id: '', name: 'Staff' },
 }: MobileDispatchClientProps = {}) {

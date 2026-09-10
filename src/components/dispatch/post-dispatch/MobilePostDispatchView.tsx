@@ -26,9 +26,7 @@ export interface MobilePostDispatchViewProps {
   permissions: {
     canPostDispatch: boolean;
     canReceivingUpload: boolean;
-    canReceivingVerify: boolean;
     canCheckedUpload: boolean;
-    canCheckedVerify: boolean;
   };
   user: {
     id: string;

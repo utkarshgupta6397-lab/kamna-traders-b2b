@@ -18,6 +18,7 @@ export interface PostDispatchInvoiceSummary {
   erpSubStatus?: string | null;
   isActionable: boolean;
   isConsumer?: boolean;
+  gstin?: string | null;
   eInvoice: {
     generated: boolean;
     irn?: string | null;

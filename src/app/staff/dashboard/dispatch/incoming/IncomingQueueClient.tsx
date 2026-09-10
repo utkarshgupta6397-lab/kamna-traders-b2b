@@ -223,6 +223,7 @@ function FrozenElapsedTimer({ baseTs, finishTs }: { baseTs: string | Date; finis
 export interface IncomingQueuePermissions {
   isAdmin?: boolean;
   canForceArchive?: boolean;
+  canReview?: boolean;
 }
 
 export default function IncomingQueueClient({
@@ -757,7 +758,10 @@ export default function IncomingQueueClient({
 
       {section === 'post' ? (
         <div className="flex-1 overflow-auto bg-slate-50/50">
-          <DesktopPostDispatchView />
+          <DesktopPostDispatchView
+            canForceArchive={permissions?.canForceArchive}
+            canReview={permissions?.canReview}
+          />
         </div>
       ) : (
         /* Pre-Dispatch Operational View */

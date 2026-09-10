@@ -25,6 +25,7 @@ import {
 import toast from 'react-hot-toast';
 import { WorkflowHistoryModal } from '@/components/dispatch/WorkflowHistoryModal';
 import DesktopPostDispatchView from './DesktopPostDispatchView';
+import { useSharedClock } from '@/hooks/useSharedClock';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -174,22 +175,12 @@ function formatElapsed(seconds: number): string {
 }
 
 /**
- * Isolated live timer badge. Re-renders only itself every 1s, preventing the
- * parent table or full row components from thrashing and re-rendering.
+ * Pure presentation live timer badge.
+ * Receives the synchronized parent clock timestamp (nowMs),
+ * eliminating per-row setInterval timers in Pre-Dispatch.
  */
-function LiveElapsedTimer({ baseTs }: { baseTs: string | Date }) {
-  const [elapsedSec, setElapsedSec] = useState(() => {
-    return Math.max(0, Math.floor((Date.now() - new Date(baseTs).getTime()) / 1000));
-  });
-
-  useEffect(() => {
-    const update = () => {
-      setElapsedSec(Math.max(0, Math.floor((Date.now() - new Date(baseTs).getTime()) / 1000)));
-    };
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, [baseTs]);
+function LiveElapsedTimer({ baseTs, nowMs }: { baseTs: string | Date; nowMs: number }) {
+  const elapsedSec = Math.max(0, Math.floor((nowMs - new Date(baseTs).getTime()) / 1000));
 
   return (
     <div>
@@ -239,6 +230,16 @@ export default function IncomingQueueClient({
   const initialSection: DispatchSection = urlSection === 'post' ? 'post' : 'pre';
 
   const [section, setSection] = useState<DispatchSection>(initialSection);
+
+  // Sync state if URL changes externally (e.g. browser back/forward)
+  useEffect(() => {
+    const target: DispatchSection = urlSection === 'post' ? 'post' : 'pre';
+    setSection((prev) => (prev !== target ? target : prev));
+  }, [urlSection]);
+
+  // Single shared 1-second clock for pre-dispatch timers, active only when pre-dispatch is visible
+  const nowMs = useSharedClock(1000, section === 'pre');
+
   const [orders, setOrders] = useState<DispatchIncomingOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -404,9 +405,12 @@ export default function IncomingQueueClient({
     }
   };
 
-  // ── Initial load + SSE ───────────────────────────────────────────────────
+  // ── Initial load + SSE (Active only during Pre-Dispatch) ───────────────────
 
   useEffect(() => {
+    // Only subscribe to Pre-Dispatch data and SSE when Pre-Dispatch section is active
+    if (section !== 'pre') return;
+
     fetchInitialData();
 
     let eventSource: EventSource | null = null;
@@ -484,7 +488,7 @@ export default function IncomingQueueClient({
         try { eventSource.close(); } catch {}
       }
     };
-  }, []);
+  }, [section]);
 
   // ── Derived data pipeline ────────────────────────────────────────────────
 
@@ -948,7 +952,7 @@ export default function IncomingQueueClient({
                               }
                             />
                           ) : (
-                            <LiveElapsedTimer baseTs={baseTs} />
+                            <LiveElapsedTimer baseTs={baseTs} nowMs={nowMs} />
                           )}
                         </td>
 

@@ -51,10 +51,19 @@ export default function TelemetryOverlay() {
     }
   }, [pathname]);
 
+  const isFetchingZohoRef = useRef(false);
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+
+  const MAX_TELEMETRY_CALLS = 200;
+
   const fetchZohoCalls = useCallback(async () => {
+    if (isFetchingZohoRef.current) return;
+    isFetchingZohoRef.current = true;
     try {
-      // Don't trace this fetch
-      const res = await (window as any).__originalFetch("/api/dev/telemetry");
+      // Use original fetch to never trace this request
+      const rawFetch = (window as any).__originalFetch || window.fetch;
+      const res = await rawFetch("/api/dev/telemetry");
       if (res.ok) {
         const data = await res.json();
         if (data.calls && data.calls.length > 0) {
@@ -63,13 +72,25 @@ export default function TelemetryOverlay() {
             id: Math.random().toString(36).substr(2, 9),
             page: pathnameRef.current,
           }));
-          setCalls((prev) => [...prev, ...newCalls]);
+          setCalls((prev) => {
+            const merged = [...prev, ...newCalls];
+            return merged.length > MAX_TELEMETRY_CALLS ? merged.slice(-MAX_TELEMETRY_CALLS) : merged;
+          });
         }
       }
     } catch (e) {
       // Ignore
+    } finally {
+      isFetchingZohoRef.current = false;
     }
   }, []);
+
+  // Fetch zoho calls when the overlay is opened
+  useEffect(() => {
+    if (isOpen) {
+      fetchZohoCalls();
+    }
+  }, [isOpen, fetchZohoCalls]);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "development" && process.env.NEXT_PUBLIC_ENABLE_API_TELEMETRY !== "true") {
@@ -85,8 +106,11 @@ export default function TelemetryOverlay() {
         else if (args[0] && "url" in (args[0] as any)) urlStr = (args[0] as any).url;
         else if (args[0] && typeof args[0].toString === "function") urlStr = args[0].toString();
         
-        // Ignore telemetry endpoint and static assets
+        const rawFetch = (window as any).__originalFetch;
+
+        // Ignore telemetry endpoint, static assets, internal Next.js requests
         if (
+          !urlStr ||
           urlStr.includes("/api/dev/telemetry") || 
           urlStr.includes("_next") ||
           urlStr.includes("webpack") ||
@@ -94,7 +118,7 @@ export default function TelemetryOverlay() {
           urlStr.endsWith(".js") ||
           urlStr.endsWith(".css")
         ) {
-          return (window as any).__originalFetch(...args);
+          return rawFetch(...args);
         }
 
         let method = "GET";
@@ -105,7 +129,7 @@ export default function TelemetryOverlay() {
         let status = 0;
         
         try {
-          const res = await (window as any).__originalFetch(...args);
+          const res = await rawFetch(...args);
           status = res.status;
           return res;
         } catch (error) {
@@ -124,10 +148,15 @@ export default function TelemetryOverlay() {
             page: pathnameRef.current,
           };
           
-          setCalls((prev) => [...prev, newCall]);
+          setCalls((prev) => {
+            const next = [...prev, newCall];
+            return next.length > MAX_TELEMETRY_CALLS ? next.slice(-MAX_TELEMETRY_CALLS) : next;
+          });
           
-          // Poll zoho calls after a local API call finishes
-          setTimeout(fetchZohoCalls, 100);
+          // Only fetch Zoho telemetry if the overlay is currently open
+          if (isOpenRef.current) {
+            setTimeout(fetchZohoCalls, 300);
+          }
         }
       };
     }

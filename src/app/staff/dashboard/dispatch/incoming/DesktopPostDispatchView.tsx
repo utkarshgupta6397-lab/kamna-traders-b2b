@@ -35,6 +35,8 @@ import InvoiceDetailModal from '@/components/dispatch/post-dispatch/InvoiceDetai
 import SyncApiUsageModal from '@/components/dispatch/post-dispatch/SyncApiUsageModal';
 import MobileImagePreview from '@/components/mobile/MobileImagePreview';
 
+import { useSharedClock } from '@/hooks/useSharedClock';
+
 export type PrimaryTabKey =
   | 'all_pending'
   | 'verification_pending'
@@ -78,19 +80,13 @@ function formatElapsed(seconds: number): string {
   return remHrs > 0 ? `${days}d ${remHrs}h` : `${days}d`;
 }
 
-function LivePostDispatchTimer({ baseTs }: { baseTs: string }) {
-  const [elapsedSec, setElapsedSec] = useState(() => {
-    return Math.max(0, Math.floor((Date.now() - new Date(baseTs).getTime()) / 1000));
-  });
-
-  useEffect(() => {
-    const update = () => {
-      setElapsedSec(Math.max(0, Math.floor((Date.now() - new Date(baseTs).getTime()) / 1000)));
-    };
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, [baseTs]);
+/**
+ * Pure presentation timer badge.
+ * Computes elapsed time directly from the shared parent clock (nowMs),
+ * eliminating per-row setInterval overhead across large invoice datasets.
+ */
+function LivePostDispatchTimer({ baseTs, nowMs }: { baseTs: string; nowMs: number }) {
+  const elapsedSec = Math.max(0, Math.floor((nowMs - new Date(baseTs).getTime()) / 1000));
 
   return (
     <div>
@@ -374,6 +370,10 @@ export default function DesktopPostDispatchView({
 
   const [invoices, setInvoices] = useState<PostDispatchInvoiceSummary[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Single shared 1-second clock for all live invoice timers on this page
+  const nowMs = useSharedClock(1000);
+
   const [refreshing, setRefreshing] = useState(false);
   const [checkingEInvoiceId, setCheckingEInvoiceId] = useState<string | null>(null);
   const [refreshingDraftId, setRefreshingDraftId] = useState<string | null>(null);
@@ -1317,7 +1317,7 @@ export default function DesktopPostDispatchView({
                             elapsedSeconds={inv.timer.elapsedSeconds}
                           />
                         ) : (
-                          <LivePostDispatchTimer baseTs={inv.timer.startedAt} />
+                          <LivePostDispatchTimer baseTs={inv.timer.startedAt} nowMs={nowMs} />
                         )}
                       </td>
 

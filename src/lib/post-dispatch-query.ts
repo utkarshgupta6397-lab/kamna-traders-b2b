@@ -34,7 +34,7 @@ export function buildPostDispatchWhereClause(params: PostDispatchFilterParams): 
     where.workflows = {
       some: {
         workflowType: 'RECEIVING',
-        status: { not: 'COMPLETED' },
+        status: { in: ['PENDING', 'REWORK_REQUIRED'] },
       },
     };
   } else if (tab === 'check_pending') {
@@ -42,7 +42,7 @@ export function buildPostDispatchWhereClause(params: PostDispatchFilterParams): 
     where.workflows = {
       some: {
         workflowType: 'CHECKED',
-        status: { not: 'COMPLETED' },
+        status: { in: ['PENDING', 'REWORK_REQUIRED'] },
       },
     };
   } else if (tab === 'inventory_pending') {

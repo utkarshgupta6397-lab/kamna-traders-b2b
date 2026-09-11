@@ -1876,8 +1876,23 @@ async function runTests() {
   });
   const receivingBudhCount = await prisma.postDispatchInvoice.count({ where: receivingBudhWhere });
   assert(
-    receivingBudhCount === budhViharCount,
+    receivingBudhCount > 0 && receivingBudhCount <= budhViharCount,
     `PP8: Dynamic tab counts update with warehouse filter (${receivingBudhCount} for Budh Vihar)`
+  );
+
+  // PP8b: Verify that receiving_pending tab strictly excludes AWAITING_VERIFICATION and COMPLETED invoices
+  const receivingPendingInvoices = await prisma.postDispatchInvoice.findMany({
+    where: receivingBudhWhere,
+    include: { workflows: true },
+  });
+  const invalidReceiving = receivingPendingInvoices.filter((inv) =>
+    inv.workflows.some(
+      (w) => w.workflowType === 'RECEIVING' && (w.status === 'AWAITING_VERIFICATION' || w.status === 'COMPLETED')
+    )
+  );
+  assert(
+    invalidReceiving.length === 0,
+    `PP8b: receiving_pending strictly excludes AWAITING_VERIFICATION and COMPLETED records (found ${invalidReceiving.length})`
   );
 
   // PP9: Date range filter subsets dataset

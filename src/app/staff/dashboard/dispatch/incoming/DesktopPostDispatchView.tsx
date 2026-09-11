@@ -82,10 +82,16 @@ function formatElapsed(seconds: number): string {
 
 /**
  * Pure presentation timer badge.
- * Computes elapsed time directly from the shared parent clock (nowMs),
- * eliminating per-row setInterval overhead across large invoice datasets.
+ * Subscribes directly to the singleton shared clock store,
+ * isolating 1-second ticks strictly to this badge and eliminating
+ * parent table and table-row re-renders.
  */
-function LivePostDispatchTimer({ baseTs, nowMs }: { baseTs: string; nowMs: number }) {
+const LivePostDispatchTimer = React.memo(function LivePostDispatchTimer({
+  baseTs,
+}: {
+  baseTs: string;
+}) {
+  const nowMs = useSharedClock(1000);
   const elapsedSec = Math.max(0, Math.floor((nowMs - new Date(baseTs).getTime()) / 1000));
 
   return (
@@ -98,9 +104,9 @@ function LivePostDispatchTimer({ baseTs, nowMs }: { baseTs: string; nowMs: numbe
       </div>
     </div>
   );
-}
+});
 
-function FrozenPostDispatchTimer({
+const FrozenPostDispatchTimer = React.memo(function FrozenPostDispatchTimer({
   baseTs,
   stoppedAt,
   elapsedSeconds,
@@ -120,7 +126,7 @@ function FrozenPostDispatchTimer({
       </div>
     </div>
   );
-}
+});
 
 /**
  * Visual semantic status pill for Zoho Status
@@ -384,9 +390,6 @@ export default function DesktopPostDispatchView({
     einvoice_pending: 0,
     archived: 0,
   });
-
-  // Single shared 1-second clock for all live invoice timers on this page
-  const nowMs = useSharedClock(1000);
 
   const [refreshing, setRefreshing] = useState(false);
   const [checkingEInvoiceId, setCheckingEInvoiceId] = useState<string | null>(null);
@@ -1290,7 +1293,7 @@ export default function DesktopPostDispatchView({
                             elapsedSeconds={inv.timer.elapsedSeconds}
                           />
                         ) : (
-                          <LivePostDispatchTimer baseTs={inv.timer.startedAt} nowMs={nowMs} />
+                          <LivePostDispatchTimer baseTs={inv.timer.startedAt} />
                         )}
                       </td>
 

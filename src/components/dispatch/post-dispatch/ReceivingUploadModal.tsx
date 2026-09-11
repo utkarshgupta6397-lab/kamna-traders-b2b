@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { Camera, X, Loader2, Upload, AlertCircle, Trash2 } from 'lucide-react';
+import { Camera, X, Loader2, Upload, AlertCircle, Trash2, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { compressImage } from '@/lib/image-compress';
 
 interface ReceivingUploadModalProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ export default function ReceivingUploadModal({
   const [photos, setPhotos] = useState<{ file: File; preview: string }[]>([]);
   const [receivingDetails, setReceivingDetails] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!isOpen) return null;
@@ -36,6 +38,7 @@ export default function ReceivingUploadModal({
         preview: URL.createObjectURL(file),
       }));
       setPhotos((prev) => [...prev, ...newPhotos]);
+      setErrorMessage(null);
     }
     // Reset input so same photo can be retaken if deleted
     if (fileInputRef.current) {
@@ -50,43 +53,119 @@ export default function ReceivingUploadModal({
       copy.splice(index, 1);
       return copy;
     });
+    setErrorMessage(null);
   };
 
   const handleSubmit = async () => {
+    // Prevent duplicate triggers if already submitting
+    if (submitting) return;
+
     if (photos.length === 0) {
-      toast.error('At least one photo is required.');
+      const msg = 'At least one photo is required.';
+      setErrorMessage(msg);
+      toast.error(msg);
       return;
     }
 
     setSubmitting(true);
+    setErrorMessage(null);
+
     try {
-      const formData = new FormData();
-      formData.append('receivingDetails', receivingDetails.trim());
-      photos.forEach((p) => {
-        formData.append('files', p.file);
-      });
+      // Step 1: Compress images client-side (each captured photo processed once)
+      const compressedFiles: File[] = [];
+      const MAX_ALLOWED_FILE_SIZE = 15 * 1024 * 1024; // 15MB safety ceiling
 
-      const res = await fetch(`/api/mobile/post-dispatch/receiving/upload/${invoiceId}`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Photo could not be uploaded. Please try again.');
+      for (const p of photos) {
+        const result = await compressImage(p.file, { maxEdge: 1600, quality: 0.8 });
+        
+        // Safety check if single file is still excessively large (> 15MB)
+        if (result.file.size > MAX_ALLOWED_FILE_SIZE) {
+          throw new Error(
+            `Photo "${p.file.name}" is too large (${(result.file.size / (1024 * 1024)).toFixed(1)}MB). Please retake the photo and try again.`
+          );
+        }
+        compressedFiles.push(result.file);
       }
 
-      toast.success('Receiving proof uploaded successfully!');
-      // Cleanup previews
+      const formData = new FormData();
+      formData.append('receivingDetails', receivingDetails.trim());
+      compressedFiles.forEach((file) => {
+        formData.append('files', file);
+      });
+
+      // Step 2: Dispatch request with network failure catch
+      let res: Response;
+      try {
+        res = await fetch(`/api/mobile/post-dispatch/receiving/upload/${invoiceId}`, {
+          method: 'POST',
+          body: formData,
+        });
+      } catch (fetchErr) {
+        throw new Error('Unable to upload. Please check your connection and try again.');
+      }
+
+      // Step 3: Robust HTTP status & non-JSON handling
+      if (!res.ok) {
+        let serverErrorMsg: string | null = null;
+        const contentType = res.headers.get('content-type') || '';
+
+        if (contentType.includes('application/json')) {
+          try {
+            const data = await res.json();
+            if (data?.error && typeof data.error === 'string') {
+              serverErrorMsg = data.error;
+            }
+          } catch {
+            // Non-valid JSON despite header
+          }
+        }
+
+        if (serverErrorMsg) {
+          throw new Error(serverErrorMsg);
+        }
+
+        // Status code specific user-friendly fallbacks
+        switch (res.status) {
+          case 400:
+            throw new Error('Invalid upload data. Please verify your photo and details.');
+          case 401:
+          case 403:
+            throw new Error('You are not authorized to submit this proof.');
+          case 413:
+            throw new Error('Photo is too large. Please retake the photo and try again.');
+          case 429:
+            throw new Error('Too many requests. Please wait a moment and try again.');
+          default:
+            if (res.status >= 500) {
+              throw new Error('Upload service is temporarily unavailable. Please try again.');
+            }
+            throw new Error(`Upload failed (Status ${res.status}). Please try again.`);
+        }
+      }
+
+      // Verify successful JSON response
+      let successData: any = null;
+      try {
+        successData = await res.json();
+      } catch {
+        // Successful status but unexpected body format
+      }
+
+      toast.success(successData?.message || 'Receiving proof uploaded successfully!');
+
+      // Cleanup previews on confirmed success
       photos.forEach((p) => URL.revokeObjectURL(p.preview));
       setPhotos([]);
       setReceivingDetails('');
+      setErrorMessage(null);
       onSuccess();
       onClose();
     } catch (err: unknown) {
       console.error('[Receiving Upload Error]', err);
       const msg = err instanceof Error ? err.message : 'Photo could not be uploaded. Please try again.';
+      setErrorMessage(msg);
       toast.error(msg);
+      // NOTE: Modal remains open and captured photos are preserved in state so user doesn't lose evidence
     } finally {
       setSubmitting(false);
     }
@@ -114,6 +193,20 @@ export default function ReceivingUploadModal({
 
         {/* Content body */}
         <div className="p-5 overflow-y-auto flex-1 space-y-4">
+          {errorMessage && (
+            <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-start gap-2.5 animate-in fade-in duration-150">
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <div className="flex-1 font-medium">{errorMessage}</div>
+              <button
+                type="button"
+                onClick={() => setErrorMessage(null)}
+                className="text-red-400 hover:text-red-600 text-xs shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* Camera Capture Section */}
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">

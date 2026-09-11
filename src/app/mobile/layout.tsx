@@ -1,4 +1,5 @@
 import { Metadata, Viewport } from 'next';
+import { Toaster } from 'react-hot-toast';
 import InstallBanner from './_components/InstallBanner';
 import HideDevUI from './_components/HideDevUI';
 
@@ -30,6 +31,7 @@ export const viewport: Viewport = {
 export default function MobileRootLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex-1 w-full flex flex-col bg-[#F8F9FB] text-slate-900 font-sans selection:bg-blue-100 overflow-hidden relative">
+      <Toaster position="top-center" toastOptions={{ duration: 4000 }} />
       <HideDevUI />
       {children}
       <InstallBanner />

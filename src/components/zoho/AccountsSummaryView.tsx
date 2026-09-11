@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSharedClock } from '@/hooks/useSharedClock';
 import {
   RefreshCw,
   Search,
@@ -25,14 +26,31 @@ import {
   Clock3,
   Receipt,
   UserRound,
+  Calendar,
+  Sparkles,
+  Layers,
+  ArrowRight,
+  HelpCircle,
+  ShieldAlert,
   Loader2,
+  Lock,
+  Unlock,
+  Building2,
+  FileDown,
+  Download,
+  AlertOctagon,
+  Eye,
+  SlidersHorizontal,
   MessageSquare,
   CheckCheck,
 } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
+import { parseISO, differenceInDays } from 'date-fns';
+import { AnimatePresence, motion } from 'framer-motion';
 import { renderStatementToPdf, getCachedAssets } from '@/lib/zoho/pdf-statement-renderer';
-import { Download } from 'lucide-react';// ─── Types ────────────────────────────────────────────────────────────────────
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface InvoiceRow {
   invoiceId: string;
@@ -650,6 +668,221 @@ function RowActions({ row }: { row: ExtendedRow }) {
   );
 }
 
+export const PERIOD_OPTIONS: { id: LookbackPeriod; label: string }[] = [
+  { id: 'today',     label: 'Today'     },
+  { id: 'yesterday', label: 'Yesterday' },
+  { id: '3days',     label: '3D'        },
+  { id: '7days',     label: '7D'        },
+  { id: '15days',    label: '15D'       },
+];
+
+// ─── Isolated Cooldown / Action Components (Prevent Whole-Page Re-renders) ──────
+
+const InvoiceRefreshAction = React.memo(function InvoiceRefreshAction({
+  row,
+  isHovered,
+  isAnyRefreshing,
+  isRefreshing,
+  onRefresh,
+}: {
+  row: ExtendedRow;
+  isHovered: boolean;
+  isAnyRefreshing: boolean;
+  isRefreshing: boolean;
+  onRefresh: (invoiceId: string) => void;
+}) {
+  const lastMs = row.lastRefreshedAt ? new Date(row.lastRefreshedAt).getTime() : 0;
+  const initialDiff = Date.now() - lastMs;
+  const isCooldownActive = lastMs > 0 && initialDiff < 60000;
+
+  const nowMs = useSharedClock(1000, isCooldownActive);
+  const diff = lastMs > 0 ? nowMs - lastMs : Infinity;
+  const invCooldown = Math.max(0, Math.ceil((60000 - diff) / 1000));
+
+  return (
+    <div className="flex items-center justify-center gap-1" style={{ opacity: isHovered || invCooldown > 0 ? 1 : 0, transition: 'opacity 0.15s' }}>
+      <button
+        onClick={(e) => { e.stopPropagation(); onRefresh(row.invoiceId); }}
+        disabled={isAnyRefreshing || invCooldown > 0}
+        className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-50 disabled:hover:bg-transparent"
+        title={invCooldown > 0 ? `Available in ${invCooldown}s` : 'Refresh Invoice'}
+      >
+        {invCooldown > 0 ? (
+          <span className="text-[9px] font-bold tabular-nums text-slate-500">{invCooldown}s</span>
+        ) : (
+          <RefreshCw size={12} className={isRefreshing ? 'animate-spin' : ''} />
+        )}
+      </button>
+      <RowActions row={row} />
+    </div>
+  );
+});
+
+const CustomerRefreshButton = React.memo(function CustomerRefreshButton({
+  customerId,
+  lastCustRefresh,
+  isAnyRefreshing,
+  isRefreshing,
+  onRefresh,
+}: {
+  customerId: string;
+  lastCustRefresh?: string | null;
+  isAnyRefreshing: boolean;
+  isRefreshing: boolean;
+  onRefresh: (customerId: string) => void;
+}) {
+  const lastMs = lastCustRefresh ? new Date(lastCustRefresh).getTime() : 0;
+  const initialDiff = Date.now() - lastMs;
+  const isCooldownActive = lastMs > 0 && initialDiff < 60000;
+
+  const nowMs = useSharedClock(1000, isCooldownActive);
+  const diff = lastMs > 0 ? nowMs - lastMs : Infinity;
+  const custCooldown = Math.max(0, Math.ceil((60000 - diff) / 1000));
+
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onRefresh(customerId); }}
+      disabled={isAnyRefreshing || custCooldown > 0}
+      className={`p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-50 ${custCooldown > 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+      title={custCooldown > 0 ? `Available in ${custCooldown}s` : 'Refresh Customer'}
+    >
+      {custCooldown > 0 ? (
+        <span className="text-[9px] font-bold tabular-nums text-slate-500">{custCooldown}s</span>
+      ) : (
+        <RefreshCw size={12} className={isRefreshing ? 'animate-spin' : ''} />
+      )}
+    </button>
+  );
+});
+
+const RecoverySyncButton = React.memo(function RecoverySyncButton({
+  lastSyncTime,
+  isSyncDisabledBase,
+  refreshingInvoices,
+  onSync,
+}: {
+  lastSyncTime: number;
+  isSyncDisabledBase: boolean;
+  refreshingInvoices: boolean;
+  onSync: () => void;
+}) {
+  const initialDiff = Date.now() - lastSyncTime;
+  const isCooldownActive = lastSyncTime > 0 && initialDiff < 60000;
+
+  const nowMs = useSharedClock(1000, isCooldownActive);
+  const elapsed = lastSyncTime > 0 ? nowMs - lastSyncTime : Infinity;
+  const cooldownSec = Math.max(0, Math.ceil((60000 - elapsed) / 1000));
+  const isSyncDisabled = isSyncDisabledBase || cooldownSec > 0;
+
+  return (
+    <button
+      onClick={onSync}
+      disabled={isSyncDisabled}
+      className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50 flex items-center gap-1 text-[9px] font-bold leading-none"
+      title={cooldownSec > 0 ? `Next sync in ${cooldownSec}s` : 'Sync outstanding from Zoho'}
+    >
+      <RefreshCw size={10} className={refreshingInvoices ? 'animate-spin' : ''} />
+      {cooldownSec > 0 ? `${cooldownSec}s` : 'Sync'}
+    </button>
+  );
+});
+
+const AccountsSummaryControls = React.memo(function AccountsSummaryControls({
+  lookback,
+  setLookback,
+  isAnyRefreshing,
+  refreshing,
+  autoFetching,
+  lastGlobalStr,
+  onRefresh,
+  exportToPDF,
+  exportToCSV,
+}: {
+  lookback: LookbackPeriod;
+  setLookback: (p: LookbackPeriod) => void;
+  isAnyRefreshing: boolean;
+  refreshing: boolean;
+  autoFetching: boolean;
+  lastGlobalStr: string | null;
+  onRefresh: (period: LookbackPeriod) => void;
+  exportToPDF: () => void;
+  exportToCSV: () => void;
+}) {
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const downloadRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (downloadRef.current && !downloadRef.current.contains(e.target as Node)) {
+        setDownloadOpen(false);
+      }
+    };
+    if (downloadOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [downloadOpen]);
+
+  const lastGlobalMs = lastGlobalStr ? new Date(lastGlobalStr).getTime() : 0;
+  const initialDiff = Date.now() - lastGlobalMs;
+  const isCooldownActive = lastGlobalMs > 0 && initialDiff < 60000;
+
+  const nowMs = useSharedClock(1000, isCooldownActive);
+  const diff = lastGlobalMs > 0 ? nowMs - lastGlobalMs : Infinity;
+  const cooldownRemaining = Math.max(0, Math.ceil((60000 - diff) / 1000));
+
+  return (
+    <>
+      <div className="flex items-center rounded-lg overflow-hidden border" style={{ borderColor: '#E2E8F0', background: '#fff' }}>
+        {PERIOD_OPTIONS.map((p) => (
+          <button key={p.id} onClick={() => setLookback(p.id)} disabled={isAnyRefreshing || cooldownRemaining > 0}
+            className="last:border-r-0 disabled:opacity-50 hover:bg-slate-50"
+            style={{
+              borderRight: '1px solid #E2E8F0',
+              background: lookback === p.id ? '#0F172A' : 'transparent',
+              color: lookback === p.id ? '#fff' : '#64748B',
+              padding: '6px 14px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
+            }}>
+              {p.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Download Dropdown */}
+      <div className="relative" ref={downloadRef}>
+        <button onClick={() => setDownloadOpen(v => !v)}
+          className="flex items-center gap-1.5 rounded-lg text-[11px] font-semibold transition-colors border hover:bg-slate-50"
+          style={{ borderColor: '#E2E8F0', background: '#fff', color: '#475569', padding: '7px 14.5px', cursor: 'pointer' }}>
+          <span>Download</span>
+          <ChevronDown size={11} />
+        </button>
+        {downloadOpen && (
+          <div className="absolute right-0 top-8 z-50 w-32 bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-[11px] font-semibold">
+            <button onClick={() => { setDownloadOpen(false); exportToPDF(); }}
+              className="flex w-full items-center gap-2 px-3 py-2.5 hover:bg-slate-50 text-slate-700 text-left cursor-pointer">
+              Download PDF
+            </button>
+            <button onClick={() => { setDownloadOpen(false); exportToCSV(); }}
+              className="flex w-full items-center gap-2 px-3 py-2.5 hover:bg-slate-50 text-slate-700 text-left cursor-pointer">
+              Download CSV
+            </button>
+          </div>
+        )}
+      </div>
+
+      <button 
+        onClick={() => onRefresh(lookback)} 
+        disabled={isAnyRefreshing || cooldownRemaining > 0}
+        className="flex items-center gap-2 rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-50"
+        style={{ background: '#475569', color: '#fff', padding: '7px 14px', cursor: 'pointer' }}
+      >
+        <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+        {refreshing ? 'Refreshing…' : autoFetching ? 'Loading…' : cooldownRemaining > 0 ? `Refresh in ${cooldownRemaining}s` : 'Refresh'}
+      </button>
+    </>
+  );
+});
+
 function DashboardSkeleton() {
   return (
     <div className="min-h-screen w-full px-6 py-6 space-y-5" style={{ background: '#F8FAFC', fontFamily: "'Inter', sans-serif" }}>
@@ -807,14 +1040,10 @@ export default function AccountsSummaryView() {
     return customerCredits.reduce((sum, c) => sum + c.availableCredit, 0);
   }, [customerCredits]);
 
-  // New Operational States & Ticking Clock
-  const [nowTick, setNowTick] = useState(Date.now());
+  // New Operational States
   const [refreshingInvoiceId, setRefreshingInvoiceId] = useState<string | null>(null);
   const [refreshingCustomerId, setRefreshingCustomerId] = useState<string | null>(null);
-  const [downloadOpen, setDownloadOpen] = useState(false);
-  const downloadRef = useRef<HTMLDivElement>(null);
 
-  // Ticks the clock every second to drive cooldown countdowns reactively
   const router = useRouter();
   const [flaggedDrawerOpen, setFlaggedDrawerOpen] = useState(false);
 
@@ -1279,46 +1508,8 @@ export default function AccountsSummaryView() {
       }
     }, 100);
   }, [viewMode]);
-  useEffect(() => {
-    const interval = setInterval(() => setNowTick(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Click outside to close download dropdown
-  useEffect(() => {
-    const handleOutsideClick = (e: MouseEvent) => {
-      if (downloadRef.current && !downloadRef.current.contains(e.target as Node)) {
-        setDownloadOpen(false);
-      }
-    };
-    if (downloadOpen) {
-      document.addEventListener('mousedown', handleOutsideClick);
-    }
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [downloadOpen]);
-
-  // Derived Cooldowns (Declarative relative to nowTick)
-  const cooldownRemaining = useMemo(() => {
-    if (!data) return 0;
-    const lastGlobalStr = data.summary?.globalRefreshedAt || data.generatedAt;
-    const diff = nowTick - new Date(lastGlobalStr).getTime();
-    return Math.max(0, Math.ceil((60000 - diff) / 1000));
-  }, [data, nowTick]);
 
   const isAnyRefreshing = refreshing || autoFetching || refreshingInvoiceId !== null || refreshingCustomerId !== null;
-
-  const getInvoiceCooldown = useCallback((row: InvoiceRow) => {
-    if (!row.lastRefreshedAt) return 0;
-    const diff = nowTick - new Date(row.lastRefreshedAt).getTime();
-    return Math.max(0, Math.ceil((60000 - diff) / 1000));
-  }, [nowTick]);
-
-  const getCustomerCooldown = useCallback((customerId: string) => {
-    const lastCustRefresh = data?.summary?.customerCooldowns?.[customerId];
-    if (!lastCustRefresh) return 0;
-    const diff = nowTick - new Date(lastCustRefresh).getTime();
-    return Math.max(0, Math.ceil((60000 - diff) / 1000));
-  }, [data, nowTick]);
 
   // ─── Recovery Tasks API ───────────────────────────────────────────────────
   const [refreshingInvoices, setRefreshingInvoices] = useState(false);
@@ -1567,6 +1758,9 @@ export default function AccountsSummaryView() {
   }, []);
 
   const fetchForRange = useCallback(async (period: LookbackPeriod, silent = false): Promise<void> => {
+    const lastGlobalStr = data?.summary?.globalRefreshedAt || data?.generatedAt;
+    const diff = lastGlobalStr ? Date.now() - new Date(lastGlobalStr).getTime() : Infinity;
+    const cooldownRemaining = Math.max(0, Math.ceil((60000 - diff) / 1000));
     if (cooldownRemaining > 0 && !silent) {
       toast.error(`Refresh available in ${cooldownRemaining}s`);
       return;
@@ -1595,12 +1789,13 @@ export default function AccountsSummaryView() {
     } finally {
       setRefreshing(false);
     }
-  }, [cooldownRemaining]);
+  }, [data]);
 
   const handleInvoiceRefresh = async (invoiceId: string) => {
     const row = data?.rows.find((r) => r.invoiceId === invoiceId);
     if (!row) return;
-    const invCooldown = getInvoiceCooldown(row as any);
+    const diff = row.lastRefreshedAt ? Date.now() - new Date(row.lastRefreshedAt).getTime() : Infinity;
+    const invCooldown = Math.max(0, Math.ceil((60000 - diff) / 1000));
     if (invCooldown > 0) {
       toast.error(`Invoice refresh available in ${invCooldown}s`);
       return;
@@ -1639,7 +1834,9 @@ export default function AccountsSummaryView() {
   };
 
   const handleCustomerRefresh = async (customerId: string) => {
-    const custCooldown = getCustomerCooldown(customerId);
+    const lastCustRefresh = data?.summary?.customerCooldowns?.[customerId];
+    const diff = lastCustRefresh ? Date.now() - new Date(lastCustRefresh).getTime() : Infinity;
+    const custCooldown = Math.max(0, Math.ceil((60000 - diff) / 1000));
     if (custCooldown > 0) {
       toast.error(`Customer refresh available in ${custCooldown}s`);
       return;
@@ -2334,14 +2531,6 @@ export default function AccountsSummaryView() {
   const usingMock = data?.summary?.usingMock;
   const { totalValue, totalCollected, totalPending, totalInvoices, fullyPaid, openCount, voidCount, overdue, collectionPct, effectiveOpen } = metrics;
 
-  const PERIOD_OPTIONS: { id: LookbackPeriod; label: string }[] = [
-    { id: 'today',     label: 'Today'     },
-    { id: 'yesterday', label: 'Yesterday' },
-    { id: '3days',     label: '3D'        },
-    { id: '7days',     label: '7D'        },
-    { id: '15days',    label: '15D'       },
-  ];
-
   const FILTER_TABS: { id: FilterKey; label: string; count: number }[] = [
     { id: 'all',  label: 'All',  count: totalInvoices },
     { id: 'paid', label: 'Paid', count: fullyPaid     },
@@ -2435,52 +2624,17 @@ export default function AccountsSummaryView() {
             </button>
           </div>
 
-          <div className="flex items-center rounded-lg overflow-hidden border" style={{ borderColor: '#E2E8F0', background: '#fff' }}>
-            {PERIOD_OPTIONS.map((p) => (
-              <button key={p.id} onClick={() => setLookback(p.id)} disabled={isAnyRefreshing || cooldownRemaining > 0}
-                className="last:border-r-0 disabled:opacity-50 hover:bg-slate-50"
-                style={{
-                  borderRight: '1px solid #E2E8F0',
-                  background: lookback === p.id ? '#0F172A' : 'transparent',
-                  color: lookback === p.id ? '#fff' : '#64748B',
-                  padding: '6px 14px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
-                }}>
-                  {p.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Download Dropdown */}
-          <div className="relative" ref={downloadRef}>
-            <button onClick={() => setDownloadOpen(v => !v)}
-              className="flex items-center gap-1.5 rounded-lg text-[11px] font-semibold transition-colors border hover:bg-slate-50"
-              style={{ borderColor: '#E2E8F0', background: '#fff', color: '#475569', padding: '7px 14.5px', cursor: 'pointer' }}>
-              <span>Download</span>
-              <ChevronDown size={11} />
-            </button>
-            {downloadOpen && (
-              <div className="absolute right-0 top-8 z-50 w-32 bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-[11px] font-semibold">
-                <button onClick={() => { setDownloadOpen(false); exportToPDF(); }}
-                  className="flex w-full items-center gap-2 px-3 py-2.5 hover:bg-slate-50 text-slate-700 text-left cursor-pointer">
-                  Download PDF
-                </button>
-                <button onClick={() => { setDownloadOpen(false); exportToCSV(); }}
-                  className="flex w-full items-center gap-2 px-3 py-2.5 hover:bg-slate-50 text-slate-700 text-left cursor-pointer">
-                  Download CSV
-                </button>
-              </div>
-            )}
-          </div>
-
-          <button 
-            onClick={() => fetchForRange(lookback, false)} 
-            disabled={isAnyRefreshing || cooldownRemaining > 0}
-            className="flex items-center gap-2 rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-50"
-            style={{ background: '#475569', color: '#fff', padding: '7px 14px', cursor: 'pointer' }}
-          >
-            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
-            {refreshing ? 'Refreshing…' : autoFetching ? 'Loading…' : cooldownRemaining > 0 ? `Refresh in ${cooldownRemaining}s` : 'Refresh'}
-          </button>
+          <AccountsSummaryControls
+            lookback={lookback}
+            setLookback={setLookback}
+            isAnyRefreshing={isAnyRefreshing}
+            refreshing={refreshing}
+            autoFetching={autoFetching}
+            lastGlobalStr={data?.summary?.globalRefreshedAt || data?.generatedAt || null}
+            onRefresh={(period) => fetchForRange(period, false)}
+            exportToPDF={exportToPDF}
+            exportToCSV={exportToCSV}
+          />
         </div>
       </div>
 
@@ -2791,26 +2945,13 @@ export default function AccountsSummaryView() {
 
                         {/* Actions */}
                         <td className="py-3 px-2 text-center">
-                          {(() => {
-                            const invCooldown = getInvoiceCooldown(row);
-                            return (
-                              <div className="flex items-center justify-center gap-1" style={{ opacity: isHovered || invCooldown > 0 ? 1 : 0, transition: 'opacity 0.15s' }}>
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleInvoiceRefresh(row.invoiceId); }}
-                                  disabled={isAnyRefreshing || invCooldown > 0}
-                                  className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-50 disabled:hover:bg-transparent"
-                                  title={invCooldown > 0 ? `Available in ${invCooldown}s` : 'Refresh Invoice'}
-                                >
-                                  {invCooldown > 0 ? (
-                                    <span className="text-[9px] font-bold tabular-nums text-slate-500">{invCooldown}s</span>
-                                  ) : (
-                                    <RefreshCw size={12} className={refreshingInvoiceId === row.invoiceId ? 'animate-spin' : ''} />
-                                  )}
-                                </button>
-                                <RowActions row={row} />
-                              </div>
-                            );
-                          })()}
+                          <InvoiceRefreshAction
+                            row={row}
+                            isHovered={isHovered}
+                            isAnyRefreshing={isAnyRefreshing}
+                            isRefreshing={refreshingInvoiceId === row.invoiceId}
+                            onRefresh={handleInvoiceRefresh}
+                          />
                         </td>
                       </tr>
                     );
@@ -3037,23 +3178,13 @@ export default function AccountsSummaryView() {
                               Settled
                             </span>
                           )}
-                          {(() => {
-                            const custCooldown = getCustomerCooldown(group.customerId);
-                            return (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleCustomerRefresh(group.customerId); }}
-                                disabled={isAnyRefreshing || custCooldown > 0}
-                                className={`p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-50 ${custCooldown > 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-                                title={custCooldown > 0 ? `Available in ${custCooldown}s` : 'Refresh Customer'}
-                              >
-                                {custCooldown > 0 ? (
-                                  <span className="text-[9px] font-bold tabular-nums text-slate-500">{custCooldown}s</span>
-                                ) : (
-                                  <RefreshCw size={12} className={refreshingCustomerId === group.customerId ? 'animate-spin' : ''} />
-                                )}
-                              </button>
-                            );
-                          })()}
+                          <CustomerRefreshButton
+                            customerId={group.customerId}
+                            lastCustRefresh={data?.summary?.customerCooldowns?.[group.customerId]}
+                            isAnyRefreshing={isAnyRefreshing}
+                            isRefreshing={refreshingCustomerId === group.customerId}
+                            onRefresh={handleCustomerRefresh}
+                          />
                         </div>
                       </div>
 
@@ -3259,20 +3390,14 @@ export default function AccountsSummaryView() {
 
                   {/* Sync button */}
                   {(() => {
-                    const elapsed = nowTick - lastSyncTime;
-                    const cooldownSec = Math.max(0, Math.ceil((60000 - elapsed) / 1000));
                     const allInvoiceIds = groupedCustomers.flatMap(c => c.invoices.map(i => i.task.invoiceId));
-                    const isSyncDisabled = refreshingInvoices || allInvoiceIds.length === 0 || cooldownSec > 0;
                     return (
-                      <button
-                        onClick={() => startSyncPrecheck(allInvoiceIds.slice(0, 100))}
-                        disabled={isSyncDisabled}
-                        className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-slate-800 transition-colors disabled:opacity-50 flex items-center gap-1 text-[9px] font-bold leading-none"
-                        title={cooldownSec > 0 ? `Next sync in ${cooldownSec}s` : 'Sync outstanding from Zoho'}
-                      >
-                        <RefreshCw size={10} className={refreshingInvoices ? 'animate-spin' : ''} />
-                        {cooldownSec > 0 ? `${cooldownSec}s` : 'Sync'}
-                      </button>
+                      <RecoverySyncButton
+                        lastSyncTime={lastSyncTime}
+                        isSyncDisabledBase={refreshingInvoices || allInvoiceIds.length === 0}
+                        refreshingInvoices={refreshingInvoices}
+                        onSync={() => startSyncPrecheck(allInvoiceIds.slice(0, 100))}
+                      />
                     );
                   })()}
 

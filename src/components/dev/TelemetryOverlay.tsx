@@ -56,6 +56,17 @@ export default function TelemetryOverlay() {
   isOpenRef.current = isOpen;
 
   const MAX_TELEMETRY_CALLS = 200;
+  const pendingCallsRef = useRef<TelemetryCall[]>([]);
+
+  const flushPendingCalls = useCallback(() => {
+    if (pendingCallsRef.current.length === 0) return;
+    const batch = pendingCallsRef.current;
+    pendingCallsRef.current = [];
+    setCalls((prev) => {
+      const next = [...prev, ...batch];
+      return next.length > MAX_TELEMETRY_CALLS ? next.slice(-MAX_TELEMETRY_CALLS) : next;
+    });
+  }, []);
 
   const fetchZohoCalls = useCallback(async () => {
     if (isFetchingZohoRef.current) return;
@@ -67,15 +78,22 @@ export default function TelemetryOverlay() {
       if (res.ok) {
         const data = await res.json();
         if (data.calls && data.calls.length > 0) {
-          const newCalls = data.calls.map((c: any) => ({
+          const newCalls: TelemetryCall[] = data.calls.map((c: any) => ({
             ...c,
             id: Math.random().toString(36).substr(2, 9),
             page: pathnameRef.current,
           }));
-          setCalls((prev) => {
-            const merged = [...prev, ...newCalls];
-            return merged.length > MAX_TELEMETRY_CALLS ? merged.slice(-MAX_TELEMETRY_CALLS) : merged;
-          });
+          if (isOpenRef.current) {
+            setCalls((prev) => {
+              const merged = [...prev, ...newCalls];
+              return merged.length > MAX_TELEMETRY_CALLS ? merged.slice(-MAX_TELEMETRY_CALLS) : merged;
+            });
+          } else {
+            pendingCallsRef.current.push(...newCalls);
+            if (pendingCallsRef.current.length > MAX_TELEMETRY_CALLS) {
+              pendingCallsRef.current = pendingCallsRef.current.slice(-MAX_TELEMETRY_CALLS);
+            }
+          }
         }
       }
     } catch (e) {
@@ -85,12 +103,13 @@ export default function TelemetryOverlay() {
     }
   }, []);
 
-  // Fetch zoho calls when the overlay is opened
+  // When overlay opens, flush any pending calls and fetch latest Zoho telemetry
   useEffect(() => {
     if (isOpen) {
+      flushPendingCalls();
       fetchZohoCalls();
     }
-  }, [isOpen, fetchZohoCalls]);
+  }, [isOpen, flushPendingCalls, fetchZohoCalls]);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "development" && process.env.NEXT_PUBLIC_ENABLE_API_TELEMETRY !== "true") {
@@ -148,21 +167,26 @@ export default function TelemetryOverlay() {
             page: pathnameRef.current,
           };
           
-          setCalls((prev) => {
-            const next = [...prev, newCall];
-            return next.length > MAX_TELEMETRY_CALLS ? next.slice(-MAX_TELEMETRY_CALLS) : next;
-          });
-          
-          // Only fetch Zoho telemetry if the overlay is currently open
+          // Buffer in pendingCallsRef without causing immediate React re-renders if closed
+          pendingCallsRef.current.push(newCall);
+          if (pendingCallsRef.current.length > MAX_TELEMETRY_CALLS) {
+            pendingCallsRef.current = pendingCallsRef.current.slice(-MAX_TELEMETRY_CALLS);
+          }
+
+          // If overlay is actively open, flush promptly and fetch Zoho telemetry
           if (isOpenRef.current) {
+            flushPendingCalls();
             setTimeout(fetchZohoCalls, 300);
           }
         }
       };
     }
-  }, [fetchZohoCalls]);
+  }, [fetchZohoCalls, flushPendingCalls]);
 
-  const clearSession = () => setCalls([]);
+  const clearSession = () => {
+    pendingCallsRef.current = [];
+    setCalls([]);
+  };
 
   const exportData = (type: "JSON" | "CSV") => {
     if (type === "JSON") {

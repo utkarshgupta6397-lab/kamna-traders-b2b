@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DevLogRun, DevLogEntry, DevLogStatus } from '@/lib/utils/DevLogger';
 import { Bug, X, Trash2, Copy, ChevronDown, ChevronRight, Check } from 'lucide-react';
 import { usePathname } from 'next/navigation';
@@ -23,24 +23,36 @@ export default function DevConsole() {
     }
   }, []);
 
-  const fetchLogs = async () => {
+  const isFetchingRef = useRef(false);
+
+  const fetchLogs = async (signal?: AbortSignal) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
-      const res = await fetch('/api/debug/logs');
+      const res = await fetch('/api/debug/logs', { signal });
       if (res.ok) {
         const data = await res.json();
         setRuns(data.runs || []);
       }
-    } catch (e) {
-      console.error('Failed to fetch dev logs', e);
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        console.error('Failed to fetch dev logs', e);
+      }
+    } finally {
+      isFetchingRef.current = false;
     }
   };
 
   useEffect(() => {
     if (!isOpen || !isDev) return;
     
-    fetchLogs();
-    const interval = setInterval(fetchLogs, 2000);
-    return () => clearInterval(interval);
+    const controller = new AbortController();
+    fetchLogs(controller.signal);
+    const interval = setInterval(() => fetchLogs(controller.signal), 2000);
+    return () => {
+      clearInterval(interval);
+      controller.abort();
+    };
   }, [isOpen, isDev]);
 
   const clearLogs = async () => {

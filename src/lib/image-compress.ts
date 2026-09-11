@@ -49,13 +49,22 @@ export async function compressImage(
   }
 
   try {
+    let origWidth = 0;
+    let origHeight = 0;
     let width = 0;
     let height = 0;
     let drawSource: CanvasImageSource;
 
     // Use createImageBitmap if available, fallback to HTMLImageElement
     if (typeof createImageBitmap !== 'undefined') {
-      const bitmap = await createImageBitmap(file);
+      let bitmap: ImageBitmap;
+      try {
+        bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      } catch {
+        bitmap = await createImageBitmap(file);
+      }
+      origWidth = bitmap.width;
+      origHeight = bitmap.height;
       width = bitmap.width;
       height = bitmap.height;
       drawSource = bitmap;
@@ -68,8 +77,10 @@ export async function compressImage(
         img.src = objectUrl;
       });
       URL.revokeObjectURL(objectUrl);
-      width = img.naturalWidth || img.width;
-      height = img.naturalHeight || img.height;
+      origWidth = img.naturalWidth || img.width;
+      origHeight = img.naturalHeight || img.height;
+      width = origWidth;
+      height = origHeight;
       drawSource = img;
     }
 
@@ -126,7 +137,12 @@ export async function compressImage(
       const compMB = (compressedFile.size / (1024 * 1024)).toFixed(2);
       const ratio = (((file.size - compressedFile.size) / file.size) * 100).toFixed(1);
       console.log(
-        `[Image Compression] ${file.name}: ${origMB}MB -> ${compMB}MB (-${ratio}%), dimensions: ${width}x${height}`
+        `[Image Compression Diagnostics] ${file.name}:\n` +
+          `  - Original Size: ${origMB}MB (${file.size} bytes)\n` +
+          `  - Compressed Size: ${compMB}MB (${compressedFile.size} bytes)\n` +
+          `  - Compression Ratio: -${ratio}%\n` +
+          `  - Original Dimensions: ${origWidth}x${origHeight}\n` +
+          `  - Compressed Dimensions: ${width}x${height}`
       );
     }
 

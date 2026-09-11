@@ -21,6 +21,7 @@ import {
   FileCheck,
   Archive,
   History,
+  Building2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { WorkflowHistoryModal } from '@/components/dispatch/WorkflowHistoryModal';
@@ -81,6 +82,7 @@ interface DispatchIncomingOrder {
   updatedAt: string;
   preDispatchWorkflow?: PreDispatchWorkflow | null;
   truckUpload?: DispatchTruckUpload | null;
+  zohoDetailsJson?: any | null;
 }
 
 type DispatchSection = 'pre' | 'post';
@@ -147,6 +149,33 @@ function getStageBadge(order: DispatchIncomingOrder) {
     default:
       return { label: 'Rate Review', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
   }
+}
+
+function getOrderWarehouse(order: DispatchIncomingOrder): string | null {
+  const d = (order.zohoDetailsJson || {}) as Record<string, any>;
+  if (!d || typeof d !== 'object') return null;
+
+  if (d.location_name && typeof d.location_name === 'string' && d.location_name.trim()) {
+    return d.location_name.trim();
+  }
+  if (d.warehouse_name && typeof d.warehouse_name === 'string' && d.warehouse_name.trim()) {
+    return d.warehouse_name.trim();
+  }
+  if (d.branch_name && typeof d.branch_name === 'string' && d.branch_name.trim()) {
+    return d.branch_name.trim();
+  }
+  if (Array.isArray(d.locations) && d.locations[0]?.location_name) {
+    return String(d.locations[0].location_name).trim();
+  }
+  if (Array.isArray(d.line_items) && d.line_items.length > 0) {
+    const item = d.line_items.find((l: any) => l.warehouse_name || l.location_name);
+    const name = item?.warehouse_name || item?.location_name;
+    if (name && typeof name === 'string' && name.trim()) {
+      return name.trim();
+    }
+  }
+
+  return null;
 }
 
 function formatCurrency(amount: number, currency = 'INR'): string {
@@ -825,6 +854,9 @@ export default function IncomingQueueClient({
               <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
                 <tr>
                   <SortableHeader label="#" sortKey="index" align="center" />
+                  <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 whitespace-nowrap">
+                    Warehouse
+                  </th>
                   <SortableHeader label="Sales Order" sortKey="salesOrder" />
                   <SortableHeader label="Customer" sortKey="customer" />
                   <SortableHeader label="Amount" sortKey="amount" align="right" />
@@ -837,7 +869,7 @@ export default function IncomingQueueClient({
               <tbody className="divide-y divide-gray-100 bg-white">
                 {paginatedOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center text-gray-400">
+                    <td colSpan={9} className="px-6 py-12 text-center text-gray-400">
                       {loading ? (
                         <div className="flex items-center justify-center gap-2">
                           <RefreshCw size={15} className="animate-spin text-gray-300" />
@@ -863,6 +895,7 @@ export default function IncomingQueueClient({
                     const globalIndex = pageSize === 'all' ? idx + 1 : (currentPage - 1) * pageSize + idx + 1;
                     const isArchived = getOrderStage(order) === 'archived';
                     const baseTs = order.activatedAt ?? order.receivedAt;
+                    const warehouseName = getOrderWarehouse(order);
 
                     const needsDetailsFetch =
                       !order.detailsStatus || order.detailsStatus === 'PENDING' || order.detailsStatus === 'FAILED';
@@ -878,6 +911,21 @@ export default function IncomingQueueClient({
                         {/* # Index */}
                         <td className="px-4 py-3 text-center text-xs font-mono text-gray-400 w-12">
                           {globalIndex}
+                        </td>
+
+                        {/* Warehouse */}
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border ${
+                              warehouseName
+                                ? 'bg-slate-50 text-slate-700 border-slate-200'
+                                : 'bg-gray-50 text-gray-400 border-gray-200 italic'
+                            }`}
+                            title={warehouseName || 'Warehouse not assigned'}
+                          >
+                            <Building2 size={11} className={warehouseName ? 'text-slate-500' : 'text-gray-300'} />
+                            <span className="truncate max-w-[180px]">{warehouseName || 'Not Assigned'}</span>
+                          </span>
                         </td>
 
                         {/* Sales Order */}

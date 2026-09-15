@@ -287,9 +287,6 @@ export async function adjustInventory(data: FormData) {
   const remarks = data.get('remarks') as string;
 
   if (isNaN(deltaNum)) throw new Error('Invalid adjustment quantity');
-  if (!/^[-+]?\d+(\.\d{1,2})?$/.test(deltaRaw)) {
-    throw new Error('Invalid adjustment quantity: Maximum 2 decimal places allowed.');
-  }
   if (!remarks || remarks.trim().length < 3) {
     throw new Error('Remarks are mandatory (min 3 chars)');
   }
@@ -298,6 +295,14 @@ export async function adjustInventory(data: FormData) {
   const skus = await ProductLookupService.search('inventory', { skuIds: [skuId], includeInactive: true });
   const sku = skus[0];
   if (!sku) throw new Error('Product variant not found');
+
+  const { validateQuantityPrecision } = await import('@/lib/uom-precision');
+  const { resolveSkuPrecision } = await import('@/lib/stock-deduction-service');
+  const isDecimal = Boolean(sku.isDecimal) || await resolveSkuPrecision(prisma, sku.id, sku.unit);
+  const precisionCheck = validateQuantityPrecision(deltaRaw, isDecimal);
+  if (!precisionCheck.valid) {
+    throw new Error(precisionCheck.error || 'Invalid adjustment quantity precision.');
+  }
 
   // Ensure Sku record exists to satisfy foreign key constraint on WarehouseInventory
   let validCategoryId: string | null = null;

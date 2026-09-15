@@ -11,7 +11,9 @@ import {
   AllocationEntry,
   areUomsCompatible,
   normalizeUom,
+  resolveSkuPrecision,
 } from '@/lib/stock-deduction-service';
+import { validateQuantityPrecision } from '@/lib/uom-precision';
 import { recordPostDispatchHistory } from '@/lib/post-dispatch-history';
 
 export const dynamic = 'force-dynamic';
@@ -122,6 +124,17 @@ export async function POST(
         return NextResponse.json({ error: `Row #${i + 1}: Warehouse is required.` }, { status: 400 });
       }
 
+      // Check for duplicate SKU + Warehouse combination
+      const isDuplicate = validatedAllocations.some(
+        existing => existing.skuId === resolvedSkuId && existing.warehouseId === a.warehouseId
+      );
+      if (isDuplicate) {
+        return NextResponse.json(
+          { error: `Row #${i + 1}: This SKU is already allocated to this warehouse.` },
+          { status: 400 }
+        );
+      }
+
       // Verify Warehouse exists and is active
       const whRecord = await prisma.warehouse.findFirst({
         where: { id: a.warehouseId, active: true },
@@ -129,6 +142,16 @@ export async function POST(
       });
       if (!whRecord) {
         return NextResponse.json({ error: `Row #${i + 1}: Active warehouse "${a.warehouseId}" not found.` }, { status: 400 });
+      }
+
+      // Validate UOM precision for the allocated SKU
+      const isDecimal = await resolveSkuPrecision(prisma, resolvedSkuId, resolvedSkuUnit || a.uom);
+      const precisionCheck = validateQuantityPrecision(String(a.qty), isDecimal);
+      if (!precisionCheck.valid) {
+        return NextResponse.json(
+          { error: `Row #${i + 1} (${resolvedSkuName}): ${precisionCheck.error}` },
+          { status: 400 }
+        );
       }
 
       validatedAllocations.push({

@@ -11,6 +11,7 @@ export interface MasterRecord {
   percentage?: number;
   taxType?: string;
   abbreviation?: string | null;
+  is_decimal?: boolean;
   zohoBooksUnitName?: string | null;
   zohoBooksIntraTaxId?: string | null;
   zohoBooksInterTaxId?: string | null;
@@ -55,7 +56,7 @@ export interface MasterConfig {
   customFields?: {
     name: string;
     label: string;
-    type: 'text' | 'number' | 'select' | 'tax-rate-select' | 'category-select';
+    type: 'text' | 'number' | 'select' | 'tax-rate-select' | 'category-select' | 'boolean';
     options?: { label: string; value: string }[];
     required?: boolean;
     helperText?: string;

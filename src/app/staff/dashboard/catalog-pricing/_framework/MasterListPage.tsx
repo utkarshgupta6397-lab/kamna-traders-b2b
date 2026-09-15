@@ -311,6 +311,7 @@ export default function MasterListPage({ config, extraActions }: { config: Maste
         canCreate={canCreate}
         canModify={canModify}
         canApprove={canApprove}
+        onRefresh={handleRefresh}
       />
 
       {/* Modals & Drawers */}

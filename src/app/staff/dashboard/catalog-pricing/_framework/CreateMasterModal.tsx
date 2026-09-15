@@ -227,7 +227,30 @@ export default function CreateMasterModal({ isOpen, onClose, config, onSuccess }
                 {f.label} {f.required && <span className="text-red-500">*</span>}
               </label>
               {f.helperText && <p className="text-[10px] text-gray-500 mb-1.5">{f.helperText}</p>}
-              {f.type === 'select' || f.type === 'tax-rate-select' || f.type === 'category-select' ? (
+              {f.type === 'boolean' ? (
+                <div className="flex items-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => {
+                      if (submitting) return;
+                      setCustomValues({ ...customValues, [f.name]: !customValues[f.name] });
+                    }}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      customValues[f.name] ? 'bg-emerald-600' : 'bg-slate-300'
+                    } ${submitting ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'}`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        customValues[f.name] ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                  <span className="text-xs font-semibold text-gray-700">
+                    {customValues[f.name] ? 'Enabled (Allow up to 2 decimal places)' : 'Disabled (Whole numbers only)'}
+                  </span>
+                </div>
+              ) : f.type === 'select' || f.type === 'tax-rate-select' || f.type === 'category-select' ? (
                 <select
                   value={customValues[f.name] || ''}
                   onChange={(e) => setCustomValues({ ...customValues, [f.name]: e.target.value })}

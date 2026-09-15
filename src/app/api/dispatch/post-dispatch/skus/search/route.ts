@@ -58,26 +58,38 @@ export async function GET(request: Request) {
         take: limit,
       }),
       prisma.unitOfMeasurement.findMany({
-        select: { id: true, abbreviation: true, name: true },
+        select: { id: true, abbreviation: true, name: true, is_decimal: true },
       }),
     ]);
 
     const uomMap = new Map(uoms.map(u => [u.id, u.abbreviation || u.name]));
-    const resultMap = new Map<string, { id: string; name: string; unit: string; code: string }>();
+    // Build quick lookup for UOM precision by abbreviation or name (case-insensitive)
+    const uomPrecisionMap = new Map<string, boolean>();
+    for (const u of uoms) {
+      if (u.name) uomPrecisionMap.set(u.name.toUpperCase(), Boolean(u.is_decimal));
+      if (u.abbreviation) uomPrecisionMap.set(u.abbreviation.toUpperCase(), Boolean(u.is_decimal));
+    }
+
+    const resultMap = new Map<string, { id: string; name: string; unit: string; code: string; isDecimal: boolean }>();
 
     for (const s of skus) {
+      const uomKey = (s.unit || '').toUpperCase();
+      const isDecimal = uomPrecisionMap.get(uomKey) ?? false;
       resultMap.set(s.id, {
         id: s.id,
         name: s.name,
         unit: s.unit || 'Units',
         code: s.id,
+        isDecimal,
       });
     }
 
     for (const v of variants) {
       if (!v.sku) continue;
       if (!resultMap.has(v.sku)) {
-        const uom = (v.product.unitId && uomMap.get(v.product.unitId)) || 'Units';
+        const uomRecord = v.product.unitId ? uoms.find(u => u.id === v.product.unitId) : null;
+        const uom = uomRecord ? (uomRecord.abbreviation || uomRecord.name) : (v.product.unitId && uomMap.get(v.product.unitId)) || 'Units';
+        const isDecimal = Boolean(uomRecord?.is_decimal);
         const displayName = v.variantName && v.variantName !== 'Default'
           ? `${v.product.name} (${v.variantName})`
           : v.product.name;
@@ -86,6 +98,7 @@ export async function GET(request: Request) {
           name: displayName,
           unit: uom,
           code: v.product.code || v.sku,
+          isDecimal,
         });
       }
     }

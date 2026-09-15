@@ -304,6 +304,7 @@ export async function POST(
     } else if (entity === 'units') {
       createData.abbreviation = customProps.abbreviation ? customProps.abbreviation.trim() : null;
       createData.zohoBooksUnitName = customProps.zohoBooksUnitName ? customProps.zohoBooksUnitName.trim() : null;
+      createData.is_decimal = Boolean(customProps.is_decimal);
     } else if (entity === 'hsn-codes') {
       if (customProps.defaultGstRateId) {
         createData.defaultGstRate = { connect: { id: customProps.defaultGstRateId } };

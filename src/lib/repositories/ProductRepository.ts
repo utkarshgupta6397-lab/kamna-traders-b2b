@@ -12,7 +12,7 @@ export class ProductRepository {
         variants: true,
         brand: { select: { name: true } },
         category: { select: { name: true } },
-        unit: { select: { name: true, abbreviation: true, code: true } },
+        unit: { select: { name: true, abbreviation: true, code: true, is_decimal: true } },
         attributeValues: { include: { attribute: true } },
         parentProduct: { select: { name: true } },
       },

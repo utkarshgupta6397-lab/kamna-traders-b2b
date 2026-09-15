@@ -167,6 +167,9 @@ export async function PATCH(
       if (customProps.zohoBooksUnitName !== undefined) {
         updateData.zohoBooksUnitName = customProps.zohoBooksUnitName ? customProps.zohoBooksUnitName.trim() : null;
       }
+      if (customProps.is_decimal !== undefined) {
+        updateData.is_decimal = Boolean(customProps.is_decimal);
+      }
     } else if (entity === 'hsn-codes') {
       if (customProps.defaultGstRateId !== undefined) {
         if (customProps.defaultGstRateId) {

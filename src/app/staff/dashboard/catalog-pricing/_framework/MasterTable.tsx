@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { MasterRecord, MasterConfig } from './types';
 import MasterStatusBadge from './MasterStatusBadge';
 import { getRecordAuthorization } from './authorization';
 import { Eye, Edit2, Send, CheckCircle2, XCircle, History, Archive, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 interface MasterTableProps {
   records: MasterRecord[];
@@ -25,6 +26,7 @@ interface MasterTableProps {
   canCreate: boolean;
   canModify: boolean;
   canApprove: boolean;
+  onRefresh?: () => void;
 }
 
 interface ColumnSchema {
@@ -60,7 +62,9 @@ export default function MasterTable(props: MasterTableProps) {
     canApprove,
   } = props;
 
-    const formatDateTime = (dateStr: string) => {
+  const [togglingDecimalId, setTogglingDecimalId] = useState<string | null>(null);
+
+  const formatDateTime = (dateStr: string) => {
     if (!dateStr) return <span className="text-gray-400">-</span>;
     const date = new Date(dateStr);
     const d = date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -132,6 +136,62 @@ export default function MasterTable(props: MasterTableProps) {
       width: 'w-[100px]',
       condition: (key) => key === 'units',
       renderCell: (r) => <span className="text-gray-600">{r.abbreviation || '-'}</span>
+    },
+    {
+      id: 'isDecimal',
+      label: 'Is Decimal',
+      width: 'w-[130px]',
+      align: 'center',
+      condition: (key) => key === 'units',
+      renderCell: (r) => {
+        const isDecimal = Boolean(r.is_decimal);
+        const { canEdit } = getRecordAuthorization(r, { canCreate, canModify, canApprove });
+        const isToggling = togglingDecimalId === r.id;
+
+        return (
+          <div className="flex items-center justify-center gap-2">
+            <button
+              type="button"
+              disabled={!canEdit || isToggling}
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (!canEdit || isToggling) return;
+                setTogglingDecimalId(r.id);
+                try {
+                  const res = await fetch(`/api/staff/catalog/units/${r.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_decimal: !isDecimal })
+                  });
+                  const resData = await res.json();
+                  if (!res.ok) {
+                    throw new Error(resData.error || 'Failed to update decimal precision');
+                  }
+                  toast.success(`Unit ${r.name}: Decimal precision ${!isDecimal ? 'ENABLED (Up to 2 decimals)' : 'DISABLED (Integers only)'}`);
+                  if (props.onRefresh) props.onRefresh();
+                } catch (err: any) {
+                  toast.error(err.message || 'Error updating decimal precision');
+                } finally {
+                  setTogglingDecimalId(null);
+                }
+              }}
+              className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                isDecimal ? 'bg-emerald-600' : 'bg-slate-300'
+              } ${!canEdit || isToggling ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'}`}
+              title={canEdit ? (isDecimal ? 'Click to disable decimals (whole numbers only)' : 'Click to enable decimals (up to 2 decimal places)') : 'Read-only'}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  isDecimal ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+            <span className={`text-[11px] font-semibold ${isDecimal ? 'text-emerald-700' : 'text-slate-500'}`}>
+              {isDecimal ? 'Yes (.00)' : 'No'}
+            </span>
+          </div>
+        );
+      }
     },
     {
       id: 'zohoBooksUnitName',

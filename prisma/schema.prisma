@@ -301,6 +301,7 @@ model UnitOfMeasurement {
   name              String              @unique
   description       String?
   abbreviation      String?
+  is_decimal        Boolean             @default(false)
   status            String              @default("Draft")
   remarks           String?
   isActive          Boolean             @default(true)

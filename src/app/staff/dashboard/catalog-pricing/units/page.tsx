@@ -9,6 +9,7 @@ const UNITS_CONFIG: MasterConfig = {
   permissionPrefix: 'catalog_units',
   customFields: [
     { name: 'abbreviation', label: 'Display Abbreviation', type: 'text', required: true, helperText: 'Used on invoices, inventory and reports.', uppercase: true, pattern: '^[A-Z0-9\\-\\/]+$' },
+    { name: 'is_decimal', label: 'Allow Decimals (Max 2 Decimal Places)', type: 'boolean', required: false, helperText: 'Enable to allow fractional quantities up to 2 decimal places for items with this UOM.' },
     { name: 'zohoBooksUnitName', label: 'Zoho Books Unit Name', type: 'text', required: false, helperText: 'Optional. If left blank, the ERP will use the existing Unit abbreviation during Zoho Books synchronization.' }
   ],
 };

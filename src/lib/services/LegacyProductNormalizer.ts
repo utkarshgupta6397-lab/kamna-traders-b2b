@@ -50,6 +50,7 @@ export class LegacyProductNormalizer {
       brandId: product.brandId ?? null,
       unit: product.unit?.name ?? null,
       unitShort: product.unit?.abbreviation || product.unit?.code || null,
+      isDecimal: Boolean(product.unit?.is_decimal),
       moq: skuMap?.get(variant.sku)?.moq ?? 1,
       stepQty: skuMap?.get(variant.sku)?.stepQty ?? 1,
       price: variant.sellingPrice || 0,

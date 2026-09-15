@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { adjustInventory } from '@/app/admin/actions';
 import { FormSubmit } from './ActionForm';
+import { validateQuantityPrecision, isValidPrecisionInput } from '@/lib/uom-precision';
 
 interface LogEntry {
   id: string;
@@ -43,6 +44,7 @@ interface Sku {
   name: string;
   unit?: string | null;
   unitShort?: string | null;
+  isDecimal?: boolean;
 }
 
 interface Props {
@@ -581,10 +583,13 @@ function InventoryAdjustModal({ warehouses, skus, onClose, onSuccess }: {
 
   const safeCurrentQty = currentQty ?? 0;
 
-  // Sync Logic: Adjust -> Final (allowing max 2 decimal places)
+  const selectedSku = useMemo(() => skus.find(s => s.id === skuId), [skus, skuId]);
+  const isDecimal = Boolean(selectedSku?.isDecimal);
+  const unit = selectedSku?.unitShort || selectedSku?.unit || 'Units';
+
+  // Sync Logic: Adjust -> Final (respecting isDecimal: integers only if false, max 2 decimals if true)
   const handleAdjustmentChange = (val: string) => {
-    // Prevent typing/pasting > 2 decimal places: allows optional sign, digits, and max 2 decimals
-    if (val !== '' && !/^[-+]?(\d+(\.\d{0,2})?|\.\d{0,2})?$/.test(val)) {
+    if (!isValidPrecisionInput(val, isDecimal, true)) {
       return;
     }
     setAdjustmentQty(val);
@@ -599,10 +604,10 @@ function InventoryAdjustModal({ warehouses, skus, onClose, onSuccess }: {
     }
   };
 
-  // Sync Logic: Final -> Adjust (allowing max 2 decimal places)
+  // Sync Logic: Final -> Adjust (respecting isDecimal)
   const handleFinalChange = (val: string) => {
-    // Final qty cannot be negative and allows max 2 decimal places
-    if (val !== '' && !/^(\d+(\.\d{0,2})?|\.\d{0,2})?$/.test(val)) {
+    // Final qty cannot be negative
+    if (!isValidPrecisionInput(val, isDecimal, false)) {
       return;
     }
     setFinalQty(val);
@@ -617,12 +622,10 @@ function InventoryAdjustModal({ warehouses, skus, onClose, onSuccess }: {
     }
   };
 
-  const selectedSku = useMemo(() => skus.find(s => s.id === skuId), [skus, skuId]);
-  const unit = selectedSku?.unitShort || selectedSku?.unit || 'Units';
-
   const parsedDelta = parseFloat(adjustmentQty);
   const isAdjustmentEmptyOrSign = adjustmentQty === '' || adjustmentQty === '-' || adjustmentQty === '+';
-  const hasValidDecimals = /^[-+]?\d+(\.\d{1,2})?$/.test(adjustmentQty);
+  const precisionResult = validateQuantityPrecision(adjustmentQty, isDecimal);
+  const hasValidDecimals = precisionResult.valid;
   const afterQty = isAdjustmentEmptyOrSign
     ? safeCurrentQty
     : !isNaN(parsedDelta)
@@ -748,31 +751,45 @@ function InventoryAdjustModal({ warehouses, skus, onClose, onSuccess }: {
           )}
 
           {/* 4. Adjustment Inputs (Enabled after SKU) */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className={`block text-xs font-bold uppercase tracking-wider ${!skuId ? 'text-gray-300' : 'text-gray-400'}`}>Adjustment Qty</label>
-              <input 
-                type="number" 
-                step="0.01"
-                value={adjustmentQty}
-                onChange={(e) => handleAdjustmentChange(e.target.value)}
-                disabled={!skuId || isLoadingStock}
-                placeholder="+20 or -5.3"
-                className="w-full border rounded-xl p-2.5 text-sm font-black focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50 disabled:opacity-50" 
-              />
+          <div className="space-y-1">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className={`block text-xs font-bold uppercase tracking-wider ${!skuId ? 'text-gray-300' : 'text-gray-400'}`}>Adjustment Qty</label>
+                  {skuId && (
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${isDecimal ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                      {isDecimal ? 'Max 2 decimals' : 'Integers only'}
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  step={isDecimal ? "0.01" : "1"}
+                  value={adjustmentQty}
+                  onChange={(e) => handleAdjustmentChange(e.target.value)}
+                  disabled={!skuId || isLoadingStock}
+                  placeholder={isDecimal ? "+20 or -5.3" : "+20 or -5"}
+                  className="w-full border rounded-xl p-2.5 text-sm font-black focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50 disabled:opacity-50"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className={`block text-xs font-bold uppercase tracking-wider ${!skuId ? 'text-gray-300' : 'text-gray-400'}`}>Final Qty</label>
+                <input
+                  type="number"
+                  step={isDecimal ? "0.01" : "1"}
+                  value={finalQty}
+                  onChange={(e) => handleFinalChange(e.target.value)}
+                  disabled={!skuId || isLoadingStock}
+                  placeholder={isDecimal ? "e.g. 100.5" : "e.g. 100"}
+                  className="w-full border rounded-xl p-2.5 text-sm font-black focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50 disabled:opacity-50"
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <label className={`block text-xs font-bold uppercase tracking-wider ${!skuId ? 'text-gray-300' : 'text-gray-400'}`}>Final Qty</label>
-              <input 
-                type="number" 
-                step="0.01"
-                value={finalQty}
-                onChange={(e) => handleFinalChange(e.target.value)}
-                disabled={!skuId || isLoadingStock}
-                placeholder="e.g. 100"
-                className="w-full border rounded-xl p-2.5 text-sm font-black focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50 disabled:opacity-50" 
-              />
-            </div>
+            {skuId && !hasValidDecimals && adjustmentQty && !isAdjustmentEmptyOrSign && (
+              <p className="text-[11px] text-red-600 font-medium mt-1">
+                {precisionResult.error}
+              </p>
+            )}
           </div>
 
           {/* 5. Remarks */}

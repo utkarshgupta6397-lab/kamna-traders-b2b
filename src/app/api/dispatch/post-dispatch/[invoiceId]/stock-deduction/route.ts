@@ -141,6 +141,7 @@ export async function GET(
             id: resolvedSku.id,
             name: resolvedSku.name,
             unit: resolvedSku.unit,
+            isDecimal: resolvedSku.isDecimal,
           } : null,
           mappingRequired: !resolvedSku,
           expectedWarehouse: expectedWarehouse ? {

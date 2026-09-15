@@ -3,8 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { validateQuantityPrecision, isValidPrecisionInput } from '@/lib/uom-precision';
+import { formatShortUom } from '@/lib/stock-deduction-service';
 
 export default function WarehouseAllocationPanel({ lineData, invoiceId, onSuccess, onCancel }: any) {
+  const isDecimal = Boolean(lineData.resolvedSku?.isDecimal);
   const existing = !lineData.allocation?.isExploded ? (lineData.allocation?.allocationData || []) : [];
   
   // Default to expected warehouse if nothing is allocated yet
@@ -29,7 +32,10 @@ export default function WarehouseAllocationPanel({ lineData, invoiceId, onSucces
   }, []);
 
   const handleQtyChange = (idx: number, newQty: string) => {
-    const qty = parseFloat(newQty) || 0;
+    if (!isValidPrecisionInput(newQty, isDecimal, false)) {
+      return;
+    }
+    const qty = newQty === '' ? '' : (parseFloat(newQty) || 0);
     const newEntries = [...entries];
     newEntries[idx].qty = qty;
     setEntries(newEntries);
@@ -61,6 +67,20 @@ export default function WarehouseAllocationPanel({ lineData, invoiceId, onSucces
       toast.error('Item must be mapped to a SKU before allocating');
       return;
     }
+
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      const check = validateQuantityPrecision(e.qty, isDecimal);
+      if (!check.valid) {
+        toast.error(`Row #${i + 1} (${e.warehouseName}): ${check.error}`);
+        return;
+      }
+      if (Number(e.qty) <= 0) {
+        toast.error(`Row #${i + 1}: Quantity must be greater than 0.`);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const res = await fetch(`/api/dispatch/post-dispatch/${invoiceId}/stock-deduction/${lineData.line.id}/save`, {
@@ -88,7 +108,7 @@ export default function WarehouseAllocationPanel({ lineData, invoiceId, onSucces
     } finally { setLoading(false); }
   };
 
-  const totalAllocated = entries.reduce((s, e) => s + e.qty, 0);
+  const totalAllocated = entries.reduce((s, e) => s + (Number(e.qty) || 0), 0);
   const remaining = Math.max(0, lineData.line.quantity - totalAllocated);
 
   if (lineData.mappingRequired) {
@@ -121,14 +141,18 @@ export default function WarehouseAllocationPanel({ lineData, invoiceId, onSucces
               <tr key={idx}>
                 <td className="p-2 font-medium">{entry.warehouseName}</td>
                 <td className="p-2">
-                  <input 
-                    type="number" min="0" step="any"
+                  <input
+                    type="number"
+                    min="0"
+                    step={isDecimal ? "0.01" : "1"}
                     value={entry.qty}
                     onChange={e => handleQtyChange(idx, e.target.value)}
-                    className="border rounded px-2 py-1 w-20 sm:w-24 outline-none focus:ring-1"
+                    className="border rounded px-2 py-1 w-20 sm:w-24 outline-none focus:ring-1 font-semibold"
                   />
                 </td>
-                <td className="p-2 text-gray-500 font-mono font-medium">{entry.uom}</td>
+                <td className="p-2 text-gray-500 font-mono font-medium" title={entry.uom}>
+                  {formatShortUom(entry.uom)}
+                </td>
                 <td className="p-2 text-center">
                   <button onClick={() => removeEntry(idx)} className="text-red-400 hover:text-red-600 p-1 inline-flex items-center justify-center">
                     <Trash2 size={14} />

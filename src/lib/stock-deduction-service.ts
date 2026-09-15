@@ -62,6 +62,8 @@ const UOM_CANONICAL_MAP: Record<string, string> = {
   mtr: 'MTR',
   meter: 'MTR',
   meters: 'MTR',
+  metre: 'MTR',
+  metres: 'MTR',
   kgs: 'KGS',
   kg: 'KGS',
   kilograms: 'KGS',
@@ -69,6 +71,28 @@ const UOM_CANONICAL_MAP: Record<string, string> = {
   pairs: 'PAIR',
   set: 'SET',
   sets: 'SET',
+  box: 'BOX',
+  boxes: 'BOX',
+  roll: 'ROLL',
+  rolls: 'ROLL',
+  pack: 'PACK',
+  packs: 'PACK',
+  pkt: 'PKT',
+  pkts: 'PKT',
+  packet: 'PKT',
+  packets: 'PKT',
+  bag: 'BAG',
+  bags: 'BAG',
+  ltr: 'LTR',
+  liter: 'LTR',
+  liters: 'LTR',
+  litre: 'LTR',
+  litres: 'LTR',
+  bndl: 'BNDL',
+  bundle: 'BNDL',
+  bundles: 'BNDL',
+  doz: 'DOZ',
+  dozen: 'DOZ',
 };
 
 // Groups of interchangeable/equivalent counting units
@@ -104,6 +128,33 @@ export function areUomsCompatible(uomA: string | null | undefined, uomB: string 
   }
 
   return false;
+}
+
+const UOM_SHORT_MAP: Record<string, string> = {
+  NOS: 'Nos',
+  PCS: 'Pcs',
+  UNIT: 'Unit',
+  MTR: 'Mtr',
+  KGS: 'Kg',
+  PAIR: 'Pair',
+  SET: 'Set',
+  BOX: 'Box',
+  ROLL: 'Roll',
+  PACK: 'Pack',
+  PKT: 'Pkt',
+  BAG: 'Bag',
+  LTR: 'Ltr',
+  BNDL: 'Bndl',
+  DOZ: 'Doz',
+};
+
+/**
+ * Formats a UOM string into its concise short display form (e.g. Numbers -> Nos, Pieces -> Pcs, Sets -> Set).
+ */
+export function formatShortUom(uom: string | null | undefined): string {
+  if (!uom) return 'Unit';
+  const canonical = normalizeUom(uom);
+  return UOM_SHORT_MAP[canonical] || (uom.length <= 4 ? uom : canonical);
 }
 
 // ─── Aggregate Inventory Status Helper ────────────────────────────────────────
@@ -543,7 +594,7 @@ export async function resolveZohoWarehouse(
 export async function resolveZohoSku(
   tx: any,
   zohoItemId: string | null | undefined
-): Promise<{ id: string; name: string; unit: string | null } | null> {
+): Promise<{ id: string; name: string; unit: string | null; isDecimal: boolean } | null> {
   if (!zohoItemId) return null;
 
   // Try Sku table first
@@ -551,7 +602,13 @@ export async function resolveZohoSku(
     where: { zohoBookItemId: zohoItemId },
     select: { id: true, name: true, unit: true },
   });
-  if (sku) return sku;
+  if (sku) {
+    const isDecimal = await resolveSkuPrecision(tx, sku.id, sku.unit);
+    return {
+      ...sku,
+      isDecimal,
+    };
+  }
 
   // Try ProductVariant
   const variant = await tx.productVariant.findFirst({
@@ -573,24 +630,90 @@ export async function resolveZohoSku(
       where: { id: variant.sku },
       select: { id: true, name: true, unit: true },
     });
-    if (variantSku) return variantSku;
+    if (variantSku) {
+      const isDecimal = await resolveSkuPrecision(tx, variantSku.id, variantSku.unit);
+      return {
+        ...variantSku,
+        isDecimal,
+      };
+    }
 
     // Resolve UOM from UnitOfMeasurement table
     let unit: string | null = null;
+    let isDecimal = false;
     if (variant.product.unitId) {
       const uom = await tx.unitOfMeasurement.findUnique({
         where: { id: variant.product.unitId },
-        select: { abbreviation: true, name: true },
+        select: { abbreviation: true, name: true, is_decimal: true },
       });
       unit = uom?.abbreviation || uom?.name || null;
+      isDecimal = Boolean(uom?.is_decimal);
     }
 
     return {
       id: variant.sku,
       name: variant.product.name,
       unit,
+      isDecimal,
     };
   }
 
   return null;
+}
+
+/**
+ * Resolves whether a SKU's unit allows decimal values (up to 2 decimal places).
+ */
+export async function resolveSkuPrecision(
+  tx: any,
+  skuId: string,
+  skuUnit?: string | null
+): Promise<boolean> {
+  try {
+    // 1. Try finding ProductVariant with Product relation
+    const pv = await tx.productVariant.findFirst({
+      where: { sku: skuId, isActive: true },
+      select: {
+        product: {
+          select: {
+            unit: { select: { is_decimal: true } },
+            unitId: true,
+          }
+        }
+      }
+    });
+
+    if (pv?.product?.unit) {
+      return Boolean(pv.product.unit.is_decimal);
+    }
+
+    if (pv?.product?.unitId) {
+      const uom = await tx.unitOfMeasurement.findUnique({
+        where: { id: pv.product.unitId },
+        select: { is_decimal: true }
+      });
+      if (uom) return Boolean(uom.is_decimal);
+    }
+
+    // 2. If Sku has unit string (e.g. "NOS", "MTR", "METERS"), match against UnitOfMeasurement
+    if (skuUnit) {
+      const uom = await tx.unitOfMeasurement.findFirst({
+        where: {
+          OR: [
+            { abbreviation: { equals: skuUnit, mode: 'insensitive' } },
+            { name: { equals: skuUnit, mode: 'insensitive' } },
+            { code: { equals: skuUnit, mode: 'insensitive' } },
+          ],
+          status: { not: 'Archived' }
+        },
+        select: { is_decimal: true }
+      });
+      if (uom) return Boolean(uom.is_decimal);
+    }
+
+    return false;
+  } catch (err) {
+    console.error(`[resolveSkuPrecision] Error resolving precision for ${skuId}:`, err);
+    return false;
+  }
 }

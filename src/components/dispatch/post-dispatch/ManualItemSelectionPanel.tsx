@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Trash2, Search, Plus, AlertCircle, Loader2, PackageCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { areUomsCompatible } from '@/lib/stock-deduction-service';
+import { areUomsCompatible, formatShortUom } from '@/lib/stock-deduction-service';
+import { validateQuantityPrecision, isValidPrecisionInput } from '@/lib/uom-precision';
 
 interface ManualItemRow {
   skuId: string;
@@ -11,8 +12,9 @@ interface ManualItemRow {
   skuCode?: string;
   warehouseId: string;
   warehouseName: string;
-  qty: number;
+  qty: number | string;
   uom: string;
+  isDecimal?: boolean;
 }
 
 interface Props {
@@ -37,7 +39,7 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const originalQty = Number(lineData.line.quantity) || 0;
-  const originalUom = lineData.line.uom || lineData.resolvedSku?.unit || 'Units';
+  const originalUom = formatShortUom(lineData.line.uom || lineData.resolvedSku?.unit || 'Units');
   const originalItemName = lineData.line.itemName;
 
   // Calculate cumulative component count and total units
@@ -45,9 +47,27 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
     return entries.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
   }, [entries]);
 
+  // Check for duplicate SKU + warehouse pairs
+  const duplicateIndices = useMemo(() => {
+    const seen = new Map<string, number>();
+    const dupes = new Set<number>();
+    entries.forEach((entry, idx) => {
+      if (!entry.skuId || !entry.warehouseId) return;
+      const key = `${entry.skuId}___${entry.warehouseId}`;
+      if (seen.has(key)) {
+        dupes.add(seen.get(key)!);
+        dupes.add(idx);
+      } else {
+        seen.set(key, idx);
+      }
+    });
+    return dupes;
+  }, [entries]);
+
   // Validate each row for saving
   const hasInvalidRows = useMemo(() => {
     if (entries.length === 0) return true;
+    if (duplicateIndices.size > 0) return true;
     return entries.some(entry => 
       !entry.skuId || 
       !entry.warehouseId || 
@@ -55,7 +75,7 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
       isNaN(entry.qty) || 
       entry.qty <= 0
     );
-  }, [entries]);
+  }, [entries, duplicateIndices]);
 
   useEffect(() => {
     fetch('/api/dispatch/post-dispatch/warehouses')
@@ -129,6 +149,17 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
     const initialWhName = lineData.expectedWarehouse?.name || (activeWarehouses.length === 1 ? activeWarehouses[0].name : '');
     const localUom = sku.unit || 'Units';
 
+    // Prevent duplicate SKU + warehouse if initial warehouse is set
+    if (initialWhId) {
+      const alreadyExists = entries.some(
+        e => e.skuId === sku.id && e.warehouseId === initialWhId
+      );
+      if (alreadyExists) {
+        toast.error('This SKU is already allocated to this warehouse.');
+        return;
+      }
+    }
+
     // Default to 1 unit per added component (user can adjust per component)
     const defaultQty = 1;
 
@@ -141,7 +172,8 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
         warehouseId: initialWhId,
         warehouseName: initialWhName,
         qty: defaultQty,
-        uom: localUom
+        uom: localUom,
+        isDecimal: Boolean(sku.isDecimal),
       }
     ]);
     setSearch('');
@@ -150,6 +182,25 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
   };
 
   const updateEntry = (idx: number, field: string, value: any) => {
+    if (field === 'warehouseId' && value) {
+      const currentSkuId = entries[idx]?.skuId;
+      const isDuplicate = entries.some(
+        (e, i) => i !== idx && e.skuId === currentSkuId && e.warehouseId === value
+      );
+      if (isDuplicate) {
+        toast.error('This SKU is already allocated to this warehouse.');
+        return;
+      }
+    }
+
+    if (field === 'qty') {
+      const isDecimal = Boolean(entries[idx]?.isDecimal);
+      const strVal = String(value);
+      if (!isValidPrecisionInput(strVal, isDecimal, false)) {
+        return;
+      }
+    }
+
     setEntries(prev => {
       const updated = [...prev];
       if (field === 'warehouseId') {
@@ -179,6 +230,20 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
       return;
     }
 
+    // Check for duplicate SKU + warehouse pairs
+    const seenPairs = new Set<string>();
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      if (entry.skuId && entry.warehouseId) {
+        const pairKey = `${entry.skuId}___${entry.warehouseId}`;
+        if (seenPairs.has(pairKey)) {
+          toast.error('This SKU is already allocated to this warehouse.');
+          return;
+        }
+        seenPairs.add(pairKey);
+      }
+    }
+
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
       if (!entry.skuId) {
@@ -189,8 +254,14 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
         toast.error(`Row #${i + 1}: Please select a deduction warehouse.`);
         return;
       }
-      if (typeof entry.qty !== 'number' || isNaN(entry.qty) || entry.qty <= 0) {
+      const numQty = parseFloat(String(entry.qty));
+      if (isNaN(numQty) || numQty <= 0) {
         toast.error(`Row #${i + 1}: Quantity must be greater than 0.`);
+        return;
+      }
+      const precisionCheck = validateQuantityPrecision(entry.qty, Boolean(entry.isDecimal));
+      if (!precisionCheck.valid) {
+        toast.error(`Row #${i + 1} (${entry.skuName}): ${precisionCheck.error}`);
         return;
       }
     }
@@ -286,8 +357,8 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
                     </div>
                   </div>
                   <div className="shrink-0 flex items-center gap-2">
-                    <span className="text-[11px] text-slate-600 font-bold bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                      {s.unit || 'UNIT'}
+                    <span className="text-[11px] text-slate-600 font-bold bg-slate-100 px-2 py-0.5 rounded border border-slate-200" title={s.unit || 'Unit'}>
+                      {formatShortUom(s.unit)}
                     </span>
                     <span className="p-1 rounded-md bg-indigo-50 text-[#1A2766] group-hover:bg-[#1A2766] group-hover:text-white transition-colors">
                       <Plus size={13} />
@@ -346,32 +417,39 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
                     </div>
                   </td>
                   <td className="py-2.5 px-3">
-                    <select 
-                      value={entry.warehouseId}
-                      onChange={e => updateEntry(idx, 'warehouseId', e.target.value)}
-                      className="border border-slate-300 rounded-lg px-2 py-1.5 w-full outline-none focus:ring-2 focus:ring-[#1A2766] bg-white text-xs font-medium text-slate-800 transition-all truncate"
-                    >
-                      <option value="">-- Select Warehouse --</option>
-                      {activeWarehouses.map(w => (
-                        <option key={w.id} value={w.id}>{w.name}</option>
-                      ))}
-                    </select>
+                    <div className="space-y-1">
+                      <select
+                        value={entry.warehouseId}
+                        onChange={e => updateEntry(idx, 'warehouseId', e.target.value)}
+                        className={`border rounded-lg px-2 py-1.5 w-full outline-none focus:ring-2 focus:ring-[#1A2766] bg-white text-xs font-medium transition-all truncate ${
+                          duplicateIndices.has(idx) ? 'border-amber-400 bg-amber-50/50 text-amber-900' : 'border-slate-300 text-slate-800'
+                        }`}
+                      >
+                        <option value="">-- Select Warehouse --</option>
+                        {activeWarehouses.map(w => (
+                          <option key={w.id} value={w.id}>{w.name}</option>
+                        ))}
+                      </select>
+                      {duplicateIndices.has(idx) && (
+                        <p className="text-[10px] text-amber-600 font-medium flex items-center gap-1">
+                          <AlertCircle size={11} className="shrink-0" />
+                          <span>This SKU is already allocated to this warehouse.</span>
+                        </p>
+                      )}
+                    </div>
                   </td>
                   <td className="py-2.5 px-3">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <input 
-                        type="number" 
-                        min="0.0001" 
-                        step="any"
+                      <input
+                        type="number"
+                        min="0"
+                        step={entry.isDecimal ? "0.01" : "1"}
                         value={entry.qty}
-                        onChange={e => {
-                          const val = parseFloat(e.target.value);
-                          updateEntry(idx, 'qty', isNaN(val) ? '' : val);
-                        }}
+                        onChange={e => updateEntry(idx, 'qty', e.target.value)}
                         className="border border-slate-300 rounded-lg px-2 py-1.5 w-20 sm:w-24 outline-none focus:ring-2 focus:ring-[#1A2766] font-semibold text-slate-900 bg-white text-xs shrink min-w-0"
                       />
-                      <span className="text-[11px] font-bold uppercase tracking-wide px-2 py-1.5 rounded-md border shrink-0 whitespace-nowrap bg-slate-100 text-slate-700 border-slate-200">
-                        {entry.uom}
+                      <span className="text-[11px] font-bold uppercase tracking-wide px-2 py-1.5 rounded-md border shrink-0 whitespace-nowrap bg-slate-100 text-slate-700 border-slate-200" title={entry.uom}>
+                        {formatShortUom(entry.uom)}
                       </span>
                     </div>
                   </td>

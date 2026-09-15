@@ -551,7 +551,7 @@ model WarehouseInventory {
   id          String    @id @default(cuid())
   warehouseId String
   skuId       String
-  qty         Decimal   @default(0) @db.Decimal(10, 4)
+  qty         Decimal   @default(0) @db.Decimal(14, 4)
   isOos       Boolean   @default(false)
   zone        String?
   updatedAt   DateTime  @updatedAt
@@ -674,9 +674,9 @@ model InventoryHistory {
   warehouseId   String
   skuId         String
   productName   String
-  beforeQty     Decimal  @db.Decimal(10, 4)
-  afterQty      Decimal  @db.Decimal(10, 4)
-  qtyChange     Decimal  @db.Decimal(10, 4)
+  beforeQty     Decimal  @db.Decimal(14, 4)
+  afterQty      Decimal  @db.Decimal(14, 4)
+  qtyChange     Decimal  @db.Decimal(14, 4)
   remarks       String
   createdBy     String
   referenceType String?
@@ -1698,6 +1698,9 @@ model PreDispatchWorkflow {
   salesorderId          String   @unique
   currentStep           Int      @default(1)
   overallStatus         String   @default("NOT_STARTED")
+  acceptedAt            DateTime?
+  acceptedBy            String?
+  acceptedByName        String?
   
   rateReviewStatus      String   @default("NOT_STARTED")
   rateReviewCompletedBy String?
@@ -1914,7 +1917,7 @@ model StockDeductionAllocation {
   expectedItemName     String?
   expectedSkuId        String?  // resolved local Sku.id (null = unmapped)
   expectedWarehouseId  String?  // resolved local Warehouse.id (null = unmapped)
-  expectedQty          Decimal  @default(0) @db.Decimal(10, 4)
+  expectedQty          Decimal  @default(0) @db.Decimal(14, 4)
   expectedUom          String?
 
   // Allocation state (JSON array of {skuId, skuName, warehouseId, warehouseName, qty, uom})

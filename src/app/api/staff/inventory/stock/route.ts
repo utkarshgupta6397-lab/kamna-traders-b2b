@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
         select: { qty: true }
       });
 
-      return NextResponse.json({ qty: inventory?.qty ?? 0 });
+      return NextResponse.json({ qty: inventory?.qty != null ? Number(inventory.qty) : 0 });
     }
 
     // Fetch all stock mappings for the warehouse

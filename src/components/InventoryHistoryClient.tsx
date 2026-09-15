@@ -561,9 +561,10 @@ function InventoryAdjustModal({ warehouses, skus, onClose, onSuccess }: {
       fetch(`/api/staff/inventory/stock?warehouseId=${warehouseId}&skuId=${skuId}`)
         .then(res => res.json())
         .then(data => {
-          setCurrentQty(data.qty ?? 0);
+          const qty = data.qty !== undefined && data.qty !== null ? Number(data.qty) : 0;
+          setCurrentQty(qty);
           setAdjustmentQty('');
-          setFinalQty(String(data.qty ?? 0));
+          setFinalQty(String(qty));
         })
         .finally(() => setIsLoadingStock(false));
     } else {
@@ -573,27 +574,61 @@ function InventoryAdjustModal({ warehouses, skus, onClose, onSuccess }: {
     }
   }, [warehouseId, skuId]);
 
-  // Sync Logic: Adjust -> Final
-  const handleAdjustmentChange = (val: string) => {
-    setAdjustmentQty(val);
-    if (currentQty === null) return;
-    const delta = parseInt(val) || 0;
-    setFinalQty(String(currentQty + delta));
+  // Helper to round floating-point math cleanly to 2 decimals without artifacts
+  const roundQty = (val: number): number => {
+    return Math.round((val + Number.EPSILON) * 100) / 100;
   };
 
-  // Sync Logic: Final -> Adjust
+  const safeCurrentQty = currentQty ?? 0;
+
+  // Sync Logic: Adjust -> Final (allowing max 2 decimal places)
+  const handleAdjustmentChange = (val: string) => {
+    // Prevent typing/pasting > 2 decimal places: allows optional sign, digits, and max 2 decimals
+    if (val !== '' && !/^[-+]?(\d+(\.\d{0,2})?|\.\d{0,2})?$/.test(val)) {
+      return;
+    }
+    setAdjustmentQty(val);
+    if (currentQty === null) return;
+    if (val === '' || val === '-' || val === '+') {
+      setFinalQty(String(safeCurrentQty));
+      return;
+    }
+    const delta = parseFloat(val);
+    if (!isNaN(delta)) {
+      setFinalQty(String(roundQty(safeCurrentQty + delta)));
+    }
+  };
+
+  // Sync Logic: Final -> Adjust (allowing max 2 decimal places)
   const handleFinalChange = (val: string) => {
+    // Final qty cannot be negative and allows max 2 decimal places
+    if (val !== '' && !/^(\d+(\.\d{0,2})?|\.\d{0,2})?$/.test(val)) {
+      return;
+    }
     setFinalQty(val);
     if (currentQty === null) return;
-    const target = parseInt(val) || 0;
-    setAdjustmentQty(String(target - currentQty));
+    if (val === '' || val === '-') {
+      setAdjustmentQty('');
+      return;
+    }
+    const target = parseFloat(val);
+    if (!isNaN(target)) {
+      setAdjustmentQty(String(roundQty(target - safeCurrentQty)));
+    }
   };
 
   const selectedSku = useMemo(() => skus.find(s => s.id === skuId), [skus, skuId]);
   const unit = selectedSku?.unitShort || selectedSku?.unit || 'Units';
 
-  const afterQty = (currentQty ?? 0) + (parseInt(adjustmentQty) || 0);
-  const isInvalid = afterQty < 0 || !warehouseId || !skuId || !remarks || remarks.trim().length < 3;
+  const parsedDelta = parseFloat(adjustmentQty);
+  const isAdjustmentEmptyOrSign = adjustmentQty === '' || adjustmentQty === '-' || adjustmentQty === '+';
+  const hasValidDecimals = /^[-+]?\d+(\.\d{1,2})?$/.test(adjustmentQty);
+  const afterQty = isAdjustmentEmptyOrSign
+    ? safeCurrentQty
+    : !isNaN(parsedDelta)
+      ? roundQty(safeCurrentQty + parsedDelta)
+      : safeCurrentQty;
+  const isInvalid = afterQty < 0 || !warehouseId || !skuId || !remarks || remarks.trim().length < 3 || isAdjustmentEmptyOrSign || isNaN(parsedDelta) || !hasValidDecimals;
 
   const filteredSkus = useMemo(() => {
     if (!skuSearch || skuSearch.length < 2) return [];
@@ -718,10 +753,11 @@ function InventoryAdjustModal({ warehouses, skus, onClose, onSuccess }: {
               <label className={`block text-xs font-bold uppercase tracking-wider ${!skuId ? 'text-gray-300' : 'text-gray-400'}`}>Adjustment Qty</label>
               <input 
                 type="number" 
+                step="0.01"
                 value={adjustmentQty}
                 onChange={(e) => handleAdjustmentChange(e.target.value)}
                 disabled={!skuId || isLoadingStock}
-                placeholder="+20 or -5"
+                placeholder="+20 or -5.3"
                 className="w-full border rounded-xl p-2.5 text-sm font-black focus:ring-2 focus:ring-[#1A2766] outline-none bg-gray-50 disabled:opacity-50" 
               />
             </div>
@@ -729,6 +765,7 @@ function InventoryAdjustModal({ warehouses, skus, onClose, onSuccess }: {
               <label className={`block text-xs font-bold uppercase tracking-wider ${!skuId ? 'text-gray-300' : 'text-gray-400'}`}>Final Qty</label>
               <input 
                 type="number" 
+                step="0.01"
                 value={finalQty}
                 onChange={(e) => handleFinalChange(e.target.value)}
                 disabled={!skuId || isLoadingStock}

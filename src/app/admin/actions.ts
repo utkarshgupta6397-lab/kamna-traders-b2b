@@ -282,10 +282,14 @@ export async function adjustInventory(data: FormData) {
     throw new Error('System warehouses are protected and inventory adjustments are not allowed.');
   }
   const skuId = data.get('skuId') as string;
-  const delta = parseFloat(data.get('delta') as string);
+  const deltaRaw = (data.get('delta') as string || '').trim();
+  const deltaNum = parseFloat(deltaRaw);
   const remarks = data.get('remarks') as string;
 
-  if (isNaN(delta)) throw new Error('Invalid adjustment quantity');
+  if (isNaN(deltaNum)) throw new Error('Invalid adjustment quantity');
+  if (!/^[-+]?\d+(\.\d{1,2})?$/.test(deltaRaw)) {
+    throw new Error('Invalid adjustment quantity: Maximum 2 decimal places allowed.');
+  }
   if (!remarks || remarks.trim().length < 3) {
     throw new Error('Remarks are mandatory (min 3 chars)');
   }
@@ -298,25 +302,26 @@ export async function adjustInventory(data: FormData) {
   // Ensure Sku record exists to satisfy foreign key constraint on WarehouseInventory
   let validCategoryId: string | null = null;
   if (sku.categoryId) {
-    const catExists = await prisma.category.findUnique({ where: { id: sku.categoryId }, select: { id: true } });
-    if (catExists) validCategoryId = catExists.id;
+    const cat = await prisma.category.findUnique({ where: { id: sku.categoryId } });
+    if (cat) validCategoryId = cat.id;
   }
 
   let validBrandId: string | null = null;
   if (sku.brandId) {
-    const brandExists = await prisma.brand.findUnique({ where: { id: sku.brandId }, select: { id: true } });
-    if (brandExists) validBrandId = brandExists.id;
+    const brand = await prisma.brand.findUnique({ where: { id: sku.brandId } });
+    if (brand) validBrandId = brand.id;
   }
 
   await prisma.sku.upsert({
-    where: { id: skuId },
+    where: { id: sku.id },
     create: {
-      id: skuId,
+      id: sku.id,
       name: sku.name,
-      categoryId: validCategoryId,
+      description: sku.description,
       brandId: validBrandId,
-      price: sku.price || 0,
       unit: sku.unit || 'UNIT',
+      categoryId: validCategoryId,
+      price: sku.price || 0,
       moq: sku.moq || 1,
       stepQty: sku.stepQty || 1,
       caseSize: sku.caseSize || 1,
@@ -325,24 +330,27 @@ export async function adjustInventory(data: FormData) {
     update: {} // No-op if it exists
   });
 
+  const { Prisma } = await import('@prisma/client');
+  const deltaDecimal = new Prisma.Decimal(deltaNum.toString());
+
   await prisma.$transaction(async (tx) => {
     // 1. Get current stock
     const currentInv = await tx.warehouseInventory.findUnique({
       where: { warehouseId_skuId: { warehouseId, skuId } }
     });
 
-    const beforeQty = currentInv?.qty ? parseFloat(currentInv.qty.toString()) : 0;
-    const afterQty = beforeQty + delta;
+    const beforeQtyDecimal = currentInv?.qty ? new Prisma.Decimal(currentInv.qty.toString()) : new Prisma.Decimal(0);
+    const afterQtyDecimal = beforeQtyDecimal.add(deltaDecimal);
 
-    if (afterQty < 0) {
-      throw new Error(`Invalid Adjustment: Resulting stock cannot be negative (Current: ${beforeQty}, Attempted: ${delta})`);
+    if (afterQtyDecimal.isNegative()) {
+      throw new Error(`Invalid Adjustment: Resulting stock cannot be negative (Current: ${beforeQtyDecimal.toString()}, Attempted: ${deltaDecimal.toString()})`);
     }
 
     // 2. Update/Create inventory
     await tx.warehouseInventory.upsert({
       where: { warehouseId_skuId: { warehouseId, skuId } },
-      update: { qty: { increment: delta }, isOos: afterQty <= 0 },
-      create: { warehouseId, skuId, qty: afterQty, isOos: afterQty <= 0 },
+      update: { qty: afterQtyDecimal, isOos: afterQtyDecimal.lte(0) },
+      create: { warehouseId, skuId, qty: afterQtyDecimal, isOos: afterQtyDecimal.lte(0) },
     });
 
     // 3. Log History
@@ -351,9 +359,9 @@ export async function adjustInventory(data: FormData) {
         warehouseId,
         skuId,
         productName: sku.name,
-        beforeQty,
-        afterQty,
-        qtyChange: delta,
+        beforeQty: beforeQtyDecimal,
+        afterQty: afterQtyDecimal,
+        qtyChange: deltaDecimal,
         remarks: `Manual Adjustment | ${remarks.trim()}`,
         createdBy: session.userId as string,
       }

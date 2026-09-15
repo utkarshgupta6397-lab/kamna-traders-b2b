@@ -228,6 +228,7 @@ export default function IncomingSOClient({ endpoint: initialEndpoint, apiKey: in
 result = Map();
 
 salesorder_id = salesorder.get("salesorder_id");
+salesorder_number = salesorder.get("salesorder_number");
 
 if(salesorder_id == null || salesorder_id == "")
 {
@@ -242,6 +243,10 @@ headerMap.put("Content-Type", "application/json");
 
 payload = Map();
 payload.put("salesorder_id", salesorder_id);
+if(salesorder_number != null && salesorder_number != "")
+{
+    payload.put("salesorder_number", salesorder_number);
+}
 
 response = invokeurl
 [

@@ -14,6 +14,7 @@ export default async function IncomingQueuePage() {
     isAdmin,
     canForceArchive: isAdmin || Boolean(session?.dispatch_force_archive),
     canReview: isAdmin || Boolean(session?.dispatch_post_dispatch_review || session?.dispatch_post_dispatch),
+    canAccept: isAdmin || Boolean(session?.dispatch_view),
   };
 
   return <IncomingQueueClient permissions={permissions} />;

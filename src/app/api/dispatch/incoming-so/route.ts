@@ -50,8 +50,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const { salesorder_id } = body;
-    console.log(`[INCOMING SO][${requestId}] salesorder_id received: ${salesorder_id}`);
+    const { salesorder_id, salesorder_number } = body;
+    console.log(`[INCOMING SO][${requestId}] salesorder_id received: ${salesorder_id}, salesorder_number: ${salesorder_number || 'N/A'}`);
 
     if (!salesorder_id || typeof salesorder_id !== 'string' || salesorder_id.trim() === '') {
       console.log(`[INCOMING SO][${requestId}] Missing or invalid salesorder_id.`);
@@ -77,6 +77,7 @@ export async function POST(request: Request) {
     });
 
     const cleanId = salesorder_id.trim();
+    const cleanNumber = typeof salesorder_number === 'string' && salesorder_number.trim() ? salesorder_number.trim() : null;
 
     // Check if it already exists
     let dispatchOrder = await prisma.dispatchIncomingOrder.findUnique({
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
       dispatchOrder = await prisma.dispatchIncomingOrder.create({
         data: {
           zohoSalesorderId: cleanId,
+          salesorderNumber: cleanNumber,
           status: 'NEW',
           activatedAt: now,
         }

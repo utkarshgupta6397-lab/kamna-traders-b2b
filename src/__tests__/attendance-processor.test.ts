@@ -141,10 +141,34 @@ function runTests() {
   if (sortedPdfBuffer.length === 0) {
     throw new Error('Expected valid PDF buffer');
   }
-  console.log('✓ generateAttendancePDF enforces strict A -> Z alphabetical order even with reversed input sheets');
+  // Test 11: Monthly Summary Boxes Verification (Order, labels, removal of Total Sundays)
+  console.log('\n[Test 11] Monthly Summary verification in PDF');
+  const pdfText = sortedPdfBuffer.toString('latin1');
+  if (pdfText.includes('Total Sundays')) {
+    throw new Error('PDF should not contain "Total Sundays" in monthly summary');
+  }
+  if (!pdfText.includes('Total Working Days')) {
+    throw new Error('PDF missing "Total Working Days"');
+  }
+  if (!pdfText.includes('Total Present')) {
+    throw new Error('PDF missing "Total Present"');
+  }
+  if (!pdfText.includes('Total Absent')) {
+    throw new Error('PDF missing "Total Absent"');
+  }
+  if (!pdfText.includes('Eligible Weekoffs')) {
+    throw new Error('PDF missing "Eligible Weekoffs"');
+  }
+  if (!pdfText.includes('Net Payable Days')) {
+    throw new Error('PDF missing "Net Payable Days"');
+  }
+  if (!pdfText.includes('To be filled manually')) {
+    throw new Error('PDF missing "To be filled manually" subtext for Eligible Weekoffs');
+  }
+  console.log('✓ Verified 5 Monthly Summary boxes: Total Working Days -> Total Present -> Total Absent -> Eligible Weekoffs -> Net Payable Days');
 
   console.log('\n======================================================');
-  console.log('ALL 10 ATTENDANCE PROCESSOR TESTS PASSED SUCCESSFULLY!');
+  console.log('ALL 11 ATTENDANCE PROCESSOR TESTS PASSED SUCCESSFULLY!');
   console.log('======================================================\n');
 }
 

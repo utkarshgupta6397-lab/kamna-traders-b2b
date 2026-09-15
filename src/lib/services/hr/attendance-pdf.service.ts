@@ -106,8 +106,8 @@ function renderEmployeeSheet(doc: jsPDF, sheet: MonthlyAttendanceSheet) {
   const fields = [
     { label: 'Total Working Days', sub: 'Excluding Sundays' },
     { label: 'Total Present', sub: 'Physical / On-Duty' },
-    { label: 'Total Sundays', sub: `Calendar (${sheet.totalSundays})` },
     { label: 'Total Absent', sub: 'Approved / Unapproved' },
+    { label: 'Eligible Weekoffs', sub: 'To be filled manually' },
     { label: 'Net Payable Days', sub: 'Final Count' },
   ];
 

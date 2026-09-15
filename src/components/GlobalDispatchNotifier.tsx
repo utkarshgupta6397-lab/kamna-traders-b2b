@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function GlobalDispatchNotifier() {
+  const router = useRouter();
   const pathname = usePathname();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const knownIdsRef = useRef<Set<string>>(new Set());
@@ -116,11 +118,60 @@ export default function GlobalDispatchNotifier() {
             if (order.id) knownIdsRef.current.add(order.id);
 
             // Toast Notification
-            const soNum = order.salesorderNumber || order.zohoSalesorderId;
-            toast.success(`New Sales Order Received\n${soNum} has been pushed to Dispatch.`, {
-              duration: 5000,
-              icon: '📥',
-            });
+            const soNum = order.salesorderNumber || (order.zohoSalesorderId ? `SO-${order.zohoSalesorderId}` : 'New Sales Order');
+
+            toast.custom(
+              (t) => (
+                <div
+                  role="alert"
+                  className={`${
+                    t.visible ? 'animate-enter' : 'animate-leave'
+                  } max-w-md w-full bg-white shadow-xl rounded-xl pointer-events-auto flex ring-1 ring-black/10 border-l-4 border-[#1A2766] overflow-hidden cursor-pointer hover:bg-slate-50/80 transition-all`}
+                  onClick={() => {
+                    toast.dismiss(t.id);
+                    const targetId = order.id || order.zohoSalesorderId;
+                    router.push(`/staff/dashboard/dispatch/incoming?highlight=${encodeURIComponent(targetId)}`);
+                  }}
+                >
+                  <div className="flex-1 w-0 p-4">
+                    <div className="flex items-start">
+                      <div className="flex-shrink-0 pt-0.5 text-2xl">
+                        📥
+                      </div>
+                      <div className="ml-3 flex-1">
+                        <p className="text-sm font-bold text-gray-900">
+                          New Sales Order Received
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-[#1A2766]">
+                          {soNum}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Pushed to Dispatch. Click to open incoming queue.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex border-l border-gray-100">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toast.dismiss(t.id);
+                      }}
+                      className="w-full border border-transparent rounded-none rounded-r-lg p-3 flex items-center justify-center text-xs font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-100 focus:outline-none transition-colors"
+                      title="Dismiss notification"
+                      aria-label="Dismiss notification"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+              ),
+              {
+                id: `so-${dedupeKey}`,
+                duration: 8000,
+              }
+            );
 
             // Play Sound Twice
             if (audioRef.current) {
@@ -139,6 +190,69 @@ export default function GlobalDispatchNotifier() {
             }
           }
 
+          if (data.type === 'update_order' && data.order) {
+            const order = data.order;
+            // If we previously displayed a placeholder with just zohoSalesorderId, update existing toast if open
+            if (order.salesorderNumber && order.zohoSalesorderId) {
+              const dedupeKey = order.zohoSalesorderId;
+              const toastId = `so-${dedupeKey}`;
+              const soNum = order.salesorderNumber;
+
+              toast.custom(
+                (t) => (
+                  <div
+                    role="alert"
+                    className={`${
+                      t.visible ? 'animate-enter' : 'animate-leave'
+                    } max-w-md w-full bg-white shadow-xl rounded-xl pointer-events-auto flex ring-1 ring-black/10 border-l-4 border-[#1A2766] overflow-hidden cursor-pointer hover:bg-slate-50/80 transition-all`}
+                    onClick={() => {
+                      toast.dismiss(t.id);
+                      const targetId = order.id || order.zohoSalesorderId;
+                      router.push(`/staff/dashboard/dispatch/incoming?highlight=${encodeURIComponent(targetId)}`);
+                    }}
+                  >
+                    <div className="flex-1 w-0 p-4">
+                      <div className="flex items-start">
+                        <div className="flex-shrink-0 pt-0.5 text-2xl">
+                          📥
+                        </div>
+                        <div className="ml-3 flex-1">
+                          <p className="text-sm font-bold text-gray-900">
+                            New Sales Order Received
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-[#1A2766]">
+                            {soNum}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Pushed to Dispatch. Click to open incoming queue.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex border-l border-gray-100">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toast.dismiss(t.id);
+                        }}
+                        className="w-full border border-transparent rounded-none rounded-r-lg p-3 flex items-center justify-center text-xs font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-100 focus:outline-none transition-colors"
+                        title="Dismiss notification"
+                        aria-label="Dismiss notification"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ),
+                {
+                  id: toastId,
+                  duration: 8000,
+                }
+              );
+            }
+          }
+
           if (data.type === 'truck_upload' && data.data) {
             const upload = data.data;
             const dedupeKey = `truck_${upload.uploadId || upload.salesOrderId}`;
@@ -149,10 +263,54 @@ export default function GlobalDispatchNotifier() {
 
             const soNum = upload.salesOrderNumber || 'Sales Order';
             const cust = upload.customerName ? ` - ${upload.customerName}` : '';
-            toast.success(`Truck Details Uploaded: ${soNum}${cust}`, {
-              duration: 6000,
-              icon: '🚚',
-            });
+            toast.custom(
+              (t) => (
+                <div
+                  role="alert"
+                  className={`${
+                    t.visible ? 'animate-enter' : 'animate-leave'
+                  } max-w-md w-full bg-white shadow-xl rounded-xl pointer-events-auto flex ring-1 ring-black/10 border-l-4 border-purple-600 overflow-hidden cursor-pointer hover:bg-slate-50/80 transition-all`}
+                  onClick={() => {
+                    toast.dismiss(t.id);
+                    router.push('/staff/dashboard/dispatch/incoming');
+                  }}
+                >
+                  <div className="flex-1 w-0 p-4">
+                    <div className="flex items-start">
+                      <div className="flex-shrink-0 pt-0.5 text-2xl">
+                        🚚
+                      </div>
+                      <div className="ml-3 flex-1">
+                        <p className="text-sm font-bold text-gray-900">
+                          Truck Details Uploaded
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-purple-700">
+                          {soNum}{cust}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex border-l border-gray-100">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toast.dismiss(t.id);
+                      }}
+                      className="w-full border border-transparent rounded-none rounded-r-lg p-3 flex items-center justify-center text-xs font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-100 focus:outline-none transition-colors"
+                      title="Dismiss notification"
+                      aria-label="Dismiss notification"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+              ),
+              {
+                id: dedupeKey,
+                duration: 8000,
+              }
+            );
 
             // Play notification sound once
             if (audioRef.current) {

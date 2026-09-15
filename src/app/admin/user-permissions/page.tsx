@@ -64,9 +64,39 @@ export default function UserPermissionsPage() {
       if (!newValue && key === 'dispatch_stock_approval_view') {
         updated.dispatch_stock_approval_approve = false;
       }
+      if (newValue && [
+        'mobile_accounts_customer_statement',
+        'mobile_accounts_customer_dcr_lookup',
+        'mobile_accounts_summary_view',
+      ].includes(key)) {
+        updated.mobile_accounts = true;
+      }
+      if (!newValue && key === 'mobile_accounts') {
+        updated.mobile_accounts_customer_statement = false;
+        updated.mobile_accounts_customer_dcr_lookup = false;
+        updated.mobile_accounts_summary_view = false;
+      }
+      if (newValue && [
+        'mobile_notes_create',
+        'mobile_notes_edit',
+        'mobile_notes_archive',
+      ].includes(key)) {
+        updated.mobile_notes_view = true;
+      }
+      if (!newValue && key === 'mobile_notes_view') {
+        updated.mobile_notes_create = false;
+        updated.mobile_notes_edit = false;
+        updated.mobile_notes_archive = false;
+      }
       if (newValue && postDispatchChildren.includes(key)) {
         updated.mobile_dispatch = true;
         updated.mobile_dispatch_post_dispatch = true;
+      }
+      if (!newValue && key === 'mobile_dispatch') {
+        updated.mobile_dispatch_post_dispatch = false;
+        postDispatchChildren.forEach((child) => {
+          updated[child] = false;
+        });
       }
       if (newValue && [
         'dispatch_post_dispatch_receiving_verify',
@@ -131,7 +161,7 @@ export default function UserPermissionsPage() {
     const catalogEnabledUsers = users.filter(u => u.role === 'ADMIN' || u.accountsAccess);
     const dispatchEnabledUsers = users.filter(u => u.role === 'ADMIN' || u.dispatch_view);
     const mobileEnabledUsers = users.filter(
-      u => u.role === 'ADMIN' || u.mobile_stock_management || u.mobile_accounts || u.mobile_dispatch
+      u => u.role === 'ADMIN' || u.mobile_stock_management || u.mobile_accounts || u.mobile_dispatch || u.mobile_notes_view
     );
     return {
       total: users.length,

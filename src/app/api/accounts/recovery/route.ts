@@ -6,7 +6,13 @@ import { getSession } from '@/lib/auth';
 export async function GET() {
   try {
     const session = await getSession();
-    if (!session || (session.role !== 'ADMIN' && !session.accounts_summary_view && !session.accounts_recovery_manage)) {
+    const hasAccess = session && (
+      session.role === 'ADMIN' ||
+      session.accounts_summary_view ||
+      session.accounts_recovery_manage ||
+      (session.mobile_accounts && session.mobile_accounts_summary_view)
+    );
+    if (!hasAccess) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -59,7 +65,13 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const session = await getSession();
-    if (!session || (session.role !== 'ADMIN' && !session.accounts_summary_view && !session.accounts_recovery_manage)) {
+    const hasAccess = session && (
+      session.role === 'ADMIN' ||
+      session.accounts_summary_view ||
+      session.accounts_recovery_manage ||
+      (session.mobile_accounts && session.mobile_accounts_summary_view)
+    );
+    if (!hasAccess) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 

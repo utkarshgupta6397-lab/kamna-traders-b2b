@@ -190,17 +190,6 @@ export default function NotesListingClient({
                 <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-[#1A2766]" />
               )}
             </button>
-
-            {/* Create Button */}
-            {permissions.canCreate && (
-              <Link
-                href="/mobile/notes/create"
-                className="flex items-center justify-center w-9 h-9 rounded-full bg-white text-[#1A2766] shadow-sm active:scale-90 transition-transform font-bold"
-                aria-label="Create note"
-              >
-                <Plus size={20} strokeWidth={2.5} />
-              </Link>
-            )}
           </div>
         </div>
       </header>
@@ -312,6 +301,18 @@ export default function NotesListingClient({
                 />
               ))}
             </div>
+          </div>
+        )}
+        {/* Floating Action Button (FAB) for Create Note */}
+        {permissions.canCreate && (
+          <div className="fixed bottom-20 right-4 sm:right-[max(1rem,calc((100vw-430px)/2+1rem))] z-30 pointer-events-none">
+            <Link
+              href="/mobile/notes/create"
+              aria-label="Create Note"
+              className="pointer-events-auto flex items-center justify-center w-14 h-14 rounded-full bg-[#1A2766] text-white shadow-lg shadow-[#1A2766]/25 active:scale-95 transition-all hover:bg-[#152055] focus:outline-hidden focus:ring-2 focus:ring-[#1A2766] focus:ring-offset-2"
+            >
+              <Plus size={26} strokeWidth={2.5} />
+            </Link>
           </div>
         )}
       </main>

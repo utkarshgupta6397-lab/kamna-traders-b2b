@@ -398,6 +398,7 @@ export default function PreDispatchWorkflowClient({
             </div>
           )}
 
+
           <div className="flex-1 flex flex-col relative w-full h-full min-h-0">
             {activeStep === 1 && <RateReviewStep order={order} workflow={workflow} onRefresh={fetchWorkflow} hasPermission={permissions?.canRateReview ?? true} />}
             {activeStep === 2 && canAccessStep(2) && (

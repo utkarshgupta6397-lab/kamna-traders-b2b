@@ -228,7 +228,7 @@ export async function POST(request: Request) {
     if (lock.isLocked && lock.lockedAt && (Date.now() - lock.lockedAt.getTime() < 2 * 60 * 1000)) {
       return NextResponse.json({
         success: false,
-        error: 'Summary is currently being refreshed by another user...',
+        error: 'Summary is currently being refreshed. Please try again shortly.',
       }, { status: 409 });
     }
 

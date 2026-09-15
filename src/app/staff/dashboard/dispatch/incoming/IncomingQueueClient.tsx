@@ -22,11 +22,15 @@ import {
   Archive,
   History,
   Building2,
+  Lock,
+  Check,
+  Calendar,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { WorkflowHistoryModal } from '@/components/dispatch/WorkflowHistoryModal';
 import DesktopPostDispatchView from './DesktopPostDispatchView';
 import { useSharedClock } from '@/hooks/useSharedClock';
+import { playDispatchChime } from '@/lib/dispatch-audio';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -35,6 +39,9 @@ interface PreDispatchWorkflow {
   dispatchOrderId: string;
   currentStep: number;
   overallStatus: string;
+  acceptedAt?: string | null;
+  acceptedBy?: string | null;
+  acceptedByName?: string | null;
   rateReviewStatus: string;
   paymentStatus: string;
   truckDetailsStatus: string;
@@ -98,7 +105,7 @@ type QueueFilter =
   | 'archived'
   | 'all';
 
-type SortKey = 'index' | 'salesOrder' | 'customer' | 'amount' | 'items' | 'waiting' | 'status';
+type SortKey = 'date' | 'index' | 'salesOrder' | 'customer' | 'amount' | 'items' | 'waiting' | 'status';
 
 type WorkflowStage =
   | 'rate_review'
@@ -110,6 +117,16 @@ type WorkflowStage =
   | 'sent_back';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function getArchivedDate(order: DispatchIncomingOrder): Date {
+  const ts =
+    order.preDispatchWorkflow?.invoiceConfirmAt ||
+    order.preDispatchWorkflow?.readyCompletedAt ||
+    order.updatedAt ||
+    order.activatedAt ||
+    order.receivedAt;
+  return new Date(ts);
+}
 
 function getOrderStage(order: DispatchIncomingOrder): WorkflowStage {
   if (order.status === 'SENT_BACK_TO_OPS') return 'sent_back';
@@ -244,6 +261,7 @@ export interface IncomingQueuePermissions {
   isAdmin?: boolean;
   canForceArchive?: boolean;
   canReview?: boolean;
+  canAccept?: boolean;
 }
 
 export default function IncomingQueueClient({
@@ -276,6 +294,7 @@ export default function IncomingQueueClient({
   const [sseStatus, setSseStatus] = useState<'connecting' | 'connected' | 'reconnecting'>('connecting');
   const [highlightedRow, setHighlightedRow] = useState<string | null>(null);
   const [fetchingIds, setFetchingIds] = useState<Set<string>>(new Set());
+  const [acceptingIds, setAcceptingIds] = useState<Set<string>>(new Set());
 
   // Pagination & Sorting state
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'waiting', direction: 'asc' });
@@ -300,10 +319,15 @@ export default function IncomingQueueClient({
   // Deduplication ref for SSE
   const knownIdsRef = useRef<Set<string>>(new Set());
 
-  // Reset pagination on search or tab change
+  // Dedicated date filter state for Archived view (defaults to 'today')
+  const [archivedDateFilter, setArchivedDateFilter] = useState<string>(() => {
+    return format(new Date(), 'yyyy-MM-dd');
+  });
+
+  // Reset pagination on search, tab change, or archived date filter change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, queueFilter]);
+  }, [searchQuery, queueFilter, archivedDateFilter]);
 
   // Handle Escape Key for Modal
   useEffect(() => {
@@ -405,6 +429,21 @@ export default function IncomingQueueClient({
           const idSet = new Set<string>();
           json.data.forEach((o: DispatchIncomingOrder) => idSet.add(o.zohoSalesorderId));
           knownIdsRef.current = idSet;
+
+          // Check if highlight query param was passed from notification click
+          const highlightParam = searchParams.get('highlight');
+          if (highlightParam) {
+            const matched = json.data.find(
+              (o: DispatchIncomingOrder) =>
+                o.id === highlightParam ||
+                o.zohoSalesorderId === highlightParam ||
+                o.salesorderNumber === highlightParam
+            );
+            if (matched) {
+              setHighlightedRow(matched.id);
+              setTimeout(() => setHighlightedRow(null), 4000);
+            }
+          }
         }
       } else {
         toast.error('Failed to load incoming queue.');
@@ -429,6 +468,61 @@ export default function IncomingQueueClient({
       setFetchingIds(prev => {
         const next = new Set(prev);
         next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const handleAccept = async (order: DispatchIncomingOrder) => {
+    if (acceptingIds.has(order.id)) return;
+
+    setAcceptingIds(prev => new Set(prev).add(order.id));
+    try {
+      const res = await fetch(`/api/dispatch/incoming-orders/${order.id}/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to accept Sales Order.');
+      }
+
+      toast.success(
+        data.alreadyAccepted
+          ? 'Sales Order is already accepted.'
+          : 'Sales Order accepted successfully. Review is now unlocked.'
+      );
+
+      // Immediately update local state so Review unlocks without full page reload
+      const updatedWorkflow = data.data?.workflow;
+      const updatedOrder = data.data?.order;
+
+      setOrders(prev =>
+        prev.map(o => {
+          if (o.id === order.id) {
+            return {
+              ...o,
+              ...(updatedOrder || {}),
+              preDispatchWorkflow: updatedWorkflow || {
+                ...(o.preDispatchWorkflow || ({} as any)),
+                acceptedAt: new Date().toISOString(),
+                overallStatus: 'IN_PROGRESS',
+              },
+            };
+          }
+          return o;
+        })
+      );
+
+      setHighlightedRow(order.id);
+      setTimeout(() => setHighlightedRow(null), 3000);
+    } catch (err: any) {
+      toast.error(err.message || 'Error accepting Sales Order.');
+    } finally {
+      setAcceptingIds(prev => {
+        const next = new Set(prev);
+        next.delete(order.id);
         return next;
       });
     }
@@ -495,6 +589,8 @@ export default function IncomingQueueClient({
               setQueueFilter('active');
               setHighlightedRow(order.id);
               setTimeout(() => setHighlightedRow(null), 3000);
+              // Play audio chime for the incoming sales order
+              playDispatchChime();
             }
           } else if (data.type === 'update_order') {
             const updated: DispatchIncomingOrder = data.order;
@@ -576,7 +672,14 @@ export default function IncomingQueueClient({
         base = orders.filter(o => o.status === 'SENT_BACK_TO_OPS');
         break;
       case 'archived':
-        base = orders.filter(o => getOrderStage(o) === 'archived');
+        base = orders.filter(o => {
+          if (getOrderStage(o) !== 'archived') return false;
+          if (archivedDateFilter) {
+            const archivedDateStr = format(getArchivedDate(o), 'yyyy-MM-dd');
+            return archivedDateStr === archivedDateFilter;
+          }
+          return true;
+        });
         break;
       case 'all':
       default:
@@ -593,7 +696,7 @@ export default function IncomingQueueClient({
         o.zohoSalesorderId.toLowerCase().includes(lq) ||
         (o.preDispatchWorkflow?.mappedInvoiceNumber?.toLowerCase() || '').includes(lq)
     );
-  }, [orders, queueFilter, searchQuery]);
+  }, [orders, queueFilter, searchQuery, archivedDateFilter]);
 
   // Sort
   const sortedOrders = useMemo(() => {
@@ -603,6 +706,11 @@ export default function IncomingQueueClient({
       let valB: any = null;
 
       switch (sortConfig.key) {
+        case 'date': {
+          const timeA = getArchivedDate(a).getTime();
+          const timeB = getArchivedDate(b).getTime();
+          return sortConfig.direction === 'asc' ? timeA - timeB : timeB - timeA;
+        }
         case 'index':
         case 'waiting': {
           const isArchivedA = getOrderStage(a) === 'archived';
@@ -826,22 +934,76 @@ export default function IncomingQueueClient({
             </div>
           </div>
 
-          {/* Search + Refresh */}
-          <div className="px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/30">
-            <div className="relative w-full sm:w-80 flex-shrink-0">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-              <input
-                type="text"
-                placeholder="Search SO No., Invoice, or Customer…"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-4 py-1.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
-              />
+          {/* Search + Refresh + Archived Date Filter */}
+          <div className="px-6 py-3 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/30">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
+              <div className="relative w-full sm:w-80 flex-shrink-0">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                <input
+                  type="text"
+                  placeholder="Search SO No., Invoice, or Customer…"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-4 py-1.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766]"
+                />
+              </div>
+
+              {/* Archived View Only: Date Filter */}
+              {queueFilter === 'archived' && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2.5 py-1 text-xs shadow-xs">
+                    <Calendar size={13} className="text-[#1A2766] shrink-0" />
+                    <span className="text-gray-500 font-medium">Date:</span>
+                    <button
+                      type="button"
+                      onClick={() => setArchivedDateFilter(format(new Date(), 'yyyy-MM-dd'))}
+                      className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                        archivedDateFilter === format(new Date(), 'yyyy-MM-dd')
+                          ? 'bg-[#1A2766] text-white'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setArchivedDateFilter('')}
+                      className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                        archivedDateFilter === ''
+                          ? 'bg-[#1A2766] text-white'
+                          : 'text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      All
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs shadow-xs">
+                    <label htmlFor="archived-goto-date" className="text-gray-500 font-medium whitespace-nowrap">
+                      Go To:
+                    </label>
+                    <input
+                      id="archived-goto-date"
+                      type="date"
+                      value={archivedDateFilter}
+                      onChange={e => setArchivedDateFilter(e.target.value)}
+                      className="bg-transparent text-gray-700 font-medium focus:outline-none cursor-pointer text-xs"
+                    />
+                  </div>
+
+                  {archivedDateFilter && (
+                    <span className="text-xs text-gray-500 font-medium bg-slate-100 px-2 py-0.5 rounded border border-slate-200 whitespace-nowrap">
+                      Showing: {format(new Date(`${archivedDateFilter}T00:00:00`), 'dd MMM yyyy')}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
+
             <button
               onClick={fetchInitialData}
               disabled={loading}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 transition-colors disabled:opacity-50"
+              className="flex items-center justify-center gap-2 px-3 py-1.5 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-600 transition-colors disabled:opacity-50 shrink-0 self-end sm:self-auto"
             >
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
               Refresh
@@ -853,6 +1015,10 @@ export default function IncomingQueueClient({
             <table className="w-full text-left border-collapse text-sm">
               <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
                 <tr>
+                  {/* DATE Column - FIRST table column in Archived view ONLY */}
+                  {queueFilter === 'archived' && (
+                    <SortableHeader label="Date" sortKey="date" />
+                  )}
                   <SortableHeader label="#" sortKey="index" align="center" />
                   <th className="px-4 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-200 whitespace-nowrap">
                     Warehouse
@@ -869,7 +1035,7 @@ export default function IncomingQueueClient({
               <tbody className="divide-y divide-gray-100 bg-white">
                 {paginatedOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-gray-400">
+                    <td colSpan={queueFilter === 'archived' ? 10 : 9} className="px-6 py-12 text-center text-gray-400">
                       {loading ? (
                         <div className="flex items-center justify-center gap-2">
                           <RefreshCw size={15} className="animate-spin text-gray-300" />
@@ -908,6 +1074,18 @@ export default function IncomingQueueClient({
                           highlightedRow === order.id ? 'bg-blue-50' : ''
                         }`}
                       >
+                        {/* DATE Column - FIRST table column in Archived view ONLY */}
+                        {queueFilter === 'archived' && (
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="font-semibold text-gray-800 text-xs font-mono">
+                              {format(getArchivedDate(order), 'dd MMM yyyy')}
+                            </div>
+                            <div className="text-[10px] text-gray-400 mt-0.5 font-mono">
+                              {format(getArchivedDate(order), 'hh:mm a')}
+                            </div>
+                          </td>
+                        )}
+
                         {/* # Index */}
                         <td className="px-4 py-3 text-center text-xs font-mono text-gray-400 w-12">
                           {globalIndex}
@@ -1072,12 +1250,73 @@ export default function IncomingQueueClient({
                               </a>
                             ) : order.status === 'NEW' ? (
                               <>
-                                <a
-                                  href={`/staff/dashboard/dispatch/incoming/${order.id}/review`}
-                                  className="px-2.5 py-1 text-xs font-bold text-white bg-[#1A2766] rounded hover:bg-blue-900 transition-colors"
-                                >
-                                  Review
-                                </a>
+                                {/* Accept Button (Immediately before Review) */}
+                                {(() => {
+                                  const isAccepted = Boolean(order.preDispatchWorkflow?.acceptedAt);
+                                  const isAccepting = acceptingIds.has(order.id);
+                                  const canAcceptOrder = permissions?.isAdmin || permissions?.canAccept !== false;
+
+                                  if (!isAccepted) {
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAccept(order)}
+                                        disabled={isAccepting || !canAcceptOrder}
+                                        title={
+                                          !canAcceptOrder
+                                            ? 'You do not have permission to accept incoming orders'
+                                            : 'Accept Sales Order into Dispatch workflow'
+                                        }
+                                        aria-label="Accept Sales Order"
+                                        className="px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                                      >
+                                        {isAccepting ? (
+                                          <>
+                                            <Loader2 size={12} className="animate-spin" />
+                                            <span>Accepting...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Check size={12} />
+                                            <span>Accept</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    );
+                                  }
+
+                                  return null;
+                                })()}
+
+                                {/* Review Button (Active only after Acceptance) */}
+                                {(() => {
+                                  const isAccepted = Boolean(order.preDispatchWorkflow?.acceptedAt);
+
+                                  if (isAccepted) {
+                                    return (
+                                      <a
+                                        href={`/staff/dashboard/dispatch/incoming/${order.id}/review`}
+                                        className="px-2.5 py-1 text-xs font-bold text-white bg-[#1A2766] rounded hover:bg-blue-900 transition-colors"
+                                      >
+                                        Review
+                                      </a>
+                                    );
+                                  }
+
+                                  return (
+                                    <button
+                                      type="button"
+                                      disabled
+                                      title="Acceptance is required before Review can begin"
+                                      aria-label="Review locked until accepted"
+                                      className="px-2.5 py-1 text-xs font-bold text-gray-400 bg-gray-100 rounded border border-gray-200 cursor-not-allowed inline-flex items-center gap-1"
+                                    >
+                                      <Lock size={11} className="text-gray-400" />
+                                      <span>Review</span>
+                                    </button>
+                                  );
+                                })()}
+
                                 <button
                                   onClick={() => handleOpenSendBackModal(order)}
                                   title="Send Back to Operations Team"

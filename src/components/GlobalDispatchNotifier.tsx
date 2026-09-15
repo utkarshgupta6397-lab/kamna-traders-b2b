@@ -4,56 +4,13 @@ import { useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { playDispatchChime } from '@/lib/dispatch-audio';
 
 export default function GlobalDispatchNotifier() {
   const router = useRouter();
   const pathname = usePathname();
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const knownIdsRef = useRef<Set<string>>(new Set());
-  const isEnabledRef = useRef(false);
-
-  // If user is already on the Dispatch Incoming page, that page directly manages
-  // its own SSE connection, table updates, and user alerts.
   const isDispatchPage = pathname?.startsWith('/staff/dashboard/dispatch/incoming');
-
-  useEffect(() => {
-    // Only run on client
-    if (typeof window !== 'undefined') {
-      const audio = new Audio('/sounds/dispatch-bell.wav');
-      audioRef.current = audio;
-      // Pre-load audio
-      audio.load();
-      
-      // Auto-unlock audio on first interaction
-      const handleInteraction = () => {
-        if (!isEnabledRef.current) {
-          // Explicitly unlock audio on user interaction by playing and immediately pausing
-          audio.play().then(() => {
-            audio.pause();
-            audio.currentTime = 0;
-            isEnabledRef.current = true;
-            console.log('[GlobalDispatchNotifier] Audio unlocked successfully.');
-          }).catch(err => {
-            console.warn('[GlobalDispatchNotifier] Silent unlock failed:', err);
-          });
-        }
-        
-        document.removeEventListener('click', handleInteraction);
-        document.removeEventListener('keydown', handleInteraction);
-        document.removeEventListener('touchstart', handleInteraction);
-      };
-      
-      document.addEventListener('click', handleInteraction, { once: true });
-      document.addEventListener('keydown', handleInteraction, { once: true });
-      document.addEventListener('touchstart', handleInteraction, { once: true });
-      
-      return () => {
-        document.removeEventListener('click', handleInteraction);
-        document.removeEventListener('keydown', handleInteraction);
-        document.removeEventListener('touchstart', handleInteraction);
-      };
-    }
-  }, []);
 
   useEffect(() => {
     // If the user is on the Dispatch Incoming page, that page already handles
@@ -173,21 +130,8 @@ export default function GlobalDispatchNotifier() {
               }
             );
 
-            // Play Sound Twice
-            if (audioRef.current) {
-              audioRef.current.play().catch(err => {
-                console.warn('[GlobalDispatchNotifier] Audio play restricted by browser:', err);
-              });
-              
-              setTimeout(() => {
-                if (audioRef.current) {
-                  audioRef.current.currentTime = 0;
-                  audioRef.current.play().catch(err => {
-                    console.warn('[GlobalDispatchNotifier] Second audio play restricted by browser:', err);
-                  });
-                }
-              }, 800);
-            }
+            // Play Sound Twice using robust shared audio manager
+            playDispatchChime();
           }
 
           if (data.type === 'update_order' && data.order) {
@@ -313,12 +257,7 @@ export default function GlobalDispatchNotifier() {
             );
 
             // Play notification sound once
-            if (audioRef.current) {
-              audioRef.current.currentTime = 0;
-              audioRef.current.play().catch(err => {
-                console.warn('[GlobalDispatchNotifier] Truck audio play restricted by browser:', err);
-              });
-            }
+            playDispatchChime();
           }
         } catch (err) {
           console.error('[GlobalDispatchNotifier] Message parse error:', err);

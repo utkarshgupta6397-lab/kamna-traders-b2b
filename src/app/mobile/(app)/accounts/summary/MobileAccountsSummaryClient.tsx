@@ -25,6 +25,7 @@ import {
   Layers,
   MapPin,
   Calendar,
+  BarChart3,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import MobileAccountsSummarySkeleton from './MobileAccountsSummarySkeleton';
@@ -148,6 +149,26 @@ function formatINR(val: number): string {
   }).format(val || 0);
 }
 
+function formatCompactINR(val: number): string {
+  if (!val || val <= 0) return '₹0';
+  if (val >= 10000000) {
+    // 1 Crore = 10,000,000
+    const cr = val / 10000000;
+    return `₹${cr >= 10 ? cr.toFixed(1) : cr.toFixed(2).replace(/\.?0+$/, '')} Cr`;
+  }
+  if (val >= 100000) {
+    // 1 Lakh = 100,000
+    const l = val / 100000;
+    return `₹${l >= 10 ? l.toFixed(1) : l.toFixed(2).replace(/\.?0+$/, '')}L`;
+  }
+  if (val >= 1000) {
+    // 1 Thousand = 1,000
+    const k = val / 1000;
+    return `₹${k >= 10 ? k.toFixed(1) : k.toFixed(1).replace(/\.?0+$/, '')}K`;
+  }
+  return `₹${Math.round(val)}`;
+}
+
 function formatDateDisplay(dateStr: string, createdTime: string | null) {
   try {
     const d = new Date(createdTime || dateStr);
@@ -203,6 +224,8 @@ export default function MobileAccountsSummaryClient({ userName }: { userName: st
   const [tasks, setTasks] = useState<RecoveryTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const [flagLoadingId, setFlagLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Filters
@@ -214,6 +237,7 @@ export default function MobileAccountsSummaryClient({ userName }: { userName: st
   const [isKeyExposureOpen, setIsKeyExposureOpen] = useState(false);
   const [isSummaryCountsOpen, setIsSummaryCountsOpen] = useState(false);
   const [isInvoicesSectionOpen, setIsInvoicesSectionOpen] = useState(true);
+  const [activeChartDate, setActiveChartDate] = useState<string | null>(null);
 
   // Invoice Detail Modal State
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
@@ -258,14 +282,31 @@ export default function MobileAccountsSummaryClient({ userName }: { userName: st
     }
   }, []);
 
+  // ─── Cooldown Countdown Timer ──────────────────────────────────────────────
+  useEffect(() => {
+    if (cooldownRemaining <= 0) return;
+    const interval = setInterval(() => {
+      setCooldownRemaining((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldownRemaining]);
+
+  // Sync initial cooldown from cache data
+  useEffect(() => {
+    const lastGlobalStr = data?.summary?.globalRefreshedAt || data?.generatedAt;
+    if (lastGlobalStr) {
+      const diff = Date.now() - new Date(lastGlobalStr).getTime();
+      const remaining = Math.max(0, Math.ceil((60000 - diff) / 1000));
+      if (remaining > 0) {
+        setCooldownRemaining((curr) => Math.max(curr, remaining));
+      }
+    }
+  }, [data]);
+
   // ─── Range Refresh ──────────────────────────────────────────────────────────
   const fetchForRange = useCallback(async (period: LookbackPeriod, silent = false): Promise<void> => {
-    const lastGlobalStr = data?.summary?.globalRefreshedAt || data?.generatedAt;
-    const diff = lastGlobalStr ? Date.now() - new Date(lastGlobalStr).getTime() : Infinity;
-    const cooldownRemaining = Math.max(0, Math.ceil((60000 - diff) / 1000));
-
     if (cooldownRemaining > 0 && !silent) {
-      toast.error(`Refresh available in ${cooldownRemaining}s`);
+      toast.error(`Refresh available in ${cooldownRemaining}s`, { id: 'summary-refresh' });
       return;
     }
 
@@ -280,26 +321,32 @@ export default function MobileAccountsSummaryClient({ userName }: { userName: st
       const result = await res.json();
 
       if (res.status === 429) {
-        if (!silent) toast.error(result.error || 'Refresh budget or rate limit exceeded.');
+        if (result.cooldownRemaining) {
+          setCooldownRemaining(result.cooldownRemaining);
+        }
+        if (!silent) {
+          toast.error(result.error || 'Refresh budget or rate limit exceeded.', { id: 'summary-refresh' });
+        }
         return;
       }
       if (res.status === 409) {
-        toast.error(result.error || 'Refresh already in progress.');
+        toast.error('Summary is currently being refreshed. Please try again shortly.', { id: 'summary-refresh' });
         return;
       }
 
       if (result.success && result.data) {
         setData(result.data as SnapshotData);
-        if (!silent) toast.success('Dashboard refreshed!', { duration: 2000 });
+        setCooldownRemaining(60);
+        if (!silent) toast.success('Dashboard refreshed!', { id: 'summary-refresh', duration: 2000 });
       } else {
-        if (!silent) toast.error(result.error || 'Refresh failed.');
+        if (!silent) toast.error(result.error || 'Refresh failed.', { id: 'summary-refresh' });
       }
     } catch {
-      if (!silent) toast.error('Network error. Please retry.');
+      if (!silent) toast.error('Network error. Please retry.', { id: 'summary-refresh' });
     } finally {
       setRefreshing(false);
     }
-  }, [data]);
+  }, [cooldownRemaining]);
 
   // ─── Initial Load Lifecycle ─────────────────────────────────────────────────
   const initData = useCallback(async () => {
@@ -397,6 +444,60 @@ export default function MobileAccountsSummaryClient({ userName }: { userName: st
     };
   }, [lookbackRows]);
 
+  // ─── Day-over-Day (DoD) Daily Chart Data ────────────────────────────────────
+  const dailyChartData = useMemo(() => {
+    if (lookback === 'today' || lookback === 'yesterday') return [];
+    const startStr = getRequiredStart(lookback);
+    const endStr = getISTDate(0);
+
+    // Generate continuous list of dates from startStr to endStr
+    const dates: string[] = [];
+    const curr = new Date(startStr + 'T00:00:00Z');
+    const end = new Date(endStr + 'T00:00:00Z');
+    while (curr <= end) {
+      dates.push(curr.toISOString().slice(0, 10));
+      curr.setUTCDate(curr.getUTCDate() + 1);
+    }
+
+    // Map rows into date buckets
+    const dateMap = new Map<string, { paid: number; pending: number; total: number }>();
+    for (const d of dates) {
+      dateMap.set(d, { paid: 0, pending: 0, total: 0 });
+    }
+
+    for (const r of lookbackRows) {
+      if (r.paymentStatus === 'void') continue;
+      const d = r.invoiceDate;
+      const bucket = dateMap.get(d);
+      if (bucket) {
+        const isSettled = r.paymentStatus === 'paid' || r.isOperationallySettled;
+        const paidAmount = isSettled ? r.invoiceValue : (r.amountPaid || 0);
+        const pendingAmount = isSettled ? 0 : (r.amountPending || 0);
+        bucket.paid += paidAmount;
+        bucket.pending += pendingAmount;
+        bucket.total += r.invoiceValue;
+      }
+    }
+
+    return dates.map((date) => {
+      const bucket = dateMap.get(date)!;
+      // Format label as "12 Sep" or "12" depending on lookback
+      const dObj = new Date(date + 'T00:00:00Z');
+      const label = dObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+      return {
+        date,
+        label,
+        paid: bucket.paid,
+        pending: bucket.pending,
+        total: bucket.total,
+      };
+    });
+  }, [lookback, lookbackRows]);
+
+  const chartMaxTotal = useMemo(() => {
+    return Math.max(...dailyChartData.map((d) => d.total), 1);
+  }, [dailyChartData]);
+
   // ─── Key Exposure Calculations ──────────────────────────────────────────────
   const keyExposure = useMemo(() => {
     const openRows = metrics.effectiveOpen;
@@ -487,6 +588,53 @@ export default function MobileAccountsSummaryClient({ userName }: { userName: st
     setInvoiceDetail(null);
   };
 
+  // ─── Direct Invoice Flagging Handler ────────────────────────────────────────
+  const handleToggleFlag = async (e: React.MouseEvent, row: ExtendedRow) => {
+    e.stopPropagation();
+    if (flagLoadingId) return;
+
+    const isCurrentlyFlagged = tasks.some(
+      (t) => t.invoiceId === row.invoiceId && t.status === 'ACTIVE'
+    );
+
+    if (isCurrentlyFlagged) {
+      toast('Invoice is already flagged pending recovery release.', { id: 'flag-action', icon: 'ℹ️' });
+      return;
+    }
+
+    setFlagLoadingId(row.invoiceId);
+    try {
+      const res = await fetch('/api/accounts/recovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoiceId: row.invoiceId,
+          invoiceNumber: row.invoiceNumber,
+          customerId: row.customerId,
+          customerName: row.customerName,
+          lastKnownPendingAmount: row.amountPending,
+          lastKnownInvoiceStatus: row.paymentStatus,
+          notes: 'Flagged directly from Mobile Accounts Summary',
+        }),
+      });
+
+      const json = await res.json();
+      if (json.success && json.data) {
+        setTasks((prev) => {
+          const filtered = prev.filter((t) => t.id !== json.data.id && t.invoiceId !== row.invoiceId);
+          return [json.data, ...filtered];
+        });
+        toast.success(`Invoice ${row.invoiceNumber} flagged for recovery`, { id: 'flag-action' });
+      } else {
+        toast.error(json.error || 'Failed to flag invoice', { id: 'flag-action' });
+      }
+    } catch {
+      toast.error('Network error. Unable to flag invoice.', { id: 'flag-action' });
+    } finally {
+      setFlagLoadingId(null);
+    }
+  };
+
   // ─── Loading State ──────────────────────────────────────────────────────────
   if (loading && !data) {
     return <MobileAccountsSummarySkeleton />;
@@ -546,15 +694,25 @@ export default function MobileAccountsSummaryClient({ userName }: { userName: st
 
           <button
             onClick={() => fetchForRange(lookback, false)}
-            disabled={refreshing}
-            className="p-2.5 text-white/90 hover:text-white active:scale-90 transition-all rounded-full disabled:opacity-50"
-            aria-label="Refresh Summary"
+            disabled={refreshing || cooldownRemaining > 0}
+            className={`p-2 relative flex items-center justify-center rounded-full transition-all ${
+              refreshing || cooldownRemaining > 0
+                ? 'opacity-60 cursor-not-allowed text-white/60'
+                : 'text-white/90 hover:text-white active:scale-90 hover:bg-white/10'
+            }`}
+            aria-label={cooldownRemaining > 0 ? `Refresh available in ${cooldownRemaining}s` : 'Refresh Summary'}
+            title={cooldownRemaining > 0 ? `Refresh available in ${cooldownRemaining}s` : 'Refresh'}
           >
             <RefreshCw
-              size={19}
+              size={18}
               strokeWidth={2.2}
               className={refreshing ? 'animate-spin text-amber-400' : ''}
             />
+            {cooldownRemaining > 0 && !refreshing && (
+              <span className="absolute -bottom-1 -right-1 text-[9px] font-black bg-amber-400 text-slate-950 px-1 py-0.2 rounded-full shadow-sm leading-none font-mono">
+                {cooldownRemaining}s
+              </span>
+            )}
           </button>
         </div>
       </header>
@@ -595,21 +753,21 @@ export default function MobileAccountsSummaryClient({ userName }: { userName: st
           })}
         </div>
 
-        {/* ─── Primary Metric 1: Total Outstanding ──────────────────────────── */}
+        {/* ─── Primary Metric 1: Total Billed ───────────────────────────────── */}
         <div className="bg-gradient-to-br from-[#1A2766] to-[#25368a] p-4 rounded-[20px] shadow-[0_4px_16px_rgba(26,39,102,0.12)] text-white relative overflow-hidden">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[12px] font-semibold text-white/80 uppercase tracking-wider">
-              Total Outstanding
+              Total Billed
             </span>
             <span className="px-2 py-0.5 rounded-full bg-white/15 text-[10px] font-bold text-white/90">
-              {metrics.openCount} Open
+              {metrics.customersBilled} Customers
             </span>
           </div>
           <div className="text-[28px] font-extrabold tracking-tight">
-            {formatINR(metrics.totalPending)}
+            {formatINR(metrics.totalValue)}
           </div>
           <p className="text-[11.5px] text-white/70 mt-1 font-medium">
-            Across {metrics.openCount} open invoices in this period
+            Across {metrics.totalInvoices} invoices in this period
           </p>
         </div>
 
@@ -648,7 +806,7 @@ export default function MobileAccountsSummaryClient({ userName }: { userName: st
           </div>
         </div>
 
-        {/* ─── Collection Efficiency & Total Billed ─────────────────────────── */}
+        {/* ─── Collection Efficiency ────────────────────────────────────────── */}
         <div className="bg-white p-4 rounded-[20px] shadow-[0_2px_8px_rgba(0,0,0,0.03)] border border-slate-100/90 flex items-center justify-between">
           <div className="flex flex-col gap-0.5 flex-1 pr-3">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -697,18 +855,99 @@ export default function MobileAccountsSummaryClient({ userName }: { userName: st
           </div>
         </div>
 
-        {/* Total Billed Secondary Metric */}
-        <div className="bg-white px-4 py-3 rounded-[16px] shadow-[0_2px_6px_rgba(0,0,0,0.02)] border border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
-              <Banknote size={15} />
+        {/* ─── Day-over-Day (DoD) Sales Chart (Multi-day periods only) ───────── */}
+        {lookback !== 'today' && lookback !== 'yesterday' && dailyChartData.length > 0 && (
+          <div className="bg-white p-4 rounded-[20px] shadow-[0_2px_8px_rgba(0,0,0,0.03)] border border-slate-100/90 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-[#1A2766]/10 text-[#1A2766] rounded-lg">
+                  <BarChart3 size={15} />
+                </div>
+                <div>
+                  <span className="text-[12px] font-bold text-slate-800 block">
+                    Day-over-Day Sales
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    Paid vs. Pending breakdown
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-500">
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span>Paid</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  <span>Pending</span>
+                </div>
+              </div>
             </div>
-            <span className="text-xs font-bold text-slate-600">Total Billed</span>
+
+            {/* Scrollable Container for 360px fit */}
+            <div className="overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none">
+              <div
+                className="flex items-end gap-2 pt-8 pb-2 min-h-[190px]"
+                style={{ minWidth: dailyChartData.length > 7 ? `${dailyChartData.length * 46}px` : '100%' }}
+              >
+                {dailyChartData.map((d) => {
+                  const paidHeight = chartMaxTotal > 0 ? (d.paid / chartMaxTotal) * 100 : 0;
+                  const pendingHeight = chartMaxTotal > 0 ? (d.pending / chartMaxTotal) * 100 : 0;
+                  const isSelected = activeChartDate === d.date;
+                  const compactTotal = d.total > 0 ? formatCompactINR(d.total) : '₹0';
+
+                  return (
+                    <div
+                      key={d.date}
+                      onClick={() => setActiveChartDate(isSelected ? null : d.date)}
+                      className="flex-1 min-w-[38px] flex flex-col items-center cursor-pointer group relative"
+                    >
+                      {/* Interactive Tooltip on Tap or Hover (Exact Amounts) */}
+                      {isSelected && (
+                        <div className="absolute -top-14 z-20 bg-slate-900/95 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg shadow-xl pointer-events-none whitespace-nowrap animate-in fade-in zoom-in-95 duration-150 border border-slate-700">
+                          <div className="text-amber-300 font-extrabold">{d.label}: {formatINR(d.total)}</div>
+                          <div className="text-[9px] font-medium text-slate-200 mt-0.5 flex items-center gap-2">
+                            <span className="text-emerald-400">Paid: {formatINR(d.paid)}</span>
+                            <span>•</span>
+                            <span className="text-amber-400">Pending: {formatINR(d.pending)}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Total Value Label above bar with dedicated headroom */}
+                      <div className="h-5 flex items-end justify-center mb-1 w-full">
+                        <span className={`text-[9.5px] font-bold tracking-tight text-center leading-none select-none ${
+                          d.total > 0 ? 'text-slate-700' : 'text-slate-300 font-normal'
+                        }`}>
+                          {compactTotal}
+                        </span>
+                      </div>
+
+                      {/* Stacked Vertical Bar */}
+                      <div className="w-full max-w-[28px] h-28 bg-slate-100/90 rounded-t-md flex flex-col-reverse overflow-hidden relative group-hover:ring-2 ring-[#1A2766]/30 transition-all">
+                        {/* Paid Section (Bottom) */}
+                        <div
+                          style={{ height: `${paidHeight}%` }}
+                          className="w-full bg-emerald-500 transition-all duration-300"
+                        />
+                        {/* Pending Section (Top of stack) */}
+                        <div
+                          style={{ height: `${pendingHeight}%` }}
+                          className="w-full bg-amber-500 transition-all duration-300"
+                        />
+                      </div>
+
+                      {/* Date / Day Label */}
+                      <span className={`text-[9.5px] mt-1.5 font-bold transition-colors ${isSelected ? 'text-[#1A2766]' : 'text-slate-500'}`}>
+                        {d.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
-          <span className="text-sm font-extrabold text-slate-800">
-            {formatINR(metrics.totalValue)}
-          </span>
-        </div>
+        )}
 
         {/* ─── Collapsible Section: Key Exposure ────────────────────────────── */}
         <div className="bg-white rounded-[18px] shadow-[0_2px_8px_rgba(0,0,0,0.03)] border border-slate-100 overflow-hidden transition-all">
@@ -992,12 +1231,32 @@ export default function MobileAccountsSummaryClient({ userName }: { userName: st
                         </div>
 
                         <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                          {/* Pending Release Badge */}
-                          {isPendingRelease && (
+                          {/* Pending Release Badge or Direct Flag Button */}
+                          {isPendingRelease ? (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 text-amber-700 text-[9px] font-extrabold uppercase rounded-md border border-amber-200 shrink-0">
                               <Flag size={8} className="fill-amber-600 text-amber-600" />
                               <span>Pending Release</span>
                             </span>
+                          ) : (
+                            /* Allow flagging directly for open invoices */
+                            !row.isOperationallySettled &&
+                            row.paymentStatus !== 'paid' &&
+                            row.paymentStatus !== 'void' && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleToggleFlag(e, row)}
+                                disabled={flagLoadingId === row.invoiceId}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9.5px] font-bold text-slate-500 hover:text-amber-600 active:text-amber-700 hover:bg-amber-50 rounded-md border border-slate-200/80 hover:border-amber-200 transition-colors shrink-0"
+                                title="Flag for recovery"
+                              >
+                                {flagLoadingId === row.invoiceId ? (
+                                  <RefreshCw size={9} className="animate-spin text-amber-600" />
+                                ) : (
+                                  <Flag size={9} />
+                                )}
+                                <span>Flag</span>
+                              </button>
+                            )
                           )}
 
                           {/* Status Badge */}

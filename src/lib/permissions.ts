@@ -19,11 +19,16 @@ export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSku
   | 'dispatch_post_dispatch_review' | 'dispatch_post_dispatch_receiving_verify' | 'dispatch_post_dispatch_checked_verify' | 'dispatch_post_dispatch_inventory_approve'
   | 'dispatch_stock_approval_view' | 'dispatch_stock_approval_approve'
   | 'mobile_stock_management' | 'mobile_stock_management_solar_panel' | 'mobile_stock_management_wire_cables' | 'mobile_stock_management_inverter' | 'mobile_stock_management_solar_accessories'
-  | 'mobile_accounts' | 'mobile_accounts_customer_statement' | 'mobile_accounts_customer_dcr_lookup'
+  | 'mobile_accounts' | 'mobile_accounts_customer_statement' | 'mobile_accounts_customer_dcr_lookup' | 'mobile_accounts_summary_view'
   | 'mobile_dispatch'
   | 'mobile_dispatch_post_dispatch'
   | 'mobile_dispatch_post_dispatch_receiving_upload'
-  | 'mobile_dispatch_post_dispatch_checked_upload';
+  | 'mobile_dispatch_post_dispatch_checked_upload'
+  | 'mobile_notes_view'
+  | 'mobile_notes_create'
+  | 'mobile_notes_edit'
+  | 'mobile_notes_archive'
+  | 'hr_attendance_processor';
 
 export interface PermissionDefinition {
   key: PermissionKey;
@@ -81,6 +86,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'accounts_invoice_processor',
     label: 'Invoice Processor',
     description: 'Ability to convert Zoho invoices to Kamna Traders format'
+  },
+  {
+    key: 'hr_attendance_processor',
+    label: 'Attendance Processor',
+    description: 'Ability to upload attendance Excel exports and generate A4 attendance statements'
   },
   {
     key: 'accounts_transactions',
@@ -298,10 +308,15 @@ export const PERMISSIONS: PermissionDefinition[] = [
   { key: 'mobile_accounts', label: 'Mobile Accounts', description: 'Controls whether Accounts is visible and accessible on mobile.' },
   { key: 'mobile_accounts_customer_statement', label: 'Mobile Customer Statement', description: 'Allows viewing Customer Statements on mobile.' },
   { key: 'mobile_accounts_customer_dcr_lookup', label: 'Mobile Customer DCR Lookup', description: 'Allows viewing Customer DCR status on mobile.' },
+  { key: 'mobile_accounts_summary_view', label: 'Mobile Accounts Summary', description: 'Allows viewing Accounts Summary on mobile.' },
   { key: 'mobile_dispatch', label: 'Mobile Dispatch', description: 'Allows capturing and viewing truck dispatch photos on mobile.' },
   { key: 'mobile_dispatch_post_dispatch', label: 'Post-Dispatch Access', description: 'Access to Post-Dispatch invoice workflow on mobile' },
   { key: 'mobile_dispatch_post_dispatch_receiving_upload', label: 'Post-Dispatch Receiving Upload', description: 'Ability to capture and upload customer receiving proof on mobile' },
   { key: 'mobile_dispatch_post_dispatch_checked_upload', label: 'Post-Dispatch Checked By Upload', description: 'Ability to upload Checked By / Checked At evidence on mobile' },
+  { key: 'mobile_notes_view', label: 'View Note', description: 'Controls whether Notes is visible and accessible on mobile.' },
+  { key: 'mobile_notes_create', label: 'Create Note', description: 'Allows creating new Notes on mobile.' },
+  { key: 'mobile_notes_edit', label: 'Edit Note', description: 'Allows editing and sharing accessible Notes on mobile.' },
+  { key: 'mobile_notes_archive', label: 'Archive Note', description: 'Allows archiving accessible Notes on mobile.' },
 ];
 
 export interface CatalogModulePermissionGroup {
@@ -500,6 +515,7 @@ export const MOBILE_PERMISSION_SECTIONS: MobilePermissionSection[] = [
     children: [
       { key: 'mobile_accounts_customer_statement', label: 'Customer Statement', description: 'Access to Customer Statement lookup and ledger view on mobile', parentKey: 'mobile_accounts' },
       { key: 'mobile_accounts_customer_dcr_lookup', label: 'Customer DCR Lookup', description: 'Access to Customer DCR Lookup on mobile', parentKey: 'mobile_accounts' },
+      { key: 'mobile_accounts_summary_view', label: 'Summary', description: 'Access to Accounts Summary on mobile', parentKey: 'mobile_accounts' },
     ],
     infoNote: 'Hold Queue uses existing Accounts/Desktop permissions (dcr_hold_release, holdQueueReviewEnabled, holdQueueReviewLimit).',
   },
@@ -515,6 +531,18 @@ export const MOBILE_PERMISSION_SECTIONS: MobilePermissionSection[] = [
       { key: 'mobile_dispatch_post_dispatch_checked_upload', label: 'Checked By / Checked At Upload', description: 'Upload Checked By / Checked At evidence', parentKey: 'mobile_dispatch_post_dispatch' },
     ],
   },
+  {
+    sectionKey: 'notes',
+    sectionTitle: 'Notes',
+    parentKey: 'mobile_notes_view',
+    parentLabel: 'Notes Access',
+    parentDescription: 'Controls whether Notes module is visible and accessible on mobile.',
+    children: [
+      { key: 'mobile_notes_create', label: 'Create Note', description: 'Allows creating new Notes on mobile', parentKey: 'mobile_notes_view' },
+      { key: 'mobile_notes_edit', label: 'Edit Note', description: 'Allows editing and sharing accessible Notes on mobile', parentKey: 'mobile_notes_view' },
+      { key: 'mobile_notes_archive', label: 'Archive Note', description: 'Allows archiving accessible Notes on mobile', parentKey: 'mobile_notes_view' },
+    ],
+  },
 ];
 
 export const mobilePermissionKeySet = new Set<string>([
@@ -526,15 +554,52 @@ export const mobilePermissionKeySet = new Set<string>([
   'mobile_accounts',
   'mobile_accounts_customer_statement',
   'mobile_accounts_customer_dcr_lookup',
+  'mobile_accounts_summary_view',
   'mobile_dispatch',
   'mobile_dispatch_post_dispatch',
   'mobile_dispatch_post_dispatch_receiving_upload',
   'mobile_dispatch_post_dispatch_checked_upload',
+  'mobile_notes_view',
+  'mobile_notes_create',
+  'mobile_notes_edit',
+  'mobile_notes_archive',
 ]);
 
-// General permissions shown in Main Matrix Tab (excludes Catalog, Dispatch, and Mobile granular permissions)
+export interface HrPermissionItem {
+  key: PermissionKey;
+  label: string;
+  description?: string;
+}
+
+export interface HrPermissionGroup {
+  groupKey: string;
+  groupName: string;
+  permissions: HrPermissionItem[];
+}
+
+export const HR_PERMISSIONS: HrPermissionItem[] = [
+  {
+    key: 'hr_attendance_processor',
+    label: 'Attendance Processor',
+    description: 'Ability to upload attendance Excel exports and generate A4 attendance statements',
+  },
+];
+
+export const HR_PERMISSION_GROUPS: HrPermissionGroup[] = [
+  {
+    groupKey: 'attendance',
+    groupName: 'Attendance',
+    permissions: HR_PERMISSIONS,
+  },
+];
+
+export const hrPermissionKeySet = new Set<string>([
+  'hr_attendance_processor',
+]);
+
+// General permissions shown in Main Matrix Tab (excludes Catalog, Dispatch, Mobile, and HR granular permissions)
 export const GENERAL_PERMISSIONS = PERMISSIONS.filter(
-  p => !catalogPermissionKeySet.has(p.key) && !dispatchPermissionKeySet.has(p.key) && !mobilePermissionKeySet.has(p.key)
+  p => !catalogPermissionKeySet.has(p.key) && !dispatchPermissionKeySet.has(p.key) && !mobilePermissionKeySet.has(p.key) && !hrPermissionKeySet.has(p.key)
 );
 
 export const ALL_PERMISSION_KEYS: PermissionKey[] = [
@@ -620,8 +685,14 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'mobile_accounts',
   'mobile_accounts_customer_statement',
   'mobile_accounts_customer_dcr_lookup',
+  'mobile_accounts_summary_view',
   'mobile_dispatch',
   'mobile_dispatch_post_dispatch',
   'mobile_dispatch_post_dispatch_receiving_upload',
   'mobile_dispatch_post_dispatch_checked_upload',
+  'mobile_notes_view',
+  'mobile_notes_create',
+  'mobile_notes_edit',
+  'mobile_notes_archive',
+  'hr_attendance_processor',
 ];

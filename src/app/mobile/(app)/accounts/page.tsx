@@ -1,7 +1,7 @@
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronLeft, Users, ChevronRight, Activity, FileText } from 'lucide-react';
+import { ChevronLeft, Users, ChevronRight, Activity, FileText, BarChart3 } from 'lucide-react';
 import { hasMobilePermission, hasMobileFeatureAccess } from '@/lib/mobile-auth';
 
 export default async function MobileAccountsPage() {
@@ -23,10 +23,11 @@ export default async function MobileAccountsPage() {
 
   const canViewStatement = hasMobileFeatureAccess(session, 'mobile_accounts', 'mobile_accounts_customer_statement');
   const canViewDcrLookup = hasMobileFeatureAccess(session, 'mobile_accounts', 'mobile_accounts_customer_dcr_lookup');
+  const canViewSummary = hasMobileFeatureAccess(session, 'mobile_accounts', 'mobile_accounts_summary_view');
   // Hold Queue flow retains desktop permission model (dcr_hold_release)
   const canViewHoldQueue = session.role === 'ADMIN' || Boolean(session.dcr_hold_release);
 
-  const hasAnyCard = canViewStatement || canViewDcrLookup || canViewHoldQueue;
+  const hasAnyCard = canViewStatement || canViewDcrLookup || canViewSummary || canViewHoldQueue;
 
   return (
     <div className="flex-1 flex flex-col font-sans">
@@ -42,7 +43,7 @@ export default async function MobileAccountsPage() {
       <main className="flex-1 px-4 py-6 max-w-[430px] mx-auto w-full">
         {hasAnyCard ? (
           <>
-            {(canViewStatement || canViewDcrLookup) && (
+            {(canViewStatement || canViewSummary || canViewDcrLookup) && (
               <>
                 <div className="mb-4 text-[11px] font-bold text-slate-400 tracking-wider uppercase px-1">
                   Available Modules
@@ -57,6 +58,21 @@ export default async function MobileAccountsPage() {
                       <div className="flex flex-col gap-0.5">
                         <div className="font-bold text-slate-800 text-[15px]">Customer Statement</div>
                         <div className="text-[12px] text-slate-500 font-medium">View Customer Ledger & Balances</div>
+                      </div>
+                    </div>
+                    <ChevronRight size={20} className="text-slate-300" />
+                  </Link>
+                )}
+
+                {canViewSummary && (
+                  <Link href="/mobile/accounts/summary" className="flex items-center justify-between bg-white p-4 rounded-[16px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 active:scale-[0.98] transition-transform mb-3">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100/50">
+                        <BarChart3 size={22} strokeWidth={2.5} />
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <div className="font-bold text-slate-800 text-[15px]">Summary</div>
+                        <div className="text-[12px] text-slate-500 font-medium">Executive Financial Overview & Invoices</div>
                       </div>
                     </div>
                     <ChevronRight size={20} className="text-slate-300" />

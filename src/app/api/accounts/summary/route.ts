@@ -5,9 +5,12 @@ import { getSession } from '@/lib/auth';
 export async function GET() {
   try {
     const session = await getSession();
-    // Simplified auth check - wait, checking role or permissions based on layout check.
-    // In admin layout, it checks session.role === 'ADMIN'.
-    if (!session || (session.role !== 'ADMIN' && !session.accounts_summary_view)) {
+    const hasAccess = session && (
+      session.role === 'ADMIN' ||
+      session.accounts_summary_view ||
+      (session.mobile_accounts && session.mobile_accounts_summary_view)
+    );
+    if (!hasAccess) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 

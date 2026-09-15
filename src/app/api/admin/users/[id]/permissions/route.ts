@@ -53,10 +53,26 @@ export async function PATCH(
         'dispatch_checked_by'
       ].includes(key)) {
         updateData.dispatch_view = true;
+      } else if ([
+        'mobile_notes_create',
+        'mobile_notes_edit',
+        'mobile_notes_archive'
+      ].includes(key)) {
+        updateData.mobile_notes_view = true;
+      } else if ([
+        'mobile_accounts_customer_statement',
+        'mobile_accounts_customer_dcr_lookup',
+        'mobile_accounts_summary_view'
+      ].includes(key)) {
+        updateData.mobile_accounts = true;
       }
     } else {
       if (key === 'dispatch_stock_approval_view') {
         updateData.dispatch_stock_approval_approve = false;
+      } else if (key === 'mobile_accounts') {
+        updateData.mobile_accounts_customer_statement = false;
+        updateData.mobile_accounts_customer_dcr_lookup = false;
+        updateData.mobile_accounts_summary_view = false;
       } else if (key === 'mobile_dispatch') {
         updateData.mobile_dispatch_post_dispatch = false;
         postDispatchChildren.forEach((child) => {
@@ -73,6 +89,10 @@ export async function PATCH(
       } else if (key === 'dispatch_post_dispatch') {
         updateData.dispatch_post_dispatch_receiving_verify = false;
         updateData.dispatch_post_dispatch_checked_verify = false;
+      } else if (key === 'mobile_notes_view') {
+        updateData.mobile_notes_create = false;
+        updateData.mobile_notes_edit = false;
+        updateData.mobile_notes_archive = false;
       }
     }
 

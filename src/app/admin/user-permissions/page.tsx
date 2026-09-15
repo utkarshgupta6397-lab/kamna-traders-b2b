@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Shield, Users, Lock, Loader2, Info, Check, Tags, PackageCheck, Truck, Smartphone } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { GENERAL_PERMISSIONS, CATALOG_MODULES, DISPATCH_PERMISSION_GROUPS, MOBILE_PERMISSION_SECTIONS, PermissionKey } from '@/lib/permissions';
+import { GENERAL_PERMISSIONS, CATALOG_MODULES, DISPATCH_PERMISSION_GROUPS, MOBILE_PERMISSION_SECTIONS, HR_PERMISSIONS, HR_PERMISSION_GROUPS, PermissionKey } from '@/lib/permissions';
 
 interface User {
   id: string;
@@ -16,13 +16,14 @@ interface User {
   canDeleteTransfers: boolean;
   accountsAccess: boolean;
   workflow_edits: boolean;
+  hr_attendance_processor?: boolean;
   [key: string]: any;
 }
 
 export default function UserPermissionsPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'general' | 'catalog' | 'dispatch' | 'mobile'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'catalog' | 'dispatch' | 'hr' | 'mobile'>('general');
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'ADMIN' | 'STAFF'>('ALL');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -216,6 +217,21 @@ export default function UserPermissionsPage() {
           Dispatch
           <span className="ml-1 px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-800 text-[10px]">
             {stats.dispatchUsers}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('hr')}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold transition-all border-b-2 -mb-px ${
+            activeTab === 'hr'
+              ? 'border-[#1A2766] text-[#1A2766]'
+              : 'border-transparent text-gray-500 hover:text-gray-900'
+          }`}
+        >
+          <Users size={14} />
+          HR
+          <span className="ml-1 px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[10px]">
+            {HR_PERMISSIONS.length}
           </span>
         </button>
 
@@ -736,7 +752,124 @@ export default function UserPermissionsPage() {
         </div>
       )}
 
-      {/* TAB 4: MOBILE PERMISSIONS MATRIX */}
+      {/* TAB 4: HR PERMISSIONS MATRIX */}
+      {activeTab === 'hr' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden space-y-3">
+          <div className="px-4 py-2 bg-emerald-50/50 border-b border-emerald-100 text-xs text-emerald-900 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Info size={14} className="text-emerald-600 flex-shrink-0" />
+              <span>
+                Configure access to the <strong>HR</strong> module and specialized features such as the <strong>Attendance Processor</strong>.
+              </span>
+            </div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md">
+              {filteredUsers.length} Users Listed
+            </span>
+          </div>
+
+          <div className="overflow-x-auto max-h-[calc(100vh-270px)]">
+            <table className="w-full border-collapse relative">
+              <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm text-center">
+                <tr>
+                  <th rowSpan={2} className="py-2 px-2.5 text-left border-b border-gray-200 min-w-[220px] bg-gray-50/95 backdrop-blur-sm sticky left-0 z-20 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">User Details</span>
+                  </th>
+                  <th colSpan={1} className="py-1.5 px-1 border-b border-r border-gray-200 text-center bg-emerald-100/70 text-[#1A2766]">
+                    <span className="text-[11px] font-black uppercase tracking-wider">
+                      HR & Attendance
+                    </span>
+                  </th>
+                </tr>
+                <tr className="bg-gray-50/90 border-b border-gray-200">
+                  <th
+                    className="py-1 px-3 text-[9px] font-bold uppercase tracking-wider border-b border-r text-gray-600 min-w-[180px]"
+                    title="Ability to upload attendance Excel exports and generate A4 attendance statements"
+                  >
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Attendance Processor</span>
+                      <Info size={9} className="text-gray-400" />
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-gray-100 text-gray-700">
+                {filteredUsers.map((user) => {
+                  const isAdmin = user.role === 'ADMIN';
+                  const isUpdating = updatingId === `${user.id}-hr_attendance_processor`;
+                  const hasPermission = Boolean(user.hr_attendance_processor);
+
+                  return (
+                    <tr key={user.id} className="hover:bg-emerald-50/20 transition-colors group">
+                      {/* User Cell */}
+                      <td className="py-2 px-2.5 border-b border-gray-100 sticky left-0 z-10 bg-white group-hover:bg-slate-50 border-r shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-[#1A2766] text-white flex items-center justify-center font-bold text-[10px] shadow-sm flex-shrink-0">
+                            {user.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="truncate">
+                            <p className="text-xs font-bold text-gray-900 truncate" title={user.name}>{user.name}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-[10px] font-mono text-gray-400">{formatPhone(user.mobile)}</span>
+                              <span className={`text-[8px] px-1 py-0.2 rounded-full font-bold uppercase tracking-tighter ${
+                                isAdmin ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
+                              }`}>
+                                {user.role}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Attendance Processor Column */}
+                      <td className="py-2 px-3 border-b border-r border-gray-200 text-center">
+                        {isAdmin ? (
+                          <div className="flex items-center justify-center gap-0.5 text-amber-600 bg-amber-50 py-0.5 px-2 rounded-full mx-auto w-fit border border-amber-100">
+                            <Check size={10} strokeWidth={3} />
+                            <span className="text-[8px] font-black uppercase tracking-wider">Full</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center">
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="sr-only peer"
+                                checked={hasPermission}
+                                onChange={() => handleToggle(user.id, 'hr_attendance_processor', hasPermission)}
+                                disabled={isUpdating}
+                              />
+                              <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-3 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
+                              {isUpdating && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-white/50 rounded-full">
+                                  <Loader2 size={10} className="animate-spin text-[#1A2766]" />
+                                </div>
+                              )}
+                            </label>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {filteredUsers.length === 0 && (
+            <div className="p-12 text-center flex flex-col items-center gap-2">
+              <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center">
+                <Users size={20} />
+              </div>
+              <div>
+                <p className="text-gray-900 font-bold text-xs">No users found</p>
+                <p className="text-[11px] text-gray-500">Adjust your search query or role filter.</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 5: MOBILE PERMISSIONS MATRIX */}
       {activeTab === 'mobile' && (
         <div className="space-y-3">
           {/* Informational Callout */}

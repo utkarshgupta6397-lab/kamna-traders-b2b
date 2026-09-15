@@ -47,6 +47,7 @@ model User {
   solar_orders_master_edit           Boolean              @default(false)
   workflow_edits                     Boolean              @default(false)
   accounts_invoice_processor         Boolean              @default(false)
+  hr_attendance_processor            Boolean              @default(false)
   communications_view                Boolean              @default(false)
   whatsapp_integration               Boolean              @default(false)
   communications_templates           Boolean              @default(false)
@@ -102,6 +103,7 @@ model User {
   mobile_accounts                    Boolean              @default(false)
   mobile_accounts_customer_statement Boolean              @default(false)
   mobile_accounts_customer_dcr_lookup Boolean             @default(false)
+  mobile_accounts_summary_view       Boolean              @default(false)
   mobile_dispatch                    Boolean              @default(false)
   mobile_dispatch_post_dispatch              Boolean              @default(false)
   mobile_dispatch_post_dispatch_receiving_upload Boolean          @default(false)
@@ -111,6 +113,10 @@ model User {
   dispatch_post_dispatch_inventory_approve Boolean          @default(false)
   dispatch_stock_approval_view       Boolean              @default(false)
   dispatch_stock_approval_approve    Boolean              @default(false)
+  mobile_notes_view                  Boolean              @default(false)
+  mobile_notes_create                Boolean              @default(false)
+  mobile_notes_edit                  Boolean              @default(false)
+  mobile_notes_archive               Boolean              @default(false)
   sessions                           ActiveSession[]
   brandsApproved                     Brand[]              @relation("BrandApprovedBy")
   brandsCreated                      Brand[]              @relation("BrandCreatedBy")
@@ -168,6 +174,14 @@ model User {
   printer                            Printer?             @relation(fields: [printerId], references: [id])
   zoneMappingsUpdated                WarehouseInventory[] @relation("ZoneMappingUpdatedBy")
   whatsappTests                      WhatsAppTestLog[]
+  notesCreated                       Note[]               @relation("NoteCreatedBy")
+  notesUpdated                       Note[]               @relation("NoteUpdatedBy")
+  notesArchived                      Note[]               @relation("NoteArchivedBy")
+  noteShares                         NoteShare[]
+  notePins                           NotePin[]
+  noteVersionsEdited                 NoteVersion[]        @relation("NoteVersionEditedBy")
+  noteAuditLogs                      NoteAuditLog[]       @relation("NoteAuditLogUser")
+  notifications                      Notification[]       @relation("NotificationRecipient")
 }
 
 model Warehouse {
@@ -1964,3 +1978,112 @@ model PostDispatchSyncLog {
   @@index([startedAt])
   @@index([status])
 }
+
+model Note {
+  id             String         @id @default(cuid())
+  title          String
+  noteType       String         @default("TEXT") // "TEXT" | "CHECKLIST"
+  content        String?
+  checklistItems Json?
+  color          String         @default("soft_yellow")
+  visibility     String         @default("ONLY_ME") // "ONLY_ME" | "SELECTED_USERS" | "ALL_USERS"
+  isArchived     Boolean        @default(false)
+  archivedAt     DateTime?
+  archivedById   String?
+  version        Int            @default(1)
+  createdById    String
+  createdAt      DateTime       @default(now())
+  updatedById    String
+  updatedAt      DateTime       @updatedAt
+
+  createdBy      User           @relation("NoteCreatedBy", fields: [createdById], references: [id])
+  updatedBy      User           @relation("NoteUpdatedBy", fields: [updatedById], references: [id])
+  archivedBy     User?          @relation("NoteArchivedBy", fields: [archivedById], references: [id])
+  shares         NoteShare[]
+  versions       NoteVersion[]
+  pins           NotePin[]
+  auditLogs      NoteAuditLog[]
+
+  @@index([createdById])
+  @@index([visibility])
+  @@index([isArchived])
+}
+
+model NoteShare {
+  id        String   @id @default(cuid())
+  noteId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([noteId, userId])
+  @@index([userId])
+  @@index([noteId])
+}
+
+model NotePin {
+  id        String   @id @default(cuid())
+  noteId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([noteId, userId])
+  @@index([userId])
+}
+
+model NoteVersion {
+  id             String   @id @default(cuid())
+  noteId         String
+  versionNumber  Int
+  title          String
+  noteType       String
+  content        String?
+  checklistItems Json?
+  color          String
+  visibility     String
+  editedById     String
+  editedAt       DateTime @default(now())
+
+  note           Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  editedBy       User     @relation("NoteVersionEditedBy", fields: [editedById], references: [id])
+
+  @@unique([noteId, versionNumber])
+  @@index([noteId])
+}
+
+model NoteAuditLog {
+  id        String   @id @default(cuid())
+  noteId    String
+  userId    String
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user      User     @relation("NoteAuditLogUser", fields: [userId], references: [id])
+
+  @@index([noteId])
+  @@index([userId])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String
+  title       String
+  message     String
+  referenceId String?
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user        User     @relation("NotificationRecipient", fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+

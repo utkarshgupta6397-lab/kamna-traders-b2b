@@ -35,13 +35,18 @@ const EXPECTED_MOBILE_KEYS: PermissionKey[] = [
   'mobile_accounts',
   'mobile_accounts_customer_statement',
   'mobile_accounts_customer_dcr_lookup',
+  'mobile_accounts_summary_view',
   'mobile_dispatch',
   'mobile_dispatch_post_dispatch',
   'mobile_dispatch_post_dispatch_receiving_upload',
   'mobile_dispatch_post_dispatch_checked_upload',
+  'mobile_notes_view',
+  'mobile_notes_create',
+  'mobile_notes_edit',
+  'mobile_notes_archive',
 ];
 
-assert(EXPECTED_MOBILE_KEYS.length === 12, 'Exactly 12 dedicated mobile permission keys defined');
+assert(EXPECTED_MOBILE_KEYS.length === 17, 'Exactly 17 dedicated mobile permission keys defined');
 
 for (const key of EXPECTED_MOBILE_KEYS) {
   assert(ALL_PERMISSION_KEYS.includes(key), `${key} exists in ALL_PERMISSION_KEYS`);
@@ -50,11 +55,12 @@ for (const key of EXPECTED_MOBILE_KEYS) {
   assert(!GENERAL_PERMISSIONS.some(p => p.key === key), `${key} is excluded from GENERAL_PERMISSIONS (decoupled from desktop matrix)`);
 }
 
-assert(MOBILE_PERMISSION_SECTIONS.length === 3, 'MOBILE_PERMISSION_SECTIONS contains 3 modules');
-const [stockSec, accountsSec, dispatchSec] = MOBILE_PERMISSION_SECTIONS;
+assert(MOBILE_PERMISSION_SECTIONS.length === 4, 'MOBILE_PERMISSION_SECTIONS contains 4 modules');
+const [stockSec, accountsSec, dispatchSec, notesSec] = MOBILE_PERMISSION_SECTIONS;
 assert(stockSec.sectionKey === 'stock_management' && stockSec.children.length === 4, 'Stock Management section has 4 children');
-assert(accountsSec.sectionKey === 'accounts' && accountsSec.children.length === 2, 'Accounts section has 2 children and infoNote');
+assert(accountsSec.sectionKey === 'accounts' && accountsSec.children.length === 3, 'Accounts section has 3 children and infoNote');
 assert(dispatchSec.sectionKey === 'dispatch' && dispatchSec.children.length === 3, 'Dispatch section has 3 children (post-dispatch hierarchy)');
+assert(notesSec.sectionKey === 'notes' && notesSec.children.length === 3, 'Notes section has 3 children');
 
 console.log('\n--- 2. Central Authorization Helpers (hasMobilePermission & hasMobileFeatureAccess) ---');
 assert(hasMobilePermission(null, 'mobile_stock_management') === false, 'null session returns false for hasMobilePermission');
@@ -141,6 +147,7 @@ const userE: any = {
 assert(hasMobilePermission(userE, 'mobile_accounts'), 'User E has accounts access');
 assert(hasMobileFeatureAccess(userE, 'mobile_accounts', 'mobile_accounts_customer_statement'), 'User E has customer statement access');
 assert(!hasMobileFeatureAccess(userE, 'mobile_accounts', 'mobile_accounts_customer_dcr_lookup'), 'User E cannot access DCR lookup');
+assert(!hasMobileFeatureAccess(userE, 'mobile_accounts', 'mobile_accounts_summary_view'), 'User E cannot access summary view');
 
 // User F: Accounts DCR Lookup Only
 const userF: any = {
@@ -152,6 +159,19 @@ const userF: any = {
 assert(hasMobilePermission(userF, 'mobile_accounts'), 'User F has accounts access');
 assert(hasMobileFeatureAccess(userF, 'mobile_accounts', 'mobile_accounts_customer_dcr_lookup'), 'User F has DCR lookup access');
 assert(!hasMobileFeatureAccess(userF, 'mobile_accounts', 'mobile_accounts_customer_statement'), 'User F cannot access customer statement');
+assert(!hasMobileFeatureAccess(userF, 'mobile_accounts', 'mobile_accounts_summary_view'), 'User F cannot access summary view');
+
+// User J: Mobile Accounts Summary Only
+const userJ: any = {
+  role: 'STAFF',
+  name: 'User J',
+  mobile_accounts: true,
+  mobile_accounts_summary_view: true,
+};
+assert(hasMobilePermission(userJ, 'mobile_accounts'), 'User J has accounts access');
+assert(hasMobileFeatureAccess(userJ, 'mobile_accounts', 'mobile_accounts_summary_view'), 'User J has mobile summary access');
+assert(!hasMobileFeatureAccess(userJ, 'mobile_accounts', 'mobile_accounts_customer_statement'), 'User J cannot access customer statement');
+assert(!hasMobileFeatureAccess(userJ, 'mobile_accounts', 'mobile_accounts_customer_dcr_lookup'), 'User J cannot access DCR lookup');
 
 // User G: Mobile Dispatch Only
 const userG: any = {
@@ -168,6 +188,7 @@ const userH: any = {
   role: 'STAFF',
   name: 'User H',
   accounts_customer_statement: true,
+  accounts_summary_view: true,
   dcr_management: true,
   dispatch_view: true,
   dispatch_truck_details: true,
@@ -179,6 +200,7 @@ const userH: any = {
   mobile_accounts: false,
   mobile_accounts_customer_statement: false,
   mobile_accounts_customer_dcr_lookup: false,
+  mobile_accounts_summary_view: false,
   mobile_dispatch: false,
 };
 assert(!hasMobilePermission(userH, 'mobile_stock_management'), 'User H (desktop perms) cannot access mobile stock management');
@@ -186,6 +208,7 @@ assert(!hasMobileFeatureAccess(userH, 'mobile_stock_management', 'mobile_stock_m
 assert(!hasMobilePermission(userH, 'mobile_accounts'), 'User H cannot access mobile accounts via mobile_accounts');
 assert(!hasMobileFeatureAccess(userH, 'mobile_accounts', 'mobile_accounts_customer_statement'), 'User H cannot access mobile customer statement via mobile check');
 assert(!hasMobileFeatureAccess(userH, 'mobile_accounts', 'mobile_accounts_customer_dcr_lookup'), 'User H cannot access mobile customer DCR lookup via mobile check');
+assert(!hasMobileFeatureAccess(userH, 'mobile_accounts', 'mobile_accounts_summary_view'), 'User H cannot access mobile accounts summary via desktop accounts_summary_view');
 assert(!hasMobilePermission(userH, 'mobile_dispatch'), 'User H cannot access mobile dispatch via dispatch_view');
 
 // User I: Admin Full Override

@@ -9,8 +9,9 @@ export default async function MobileHome() {
   const canAccessStock = hasMobilePermission(session, 'mobile_stock_management');
   const canAccessAccounts = hasMobilePermission(session, 'mobile_accounts');
   const canAccessDispatch = hasMobilePermission(session, 'mobile_dispatch');
+  const canAccessNotes = hasMobilePermission(session, 'mobile_notes_view');
 
-  const hasAnyModule = canAccessStock || canAccessAccounts || canAccessDispatch;
+  const hasAnyModule = canAccessStock || canAccessAccounts || canAccessDispatch || canAccessNotes;
 
   return (
     <div className="flex-1 flex flex-col font-sans">
@@ -90,6 +91,26 @@ export default async function MobileHome() {
                 </div>
                 <span className="font-bold text-[#1A2766] text-[15px] leading-tight tracking-tight">
                   Dispatch
+                </span>
+              </Link>
+            )}
+
+            {canAccessNotes && (
+              <Link
+                href="/mobile/notes"
+                className="flex flex-col items-center justify-center aspect-square bg-white p-4 rounded-[24px] shadow-[0_2px_12px_rgba(0,0,0,0.03)] border border-slate-100 active:scale-[0.96] active:bg-slate-50 transition-all text-center"
+              >
+                <div className="w-[64px] h-[64px] rounded-[20px] bg-[#F8F9FB] flex items-center justify-center mb-3">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="#ffffff" stroke="#1A2766" />
+                    <polyline points="14 2 14 8 20 8" fill="#dbeafe" stroke="#2563eb" />
+                    <line x1="16" y1="13" x2="8" y2="13" stroke="#1A2766" strokeWidth="2" />
+                    <line x1="16" y1="17" x2="8" y2="17" stroke="#1A2766" strokeWidth="2" />
+                    <line x1="10" y1="9" x2="8" y2="9" stroke="#16a34a" strokeWidth="2" />
+                  </svg>
+                </div>
+                <span className="font-bold text-[#1A2766] text-[15px] leading-tight tracking-tight">
+                  Notes
                 </span>
               </Link>
             )}

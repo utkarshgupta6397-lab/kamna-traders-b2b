@@ -42,6 +42,7 @@ export async function GET() {
           solar_orders_docs_progress: true,
           solar_orders_master_edit: true,
           workflow_edits: true,
+          hr_attendance_processor: true,
           dispatch_view: true,
           dispatch_rate_review: true,
           dispatch_payment_verification: true,

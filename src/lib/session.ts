@@ -123,6 +123,7 @@ export async function validateSession(sessionToken: string): Promise<{
             accountsAccess: true,
             accounts_customer_statement: true,
             accounts_invoice_processor: true,
+            hr_attendance_processor: true,
             accounts_transactions: true,
             accounts_summary_view: true,
             accounts_reports_salesman: true,
@@ -163,12 +164,17 @@ export async function validateSession(sessionToken: string): Promise<{
             mobile_accounts: true,
             mobile_accounts_customer_statement: true,
             mobile_accounts_customer_dcr_lookup: true,
+            mobile_accounts_summary_view: true,
             mobile_dispatch: true,
             mobile_dispatch_post_dispatch: true,
             mobile_dispatch_post_dispatch_receiving_upload: true,
             mobile_dispatch_post_dispatch_receiving_verify: true,
             mobile_dispatch_post_dispatch_checked_upload: true,
             mobile_dispatch_post_dispatch_checked_verify: true,
+            mobile_notes_view: true,
+            mobile_notes_create: true,
+            mobile_notes_edit: true,
+            mobile_notes_archive: true,
             communications_view: true,
             communications_templates: true,
             whatsapp_integration: true,
@@ -225,6 +231,7 @@ export async function validateSession(sessionToken: string): Promise<{
             accountsAccess: true,
             accounts_customer_statement: true,
             accounts_invoice_processor: true,
+            hr_attendance_processor: true,
             accounts_transactions: true,
             accounts_summary_view: true,
             accounts_reports_salesman: true,
@@ -267,6 +274,10 @@ export async function validateSession(sessionToken: string): Promise<{
             mobile_dispatch_post_dispatch_receiving_verify: true,
             mobile_dispatch_post_dispatch_checked_upload: true,
             mobile_dispatch_post_dispatch_checked_verify: true,
+            mobile_notes_view: true,
+            mobile_notes_create: true,
+            mobile_notes_edit: true,
+            mobile_notes_archive: true,
             communications_view: true,
             communications_templates: true,
             whatsapp_integration: true,
@@ -312,6 +323,7 @@ export async function validateSession(sessionToken: string): Promise<{
                   "mobile_dispatch", "mobile_dispatch_post_dispatch",
                   "mobile_dispatch_post_dispatch_receiving_upload", "mobile_dispatch_post_dispatch_receiving_verify",
                   "mobile_dispatch_post_dispatch_checked_upload", "mobile_dispatch_post_dispatch_checked_verify",
+                  "mobile_notes_view", "mobile_notes_create", "mobile_notes_edit", "mobile_notes_archive",
                   "dispatch_force_archive"
            FROM "User" WHERE "id" = $1 LIMIT 1`,
           fallback.userId
@@ -340,6 +352,7 @@ export async function validateSession(sessionToken: string): Promise<{
       userObj.canDeleteTransfers = true;
       userObj.accounts_customer_statement = true;
       userObj.accounts_invoice_processor = true;
+      userObj.hr_attendance_processor = true;
       userObj.accounts_transactions = true;
       userObj.accounts_summary_view = true;
       userObj.accounts_reports_salesman = true;
@@ -393,6 +406,10 @@ export async function validateSession(sessionToken: string): Promise<{
       userObj.mobile_dispatch_post_dispatch_receiving_verify = true;
       userObj.mobile_dispatch_post_dispatch_checked_upload = true;
       userObj.mobile_dispatch_post_dispatch_checked_verify = true;
+      userObj.mobile_notes_view = true;
+      userObj.mobile_notes_create = true;
+      userObj.mobile_notes_edit = true;
+      userObj.mobile_notes_archive = true;
     }
 
     const masterPerms = [

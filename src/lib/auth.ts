@@ -95,6 +95,7 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.canDeleteTransfers = true;
       merged.accounts_customer_statement = true;
       merged.accounts_invoice_processor = true;
+      merged.hr_attendance_processor = true;
       merged.accounts_transactions = true;
       merged.accounts_summary_view = true;
       merged.accounts_reports_salesman = true;
@@ -162,12 +163,17 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.mobile_accounts = true;
       merged.mobile_accounts_customer_statement = true;
       merged.mobile_accounts_customer_dcr_lookup = true;
+      merged.mobile_accounts_summary_view = true;
       merged.mobile_dispatch = true;
       merged.mobile_dispatch_post_dispatch = true;
       merged.mobile_dispatch_post_dispatch_receiving_upload = true;
       merged.mobile_dispatch_post_dispatch_receiving_verify = true;
       merged.mobile_dispatch_post_dispatch_checked_upload = true;
       merged.mobile_dispatch_post_dispatch_checked_verify = true;
+      merged.mobile_notes_view = true;
+      merged.mobile_notes_create = true;
+      merged.mobile_notes_edit = true;
+      merged.mobile_notes_archive = true;
     }
 
     console.log(`[Auth] getSession success for ${merged.userId} (Role: ${merged.role})`);

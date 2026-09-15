@@ -2,7 +2,7 @@ import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { LogOut, Home, ClipboardList, History, Box, Settings, MapPin, Truck, FileText, Sun, MessageSquare, BookOpen } from 'lucide-react';
+import { LogOut, Home, ClipboardList, History, Box, Settings, MapPin, Truck, FileText, Sun, MessageSquare, BookOpen, Users } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import GlobalDispatchNotifier from '@/components/GlobalDispatchNotifier';
 
@@ -46,6 +46,11 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
             {(session.accounts_customer_statement || session.accounts_transactions || session.role === 'ADMIN') && (
               <Link href="/staff/dashboard/accounts" className="flex items-center gap-1.5 hover:text-white transition-colors">
                 <FileText size={16} /><span className="hidden md:inline text-xs">Accounts</span>
+              </Link>
+            )}
+            {(session.hr_attendance_processor || session.role === 'ADMIN') && (
+              <Link href="/staff/dashboard/hr" className="flex items-center gap-1.5 hover:text-white transition-colors">
+                <Users size={16} /><span className="hidden md:inline text-xs">HR</span>
               </Link>
             )}
             {session.solar_orders_view && (

@@ -25,6 +25,15 @@ export async function GET() {
       });
     }
 
+    const recoveryLock = await prisma.syncLock.findUnique({
+      where: { name: 'RECOVERY_SYNC' },
+    });
+    const isFullSyncLocked = !!(
+      recoveryLock?.isLocked &&
+      recoveryLock.lockedAt &&
+      Date.now() - recoveryLock.lockedAt.getTime() < 5 * 60 * 1000
+    );
+
     return NextResponse.json({
       success: true,
       data: {
@@ -35,6 +44,7 @@ export async function GET() {
         summary: cache.summary,
         distributions: cache.distributions,
         rows: cache.rows,
+        isFullSyncLocked,
       },
     });
   } catch (error: any) {

@@ -218,6 +218,24 @@ export async function POST(request: Request) {
       }
     }
 
+    if (customerId) {
+      if (typeof customerId !== 'string' || customerId.trim() === '' || customerId.length > 100) {
+        return NextResponse.json({ success: false, error: 'Invalid customer ID' }, { status: 400 });
+      }
+    }
+
+    // Check if full customer sync (RECOVERY_SYNC) is in progress
+    const recoveryLock = await prisma.syncLock.findUnique({
+      where: { name: 'RECOVERY_SYNC' },
+    });
+    if (recoveryLock?.isLocked && recoveryLock.lockedAt && (Date.now() - recoveryLock.lockedAt.getTime() < 5 * 60 * 1000)) {
+      return NextResponse.json({
+        success: false,
+        error: customerId ? 'Customer sync unavailable during full sync' : 'Full sync in progress. Please try again shortly.',
+        isFullSyncRunning: true,
+      }, { status: 409 });
+    }
+
     // 1. Concurrency Lock
     const lock = await prisma.syncLock.upsert({
       where: { name: 'INVOICE_SUMMARY_REFRESH' },

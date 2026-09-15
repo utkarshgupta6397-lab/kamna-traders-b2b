@@ -290,6 +290,17 @@ function buildStatementUrl(customerId: string): string {
   return `/staff/dashboard/accounts?tab=statement&customerId=${encodeURIComponent(customerId)}`;
 }
 
+function isValidZohoContactId(customerId: string | null | undefined): boolean {
+  if (!customerId || typeof customerId !== 'string') return false;
+  const trimmed = customerId.trim();
+  if (!trimmed || trimmed === '#' || trimmed.startsWith('c-') || trimmed.startsWith('mock-')) return false;
+  return true;
+}
+
+function getZohoContactUrl(customerId: string): string {
+  return `https://books.zoho.in/app#/contacts/${customerId}`;
+}
+
 // ─── SVG Collection Gauge ─────────────────────────────────────────────────────
 
 function CollectionGauge({ pct }: { pct: number }) {
@@ -386,6 +397,11 @@ function CustomerCell({
   taskLoading,
   onFlag,
   historicalCount = 0,
+  onCustomerRefresh,
+  isCustomerRefreshing = false,
+  isAnyRefreshing = false,
+  isFullSyncRunning = false,
+  custCooldown = 0,
 }: {
   row: ExtendedRow;
   enrichment: CustomerEnrichment | undefined;
@@ -394,12 +410,17 @@ function CustomerCell({
   taskLoading?: boolean;
   onFlag?: (row: ExtendedRow) => void;
   historicalCount?: number;
+  onCustomerRefresh?: (customerId: string, customerName?: string) => void;
+  isCustomerRefreshing?: boolean;
+  isAnyRefreshing?: boolean;
+  isFullSyncRunning?: boolean;
+  custCooldown?: number;
 }) {
   const [show, setShow] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const isMock = row.invoiceId.startsWith('mock-');
-  const customerUrl = isMock ? '#' : `https://books.zoho.in/app#/contacts/${row.customerId}`;
+  const hasValidZohoId = isValidZohoContactId(row.customerId);
+  const customerUrl = hasValidZohoId ? getZohoContactUrl(row.customerId) : null;
   const statementUrl = buildStatementUrl(row.customerId);
 
   const gst = row.resolvedGst;
@@ -424,7 +445,7 @@ function CustomerCell({
     <div ref={containerRef} className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
       {/* Customer name and inline actions */}
       <div className="flex items-center gap-1.5 min-w-0">
-        {isMock ? (
+        {!customerUrl ? (
           <span className="text-[12px] font-semibold truncate" style={{ color: '#0F172A' }}>
             {row.customerName}
           </span>
@@ -556,8 +577,24 @@ function CustomerCell({
             )}
           </div>
 
-          {/* View Statement CTA */}
-          <div className="px-3 pb-3">
+          {/* Actions CTA */}
+          <div className="px-3 pb-3 space-y-1.5">
+            {onCustomerRefresh && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCustomerRefresh(row.customerId, row.customerName);
+                }}
+                disabled={isAnyRefreshing || custCooldown > 0 || isFullSyncRunning}
+                className="flex items-center justify-center gap-1.5 w-full py-1.5 rounded-lg text-[10px] font-semibold transition-colors border border-slate-200 hover:bg-slate-50 disabled:opacity-50"
+                style={{ color: '#0F172A', background: '#fff' }}
+                title={isFullSyncRunning ? 'Full sync in progress' : custCooldown > 0 ? `Available in ${custCooldown}s` : 'Sync Customer'}
+              >
+                <RefreshCw size={10} className={isCustomerRefreshing ? 'animate-spin' : ''} />
+                {isFullSyncRunning ? 'Full sync in progress' : custCooldown > 0 ? `Sync in ${custCooldown}s` : 'Sync Customer'}
+              </button>
+            )}
             <a
               href={statementUrl}
               target="_blank"
@@ -720,16 +757,20 @@ const InvoiceRefreshAction = React.memo(function InvoiceRefreshAction({
 
 const CustomerRefreshButton = React.memo(function CustomerRefreshButton({
   customerId,
+  customerName,
   lastCustRefresh,
   isAnyRefreshing,
   isRefreshing,
+  isFullSyncRunning = false,
   onRefresh,
 }: {
   customerId: string;
+  customerName?: string;
   lastCustRefresh?: string | null;
   isAnyRefreshing: boolean;
   isRefreshing: boolean;
-  onRefresh: (customerId: string) => void;
+  isFullSyncRunning?: boolean;
+  onRefresh: (customerId: string, customerName?: string) => void;
 }) {
   const lastMs = lastCustRefresh ? new Date(lastCustRefresh).getTime() : 0;
   const initialDiff = Date.now() - lastMs;
@@ -739,12 +780,21 @@ const CustomerRefreshButton = React.memo(function CustomerRefreshButton({
   const diff = lastMs > 0 ? nowMs - lastMs : Infinity;
   const custCooldown = Math.max(0, Math.ceil((60000 - diff) / 1000));
 
+  const isDisabled = isAnyRefreshing || custCooldown > 0 || isFullSyncRunning;
+  const tooltip = isFullSyncRunning
+    ? 'Full sync in progress'
+    : custCooldown > 0
+      ? `Available in ${custCooldown}s`
+      : 'Sync Customer';
+
   return (
     <button
-      onClick={(e) => { e.stopPropagation(); onRefresh(customerId); }}
-      disabled={isAnyRefreshing || custCooldown > 0}
-      className={`p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-50 ${custCooldown > 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-      title={custCooldown > 0 ? `Available in ${custCooldown}s` : 'Refresh Customer'}
+      onClick={(e) => { e.stopPropagation(); onRefresh(customerId, customerName); }}
+      disabled={isDisabled}
+      className={`p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-50 ${
+        isFullSyncRunning || custCooldown > 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+      }`}
+      title={tooltip}
     >
       {custCooldown > 0 ? (
         <span className="text-[9px] font-bold tabular-nums text-slate-500">{custCooldown}s</span>
@@ -1509,10 +1559,11 @@ export default function AccountsSummaryView() {
     }, 100);
   }, [viewMode]);
 
-  const isAnyRefreshing = refreshing || autoFetching || refreshingInvoiceId !== null || refreshingCustomerId !== null;
-
   // ─── Recovery Tasks API ───────────────────────────────────────────────────
   const [refreshingInvoices, setRefreshingInvoices] = useState(false);
+
+  const isFullSyncRunning = refreshingInvoices || syncLoading || !!(data as any)?.isFullSyncLocked;
+  const isAnyRefreshing = refreshing || autoFetching || refreshingInvoiceId !== null || refreshingCustomerId !== null || isFullSyncRunning;
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -1833,7 +1884,18 @@ export default function AccountsSummaryView() {
     }
   };
 
-  const handleCustomerRefresh = async (customerId: string) => {
+  const handleCustomerRefresh = async (customerId: string, customerNameParam?: string) => {
+    const resolvedCustomerName =
+      customerNameParam ||
+      data?.rows.find((r) => r.customerId === customerId)?.customerName ||
+      customerGroups.find((g) => g.customerId === customerId)?.customerName ||
+      'Customer';
+
+    if (isFullSyncRunning) {
+      toast.error('Customer sync unavailable during full sync');
+      return;
+    }
+
     const lastCustRefresh = data?.summary?.customerCooldowns?.[customerId];
     const diff = lastCustRefresh ? Date.now() - new Date(lastCustRefresh).getTime() : Infinity;
     const custCooldown = Math.max(0, Math.ceil((60000 - diff) / 1000));
@@ -1850,6 +1912,10 @@ export default function AccountsSummaryView() {
         body: JSON.stringify({ customerId }),
       });
       const result = await res.json();
+      if (res.status === 409) {
+        toast.error(result.error || 'Customer sync unavailable during full sync');
+        return;
+      }
       if (res.status === 429) {
         toast.error(result.error || 'Refresh budget or rate limit exceeded.');
         return;
@@ -1859,12 +1925,12 @@ export default function AccountsSummaryView() {
         if (result.enrichment) {
           setEnrichMap((prev) => ({ ...prev, [customerId]: result.enrichment }));
         }
-        toast.success('Customer data refreshed!');
+        toast.success(`${resolvedCustomerName} synced successfully.`);
       } else {
-        toast.error(result.error || 'Refresh failed.');
+        toast.error(result.error || `Unable to sync ${resolvedCustomerName}. Please try again.`);
       }
     } catch {
-      toast.error('Network error. Please retry.');
+      toast.error(`Unable to sync ${resolvedCustomerName}. Please try again.`);
     } finally {
       setRefreshingCustomerId(null);
     }
@@ -2804,6 +2870,9 @@ export default function AccountsSummaryView() {
                     const enrichment = enrichMap[row.customerId];
                     const unusedCredits = enrichment?.unusedCredits ?? null;
                     const hasCredits = unusedCredits !== null && unusedCredits > 0;
+                    const lastCustRefresh = data?.summary?.customerCooldowns?.[row.customerId];
+                    const custLastMs = lastCustRefresh ? new Date(lastCustRefresh).getTime() : 0;
+                    const custCooldown = Math.max(0, Math.ceil((60000 - (custLastMs > 0 ? Date.now() - custLastMs : Infinity)) / 1000));
 
                     return (
                       <tr key={row.invoiceId}
@@ -2851,6 +2920,11 @@ export default function AccountsSummaryView() {
                             taskLoading={taskLoadingId === row.invoiceId}
                             onFlag={handleFlagStatement}
                             historicalCount={historicalCounts[row.invoiceId] || 0}
+                            onCustomerRefresh={handleCustomerRefresh}
+                            isCustomerRefreshing={refreshingCustomerId === row.customerId}
+                            isAnyRefreshing={isAnyRefreshing}
+                            isFullSyncRunning={isFullSyncRunning}
+                            custCooldown={custCooldown}
                           />
                         </td>
 
@@ -3017,7 +3091,20 @@ export default function AccountsSummaryView() {
                           </button>
                           <div>
                             <div className="flex items-center gap-1.5">
-                              <p className="text-[13px] font-bold" style={{ color: '#0F172A' }}>{group.customerName}</p>
+                              {isValidZohoContactId(group.customerId) ? (
+                                <a
+                                  href={getZohoContactUrl(group.customerId)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[13px] font-bold hover:underline"
+                                  style={{ color: '#0F172A' }}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {group.customerName}
+                                </a>
+                              ) : (
+                                <p className="text-[13px] font-bold" style={{ color: '#0F172A' }}>{group.customerName}</p>
+                              )}
                               {statusFilter === 'open' && (
                                 <div className="flex items-center gap-1 shrink-0">
                                   {enrichMap[group.customerId]?.tallyReady && (
@@ -3180,10 +3267,12 @@ export default function AccountsSummaryView() {
                           )}
                           <CustomerRefreshButton
                             customerId={group.customerId}
+                            customerName={group.customerName}
                             lastCustRefresh={data?.summary?.customerCooldowns?.[group.customerId]}
                             isAnyRefreshing={isAnyRefreshing}
                             isRefreshing={refreshingCustomerId === group.customerId}
-                            onRefresh={handleCustomerRefresh}
+                            isFullSyncRunning={isFullSyncRunning}
+                            onRefresh={(cId) => handleCustomerRefresh(cId, group.customerName)}
                           />
                         </div>
                       </div>
@@ -3193,10 +3282,22 @@ export default function AccountsSummaryView() {
                         <div className="px-12 py-4 bg-slate-50 border-t border-slate-100 shadow-inner">
                           <div className="flex items-center justify-between mb-3">
                             <h4 className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#64748B' }}>Invoice Ledger</h4>
-                            <a href={statementUrl} target="_blank" rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-md text-[10px] font-semibold text-slate-600 hover:bg-slate-100 transition-colors">
-                              <FileText size={11} /> View Full Statement
-                            </a>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleCustomerRefresh(group.customerId, group.customerName)}
+                                disabled={isAnyRefreshing || isFullSyncRunning || (data?.summary?.customerCooldowns?.[group.customerId] ? Date.now() - new Date(data.summary.customerCooldowns[group.customerId]).getTime() < 60000 : false)}
+                                className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-md text-[10px] font-semibold text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
+                                title={isFullSyncRunning ? 'Full sync in progress' : 'Sync Customer'}
+                              >
+                                <RefreshCw size={11} className={refreshingCustomerId === group.customerId ? 'animate-spin' : ''} />
+                                {isFullSyncRunning ? 'Full sync in progress' : 'Sync Customer'}
+                              </button>
+                              <a href={statementUrl} target="_blank" rel="noopener noreferrer"
+                                className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-md text-[10px] font-semibold text-slate-600 hover:bg-slate-100 transition-colors">
+                                <FileText size={11} /> View Full Statement
+                              </a>
+                            </div>
                           </div>
                           
                           <table className="w-full text-left" style={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -3390,13 +3491,21 @@ export default function AccountsSummaryView() {
 
                   {/* Sync button */}
                   {(() => {
-                    const allInvoiceIds = groupedCustomers.flatMap(c => c.invoices.map(i => i.task.invoiceId));
+                    const sortedCustomersForSync = [...groupedCustomers].sort((a, b) => {
+                      const getMinSyncTime = (c: typeof a) => {
+                        const times = c.invoices.map(i => i.task.lastSyncedAt ? new Date(i.task.lastSyncedAt).getTime() : 0);
+                        return times.length > 0 ? Math.min(...times) : 0;
+                      };
+                      return getMinSyncTime(a) - getMinSyncTime(b);
+                    });
+                    const batchCustomers = sortedCustomersForSync.slice(0, 200);
+                    const batchInvoiceIds = batchCustomers.flatMap(c => c.invoices.map(i => i.task.invoiceId)).slice(0, 200);
                     return (
                       <RecoverySyncButton
                         lastSyncTime={lastSyncTime}
-                        isSyncDisabledBase={refreshingInvoices || allInvoiceIds.length === 0}
+                        isSyncDisabledBase={refreshingInvoices || batchInvoiceIds.length === 0}
                         refreshingInvoices={refreshingInvoices}
-                        onSync={() => startSyncPrecheck(allInvoiceIds.slice(0, 100))}
+                        onSync={() => startSyncPrecheck(batchInvoiceIds)}
                       />
                     );
                   })()}
@@ -3752,7 +3861,21 @@ export default function AccountsSummaryView() {
                       <tbody className="divide-y divide-slate-100 bg-white">
                         {customerCredits.map((c, i) => (
                           <tr key={i} className="hover:bg-slate-50/50">
-                            <td className="p-2 font-medium text-slate-700">{c.customerName}</td>
+                            <td className="p-2 font-medium text-slate-700">
+                              {isValidZohoContactId(c.customerId) ? (
+                                <a
+                                  href={getZohoContactUrl(c.customerId)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-slate-800 hover:underline hover:text-blue-600 font-semibold"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {c.customerName}
+                                </a>
+                              ) : (
+                                <span>{c.customerName}</span>
+                              )}
+                            </td>
                             <td className="p-2 text-right text-emerald-600 font-extrabold">{formatINR(c.availableCredit)}</td>
                             <td className="p-2 text-center text-slate-500 font-mono">{c.lastActivityDate}</td>
                           </tr>

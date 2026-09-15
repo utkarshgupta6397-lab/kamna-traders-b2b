@@ -33,18 +33,53 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'invoiceIds must be an array' }, { status: 400 });
     }
 
-    if (invoiceIds.length > 100) {
-      return NextResponse.json({ success: false, error: 'Cannot refresh more than 100 invoices at a time' }, { status: 400 });
+    if (invoiceIds.length > 200) {
+      return NextResponse.json({ success: false, error: 'Cannot refresh more than 200 invoices at a time' }, { status: 400 });
     }
 
-    const isDryRun = !!dryRun;
-    const proposedRemovals: any[] = [];
-    let processedCount = 0;
-    let removedCount = 0;
-    let releasedCount = 0;
+    // 1. Check if summary refresh lock is active
+    const summaryLock = await prisma.syncLock.findUnique({
+      where: { name: 'INVOICE_SUMMARY_REFRESH' },
+    });
+    if (summaryLock?.isLocked && summaryLock.lockedAt && (Date.now() - summaryLock.lockedAt.getTime() < 2 * 60 * 1000)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Summary refresh is in progress. Please wait for it to finish.',
+      }, { status: 409 });
+    }
 
-    const batchSize = 10;
-    for (let i = 0; i < invoiceIds.length; i += batchSize) {
+    // 2. Concurrency Lock for Recovery Queue / Full Customer Sync
+    const recoveryLock = await prisma.syncLock.upsert({
+      where: { name: 'RECOVERY_SYNC' },
+      update: {},
+      create: { name: 'RECOVERY_SYNC', isLocked: false },
+    });
+
+    if (recoveryLock.isLocked && recoveryLock.lockedAt && (Date.now() - recoveryLock.lockedAt.getTime() < 5 * 60 * 1000)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Full customer sync is currently in progress. Please try again shortly.',
+      }, { status: 409 });
+    }
+
+    await prisma.syncLock.update({
+      where: { name: 'RECOVERY_SYNC' },
+      data: { isLocked: true, lockedAt: new Date(), lockedBy: session.name || 'Staff' },
+    });
+
+    try {
+      const totalActiveCount = await prisma.recoveryInvoiceTask.count({
+        where: { status: 'ACTIVE' }
+      });
+
+      const isDryRun = !!dryRun;
+      const proposedRemovals: any[] = [];
+      let processedCount = 0;
+      let removedCount = 0;
+      let releasedCount = 0;
+
+      const batchSize = 10;
+      for (let i = 0; i < invoiceIds.length; i += batchSize) {
       const batch = invoiceIds.slice(i, i + batchSize);
       await Promise.all(batch.map(async (invoiceId) => {
         try {
@@ -275,27 +310,38 @@ export async function POST(request: Request) {
       }
     }
 
-    // Fetch the final set of ACTIVE recovery tasks to return to UI
-    const activeTasks = await prisma.recoveryInvoiceTask.findMany({
-      where: { status: 'ACTIVE' },
-      orderBy: { flaggedAt: 'desc' }
-    });
+      // Fetch the final set of ACTIVE recovery tasks to return to UI
+      const activeTasks = await prisma.recoveryInvoiceTask.findMany({
+        where: { status: 'ACTIVE' },
+        orderBy: { flaggedAt: 'desc' }
+      });
 
-    const remainingCount = activeTasks.length;
+      // Accurately reflect remaining tasks to process based on batch execution limit
+      const remainingCount = Math.max(0, totalActiveCount - processedCount);
 
-    return NextResponse.json({
-      success: true,
-      dryRun: isDryRun,
-      proposedRemovals,
-      customerCredits,
-      data: activeTasks,
-      stats: {
-        processed: processedCount,
-        removed: removedCount,
-        released: releasedCount,
-        remaining: remainingCount
-      }
-    });
+      return NextResponse.json({
+        success: true,
+        dryRun: isDryRun,
+        proposedRemovals,
+        customerCredits,
+        data: activeTasks,
+        stats: {
+          processed: processedCount,
+          removed: removedCount,
+          released: releasedCount,
+          remaining: remainingCount,
+          totalEligible: totalActiveCount,
+          activeRemaining: activeTasks.length,
+        }
+      });
+    } finally {
+      await prisma.syncLock
+        .update({
+          where: { name: 'RECOVERY_SYNC' },
+          data: { isLocked: false, lockedAt: null, lockedBy: null },
+        })
+        .catch(() => null);
+    }
 
   } catch (error: any) {
     console.error('[POST /api/accounts/recovery/refresh]', error);

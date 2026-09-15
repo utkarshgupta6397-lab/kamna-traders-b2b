@@ -17,6 +17,21 @@ import { adjustInventory } from '@/app/admin/actions';
 import { FormSubmit } from './ActionForm';
 import { validateQuantityPrecision, isValidPrecisionInput } from '@/lib/uom-precision';
 
+// All possible movement types for the Type filter
+const MOVEMENT_TYPE_OPTIONS = [
+  { value: '', label: 'All Types' },
+  { value: 'POST DISPATCH DEDUCTION', label: 'Post Dispatch Deduction' },
+  { value: 'MANUAL ADJUSTMENT', label: 'Manual Adjustment' },
+  { value: 'DISPATCH', label: 'Dispatch' },
+  { value: 'CART HOLD', label: 'Cart Hold' },
+  { value: 'CART RESUME', label: 'Cart Resume' },
+  { value: 'STOCK ADD', label: 'Stock Add' },
+  { value: 'STOCK LESS', label: 'Stock Less' },
+  { value: 'TRANSFER IN', label: 'Transfer In' },
+  { value: 'TRANSFER OUT', label: 'Transfer Out' },
+  { value: 'RECEIVE', label: 'Receive' },
+];
+
 interface LogEntry {
   id: string;
   warehouseId: string;
@@ -65,6 +80,30 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
 
   const todayStr = getTodayString();
 
+  // Build a lookup map: skuId -> display UOM string
+  const skuUomMap = useMemo(() => {
+    const map = new Map<string, string>();
+    skus.forEach(s => {
+      const uom = s.unitShort || s.unit || '';
+      if (uom) map.set(s.id, uom);
+    });
+    return map;
+  }, [skus]);
+
+  // Build unique UOM list for filter dropdown
+  const uniqueUoms = useMemo(() => {
+    const seen = new Set<string>();
+    const list: string[] = [];
+    skus.forEach(s => {
+      const uom = s.unitShort || s.unit || '';
+      if (uom && !seen.has(uom)) {
+        seen.add(uom);
+        list.push(uom);
+      }
+    });
+    return list.sort();
+  }, [skus]);
+
   // --- Applied Filter States (Actual state of truth for data fetch) ---
   const [appliedFilters, setAppliedFilters] = useState({
     q: '',
@@ -84,6 +123,12 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
   const [pendingTo, setPendingTo] = useState(todayStr);
   const [showFilterSkuDropdown, setShowFilterSkuDropdown] = useState(false);
   const [skuSearchText, setSkuSearchText] = useState('');
+
+  // Client-side Type and UOM filter (applied after fetch)
+  const [pendingTypeFilter, setPendingTypeFilter] = useState('');
+  const [pendingUomFilter, setPendingUomFilter] = useState('');
+  const [activeTypeFilter, setActiveTypeFilter] = useState('');
+  const [activeUomFilter, setActiveUomFilter] = useState('');
 
   // Searchable Warehouse Dropdown States
   const [showWhDropdown, setShowWhDropdown] = useState(false);
@@ -156,6 +201,8 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
       to: pendingTo,
       page: 1 // Reset to first page on new filter
     }));
+    setActiveTypeFilter(pendingTypeFilter);
+    setActiveUomFilter(pendingUomFilter);
   };
 
   const handleReset = () => {
@@ -166,6 +213,10 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
     setPendingTo(todayStr);
     setSkuSearchText('');
     setWhSearchText('');
+    setPendingTypeFilter('');
+    setPendingUomFilter('');
+    setActiveTypeFilter('');
+    setActiveUomFilter('');
     setAppliedFilters({
       q: '',
       warehouseId: '',
@@ -240,6 +291,48 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
       ? { text: 'STOCK ADD', bg: 'bg-emerald-50', fg: 'text-emerald-700', border: 'border-emerald-100' }
       : { text: 'STOCK LESS', bg: 'bg-red-50', fg: 'text-red-700', border: 'border-red-100' };
   };
+
+  // Helper: extract invoice reference from remarks or referenceId
+  const getInvoiceRef = (log: LogEntry): string | null => {
+    const remarks = log.remarks || '';
+    if (remarks.includes('Invoice:')) {
+      return remarks.split('Invoice:')[1]?.trim() || null;
+    }
+    // Also check referenceId for post-dispatch entries
+    if (log.referenceType === 'POST_DISPATCH_DEDUCTION' && log.referenceId) {
+      return log.referenceId;
+    }
+    return null;
+  };
+
+  // Helper: format timestamp into separated date + time lines
+  const formatTimestamp = (isoString: string) => {
+    const d = new Date(isoString);
+    const dateStr = d.toLocaleDateString('en-IN', {
+      day: '2-digit', month: 'short', year: '2-digit',
+      timeZone: 'Asia/Kolkata'
+    });
+    const timeStr = d.toLocaleTimeString('en-IN', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+      timeZone: 'Asia/Kolkata'
+    }).toLowerCase();
+    return { dateStr, timeStr };
+  };
+
+  // Apply client-side Type and UOM filters on top of server-fetched logs
+  const filteredLogs = useMemo(() => {
+    let result = logs;
+    if (activeTypeFilter) {
+      result = result.filter(log => getMovementType(log).text === activeTypeFilter);
+    }
+    if (activeUomFilter) {
+      result = result.filter(log => {
+        const uom = skuUomMap.get(log.skuId) || '';
+        return uom === activeUomFilter;
+      });
+    }
+    return result;
+  }, [logs, activeTypeFilter, activeUomFilter, skuUomMap]);
 
   return (
     <div className="max-w-screen-2xl mx-auto space-y-3 pb-8 px-4 mt-4">
@@ -356,6 +449,35 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
           />
         </div>
 
+        {/* Type filter (client-side) */}
+        <div className="w-40">
+          <select
+            value={pendingTypeFilter}
+            onChange={(e) => setPendingTypeFilter(e.target.value)}
+            className="w-full px-2 py-1 h-7 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-[#1A2766] outline-none bg-gray-50/50 font-medium"
+          >
+            {MOVEMENT_TYPE_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* UOM filter (client-side) */}
+        {uniqueUoms.length > 0 && (
+          <div className="w-24">
+            <select
+              value={pendingUomFilter}
+              onChange={(e) => setPendingUomFilter(e.target.value)}
+              className="w-full px-2 py-1 h-7 text-xs border border-gray-200 rounded-lg focus:ring-1 focus:ring-[#1A2766] outline-none bg-gray-50/50 font-medium"
+            >
+              <option value="">All UOM</option>
+              {uniqueUoms.map(uom => (
+                <option key={uom} value={uom}>{uom}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Dates */}
         <div className="flex items-center gap-1.5 text-gray-500">
           <span>From:</span>
@@ -418,62 +540,101 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
         )}
 
         <div className="overflow-x-auto max-h-[calc(100vh-220px)] overflow-y-auto">
+          {/* 9 columns: Time | Item | Warehouse | Before | Change | After | UOM | Type | User */}
           <table className="w-full text-left text-xs min-w-[1100px] border-collapse relative">
             <thead>
               <tr className="bg-gray-50 border-b text-gray-500 text-[10px] uppercase tracking-wider font-bold sticky top-0 z-10 shadow-sm">
-                <th className="py-2 px-2.5 bg-gray-50">Time</th>
-                <th className="py-2 px-2.5 bg-gray-50">SKU</th>
-                <th className="py-2 px-2.5 bg-gray-50">Product</th>
-                <th className="py-2 px-2.5 bg-gray-50">Warehouse</th>
-                <th className="py-2 px-2.5 text-right bg-gray-50">Before</th>
-                <th className="py-2 px-2.5 text-center bg-gray-50">Change</th>
-                <th className="py-2 px-2.5 text-right bg-gray-50">After</th>
-                <th className="py-2 px-2.5 bg-gray-50">Type</th>
-                <th className="py-2 px-2.5 bg-gray-50">User</th>
+                <th className="py-2 px-2.5 bg-gray-50 w-24">Time</th>
+                <th className="py-2 px-2.5 bg-gray-50">Item</th>
+                <th className="py-2 px-2.5 bg-gray-50 w-28">Warehouse</th>
+                <th className="py-2 px-2.5 text-right bg-gray-50 w-16">Before</th>
+                <th className="py-2 px-2.5 text-center bg-gray-50 w-16">Change</th>
+                <th className="py-2 px-2.5 text-right bg-gray-50 w-16">After</th>
+                <th className="py-2 px-2.5 bg-gray-50 w-14">UOM</th>
+                <th className="py-2 px-2.5 bg-gray-50 w-44">Type</th>
+                <th className="py-2 px-2.5 bg-gray-50 w-24">User</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-gray-700">
-              {logs.map((log) => {
+              {filteredLogs.map((log) => {
                 const typeInfo = getMovementType(log);
+                const invoiceRef = getInvoiceRef(log);
+                const uom = skuUomMap.get(log.skuId) || '';
+                const { dateStr, timeStr } = formatTimestamp(log.createdAt);
+                const changeNum = Number(log.qtyChange);
                 return (
                   <tr key={log.id} className="hover:bg-gray-50/70 transition-colors odd:bg-white even:bg-gray-50/10 text-xs">
-                    <td className="py-1.5 px-2.5 whitespace-nowrap text-[10px] font-medium text-gray-400">
-                      {new Date(log.createdAt).toLocaleString('en-IN', { 
-                        day: '2-digit', month: 'short',
-                        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
-                        timeZone: 'Asia/Kolkata'
-                      }).toLowerCase()}
+                    {/* Time: date on top line, time on second line */}
+                    <td className="py-1.5 px-2.5 whitespace-nowrap">
+                      <div className="text-[10px] font-semibold text-gray-700 leading-tight">{dateStr}</div>
+                      <div className="text-[9px] font-medium text-gray-400 leading-tight tabular-nums">{timeStr}</div>
                     </td>
-                    <td className="py-1.5 px-2.5 whitespace-nowrap font-mono font-bold text-xs text-[#1A2766]">
-                      {log.skuId}
+
+                    {/* Item: Product name prominent, SKU smaller/muted/monospace beneath */}
+                    <td className="py-1.5 px-2.5 max-w-xs">
+                      <div className="font-semibold text-xs text-gray-800 truncate leading-tight" title={log.productName}>
+                        {log.productName}
+                      </div>
+                      <div className="font-mono text-[9px] text-gray-400 font-medium leading-tight truncate" title={log.skuId}>
+                        {log.skuId}
+                      </div>
                     </td>
-                    <td className="py-1.5 px-2.5 font-medium text-xs text-gray-800 truncate max-w-xs" title={log.productName}>
-                      {log.productName}
+
+                    {/* Warehouse: compact badge */}
+                    <td className="py-1.5 px-2.5 whitespace-nowrap">
+                      <span className="inline-block text-[10px] font-bold text-[#1A2766] bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5 leading-tight truncate max-w-[7rem]" title={log.warehouse.name}>
+                        {log.warehouse.name}
+                      </span>
                     </td>
-                    <td className="py-1.5 px-2.5 whitespace-nowrap font-bold text-xs text-gray-700">
-                      {log.warehouse.name}
-                    </td>
-                    <td className="py-1.5 px-2.5 text-right font-mono text-gray-400 text-xs">
+
+                    {/* Before: secondary/muted */}
+                    <td className="py-1.5 px-2.5 text-right font-mono text-gray-400 text-[10px]">
                       {log.beforeQty >= 999999999 ? '∞' : log.beforeQty}
                     </td>
+
+                    {/* Change: green/red/muted with +/- sign */}
                     <td className="py-1.5 px-2.5 text-center font-mono">
-                      <span className={`inline-block font-bold text-xs ${log.qtyChange > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {log.qtyChange > 0 ? '+' : ''}{log.qtyChange}
+                      <span className={`inline-block font-bold text-xs tabular-nums ${
+                        changeNum > 0
+                          ? 'text-emerald-600'
+                          : changeNum < 0
+                            ? 'text-red-600'
+                            : 'text-gray-400'
+                      }`}>
+                        {changeNum > 0 ? '+' : ''}{log.qtyChange}
                       </span>
                     </td>
-                    <td className="py-1.5 px-2.5 text-right font-mono font-bold text-gray-900 text-xs">
+
+                    {/* After: bold/prominent */}
+                    <td className="py-1.5 px-2.5 text-right font-mono font-bold text-gray-900 text-xs tabular-nums">
                       {log.afterQty >= 999999999 ? '∞' : log.afterQty}
                     </td>
+
+                    {/* UOM: immediately after After */}
                     <td className="py-1.5 px-2.5 whitespace-nowrap">
-                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border ${typeInfo.bg} ${typeInfo.fg} ${typeInfo.border}`} title={log.remarks}>
+                      {uom ? (
+                        <span className="text-[10px] font-semibold text-gray-500">{uom}</span>
+                      ) : (
+                        <span className="text-[9px] text-gray-300">—</span>
+                      )}
+                    </td>
+
+                    {/* Type: badge + invoice ref beneath for POST DISPATCH */}
+                    <td className="py-1.5 px-2.5">
+                      <span
+                        className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border ${typeInfo.bg} ${typeInfo.fg} ${typeInfo.border} leading-tight`}
+                        title={log.remarks}
+                      >
                         {typeInfo.text}
                       </span>
-                      {log.remarks && log.remarks.includes('Invoice:') && (
-                        <span className="block text-[9px] text-gray-500 font-mono mt-0.5" title={log.remarks}>
-                          {log.remarks.split('Invoice:')[1]?.trim()}
+                      {invoiceRef && (
+                        <span className="block text-[9px] text-gray-400 font-mono mt-0.5 truncate max-w-[10rem]" title={invoiceRef}>
+                          {invoiceRef}
                         </span>
                       )}
                     </td>
+
+                    {/* User */}
                     <td className="py-1.5 px-2.5 whitespace-nowrap text-[10px] font-bold text-gray-600">
                       {log.user.name}
                     </td>
@@ -481,7 +642,7 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
                 );
               })}
 
-              {!isLoading && logs.length === 0 && (
+              {!isLoading && filteredLogs.length === 0 && (
                 <tr>
                   <td colSpan={9} className="p-12 text-center text-gray-400">
                     <History size={48} strokeWidth={1} className="mx-auto mb-2 opacity-10" />
@@ -494,9 +655,14 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
         </div>
 
         {/* Pagination UI */}
-        <div className="bg-gray-50/50 p-4 border-t flex items-center justify-between">
+        <div className="bg-gray-50/50 p-3 border-t flex items-center justify-between">
           <div className="text-xs text-gray-500 font-medium">
-            Showing {(appliedFilters.page - 1) * appliedFilters.pageSize + 1} – {Math.min(total, appliedFilters.page * appliedFilters.pageSize)} of {total} rows
+            {activeTypeFilter || activeUomFilter ? (
+              <>Showing {filteredLogs.length} filtered of {(appliedFilters.page - 1) * appliedFilters.pageSize + 1}–{Math.min(total, appliedFilters.page * appliedFilters.pageSize)} loaded ({total} total)</>
+            ) : (
+              <>Showing {(appliedFilters.page - 1) * appliedFilters.pageSize + 1} – {Math.min(total, appliedFilters.page * appliedFilters.pageSize)} of {total} rows</>
+            )}
+
           </div>
           <div className="flex items-center gap-2">
             <button 

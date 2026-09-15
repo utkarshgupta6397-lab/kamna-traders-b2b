@@ -46,7 +46,7 @@ export async function POST(req: Request) {
             where: { warehouseId_skuId: { warehouseId, skuId } }
           });
 
-          beforeQty = currentInv?.qty || 0;
+          beforeQty = currentInv?.qty ? Number(currentInv.qty) : 0;
           qtyChange = parsedQty - beforeQty;
 
           await tx.warehouseInventory.upsert({

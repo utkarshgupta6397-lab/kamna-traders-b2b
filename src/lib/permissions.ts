@@ -16,7 +16,8 @@ export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSku
   | 'dispatch_rate_review' | 'dispatch_payment_verification' | 'dispatch_truck_details'
   | 'dispatch_ready_for_invoice' | 'dispatch_invoice_confirmation' | 'dispatch_workflow_override' | 'dispatch_force_archive'
   | 'dispatch_inventory_deduction' | 'dispatch_receiving_upload' | 'dispatch_checked_by' | 'dispatch_post_dispatch'
-  | 'dispatch_post_dispatch_review' | 'dispatch_post_dispatch_receiving_verify' | 'dispatch_post_dispatch_checked_verify'
+  | 'dispatch_post_dispatch_review' | 'dispatch_post_dispatch_receiving_verify' | 'dispatch_post_dispatch_checked_verify' | 'dispatch_post_dispatch_inventory_approve'
+  | 'dispatch_stock_approval_view' | 'dispatch_stock_approval_approve'
   | 'mobile_stock_management' | 'mobile_stock_management_solar_panel' | 'mobile_stock_management_wire_cables' | 'mobile_stock_management_inverter' | 'mobile_stock_management_solar_accessories'
   | 'mobile_accounts' | 'mobile_accounts_customer_statement' | 'mobile_accounts_customer_dcr_lookup'
   | 'mobile_dispatch'
@@ -217,6 +218,21 @@ export const PERMISSIONS: PermissionDefinition[] = [
     description: 'Approve or reject Checked By / Checked At evidence on desktop'
   },
   {
+    key: 'dispatch_post_dispatch_inventory_approve',
+    label: 'Stock Deduction Approval',
+    description: 'Approve or reject Post-Dispatch stock deduction deviations on desktop'
+  },
+  {
+    key: 'dispatch_stock_approval_view',
+    label: 'Stock Approval View',
+    description: 'View the desktop Operations Stock Approval queue and request details'
+  },
+  {
+    key: 'dispatch_stock_approval_approve',
+    label: 'Stock Approval Processing',
+    description: 'Approve or reject Post-Dispatch stock deduction requests on desktop'
+  },
+  {
     key: 'dispatch_inventory_deduction',
     label: 'Inventory Deduction',
     description: 'Ability to perform Post-Dispatch inventory deduction'
@@ -407,6 +423,9 @@ export const DISPATCH_PERMISSION_GROUPS: DispatchPermissionGroup[] = [
       { key: 'dispatch_post_dispatch', label: 'Post Dispatch Module', description: 'Access to Desktop Post-Dispatch module and table' },
       { key: 'dispatch_post_dispatch_receiving_verify', label: 'Receiving Verification', description: 'Approve or reject customer receiving proof on desktop' },
       { key: 'dispatch_post_dispatch_checked_verify', label: 'Upload Verification', description: 'Approve or reject Checked By / Checked At evidence on desktop' },
+      { key: 'dispatch_post_dispatch_inventory_approve', label: 'Stock Deduction Approval', description: 'Approve or reject stock deduction deviation submissions' },
+      { key: 'dispatch_stock_approval_view', label: 'Stock Approval View', description: 'View the desktop Operations Stock Approval queue' },
+      { key: 'dispatch_stock_approval_approve', label: 'Stock Approval Processing', description: 'Approve or reject stock deduction requests on desktop' },
       { key: 'dispatch_force_archive', label: 'Force Archive', description: 'Force archive invoices in Post-Dispatch' },
     ]
   }
@@ -424,6 +443,9 @@ export const dispatchPermissionKeySet = new Set<string>([
   'dispatch_post_dispatch',
   'dispatch_post_dispatch_receiving_verify',
   'dispatch_post_dispatch_checked_verify',
+  'dispatch_post_dispatch_inventory_approve',
+  'dispatch_stock_approval_view',
+  'dispatch_stock_approval_approve',
   'dispatch_force_archive',
   'dispatch_rate_review',
   'dispatch_payment_verification',
@@ -587,6 +609,9 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'dispatch_post_dispatch_review',
   'dispatch_post_dispatch_receiving_verify',
   'dispatch_post_dispatch_checked_verify',
+  'dispatch_post_dispatch_inventory_approve',
+  'dispatch_stock_approval_view',
+  'dispatch_stock_approval_approve',
   'mobile_stock_management',
   'mobile_stock_management_solar_panel',
   'mobile_stock_management_wire_cables',

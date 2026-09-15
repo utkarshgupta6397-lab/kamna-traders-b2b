@@ -11,9 +11,10 @@ export default async function OperationsLayout({ children }: { children: React.R
 
   const isAdmin = session.role === 'ADMIN';
   const canManageTransfers = isAdmin || !!session.canManageTransfers;
+  const canViewStockApproval = isAdmin || !!session.dispatch_stock_approval_view;
 
   return (
-    <OperationsTabs canManageTransfers={canManageTransfers}>
+    <OperationsTabs canManageTransfers={canManageTransfers} canViewStockApproval={canViewStockApproval}>
       {children}
     </OperationsTabs>
   );

@@ -57,6 +57,12 @@ export default function UserPermissionsPage() {
     setUsers(prev => prev.map(u => {
       if (u.id !== userId) return u;
       const updated = { ...u, [key]: newValue };
+      if (newValue && key === 'dispatch_stock_approval_approve') {
+        updated.dispatch_stock_approval_view = true;
+      }
+      if (!newValue && key === 'dispatch_stock_approval_view') {
+        updated.dispatch_stock_approval_approve = false;
+      }
       if (newValue && postDispatchChildren.includes(key)) {
         updated.mobile_dispatch = true;
         updated.mobile_dispatch_post_dispatch = true;

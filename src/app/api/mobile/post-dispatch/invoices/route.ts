@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth';
 import { hasPostDispatchAccess } from '@/lib/post-dispatch-auth';
 import { isConsumerCustomer } from '@/lib/post-dispatch-sync';
 import { buildPostDispatchWhereClause } from '@/lib/post-dispatch-query';
+import { computeAggregateInventoryStatus } from '@/lib/stock-deduction-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,6 +56,12 @@ export async function GET(request: Request) {
       prisma.postDispatchInvoice.findMany({
         where,
         include: {
+          lines: {
+            select: { id: true },
+          },
+          stockDeductionAllocations: {
+            select: { invoiceLineId: true, status: true },
+          },
           workflows: {
             include: {
               submissions: {
@@ -145,16 +152,26 @@ export async function GET(request: Request) {
       const endTime = inv.timerStoppedAt ? new Date(inv.timerStoppedAt).getTime() : now.getTime();
       const elapsedSeconds = Math.max(0, Math.floor((endTime - startTime) / 1000));
 
+      const zohoStatusLower = (inv.zohoStatus || '').toLowerCase();
+      const isVoid = zohoStatusLower === 'void' || inv.erpSubStatus === 'Void';
       const receivingWf = inv.workflows.find((w) => w.workflowType === 'RECEIVING');
       const checkedWf = inv.workflows.find((w) => w.workflowType === 'CHECKED');
       const inventoryWf = inv.workflows.find((w) => w.workflowType === 'INVENTORY_DEDUCTION');
-      const completedCount = inv.workflows.filter((w) => w.status === 'COMPLETED').length;
-      const zohoStatusLower = inv.zohoStatus.toLowerCase();
+
+      // Aggregate Inventory Status derived from actual deduction status of lines
+      const computedInventoryStatus = isVoid
+        ? (inventoryWf?.status || 'PENDING')
+        : computeAggregateInventoryStatus(inv.lines?.length || 0, inv.stockDeductionAllocations || []);
+
+      const completedCount =
+        (receivingWf?.status === 'COMPLETED' ? 1 : 0) +
+        (checkedWf?.status === 'COMPLETED' ? 1 : 0) +
+        (computedInventoryStatus === 'COMPLETED' ? 1 : 0);
+
       const isActionable =
         inv.erpStatus === 'Active' &&
         zohoStatusLower !== 'draft' &&
-        zohoStatusLower !== 'void' &&
-        inv.erpSubStatus !== 'Void';
+        !isVoid;
 
       const detailsJson = inv.zohoDetailsJson as any;
       const isConsumer = detailsJson?.gst_treatment
@@ -206,7 +223,7 @@ export async function GET(request: Request) {
           completedCount,
           receivingStatus: receivingWf?.status || 'PENDING',
           checkedStatus: checkedWf?.status || 'PENDING',
-          inventoryStatus: inventoryWf?.status || 'PENDING',
+          inventoryStatus: computedInventoryStatus,
         },
       };
     });

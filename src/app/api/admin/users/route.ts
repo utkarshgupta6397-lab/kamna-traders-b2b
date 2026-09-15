@@ -57,6 +57,8 @@ export async function GET() {
           dispatch_post_dispatch_review: true,
           dispatch_post_dispatch_receiving_verify: true,
           dispatch_post_dispatch_checked_verify: true,
+          dispatch_stock_approval_view: true,
+          dispatch_stock_approval_approve: true,
           mobile_stock_management: true,
           mobile_stock_management_solar_panel: true,
           mobile_stock_management_wire_cables: true,

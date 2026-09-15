@@ -9,7 +9,7 @@ interface InventoryItem {
   warehouse: { name: string };
   sku: { id: string; name: string };
   zone: string | null;
-  qty: number;
+  qty: number | string | any;
   isOos: boolean;
 }
 
@@ -134,7 +134,7 @@ export default function InventoryTableClient({ items }: { items: InventoryItem[]
                       <span className="text-gray-300">-</span>
                     )}
                   </td>
-                  <td className="p-3 text-right font-semibold text-xs">{item.qty}</td>
+                  <td className="p-3 text-right font-semibold text-xs">{item.qty?.toString()}</td>
                   <td className="p-3">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${item.isOos ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
                       {item.isOos ? 'OOS' : 'In Stock'}

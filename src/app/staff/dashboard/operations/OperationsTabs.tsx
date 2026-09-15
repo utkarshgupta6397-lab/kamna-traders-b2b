@@ -2,15 +2,17 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ShoppingCart, History, Package, ArrowLeftRight, Truck } from 'lucide-react';
+import { ShoppingCart, History, Package, ArrowLeftRight, ShieldCheck } from 'lucide-react';
 
 interface OperationsTabsProps {
   canManageTransfers: boolean;
+  canViewStockApproval?: boolean;
   children: React.ReactNode;
 }
 
 export default function OperationsTabs({
   canManageTransfers,
+  canViewStockApproval,
   children,
 }: OperationsTabsProps) {
   const pathname = usePathname();
@@ -18,8 +20,8 @@ export default function OperationsTabs({
   let activeTab = 'current-stock';
   if (pathname.includes('/operations/carts')) {
     activeTab = 'carts';
-  } else if (pathname.includes('/operations/dispatch')) {
-    activeTab = 'dispatch';
+  } else if (pathname.includes('/operations/stock-approval')) {
+    activeTab = 'stock-approval';
   } else if (pathname.includes('/operations/inventory-history')) {
     activeTab = 'inventory-history';
   } else if (pathname.includes('/operations/transfers')) {
@@ -42,10 +44,6 @@ export default function OperationsTabs({
           <ShoppingCart size={16} strokeWidth={1.8} />
           Carts
         </Link>
-        <Link href="/staff/dashboard/operations/dispatch" className={tabCls('dispatch')}>
-          <Truck size={16} strokeWidth={1.8} />
-          Dispatch
-        </Link>
         <Link href="/staff/dashboard/operations/inventory-history" className={tabCls('inventory-history')}>
           <History size={16} strokeWidth={1.8} />
           Inventory History
@@ -58,6 +56,12 @@ export default function OperationsTabs({
           <Link href="/staff/dashboard/operations/transfers" className={tabCls('transfers')}>
             <ArrowLeftRight size={16} strokeWidth={1.8} />
             Transfers
+          </Link>
+        )}
+        {canViewStockApproval && (
+          <Link href="/staff/dashboard/operations/stock-approval" className={tabCls('stock-approval')}>
+            <ShieldCheck size={16} strokeWidth={1.8} />
+            Stock Approval
           </Link>
         )}
       </div>

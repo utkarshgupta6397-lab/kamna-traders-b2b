@@ -37,6 +37,8 @@ export async function PATCH(
         updateData.mobile_dispatch_post_dispatch = true;
       } else if (key === 'mobile_dispatch_post_dispatch') {
         updateData.mobile_dispatch = true;
+      } else if (key === 'dispatch_stock_approval_approve') {
+        updateData.dispatch_stock_approval_view = true;
       } else if ([
         'dispatch_post_dispatch_receiving_verify',
         'dispatch_post_dispatch_checked_verify',
@@ -53,7 +55,9 @@ export async function PATCH(
         updateData.dispatch_view = true;
       }
     } else {
-      if (key === 'mobile_dispatch') {
+      if (key === 'dispatch_stock_approval_view') {
+        updateData.dispatch_stock_approval_approve = false;
+      } else if (key === 'mobile_dispatch') {
         updateData.mobile_dispatch_post_dispatch = false;
         postDispatchChildren.forEach((child) => {
           updateData[child] = false;

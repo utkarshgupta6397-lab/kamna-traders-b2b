@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
 
     const stockMap: Record<string, number> = {};
     for (const inv of inventoryList) {
-      stockMap[inv.skuId] = inv.qty;
+      stockMap[inv.skuId] = Number(inv.qty);
     }
 
     return NextResponse.json(stockMap);

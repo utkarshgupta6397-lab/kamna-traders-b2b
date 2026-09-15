@@ -214,7 +214,7 @@ export async function POST(request: Request) {
             }
           }
         });
-        const currentStock = sourceInv?.qty || 0;
+        const currentStock = sourceInv?.qty ? parseFloat(sourceInv.qty.toString()) : 0;
         if (item.requestedQty > currentStock) {
           console.warn("[TRANSFER] Validation failed: requested qty exceeds available stock", { skuId: item.skuId, requested: item.requestedQty, currentStock });
           return NextResponse.json({

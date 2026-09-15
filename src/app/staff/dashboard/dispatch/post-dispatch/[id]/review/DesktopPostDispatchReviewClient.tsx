@@ -31,10 +31,15 @@ import {
 import toast from "react-hot-toast";
 import MobileImagePreview from "@/components/mobile/MobileImagePreview";
 
+import DeductionSummaryPanel from '@/components/dispatch/post-dispatch/DeductionSummaryPanel';
+
 interface Props {
   invoiceId: string;
   canVerifyReceiving: boolean;
   canVerifyChecked: boolean;
+  canEditStockAllocation?: boolean;
+  canDeductStock: boolean;
+  canApproveStockDeduction: boolean;
   currentUserId: string;
 }
 
@@ -160,6 +165,9 @@ export default function DesktopPostDispatchReviewClient({
   invoiceId,
   canVerifyReceiving,
   canVerifyChecked,
+  canEditStockAllocation = false,
+  canDeductStock,
+  canApproveStockDeduction,
   currentUserId,
 }: Props) {
   const [invoice, setInvoice] = useState<any | null>(null);
@@ -169,6 +177,8 @@ export default function DesktopPostDispatchReviewClient({
 
   // Section Tab Navigation: "RECEIVING" | "CHECKED" | "INVENTORY"
   const [activeSection, setActiveSection] = useState<SectionTab>("RECEIVING");
+  const [deductionData, setDeductionData] = useState<any | null>(null);
+  const [deductionLoading, setDeductionLoading] = useState(false);
 
   // Rejection modal state
   const [rejectModal, setRejectModal] = useState<{
@@ -206,13 +216,31 @@ export default function DesktopPostDispatchReviewClient({
     }
   }, [invoiceId]);
 
+  // Load deduction summary from stock-deduction endpoint
+  const fetchDeductionSummary = useCallback(async () => {
+    setDeductionLoading(true);
+    try {
+      const res = await fetch(`/api/dispatch/post-dispatch/${invoiceId}/stock-deduction`);
+      if (res.ok) {
+        const json = await res.json();
+        setDeductionData(json);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDeductionLoading(false);
+    }
+  }, [invoiceId]);
+
   useEffect(() => {
     fetchInvoiceDetail();
-  }, [fetchInvoiceDetail]);
+    fetchDeductionSummary();
+  }, [fetchInvoiceDetail, fetchDeductionSummary]);
 
   const handleManualRefresh = () => {
     setRefreshing(true);
     fetchInvoiceDetail();
+    fetchDeductionSummary();
   };
 
   // Targeted individual status refresh from Zoho Books (only on user request)
@@ -609,9 +637,6 @@ export default function DesktopPostDispatchReviewClient({
                 >
                   <Package size={14} />
                   <span>Inventory Deduction</span>
-                  <span className="text-[10px] px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded font-semibold">
-                    Phase 2
-                  </span>
                 </button>
               </nav>
             </div>
@@ -998,71 +1023,67 @@ export default function DesktopPostDispatchReviewClient({
                 </div>
               )}
 
-              {/* SECTION 3: INVENTORY DEDUCTION (PHASE 2 - COMING SOON) */}
+              {/* SECTION 3: INVENTORY DEDUCTION */}
               {activeSection === "INVENTORY" && (
                 <div>
                   <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-gray-100 text-gray-600 flex items-center justify-center border border-gray-200">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center border border-indigo-200">
                         <Package size={16} />
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-bold text-gray-900 text-sm tracking-tight">Inventory Deduction</h3>
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 uppercase tracking-wider">
-                            Phase 2 — Coming Soon
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500">Automated stock deduction against warehouse inventories will activate in Phase 2</p>
+                        <h3 className="font-bold text-gray-900 text-sm tracking-tight">Inventory Deduction & Stock Allocation</h3>
+                        <p className="text-xs text-gray-500">Item-by-item warehouse stock deduction and deviation review</p>
                       </div>
                     </div>
 
-                    <span className="h-6 px-3 rounded-full text-xs font-semibold text-gray-400 bg-gray-100 border border-gray-200 inline-flex items-center">
-                      Not Started (Phase 2)
-                    </span>
+                    {/* Status Pill */}
+                    <div>
+                      {inventoryWf?.status === "COMPLETED" ? (
+                        <span className="h-6 px-3 rounded-full text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 inline-flex items-center gap-1.5">
+                          <CheckCircle2 size={13} className="text-emerald-600" />
+                          <span>Deductions Completed</span>
+                        </span>
+                      ) : (
+                        <span className="h-6 px-3 rounded-full text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 inline-flex items-center gap-1.5">
+                          <Hourglass size={13} className="text-slate-500" />
+                          <span>Pending Deduction</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="p-6 space-y-4">
-                    <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-xl text-xs text-amber-900 leading-relaxed">
-                      <strong>Phase 2 Workspace:</strong> Item mapping, stock deduction quantities, warehouse deviation approvals, and ERP stock register updates will be managed from this workspace upon Phase 2 rollout. No inventory deductions are executed during Phase 1.
-                    </div>
-
-                    {invoice.lines?.length > 0 ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                            Invoice Line Items ({invoice.lines.length})
-                          </p>
-                          <span className="text-[11px] text-gray-400">Stored in local ERP</span>
-                        </div>
-                        <div className="border border-gray-200 rounded-xl overflow-hidden bg-white text-xs">
-                          <table className="w-full text-left">
-                            <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px]">
-                              <tr>
-                                <th className="px-3 py-2.5">Item Name</th>
-                                <th className="px-3 py-2.5 text-right">Qty</th>
-                                <th className="px-3 py-2.5 text-right">Rate</th>
-                                <th className="px-3 py-2.5 text-right">Amount</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {invoice.lines.map((line: any) => (
-                                <tr key={line.id} className="text-gray-700 hover:bg-gray-50/50">
-                                  <td className="px-3 py-2 font-medium">{line.itemName}</td>
-                                  <td className="px-3 py-2 text-right font-mono">{line.quantity}</td>
-                                  <td className="px-3 py-2 text-right font-mono">{formatCurrency(line.rate, invoice.currencyCode)}</td>
-                                  <td className="px-3 py-2 text-right font-mono font-bold">{formatCurrency(line.amount, invoice.currencyCode)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                  <div className="p-6 space-y-6">
+                    {/* Summary statistics */}
+                    {deductionLoading && !deductionData ? (
+                      <div className="py-8 flex items-center justify-center gap-2 text-xs text-slate-500">
+                        <Loader2 size={16} className="animate-spin text-[#1A2766]" />
+                        <span>Loading inventory status…</span>
                       </div>
                     ) : (
-                      <p className="text-xs text-gray-400 italic py-4 text-center">
-                        Inventory line items have not been fetched or are not required in Phase 1.
-                      </p>
+                      <DeductionSummaryPanel data={deductionData} />
                     )}
+
+                    {/* Dedicated workspace navigation banner */}
+                    <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-50 via-indigo-50/40 to-slate-50 border border-indigo-100/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                          <Package className="text-[#1A2766]" size={16} />
+                          <span>Dedicated Inventory Deduction Workspace</span>
+                        </h4>
+                        <p className="text-xs text-slate-500 leading-relaxed max-w-xl">
+                          Manage line-by-line warehouse stock deductions, resolve SKU mappings, configure deviations, and submit or approve stock allocations in the full-page operational workspace.
+                        </p>
+                      </div>
+
+                      <Link
+                        href={`/staff/dashboard/dispatch/post-dispatch/${invoiceId}/inventory-deduction`}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#1A2766] hover:bg-[#121c48] text-white text-xs font-bold rounded-xl shadow-xs hover:shadow transition-all shrink-0"
+                      >
+                        <span>Open Allocation Workspace</span>
+                        <ExternalLink size={14} />
+                      </Link>
+                    </div>
                   </div>
                 </div>
               )}

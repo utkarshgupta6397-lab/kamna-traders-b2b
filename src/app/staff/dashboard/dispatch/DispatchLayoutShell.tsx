@@ -7,8 +7,9 @@ export default function DispatchLayoutShell({ children }: { children: React.Reac
   const pathname = usePathname();
   const isReviewPage = pathname.includes('/review');
   const isIncomingPage = pathname.startsWith('/staff/dashboard/dispatch/incoming');
+  const isInventoryDeductionPage = pathname.includes('/inventory-deduction');
 
-  if (isReviewPage || isIncomingPage) {
+  if (isReviewPage || isIncomingPage || isInventoryDeductionPage) {
     return (
       <div className="flex-1 flex flex-col min-w-0 h-full min-h-0 w-full">
         {children}

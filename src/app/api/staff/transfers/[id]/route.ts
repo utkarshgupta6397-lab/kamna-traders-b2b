@@ -279,14 +279,14 @@ export async function POST(
           where: { warehouseId: transfer.sourceWarehouseId, skuId: { in: skuIds } }
         });
 
-        const transitInvMap = new Map(transitInvs.map(i => [i.skuId, i.qty]));
-        const destInvMap = new Map(destInvs.map(i => [i.skuId, i.qty]));
-        const sourceInvMap = new Map(sourceInvs.map(i => [i.skuId, i.qty]));
+        const transitInvMap = new Map(transitInvs.map(i => [i.skuId, i.qty ? parseFloat(i.qty.toString()) : 0]));
+        const destInvMap = new Map(destInvs.map(i => [i.skuId, i.qty ? parseFloat(i.qty.toString()) : 0]));
+        const sourceInvMap = new Map(sourceInvs.map(i => [i.skuId, i.qty ? parseFloat(i.qty.toString()) : 0]));
 
         for (const item of valResults) {
-          const currentTransitQty = transitInvMap.get(item.skuId) || 0;
-          const currentDestQty = destInvMap.get(item.skuId) || 0;
-          const currentSourceQty = sourceInvMap.get(item.skuId) || 0;
+          const currentTransitQty = Number(transitInvMap.get(item.skuId) ?? 0);
+          const currentDestQty = Number(destInvMap.get(item.skuId) ?? 0);
+          const currentSourceQty = Number(sourceInvMap.get(item.skuId) ?? 0);
 
           // 1. Deduct stock from In Transit warehouse (IN_TRANSIT) for all SKUs (since it was added there during dispatch)
           if (item.receiveQty > 0 || item.shortQtyForThisTime > 0) {
@@ -593,7 +593,7 @@ export async function POST(
           }
         }
       });
-      const currentSourceQty = sourceInv?.qty || 0;
+      const currentSourceQty = sourceInv?.qty ? Number(sourceInv.qty) : 0;
 
       // Fetch destination warehouse inventory (IN_TRANSIT)
       const destInv = await prisma.warehouseInventory.findUnique({
@@ -604,7 +604,7 @@ export async function POST(
           }
         }
       });
-      const currentDestQty = destInv?.qty || 0;
+      const currentDestQty = destInv?.qty ? Number(destInv.qty) : 0;
 
       // Validate stock for non-unlimited SKUs
       if (!sku.isUnlimited) {
@@ -638,12 +638,12 @@ export async function POST(
         where: { warehouseId: 'IN_TRANSIT', skuId: { in: skuIds } }
       });
 
-      const sourceInvMap = new Map(sourceInvs.map(i => [i.skuId, i.qty]));
-      const destInvMap = new Map(destInvs.map(i => [i.skuId, i.qty]));
+      const sourceInvMap = new Map(sourceInvs.map(i => [i.skuId, i.qty ? Number(i.qty) : 0]));
+      const destInvMap = new Map(destInvs.map(i => [i.skuId, i.qty ? Number(i.qty) : 0]));
 
       for (const val of dispatchValidations) {
-        const currentSourceQty = sourceInvMap.get(val.skuId) || 0;
-        const currentDestQty = destInvMap.get(val.skuId) || 0;
+        const currentSourceQty = Number(sourceInvMap.get(val.skuId) ?? 0);
+        const currentDestQty = Number(destInvMap.get(val.skuId) ?? 0);
 
         // Double check stock levels for non-unlimited SKUs inside transaction block
         if (!val.isUnlimited) {

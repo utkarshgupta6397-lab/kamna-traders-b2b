@@ -75,6 +75,11 @@ export default function InvoiceCard({ invoice, onOpen }: InvoiceCardProps) {
   const checkedAwaiting = invoice.workflowSummary.checkedStatus === 'AWAITING_VERIFICATION';
   const checkedRework = invoice.workflowSummary.checkedStatus === 'REWORK_REQUIRED';
 
+  const inventoryDone = invoice.workflowSummary.inventoryStatus === 'COMPLETED';
+  const inventoryInProgress =
+    invoice.workflowSummary.inventoryStatus === 'IN_PROGRESS' ||
+    invoice.workflowSummary.inventoryStatus === 'IN-PROGRESS';
+
   const hasRework = receivingRework || checkedRework;
   const hasAwaiting = receivingAwaiting || checkedAwaiting;
 
@@ -226,10 +231,26 @@ export default function InvoiceCard({ invoice, onOpen }: InvoiceCardProps) {
             </span>
           </div>
 
-          {/* Inventory status (placeholder) */}
-          <div className="flex items-center gap-1 text-slate-400">
-            <Circle className="w-3.5 h-3.5 text-slate-300" />
-            <span>Inventory</span>
+          {/* Inventory status */}
+          <div className="flex items-center gap-1">
+            {inventoryDone ? (
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+            ) : inventoryInProgress ? (
+              <Clock className="w-3.5 h-3.5 text-amber-500" />
+            ) : (
+              <Circle className="w-3.5 h-3.5 text-slate-300" />
+            )}
+            <span
+              className={
+                inventoryDone
+                  ? 'text-emerald-700 font-medium'
+                  : inventoryInProgress
+                  ? 'text-amber-700 font-semibold'
+                  : 'text-slate-500'
+              }
+            >
+              Inventory
+            </span>
           </div>
         </div>
 

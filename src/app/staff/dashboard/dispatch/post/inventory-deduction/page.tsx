@@ -12,16 +12,16 @@ export default function Page() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-gray-900">Inventory Deduction</h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
-              Phase 2 — Coming Soon
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200">
+              Invoice Level Workflow
             </span>
           </div>
           <p className="text-sm text-gray-500 mt-1">
-            Automated stock deduction module for completed dispatch shipments.
+            Automated stock deduction module for dispatched invoices.
           </p>
         </div>
         <Link
-          href="/staff/dashboard/dispatch/incoming"
+          href="/staff/dashboard/dispatch/incoming?dispatch=post"
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#1A2766] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
         >
           <ArrowLeft size={14} />
@@ -32,21 +32,21 @@ export default function Page() {
       {/* Notice Card */}
       <div className="flex-1 overflow-auto bg-gray-50/30 flex items-center justify-center p-8">
         <div className="flex flex-col items-center text-center max-w-md bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
-          <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center border border-amber-100 mb-4 text-amber-600">
+          <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center border border-blue-100 mb-4 text-[#1A2766]">
             <PackageMinus size={32} />
           </div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 mb-2">
-            Scheduled for Phase 2
+          <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 mb-2">
+            Integrated Workspace
           </div>
-          <h2 className="text-lg font-bold text-gray-900 mb-2">Inventory Deduction Module</h2>
+          <h2 className="text-lg font-bold text-gray-900 mb-2">Inventory Deduction Workspace</h2>
           <p className="text-xs text-gray-500 leading-relaxed mb-6">
-            Phase 1 implements Zoho Books invoice synchronization, receiving proof upload & verification, and physical checked-by audit workflows. Automated inventory deductions will be introduced in Phase 2.
+            Inventory deductions and SKU allocations are performed on each invoice directly from the Post-Dispatch Review workspace. Navigate to any active post-dispatch invoice to review items, allocate warehouse stock, and trigger deductions.
           </p>
           <Link
-            href="/staff/dashboard/dispatch/incoming"
+            href="/staff/dashboard/dispatch/incoming?dispatch=post"
             className="px-4 py-2 bg-[#1A2766] text-white text-xs font-bold rounded-lg hover:bg-blue-900 transition-colors shadow-sm"
           >
-            Go to Active Workflows
+            Go to Post-Dispatch Invoices
           </Link>
         </div>
       </div>

@@ -22,13 +22,13 @@ export class LegacyProductNormalizer {
     const skuInventory = inventoryMap ? (inventoryMap.get(variant.sku) || []) : [];
     
     const targetInv = warehouseId ? skuInventory.find(inv => inv.warehouseId === warehouseId) : null;
-    const inventoryQty = targetInv ? targetInv.qty : skuInventory.reduce((s, inv) => s + inv.qty, 0);
+    const inventoryQty = targetInv ? Number(targetInv.qty) : skuInventory.reduce((s, inv) => s + Number(inv.qty), 0);
     const isUnlimited = !variant.trackInventory;
 
     const isOos = isUnlimited 
       ? false 
       : targetInv
-        ? targetInv.isOos || targetInv.qty <= 0
+        ? targetInv.isOos || Number(targetInv.qty) <= 0
         : skuInventory.length > 0 
           ? skuInventory.some(inv => inv.isOos) || inventoryQty <= 0
           : false;
@@ -37,7 +37,7 @@ export class LegacyProductNormalizer {
     const inventoryDict: Record<string, { qty: number, isOos: boolean }> = {};
     skuInventory.forEach(inv => {
       inventoryDict[inv.warehouseId] = {
-        qty: inv.qty,
+        qty: Number(inv.qty),
         isOos: inv.isOos
       };
     });

@@ -27,6 +27,8 @@ interface LogEntry {
   remarks: string;
   createdBy: string;
   createdAt: string; // From API it comes as ISO string
+  referenceType?: string | null;
+  referenceId?: string | null;
   warehouse: { name: string };
   user: { name: string };
 }
@@ -195,6 +197,10 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
   const getMovementType = (log: LogEntry) => {
     const remarks = (log.remarks || '').toUpperCase();
     const change = log.qtyChange;
+
+    if (log.referenceType === 'POST_DISPATCH_DEDUCTION' || remarks.includes('POST-DISPATCH') || remarks.includes('POST_DISPATCH')) {
+      return { text: 'POST DISPATCH DEDUCTION', bg: 'bg-purple-50', fg: 'text-purple-700', border: 'border-purple-200' };
+    }
 
     if (remarks.includes('DISPATCH HOLD')) {
       return { text: 'CART HOLD', bg: 'bg-amber-50', fg: 'text-amber-700', border: 'border-amber-100' };
@@ -460,6 +466,11 @@ export default function InventoryHistoryClient({ warehouses, skus, canAdjust = f
                       <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border ${typeInfo.bg} ${typeInfo.fg} ${typeInfo.border}`} title={log.remarks}>
                         {typeInfo.text}
                       </span>
+                      {log.remarks && log.remarks.includes('Invoice:') && (
+                        <span className="block text-[9px] text-gray-500 font-mono mt-0.5" title={log.remarks}>
+                          {log.remarks.split('Invoice:')[1]?.trim()}
+                        </span>
+                      )}
                     </td>
                     <td className="py-1.5 px-2.5 whitespace-nowrap text-[10px] font-bold text-gray-600">
                       {log.user.name}

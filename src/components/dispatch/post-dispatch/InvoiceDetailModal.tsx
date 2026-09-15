@@ -530,8 +530,8 @@ export default function InvoiceDetailModal({
                       </p>
                     </div>
 
-                    <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600">
-                      Phase 2 Ready
+                    <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                      Active Workflow
                     </span>
                   </div>
 

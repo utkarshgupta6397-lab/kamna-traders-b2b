@@ -2,7 +2,7 @@ import React from 'react';
 import { redirect } from 'next/navigation';
 import { Metadata } from 'next';
 import { getSession } from '@/lib/auth';
-import { hasDesktopPostDispatchReviewAccess } from '@/lib/post-dispatch-auth';
+import { hasDesktopPostDispatchReviewAccess, canEditStockAllocation, canDeductStock, canApproveStockDeduction } from '@/lib/post-dispatch-auth';
 import DesktopPostDispatchReviewClient from './DesktopPostDispatchReviewClient';
 
 export const metadata: Metadata = {
@@ -45,6 +45,10 @@ export default async function PostDispatchReviewPage({
       session.dispatch_post_dispatch_checked_verify
     );
 
+  const canEditStockAllocationPerm = canEditStockAllocation(session);
+  const canDeductStockPerm = canDeductStock(session);
+  const canApproveStockDeductionPerm = canApproveStockDeduction(session);
+
   const currentUserId = (session.userId as string) || (session.id as string);
 
   return (
@@ -52,6 +56,9 @@ export default async function PostDispatchReviewPage({
       invoiceId={id}
       canVerifyReceiving={canVerifyReceiving}
       canVerifyChecked={canVerifyChecked}
+      canEditStockAllocation={canEditStockAllocationPerm}
+      canDeductStock={canDeductStockPerm}
+      canApproveStockDeduction={canApproveStockDeductionPerm}
       currentUserId={currentUserId}
     />
   );

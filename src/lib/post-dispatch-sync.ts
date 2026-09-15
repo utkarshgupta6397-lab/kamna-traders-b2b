@@ -1164,7 +1164,7 @@ export async function runEInvoiceStatusCheck(options: {
 export async function checkAndArchiveInvoice(
   invoiceId: string,
   tx?: Prisma.TransactionClient | PrismaClient
-) {
+): Promise<boolean> {
   const db = (tx || prisma) as PrismaClient;
   const workflows = await db.postDispatchWorkflow.findMany({
     where: { invoiceId },
@@ -1193,4 +1193,6 @@ export async function checkAndArchiveInvoice(
       },
     });
   }
+
+  return allCompleted;
 }

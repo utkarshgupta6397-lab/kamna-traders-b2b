@@ -34,7 +34,7 @@ export async function GET() {
 
     const stockMap = new Map<string, number>();
     for (const inv of inventory) {
-      stockMap.set(`${inv.warehouseId}_${inv.skuId}`, inv.qty);
+      stockMap.set(`${inv.warehouseId}_${inv.skuId}`, Number(inv.qty));
     }
 
     const results = thresholds.map(t => ({

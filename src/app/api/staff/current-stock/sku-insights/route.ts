@@ -138,7 +138,7 @@ export async function GET(request: Request) {
       const dateKey = adj.createdAt.toISOString().split('T')[0];
       const whId = adj.warehouseId;
       const key = `${dateKey}_${whId}`;
-      const qty = adj.qtyChange;
+      const qty = Number(adj.qtyChange);
 
       if (!totalsByWarehouse[whId]) {
         totalsByWarehouse[whId] = { in: 0, out: 0, avgDailyOut: 0 };
@@ -160,7 +160,7 @@ export async function GET(request: Request) {
       aggregated[key].inward += qty;
       aggregated[key].net += qty;
       // We take the latest afterQty for that day/wh
-      aggregated[key].afterQty = adj.afterQty;
+      aggregated[key].afterQty = Number(adj.afterQty);
     });
 
     // Finalize movements
@@ -190,9 +190,9 @@ export async function GET(request: Request) {
       sku: {
         id: catalogItem.legacySku || skuId,
         name: catalogItem.displayName || catalogItem.productName || 'Unknown Product',
-        totalStock: inventory.reduce((sum, inv) => sum + inv.qty, 0),
+        totalStock: inventory.reduce((sum, inv) => sum + Number(inv.qty), 0),
         inventoryByWarehouse: inventory.reduce((acc, inv) => {
-          acc[inv.warehouseId] = { qty: inv.qty };
+          acc[inv.warehouseId] = { qty: Number(inv.qty) };
           return acc;
         }, {} as Record<string, { qty: number }>),
         unit: catalogItem.unit

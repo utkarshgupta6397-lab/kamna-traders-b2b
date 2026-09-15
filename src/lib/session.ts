@@ -153,6 +153,8 @@ export async function validateSession(sessionToken: string): Promise<{
             dispatch_post_dispatch_review: true,
             dispatch_post_dispatch_receiving_verify: true,
             dispatch_post_dispatch_checked_verify: true,
+            dispatch_stock_approval_view: true,
+            dispatch_stock_approval_approve: true,
             mobile_stock_management: true,
             mobile_stock_management_solar_panel: true,
             mobile_stock_management_wire_cables: true,
@@ -249,6 +251,8 @@ export async function validateSession(sessionToken: string): Promise<{
             dispatch_receiving_upload: true,
             dispatch_checked_by: true,
             dispatch_post_dispatch: true,
+            dispatch_stock_approval_view: true,
+            dispatch_stock_approval_approve: true,
             mobile_stock_management: true,
             mobile_stock_management_solar_panel: true,
             mobile_stock_management_wire_cables: true,
@@ -363,6 +367,8 @@ export async function validateSession(sessionToken: string): Promise<{
       userObj.dispatch_receiving_upload = true;
       userObj.dispatch_checked_by = true;
       userObj.dispatch_post_dispatch = true;
+      userObj.dispatch_stock_approval_view = true;
+      userObj.dispatch_stock_approval_approve = true;
       userObj.communications_view = true;
       userObj.communications_templates = true;
       userObj.whatsapp_integration = true;

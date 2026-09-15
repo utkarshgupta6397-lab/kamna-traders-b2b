@@ -111,7 +111,7 @@ export async function PATCH(
               where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId: item.skuId } }
             });
 
-            const beforeQty = inventory?.qty || 0;
+            const beforeQty = inventory?.qty ? Number(inventory.qty) : 0;
             const afterQty = beforeQty + item.qty;
 
             await tx.warehouseInventory.upsert({
@@ -173,7 +173,7 @@ export async function PATCH(
               where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId: item.skuId } }
             });
 
-            const currentQty = inventory?.qty || 0;
+            const currentQty = inventory?.qty ? Number(inventory.qty) : 0;
             if (currentQty < item.qty) {
               throw new Error(`Insufficient inventory to re-complete this dispatch.`);
             }
@@ -201,7 +201,7 @@ export async function PATCH(
               where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId: item.skuId } }
             });
 
-            const beforeQty = inventory?.qty || 0;
+            const beforeQty = inventory?.qty ? Number(inventory.qty) : 0;
             const afterQty = beforeQty - item.qty;
 
             await tx.warehouseInventory.update({
@@ -339,7 +339,7 @@ export async function PATCH(
             where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId } },
           });
 
-          const beforeQty = inventory?.qty || 0;
+          const beforeQty = inventory?.qty ? Number(inventory.qty) : 0;
           const afterQty = beforeQty + diff;
 
           // Negative stock prevention for deductions (diff < 0 means deducting more)
@@ -490,7 +490,7 @@ export async function DELETE(
             where: { warehouseId_skuId: { warehouseId: cart.warehouseId, skuId: item.skuId } }
           });
 
-          const beforeQty = inventory?.qty || 0;
+          const beforeQty = inventory?.qty ? Number(inventory.qty) : 0;
           const afterQty = beforeQty + item.qty;
 
           await tx.warehouseInventory.upsert({

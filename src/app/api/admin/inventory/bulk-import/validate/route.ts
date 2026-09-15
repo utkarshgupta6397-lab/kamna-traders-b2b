@@ -92,7 +92,7 @@ export async function POST(req: Request) {
             select: { qty: true },
           });
           if (existingInv) {
-            existingQty = existingInv.qty;
+            existingQty = Number(existingInv.qty);
           }
         }
       }

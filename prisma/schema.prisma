@@ -108,6 +108,9 @@ model User {
   mobile_dispatch_post_dispatch_receiving_verify Boolean          @default(false)
   mobile_dispatch_post_dispatch_checked_upload   Boolean          @default(false)
   mobile_dispatch_post_dispatch_checked_verify   Boolean          @default(false)
+  dispatch_post_dispatch_inventory_approve Boolean          @default(false)
+  dispatch_stock_approval_view       Boolean              @default(false)
+  dispatch_stock_approval_approve    Boolean              @default(false)
   sessions                           ActiveSession[]
   brandsApproved                     Brand[]              @relation("BrandApprovedBy")
   brandsCreated                      Brand[]              @relation("BrandCreatedBy")
@@ -176,6 +179,7 @@ model Warehouse {
   updatedAt         DateTime              @updatedAt
   isSystemWarehouse Boolean               @default(false)
   printZonalSlips   Boolean               @default(true)
+  zohoLocationId    String?               @unique
   carts             Cart[]
   inventoryHistory  InventoryHistory[]
   stockAlerts       StockAlertThreshold[]
@@ -532,7 +536,7 @@ model WarehouseInventory {
   id          String    @id @default(cuid())
   warehouseId String
   skuId       String
-  qty         Int       @default(0)
+  qty         Decimal   @default(0) @db.Decimal(10, 4)
   isOos       Boolean   @default(false)
   zone        String?
   updatedAt   DateTime  @updatedAt
@@ -655,9 +659,9 @@ model InventoryHistory {
   warehouseId   String
   skuId         String
   productName   String
-  beforeQty     Int
-  afterQty      Int
-  qtyChange     Int
+  beforeQty     Decimal  @db.Decimal(10, 4)
+  afterQty      Decimal  @db.Decimal(10, 4)
+  qtyChange     Decimal  @db.Decimal(10, 4)
   remarks       String
   createdBy     String
   referenceType String?
@@ -1778,6 +1782,7 @@ model PostDispatchInvoice {
   lines                PostDispatchInvoiceLine[]
   workflows            PostDispatchWorkflow[]
   history              PostDispatchHistory[]
+  stockDeductionAllocations StockDeductionAllocation[]
 
   @@index([zohoStatus])
   @@index([erpStatus])
@@ -1801,6 +1806,7 @@ model PostDispatchInvoiceLine {
   updatedAt            DateTime            @updatedAt
 
   invoice              PostDispatchInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  stockDeductionAllocation StockDeductionAllocation?
 
   @@index([invoiceId])
 }
@@ -1880,6 +1886,62 @@ model PostDispatchHistory {
 
   @@index([invoiceId])
   @@index([createdAt])
+}
+
+
+model StockDeductionAllocation {
+  id                   String   @id @default(cuid())
+  invoiceId            String
+  invoiceLineId        String   @unique
+
+  // Expected values from invoice line
+  expectedItemId       String?  // Zoho item ID from invoice line
+  expectedItemName     String?
+  expectedSkuId        String?  // resolved local Sku.id (null = unmapped)
+  expectedWarehouseId  String?  // resolved local Warehouse.id (null = unmapped)
+  expectedQty          Decimal  @default(0) @db.Decimal(10, 4)
+  expectedUom          String?
+
+  // Allocation state (JSON array of {skuId, skuName, warehouseId, warehouseName, qty, uom})
+  allocationData       Json?    // null = not allocated yet
+  isExploded           Boolean  @default(false)
+
+  // Classification
+  status               String   @default("NOT_ALLOCATED")
+  // NOT_ALLOCATED | DRAFT | SUBMITTED_FOR_APPROVAL | APPROVED | REJECTED | DEDUCTED | PARTIALLY_ALLOCATED
+  classification       String   @default("NOT_ALLOCATED")
+  // AUTO_APPROVED | APPROVAL_REQUIRED | PARTIAL | NOT_ALLOCATED | INVALID
+  deviationReasons     Json?
+
+  // Approval
+  submittedById        String?
+  submittedByName      String?
+  submittedAt          DateTime?
+  submittedSnapshot    Json?    // immutable copy of allocationData at submission
+  approvedById         String?
+  approvedByName       String?
+  approvedAt           DateTime?
+  rejectedById         String?
+  rejectedByName       String?
+  rejectedAt           DateTime?
+  rejectionRemarks     String?
+  rejectionHistory     Json?
+
+  // Deduction tracking
+  deductedAt           DateTime?
+  deductedById         String?
+  deductedByName       String?
+  inventoryHistoryIds  Json?    // array of InventoryHistory record IDs created
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  invoice              PostDispatchInvoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceLine          PostDispatchInvoiceLine @relation(fields: [invoiceLineId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([status])
+  @@index([classification])
 }
 
 model PostDispatchSyncLog {

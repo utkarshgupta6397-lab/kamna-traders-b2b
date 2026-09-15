@@ -174,13 +174,43 @@ function WorkflowStatusCell({
   workflowType: 'RECEIVING' | 'CHECKED' | 'INVENTORY';
 }) {
   if (workflowType === 'INVENTORY') {
+    const isCompleted = status === 'COMPLETED';
+    const isInProgress = status === 'IN_PROGRESS' || status === 'IN-PROGRESS';
+
+    if (isCompleted) {
+      return (
+        <span
+          className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 shrink-0 leading-none whitespace-nowrap"
+          title="All applicable inventory items deducted"
+          aria-label="Inventory Deduction Completed"
+        >
+          <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+          <span>✓ Completed</span>
+        </span>
+      );
+    }
+
+    if (isInProgress) {
+      return (
+        <span
+          className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-300 shrink-0 leading-none whitespace-nowrap"
+          title="Some lines deducted, other lines pending/incomplete"
+          aria-label="Inventory Deduction In-Progress"
+        >
+          <Clock size={12} className="text-amber-600 shrink-0" />
+          <span>In-Progress</span>
+        </span>
+      );
+    }
+
     return (
       <span
-        className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md text-[11px] font-medium text-slate-500 bg-slate-50 border border-slate-200 shrink-0 leading-none whitespace-nowrap"
-        title="Inventory Deduction (Phase 2 Coming Soon)"
+        className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md text-[11px] font-medium text-slate-600 bg-slate-50 border border-slate-200 shrink-0 leading-none whitespace-nowrap"
+        title="No items deducted yet"
+        aria-label="Inventory Deduction Pending"
       >
         <Circle size={10} className="text-slate-400 shrink-0" />
-        <span>Pending (TBD)</span>
+        <span>Pending</span>
       </span>
     );
   }

@@ -5,6 +5,7 @@ import { hasPostDispatchAccess } from '@/lib/post-dispatch-auth';
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
 import { recordPostDispatchHistory } from '@/lib/post-dispatch-history';
 import { logZohoApiCall, isConsumerCustomer, ZohoLineItem } from '@/lib/post-dispatch-sync';
+import { computeAggregateInventoryStatus } from '@/lib/stock-deduction-service';
 import { Prisma } from '@prisma/client';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
@@ -154,6 +155,12 @@ export async function POST(
           eInvoiceStatus,
         },
         include: {
+          lines: {
+            select: { id: true },
+          },
+          stockDeductionAllocations: {
+            select: { invoiceLineId: true, status: true },
+          },
           workflows: {
             include: {
               submissions: {
@@ -219,7 +226,19 @@ export async function POST(
     const receivingWf = updated.workflows.find((w) => w.workflowType === 'RECEIVING');
     const checkedWf = updated.workflows.find((w) => w.workflowType === 'CHECKED');
     const inventoryWf = updated.workflows.find((w) => w.workflowType === 'INVENTORY_DEDUCTION');
-    const completedCount = updated.workflows.filter((w) => w.status === 'COMPLETED').length;
+
+    const isVoidInvoice = isVoid || updated.erpSubStatus === 'Void';
+    const computedInventoryStatus = isVoidInvoice
+      ? (inventoryWf?.status || 'PENDING')
+      : computeAggregateInventoryStatus(
+          (updated as any).lines?.length || 0,
+          (updated as any).stockDeductionAllocations || []
+        );
+
+    const completedCount =
+      (receivingWf?.status === 'COMPLETED' ? 1 : 0) +
+      (checkedWf?.status === 'COMPLETED' ? 1 : 0) +
+      (computedInventoryStatus === 'COMPLETED' ? 1 : 0);
 
     const formattedInvoice = {
       id: updated.id,
@@ -256,7 +275,7 @@ export async function POST(
         completedCount,
         receivingStatus: receivingWf?.status || 'PENDING',
         checkedStatus: checkedWf?.status || 'PENDING',
-        inventoryStatus: inventoryWf?.status || 'PENDING',
+        inventoryStatus: computedInventoryStatus,
       },
     };
 

@@ -47,7 +47,9 @@ export async function createWarehouse(data: FormData) {
   await requireAdmin();
   const name = data.get('name') as string;
   const address = data.get('address') as string;
-  await prisma.warehouse.create({ data: { name, address, isSystemWarehouse: false } });
+  const zohoLocationIdRaw = (data.get('zohoLocationId') as string || '').trim();
+  const zohoLocationId = zohoLocationIdRaw || null;
+  await prisma.warehouse.create({ data: { name, address, isSystemWarehouse: false, zohoLocationId } });
   revalidatePath('/admin/warehouses');
 }
 
@@ -61,7 +63,10 @@ export async function updateWarehouse(data: FormData) {
   const name = data.get('name') as string;
   const address = data.get('address') as string;
   const active = data.get('active') === 'true';
-  await prisma.warehouse.update({ where: { id }, data: { name, address, active } });
+  const zohoLocationIdRaw = (data.get('zohoLocationId') as string || '').trim();
+  const zohoLocationId = zohoLocationIdRaw || null;
+
+  await prisma.warehouse.update({ where: { id }, data: { name, address, active, zohoLocationId } });
   revalidatePath('/admin/warehouses');
 }
 
@@ -219,7 +224,7 @@ export async function updateInventory(data: FormData) {
     throw new Error('System warehouses are protected and inventory adjustments are not allowed.');
   }
   const skuId = data.get('skuId') as string;
-  const qty = parseInt(data.get('qty') as string, 10);
+  const qty = parseFloat(data.get('qty') as string);
   const zone = data.get('zone') as string;
   const remarks = data.get('remarks') as string;
 
@@ -235,7 +240,7 @@ export async function updateInventory(data: FormData) {
       where: { warehouseId_skuId: { warehouseId, skuId } }
     });
 
-    const beforeQty = currentInv?.qty ?? 0;
+    const beforeQty = currentInv?.qty ? parseFloat(currentInv.qty.toString()) : 0;
     const afterQty = qty; // Manual adjustment sets the absolute value
     const qtyChange = afterQty - beforeQty;
 
@@ -277,7 +282,7 @@ export async function adjustInventory(data: FormData) {
     throw new Error('System warehouses are protected and inventory adjustments are not allowed.');
   }
   const skuId = data.get('skuId') as string;
-  const delta = parseInt(data.get('delta') as string, 10);
+  const delta = parseFloat(data.get('delta') as string);
   const remarks = data.get('remarks') as string;
 
   if (isNaN(delta)) throw new Error('Invalid adjustment quantity');
@@ -291,12 +296,25 @@ export async function adjustInventory(data: FormData) {
   if (!sku) throw new Error('Product variant not found');
 
   // Ensure Sku record exists to satisfy foreign key constraint on WarehouseInventory
+  let validCategoryId: string | null = null;
+  if (sku.categoryId) {
+    const catExists = await prisma.category.findUnique({ where: { id: sku.categoryId }, select: { id: true } });
+    if (catExists) validCategoryId = catExists.id;
+  }
+
+  let validBrandId: string | null = null;
+  if (sku.brandId) {
+    const brandExists = await prisma.brand.findUnique({ where: { id: sku.brandId }, select: { id: true } });
+    if (brandExists) validBrandId = brandExists.id;
+  }
+
   await prisma.sku.upsert({
     where: { id: skuId },
     create: {
       id: skuId,
       name: sku.name,
-      categoryId: sku.categoryId || 'unknown',
+      categoryId: validCategoryId,
+      brandId: validBrandId,
       price: sku.price || 0,
       unit: sku.unit || 'UNIT',
       moq: sku.moq || 1,
@@ -313,7 +331,7 @@ export async function adjustInventory(data: FormData) {
       where: { warehouseId_skuId: { warehouseId, skuId } }
     });
 
-    const beforeQty = currentInv?.qty ?? 0;
+    const beforeQty = currentInv?.qty ? parseFloat(currentInv.qty.toString()) : 0;
     const afterQty = beforeQty + delta;
 
     if (afterQty < 0) {

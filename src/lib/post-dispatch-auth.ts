@@ -142,3 +142,62 @@ export function canVerifySubmission(
 
   return { allowed: true };
 }
+
+/**
+ * Checks if user can edit/draft stock allocations (open Allocate/Add Items Manually, save draft, submit).
+ * Requires access to the Desktop Post-Dispatch Review workspace.
+ * (Users with deduction rights or post-dispatch review access can draft allocations).
+ */
+export function canEditStockAllocation(session: Session): boolean {
+  if (!session) return false;
+  if (session.role === 'ADMIN') return true;
+  return hasDesktopPostDispatchReviewAccess(session) || canDeductStock(session);
+}
+
+/**
+ * Checks if user can perform actual stock deduction operations (change WarehouseInventory).
+ * Requires dispatch_view + dispatch_post_dispatch + dispatch_inventory_deduction.
+ */
+export function canDeductStock(session: Session): boolean {
+  if (!session) return false;
+  if (session.role === 'ADMIN') return true;
+  return Boolean(
+    session.dispatch_view &&
+    session.dispatch_post_dispatch &&
+    session.dispatch_inventory_deduction
+  );
+}
+
+/**
+ * Checks if user can approve/reject stock deduction deviation submissions.
+ * Requires dispatch_view + dispatch_post_dispatch + dispatch_post_dispatch_inventory_approve.
+ */
+export function canApproveStockDeduction(session: Session): boolean {
+  if (!session) return false;
+  if (session.role === 'ADMIN') return true;
+  return Boolean(
+    session.dispatch_view &&
+    session.dispatch_post_dispatch &&
+    session.dispatch_post_dispatch_inventory_approve
+  );
+}
+
+/**
+ * Checks if user can view the desktop Operations Stock Approval page and details.
+ * Requires role === 'ADMIN' or dispatch_stock_approval_view.
+ */
+export function canViewStockApproval(session: Session): boolean {
+  if (!session) return false;
+  if (session.role === 'ADMIN') return true;
+  return Boolean(session.dispatch_stock_approval_view);
+}
+
+/**
+ * Checks if user can approve or reject stock deduction requests in the desktop Operations Stock Approval queue.
+ * Requires role === 'ADMIN' or dispatch_stock_approval_approve.
+ */
+export function canApproveStockApproval(session: Session): boolean {
+  if (!session) return false;
+  if (session.role === 'ADMIN') return true;
+  return Boolean(session.dispatch_stock_approval_approve);
+}

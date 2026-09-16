@@ -20,6 +20,8 @@ import {
 } from '../lib/post-dispatch-auth';
 import { checkAndArchiveInvoice } from '../lib/post-dispatch-sync';
 import { recordPostDispatchHistory } from '../lib/post-dispatch-history';
+import { ProductLookupService } from '../lib/services/ProductLookupService';
+import { createProductWithDefaultVariant } from '../lib/product-service';
 
 let passed = 0;
 let failed = 0;
@@ -2296,6 +2298,129 @@ async function runStockDeductionTests() {
   assert(isVoidInvoice === true, 'TEST 33l: Case 7 - Invoice correctly recognized as Void');
   assert(voidComputedStatus !== 'COMPLETED', 'TEST 33m: Case 7 - Void invoice inventory status is NOT converted to COMPLETED');
   assert(voidComputedStatus === 'PENDING', 'TEST 33n: Case 7 - Void invoice retains PENDING / void status');
+
+  // TEST 34: Canonical Product Catalog Parity (Adjust Inventory <-> Stock Deduction)
+  console.log('\n--- TEST 34: Canonical Product Catalog Parity (Adjust Inventory <-> Stock Deduction) ---');
+  const ts34 = Date.now();
+  const testUom34Id = `UOM_SD_${ts34}`;
+  const testProd34Id = `PRD_SD_${ts34}`;
+  const canonicalSku34 = `XX2MQF_T34_${ts34}`;
+  const orphanSku34 = `XX2MQFV1_T34_${ts34}`;
+
+  // 1. Create test UOM
+  await prisma.unitOfMeasurement.create({
+    data: { id: testUom34Id, name: 'Numbers', abbreviation: 'Nos', is_decimal: false },
+  });
+
+  // 2. Create canonical Product with code = canonicalSku34
+  const testCreatedProd = await createProductWithDefaultVariant({
+    name: 'Durasol Solar Hybrid Inverter 3.6 KW Test',
+    code: canonicalSku34,
+    unitId: testUom34Id,
+    status: 'Active',
+    trackInventory: true,
+    userId: testUserId,
+  });
+
+  assert(testCreatedProd.variants.length === 1, 'TEST 34a: Standalone product created with exactly 1 default variant');
+  assert(testCreatedProd.variants[0].sku === canonicalSku34, `TEST 34b: Default variant SKU is '${canonicalSku34}' directly (NOT appending V1)`);
+
+  // 3. Create legacy orphan Sku with V1 suffix (simulating production legacy record)
+  await prisma.sku.create({
+    data: {
+      id: orphanSku34,
+      name: 'Durasol Solar Hybrid Inverter 3.6 KW Test (Orphan)',
+      unit: 'Nos',
+      price: 50000,
+      isActive: true,
+    },
+  });
+
+  // 4. Also ensure canonical Sku exists (for warehouse foreign key)
+  await prisma.sku.upsert({
+    where: { id: canonicalSku34 },
+    create: {
+      id: canonicalSku34,
+      name: 'Durasol Solar Hybrid Inverter 3.6 KW Test',
+      unit: 'Nos',
+      price: 50000,
+      isActive: true,
+    },
+    update: {},
+  });
+
+  // 5. Seed stock for canonical SKU in testWh1
+  await prisma.warehouseInventory.create({
+    data: {
+      warehouseId: testWh1Id,
+      skuId: canonicalSku34,
+      qty: 15,
+      isOos: false,
+    },
+  });
+
+  // 6. Test search via canonical ProductLookupService (matches Adjust Inventory & Post-Dispatch search)
+  const canonicalSearchResults = await ProductLookupService.search('inventory', {
+    query: canonicalSku34,
+    includeInactive: false,
+  });
+
+  assert(canonicalSearchResults.length === 1, 'TEST 34c: Exactly 1 item returned for canonical SKU query');
+  assert(canonicalSearchResults[0].sku === canonicalSku34, `TEST 34d: Search result SKU is '${canonicalSku34}'`);
+  assert(canonicalSearchResults.every((r: any) => r.sku !== orphanSku34 && r.id !== orphanSku34), 'TEST 34e: Orphan legacy SKU with V1 is NEVER returned by canonical search');
+
+  // 7. Validate stock on canonical SKU
+  const stockValResult = await validateAllocationsStock(prisma, [
+    {
+      skuId: canonicalSearchResults[0].sku,
+      skuName: canonicalSearchResults[0].name,
+      warehouseId: testWh1Id,
+      warehouseName: 'SD Test Warehouse 1',
+      qty: 5,
+      uom: 'Nos',
+    },
+  ]);
+  assert(stockValResult.valid === true, 'TEST 34f: validateAllocationsStock succeeds on canonical SKU');
+
+  // 8. Execute actual deduction on canonical SKU
+  const testInv34Id = `INV_SD_T34_${ts34}`;
+  const testLine34Id = `LINE_SD_T34_${ts34}`;
+  await prisma.$transaction(async (tx) => {
+    const historyIds = await executeStockDeduction(tx, {
+      entries: [
+        {
+          skuId: canonicalSearchResults[0].sku,
+          skuName: canonicalSearchResults[0].name,
+          warehouseId: testWh1Id,
+          warehouseName: 'SD Test Warehouse 1',
+          qty: 5,
+          uom: 'Nos',
+        },
+      ],
+      invoiceId: testInv34Id,
+      invoiceNumber: `INV-T34-${ts34}`,
+      invoiceLineId: testLine34Id,
+      allocationId: `ALLOC_T34_${ts34}`,
+      userId: testUserId,
+      userName: 'Test User',
+    });
+    assert(historyIds.length === 1, 'TEST 34g: executeStockDeduction executed successfully on canonical SKU');
+  });
+
+  // 9. Verify warehouse stock decremented properly (15 - 5 = 10)
+  const afterInv34 = await prisma.warehouseInventory.findUnique({
+    where: { warehouseId_skuId: { warehouseId: testWh1Id, skuId: canonicalSku34 } },
+  });
+  assert(Number(afterInv34?.qty) === 10, 'TEST 34h: Warehouse stock successfully decremented from 15 to 10 for canonical SKU');
+
+  // Cleanup TEST 34 specific records
+  await prisma.inventoryHistory.deleteMany({ where: { referenceId: testInv34Id } });
+  await prisma.warehouseInventory.deleteMany({ where: { skuId: canonicalSku34 } });
+  await prisma.sku.deleteMany({ where: { id: { in: [canonicalSku34, orphanSku34] } } });
+  await prisma.productVariant.deleteMany({ where: { productId: testCreatedProd.id } });
+  await prisma.masterDataHistory.deleteMany({ where: { productId: testCreatedProd.id } });
+  await prisma.product.delete({ where: { id: testCreatedProd.id } });
+  await prisma.unitOfMeasurement.delete({ where: { id: testUom34Id } });
 
 
   // Clean up test data

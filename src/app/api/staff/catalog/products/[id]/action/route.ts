@@ -160,7 +160,8 @@ export async function POST(
                 moq: 1,
                 stepQty: 1,
                 caseSize: 1,
-                isActive: true
+                isActive: true,
+                zohoBookItemId: variant.zohoBookItemId || null,
               }
             });
           }

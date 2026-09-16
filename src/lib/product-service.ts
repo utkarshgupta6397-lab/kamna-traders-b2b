@@ -68,7 +68,7 @@ export async function createProductWithDefaultVariant(params: CreateProductParam
         variants: {
           create: {
             variantName: 'Default',
-            sku: generateVariantSku(finalCode, 1),
+            sku: finalCode,
             purchasePrice: params.purchasePrice || 0,
             sellingPrice: params.sellingPrice || 0,
             trackInventory: params.trackInventory !== false,

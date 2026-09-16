@@ -22,6 +22,8 @@ import {
   Clock,
   ShieldAlert,
   Loader2,
+  Zap,
+  ZapOff,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { playTruckHornSound } from '@/lib/hooks/useAudioNotification';
@@ -159,6 +161,8 @@ export default function MobileDispatchClient({
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [capturedPreviewUrl, setCapturedPreviewUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [isTorchSupported, setIsTorchSupported] = useState(false);
+  const [isTorchOn, setIsTorchOn] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -208,18 +212,37 @@ export default function MobileDispatchClient({
 
   const stopCameraStream = useCallback(() => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current.getVideoTracks().forEach((track) => {
+        try {
+          // Turn off torch if supported before stopping
+          const capabilities = (track.getCapabilities && typeof track.getCapabilities === 'function')
+            ? (track.getCapabilities() as Record<string, any>)
+            : {};
+          if (capabilities && capabilities.torch) {
+            track.applyConstraints({
+              advanced: [{ torch: false } as any],
+            }).catch(() => {});
+          }
+        } catch {
+          // ignore error on cleanup
+        }
+        track.stop();
+      });
       streamRef.current = null;
     }
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    setIsTorchSupported(false);
+    setIsTorchOn(false);
   }, []);
 
   const startCameraStream = useCallback(async () => {
     stopCameraStream();
     setCameraError(null);
     setCapturedBlob(null);
+    setIsTorchSupported(false);
+    setIsTorchOn(false);
     if (capturedPreviewUrl) {
       URL.revokeObjectURL(capturedPreviewUrl);
       setCapturedPreviewUrl(null);
@@ -245,6 +268,15 @@ export default function MobileDispatchClient({
         await videoRef.current.play();
       }
       setCameraActive(true);
+
+      // Check torch capability on active video track
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && typeof videoTrack.getCapabilities === 'function') {
+        const capabilities = videoTrack.getCapabilities() as Record<string, any>;
+        if (Boolean(capabilities && capabilities.torch)) {
+          setIsTorchSupported(true);
+        }
+      }
     } catch (err: any) {
       console.error('[Camera Access Error]', err);
       let msg = 'Live camera access is required to capture truck photos.';
@@ -257,6 +289,23 @@ export default function MobileDispatchClient({
       setCameraActive(false);
     }
   }, [capturedPreviewUrl, stopCameraStream]);
+
+  const toggleTorch = async () => {
+    if (!streamRef.current) return;
+    const videoTrack = streamRef.current.getVideoTracks()[0];
+    if (!videoTrack) return;
+
+    const nextTorchState = !isTorchOn;
+    try {
+      await videoTrack.applyConstraints({
+        advanced: [{ torch: nextTorchState } as any],
+      });
+      setIsTorchOn(nextTorchState);
+    } catch (err) {
+      console.error('[Torch Toggle Error]', err);
+      toast.error('Unable to toggle camera flash');
+    }
+  };
 
   // Open modal
   const handleOpenCapture = (order: EligibleOrder) => {
@@ -778,30 +827,49 @@ export default function MobileDispatchClient({
                   {selectedOrder.customerName}
                 </div>
               </div>
-              <button
-                onClick={handleCloseCapture}
-                disabled={submitting}
-                className="p-2.5 rounded-full bg-black/40 hover:bg-black/60 active:bg-white/30 text-white backdrop-blur-md transition-all shrink-0 border border-white/10"
-                aria-label="Close Camera"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                {cameraActive && !cameraError && !capturedPreviewUrl && isTorchSupported && (
+                  <button
+                    onClick={toggleTorch}
+                    disabled={submitting}
+                    className={`p-2.5 rounded-full backdrop-blur-md transition-all shrink-0 border ${
+                      isTorchOn
+                        ? 'bg-amber-400 text-black border-amber-300 shadow-md shadow-amber-400/40'
+                        : 'bg-black/40 hover:bg-black/60 active:bg-white/30 text-white border-white/10'
+                    }`}
+                    aria-label={isTorchOn ? 'Turn flash off' : 'Turn flash on'}
+                    title={isTorchOn ? 'Turn flash off' : 'Turn flash on'}
+                  >
+                    {isTorchOn ? <Zap size={20} className="fill-current" /> : <ZapOff size={20} />}
+                  </button>
+                )}
+                <button
+                  onClick={handleCloseCapture}
+                  disabled={submitting}
+                  className="p-2.5 rounded-full bg-black/40 hover:bg-black/60 active:bg-white/30 text-white backdrop-blur-md transition-all shrink-0 border border-white/10"
+                  aria-label="Close Camera"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {/* Target Framing Guide / Review Badge */}
-            <div className="flex-1 flex items-center justify-center p-6 pointer-events-none">
+            <div className="flex-1 flex flex-col items-center justify-center p-6 pointer-events-none">
               {capturedPreviewUrl ? (
                 <div className="bg-black/60 px-4 py-1.5 rounded-full text-white text-xs font-semibold backdrop-blur-md border border-white/10 self-start mt-2">
                   Review Photo
                 </div>
               ) : cameraActive && !cameraError ? (
-                <div className="w-full max-w-[360px] aspect-[16/10] border-2 border-dashed border-white/75 rounded-2xl flex flex-col justify-between p-3.5 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]">
-                  <div className="text-center text-white text-xs font-semibold bg-black/50 px-3 py-1 rounded-full self-center backdrop-blur-sm border border-white/15">
-                    Center the truck number plate
-                  </div>
-                  <div className="flex justify-between items-end text-[11px] font-medium text-white/80">
-                    <span className="bg-black/40 px-2 py-0.5 rounded-md backdrop-blur-sm">Live View</span>
-                    <span className="bg-black/40 px-2 py-0.5 rounded-md backdrop-blur-sm">Rear Camera</span>
+                <div className="w-full max-w-[360px] flex flex-col gap-2">
+                  <div className="w-full aspect-[16/10] border-2 border-dashed border-white/75 rounded-2xl flex flex-col justify-between p-3.5 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]">
+                    <div className="text-center text-white text-xs font-semibold bg-black/50 px-3 py-1 rounded-full self-center backdrop-blur-sm border border-white/15">
+                      Center the truck number plate
+                    </div>
+                    <div className="flex justify-between items-end text-[11px] font-medium text-white/80">
+                      <span className="bg-black/40 px-2 py-0.5 rounded-md backdrop-blur-sm">Live View</span>
+                      <span className="bg-black/40 px-2 py-0.5 rounded-md backdrop-blur-sm">Rear Camera</span>
+                    </div>
                   </div>
                 </div>
               ) : null}

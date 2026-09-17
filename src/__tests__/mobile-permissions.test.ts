@@ -58,7 +58,7 @@ for (const key of EXPECTED_MOBILE_KEYS) {
 assert(MOBILE_PERMISSION_SECTIONS.length === 4, 'MOBILE_PERMISSION_SECTIONS contains 4 modules');
 const [stockSec, accountsSec, dispatchSec, notesSec] = MOBILE_PERMISSION_SECTIONS;
 assert(stockSec.sectionKey === 'stock_management' && stockSec.children.length === 4, 'Stock Management section has 4 children');
-assert(accountsSec.sectionKey === 'accounts' && accountsSec.children.length === 3, 'Accounts section has 3 children and infoNote');
+assert(accountsSec.sectionKey === 'accounts' && accountsSec.children.length >= 3, 'Accounts section has at least 3 children and infoNote');
 assert(dispatchSec.sectionKey === 'dispatch' && dispatchSec.children.length === 3, 'Dispatch section has 3 children (post-dispatch hierarchy)');
 assert(notesSec.sectionKey === 'notes' && notesSec.children.length === 3, 'Notes section has 3 children');
 

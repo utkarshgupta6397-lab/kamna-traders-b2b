@@ -20,6 +20,7 @@ export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSku
   | 'dispatch_stock_approval_view' | 'dispatch_stock_approval_approve'
   | 'mobile_stock_management' | 'mobile_stock_management_solar_panel' | 'mobile_stock_management_wire_cables' | 'mobile_stock_management_inverter' | 'mobile_stock_management_solar_accessories'
   | 'mobile_accounts' | 'mobile_accounts_customer_statement' | 'mobile_accounts_customer_dcr_lookup' | 'mobile_accounts_summary_view'
+  | 'manage_payments_view_own' | 'manage_payments_create' | 'manage_payments_view_all' | 'manage_payments_approve' | 'manage_payments_reject'
   | 'mobile_dispatch'
   | 'mobile_dispatch_post_dispatch'
   | 'mobile_dispatch_post_dispatch_receiving_upload'
@@ -309,6 +310,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
   { key: 'mobile_accounts_customer_statement', label: 'Mobile Customer Statement', description: 'Allows viewing Customer Statements on mobile.' },
   { key: 'mobile_accounts_customer_dcr_lookup', label: 'Mobile Customer DCR Lookup', description: 'Allows viewing Customer DCR status on mobile.' },
   { key: 'mobile_accounts_summary_view', label: 'Mobile Accounts Summary', description: 'Allows viewing Accounts Summary on mobile.' },
+  { key: 'manage_payments_view_own', label: 'View Own Payments', description: 'Allows accessing Manage Payments and viewing own payment requests on mobile.' },
+  { key: 'manage_payments_create', label: 'Record Payment', description: 'Allows creating customer POS payment requests on mobile.' },
+  { key: 'manage_payments_view_all', label: 'View All Payments', description: 'Allows viewing company-wide payment requests on mobile.' },
+  { key: 'manage_payments_approve', label: 'Approve Payment', description: 'Allows approving pending payment requests on mobile.' },
+  { key: 'manage_payments_reject', label: 'Decline Payment', description: 'Allows declining pending payment requests on mobile.' },
   { key: 'mobile_dispatch', label: 'Mobile Dispatch', description: 'Allows capturing and viewing truck dispatch photos on mobile.' },
   { key: 'mobile_dispatch_post_dispatch', label: 'Post-Dispatch Access', description: 'Access to Post-Dispatch invoice workflow on mobile' },
   { key: 'mobile_dispatch_post_dispatch_receiving_upload', label: 'Post-Dispatch Receiving Upload', description: 'Ability to capture and upload customer receiving proof on mobile' },
@@ -516,6 +522,11 @@ export const MOBILE_PERMISSION_SECTIONS: MobilePermissionSection[] = [
       { key: 'mobile_accounts_customer_statement', label: 'Customer Statement', description: 'Access to Customer Statement lookup and ledger view on mobile', parentKey: 'mobile_accounts' },
       { key: 'mobile_accounts_customer_dcr_lookup', label: 'Customer DCR Lookup', description: 'Access to Customer DCR Lookup on mobile', parentKey: 'mobile_accounts' },
       { key: 'mobile_accounts_summary_view', label: 'Summary', description: 'Access to Accounts Summary on mobile', parentKey: 'mobile_accounts' },
+      { key: 'manage_payments_view_own', label: 'Manage Payments (Own)', description: 'Access to Manage Payments and view own payment requests', parentKey: 'mobile_accounts' },
+      { key: 'manage_payments_create', label: 'Record Payment', description: 'Allows recording payment requests on mobile', parentKey: 'mobile_accounts' },
+      { key: 'manage_payments_view_all', label: 'Manage Payments (All)', description: 'Access to view all company payment requests on mobile', parentKey: 'mobile_accounts' },
+      { key: 'manage_payments_approve', label: 'Approve Payment', description: 'Allows approving pending payment requests on mobile', parentKey: 'mobile_accounts' },
+      { key: 'manage_payments_reject', label: 'Decline Payment', description: 'Allows declining pending payment requests on mobile', parentKey: 'mobile_accounts' },
     ],
     infoNote: 'Hold Queue uses existing Accounts/Desktop permissions (dcr_hold_release, holdQueueReviewEnabled, holdQueueReviewLimit).',
   },
@@ -555,6 +566,11 @@ export const mobilePermissionKeySet = new Set<string>([
   'mobile_accounts_customer_statement',
   'mobile_accounts_customer_dcr_lookup',
   'mobile_accounts_summary_view',
+  'manage_payments_view_own',
+  'manage_payments_create',
+  'manage_payments_view_all',
+  'manage_payments_approve',
+  'manage_payments_reject',
   'mobile_dispatch',
   'mobile_dispatch_post_dispatch',
   'mobile_dispatch_post_dispatch_receiving_upload',
@@ -686,6 +702,11 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'mobile_accounts_customer_statement',
   'mobile_accounts_customer_dcr_lookup',
   'mobile_accounts_summary_view',
+  'manage_payments_view_own',
+  'manage_payments_create',
+  'manage_payments_view_all',
+  'manage_payments_approve',
+  'manage_payments_reject',
   'mobile_dispatch',
   'mobile_dispatch_post_dispatch',
   'mobile_dispatch_post_dispatch_receiving_upload',

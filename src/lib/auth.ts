@@ -164,6 +164,11 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
       merged.mobile_accounts_customer_statement = true;
       merged.mobile_accounts_customer_dcr_lookup = true;
       merged.mobile_accounts_summary_view = true;
+      merged.manage_payments_view_own = true;
+      merged.manage_payments_create = true;
+      merged.manage_payments_view_all = true;
+      merged.manage_payments_approve = true;
+      merged.manage_payments_reject = true;
       merged.mobile_dispatch = true;
       merged.mobile_dispatch_post_dispatch = true;
       merged.mobile_dispatch_post_dispatch_receiving_upload = true;

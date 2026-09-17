@@ -15,6 +15,7 @@ import {
   ArrowRight,
   Sparkles,
   Lock,
+  Volume2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -110,6 +111,67 @@ export default function InvoiceConfirmationStep({
   const [searchQuery, setSearchQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<InvoiceItem[] | null>(null);
+  const [testingVoice, setTestingVoice] = useState(false);
+
+  const targetCustomerName =
+    order.customerName ||
+    ((order.zohoDetailsJson as Record<string, unknown> | undefined)?.customer_name as string) ||
+    'Customer';
+
+  const handleTestVoice = () => {
+    console.log('[VOICE V2] button clicked');
+
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      console.error('[VOICE V2] speechSynthesis NOT available');
+      return;
+    }
+
+    console.log('[VOICE V2] speechSynthesis available');
+
+    const utterance = new SpeechSynthesisUtterance(
+      'Shri Sidbali Solar Systems invoice created successfully.'
+    );
+
+    utterance.volume = 0.4;
+    utterance.rate = 1.2;
+    utterance.pitch = 1;
+    utterance.lang = 'en-IN';
+
+    console.log('[VOICE V2] utterance created');
+    console.log('[VOICE V2] volume =', utterance.volume);
+    console.log('[VOICE V2] rate =', utterance.rate);
+    console.log('[VOICE V2] language =', utterance.lang);
+
+    utterance.onstart = () => {
+      console.log('[VOICE V2] speech started');
+      console.log('[VOICE V2] state -> speaking:', window.speechSynthesis.speaking, 'pending:', window.speechSynthesis.pending, 'paused:', window.speechSynthesis.paused);
+    };
+
+    utterance.onend = () => {
+      console.log('[VOICE V2] speech ended');
+      console.log('[VOICE V2] state -> speaking:', window.speechSynthesis.speaking, 'pending:', window.speechSynthesis.pending, 'paused:', window.speechSynthesis.paused);
+    };
+
+    utterance.onerror = (e) => {
+      console.error('[VOICE V2] speech error =', e.error || e);
+      console.log('[VOICE V2] state -> speaking:', window.speechSynthesis.speaking, 'pending:', window.speechSynthesis.pending, 'paused:', window.speechSynthesis.paused);
+    };
+
+    utterance.onpause = () => {
+      console.log('[VOICE V2] speech paused');
+    };
+
+    utterance.onresume = () => {
+      console.log('[VOICE V2] speech resumed');
+    };
+
+    // Chrome/Safari GC guard: attach to window so it is not garbage collected mid-speech
+    (window as unknown as { _v2Utterance?: SpeechSynthesisUtterance })._v2Utterance = utterance;
+
+    window.speechSynthesis.speak(utterance);
+
+    console.log('[VOICE V2] speak() invoked -> speaking:', window.speechSynthesis.speaking, 'pending:', window.speechSynthesis.pending, 'paused:', window.speechSynthesis.paused);
+  };
 
   const fetchRecentInvoices = useCallback(async (isManualRefresh = false) => {
     if (isManualRefresh) {
@@ -311,15 +373,30 @@ export default function InvoiceConfirmationStep({
           </p>
         </div>
 
-        <button
-          onClick={() => fetchRecentInvoices(true)}
-          disabled={loading || refreshing || isAnySubmitting}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors disabled:opacity-50 self-start sm:self-auto cursor-pointer"
-          title="Refresh invoices list from Zoho Books"
-        >
-          <RefreshCw size={14} className={refreshing ? 'animate-spin text-[#1A2766]' : 'text-gray-500'} />
-          <span>{refreshing ? 'Refreshing...' : 'Refresh Invoices'}</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          {process.env.NODE_ENV === 'development' && (
+            <button
+              type="button"
+              onClick={handleTestVoice}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition-colors cursor-pointer shadow-xs"
+              title="PHASE 1: Direct browser speechSynthesis execution"
+            >
+              <Volume2 size={14} className="text-purple-700" />
+              <span>🔊 Test Voice</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => fetchRecentInvoices(true)}
+            disabled={loading || refreshing || isAnySubmitting}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+            title="Refresh invoices list from Zoho Books"
+          >
+            <RefreshCw size={14} className={refreshing ? 'animate-spin text-[#1A2766]' : 'text-gray-500'} />
+            <span>{refreshing ? 'Refreshing...' : 'Refresh Invoices'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Primary List Section */}

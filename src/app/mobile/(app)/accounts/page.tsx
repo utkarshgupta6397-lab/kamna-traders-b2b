@@ -1,7 +1,7 @@
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronLeft, Users, ChevronRight, Activity, FileText, BarChart3 } from 'lucide-react';
+import { ChevronLeft, Users, ChevronRight, Activity, FileText, BarChart3, CreditCard } from 'lucide-react';
 import { hasMobilePermission, hasMobileFeatureAccess } from '@/lib/mobile-auth';
 
 export default async function MobileAccountsPage() {
@@ -24,10 +24,14 @@ export default async function MobileAccountsPage() {
   const canViewStatement = hasMobileFeatureAccess(session, 'mobile_accounts', 'mobile_accounts_customer_statement');
   const canViewDcrLookup = hasMobileFeatureAccess(session, 'mobile_accounts', 'mobile_accounts_customer_dcr_lookup');
   const canViewSummary = hasMobileFeatureAccess(session, 'mobile_accounts', 'mobile_accounts_summary_view');
+  const canViewManagePayments =
+    hasMobileFeatureAccess(session, 'mobile_accounts', 'manage_payments_view_own') ||
+    hasMobileFeatureAccess(session, 'mobile_accounts', 'manage_payments_view_all') ||
+    session.role === 'ADMIN';
   // Hold Queue flow retains desktop permission model (dcr_hold_release)
   const canViewHoldQueue = session.role === 'ADMIN' || Boolean(session.dcr_hold_release);
 
-  const hasAnyCard = canViewStatement || canViewDcrLookup || canViewSummary || canViewHoldQueue;
+  const hasAnyCard = canViewStatement || canViewDcrLookup || canViewSummary || canViewHoldQueue || canViewManagePayments;
 
   return (
     <div className="flex-1 flex flex-col font-sans">
@@ -43,11 +47,26 @@ export default async function MobileAccountsPage() {
       <main className="flex-1 px-4 py-6 max-w-[430px] mx-auto w-full">
         {hasAnyCard ? (
           <>
-            {(canViewStatement || canViewSummary || canViewDcrLookup) && (
+            {(canViewStatement || canViewSummary || canViewDcrLookup || canViewManagePayments) && (
               <>
                 <div className="mb-4 text-[11px] font-bold text-slate-400 tracking-wider uppercase px-1">
                   Available Modules
                 </div>
+
+                {canViewManagePayments && (
+                  <Link href="/mobile/accounts/manage-payments" className="flex items-center justify-between bg-white p-4 rounded-[16px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 active:scale-[0.98] transition-transform mb-3">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100/50">
+                        <CreditCard size={22} strokeWidth={2.5} />
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        <div className="font-bold text-slate-800 text-[15px]">Manage Payments</div>
+                        <div className="text-[12px] text-slate-500 font-medium">Record and track customer payments</div>
+                      </div>
+                    </div>
+                    <ChevronRight size={20} className="text-slate-300" />
+                  </Link>
+                )}
 
                 {canViewStatement && (
                   <Link href="/mobile/accounts/customer-statement" className="flex items-center justify-between bg-white p-4 rounded-[16px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 active:scale-[0.98] transition-transform mb-3">

@@ -165,6 +165,11 @@ export async function validateSession(sessionToken: string): Promise<{
             mobile_accounts_customer_statement: true,
             mobile_accounts_customer_dcr_lookup: true,
             mobile_accounts_summary_view: true,
+            manage_payments_view_own: true,
+            manage_payments_create: true,
+            manage_payments_view_all: true,
+            manage_payments_approve: true,
+            manage_payments_reject: true,
             mobile_dispatch: true,
             mobile_dispatch_post_dispatch: true,
             mobile_dispatch_post_dispatch_receiving_upload: true,
@@ -268,6 +273,11 @@ export async function validateSession(sessionToken: string): Promise<{
             mobile_accounts: true,
             mobile_accounts_customer_statement: true,
             mobile_accounts_customer_dcr_lookup: true,
+            manage_payments_view_own: true,
+            manage_payments_create: true,
+            manage_payments_view_all: true,
+            manage_payments_approve: true,
+            manage_payments_reject: true,
             mobile_dispatch: true,
             mobile_dispatch_post_dispatch: true,
             mobile_dispatch_post_dispatch_receiving_upload: true,
@@ -320,6 +330,8 @@ export async function validateSession(sessionToken: string): Promise<{
           `SELECT "mobile_stock_management", "mobile_stock_management_solar_panel", "mobile_stock_management_wire_cables",
                   "mobile_stock_management_inverter", "mobile_stock_management_solar_accessories",
                   "mobile_accounts", "mobile_accounts_customer_statement", "mobile_accounts_customer_dcr_lookup",
+                  "manage_payments_view_own", "manage_payments_create", "manage_payments_view_all",
+                  "manage_payments_approve", "manage_payments_reject",
                   "mobile_dispatch", "mobile_dispatch_post_dispatch",
                   "mobile_dispatch_post_dispatch_receiving_upload", "mobile_dispatch_post_dispatch_receiving_verify",
                   "mobile_dispatch_post_dispatch_checked_upload", "mobile_dispatch_post_dispatch_checked_verify",
@@ -400,6 +412,11 @@ export async function validateSession(sessionToken: string): Promise<{
       userObj.mobile_accounts = true;
       userObj.mobile_accounts_customer_statement = true;
       userObj.mobile_accounts_customer_dcr_lookup = true;
+      userObj.manage_payments_view_own = true;
+      userObj.manage_payments_create = true;
+      userObj.manage_payments_view_all = true;
+      userObj.manage_payments_approve = true;
+      userObj.manage_payments_reject = true;
       userObj.mobile_dispatch = true;
       userObj.mobile_dispatch_post_dispatch = true;
       userObj.mobile_dispatch_post_dispatch_receiving_upload = true;

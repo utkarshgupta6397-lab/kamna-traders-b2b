@@ -117,7 +117,15 @@ model User {
   mobile_notes_create                Boolean              @default(false)
   mobile_notes_edit                  Boolean              @default(false)
   mobile_notes_archive               Boolean              @default(false)
+  manage_payments_view_own           Boolean              @default(false)
+  manage_payments_create             Boolean              @default(false)
+  manage_payments_view_all           Boolean              @default(false)
+  manage_payments_approve            Boolean              @default(false)
+  manage_payments_reject             Boolean              @default(false)
   sessions                           ActiveSession[]
+  paymentRequestsCreated             PaymentRequest[]     @relation("PaymentRequestCreatedBy")
+  paymentRequestsApproved            PaymentRequest[]     @relation("PaymentRequestApprovedBy")
+  paymentRequestsRejected            PaymentRequest[]     @relation("PaymentRequestRejectedBy")
   brandsApproved                     Brand[]              @relation("BrandApprovedBy")
   brandsCreated                      Brand[]              @relation("BrandCreatedBy")
   brandsUpdated                      Brand[]              @relation("BrandUpdatedBy")
@@ -899,6 +907,7 @@ model Customer {
   balanceUpdatedAt      DateTime?
   netOutstandingBalance Float?
   dcrInvoices           DcrInvoice[]
+  paymentRequests       PaymentRequest[]
 }
 
 model DcrInvoice {
@@ -2088,5 +2097,45 @@ model Notification {
 
   @@index([userId, isRead])
   @@index([createdAt])
+}
+
+model PaymentRequest {
+  id             String   @id @default(cuid())
+  requestNumber  String   @unique
+  customerId     String
+  customerName   String
+  amount         Decimal  @db.Decimal(14, 2)
+  paymentDate    DateTime @db.Date
+  paymentMode    String   @default("POS")
+  photoUrl       String?
+  status         String   @default("PENDING_APPROVAL")
+  idempotencyKey  String?   @unique
+  createdById     String
+  approvedById    String?
+  approvedAt      DateTime?
+  rejectedById    String?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime  @default(now())
+  submittedAt     DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  customer   Customer @relation(fields: [customerId], references: [id])
+  createdBy  User     @relation("PaymentRequestCreatedBy", fields: [createdById], references: [id])
+  approvedBy User?    @relation("PaymentRequestApprovedBy", fields: [approvedById], references: [id])
+  rejectedBy User?    @relation("PaymentRequestRejectedBy", fields: [rejectedById], references: [id])
+
+  @@index([createdById])
+  @@index([approvedById])
+  @@index([rejectedById])
+  @@index([customerId])
+  @@index([status])
+  @@index([paymentDate])
+  @@index([createdAt])
+}
+
+model PaymentSequence {
+  date     String @id
+  sequence Int    @default(0)
 }
 

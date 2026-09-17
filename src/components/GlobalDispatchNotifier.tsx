@@ -5,17 +5,35 @@ import { usePathname, useRouter } from 'next/navigation';
 import { X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { playDispatchChime } from '@/lib/dispatch-audio';
+import { speakInvoiceCreated } from '@/lib/voice-notifications';
 
 export default function GlobalDispatchNotifier() {
   const router = useRouter();
   const pathname = usePathname();
   const knownIdsRef = useRef<Set<string>>(new Set());
-  const isDispatchPage = pathname?.startsWith('/staff/dashboard/dispatch/incoming');
+  const isDispatchQueuePage = pathname === '/staff/dashboard/dispatch/incoming';
+
+  // Voice preloading and initialization when authenticated ERP app mounts
+  useEffect(() => {
+    console.log(`[VOICE DEBUG] GlobalDispatchNotifier mounted (pathname: ${pathname})`);
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        const voices = window.speechSynthesis.getVoices();
+        console.log(`[VOICE DEBUG] Initial speech voice count: ${voices.length}`);
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+          window.speechSynthesis.onvoiceschanged = () => {
+            const updated = window.speechSynthesis.getVoices();
+            console.log(`[VOICE DEBUG] voiceschanged fired: ${updated.length} voices available`);
+          };
+        }
+      } catch (err) {
+        console.warn('[VOICE DEBUG] Voice preload error:', err);
+      }
+    }
+  }, [pathname]);
 
   useEffect(() => {
-    // If the user is on the Dispatch Incoming page, that page already handles
-    // its own SSE stream, notifications, and queue state.
-    if (isDispatchPage) return;
+    console.log(`[VOICE DEBUG] GlobalDispatchNotifier SSE effect running. isDispatchQueuePage=${isDispatchQueuePage}`);
 
     let eventSource: EventSource | null = null;
     let reconnectTimeout: NodeJS.Timeout | null = null;
@@ -29,7 +47,7 @@ export default function GlobalDispatchNotifier() {
         if (res.ok) {
           const json = await res.json();
           if (json.success && Array.isArray(json.data)) {
-            json.data.forEach((o: any) => {
+            json.data.forEach((o: { zohoSalesorderId?: string; id?: string }) => {
               if (o.zohoSalesorderId) knownIdsRef.current.add(o.zohoSalesorderId);
               if (o.id) knownIdsRef.current.add(o.id);
             });
@@ -51,9 +69,11 @@ export default function GlobalDispatchNotifier() {
         eventSource = null;
       }
       
+      console.log(`[VOICE DEBUG] Opening EventSource to /api/dispatch/incoming-queue/events`);
       eventSource = new EventSource('/api/dispatch/incoming-queue/events');
 
       eventSource.onopen = () => {
+        console.log(`[VOICE DEBUG] SSE EventSource connection opened on client`);
         reconnectAttempts = 0;
       };
 
@@ -73,6 +93,9 @@ export default function GlobalDispatchNotifier() {
             knownIdsRef.current.add(dedupeKey);
             if (order.zohoSalesorderId) knownIdsRef.current.add(order.zohoSalesorderId);
             if (order.id) knownIdsRef.current.add(order.id);
+
+            // If user is already on the dispatch incoming table, that table manages its own rows and chime
+            if (isDispatchQueuePage) return;
 
             // Toast Notification
             const soNum = order.salesorderNumber || (order.zohoSalesorderId ? `SO-${order.zohoSalesorderId}` : 'New Sales Order');
@@ -205,6 +228,8 @@ export default function GlobalDispatchNotifier() {
             }
             knownIdsRef.current.add(dedupeKey);
 
+            if (isDispatchQueuePage) return;
+
             const soNum = upload.salesOrderNumber || 'Sales Order';
             const cust = upload.customerName ? ` - ${upload.customerName}` : '';
             toast.custom(
@@ -259,6 +284,9 @@ export default function GlobalDispatchNotifier() {
             // Play notification sound once
             playDispatchChime();
           }
+
+          // [PHASE 1 RESET] Voice notification disabled in GlobalDispatchNotifier
+          // if (data.type === 'invoice_created') { ... }
         } catch (err) {
           console.error('[GlobalDispatchNotifier] Message parse error:', err);
         }
@@ -287,7 +315,7 @@ export default function GlobalDispatchNotifier() {
         try { eventSource.close(); } catch {}
       }
     };
-  }, [isDispatchPage]);
+  }, [isDispatchQueuePage]);
 
   return null;
 }

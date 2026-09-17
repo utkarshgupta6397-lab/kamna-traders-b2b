@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { dispatchEventEmitter, DISPATCH_EVENTS } from '@/lib/dispatch-events';
+import { dispatchEventEmitter, DISPATCH_EVENTS, dispatchEmitterId } from '@/lib/dispatch-events';
 import { fetchInvoicesByCustomerId, searchInvoiceByNumber, fetchInvoiceById } from '@/lib/zoho/invoices';
 import { canCompleteDispatchStep, dispatchForbiddenResponse } from '@/lib/dispatch-auth';
 import { recordDispatchWorkflowHistory } from '@/lib/dispatch-history';
@@ -364,6 +364,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       ...updatedOrder,
       preDispatchWorkflow: updatedWf
     });
+
+    // [PHASE 1 RESET] INVOICE_CREATED broadcast disabled
+    // dispatchEventEmitter.emit(DISPATCH_EVENTS.INVOICE_CREATED, ...);
 
     return NextResponse.json({ success: true, data: updatedWf, order: updatedOrder });
 

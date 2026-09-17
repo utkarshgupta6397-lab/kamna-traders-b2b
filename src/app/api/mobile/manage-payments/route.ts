@@ -32,6 +32,11 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const view = searchParams.get('view') || 'my';
     const status = searchParams.get('status') || 'all';
+    const search = (searchParams.get('search') || '').trim();
+    const dateRange = searchParams.get('dateRange');
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const paymentMode = searchParams.get('paymentMode');
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
     const skip = (page - 1) * limit;
@@ -57,6 +62,58 @@ export async function GET(request: Request) {
       where.status = status;
     }
 
+    if (paymentMode && paymentMode !== 'all') {
+      where.paymentMode = paymentMode;
+    }
+
+    if (search) {
+      where.OR = [
+        { requestNumber: { contains: search, mode: 'insensitive' } },
+        { customerName: { contains: search, mode: 'insensitive' } },
+        { customerId: { contains: search, mode: 'insensitive' } },
+        { createdBy: { name: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    if (dateRange && dateRange !== 'all') {
+      const todayStr = getTodayDateStringIST();
+      const [year, month, day] = todayStr.split('-').map(Number);
+
+      let fromDateStr = todayStr;
+      let toDateStr = todayStr;
+
+      if (dateRange === 'today') {
+        fromDateStr = todayStr;
+        toDateStr = todayStr;
+      } else if (dateRange === 'yesterday') {
+        const yDate = new Date(Date.UTC(year, month - 1, day - 1));
+        fromDateStr = yDate.toISOString().slice(0, 10);
+        toDateStr = fromDateStr;
+      } else if (dateRange === '3days' || dateRange === '3D') {
+        const d = new Date(Date.UTC(year, month - 1, day - 2));
+        fromDateStr = d.toISOString().slice(0, 10);
+        toDateStr = todayStr;
+      } else if (dateRange === '7days' || dateRange === '7D') {
+        const d = new Date(Date.UTC(year, month - 1, day - 6));
+        fromDateStr = d.toISOString().slice(0, 10);
+        toDateStr = todayStr;
+      } else if (dateRange === '15days' || dateRange === '15D') {
+        const d = new Date(Date.UTC(year, month - 1, day - 14));
+        fromDateStr = d.toISOString().slice(0, 10);
+        toDateStr = todayStr;
+      } else if (dateRange === 'custom' && startDate && endDate) {
+        fromDateStr = startDate;
+        toDateStr = endDate;
+      }
+
+      if (fromDateStr && toDateStr) {
+        where.paymentDate = {
+          gte: new Date(`${fromDateStr}T00:00:00.000Z`),
+          lte: new Date(`${toDateStr}T23:59:59.999Z`),
+        };
+      }
+    }
+
     const [payments, total] = await Promise.all([
       prisma.paymentRequest.findMany({
         where,
@@ -68,6 +125,12 @@ export async function GET(request: Request) {
             select: { id: true, name: true, gstNumber: true },
           },
           createdBy: {
+            select: { id: true, name: true },
+          },
+          approvedBy: {
+            select: { id: true, name: true },
+          },
+          rejectedBy: {
             select: { id: true, name: true },
           },
         },

@@ -69,11 +69,37 @@ export async function GET(request: Request) {
       },
     });
 
+    // 3. Approved Today (count of payments approved today by approvedAt timestamp)
+    const approvedTodayCount = await prisma.paymentRequest.count({
+      where: {
+        status: 'APPROVED',
+        approvedAt: {
+          gte: start,
+          lte: end,
+        },
+        ...userScope,
+      },
+    });
+
+    // 4. Rejected Today (count of payments rejected today by rejectedAt timestamp)
+    const rejectedCountToday = await prisma.paymentRequest.count({
+      where: {
+        status: 'REJECTED',
+        rejectedAt: {
+          gte: start,
+          lte: end,
+        },
+        ...userScope,
+      },
+    });
+
     return NextResponse.json({
       success: true,
       todayDate: todayStr,
       totalToday: Number(approvedToday._sum.amount || 0),
       approvedCountToday: approvedToday._count._all || 0,
+      approvedTodayCount,
+      rejectedCountToday,
       pendingCount: pendingSummary._count._all || 0,
       pendingAmount: Number(pendingSummary._sum.amount || 0),
       canViewAll,

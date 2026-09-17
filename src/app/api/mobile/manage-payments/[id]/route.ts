@@ -31,6 +31,12 @@ export async function GET(
         createdBy: {
           select: { id: true, name: true, role: true },
         },
+        approvedBy: {
+          select: { id: true, name: true },
+        },
+        rejectedBy: {
+          select: { id: true, name: true },
+        },
       },
     });
 

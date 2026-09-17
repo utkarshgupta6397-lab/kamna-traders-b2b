@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { FileText, ArrowLeftRight, ChartColumn, ShieldCheck, FileSpreadsheet, BarChart3 } from 'lucide-react';
+import { FileText, ArrowLeftRight, ChartColumn, ShieldCheck, FileSpreadsheet, BarChart3, Banknote } from 'lucide-react';
 
 interface AccountsTabsProps {
   canViewStatement: boolean;
@@ -11,6 +11,7 @@ interface AccountsTabsProps {
   canViewReports?: boolean;
   canManageDcr?: boolean;
   canProcessInvoices?: boolean;
+  canManagePayments?: boolean;
   children: React.ReactNode;
 }
 
@@ -21,13 +22,16 @@ export default function AccountsTabs({
   canViewReports,
   canManageDcr,
   canProcessInvoices,
+  canManagePayments,
   children,
 }: AccountsTabsProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
   let activeTab = 'statement';
-  if (pathname.includes('/accounts/dcr')) {
+  if (pathname.includes('/accounts/manage-payments')) {
+    activeTab = 'manage-payments';
+  } else if (pathname.includes('/accounts/dcr')) {
     activeTab = 'dcr';
   } else if (pathname.includes('/accounts/invoice-processor')) {
     activeTab = 'invoice-processor';
@@ -67,6 +71,12 @@ export default function AccountsTabs({
           <Link href="/staff/dashboard/accounts/summary" className={tabCls('summary')}>
             <ChartColumn size={16} strokeWidth={1.8} />
             Summary
+          </Link>
+        )}
+        {canManagePayments && (
+          <Link href="/staff/dashboard/accounts/manage-payments" className={tabCls('manage-payments')}>
+            <Banknote size={16} strokeWidth={1.8} />
+            Manage Payments
           </Link>
         )}
         {canManageDcr && (

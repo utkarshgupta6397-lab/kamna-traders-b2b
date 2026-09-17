@@ -43,7 +43,7 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
             <Link href="/staff/dashboard/operations" className="flex items-center gap-1.5 hover:text-white transition-colors">
               <Box size={16} /><span className="hidden md:inline text-xs">Operations</span>
             </Link>
-            {(session.accounts_customer_statement || session.accounts_transactions || session.role === 'ADMIN') && (
+            {(session.accounts_customer_statement || session.accounts_transactions || session.accounts_summary_view || session.manage_payments_view_own || session.manage_payments_view_all || session.role === 'ADMIN') && (
               <Link href="/staff/dashboard/accounts" className="flex items-center gap-1.5 hover:text-white transition-colors">
                 <FileText size={16} /><span className="hidden md:inline text-xs">Accounts</span>
               </Link>

@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 import { hasMobilePermission } from '@/lib/mobile-auth';
 import { createZohoCustomerAdvance } from '@/lib/services/zoho-customer-advance.service';
 
-export async function PATCH(
+export async function POST(
   request: Request,
   props: { params: Promise<{ id: string }> }
 ) {
@@ -20,7 +20,7 @@ export async function PATCH(
 
     if (!canApprove) {
       return NextResponse.json(
-        { error: 'You do not have permission to approve payments.' },
+        { error: 'You do not have permission to sync/approve payments.' },
         { status: 403 }
       );
     }
@@ -30,12 +30,12 @@ export async function PATCH(
       return NextResponse.json({ error: 'Payment ID is required.' }, { status: 400 });
     }
 
-    // Check payment existence
     const payment = await prisma.paymentRequest.findUnique({
       where: { id },
       include: {
         customer: { select: { id: true, name: true, gstNumber: true } },
         createdBy: { select: { id: true, name: true } },
+        approvedBy: { select: { id: true, name: true } },
       },
     });
 
@@ -43,19 +43,26 @@ export async function PATCH(
       return NextResponse.json({ error: 'Payment request not found.' }, { status: 404 });
     }
 
-    if (payment.status !== 'PENDING_APPROVAL') {
+    if (payment.status === 'APPROVED' && payment.zohoSyncStatus === 'ZOHO_SYNCED') {
+      return NextResponse.json({
+        success: true,
+        message: 'Payment is already approved and synced with Zoho Books.',
+        payment,
+      });
+    }
+
+    if (payment.status === 'REJECTED') {
       return NextResponse.json(
-        { error: `Payment request is already ${payment.status.toLowerCase().replace('_', ' ')}.` },
-        { status: 409 }
+        { error: 'Cannot sync a rejected payment request.' },
+        { status: 400 }
       );
     }
 
-    // Concurrency Lock: Mark ZOHO_SYNC_PENDING atomically to prevent duplicate concurrent POSTs
+    // Atomic lock to prevent duplicate sync executions
     const now = new Date();
     const lockResult = await prisma.paymentRequest.updateMany({
       where: {
         id,
-        status: 'PENDING_APPROVAL',
         zohoSyncStatus: { not: 'ZOHO_SYNC_PENDING' }
       },
       data: {
@@ -66,19 +73,30 @@ export async function PATCH(
 
     if (lockResult.count === 0) {
       return NextResponse.json(
-        { error: 'Payment approval or Zoho sync is already in progress or already processed.' },
+        { error: 'Zoho synchronization is already in progress.' },
         { status: 409 }
       );
     }
 
-    // Attempt Zoho Books Customer Advance creation
-    console.log(`[Approve Payment] Initiating Zoho Customer Advance sync for ${payment.requestNumber}...`);
+    // Audit log retry started
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'ZOHO_SYNC_RETRIED',
+          details: JSON.stringify({
+            paymentRequestId: id,
+            requestNumber: payment.requestNumber,
+            actor: session.name || session.userId
+          })
+        }
+      });
+    } catch (_) {}
+
+    // Execute Customer Advance sync
     const zohoResult = await createZohoCustomerAdvance(payment);
 
     if (!zohoResult.success) {
-      console.warn(`[Approve Payment] Zoho sync failed for ${payment.requestNumber}:`, zohoResult.error);
-      
-      // Update PaymentRequest with failure metadata, keeping status = PENDING_APPROVAL
       await prisma.paymentRequest.update({
         where: { id },
         data: {
@@ -89,7 +107,6 @@ export async function PATCH(
         }
       });
 
-      // Audit Log for Zoho sync failure
       try {
         await prisma.auditLog.create({
           data: {
@@ -103,13 +120,11 @@ export async function PATCH(
             })
           }
         });
-      } catch (auditErr) {
-        console.error('[Approve Payment] AuditLog write failed:', auditErr);
-      }
+      } catch (_) {}
 
       return NextResponse.json(
         {
-          error: `Approval failed: Zoho Books Customer Advance could not be created. ${zohoResult.error}`,
+          error: `Zoho Books sync failed: ${zohoResult.error}`,
           zohoSyncError: zohoResult.error,
           zohoSyncStatus: 'ZOHO_SYNC_FAILED'
         },
@@ -117,13 +132,13 @@ export async function PATCH(
       );
     }
 
-    // Zoho sync succeeded: Atomically set status to APPROVED
-    const approvedPayment = await prisma.paymentRequest.update({
+    // Successful sync: update payment to APPROVED with Zoho metadata
+    const updatedPayment = await prisma.paymentRequest.update({
       where: { id },
       data: {
         status: 'APPROVED',
-        approvedById: session.userId,
-        approvedAt: now,
+        approvedById: payment.approvedById || session.userId,
+        approvedAt: payment.approvedAt || now,
         zohoPaymentId: zohoResult.paymentId,
         zohoSyncStatus: 'ZOHO_SYNCED',
         zohoSyncedAt: now,
@@ -136,20 +151,7 @@ export async function PATCH(
       }
     });
 
-    // Audit Log for Approval and Zoho Success
     try {
-      await prisma.auditLog.create({
-        data: {
-          userId: session.userId,
-          action: 'PAYMENT_APPROVED',
-          details: JSON.stringify({
-            paymentRequestId: id,
-            requestNumber: payment.requestNumber,
-            zohoPaymentId: zohoResult.paymentId,
-            actor: session.name || session.userId
-          })
-        }
-      });
       await prisma.auditLog.create({
         data: {
           userId: session.userId,
@@ -162,31 +164,27 @@ export async function PATCH(
           })
         }
       });
-    } catch (auditErr) {
-      console.error('[Approve Payment] AuditLog write failed:', auditErr);
-    }
+    } catch (_) {}
 
     return NextResponse.json({
       success: true,
-      message: 'Payment request approved and synced to Zoho Books as Customer Advance.',
-      payment: approvedPayment,
+      message: 'Payment successfully synced to Zoho Books and approved.',
+      payment: updatedPayment,
     });
   } catch (error: any) {
-    console.error('[Approve Payment Error]', error);
-    
-    // Unlock if an unexpected server error occurred
+    console.error('[Sync Zoho Error]', error);
     try {
       const { id } = await props.params;
       if (id) {
         await prisma.paymentRequest.updateMany({
           where: { id, zohoSyncStatus: 'ZOHO_SYNC_PENDING' },
-          data: { zohoSyncStatus: 'ZOHO_SYNC_FAILED', zohoSyncError: error?.message || 'Unexpected server error during approval' }
+          data: { zohoSyncStatus: 'ZOHO_SYNC_FAILED', zohoSyncError: error?.message || 'Unexpected error during sync' }
         });
       }
     } catch (_) {}
 
     return NextResponse.json(
-      { error: error?.message || 'Failed to approve payment request.' },
+      { error: error?.message || 'Failed to sync payment with Zoho Books.' },
       { status: 500 }
     );
   }

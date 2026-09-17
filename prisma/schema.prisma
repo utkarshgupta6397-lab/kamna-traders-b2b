@@ -2116,6 +2116,12 @@ model PaymentRequest {
   rejectedById    String?
   rejectedAt      DateTime?
   rejectionReason String?
+  zohoPaymentId         String?
+  zohoSyncStatus        String    @default("NOT_SYNCED")
+  zohoSyncedAt          DateTime?
+  zohoSyncError         String?
+  zohoSyncAttempts      Int       @default(0)
+  lastZohoSyncAttemptAt DateTime?
   createdAt       DateTime  @default(now())
   submittedAt     DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -2132,6 +2138,8 @@ model PaymentRequest {
   @@index([status])
   @@index([paymentDate])
   @@index([createdAt])
+  @@index([zohoPaymentId])
+  @@index([zohoSyncStatus])
 }
 
 model PaymentSequence {

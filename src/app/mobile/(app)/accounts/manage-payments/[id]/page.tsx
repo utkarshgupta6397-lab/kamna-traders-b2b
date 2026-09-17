@@ -73,6 +73,8 @@ export default async function PaymentDetailPage(
     updatedAt: payment.updatedAt.toISOString(),
     approvedAt: payment.approvedAt ? payment.approvedAt.toISOString() : null,
     rejectedAt: payment.rejectedAt ? payment.rejectedAt.toISOString() : null,
+    zohoSyncedAt: payment.zohoSyncedAt ? payment.zohoSyncedAt.toISOString() : null,
+    lastZohoSyncAttemptAt: payment.lastZohoSyncAttemptAt ? payment.lastZohoSyncAttemptAt.toISOString() : null,
   };
 
   return (

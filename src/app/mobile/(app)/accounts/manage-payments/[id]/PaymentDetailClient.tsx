@@ -17,6 +17,7 @@ import {
   X,
   AlertTriangle,
   Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import PaymentStatusBadge from '@/components/mobile/manage-payments/PaymentStatusBadge';
 import MobileImagePreview from '@/components/mobile/MobileImagePreview';
@@ -43,6 +44,12 @@ interface PaymentDetailProps {
     rejectedById?: string | null;
     rejectedAt?: string | null;
     rejectionReason?: string | null;
+    zohoPaymentId?: string | null;
+    zohoSyncStatus?: string | null;
+    zohoSyncedAt?: string | null;
+    zohoSyncError?: string | null;
+    zohoSyncAttempts?: number;
+    lastZohoSyncAttemptAt?: string | null;
     customer?: {
       id: string;
       name: string;
@@ -87,6 +94,7 @@ export default function PaymentDetailClient({
   // Approval & Decline States
   const [isApproving, setIsApproving] = useState(false);
   const [isDeclining, setIsDeclining] = useState(false);
+  const [isRetryingSync, setIsRetryingSync] = useState(false);
   const [isDeclineModalOpen, setIsDeclineModalOpen] = useState(false);
   const [selectedReason, setSelectedReason] = useState<string>('');
   const [declineComment, setDeclineComment] = useState<string>('');
@@ -127,6 +135,15 @@ export default function PaymentDetailClient({
     }
   }
 
+  let formattedZohoSyncedAt = payment.zohoSyncedAt;
+  if (payment.zohoSyncedAt) {
+    try {
+      formattedZohoSyncedAt = format(new Date(payment.zohoSyncedAt), 'dd MMM yyyy, hh:mm a');
+    } catch (e) {
+      formattedZohoSyncedAt = String(payment.zohoSyncedAt);
+    }
+  }
+
   // Handle Approve Action
   const handleApprove = async () => {
     if (isApproving || payment.status !== 'PENDING_APPROVAL') return;
@@ -135,12 +152,12 @@ export default function PaymentDetailClient({
       `Are you sure you want to approve payment #${payment.requestNumber} for ${formatIndianCurrency(
         payment.amount,
         false
-      )}?`
+      )}? This will create a Customer Advance in Zoho Books.`
     );
     if (!confirmed) return;
 
     setIsApproving(true);
-    const toastId = toast.loading('Approving payment request...');
+    const toastId = toast.loading('Creating Customer Advance in Zoho Books & approving...');
 
     try {
       const res = await fetch(`/api/mobile/manage-payments/${payment.id}/approve`, {
@@ -150,6 +167,13 @@ export default function PaymentDetailClient({
 
       const data = await res.json();
       if (!res.ok) {
+        if (data.zohoSyncError) {
+          setPayment((prev) => ({
+            ...prev,
+            zohoSyncStatus: data.zohoSyncStatus || 'ZOHO_SYNC_FAILED',
+            zohoSyncError: data.zohoSyncError,
+          }));
+        }
         throw new Error(data.error || 'Failed to approve payment');
       }
 
@@ -159,12 +183,51 @@ export default function PaymentDetailClient({
         amount: Number(data.payment.amount),
       }));
 
-      toast.success('Payment request approved successfully', { id: toastId });
+      toast.success('Approved and synced to Zoho Books successfully', { id: toastId });
     } catch (err: any) {
       console.error('Approve error:', err);
       toast.error(err?.message || 'Failed to approve payment', { id: toastId });
     } finally {
       setIsApproving(false);
+    }
+  };
+
+  // Handle Retry Zoho Sync Action
+  const handleRetrySync = async () => {
+    if (isRetryingSync) return;
+    setIsRetryingSync(true);
+    const toastId = toast.loading('Syncing Customer Advance to Zoho Books...');
+
+    try {
+      const res = await fetch(`/api/mobile/manage-payments/${payment.id}/sync-zoho`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.zohoSyncError) {
+          setPayment((prev) => ({
+            ...prev,
+            zohoSyncStatus: data.zohoSyncStatus || 'ZOHO_SYNC_FAILED',
+            zohoSyncError: data.zohoSyncError,
+          }));
+        }
+        throw new Error(data.error || 'Failed to sync with Zoho Books');
+      }
+
+      setPayment((prev) => ({
+        ...prev,
+        ...data.payment,
+        amount: Number(data.payment.amount),
+      }));
+
+      toast.success('Successfully synced with Zoho Books', { id: toastId });
+    } catch (err: any) {
+      console.error('Zoho sync error:', err);
+      toast.error(err?.message || 'Failed to sync with Zoho Books', { id: toastId });
+    } finally {
+      setIsRetryingSync(false);
     }
   };
 
@@ -280,6 +343,40 @@ export default function PaymentDetailClient({
               <p className="font-semibold text-red-900 leading-snug">
                 {payment.rejectionReason}
               </p>
+            </div>
+          )}
+
+          {/* Zoho Sync Issue Banner if Pending or Failed */}
+          {payment.zohoSyncStatus === 'ZOHO_SYNC_FAILED' && payment.zohoSyncError && (
+            <div className="mt-1 bg-amber-50/90 border border-amber-200 rounded-xl p-3 text-xs flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold uppercase text-amber-800 tracking-wider flex items-center gap-1.5">
+                <AlertTriangle size={14} className="text-amber-600" />
+                Zoho Books Sync Issue
+              </span>
+              <p className="font-semibold text-amber-950 leading-snug">
+                {payment.zohoSyncError}
+              </p>
+              {payment.status === 'PENDING_APPROVAL' ? (
+                <span className="text-[11px] text-amber-700">
+                  Approval was halted. Check Zoho authorization and tap Approve to retry.
+                </span>
+              ) : (
+                canApprove && (
+                  <button
+                    type="button"
+                    onClick={handleRetrySync}
+                    disabled={isRetryingSync}
+                    className="mt-1 inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs active:scale-[0.98] transition-all disabled:opacity-60"
+                  >
+                    {isRetryingSync ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={13} />
+                    )}
+                    <span>Retry Zoho Sync</span>
+                  </button>
+                )
+              )}
             </div>
           )}
         </div>
@@ -408,6 +505,50 @@ export default function PaymentDetailClient({
                     <span className="font-medium text-slate-600">{formattedApprovedAt}</span>
                   </div>
                 )}
+
+                {/* Zoho Customer Advance Sync Details */}
+                <div className="pt-2.5 mt-1 border-t border-slate-100 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-medium">Zoho Books Advance</span>
+                    {payment.zohoSyncStatus === 'ZOHO_SYNCED' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                        <CheckCircle2 size={12} /> Synced
+                      </span>
+                    ) : payment.zohoSyncStatus === 'ZOHO_SYNC_FAILED' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800">
+                        <AlertTriangle size={12} /> Sync Issue
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800">
+                        <Loader2 size={12} className="animate-spin" /> Pending
+                      </span>
+                    )}
+                  </div>
+
+                  {payment.zohoPaymentId && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-medium">Zoho Payment ID</span>
+                      <span className="font-mono font-bold text-slate-800">{payment.zohoPaymentId}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 font-medium">Advance Mode</span>
+                    <span className="font-semibold text-slate-700">POS Device</span>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500 font-medium">Deposit Account</span>
+                    <span className="font-semibold text-slate-700">Kamna Traders ICICI</span>
+                  </div>
+
+                  {formattedZohoSyncedAt && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-medium">Zoho Synced At</span>
+                      <span className="font-medium text-slate-600">{formattedZohoSyncedAt}</span>
+                    </div>
+                  )}
+                </div>
               </>
             )}
 

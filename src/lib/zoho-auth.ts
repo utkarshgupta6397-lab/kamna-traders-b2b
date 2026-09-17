@@ -241,6 +241,7 @@ const ZOHO_OAUTH_SCOPES = [
   'ZohoBooks.invoices.READ',
   'ZohoBooks.invoices.CREATE',
   'ZohoBooks.customerpayments.READ',
+  'ZohoBooks.customerpayments.CREATE',
   'ZohoBooks.bills.READ',
   'ZohoBooks.vendorpayments.READ',
   'ZohoBooks.banking.READ'

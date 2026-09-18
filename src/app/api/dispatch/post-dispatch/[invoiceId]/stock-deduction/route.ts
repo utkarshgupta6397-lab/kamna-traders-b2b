@@ -3,8 +3,13 @@ import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { hasDesktopPostDispatchReviewAccess } from '@/lib/post-dispatch-auth';
 import { resolveZohoWarehouse, resolveZohoSku } from '@/lib/stock-deduction-service';
+import { resolveProductImage } from '@/lib/utils';
+import { getOrFetchInvoiceDetail } from '@/lib/post-dispatch-sync';
 
 export const dynamic = 'force-dynamic';
+
+// In-flight deduplication to prevent duplicate concurrent Zoho API requests for the same invoice
+const inFlightInvoiceFetches = new Map<string, Promise<any>>();
 
 export async function GET(
   _request: Request,
@@ -34,10 +39,11 @@ export async function GET(
 
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
 
-    // Fallback: If DB lines are empty but invoice has line_items in zohoDetailsJson, auto-populate lines
+    // Automatic Zoho Books Fetch if DB lines are not yet available
     if (invoice.lines.length === 0) {
       const details = invoice.zohoDetailsJson as any;
       const rawLines = Array.isArray(details?.line_items) ? details.line_items : [];
+
       if (rawLines.length > 0) {
         await prisma.postDispatchInvoiceLine.createMany({
           data: rawLines.map((li: any) => ({
@@ -59,6 +65,46 @@ export async function GET(
           where: { invoiceId },
           orderBy: { createdAt: 'asc' },
         });
+      } else if (invoice.zohoInvoiceId) {
+        // Automatically fetch detail & line items from Zoho Books with in-flight deduplication
+        let fetchPromise = inFlightInvoiceFetches.get(invoice.id);
+        if (!fetchPromise) {
+          fetchPromise = getOrFetchInvoiceDetail({
+            invoiceId: invoice.id,
+            userId: session.userId,
+            userName: (session as any).name,
+          }).finally(() => {
+            inFlightInvoiceFetches.delete(invoice.id);
+          });
+          inFlightInvoiceFetches.set(invoice.id, fetchPromise);
+        }
+
+        const syncResult = await fetchPromise;
+        if (!syncResult.success && syncResult.error) {
+          console.error('[StockDeduction ZohoAutoFetchError]', syncResult.error);
+          return NextResponse.json(
+            { error: `Failed to load invoice items from Zoho Books: ${syncResult.error}` },
+            { status: 502 }
+          );
+        }
+
+        // Re-fetch populated lines and refreshed invoice details
+        invoice.lines = await prisma.postDispatchInvoiceLine.findMany({
+          where: { invoiceId },
+          orderBy: { createdAt: 'asc' },
+        });
+
+        const refreshedInv = await prisma.postDispatchInvoice.findUnique({
+          where: { id: invoiceId },
+          select: { zohoDetailsJson: true, total: true, customerName: true, zohoStatus: true, erpStatus: true },
+        });
+        if (refreshedInv) {
+          invoice.zohoDetailsJson = refreshedInv.zohoDetailsJson;
+          invoice.total = refreshedInv.total;
+          invoice.customerName = refreshedInv.customerName;
+          invoice.zohoStatus = refreshedInv.zohoStatus;
+          invoice.erpStatus = refreshedInv.erpStatus;
+        }
       }
     }
 
@@ -128,6 +174,25 @@ export async function GET(
           : null;
         const lineUom = rawZohoLine?.unit || resolvedSku?.unit || 'Units';
 
+        // Resolve product image for SKU if mapped
+        let image: string | null = null;
+        if (localSkuId) {
+          const variant = await prisma.productVariant.findFirst({
+            where: { sku: localSkuId },
+            include: {
+              product: {
+                select: {
+                  thumbnailBase64: true,
+                  parentProduct: { select: { thumbnailBase64: true } },
+                },
+              },
+            },
+          });
+          if (variant?.product) {
+            image = resolveProductImage(variant.product);
+          }
+        }
+
         return {
           line: {
             id: line.id,
@@ -137,6 +202,7 @@ export async function GET(
             uom: lineUom,
             hsnCode: line.hsnCode,
           },
+          image,
           resolvedSku: resolvedSku ? {
             id: resolvedSku.id,
             name: resolvedSku.name,
@@ -166,6 +232,11 @@ export async function GET(
     return NextResponse.json({
       invoiceId,
       invoiceNumber: invoice.invoiceNumber,
+      customerName: invoice.customerName || zohoDetails?.customer_name || 'Customer',
+      total: invoice.total != null ? Number(invoice.total) : (zohoDetails?.total != null ? Number(zohoDetails.total) : 0),
+      currencyCode: invoice.currencyCode || 'INR',
+      zohoStatus: invoice.zohoStatus || zohoDetails?.status || 'Active',
+      erpStatus: invoice.erpStatus || 'UNKNOWN',
       inventoryWorkflowStatus: inventoryWorkflow?.status || 'PENDING',
       lines: lineData,
       warehouses,

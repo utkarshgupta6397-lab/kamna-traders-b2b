@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import {
   ArrowLeft,
@@ -170,6 +171,7 @@ export default function DesktopPostDispatchReviewClient({
   canApproveStockDeduction,
   currentUserId,
 }: Props) {
+  const router = useRouter();
   const [invoice, setInvoice] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -179,6 +181,13 @@ export default function DesktopPostDispatchReviewClient({
   const [activeSection, setActiveSection] = useState<SectionTab>("RECEIVING");
   const [deductionData, setDeductionData] = useState<any | null>(null);
   const [deductionLoading, setDeductionLoading] = useState(false);
+
+  // If INVENTORY section is activated, navigate directly to dedicated workspace
+  useEffect(() => {
+    if (activeSection === "INVENTORY") {
+      router.push(`/staff/dashboard/dispatch/post-dispatch/${invoiceId}/inventory-deduction`);
+    }
+  }, [activeSection, invoiceId, router]);
 
   // Rejection modal state
   const [rejectModal, setRejectModal] = useState<{
@@ -216,7 +225,7 @@ export default function DesktopPostDispatchReviewClient({
     }
   }, [invoiceId]);
 
-  // Load deduction summary from stock-deduction endpoint
+  // Load deduction summary from stock-deduction endpoint (only called if fallback section 3 is active)
   const fetchDeductionSummary = useCallback(async () => {
     setDeductionLoading(true);
     try {
@@ -234,13 +243,11 @@ export default function DesktopPostDispatchReviewClient({
 
   useEffect(() => {
     fetchInvoiceDetail();
-    fetchDeductionSummary();
-  }, [fetchInvoiceDetail, fetchDeductionSummary]);
+  }, [fetchInvoiceDetail]);
 
   const handleManualRefresh = () => {
     setRefreshing(true);
     fetchInvoiceDetail();
-    fetchDeductionSummary();
   };
 
   // Targeted individual status refresh from Zoho Books (only on user request)
@@ -626,18 +633,16 @@ export default function DesktopPostDispatchReviewClient({
                   )}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveSection("INVENTORY")}
-                  className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-                    activeSection === "INVENTORY"
-                      ? "bg-[#1A2766] text-white shadow-xs"
-                      : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
-                  }`}
+                <Link
+                  href={`/staff/dashboard/dispatch/post-dispatch/${invoiceId}/inventory-deduction`}
+                  className="flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
                 >
                   <Package size={14} />
                   <span>Inventory Deduction</span>
-                </button>
+                  {inventoryWf?.status === "COMPLETED" && (
+                    <CheckCircle2 size={13} className="text-emerald-600" />
+                  )}
+                </Link>
               </nav>
             </div>
 

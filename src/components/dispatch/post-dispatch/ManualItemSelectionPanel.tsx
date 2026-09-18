@@ -68,13 +68,13 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
   const hasInvalidRows = useMemo(() => {
     if (entries.length === 0) return true;
     if (duplicateIndices.size > 0) return true;
-    return entries.some(entry => 
-      !entry.skuId || 
-      !entry.warehouseId || 
-      typeof entry.qty !== 'number' || 
-      isNaN(entry.qty) || 
-      entry.qty <= 0
-    );
+    return entries.some(entry => {
+      if (!entry.skuId || !entry.warehouseId) return true;
+      const numQty = typeof entry.qty === 'number' ? entry.qty : parseFloat(String(entry.qty));
+      if (isNaN(numQty) || numQty <= 0) return true;
+      const precisionCheck = validateQuantityPrecision(entry.qty, Boolean(entry.isDecimal));
+      return !precisionCheck.valid;
+    });
   }, [entries, duplicateIndices]);
 
   useEffect(() => {
@@ -268,11 +268,16 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
 
     setLoading(true);
     try {
+      const formattedAllocations = entries.map(e => ({
+        ...e,
+        qty: typeof e.qty === 'number' ? e.qty : (parseFloat(String(e.qty)) || 0)
+      }));
+
       const res = await fetch(`/api/dispatch/post-dispatch/${invoiceId}/stock-deduction/${lineData.line.id}/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          allocations: entries,
+          allocations: formattedAllocations,
           isExploded: true,
           expectedSkuId: lineData.resolvedSku?.id || null,
           expectedWarehouseId: lineData.expectedWarehouse?.id || null,
@@ -302,6 +307,9 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
           <h4 className="text-xs font-bold text-slate-800 tracking-tight">
             ADD ITEMS MANUALLY
           </h4>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-200">
+            Manual Override
+          </span>
           <span className="text-[11px] text-slate-500 font-normal hidden sm:inline">
             — Explode invoice line into local ERP component SKUs and specify deduction warehouses &amp; quantities.
           </span>
@@ -310,12 +318,26 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
         {/* Source Context & Components Pill */}
         <div className="flex items-center gap-2 px-3 py-1 bg-white border border-slate-200 rounded-lg shadow-2xs text-xs">
           <span className="text-slate-500">
-            Source Line: <strong className="text-slate-800 font-semibold">{originalQty} {originalUom}</strong>
+            Invoice Ref Qty: <strong className="text-slate-800 font-semibold">{originalQty} {originalUom}</strong>
           </span>
           <span className="text-slate-300">•</span>
           <span className="text-slate-600">
-            Components: <strong className="text-[#1A2766] font-bold">{entries.length} item{entries.length === 1 ? '' : 's'}</strong>
+            Configured Items: <strong className="text-[#1A2766] font-bold">{entries.length} item{entries.length === 1 ? '' : 's'}</strong>
           </span>
+        </div>
+      </div>
+
+      {/* Informational Callout: Unrestricted Manual Adjustment */}
+      <div className="flex items-start gap-2.5 p-3 rounded-lg bg-purple-50/80 border border-purple-200/90 text-xs text-purple-900">
+        <AlertCircle size={15} className="shrink-0 text-purple-600 mt-0.5" />
+        <div className="space-y-0.5">
+          <div className="font-bold text-purple-950 flex items-center gap-1.5">
+            <span>Unrestricted Manual Adjustment Mode</span>
+            <span className="text-[10px] font-semibold bg-purple-200/80 text-purple-800 px-1.5 py-0.2 rounded">Reference Only</span>
+          </div>
+          <div className="text-[11px] text-purple-800 leading-relaxed">
+            Invoice line quantity (<strong className="font-semibold text-purple-950">{originalQty} {originalUom}</strong>) serves as context and reference only. In manual mode, you can allocate any local ERP SKU, any warehouse, and any custom deduction quantity (greater than, less than, or equal to the invoice line quantity).
+          </div>
         </div>
       </div>
 
@@ -475,9 +497,9 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
       {entries.length > 0 && (
         <div className="p-2.5 rounded-lg border text-xs flex flex-wrap items-center justify-between gap-2 bg-slate-100/70 border-slate-200 text-slate-700">
           <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#1A2766]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-600" />
             <span>
-              Configured Components: <strong className="text-slate-900 font-bold">{entries.length} ERP SKU{entries.length === 1 ? '' : 's'}</strong>
+              Configured Items: <strong className="text-slate-900 font-bold">{entries.length} ERP SKU{entries.length === 1 ? '' : 's'}</strong>
             </span>
             <span className="text-slate-300">•</span>
             <span>
@@ -485,7 +507,7 @@ export default function ManualItemSelectionPanel({ lineData, invoiceId, onSucces
             </span>
           </div>
           <div className="text-[11px] text-slate-500">
-            Deduction for invoice line: <span className="font-semibold text-slate-700">{originalQty} {originalUom}</span>
+            Invoice Reference Qty: <span className="font-semibold text-slate-700">{originalQty} {originalUom}</span> (Manual Override)
           </div>
         </div>
       )}

@@ -32,7 +32,7 @@ export async function POST(
 
   try {
     const body = await request.json();
-    const { allocations, isExploded, expectedSkuId, expectedWarehouseId, expectedQty, expectedUom, expectedItemId, expectedItemName } = body;
+    const { allocations, isExploded, expectedSkuId, expectedWarehouseId, expectedQty, expectedUom, expectedItemId, expectedItemName, submitForApproval } = body;
 
     const invoice = await prisma.postDispatchInvoice.findUnique({
       where: { id: invoiceId },
@@ -226,6 +226,95 @@ export async function POST(
     });
 
     const isFirstSave = !existing;
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // SUBMISSION FOR APPROVAL (ATOMIC TRANSACTION)
+    // When submitForApproval is true, persist allocation, transition status to
+    // SUBMITTED_FOR_APPROVAL, create snapshot, and log audit event atomically.
+    // ──────────────────────────────────────────────────────────────────────────
+    if (submitForApproval) {
+      if (validatedAllocations.length === 0) {
+        return NextResponse.json({ error: 'Cannot submit empty allocation for approval.' }, { status: 400 });
+      }
+
+      const snapshot = {
+        allocations: validatedAllocations,
+        isExploded: Boolean(isExploded),
+        expectedSkuId: expectedSkuId || null,
+        expectedWarehouseId: expectedWarehouseId || null,
+        expectedQty: parseFloat(expectedQty) || line.quantity,
+        expectedUom: expectedUom || null,
+        classification: classifyResult.classification,
+        deviationReasons: classifyResult.deviationReasons,
+        snapshotAt: new Date().toISOString(),
+      };
+
+      const result = await prisma.$transaction(async (tx) => {
+        const upsertData = {
+          invoiceId,
+          invoiceLineId: lineId,
+          expectedItemId: expectedItemId || line.itemId,
+          expectedItemName: expectedItemName || line.itemName,
+          expectedSkuId: expectedSkuId || null,
+          expectedWarehouseId: expectedWarehouseId || null,
+          expectedQty: parseFloat(expectedQty) || line.quantity,
+          expectedUom: expectedUom || null,
+          allocationData: validatedAllocations as any,
+          isExploded: Boolean(isExploded),
+          status: 'SUBMITTED_FOR_APPROVAL',
+          classification: classifyResult.classification,
+          deviationReasons: classifyResult.deviationReasons.length > 0 ? classifyResult.deviationReasons : Prisma.DbNull,
+          submittedById: userId,
+          submittedByName: userName,
+          submittedAt: new Date(),
+          submittedSnapshot: snapshot as any,
+          rejectedById: null,
+          rejectedByName: null,
+          rejectedAt: null,
+          rejectionRemarks: null,
+          updatedAt: new Date(),
+        };
+
+        const allocRecord = await tx.stockDeductionAllocation.upsert({
+          where: { invoiceLineId: lineId },
+          create: { ...upsertData, id: undefined },
+          update: upsertData,
+        });
+
+        await recordPostDispatchHistory(tx as any, {
+          invoiceId,
+          workflowType: 'INVENTORY_DEDUCTION',
+          eventType: 'STOCK_SUBMITTED_FOR_APPROVAL',
+          userId,
+          userName,
+          submissionId: allocRecord.id,
+          metadata: {
+            lineId,
+            itemName: line.itemName,
+            classification: classifyResult.classification,
+            deviationReasons: classifyResult.deviationReasons,
+            snapshotRef: allocRecord.id,
+            allocatedQty: classifyResult.allocatedQty,
+            remainingQty: classifyResult.remainingQty,
+          },
+        });
+
+        return allocRecord;
+      });
+
+      return NextResponse.json({
+        success: true,
+        submitted: true,
+        allocation: {
+          ...result,
+          expectedQty: parseFloat(result.expectedQty.toString()),
+        },
+        classification: {
+          ...classifyResult,
+          status: 'SUBMITTED_FOR_APPROVAL',
+        },
+      });
+    }
 
     // ──────────────────────────────────────────────────────────────────────────
     // CASE A: EXACT MATCH + SUFFICIENT STOCK → IMMEDIATE ATOMIC DEDUCTION

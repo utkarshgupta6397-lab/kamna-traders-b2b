@@ -43,7 +43,10 @@ export async function GET(request: Request) {
       prisma.stockDeductionAllocation.count({
         where: {
           status: 'DEDUCTED',
-          classification: { not: 'AUTO_APPROVED' },
+          OR: [
+            { classification: { not: 'AUTO_APPROVED' } },
+            { submittedAt: { not: null } },
+          ],
           deductedAt: { gte: today },
         },
       }),
@@ -56,12 +59,15 @@ export async function GET(request: Request) {
       orderBy: { name: 'asc' },
     });
 
-    // 3. Build where clause: Show ONLY deviation requests submitted for approval
+    // 3. Build where clause: Show all requests submitted for approval or with approval history
     const where: any = {
-      // Exclude unallocated lines
+      // Exclude unallocated lines and drafts
       status: { notIn: ['NOT_ALLOCATED', 'DRAFT'] },
-      // Exclude exact match auto-approved deductions (they do not belong to deviation approval queue)
-      classification: { not: 'AUTO_APPROVED' },
+      OR: [
+        { status: 'SUBMITTED_FOR_APPROVAL' },
+        { classification: { not: 'AUTO_APPROVED' } },
+        { submittedAt: { not: null } },
+      ],
     };
 
     if (status && status !== 'ALL') {

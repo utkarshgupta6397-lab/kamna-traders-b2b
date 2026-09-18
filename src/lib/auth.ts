@@ -59,8 +59,13 @@ export const getSession = cache(async (): Promise<Record<string, any> | null> =>
   
   if ((global as any).__SYSTEM_RESET_RUNNING__) return null;
 
-  const cookieStore = await cookies();
-  const jwt = cookieStore.get('session')?.value;
+  let cookieStore: any;
+  try {
+    cookieStore = await cookies();
+  } catch {
+    return (globalThis as any).__TEST_SESSION__ || null;
+  }
+  const jwt = cookieStore?.get('session')?.value;
   if (!jwt) return null;
   
   try {

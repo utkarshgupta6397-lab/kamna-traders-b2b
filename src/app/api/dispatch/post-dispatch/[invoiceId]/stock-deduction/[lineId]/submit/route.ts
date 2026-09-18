@@ -56,8 +56,8 @@ export async function POST(
       isExploded: alloc.isExploded,
     });
 
-    if (classResult.classification !== 'APPROVAL_REQUIRED') {
-      return NextResponse.json({ error: `Cannot submit: classification is "${classResult.classification}". Only APPROVAL_REQUIRED allocations need approval.` }, { status: 400 });
+    if (classResult.classification === 'INVALID' || classResult.classification === 'NOT_ALLOCATED') {
+      return NextResponse.json({ error: `Cannot submit: allocation has invalid entries.` }, { status: 400 });
     }
 
     const snapshot = {

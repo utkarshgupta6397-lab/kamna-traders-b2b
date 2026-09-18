@@ -12,6 +12,7 @@ import {
   Plus,
   Loader2,
   Package,
+  Clock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatShortUom } from '@/lib/stock-deduction-service';
@@ -445,10 +446,15 @@ export default function DirectDeductionWorkspace({
     return enrichedRows.reduce((sum, r) => sum + (isNaN(r.numQty) ? 0 : r.numQty), 0);
   }, [enrichedRows]);
 
-  // Unified Save Deduction handler
-  const handleSaveDeduction = async () => {
+  // Concurrency ref to guard against rapid double clicks
+  const isSubmittingRef = useRef(false);
+
+  // Unified Submit for Approval handler
+  const handleSubmitForApproval = async () => {
+    if (isSubmittingRef.current || saving) return;
+
     if (hasInsufficientStock) {
-      toast.error('Cannot save deduction: One or more rows have insufficient stock');
+      toast.error('Cannot submit deduction: One or more rows have insufficient stock');
       return;
     }
     if (hasInvalidRows) {
@@ -456,6 +462,7 @@ export default function DirectDeductionWorkspace({
       return;
     }
 
+    isSubmittingRef.current = true;
     setSaving(true);
     try {
       const isExploded = activeMode === 'MANUAL';
@@ -481,23 +488,21 @@ export default function DirectDeductionWorkspace({
           expectedUom: lineData.line.uom,
           expectedItemId: lineData.line.itemId,
           expectedItemName: lineData.line.itemName,
+          submitForApproval: true,
         }),
       });
 
       const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error || 'Failed to save deduction');
+      if (!res.ok) throw new Error(resData.error || 'Failed to submit deduction for approval');
 
-      if (resData.autoDeducted) {
-        toast.success('Stock deducted successfully!');
-      } else {
-        toast.success(isExploded ? 'Manual items saved as draft' : 'Allocation saved');
-      }
-
+      onClearDraft(lineId);
+      toast.success('Deduction submitted for approval.');
       await onSuccess();
     } catch (err: any) {
-      toast.error(err.message || 'Save failed');
+      toast.error(err.message || 'Submission failed');
     } finally {
       setSaving(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -944,7 +949,7 @@ export default function DirectDeductionWorkspace({
           {!isReadOnly && !isApproved && (
             <button
               type="button"
-              onClick={handleSaveDeduction}
+              onClick={handleSubmitForApproval}
               disabled={saving || hasInsufficientStock || hasInvalidRows || !canEditStockAllocation}
               className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 ${
                 hasInsufficientStock || hasInvalidRows || !canEditStockAllocation
@@ -953,10 +958,10 @@ export default function DirectDeductionWorkspace({
               }`}
               title={
                 hasInsufficientStock
-                  ? 'Cannot save: Insufficient warehouse stock'
+                  ? 'Cannot submit: Insufficient warehouse stock'
                   : hasInvalidRows
                   ? 'Please fill all required rows with positive quantities'
-                  : 'Save Deduction'
+                  : 'Submit for Approval'
               }
             >
               {saving ? (
@@ -964,7 +969,7 @@ export default function DirectDeductionWorkspace({
               ) : (
                 <CheckCircle2 size={14} />
               )}
-              <span>Save Deduction</span>
+              <span>{saving ? 'Submitting...' : 'Submit for Approval'}</span>
             </button>
           )}
         </div>

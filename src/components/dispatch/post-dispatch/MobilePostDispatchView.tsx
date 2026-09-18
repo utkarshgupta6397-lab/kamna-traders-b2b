@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import {
   Search,
@@ -12,14 +12,17 @@ import {
   ChevronRight,
   Clock,
   CheckCircle2,
+  Calendar,
   X,
 } from 'lucide-react';
+import { format, startOfDay, endOfDay, subDays } from 'date-fns';
 import toast from 'react-hot-toast';
 import { PostDispatchInvoiceSummary } from './InvoiceCard';
 import MobilePostDispatchCard from './MobilePostDispatchCard';
 import InvoiceDetailModal from './InvoiceDetailModal';
 import ReceivingUploadModal from './ReceivingUploadModal';
 import CheckedUploadModal from './CheckedUploadModal';
+import CustomDateRangeModal from './CustomDateRangeModal';
 import MobileImagePreview from '@/components/mobile/MobileImagePreview';
 
 export interface MobilePostDispatchViewProps {
@@ -36,7 +39,8 @@ export interface MobilePostDispatchViewProps {
   onRefreshStateChange?: (refreshing: boolean) => void;
 }
 
-type OperationalQueue = 'hub' | 'receiving' | 'check';
+export type OperationalQueue = 'hub' | 'receiving' | 'check';
+export type DateFilterPreset = 'today' | 'yesterday' | 'last_7' | 'custom' | null;
 
 function formatINR(val: number) {
   return new Intl.NumberFormat('en-IN', {
@@ -56,18 +60,28 @@ export default function MobilePostDispatchView({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Read initial queue & warehouse from URL
+  // Read initial queue, warehouse, and date filters from URL
   const initialQueueParam = searchParams.get('queue') as OperationalQueue | null;
   const initialQueue: OperationalQueue =
     initialQueueParam && ['hub', 'receiving', 'check'].includes(initialQueueParam)
       ? initialQueueParam
       : 'hub';
 
+  const initialDateParam = searchParams.get('date') as DateFilterPreset | null;
+  const initialDatePreset: DateFilterPreset =
+    initialDateParam && ['today', 'yesterday', 'last_7', 'custom'].includes(initialDateParam)
+      ? initialDateParam
+      : null;
+
   const [activeQueue, setActiveQueue] = useState<OperationalQueue>(initialQueue);
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>(
     searchParams.get('warehouse') || 'ALL'
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const [datePreset, setDatePreset] = useState<DateFilterPreset>(initialDatePreset);
+  const [customFrom, setCustomFrom] = useState<string>(searchParams.get('from') || '');
+  const [customTo, setCustomTo] = useState<string>(searchParams.get('to') || '');
+  const [customModalOpen, setCustomModalOpen] = useState(false);
 
   // Data states
   const [invoices, setInvoices] = useState<PostDispatchInvoiceSummary[]>([]);
@@ -119,38 +133,167 @@ export default function MobilePostDispatchView({
     updateUrlParams({ warehouse: wh === 'ALL' ? null : wh });
   };
 
-  // ── Fetch Invoices (LOCAL ERP DATA ONLY) ─────────────────────────
+  // ── Date Preset Change Handlers ─────────────────────────────────
+  const handleSelectPreset = (preset: 'today' | 'yesterday' | 'last_7') => {
+    if (datePreset === preset) {
+      return; // Deduplicate: do not re-fetch if already active
+    }
+    setDatePreset(preset);
+    updateUrlParams({
+      date: preset,
+      from: null,
+      to: null,
+    });
+  };
+
+  const handleOpenCustomModal = () => {
+    setCustomModalOpen(true);
+  };
+
+  const handleApplyCustomRange = (from: string, to: string) => {
+    if (datePreset === 'custom' && customFrom === from && customTo === to) {
+      return; // Same custom range already applied
+    }
+    setDatePreset('custom');
+    setCustomFrom(from);
+    setCustomTo(to);
+    updateUrlParams({
+      date: 'custom',
+      from,
+      to,
+    });
+  };
+
+  const handleClearDateFilter = () => {
+    if (datePreset === null) return;
+    setDatePreset(null);
+    setCustomFrom('');
+    setCustomTo('');
+    updateUrlParams({
+      date: null,
+      from: null,
+      to: null,
+    });
+  };
+
+  // ── Compute Date Range for Server Query ─────────────────────────
+  const computedDateRange = useMemo(() => {
+    const now = new Date();
+    if (datePreset === 'today') {
+      return {
+        startDate: startOfDay(now).toISOString(),
+        endDate: endOfDay(now).toISOString(),
+      };
+    }
+    if (datePreset === 'yesterday') {
+      const y = subDays(now, 1);
+      return {
+        startDate: startOfDay(y).toISOString(),
+        endDate: endOfDay(y).toISOString(),
+      };
+    }
+    if (datePreset === 'last_7') {
+      return {
+        startDate: startOfDay(subDays(now, 6)).toISOString(),
+        endDate: endOfDay(now).toISOString(),
+      };
+    }
+    if (datePreset === 'custom' && customFrom) {
+      const effectiveTo = customTo || customFrom;
+      return {
+        startDate: startOfDay(new Date(customFrom + 'T00:00:00')).toISOString(),
+        endDate: endOfDay(new Date(effectiveTo + 'T23:59:59.999')).toISOString(),
+      };
+    }
+    return { startDate: null, endDate: null };
+  }, [datePreset, customFrom, customTo]);
+
+  // Dynamic label for Custom pill
+  const customPillLabel = useMemo(() => {
+    if (datePreset !== 'custom' || !customFrom) return 'Custom';
+    try {
+      const fStr = format(new Date(customFrom + 'T00:00:00'), 'd MMM');
+      if (!customTo || customTo === customFrom) {
+        return fStr;
+      }
+      const tStr = format(new Date(customTo + 'T00:00:00'), 'd MMM');
+      return `${fStr} – ${tStr}`;
+    } catch {
+      return 'Custom';
+    }
+  }, [datePreset, customFrom, customTo]);
+
+  // ── Fetch Invoices with Stale Response Protection ───────────────
+  const requestSeqRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const fetchData = useCallback(async (isManualRefresh = false) => {
     if (isManualRefresh) {
       setRefreshing(true);
       onRefreshStateChange?.(true);
+    } else {
+      setLoading(true);
     }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    const currentSeq = ++requestSeqRef.current;
+
     try {
-      // Invoices (fetch active invoices)
-      const invRes = await fetch('/api/mobile/post-dispatch/invoices?tab=all&pageSize=all');
-      if (invRes.ok) {
-        const invData = await invRes.json();
-        setInvoices(invData.invoices || []);
-        setUnauthorizedMessage(null);
-      } else if (invRes.status === 403) {
-        const errJson = await invRes.json().catch(() => ({}));
-        setUnauthorizedMessage(errJson.error || 'Access to Post-Dispatch is restricted.');
+      const params = new URLSearchParams();
+      params.set('tab', 'all');
+      params.set('pageSize', 'all');
+      if (computedDateRange.startDate) {
+        params.set('startDate', computedDateRange.startDate);
+      }
+      if (computedDateRange.endDate) {
+        params.set('endDate', computedDateRange.endDate);
       }
 
-      if (isManualRefresh) {
+      const invRes = await fetch(`/api/mobile/post-dispatch/invoices?${params.toString()}`, {
+        signal: controller.signal,
+      });
+
+      if (currentSeq !== requestSeqRef.current) {
+        return;
+      }
+
+      if (invRes.ok) {
+        const invData = await invRes.json();
+        if (currentSeq === requestSeqRef.current) {
+          setInvoices(invData.invoices || []);
+          setUnauthorizedMessage(null);
+        }
+      } else if (invRes.status === 403) {
+        const errJson = await invRes.json().catch(() => ({}));
+        if (currentSeq === requestSeqRef.current) {
+          setUnauthorizedMessage(errJson.error || 'Access to Post-Dispatch is restricted.');
+        }
+      }
+
+      if (isManualRefresh && currentSeq === requestSeqRef.current) {
         toast.success('Post-dispatch queues updated');
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        return;
+      }
       console.error('[PostDispatch Mobile Fetch Error]', err);
-      if (isManualRefresh) {
+      if (isManualRefresh && currentSeq === requestSeqRef.current) {
         toast.error('Failed to refresh data');
       }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
-      onRefreshStateChange?.(false);
+      if (currentSeq === requestSeqRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+        onRefreshStateChange?.(false);
+      }
     }
-  }, [onRefreshStateChange]);
+  }, [computedDateRange, onRefreshStateChange]);
 
   useEffect(() => {
     fetchData();
@@ -242,27 +385,146 @@ export default function MobilePostDispatchView({
 
   return (
     <div className="flex-1 flex flex-col font-sans bg-[#F8F9FB] min-h-0">
-      {/* Compact Warehouse Selector Bar (Refined Filter Pill) */}
-      <div className="px-4 py-2 bg-white border-b border-slate-200/80 sticky top-[95px] z-30 flex items-center justify-between gap-2 shadow-xs">
-        <div className="flex items-center gap-2 flex-1 min-w-0 bg-slate-50 hover:bg-slate-100/80 px-3 py-1.5 rounded-xl border border-slate-200/70 transition-colors">
-          <Building2 size={15} className="text-[#1A2766] shrink-0" />
-          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <span className="text-[11px] font-semibold text-slate-500 shrink-0">
-              Warehouse:
-            </span>
-            <select
-              value={selectedWarehouse}
-              onChange={(e) => handleWarehouseChange(e.target.value)}
-              className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none truncate cursor-pointer flex-1 min-w-0 py-0.5"
-            >
-              <option value="ALL">All Warehouses</option>
-              {availableWarehouses.map((wh) => (
-                <option key={wh} value={wh}>
-                  {wh}
-                </option>
-              ))}
-            </select>
+      {/* Compact Warehouse Selector & Date Filter Pills Bar */}
+      <div className="bg-white border-b border-slate-200/80 sticky top-[95px] z-30 shadow-xs">
+        {/* Warehouse Selector */}
+        <div className="px-4 pt-2 pb-1.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-1 min-w-0 bg-slate-50 hover:bg-slate-100/80 px-3 py-1.5 rounded-xl border border-slate-200/70 transition-colors">
+            <Building2 size={15} className="text-[#1A2766] shrink-0" />
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <span className="text-[11px] font-semibold text-slate-500 shrink-0">
+                Warehouse:
+              </span>
+              <select
+                value={selectedWarehouse}
+                onChange={(e) => handleWarehouseChange(e.target.value)}
+                className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none truncate cursor-pointer flex-1 min-w-0 py-0.5"
+              >
+                <option value="ALL">All Warehouses</option>
+                {availableWarehouses.map((wh) => (
+                  <option key={wh} value={wh}>
+                    {wh}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
+        </div>
+
+        {/* Quick Date-Filter Pills Row */}
+        <div className="px-4 pb-2 pt-0.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap">
+          {/* Today */}
+          <button
+            type="button"
+            onClick={() => handleSelectPreset('today')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 border flex items-center gap-1.5 ${
+              datePreset === 'today'
+                ? 'bg-[#1A2766] text-white border-[#1A2766] shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200/80 active:bg-slate-100'
+            }`}
+          >
+            <span>Today</span>
+            {datePreset === 'today' && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleClearDateFilter();
+                }}
+                className="p-0.5 rounded-full hover:bg-white/20 transition-colors"
+                title="Clear date filter"
+                aria-label="Clear date filter"
+              >
+                <X size={12} strokeWidth={2.5} />
+              </span>
+            )}
+          </button>
+
+          {/* Yesterday */}
+          <button
+            type="button"
+            onClick={() => handleSelectPreset('yesterday')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 border flex items-center gap-1.5 ${
+              datePreset === 'yesterday'
+                ? 'bg-[#1A2766] text-white border-[#1A2766] shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200/80 active:bg-slate-100'
+            }`}
+          >
+            <span>Yesterday</span>
+            {datePreset === 'yesterday' && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleClearDateFilter();
+                }}
+                className="p-0.5 rounded-full hover:bg-white/20 transition-colors"
+                title="Clear date filter"
+                aria-label="Clear date filter"
+              >
+                <X size={12} strokeWidth={2.5} />
+              </span>
+            )}
+          </button>
+
+          {/* Last 7 Days */}
+          <button
+            type="button"
+            onClick={() => handleSelectPreset('last_7')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 border flex items-center gap-1.5 ${
+              datePreset === 'last_7'
+                ? 'bg-[#1A2766] text-white border-[#1A2766] shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200/80 active:bg-slate-100'
+            }`}
+          >
+            <span>Last 7 Days</span>
+            {datePreset === 'last_7' && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleClearDateFilter();
+                }}
+                className="p-0.5 rounded-full hover:bg-white/20 transition-colors"
+                title="Clear date filter"
+                aria-label="Clear date filter"
+              >
+                <X size={12} strokeWidth={2.5} />
+              </span>
+            )}
+          </button>
+
+          {/* Custom */}
+          <button
+            type="button"
+            onClick={handleOpenCustomModal}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 border flex items-center gap-1.5 ${
+              datePreset === 'custom'
+                ? 'bg-[#1A2766] text-white border-[#1A2766] shadow-xs'
+                : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200/80 active:bg-slate-100'
+            }`}
+          >
+            <Calendar size={13} className={datePreset === 'custom' ? 'text-white' : 'text-slate-400'} />
+            <span>{customPillLabel}</span>
+            {datePreset === 'custom' && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleClearDateFilter();
+                }}
+                className="p-0.5 rounded-full hover:bg-white/20 transition-colors"
+                title="Clear date filter"
+                aria-label="Clear date filter"
+              >
+                <X size={12} strokeWidth={2.5} />
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -515,6 +777,15 @@ export default function MobilePostDispatchView({
         onClose={() => setPreviewPhoto({ isOpen: false, url: null })}
         imageUrl={previewPhoto.url}
         title={previewPhoto.title || 'Evidence Preview'}
+      />
+
+      {/* 5. Custom Date Range Modal */}
+      <CustomDateRangeModal
+        isOpen={customModalOpen}
+        onClose={() => setCustomModalOpen(false)}
+        initialFrom={customFrom}
+        initialTo={customTo}
+        onApply={handleApplyCustomRange}
       />
     </div>
   );

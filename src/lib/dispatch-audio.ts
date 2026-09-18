@@ -62,10 +62,7 @@ class DispatchAudioManager {
     });
   }
 
-  /**
-   * Plays the dispatch incoming chime (double chime with 800ms spacing).
-   */
-  public async playChime(): Promise<void> {
+  private async playAudioOnce(): Promise<void> {
     if (typeof window === 'undefined') return;
 
     if (!this.audio) {
@@ -78,22 +75,35 @@ class DispatchAudioManager {
       this.audio.currentTime = 0;
       this.audio.volume = 1;
       await this.audio.play();
-
-      setTimeout(() => {
-        if (this.audio) {
-          try {
-            this.audio.currentTime = 0;
-            this.audio.play().catch((err) => {
-              console.warn('[DispatchAudio] Second chime playback restricted:', err);
-            });
-          } catch (innerErr) {
-            console.warn('[DispatchAudio] Second chime error:', innerErr);
-          }
-        }
-      }, 800);
     } catch (err: any) {
       console.warn('[DispatchAudio] Chime playback blocked or failed:', err?.message || err);
     }
+  }
+
+  /**
+   * Plays the dispatch chime:
+   * - count = 1: exactly ONE chime (used for Truck Photo Upload)
+   * - count = 2: exactly TWO chimes with 800ms spacing (used for New Sales Order / New Push)
+   */
+  public async playChimes(count: 1 | 2 = 1): Promise<void> {
+    if (typeof window === 'undefined') return;
+
+    await this.playAudioOnce();
+
+    if (count === 2) {
+      setTimeout(() => {
+        this.playAudioOnce().catch((innerErr) => {
+          console.warn('[DispatchAudio] Second chime error:', innerErr);
+        });
+      }, 800);
+    }
+  }
+
+  /**
+   * Backward-compatible chime player. Defaults to 2 chimes.
+   */
+  public async playChime(): Promise<void> {
+    return this.playChimes(2);
   }
 }
 
@@ -107,6 +117,33 @@ export function getDispatchAudioManager(): DispatchAudioManager {
   return instance;
 }
 
-export function playDispatchChime(): Promise<void> {
-  return getDispatchAudioManager().playChime();
+export type NotificationEventType =
+  | 'NEW_PUSH'
+  | 'NEW_SALES_ORDER'
+  | 'TRUCK_PHOTO_UPLOADED'
+  | 'UPDATE_ORDER';
+
+/**
+ * Centralized Sound Policy Decision Point
+ * - NEW_PUSH / NEW_SALES_ORDER: 2 chimes
+ * - TRUCK_PHOTO_UPLOADED: 1 chime
+ * - UPDATE_ORDER / others: No sound
+ */
+export function playNotificationSound(eventType: NotificationEventType): Promise<void> {
+  const manager = getDispatchAudioManager();
+  switch (eventType) {
+    case 'NEW_PUSH':
+    case 'NEW_SALES_ORDER':
+      return manager.playChimes(2);
+    case 'TRUCK_PHOTO_UPLOADED':
+      return manager.playChimes(1);
+    case 'UPDATE_ORDER':
+    default:
+      return Promise.resolve();
+  }
 }
+
+export function playDispatchChime(count: 1 | 2 = 2): Promise<void> {
+  return getDispatchAudioManager().playChimes(count);
+}
+

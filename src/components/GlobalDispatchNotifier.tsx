@@ -1,46 +1,74 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { playDispatchChime } from '@/lib/dispatch-audio';
-import { speakInvoiceCreated } from '@/lib/voice-notifications';
+import { playNotificationSound } from '@/lib/dispatch-audio';
+
+/**
+ * Bounded deduplication set to avoid unbounded memory growth
+ * while providing reliable idempotency across route transitions.
+ */
+class BoundedDeduplicationSet {
+  private maxSize: number;
+  private set: Set<string>;
+
+  constructor(maxSize = 500) {
+    this.maxSize = maxSize;
+    this.set = new Set();
+  }
+
+  has(key: string): boolean {
+    return this.set.has(key);
+  }
+
+  add(key: string): void {
+    if (this.set.has(key)) return;
+    if (this.set.size >= this.maxSize) {
+      const firstKey = this.set.keys().next().value;
+      if (firstKey !== undefined) {
+        this.set.delete(firstKey);
+      }
+    }
+    this.set.add(key);
+  }
+
+  clear(): void {
+    this.set.clear();
+  }
+}
+
+// Module-level deduplication cache persisting across component remounts within the browser tab session
+const globalDedupeSet = new BoundedDeduplicationSet(500);
 
 export default function GlobalDispatchNotifier() {
   const router = useRouter();
   const pathname = usePathname();
-  const knownIdsRef = useRef<Set<string>>(new Set());
-  const isDispatchQueuePage = pathname === '/staff/dashboard/dispatch/incoming';
 
   // Voice preloading and initialization when authenticated ERP app mounts
   useEffect(() => {
-    console.log(`[VOICE DEBUG] GlobalDispatchNotifier mounted (pathname: ${pathname})`);
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       try {
-        const voices = window.speechSynthesis.getVoices();
-        console.log(`[VOICE DEBUG] Initial speech voice count: ${voices.length}`);
+        window.speechSynthesis.getVoices();
         if (window.speechSynthesis.onvoiceschanged !== undefined) {
           window.speechSynthesis.onvoiceschanged = () => {
-            const updated = window.speechSynthesis.getVoices();
-            console.log(`[VOICE DEBUG] voiceschanged fired: ${updated.length} voices available`);
+            window.speechSynthesis.getVoices();
           };
         }
       } catch (err) {
-        console.warn('[VOICE DEBUG] Voice preload error:', err);
+        console.warn('[Voice] Voice preload error:', err);
       }
     }
-  }, [pathname]);
+  }, []);
 
   useEffect(() => {
-    console.log(`[VOICE DEBUG] GlobalDispatchNotifier SSE effect running. isDispatchQueuePage=${isDispatchQueuePage}`);
-
     let eventSource: EventSource | null = null;
     let reconnectTimeout: NodeJS.Timeout | null = null;
     let isUnmounted = false;
     let reconnectAttempts = 0;
 
-    // 1. Establish baseline from existing queue so existing rows never play bell sound
+    // 1. Establish baseline from existing queue so existing rows never trigger notifications or sounds
     const initBaselineAndSSE = async () => {
       try {
         const res = await fetch('/api/dispatch/incoming-queue');
@@ -48,8 +76,14 @@ export default function GlobalDispatchNotifier() {
           const json = await res.json();
           if (json.success && Array.isArray(json.data)) {
             json.data.forEach((o: { zohoSalesorderId?: string; id?: string }) => {
-              if (o.zohoSalesorderId) knownIdsRef.current.add(o.zohoSalesorderId);
-              if (o.id) knownIdsRef.current.add(o.id);
+              if (o.zohoSalesorderId) {
+                globalDedupeSet.add(o.zohoSalesorderId);
+                globalDedupeSet.add(`new_so_${o.zohoSalesorderId}`);
+              }
+              if (o.id) {
+                globalDedupeSet.add(o.id);
+                globalDedupeSet.add(`new_so_${o.id}`);
+              }
             });
           }
         }
@@ -69,11 +103,9 @@ export default function GlobalDispatchNotifier() {
         eventSource = null;
       }
       
-      console.log(`[VOICE DEBUG] Opening EventSource to /api/dispatch/incoming-queue/events`);
       eventSource = new EventSource('/api/dispatch/incoming-queue/events');
 
       eventSource.onopen = () => {
-        console.log(`[VOICE DEBUG] SSE EventSource connection opened on client`);
         reconnectAttempts = 0;
       };
 
@@ -81,21 +113,27 @@ export default function GlobalDispatchNotifier() {
         try {
           const data = JSON.parse(e.data);
           
+          // ==========================================
+          // 1. NEW SALES ORDER / NEW PUSH EVENT
+          // ==========================================
           if (data.type === 'new_order' && data.order) {
             const order = data.order;
             
-            // Deduplicate: Don't notify for the same ID twice in this session unless it's a repush
-            const dedupeKey = order._isRePush ? `${order.zohoSalesorderId}_${order._rePushTimestamp}` : order.zohoSalesorderId;
-            if (knownIdsRef.current.has(dedupeKey) || knownIdsRef.current.has(order.zohoSalesorderId)) {
+            // Canonical Deduplication Key
+            const dedupeKey = order._isRePush
+              ? `new_so_${order.zohoSalesorderId}_${order._rePushTimestamp}`
+              : `new_so_${order.zohoSalesorderId || order.id}`;
+
+            if (
+              globalDedupeSet.has(dedupeKey) ||
+              (!order._isRePush && order.zohoSalesorderId && globalDedupeSet.has(`new_so_${order.zohoSalesorderId}`))
+            ) {
               return;
             }
             
-            knownIdsRef.current.add(dedupeKey);
-            if (order.zohoSalesorderId) knownIdsRef.current.add(order.zohoSalesorderId);
-            if (order.id) knownIdsRef.current.add(order.id);
-
-            // If user is already on the dispatch incoming table, that table manages its own rows and chime
-            if (isDispatchQueuePage) return;
+            globalDedupeSet.add(dedupeKey);
+            if (order.zohoSalesorderId) globalDedupeSet.add(`new_so_${order.zohoSalesorderId}`);
+            if (order.id) globalDedupeSet.add(`new_so_${order.id}`);
 
             // Toast Notification
             const soNum = order.salesorderNumber || (order.zohoSalesorderId ? `SO-${order.zohoSalesorderId}` : 'New Sales Order');
@@ -148,87 +186,34 @@ export default function GlobalDispatchNotifier() {
                 </div>
               ),
               {
-                id: `so-${dedupeKey}`,
+                id: dedupeKey,
                 duration: 8000,
               }
             );
 
-            // Play Sound Twice using robust shared audio manager
-            playDispatchChime();
+            // Play Sound Policy: TWO chimes for new push
+            playNotificationSound('NEW_PUSH');
           }
 
-          if (data.type === 'update_order' && data.order) {
-            const order = data.order;
-            // If we previously displayed a placeholder with just zohoSalesorderId, update existing toast if open
-            if (order.salesorderNumber && order.zohoSalesorderId) {
-              const dedupeKey = order.zohoSalesorderId;
-              const toastId = `so-${dedupeKey}`;
-              const soNum = order.salesorderNumber;
-
-              toast.custom(
-                (t) => (
-                  <div
-                    role="alert"
-                    className={`${
-                      t.visible ? 'animate-enter' : 'animate-leave'
-                    } max-w-md w-full bg-white shadow-xl rounded-xl pointer-events-auto flex ring-1 ring-black/10 border-l-4 border-[#1A2766] overflow-hidden cursor-pointer hover:bg-slate-50/80 transition-all`}
-                    onClick={() => {
-                      toast.dismiss(t.id);
-                      const targetId = order.id || order.zohoSalesorderId;
-                      router.push(`/staff/dashboard/dispatch/incoming?highlight=${encodeURIComponent(targetId)}`);
-                    }}
-                  >
-                    <div className="flex-1 w-0 p-4">
-                      <div className="flex items-start">
-                        <div className="flex-shrink-0 pt-0.5 text-2xl">
-                          📥
-                        </div>
-                        <div className="ml-3 flex-1">
-                          <p className="text-sm font-bold text-gray-900">
-                            New Sales Order Received
-                          </p>
-                          <p className="mt-1 text-xs font-semibold text-[#1A2766]">
-                            {soNum}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            Pushed to Dispatch. Click to open incoming queue.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex border-l border-gray-100">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toast.dismiss(t.id);
-                        }}
-                        className="w-full border border-transparent rounded-none rounded-r-lg p-3 flex items-center justify-center text-xs font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-100 focus:outline-none transition-colors"
-                        title="Dismiss notification"
-                        aria-label="Dismiss notification"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ),
-                {
-                  id: toastId,
-                  duration: 8000,
-                }
-              );
-            }
+          // ==========================================
+          // 2. ORDER UPDATE EVENT (DATA SYNC ONLY)
+          // ==========================================
+          // update_order is purely for updating active row state on tables.
+          // It MUST NEVER display a new sales order toast or play sounds.
+          if (data.type === 'update_order') {
+            return;
           }
 
+          // ==========================================
+          // 3. TRUCK PHOTO UPLOAD EVENT
+          // ==========================================
           if (data.type === 'truck_upload' && data.data) {
             const upload = data.data;
             const dedupeKey = `truck_${upload.uploadId || upload.salesOrderId}`;
-            if (knownIdsRef.current.has(dedupeKey)) {
+            if (globalDedupeSet.has(dedupeKey)) {
               return;
             }
-            knownIdsRef.current.add(dedupeKey);
-
-            if (isDispatchQueuePage) return;
+            globalDedupeSet.add(dedupeKey);
 
             const soNum = upload.salesOrderNumber || 'Sales Order';
             const cust = upload.customerName ? ` - ${upload.customerName}` : '';
@@ -281,12 +266,9 @@ export default function GlobalDispatchNotifier() {
               }
             );
 
-            // Play notification sound once
-            playDispatchChime();
+            // Play Sound Policy: Exactly ONE chime for truck photo upload
+            playNotificationSound('TRUCK_PHOTO_UPLOADED');
           }
-
-          // [PHASE 1 RESET] Voice notification disabled in GlobalDispatchNotifier
-          // if (data.type === 'invoice_created') { ... }
         } catch (err) {
           console.error('[GlobalDispatchNotifier] Message parse error:', err);
         }
@@ -315,7 +297,7 @@ export default function GlobalDispatchNotifier() {
         try { eventSource.close(); } catch {}
       }
     };
-  }, [isDispatchQueuePage]);
+  }, []); // Run once on layout mount, establishing a single stable SSE connection across page navigation
 
   return null;
 }

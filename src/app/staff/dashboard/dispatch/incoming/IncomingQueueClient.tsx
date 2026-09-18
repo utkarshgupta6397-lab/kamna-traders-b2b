@@ -30,7 +30,6 @@ import toast from 'react-hot-toast';
 import { WorkflowHistoryModal } from '@/components/dispatch/WorkflowHistoryModal';
 import DesktopPostDispatchView from './DesktopPostDispatchView';
 import { useSharedClock } from '@/hooks/useSharedClock';
-import { playDispatchChime } from '@/lib/dispatch-audio';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -589,8 +588,7 @@ export default function IncomingQueueClient({
               setQueueFilter('active');
               setHighlightedRow(order.id);
               setTimeout(() => setHighlightedRow(null), 3000);
-              // Play audio chime for the incoming sales order
-              playDispatchChime();
+              // Note: Audio notification and toasts are centralized in GlobalDispatchNotifier
             }
           } else if (data.type === 'update_order') {
             const updated: DispatchIncomingOrder = data.order;

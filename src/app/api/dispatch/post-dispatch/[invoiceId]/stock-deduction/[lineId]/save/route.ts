@@ -9,8 +9,6 @@ import {
   validateAllocationsStock,
   checkInvoiceDeductionCompletion,
   AllocationEntry,
-  areUomsCompatible,
-  normalizeUom,
   resolveSkuPrecision,
 } from '@/lib/stock-deduction-service';
 import { validateQuantityPrecision } from '@/lib/uom-precision';
@@ -165,16 +163,15 @@ export async function POST(
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // QUANTITY & UOM VALIDATION AGAINST SOURCE INVOICE LINE
+    // QUANTITY VALIDATION AGAINST SOURCE INVOICE LINE
     // For normal (non-exploded) allocations:
-    // - Total allocated quantity cannot exceed the source invoice line quantity.
-    // - UOMs must be compatible.
+    // - Total allocated quantity cannot exceed the source invoice line quantity (1:1 direct numeric relationship).
+    // - UOM labels are NOT a validation barrier.
     // For manual / exploded allocations (isExploded = true):
-    // - A source item (e.g. "1 Set") explodes into multiple physical inventory items
-    //   (e.g. SKU A: 1 Unit, SKU B: 1 Unit). Blind numerical summation across child
-    //   components is not applicable without a BOM rule.
+    // - A source item (e.g. "1 Set") explodes into multiple physical inventory items.
+    //   Blind numerical summation across child components is not applicable without a BOM rule.
     // - Each individual allocation entry is validated for positive quantity, valid SKU,
-    //   valid warehouse, valid UOM, and sufficient stock.
+    //   valid warehouse, and sufficient stock.
     // ──────────────────────────────────────────────────────────────────────────
     const targetSourceQty = parseFloat(String(expectedQty || line.quantity)) || 0;
     const targetSourceUom = String(expectedUom || 'Units');
@@ -182,7 +179,7 @@ export async function POST(
     if (!isExploded && validatedAllocations.length > 0) {
       const totalAllocatedQty = validatedAllocations.reduce((sum, a) => sum + a.qty, 0);
 
-      // 1. Quantity check for normal allocation: must not exceed source quantity
+      // Quantity check for normal allocation: must not exceed source quantity
       if (totalAllocatedQty > targetSourceQty) {
         return NextResponse.json(
           {
@@ -190,19 +187,6 @@ export async function POST(
           },
           { status: 400 }
         );
-      }
-
-      // 2. UOM check for normal allocation: Verify allocated item has a compatible UOM
-      for (let i = 0; i < validatedAllocations.length; i++) {
-        const item = validatedAllocations[i];
-        if (!areUomsCompatible(targetSourceUom, item.uom)) {
-          return NextResponse.json(
-            {
-              error: `Row #${i + 1} (${item.skuName}): UOM "${item.uom}" is incompatible with source invoice line UOM "${targetSourceUom}". Unsafe conversion is prohibited.`,
-            },
-            { status: 400 }
-          );
-        }
       }
     }
 
@@ -229,10 +213,12 @@ export async function POST(
 
     // ──────────────────────────────────────────────────────────────────────────
     // SUBMISSION FOR APPROVAL (ATOMIC TRANSACTION)
-    // When submitForApproval is true, persist allocation, transition status to
-    // SUBMITTED_FOR_APPROVAL, create snapshot, and log audit event atomically.
+    // When submitForApproval is true AND the allocation requires approval (has deviations),
+    // persist allocation, transition status to SUBMITTED_FOR_APPROVAL, create snapshot,
+    // and log audit event atomically. Normal AUTO_APPROVED allocations bypass this and
+    // proceed directly to Case A immediate atomic deduction.
     // ──────────────────────────────────────────────────────────────────────────
-    if (submitForApproval) {
+    if (submitForApproval && classifyResult.classification !== 'AUTO_APPROVED') {
       if (validatedAllocations.length === 0) {
         return NextResponse.json({ error: 'Cannot submit empty allocation for approval.' }, { status: 400 });
       }

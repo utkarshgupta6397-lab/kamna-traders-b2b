@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Trash2, Search, Plus, AlertCircle, Loader2, PackageCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { areUomsCompatible, formatShortUom } from '@/lib/stock-deduction-service';
+import { formatShortUom } from '@/lib/stock-deduction-service';
 import { validateQuantityPrecision, isValidPrecisionInput } from '@/lib/uom-precision';
 
 interface ManualItemRow {

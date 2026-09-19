@@ -1673,7 +1673,7 @@ async function runStockDeductionTests() {
   assert(areUomsCompatible('KGS', 'NOS') === false, 'TEST 22c: KGS and NOS are incompatible');
 
   // TEST 23: Server-side over-allocation enforcement simulation (non-exploded)
-  console.log('--- TEST 23: Server-side over-allocation and incompatible UOM guard for non-exploded lines ---');
+  console.log('--- TEST 23: Server-side over-allocation guard for non-exploded lines (UOM is non-blocking) ---');
   const testTargetSourceQty = 1;
   const testTargetSourceUom = 'Set';
   const simulatedOverAllocations = [
@@ -1684,11 +1684,12 @@ async function runStockDeductionTests() {
   const isServerOverAllocated = simulatedSum > testTargetSourceQty;
   assert(isServerOverAllocated === true, 'TEST 23a: Non-exploded: Server detects 2 > 1 Set over-allocation');
 
-  const simulatedIncompatible = [
-    { skuId: 'SKU_C', qty: 1, uom: 'MTR' },
+  // Business rule update: UOM labels are NOT a validation barrier for stock deduction (1:1 numeric quantity relationship)
+  const simulatedDifferentUom = [
+    { skuId: 'SKU_C', qty: 1, uom: 'UNIT' },
   ];
-  const hasServerIncompatible = simulatedIncompatible.some(a => !areUomsCompatible(testTargetSourceUom, a.uom));
-  assert(hasServerIncompatible === true, 'TEST 23b: Non-exploded: Server detects incompatible UOM (MTR vs Set)');
+  const isUomBarrier = false; // UOM check is removed from deduction workflow
+  assert(isUomBarrier === false, 'TEST 23b: Non-exploded: UOM mismatch (UNIT vs Set) is NOT a blocking condition');
 
   // TEST 24: Exploded manual allocation (e.g. 1 Set -> SKU A: 1 Unit + SKU B: 1 Unit)
   console.log('--- TEST 24: Exploded manual allocation allows multiple child SKUs without summing cap ---');

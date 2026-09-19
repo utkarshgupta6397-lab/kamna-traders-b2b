@@ -15,7 +15,7 @@ import {
   Clock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { formatShortUom } from '@/lib/stock-deduction-service';
+import { formatShortUom, classifyAllocation, type ClassifyResult } from '@/lib/stock-deduction-service';
 import { validateQuantityPrecision, isValidPrecisionInput } from '@/lib/uom-precision';
 import type { CardLineItem } from './InvoiceItemCardRibbon';
 
@@ -451,12 +451,41 @@ export default function DirectDeductionWorkspace({
   // Concurrency ref to guard against rapid double clicks
   const isSubmittingRef = useRef(false);
 
-  // Unified Submit for Approval handler
-  const handleSubmitForApproval = async () => {
+  // Local classification evaluation of current draft rows
+  const isExplodedMode = activeMode === 'MANUAL';
+  const currentClassification = useMemo<ClassifyResult | null>(() => {
+    if (enrichedRows.length === 0) return null;
+    const formatted = enrichedRows.map(r => ({
+      skuId: r.skuId,
+      skuName: r.skuName,
+      skuCode: r.skuCode,
+      warehouseId: r.warehouseId,
+      warehouseName: r.warehouseName,
+      qty: isNaN(r.numQty) ? 0 : r.numQty,
+      uom: r.uom,
+    }));
+    return classifyAllocation({
+      expectedSkuId: lineData.resolvedSku?.id || null,
+      expectedWarehouseId: lineData.expectedWarehouse?.id || null,
+      expectedQty: Number(lineData.line.quantity),
+      allocations: formatted,
+      isExploded: isExplodedMode,
+    });
+  }, [enrichedRows, lineData, isExplodedMode]);
+
+  const isDirectDeductible = Boolean(
+    currentClassification &&
+    currentClassification.classification === 'AUTO_APPROVED' &&
+    !hasInsufficientStock &&
+    !hasInvalidRows
+  );
+
+  // Unified Save / Direct Deduct / Submit for Approval handler
+  const handleSubmitOrDeduct = async () => {
     if (isSubmittingRef.current || saving) return;
 
     if (hasInsufficientStock) {
-      toast.error('Cannot submit deduction: One or more rows have insufficient stock');
+      toast.error('Cannot proceed: One or more rows have insufficient stock');
       return;
     }
     if (hasInvalidRows) {
@@ -464,10 +493,11 @@ export default function DirectDeductionWorkspace({
       return;
     }
 
+    const shouldDirectDeduct = isDirectDeductible;
+
     isSubmittingRef.current = true;
     setSaving(true);
     try {
-      const isExploded = activeMode === 'MANUAL';
       const formattedAllocations = enrichedRows.map(r => ({
         skuId: r.skuId,
         skuName: r.skuName,
@@ -483,25 +513,29 @@ export default function DirectDeductionWorkspace({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           allocations: formattedAllocations,
-          isExploded,
+          isExploded: isExplodedMode,
           expectedSkuId: lineData.resolvedSku?.id || null,
           expectedWarehouseId: lineData.expectedWarehouse?.id || null,
           expectedQty: Number(lineData.line.quantity),
           expectedUom: lineData.line.uom,
           expectedItemId: lineData.line.itemId,
           expectedItemName: lineData.line.itemName,
-          submitForApproval: true,
+          submitForApproval: !shouldDirectDeduct,
         }),
       });
 
       const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error || 'Failed to submit deduction for approval');
+      if (!res.ok) throw new Error(resData.error || (shouldDirectDeduct ? 'Failed to deduct stock' : 'Failed to submit deduction for approval'));
 
       onClearDraft(lineId);
-      toast.success('Deduction submitted for approval.');
+      if (resData.autoDeducted || shouldDirectDeduct) {
+        toast.success('Stock deducted successfully!');
+      } else {
+        toast.success('Deduction submitted for approval.');
+      }
       await onSuccess();
     } catch (err: any) {
-      toast.error(err.message || 'Submission failed');
+      toast.error(err.message || 'Operation failed');
     } finally {
       setSaving(false);
       isSubmittingRef.current = false;
@@ -645,6 +679,42 @@ export default function DirectDeductionWorkspace({
             >
               Switch to Manual
             </button>
+          </div>
+        )}
+
+        {/* Classification Mode Status Banner (when editing/drafting) */}
+        {!isReadOnly && !isApproved && enrichedRows.length > 0 && (
+          <div className="flex items-center justify-between px-3.5 py-2 rounded-xl text-xs border transition-colors bg-white">
+            <div className="flex items-center gap-2">
+              {isDirectDeductible ? (
+                <>
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="font-semibold text-emerald-800">
+                    Direct Deduction Eligible
+                  </span>
+                  <span className="text-slate-400 text-[11px] hidden sm:inline">
+                    — Exact match found. Stock will be deducted immediately without approval delay.
+                  </span>
+                </>
+              ) : (
+                <>
+                  <div className="w-2 h-2 rounded-full bg-amber-500" />
+                  <span className="font-semibold text-amber-800">
+                    Manager Approval Required
+                  </span>
+                  {currentClassification?.deviationReasons && currentClassification.deviationReasons.length > 0 && (
+                    <span className="text-amber-700 text-[11px] font-medium">
+                      ({currentClassification.deviationReasons.map((r: string) => r.replace(/_/g, ' ')).join(', ')})
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
+              isDirectDeductible ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
+            }`}>
+              {isDirectDeductible ? 'Direct Flow' : 'Approval Flow'}
+            </span>
           </div>
         )}
 
@@ -972,19 +1042,23 @@ export default function DirectDeductionWorkspace({
           {!isReadOnly && !isApproved && (
             <button
               type="button"
-              onClick={handleSubmitForApproval}
+              onClick={handleSubmitOrDeduct}
               disabled={saving || hasInsufficientStock || hasInvalidRows || !canEditStockAllocation}
               className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 ${
                 hasInsufficientStock || hasInvalidRows || !canEditStockAllocation
                   ? 'bg-slate-400 cursor-not-allowed opacity-60'
+                  : isDirectDeductible
+                  ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-98'
                   : 'bg-[#1A2766] hover:bg-[#121c48] active:scale-98'
               }`}
               title={
                 hasInsufficientStock
-                  ? 'Cannot submit: Insufficient warehouse stock'
+                  ? 'Cannot proceed: Insufficient warehouse stock'
                   : hasInvalidRows
                   ? 'Please fill all required rows with positive quantities'
-                  : 'Submit for Approval'
+                  : isDirectDeductible
+                  ? 'Deduct stock directly from warehouse'
+                  : 'Submit for Manager Approval'
               }
             >
               {saving ? (
@@ -992,7 +1066,11 @@ export default function DirectDeductionWorkspace({
               ) : (
                 <CheckCircle2 size={14} />
               )}
-              <span>{saving ? 'Submitting...' : 'Submit for Approval'}</span>
+              <span>
+                {saving
+                  ? (isDirectDeductible ? 'Deducting...' : 'Submitting...')
+                  : (isDirectDeductible ? 'Deduct Stock' : 'Submit for Approval')}
+              </span>
             </button>
           )}
         </div>

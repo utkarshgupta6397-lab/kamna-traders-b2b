@@ -717,3 +717,56 @@ export async function resolveSkuPrecision(
     return false;
   }
 }
+
+// ─── Operational Queue Helpers ────────────────────────────────────────────────
+
+/**
+ * Determines whether an invoice line requires action from the Operations team.
+ * An item is Operations Pending ONLY when Operations still has a task to perform.
+ *
+ * Finished or waiting on other parties:
+ * - DEDUCTED: Already deducted. No ops action.
+ * - APPROVED: Approved/deducted. No ops action.
+ * - SUBMITTED_FOR_APPROVAL: Waiting for approver review. No ops action.
+ *
+ * Actionable by Operations:
+ * - mappingRequired: Sku must be mapped.
+ * - null or NOT_ALLOCATED: Initial allocation required.
+ * - DRAFT: Configuration in progress.
+ * - REWORK_REQUIRED or REJECTED: Returned to Operations for correction.
+ */
+export function isLineOperationsPending(lineData: {
+  allocation?: { status?: string | null } | null;
+  mappingRequired?: boolean | null;
+} | null | undefined): boolean {
+  if (!lineData) return false;
+
+  const status = lineData.allocation?.status;
+
+  // If already deducted or approved, completed
+  if (status === 'DEDUCTED' || status === 'APPROVED') {
+    return false;
+  }
+
+  // If submitted for approval, ops is waiting on approver - NOT pending ops action
+  if (status === 'SUBMITTED_FOR_APPROVAL') {
+    return false;
+  }
+
+  // If mapping required, ops must resolve mapping
+  if (lineData.mappingRequired) {
+    return true;
+  }
+
+  // Otherwise: unallocated (null or NOT_ALLOCATED), DRAFT, REWORK_REQUIRED, REJECTED
+  return true;
+}
+
+/**
+ * Checks if an invoice line has completed its deduction lifecycle.
+ */
+export function isLineCompleted(lineData: {
+  allocation?: { status?: string | null } | null;
+} | null | undefined): boolean {
+  return lineData?.allocation?.status === 'DEDUCTED';
+}

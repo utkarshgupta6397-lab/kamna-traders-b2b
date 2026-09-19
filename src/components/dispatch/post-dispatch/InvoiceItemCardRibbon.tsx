@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useRef } from 'react';
-import { Package, ChevronLeft, ChevronRight } from 'lucide-react';
-import { formatShortUom } from '@/lib/stock-deduction-service';
+import { Package, ChevronLeft, ChevronRight, Check } from 'lucide-react';
+import { formatShortUom, isLineCompleted } from '@/lib/stock-deduction-service';
 
 export interface CardLineItem {
   line: {
@@ -144,6 +144,7 @@ export default function InvoiceItemCardRibbon({
       >
         {lines.map((item, idx) => {
           const isSelected = item.line.id === selectedLineId;
+          const isDeducted = isLineCompleted(item);
           const badge = getItemBadge(item);
           const uom = formatShortUom(item.line.uom || item.resolvedSku?.unit || 'Units');
 
@@ -151,12 +152,23 @@ export default function InvoiceItemCardRibbon({
             <div
               key={item.line.id}
               onClick={() => onSelectLine(item.line.id)}
-              className={`min-w-[170px] max-w-[200px] sm:min-w-[190px] sm:max-w-[210px] shrink-0 p-2.5 rounded-xl border cursor-pointer select-none transition-all flex flex-col justify-between ${
+              className={`relative overflow-hidden min-w-[170px] max-w-[200px] sm:min-w-[190px] sm:max-w-[210px] shrink-0 p-2.5 rounded-xl border cursor-pointer select-none transition-all flex flex-col justify-between ${
                 isSelected
                   ? 'border-[#1A2766] bg-indigo-50/30 shadow-sm ring-2 ring-[#1A2766]/20'
+                  : isDeducted
+                  ? 'border-emerald-200/80 bg-emerald-50/15 hover:border-emerald-300 hover:shadow-2xs'
                   : 'border-slate-200/90 bg-white hover:border-slate-300 hover:shadow-2xs'
               }`}
             >
+              {/* Subtle Success Watermark Overlay for Deducted Items */}
+              {isDeducted && (
+                <div className="absolute inset-0 pointer-events-none rounded-xl overflow-hidden flex items-center justify-center bg-emerald-500/[0.03] z-10">
+                  <div className="w-16 h-16 rounded-full border-2 border-emerald-500/20 bg-emerald-50/40 flex items-center justify-center text-emerald-600/25 transform -rotate-12">
+                    <Check size={36} strokeWidth={3} />
+                  </div>
+                </div>
+              )}
+
               <div>
                 {/* Product Image / Placeholder */}
                 <div className="w-full h-24 bg-slate-100/80 rounded-lg overflow-hidden flex items-center justify-center relative border border-slate-100">

@@ -14,6 +14,7 @@ import { formatCurrency } from '@/lib/utils';
 import InvoiceItemCardRibbon from '@/components/dispatch/post-dispatch/InvoiceItemCardRibbon';
 import DirectDeductionWorkspace, { LineDraftState } from '@/components/dispatch/post-dispatch/DirectDeductionWorkspace';
 import InventoryDeductionSkeleton from '@/components/dispatch/post-dispatch/InventoryDeductionSkeleton';
+import { isLineOperationsPending } from '@/lib/stock-deduction-service';
 
 interface Props {
   invoiceId: string;
@@ -75,22 +76,116 @@ export default function InventoryDeductionPageClient({
     fetchData();
   }, [fetchData]);
 
-  // Keep selected line synced with query param or auto-select first line
+  const lines = useMemo(() => data?.lines || [], [data]);
+
+  // Enriched card lines with draft states
+  const cardLines = useMemo(() => {
+    return lines.map((l: any) => {
+      const lineId = l.line.id;
+      const draft = draftStates[lineId];
+      let draftMeta = undefined;
+
+      if (draft) {
+        const isExploded = draft.mode === 'MANUAL';
+        const rows = isExploded ? draft.manualAllocations : draft.autoAllocations;
+        const totalUnits = rows.reduce((s, r) => s + (Number(r.qty) || 0), 0);
+        draftMeta = {
+          isConfigured: draft.isConfigured,
+          isExploded,
+          totalUnits,
+        };
+      }
+
+      return {
+        ...l,
+        draftState: draftMeta,
+      };
+    });
+  }, [lines, draftStates]);
+
+  const pendingCardLines = useMemo(() => {
+    return cardLines.filter((l: any) => isLineOperationsPending(l));
+  }, [cardLines]);
+
+  const pendingCount = pendingCardLines.length;
+  const allCount = cardLines.length;
+
+  const [activeFilter, setActiveFilter] = useState<'PENDING' | 'ALL'>('PENDING');
+  const hasInitializedFilterRef = useRef(false);
+
+  // Set initial filter based on pending count or deep-linked line
   useEffect(() => {
-    if (data?.lines && data.lines.length > 0) {
+    if (data?.lines && !hasInitializedFilterRef.current) {
+      hasInitializedFilterRef.current = true;
+      const initialPendingCount = data.lines.filter((l: any) => isLineOperationsPending(l)).length;
       if (lineQueryParam) {
-        const found = data.lines.find((l: any) => l.line.id === lineQueryParam);
-        if (found) {
-          setSelectedLineId(lineQueryParam);
+        const targetLine = data.lines.find((l: any) => l.line.id === lineQueryParam);
+        if (targetLine && !isLineOperationsPending(targetLine)) {
+          setActiveFilter('ALL');
           return;
         }
       }
-      if (!selectedLineId || !data.lines.some((l: any) => l.line.id === selectedLineId)) {
-        const firstLineId = data.lines[0].line.id;
-        setSelectedLineId(firstLineId);
+      setActiveFilter(initialPendingCount > 0 ? 'PENDING' : 'ALL');
+    }
+  }, [data, lineQueryParam]);
+
+  // If currently in PENDING view and pendingCount drops to 0, auto switch to ALL
+  useEffect(() => {
+    if (!loading && data?.lines && data.lines.length > 0) {
+      if (activeFilter === 'PENDING' && pendingCount === 0) {
+        setActiveFilter('ALL');
       }
     }
-  }, [data, lineQueryParam, selectedLineId]);
+  }, [activeFilter, pendingCount, loading, data]);
+
+  const visibleCardLines = useMemo(() => {
+    if (activeFilter === 'PENDING') {
+      return pendingCardLines;
+    }
+    return cardLines;
+  }, [activeFilter, pendingCardLines, cardLines]);
+
+  // Keep selected line synced with query param or auto-select valid visible line
+  useEffect(() => {
+    if (!data?.lines || data.lines.length === 0) return;
+
+    const currentVisible = activeFilter === 'PENDING' ? pendingCardLines : cardLines;
+    if (currentVisible.length === 0) return;
+
+    // 1. If lineQueryParam is present and valid in currentVisible, keep it
+    if (lineQueryParam && currentVisible.some((l: any) => l.line.id === lineQueryParam)) {
+      if (selectedLineId !== lineQueryParam) {
+        setSelectedLineId(lineQueryParam);
+      }
+      return;
+    }
+
+    // 2. If current selectedLineId is present in currentVisible, keep it
+    if (selectedLineId && currentVisible.some((l: any) => l.line.id === selectedLineId)) {
+      return;
+    }
+
+    // 3. Otherwise fall back to first visible item
+    const nextLineId = currentVisible[0].line.id;
+    setSelectedLineId(nextLineId);
+    const params = new URLSearchParams(window.location.search);
+    params.set('line', nextLineId);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }, [data, activeFilter, pendingCardLines, cardLines, lineQueryParam, selectedLineId, router]);
+
+  const handleFilterChange = (newFilter: 'PENDING' | 'ALL') => {
+    setActiveFilter(newFilter);
+    const targetLines = newFilter === 'PENDING' ? pendingCardLines : cardLines;
+    if (targetLines.length > 0) {
+      if (!targetLines.some((l: any) => l.line.id === selectedLineId)) {
+        const nextId = targetLines[0].line.id;
+        setSelectedLineId(nextId);
+        const params = new URLSearchParams(window.location.search);
+        params.set('line', nextId);
+        router.replace(`?${params.toString()}`, { scroll: false });
+      }
+    }
+  };
 
   const handleSelectLine = (lineId: string) => {
     setSelectedLineId(lineId);
@@ -142,36 +237,10 @@ export default function InventoryDeductionPageClient({
     });
   }, []);
 
-  const lines = useMemo(() => data?.lines || [], [data]);
   const selectedLineData = useMemo(
     () => lines.find((l: any) => l.line.id === selectedLineId) || null,
     [lines, selectedLineId]
   );
-
-  // Enriched card lines with draft states
-  const cardLines = useMemo(() => {
-    return lines.map((l: any) => {
-      const lineId = l.line.id;
-      const draft = draftStates[lineId];
-      let draftMeta = undefined;
-
-      if (draft) {
-        const isExploded = draft.mode === 'MANUAL';
-        const rows = isExploded ? draft.manualAllocations : draft.autoAllocations;
-        const totalUnits = rows.reduce((s, r) => s + (Number(r.qty) || 0), 0);
-        draftMeta = {
-          isConfigured: draft.isConfigured,
-          isExploded,
-          totalUnits,
-        };
-      }
-
-      return {
-        ...l,
-        draftState: draftMeta,
-      };
-    });
-  }, [lines, draftStates]);
 
   if (loading && !data) {
     return <InventoryDeductionSkeleton invoiceId={invoiceId} invoiceNumber={data?.invoiceNumber} />;
@@ -306,19 +375,80 @@ export default function InventoryDeductionPageClient({
           <>
             {/* TOP SECTION: POS-STYLE INVOICE ITEM CARDS RIBBON */}
             <div>
-              <div className="flex items-center justify-between mb-1.5 px-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  Invoice Items ({lines.length})
-                </span>
-                <span className="text-[11px] text-slate-400">
-                  Select item to allocate
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2 px-1">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                    Invoice Items
+                  </span>
+
+                  {/* Operational Segmented Toggle Filter */}
+                  <div className="inline-flex p-0.5 rounded-lg bg-slate-200/80 text-xs font-semibold select-none">
+                    <button
+                      type="button"
+                      onClick={() => handleFilterChange('PENDING')}
+                      className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 ${
+                        activeFilter === 'PENDING'
+                          ? 'bg-white text-[#1A2766] shadow-xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <span>Pending</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold transition-colors ${
+                          activeFilter === 'PENDING'
+                            ? 'bg-indigo-100 text-[#1A2766]'
+                            : 'bg-slate-300/80 text-slate-700'
+                        }`}
+                      >
+                        {pendingCount}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleFilterChange('ALL')}
+                      className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 ${
+                        activeFilter === 'ALL'
+                          ? 'bg-white text-[#1A2766] shadow-xs font-bold'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <span>All</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold transition-colors ${
+                          activeFilter === 'ALL'
+                            ? 'bg-slate-200 text-slate-800'
+                            : 'bg-slate-300/80 text-slate-700'
+                        }`}
+                      >
+                        {allCount}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <span className="text-[11px] text-slate-400 hidden sm:inline">
+                  {activeFilter === 'PENDING'
+                    ? pendingCount === 0
+                      ? 'No actionable items pending'
+                      : 'Showing actionable Operations items'
+                    : 'Showing all invoice items'}
                 </span>
               </div>
-              <InvoiceItemCardRibbon
-                lines={cardLines}
-                selectedLineId={selectedLineId}
-                onSelectLine={handleSelectLine}
-              />
+
+              {visibleCardLines.length === 0 ? (
+                <div className="p-8 text-center bg-white rounded-xl border border-dashed border-slate-200 text-slate-500 text-xs">
+                  {activeFilter === 'PENDING'
+                    ? 'All invoice items have been processed or submitted.'
+                    : 'No items found.'}
+                </div>
+              ) : (
+                <InvoiceItemCardRibbon
+                  lines={visibleCardLines}
+                  selectedLineId={selectedLineId}
+                  onSelectLine={handleSelectLine}
+                />
+              )}
             </div>
 
             {/* SELECTED ITEM DEDICATED WORKSPACE */}

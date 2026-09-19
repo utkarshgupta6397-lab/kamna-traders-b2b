@@ -133,6 +133,7 @@ export async function GET(req: Request) {
     const enrichedSerials = serials.map((s: any) => {
       let computedProduct = null;
       let computedSku = null;
+      let productImage = null;
 
       const alloc = s.allocations?.[0];
       if (alloc?.invoiceItem) {
@@ -145,6 +146,13 @@ export async function GET(req: Request) {
         computedSku = s.skuId;
       }
 
+      if (s.skuId && catalogItems.has(s.skuId)) {
+        const catItem = catalogItems.get(s.skuId);
+        if (catItem?.thumbnailBase64) {
+          productImage = catItem.thumbnailBase64;
+        }
+      }
+
       if (!computedProduct) {
         computedProduct = 'Unknown Product';
       }
@@ -155,7 +163,8 @@ export async function GET(req: Request) {
       return {
         ...s,
         computedProduct,
-        computedSku
+        computedSku,
+        productImage
       };
     });
 

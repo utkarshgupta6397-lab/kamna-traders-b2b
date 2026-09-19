@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, ChevronDown, X, Activity, RefreshCw , FileText} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
+import { MobileGroupedSerials } from '@/components/dcr/MobileGroupedSerials';
 
 export default function MobileCustomerLookupClient() {
   const router = useRouter();
@@ -589,21 +590,11 @@ export default function MobileCustomerLookupClient() {
                               </div>
                             ) : (
                               <div className="flex flex-col gap-2">
-                                {invoiceSerialData[inv.id]?.items?.map(serial => (
-                                  <div key={serial.id} className="border border-slate-200 rounded-lg bg-slate-50 p-2.5 flex flex-col gap-2">
-                                    <div className="flex justify-between items-start gap-2">
-                                      <span className="font-mono text-[11px] font-bold text-slate-800 break-all leading-tight">{serial.serialNumber}</span>
-                                      {getSerialStatusBadge(serial.status)}
-                                    </div>
-                                    <div className="text-[10px] text-slate-500 leading-tight font-medium">
-                                      {serial.computedProduct || serial.skuId || 'Unknown Product'}
-                                    </div>
-                                    <div className="text-[10px] font-medium mt-1 pt-1.5 border-t border-slate-200/60 flex items-center">
-                                      <span className="text-slate-400 mr-1.5">Vendor DCR:</span>
-                                      {getVendorDcrBadge(serial.vendorDcrStatus)}
-                                    </div>
-                                  </div>
-                                ))}
+                                <MobileGroupedSerials
+                                  serials={invoiceSerialData[inv.id]?.items}
+                                  invoiceId={inv.id}
+                                  activeFilter={inlineFilter}
+                                />
                                 
                                 {invoiceSerialData[inv.id]?.hasMore && (
                                   <button 

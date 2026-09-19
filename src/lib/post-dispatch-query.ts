@@ -47,12 +47,38 @@ export function buildPostDispatchWhereClause(params: PostDispatchFilterParams): 
     };
   } else if (tab === 'inventory_pending') {
     where.erpStatus = 'Active';
+    where.zohoStatus = { notIn: ['void', 'draft'], mode: 'insensitive' };
     where.workflows = {
       some: {
         workflowType: 'INVENTORY_DEDUCTION',
         status: { not: 'COMPLETED' },
       },
     };
+    where.AND = [
+      {
+        OR: [
+          // Fresh invoice without synced lines yet whose inventory deduction workflow is pending
+          { lines: { none: {} } },
+          // Invoice with at least one line actionable by operations
+          {
+            lines: {
+              some: {
+                OR: [
+                  { stockDeductionAllocation: { is: null } },
+                  {
+                    stockDeductionAllocation: {
+                      status: {
+                        notIn: ['DEDUCTED', 'SUBMITTED_FOR_APPROVAL', 'APPROVED'],
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    ];
   } else if (tab === 'einvoice_pending') {
     where.erpStatus = 'Active';
     where.eInvoiceGenerated = false;

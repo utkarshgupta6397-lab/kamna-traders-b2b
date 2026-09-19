@@ -40,7 +40,7 @@ export default function InvoiceItemRow({
 
   if (status === 'DEDUCTED' || classification === 'AUTO_APPROVED') {
     badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-  } else if (['APPROVAL_REQUIRED', 'SUBMITTED_FOR_APPROVAL', 'APPROVED', 'REJECTED'].includes(status) || classification === 'APPROVAL_REQUIRED') {
+  } else if (['APPROVAL_REQUIRED', 'SUBMITTED_FOR_APPROVAL', 'APPROVED', 'REJECTED', 'REWORK_REQUIRED'].includes(status) || classification === 'APPROVAL_REQUIRED') {
     badgeColor = 'bg-red-50 text-red-700 border-red-200';
   } else if (status === 'PARTIALLY_ALLOCATED' || classification === 'PARTIAL') {
     badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';

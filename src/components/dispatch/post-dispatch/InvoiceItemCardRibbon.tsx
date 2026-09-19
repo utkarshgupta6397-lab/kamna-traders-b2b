@@ -85,7 +85,7 @@ export default function InvoiceItemCardRibbon({
         dot: 'bg-amber-500',
       };
     }
-    if (status === 'REWORK_REQUIRED') {
+    if (status === 'REWORK_REQUIRED' || status === 'REJECTED') {
       return {
         label: 'Rework Required',
         classes: 'bg-rose-50 text-rose-700 border-rose-200',

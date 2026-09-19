@@ -64,9 +64,11 @@ export default function DirectDeductionWorkspace({
   onSuccess,
 }: Props) {
   const lineId = lineData.line.id;
-  const isDeducted = lineData.allocation?.status === 'DEDUCTED';
+  const status = lineData.allocation?.status || 'NOT_ALLOCATED';
+  const isDeducted = status === 'DEDUCTED';
   const isApproved = lineData.allocation?.status === 'APPROVED';
-  const isSubmitted = lineData.allocation?.status === 'SUBMITTED_FOR_APPROVAL';
+  const isSubmitted = status === 'SUBMITTED_FOR_APPROVAL';
+  const isRejected = status === 'REWORK_REQUIRED' || status === 'REJECTED';
   const isReadOnly = isDeducted || isSubmitted;
 
   // Local stock cache: `${skuId}___${warehouseId}` -> number
@@ -416,7 +418,7 @@ export default function DirectDeductionWorkspace({
       const stock = stockCache[key] !== undefined ? stockCache[key] : row.availableStock;
       const isLoading = Boolean(loadingStockMap[key]);
       const numQty = typeof row.qty === 'number' ? row.qty : parseFloat(String(row.qty));
-      const isInsufficient = stock !== null && stock !== undefined && !isLoading && !isNaN(numQty) && numQty > stock;
+      const isInsufficient = !isDeducted && stock !== null && stock !== undefined && !isLoading && !isNaN(numQty) && numQty > stock;
       const isInvalidQty = isNaN(numQty) || numQty <= 0;
       const precisionCheck = validateQuantityPrecision(row.qty, Boolean(row.isDecimal));
 
@@ -430,12 +432,12 @@ export default function DirectDeductionWorkspace({
         precisionError: precisionCheck.error,
       };
     });
-  }, [activeRows, stockCache, loadingStockMap]);
+  }, [activeRows, stockCache, loadingStockMap, isDeducted]);
 
   // Overall validation
   const hasInsufficientStock = useMemo(() => {
-    return enrichedRows.some(r => r.isInsufficient);
-  }, [enrichedRows]);
+    return !isDeducted && enrichedRows.some(r => r.isInsufficient);
+  }, [enrichedRows, isDeducted]);
 
   const hasInvalidRows = useMemo(() => {
     if (enrichedRows.length === 0) return true;
@@ -552,6 +554,11 @@ export default function DirectDeductionWorkspace({
                 PENDING APPROVAL
               </span>
             )}
+            {isRejected && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                REWORK REQUIRED
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 mt-1">
             <span>
@@ -605,6 +612,22 @@ export default function DirectDeductionWorkspace({
 
       {/* 2. Workspace Content Area */}
       <div className="p-5 flex-1 space-y-4">
+        {/* Rejection / Rework Alert */}
+        {isRejected && lineData.allocation?.rejectionRemarks && (
+          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 flex items-start gap-2.5 text-xs">
+            <AlertCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+            <div>
+              <strong className="font-semibold block text-rose-950">Approver Rejection Remarks</strong>
+              <span>{lineData.allocation.rejectionRemarks}</span>
+              {lineData.allocation.rejectedByName && (
+                <span className="text-rose-600 ml-1.5 font-medium">
+                  — {lineData.allocation.rejectedByName}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Mapping Required Alert for Automatic Mode */}
         {activeMode === 'AUTOMATIC' && lineData.mappingRequired && (
           <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">

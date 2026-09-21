@@ -17,7 +17,7 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
   }
 
   return (
-    <div className="h-screen bg-[#f8f9fb] print:bg-white flex flex-col overflow-hidden">
+    <div className="min-h-screen bg-[#f8f9fb] print:bg-white flex flex-col">
       <Toaster position="top-right" />
       <GlobalDispatchNotifier />
       <header className="print:hidden sticky top-0 z-50 bg-gradient-to-r from-[#1A2766] via-[#1f3180] to-[#AE1B1E] shadow-lg shrink-0">
@@ -35,7 +35,7 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
         </div>
       </header>
 
-      <main className="flex-1 w-full px-4 sm:px-6 py-2 flex flex-col min-h-0 overflow-y-auto lg:overflow-hidden print:p-0 print:m-0 print:max-w-none">
+      <main className="flex-1 w-full flex flex-col print:p-0 print:m-0 print:max-w-none">
         {children}
       </main>
     </div>

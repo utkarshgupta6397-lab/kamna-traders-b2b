@@ -9,5 +9,6 @@ export default async function StaffDashboardPage() {
     redirect('/staff?callbackUrl=%2Fstaff%2Fdashboard');
   }
 
-  return <DashboardClient userName={session.name} />;
+  // Pass session permissions to DashboardClient for section access gating
+  return <DashboardClient userName={session.name} session={session} />;
 }

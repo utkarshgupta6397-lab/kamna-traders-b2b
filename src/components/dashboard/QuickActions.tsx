@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { ShoppingCart, BookOpen, Box, FileText, ArrowUpRight } from 'lucide-react';
+import { FileText, PackagePlus, Boxes, Truck, ArrowUpRight } from 'lucide-react';
 
 export interface CompactQuickAction {
   label: string;
@@ -13,33 +13,33 @@ export interface CompactQuickAction {
 
 export const TOP_QUICK_ACTIONS: CompactQuickAction[] = [
   {
-    label: 'Open Cart',
-    href: '/staff/dashboard/cart',
-    icon: ShoppingCart,
+    label: 'Customer Statement',
+    href: '/staff/dashboard/accounts?tab=statement',
+    icon: FileText,
     color: 'text-blue-600',
     bg: 'bg-blue-50/70 hover:bg-blue-100/70',
     border: 'border-blue-100',
   },
   {
-    label: 'Catalog',
-    href: '/staff/dashboard/catalog-pricing',
-    icon: BookOpen,
+    label: 'Create Product',
+    href: '/staff/dashboard/catalog-pricing/products/create',
+    icon: PackagePlus,
     color: 'text-indigo-600',
     bg: 'bg-indigo-50/70 hover:bg-indigo-100/70',
     border: 'border-indigo-100',
   },
   {
-    label: 'Operations',
-    href: '/staff/dashboard/operations',
-    icon: Box,
+    label: 'Current Stock',
+    href: '/staff/dashboard/operations/current-stock',
+    icon: Boxes,
     color: 'text-emerald-600',
     bg: 'bg-emerald-50/70 hover:bg-emerald-100/70',
     border: 'border-emerald-100',
   },
   {
-    label: 'Accounts',
-    href: '/staff/dashboard/accounts',
-    icon: FileText,
+    label: 'Post Dispatch',
+    href: '/staff/dashboard/dispatch/incoming?dispatch=post',
+    icon: Truck,
     color: 'text-cyan-600',
     bg: 'bg-cyan-50/70 hover:bg-cyan-100/70',
     border: 'border-cyan-100',

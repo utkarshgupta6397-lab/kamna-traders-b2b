@@ -8,6 +8,11 @@ import {
 import { MOTIVATIONAL_QUOTES, getHourlyQuote, getHourlyQuoteIndex } from '../utils/quotes';
 import { DASHBOARD_SECTIONS } from '../components/dashboard/DashboardSectionTabs';
 import { TOP_QUICK_ACTIONS } from '../components/dashboard/QuickActions';
+import {
+  getAccessibleDashboardSections,
+  getNextRotatingSection,
+  canAccessDashboardSection,
+} from '../utils/dashboardSectionRotation';
 
 console.log('\n--- Staff Dashboard & Cart Verification Tests ---');
 
@@ -189,10 +194,86 @@ actualSectionIds.forEach((id, idx) => {
 // 5. Compact Quick Actions Validation
 console.log('\n[Test Suite 5: Compact Quick Actions]');
 assert.strictEqual(TOP_QUICK_ACTIONS.length, 4, 'Must have exactly 4 compact quick actions');
-const expectedQuickActionLabels = ['Open Cart', 'Catalog', 'Operations', 'Accounts'];
+const expectedQuickActionLabels = [
+  'Customer Statement',
+  'Create Product',
+  'Current Stock',
+  'Post Dispatch',
+];
 const actualQuickActionLabels = TOP_QUICK_ACTIONS.map(a => a.label);
 assert.deepStrictEqual(actualQuickActionLabels, expectedQuickActionLabels);
-assert.strictEqual(TOP_QUICK_ACTIONS[0].href, '/staff/dashboard/cart');
+assert.strictEqual(TOP_QUICK_ACTIONS[0].href, '/staff/dashboard/accounts?tab=statement');
+assert.strictEqual(TOP_QUICK_ACTIONS[1].href, '/staff/dashboard/catalog-pricing/products/create');
+assert.strictEqual(TOP_QUICK_ACTIONS[2].href, '/staff/dashboard/operations/current-stock');
+assert.strictEqual(TOP_QUICK_ACTIONS[3].href, '/staff/dashboard/dispatch/incoming?dispatch=post');
 console.log('✓ PASS: Exactly 4 compact quick actions configured beside section switcher');
 
+// 6. Idle Auto-Rotation and Permission Gating Tests
+console.log('\n[Test Suite 6: Idle Section Auto-Rotation and Access Gating]');
+
+// Test A: Admin session has access to all 6 sections in exact canonical sequence
+const adminSession = { role: 'ADMIN' };
+const adminAccessible = getAccessibleDashboardSections(adminSession);
+assert.deepStrictEqual(
+  adminAccessible,
+  ['overview', 'sales', 'inventory', 'operations', 'accounts', 'activity'],
+  'Admin must have access to all 6 sections'
+);
+console.log('✓ PASS: Admin session can access all 6 sections in canonical order');
+
+// Test B: Rotation sequence advances correctly through all 6 sections and wraps around to Overview
+let curr = 'overview' as any;
+const expectedCycle = ['sales', 'inventory', 'operations', 'accounts', 'activity', 'overview'];
+expectedCycle.forEach((expectedNext) => {
+  curr = getNextRotatingSection(curr, adminAccessible);
+  assert.strictEqual(curr, expectedNext, `Expected next section to be ${expectedNext}`);
+});
+console.log('✓ PASS: Canonical sequence rotates cleanly through Overview -> Sales -> Inventory -> Operations -> Accounts -> Activity -> Overview');
+
+// Test C: User without Accounts permission skips Accounts section
+const nonAccountsSession = {
+  role: 'STAFF',
+  canManageTransfers: true, // has Operations access
+};
+const nonAccountsAccessible = getAccessibleDashboardSections(nonAccountsSession);
+assert.deepStrictEqual(
+  nonAccountsAccessible,
+  ['overview', 'sales', 'inventory', 'operations', 'activity'],
+  'Must omit accounts'
+);
+assert.strictEqual(
+  getNextRotatingSection('operations', nonAccountsAccessible),
+  'activity',
+  'Must skip accounts and advance straight from operations to activity'
+);
+console.log('✓ PASS: Section rotation skips Accounts for users without accounts permissions');
+
+// Test D: User without Operations permission skips Operations section
+const nonOpsSession = {
+  role: 'STAFF',
+  accounts_customer_statement: true, // has Accounts access
+};
+const nonOpsAccessible = getAccessibleDashboardSections(nonOpsSession);
+assert.deepStrictEqual(
+  nonOpsAccessible,
+  ['overview', 'sales', 'inventory', 'accounts', 'activity'],
+  'Must omit operations'
+);
+assert.strictEqual(
+  getNextRotatingSection('inventory', nonOpsAccessible),
+  'accounts',
+  'Must skip operations and advance straight from inventory to accounts'
+);
+console.log('✓ PASS: Section rotation skips Operations for users without operations permissions');
+
+// Test E: Minimal user with only Overview accessible (hypothetical single section)
+const singleSectionOnly = ['overview' as const];
+assert.strictEqual(
+  getNextRotatingSection('overview', singleSectionOnly),
+  'overview',
+  'Single section must not advance'
+);
+console.log('✓ PASS: Single accessible section does not advance or loop away');
+
 console.log('\nAll tests passed successfully! ✅\n');
+

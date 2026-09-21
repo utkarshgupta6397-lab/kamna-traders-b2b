@@ -34,55 +34,45 @@ export default function MotivationalQuoteBanner() {
   const isGita = quoteData.displayMode === 'GITA';
 
   return (
-    <div className="relative rounded-2xl border border-blue-100/70 bg-gradient-to-r from-blue-50/50 via-white to-indigo-50/40 px-6 py-4 xl:py-5 shadow-xs shrink-0 text-center overflow-hidden">
-      {/* Centered Quote Composition Container with readable max-width */}
-      <div className="max-w-[960px] mx-auto flex flex-col items-center justify-center">
-        {/* Subtle Category Pill / Minimal Label */}
-        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#1A2766]/5 border border-[#1A2766]/10 text-[10px] font-bold uppercase tracking-widest text-[#1A2766] mb-2">
-          <span>{isGita ? 'Bhagavad Gita' : "Today's Motivation"}</span>
-          {isGita && quoteData.chapter && quoteData.verse && (
-            <span className="text-[#1A2766]/60">
-              · अध्याय {quoteData.chapter}, श्लोक {quoteData.verse}
-            </span>
-          )}
-        </div>
-
+    <div className="relative rounded-xl border border-blue-100/70 bg-gradient-to-r from-blue-50/50 via-white to-indigo-50/40 px-6 py-2.5 sm:py-3 shadow-xs shrink-0 text-center overflow-hidden">
+      {/* Centered Compact Quote Composition Container with readable max-width */}
+      <div className="max-w-[1000px] mx-auto flex flex-col items-center justify-center">
         <AnimatePresence mode="wait">
           <motion.div
             key={quoteData.id || quoteData.quote}
-            initial={{ opacity: 0, y: 3 }}
+            initial={{ opacity: 0, y: 2 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -3 }}
-            transition={{ duration: 0.35, ease: 'easeOut' }}
+            exit={{ opacity: 0, y: -2 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
             className="flex flex-col items-center justify-center w-full"
           >
             {isGita ? (
-              /* Bhagavad Gita Centered Presentation */
-              <div className="flex flex-col items-center gap-1.5 my-0.5">
+              /* Bhagavad Gita Centered Compact Presentation (no category heading) */
+              <div className="flex flex-col items-center">
                 {/* Large centered Sanskrit/Devanagari shloka */}
-                <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-800 tracking-wide font-sans leading-relaxed text-center">
+                <h2 className="text-base sm:text-lg lg:text-xl xl:text-[22px] font-bold text-slate-800 tracking-wide font-sans leading-snug text-center">
                   &ldquo;{quoteData.quote}&rdquo;
                 </h2>
                 {/* Smaller muted centered English meaning */}
                 {quoteData.englishMeaning && (
-                  <p className="text-xs sm:text-sm text-slate-500 font-normal leading-normal max-w-[840px] text-center italic mt-0.5">
+                  <p className="text-xs sm:text-[13px] text-slate-500 font-normal leading-snug max-w-[860px] text-center italic mt-0.5">
                     {quoteData.englishMeaning}
                   </p>
                 )}
                 {/* Centered Chapter/Verse attribution */}
-                <div className="text-xs sm:text-sm font-semibold text-slate-600 not-italic tracking-tight mt-1.5">
+                <div className="text-[11px] sm:text-xs font-semibold text-slate-600 not-italic tracking-tight mt-1">
                   — भगवद्गीता · अध्याय {quoteData.chapter}, श्लोक {quoteData.verse}
                 </div>
               </div>
             ) : (
-              /* Standard Centered Quote Presentation */
-              <div className="flex flex-col items-center gap-1.5 my-0.5">
+              /* Standard Centered Compact Quote Presentation (no category heading) */
+              <div className="flex flex-col items-center">
                 {/* Large, prominent centered quote */}
-                <h2 className="text-lg sm:text-xl lg:text-2xl xl:text-[26px] font-bold text-slate-800 italic leading-snug tracking-tight text-center">
+                <h2 className="text-base sm:text-lg lg:text-xl xl:text-[22px] font-bold text-slate-800 italic leading-snug tracking-tight text-center">
                   &ldquo;{quoteData.quote}&rdquo;
                 </h2>
-                {/* Centered author attribution */}
-                <div className="text-xs sm:text-sm font-medium text-slate-500 not-italic tracking-normal mt-1">
+                {/* Centered author attribution directly below */}
+                <div className="text-xs sm:text-[13px] font-medium text-slate-500 not-italic tracking-normal mt-1">
                   — <span className="font-semibold text-slate-700">{quoteData.author}</span>
                 </div>
               </div>

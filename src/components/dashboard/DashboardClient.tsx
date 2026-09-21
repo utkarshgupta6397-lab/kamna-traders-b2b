@@ -80,7 +80,7 @@ export default function DashboardClient({ userName }: DashboardClientProps) {
       </div>
 
       {/* 2. DOMINANT MIDDLE AREA: SWITCHABLE SECTION WORKSPACE */}
-      <main className="flex-1 min-h-0 overflow-hidden py-0.5" aria-label="Dashboard Content Area">
+      <main className="flex-1 min-h-0 w-full overflow-hidden flex flex-col py-0.5" aria-label="Dashboard Content Area">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeSection}
@@ -88,7 +88,7 @@ export default function DashboardClient({ userName }: DashboardClientProps) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -2 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="h-full w-full min-h-0"
+            className="h-full w-full min-h-0 flex-1 flex flex-col"
           >
             {activeSection === 'overview' && <OverviewSection />}
             {activeSection === 'sales' && <SalesSection />}
@@ -101,7 +101,7 @@ export default function DashboardClient({ userName }: DashboardClientProps) {
       </main>
 
       {/* 3. PERSISTENT STICKY BOTTOM FOOTER: PROMINENT MOTIVATIONAL QUOTE */}
-      <footer aria-label="Today's Motivation" className="shrink-0 pt-0.5">
+      <footer aria-label="Today's Motivation" className="shrink-0 w-full pt-1.5 mt-auto">
         <MotivationalQuoteBanner />
       </footer>
     </div>

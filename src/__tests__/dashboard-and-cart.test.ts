@@ -110,6 +110,33 @@ for (let i = 0; i < MOTIVATIONAL_QUOTES.length; i++) {
 assert.strictEqual(uniqueQuotes.size, 100);
 console.log('✓ PASS: All 100 quotes are from verified public/historical figures, unique, and strictly non-team');
 
+// Check category distribution
+const gitaQuotes = MOTIVATIONAL_QUOTES.filter((q) => q.category === 'BHAGAVAD_GITA');
+const indianQuotes = MOTIVATIONAL_QUOTES.filter((q) => q.category === 'INDIAN_LEADERS');
+const famousQuotes = MOTIVATIONAL_QUOTES.filter((q) => q.category === 'FAMOUS_PERSONALITIES');
+
+assert.strictEqual(gitaQuotes.length, 20, `Expected 20 Bhagavad Gita shlokas, got ${gitaQuotes.length}`);
+assert.strictEqual(indianQuotes.length, 25, `Expected 25 Indian Leaders quotes, got ${indianQuotes.length}`);
+assert.strictEqual(famousQuotes.length, 55, `Expected 55 Famous Personalities quotes, got ${famousQuotes.length}`);
+
+// Verify all Gita entries have Sanskrit text, Devanagari author, Chapter, Verse, English meaning, and GITA displayMode
+for (const gita of gitaQuotes) {
+  assert.strictEqual(gita.displayMode, 'GITA');
+  assert.strictEqual(gita.language, 'SA');
+  assert.ok(gita.chapter && gita.chapter > 0, 'Chapter must be present and positive');
+  assert.ok(gita.verse && gita.verse.length > 0, 'Verse must be present');
+  assert.ok(gita.englishMeaning && gita.englishMeaning.length > 10, 'English meaning must be present');
+  assert.strictEqual(gita.author, 'भगवद्गीता');
+}
+console.log('✓ PASS: All 20 Bhagavad Gita entries contain valid Devanagari, English meanings, and Chapter/Verse citations');
+
+// Verify Indian Leaders entries have sources and standard display mode
+for (const ind of indianQuotes) {
+  assert.strictEqual(ind.displayMode, 'STANDARD');
+  assert.ok(ind.author.length > 2);
+}
+console.log('✓ PASS: All 25 Indian Leaders & Thinkers entries verified');
+
 // Hourly deterministic quote test (same hour returns identical quote, different hour changes)
 const dateHour1 = new Date(2026, 8, 21, 10, 5, 0);
 const dateHour1Later = new Date(2026, 8, 21, 10, 55, 0);

@@ -64,6 +64,25 @@ const BalanceIndicator = ({ balance }: { balance: number }) => {
   );
 };
 
+// Directional indicator for running balance changes:
+// current > previous: balance increased (rose / ↗)
+// current < previous: balance decreased (emerald / ↙)
+// current === previous: no change (null)
+const BalanceChangeIndicator = ({ current, previous }: { current: number; previous: number | null }) => {
+  if (previous === null || Math.abs(current - previous) < 0.01) return null;
+  const isIncrease = current > previous;
+  return (
+    <span
+      className={`inline-flex items-center justify-center mr-1 text-[11px] font-bold ${
+        isIncrease ? 'text-rose-500' : 'text-emerald-600'
+      }`}
+      title={isIncrease ? 'Balance increased (more receivable / owed)' : 'Balance decreased (less receivable / paid down)'}
+    >
+      {isIncrease ? '↗' : '↙'}
+    </span>
+  );
+};
+
 /** Humanize cached age in ms */
 function formatCachedAge(ms: number): string {
   const seconds = Math.floor(ms / 1000);
@@ -127,6 +146,69 @@ function fmtDateTime(iso: string) {
   return `${datePart} ${timePart}`;
 }
 
+// ─── Date Filter Helpers ──────────────────────────────────────────────────────
+
+export type DateFilterType = 'this-month' | 'last-month' | 'last-2-months' | 'last-3-months' | 'this-quarter' | 'all-time';
+
+export const DATE_FILTER_CHIPS: { id: DateFilterType; label: string }[] = [
+  { id: 'this-month', label: 'This Month' },
+  { id: 'last-month', label: 'Last Month' },
+  { id: 'last-2-months', label: 'Last 2 Months' },
+  { id: 'last-3-months', label: 'Last 3 Months' },
+  { id: 'this-quarter', label: 'This Quarter' },
+  { id: 'all-time', label: 'All Time' },
+];
+
+export function getDateFilterRange(type: DateFilterType, refDate = new Date()): { start: string | null; end: string | null } {
+  if (type === 'all-time') {
+    return { start: null, end: null };
+  }
+
+  const year = refDate.getFullYear();
+  const month = refDate.getMonth(); // 0 = Jan, 8 = Sep, 11 = Dec
+
+  const toIso = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const todayStr = toIso(refDate);
+
+  switch (type) {
+    case 'this-month': {
+      // From 1st day of current calendar month through today
+      const start = new Date(year, month, 1);
+      return { start: toIso(start), end: todayStr };
+    }
+    case 'last-month': {
+      // Entire previous calendar month: e.g. for Sep 2026 => 01 Aug -> 31 Aug
+      const start = new Date(year, month - 1, 1);
+      const end = new Date(year, month, 0); // last day of prev month
+      return { start: toIso(start), end: toIso(end) };
+    }
+    case 'last-2-months': {
+      // Current calendar month + previous calendar month: starts 1st day of (month - 1)
+      const start = new Date(year, month - 1, 1);
+      return { start: toIso(start), end: todayStr };
+    }
+    case 'last-3-months': {
+      // Current calendar month + previous two calendar months: starts 1st day of (month - 2)
+      const start = new Date(year, month - 2, 1);
+      return { start: toIso(start), end: todayStr };
+    }
+    case 'this-quarter': {
+      // Current calendar quarter through today
+      const quarterStartMonth = Math.floor(month / 3) * 3;
+      const start = new Date(year, quarterStartMonth, 1);
+      return { start: toIso(start), end: todayStr };
+    }
+    default:
+      return { start: null, end: null };
+  }
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function CustomerStatementView() {
@@ -136,8 +218,7 @@ export default function CustomerStatementView() {
 
   const [customerId, setCustomerId] = useState(initialCustomerId);
   const [loading, setLoading] = useState(false);
-  const [cachedBalance, setCachedBalance] = useState<{netOutstandingBalance: number, balanceUpdatedAt: string | null, balanceSyncStatus: string | null} | null>(null);
-  const [cachedBalanceLoading, setCachedBalanceLoading] = useState(false);
+
 
   const [statement, setStatement] = useState<{
     success: boolean;
@@ -157,7 +238,20 @@ export default function CustomerStatementView() {
   const [printing, setPrinting] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
+  const [pdfPreviewModal, setPdfPreviewModal] = useState<{
+    isOpen: boolean;
+    blobUrl: string | null;
+    fileName: string;
+    doc: any | null;
+  }>({
+    isOpen: false,
+    blobUrl: null,
+    fileName: '',
+    doc: null,
+  });
   const [isExpanded, setIsExpanded] = useState(false);
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
+  const [userExpandedMonths, setUserExpandedMonths] = useState<Set<string> | null>(null);
   const [cachedAt, setCachedAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
 
@@ -191,12 +285,12 @@ export default function CustomerStatementView() {
   const [kpiMode, setKpiMode] = useState<'compact' | 'financial'>('compact');
 
   // Ledger Filter State
+  const [dateFilter, setDateFilter] = useState<DateFilterType>('all-time');
   const [filterSales, setFilterSales] = useState(true);
   const [filterCustPmts, setFilterCustPmts] = useState(true);
   const [filterBills, setFilterBills] = useState(true);
   const [filterVendorPmts, setFilterVendorPmts] = useState(true);
   const [ledgerSearch, setLedgerSearch] = useState('');
-  const [invertBalanceColor, setInvertBalanceColor] = useState(false);
   const [userName, setUserName] = useState('Staff');
 
   // Memoize visible statement transactions and calculations for export synchronization
@@ -211,12 +305,45 @@ export default function CustomerStatementView() {
     const clipIdx = isValidClip ? clipFromIndex : -1;
     const isClipped = clipIdx !== -1;
     const activeTxs = isClipped ? s.transactions.slice(clipIdx) : s.transactions;
-    const chronologicalVisible = isExpanded ? activeTxs : activeTxs.slice(-10);
-    const dynamicOpeningBalance = chronologicalVisible.length > 0
-      ? (chronologicalVisible[0].balanceAfter - chronologicalVisible[0].netEffect)
-      : s.closingBalance;
 
-    const visibleTransactions = chronologicalVisible.filter((tx: any) => {
+    // 1. Date Range Filter
+    const { start: dateStart, end: dateEnd } = getDateFilterRange(dateFilter);
+    const dateFilteredTxs = (dateStart || dateEnd)
+      ? activeTxs.filter((tx: any) => {
+          const d = (tx.date || tx.datetime || '').slice(0, 10);
+          if (!d) return true;
+          if (dateStart && d < dateStart) return false;
+          if (dateEnd && d > dateEnd) return false;
+          return true;
+        })
+      : activeTxs;
+
+    // 2. Period Opening Balance (balance immediately before the period starts)
+    let periodOpeningBalance: number;
+    if (!dateStart && !dateEnd) {
+      periodOpeningBalance = isClipped
+        ? (activeTxs[0].balanceAfter - activeTxs[0].netEffect)
+        : s.openingBalance;
+    } else if (dateFilteredTxs.length > 0) {
+      periodOpeningBalance = dateFilteredTxs[0].balanceAfter - dateFilteredTxs[0].netEffect;
+    } else {
+      const priorTxs = dateStart
+        ? activeTxs.filter((tx: any) => {
+            const d = (tx.date || tx.datetime || '').slice(0, 10);
+            return d && d < dateStart;
+          })
+        : [];
+      if (priorTxs.length > 0) {
+        periodOpeningBalance = priorTxs[priorTxs.length - 1].balanceAfter;
+      } else {
+        periodOpeningBalance = (isClipped && activeTxs.length > 0)
+          ? (activeTxs[0].balanceAfter - activeTxs[0].netEffect)
+          : s.openingBalance;
+      }
+    }
+
+    // 3. Search & Type Filter
+    const filteredTransactions = dateFilteredTxs.filter((tx: any) => {
       if (tx.type === 'invoice' && !filterSales) return false;
       if (tx.type === 'payment' && !filterCustPmts) return false;
       if (tx.type === 'bill' && !filterBills) return false;
@@ -236,7 +363,12 @@ export default function CustomerStatementView() {
       return true;
     });
 
-    const dynamicClosingBalance = dynamicOpeningBalance + visibleTransactions.reduce((sum: number, t: any) => sum + t.netEffect, 0);
+    const chronologicalVisible = filteredTransactions;
+    const dynamicOpeningBalance = chronologicalVisible.length > 0
+      ? (chronologicalVisible[0].balanceAfter - chronologicalVisible[0].netEffect)
+      : periodOpeningBalance;
+
+    const dynamicClosingBalance = dynamicOpeningBalance + chronologicalVisible.reduce((sum: number, t: any) => sum + t.netEffect, 0);
 
     const activeUnpaidInvoices = s.unpaidInvoices ? (
       isClipped ? s.unpaidInvoices.filter((inv: any) => {
@@ -252,11 +384,11 @@ export default function CustomerStatementView() {
       ...s,
       openingBalance: dynamicOpeningBalance,
       closingBalance: dynamicClosingBalance,
-      transactions: visibleTransactions,
-      transactionCount: visibleTransactions.length,
+      transactions: chronologicalVisible,
+      transactionCount: filteredTransactions.length,
       unpaidInvoices: activeUnpaidInvoices
     };
-  }, [statementMode, groupStatement, statement, clipFromIndex, isExpanded, filterSales, filterCustPmts, filterBills, filterVendorPmts, ledgerSearch]);
+  }, [statementMode, groupStatement, statement, clipFromIndex, isExpanded, filterSales, filterCustPmts, filterBills, filterVendorPmts, ledgerSearch, dateFilter]);
 
   // Expanded Transactions State
   const [expandedTx, setExpandedTx] = useState<Record<string, boolean>>({});
@@ -432,12 +564,12 @@ export default function CustomerStatementView() {
     }
   };
 
-  // ── PDF Download (visible statement only) ────────────────────────────────
+  // ── PDF Preview & Download Flow ──────────────────────────────────────────
   const handleDownloadPDF = async (sToPrint: any) => {
     if (!sToPrint) return;
     setPdfGenerating(true);
     try {
-      toast.loading('Generating PDF…', { id: 'pdf-stmt' });
+      toast.loading('Preparing PDF Preview…', { id: 'pdf-stmt' });
 
       const jsPDF = (await import('jspdf')).default;
       const autoTable = (await import('jspdf-autotable')).default;
@@ -451,36 +583,54 @@ export default function CustomerStatementView() {
         generatedBy: userName
       });
 
-      // ── Save ────────────────────────────────────────────────────────────
       let safeName = sToPrint.customer.contactName || 'CUSTOMER';
       if (sToPrint.isGroup) safeName = 'GROUP';
       safeName = safeName.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
       const dateStr = new Date().toISOString().slice(0, 10);
-      doc.save(`${safeName}_STATEMENT_${dateStr}.pdf`);
-      toast.success('Statement PDF downloaded!', { id: 'pdf-stmt' });
+      const fileName = `${safeName}_STATEMENT_${dateStr}.pdf`;
+
+      const blobUrl = doc.output('bloburl');
+
+      setPdfPreviewModal({
+        isOpen: true,
+        blobUrl: String(blobUrl),
+        fileName,
+        doc,
+      });
+
+      toast.success('PDF preview generated!', { id: 'pdf-stmt' });
     } catch (err) {
       console.error('[PDF Export Error]', err);
-      toast.error('Failed to generate PDF.', { id: 'pdf-stmt' });
+      toast.error('Failed to generate PDF preview.', { id: 'pdf-stmt' });
     } finally {
       setPdfGenerating(false);
     }
   };
 
-  const handleFetchBalance = async (cid: string) => {
-    setCachedBalanceLoading(true);
-    setStatement(null); // Clear full statement
-    setCachedBalance(null);
+  const confirmPdfDownload = () => {
+    if (!pdfPreviewModal.doc) return;
     try {
-      const res = await fetch(`/api/admin/customer-statement/balance?customerId=${cid}`);
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setCachedBalance(data.data);
-      }
+      pdfPreviewModal.doc.save(pdfPreviewModal.fileName || 'statement.pdf');
+      toast.success('Statement PDF downloaded!');
+      closePdfPreviewModal();
     } catch (err) {
-      console.error('Failed to fetch cached balance', err);
-    } finally {
-      setCachedBalanceLoading(false);
+      console.error('Failed to save PDF:', err);
+      toast.error('Failed to save PDF file.');
     }
+  };
+
+  const closePdfPreviewModal = () => {
+    if (pdfPreviewModal.blobUrl) {
+      try {
+        URL.revokeObjectURL(pdfPreviewModal.blobUrl);
+      } catch (e) {}
+    }
+    setPdfPreviewModal({
+      isOpen: false,
+      blobUrl: null,
+      fileName: '',
+      doc: null,
+    });
   };
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
@@ -497,6 +647,8 @@ export default function CustomerStatementView() {
           const parsed = JSON.parse(cached);
           setStatement({ success: true, data: parsed.data });
           setCachedAt(parsed.cachedAt);
+          setUserExpandedMonths(null);
+          setExpandedMonths(new Set());
           return;
         } catch (e) {}
       }
@@ -506,6 +658,8 @@ export default function CustomerStatementView() {
     setStatement(null);
     setCachedAt(null);
     setClipFromIndex(null); // Reset clip mode
+    setUserExpandedMonths(null);
+    setExpandedMonths(new Set());
     try {
       const res = await fetch(`/api/admin/customer-statement/statement?customerId=${cid}`);
       const data = await res.json();
@@ -516,10 +670,7 @@ export default function CustomerStatementView() {
       }
 
       if (data.success) {
-        // Fix: Do not set statement to data.data, keep it as data so statement.success is defined!
-        // Alternatively, update the UI check, but setting it as data keeps it consistent with GroupStatement which has success: true
         setStatement(data);
-        setIsCalcOpen(true); // Auto-open calculator on load
         const nowTs = Date.now();
         setCachedAt(nowTs);
         setNow(nowTs);
@@ -567,7 +718,6 @@ export default function CustomerStatementView() {
       const data = await res.json();
       if (data.success && data.data) {
         setGroupStatement({ success: true, statements: data.data });
-        setIsCalcOpen(true); // Auto-open calculator on load
         setVisibleFirmIds(activeCustomers.map(c => c.id));
         const nowTs = Date.now();
         setCachedAt(nowTs);
@@ -904,37 +1054,59 @@ export default function CustomerStatementView() {
   }, [statementMode, statement?.data, groupStatement, visibleFirmIds]);
 
   return (
-    <div className="flex gap-5 items-start w-full relative">
-      <div className={`transition-all duration-300 space-y-4 shrink-0 ${isCalcOpen ? 'w-[calc(70%-1.25rem)]' : 'w-full'}`}>
+    <div className="flex flex-col w-full relative">
+      <div className="space-y-4 w-full">
+        {/* ── Page Header ──────────────────────────────────────────────────────── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">Customer Statement Preview</h1>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Finance-grade customer ledger · Reverse-calculated opening balance
+            <h1 className="text-2xl font-bold text-gray-900">Customer Statement</h1>
+            <p className="text-xs text-gray-500 mt-0.5">
+              View and manage customer transactions, payments and outstanding balance
             </p>
           </div>
           
-          {/* Mode Toggle */}
-          <div className="flex bg-gray-100 p-1 rounded-lg self-start sm:self-auto shrink-0 border border-gray-200">
+          <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0">
+            {/* Mode Toggle */}
+            <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200">
+              <button
+                onClick={() => handleModeChange('single')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                  statementMode === 'single' 
+                    ? 'bg-white text-[#1A2766] shadow-sm' 
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Single
+              </button>
+              <button
+                onClick={() => handleModeChange('group')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                  statementMode === 'group' 
+                    ? 'bg-[#1A2766] text-white shadow-sm' 
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Group
+              </button>
+            </div>
+
+            {/* Header Calculator Button */}
             <button
-              onClick={() => handleModeChange('single')}
-              className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-all ${
-                statementMode === 'single' 
-                  ? 'bg-white text-[#1A2766] shadow-sm' 
-                  : 'text-gray-500 hover:text-gray-700'
+              onClick={() => setIsCalcOpen(!isCalcOpen)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors shadow-sm ${
+                isCalcOpen
+                  ? 'bg-purple-600 text-white hover:bg-purple-700'
+                  : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
               }`}
+              title={isCalcOpen ? "Close Balance Calculator" : "Open Balance Calculator"}
             >
-              Single
-            </button>
-            <button
-              onClick={() => handleModeChange('group')}
-              className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-all ${
-                statementMode === 'group' 
-                  ? 'bg-[#1A2766] text-white shadow-sm' 
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Group
+              <Calculator size={14} />
+              <span>{isCalcOpen ? "Close Calculator" : "Open Calculator"}</span>
+              {calcEntries.length > 0 && (
+                <span className={`${isCalcOpen ? 'bg-white text-purple-700' : 'bg-purple-600 text-white'} text-[10px] px-1.5 py-0.2 rounded-full font-bold`}>
+                  {calcEntries.length}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -942,7 +1114,7 @@ export default function CustomerStatementView() {
       {/* ── Search & Action Bar ─────────────────────────────────────────────────── */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-3 flex flex-col xl:flex-row items-start xl:items-end justify-between gap-4 sticky top-0 z-40 xl:static">
         
-        {/* Left: Search & Cache Status */}
+        {/* Left: Search */}
         <div className="flex-1 w-full xl:max-w-md flex flex-col gap-1.5 relative">
           <div className="flex items-center justify-between px-0.5">
             <label className="flex items-center gap-2 text-xs font-bold text-gray-700">
@@ -953,12 +1125,6 @@ export default function CustomerStatementView() {
                 </span>
               )}
             </label>
-            {cachedAt && statementMode === 'single' && (
-              <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-medium">
-                Cached {formatCachedAge(now - cachedAt)}
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-              </div>
-            )}
           </div>
 
           {statementMode === 'group' && selectedCustomers.length > 0 && (
@@ -1038,7 +1204,7 @@ export default function CustomerStatementView() {
                               setSearchQuery(c.name);
                               setCustomerId(c.id);
                               setShowSuggestions(false);
-                              handleFetchBalance(c.id);
+                              handleFetch(c.id);
                             }
                           }}
                         >
@@ -1098,39 +1264,17 @@ export default function CustomerStatementView() {
                 : 'Load Statement'
             )}
           </button>
-          
-
 
           {s && (
             <>
-              {/* Secondary: Print */}
-              <button
-                onClick={handleThermalPrint}
-                disabled={printing}
-                className="flex items-center justify-center gap-1.5 px-4 h-[36px] bg-white text-gray-700 border border-gray-300 rounded-md text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50 w-full sm:w-auto print:hidden"
-              >
-                {printing ? <RefreshCw size={14} className="animate-spin" /> : <Printer size={14} />}
-                {printing ? 'Printing…' : 'Print'}
-              </button>
-
-              {/* Success: Download PDF */}
+              {/* Success: Download PDF (Opens Preview Modal First) */}
               <button
                 onClick={() => handleDownloadPDF(visibleStatementData)}
                 disabled={pdfGenerating}
                 className="flex items-center justify-center gap-1.5 px-4 h-[36px] bg-emerald-600 text-white rounded-md text-sm font-medium hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50 w-full sm:w-auto print:hidden"
               >
                 {pdfGenerating ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
-                {pdfGenerating ? 'Generating…' : 'Download PDF'}
-              </button>
-
-
-
-              {/* Accent: Calculator */}
-              <button
-                onClick={() => setIsCalcOpen(true)}
-                className="flex items-center justify-center gap-1.5 px-4 h-[36px] bg-purple-50 text-purple-700 border border-purple-200 rounded-md text-sm font-medium hover:bg-purple-100 transition-colors shadow-sm w-full sm:w-auto print:hidden"
-              >
-                <Calculator size={14} /> Calculator
+                {pdfGenerating ? 'Preparing…' : 'Download PDF'}
               </button>
 
               {/* Outline / Secondary: View DCR Summary */}
@@ -1147,49 +1291,17 @@ export default function CustomerStatementView() {
         </div>
       </div>
 
-      {/* Render Full Ledger or Cached Balance */}
-      {!s && !loading && !cachedBalanceLoading && cachedBalance && statementMode === 'single' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center max-w-2xl mx-auto my-8">
-          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Users className="w-8 h-8 text-[#1A2766]" />
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">{searchQuery || 'Customer'} Summary</h2>
-          
-          <div className="flex flex-col gap-2 mt-6 max-w-sm mx-auto">
-            <div className="flex justify-between items-center py-3 border-b border-gray-100">
-              <span className="text-gray-500 font-medium">Cached Outstanding</span>
-              <span className="text-2xl font-black text-gray-900">{fmtBalance(cachedBalance.netOutstandingBalance)}</span>
-            </div>
-            <div className="flex justify-between items-center py-2 text-xs">
-              <span className="text-gray-400">Last Synced</span>
-              <span className={cachedBalance.balanceUpdatedAt ? 'text-gray-600' : 'text-amber-600'}>
-                {cachedBalance.balanceUpdatedAt ? new Date(cachedBalance.balanceUpdatedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Never Synced'}
-              </span>
-            </div>
-          </div>
 
-          <div className="mt-8 text-sm text-gray-500">
-            To view the complete transaction ledger and invoices, load the full statement.
-          </div>
-          
-          <button
-            onClick={() => handleFetch(customerId, true)}
-            disabled={loading}
-            className="mt-6 px-6 py-2.5 bg-[#1A2766] text-white rounded-md font-medium shadow-sm hover:bg-[#25368a] transition-colors inline-flex items-center gap-2"
-          >
-            {loading ? <RefreshCw className="animate-spin w-4 h-4" /> : <RefreshCw className="w-4 h-4" />}
-            Load Full Statement Ledger
-          </button>
-        </div>
-      )}
-
-      {/* ── Error state ────────────────────────────────────────────────── */}
-      {statementMode === 'single' && statement && !statement.success && (
-        <div className="flex items-center gap-3 p-4 bg-red-50 text-red-700 border border-red-200 rounded-xl text-sm">
-          <AlertCircle size={18} className="shrink-0" />
-          <span>{statement.error || 'Unknown error'}</span>
-        </div>
-      )}
+      {/* ── Main Content & Calculator Side-by-Side Container ── */}
+      <div className="flex flex-col lg:flex-row w-full gap-4 items-start">
+        <main className="min-w-0 flex-1 w-full flex flex-col gap-4">
+          {/* ── Error state ────────────────────────────────────────────────── */}
+          {statementMode === 'single' && statement && !statement.success && (
+            <div className="flex items-center gap-3 p-4 bg-red-50 text-red-700 border border-red-200 rounded-xl text-sm">
+              <AlertCircle size={18} className="shrink-0" />
+              <span>{statement.error || 'Unknown error'}</span>
+            </div>
+          )}
 
       {/* ── Group Mode Empty State ─────────────────────────────────────── */}
       {statementMode === 'group' && !groupStatement && (
@@ -1216,12 +1328,45 @@ export default function CustomerStatementView() {
         const clipIdx = isValidClip ? clipFromIndex : -1;
         const isClipped = clipIdx !== -1;
         const activeTxs = isClipped ? s.transactions.slice(clipIdx) : s.transactions;
-        const chronologicalVisible = isExpanded ? activeTxs : activeTxs.slice(-10);
-        const dynamicOpeningBalance = chronologicalVisible.length > 0
-          ? (chronologicalVisible[0].balanceAfter - chronologicalVisible[0].netEffect)
-          : s.closingBalance;
 
-        const visibleTransactions = chronologicalVisible.filter((tx: any) => {
+        // 1. Date Range Filter
+        const { start: dateStart, end: dateEnd } = getDateFilterRange(dateFilter);
+        const dateFilteredTxs = (dateStart || dateEnd)
+          ? activeTxs.filter((tx: any) => {
+              const d = (tx.date || tx.datetime || '').slice(0, 10);
+              if (!d) return true;
+              if (dateStart && d < dateStart) return false;
+              if (dateEnd && d > dateEnd) return false;
+              return true;
+            })
+          : activeTxs;
+
+        // 2. Period Opening Balance (balance immediately before the period starts)
+        let periodOpeningBalance: number;
+        if (!dateStart && !dateEnd) {
+          periodOpeningBalance = isClipped
+            ? (activeTxs[0].balanceAfter - activeTxs[0].netEffect)
+            : s.openingBalance;
+        } else if (dateFilteredTxs.length > 0) {
+          periodOpeningBalance = dateFilteredTxs[0].balanceAfter - dateFilteredTxs[0].netEffect;
+        } else {
+          const priorTxs = dateStart
+            ? activeTxs.filter((tx: any) => {
+                const d = (tx.date || tx.datetime || '').slice(0, 10);
+                return d && d < dateStart;
+              })
+            : [];
+          if (priorTxs.length > 0) {
+            periodOpeningBalance = priorTxs[priorTxs.length - 1].balanceAfter;
+          } else {
+            periodOpeningBalance = (isClipped && activeTxs.length > 0)
+              ? (activeTxs[0].balanceAfter - activeTxs[0].netEffect)
+              : s.openingBalance;
+          }
+        }
+
+        // 3. Search & Type Filter
+        const filteredTransactions = dateFilteredTxs.filter((tx: any) => {
           if (tx.type === 'invoice' && !filterSales) return false;
           if (tx.type === 'payment' && !filterCustPmts) return false;
           if (tx.type === 'bill' && !filterBills) return false;
@@ -1240,6 +1385,12 @@ export default function CustomerStatementView() {
           }
           return true;
         });
+
+        const visibleTransactions = filteredTransactions;
+        const dynamicOpeningBalance = visibleTransactions.length > 0
+          ? (visibleTransactions[0].balanceAfter - visibleTransactions[0].netEffect)
+          : periodOpeningBalance;
+
         const openingPresentation = getOpeningBalancePresentation(dynamicOpeningBalance);
 
         // Totals for visible/filtered period
@@ -1277,8 +1428,81 @@ export default function CustomerStatementView() {
           openingBalance: dynamicOpeningBalance,
           closingBalance: dynamicClosingBalance,
           transactions: visibleTransactions,
-          transactionCount: visibleTransactions.length,
+          transactionCount: filteredTransactions.length,
           unpaidInvoices: activeUnpaidInvoices
+        };
+
+        // ── Monthly Grouping presentation derivation ────────────────────────
+        // Transactions are grouped by calendar month in chronological order.
+        // The latest/current month is at the bottom.
+        const monthGroupsMap = new Map<string, {
+          key: string;
+          label: string;
+          debitTotal: number;
+          creditTotal: number;
+          monthEndBalance: number;
+          transactions: any[];
+        }>();
+
+        const monthNames = [
+          'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+          'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'
+        ];
+
+        visibleTransactions.forEach((tx: any) => {
+          const dateIso = (tx.date || tx.datetime || '').slice(0, 10);
+          let key = 'UNKNOWN';
+          let label = 'OTHER';
+          if (dateIso && dateIso.length >= 7) {
+            const yearStr = dateIso.slice(0, 4);
+            const monthStr = dateIso.slice(5, 7);
+            const monthNum = parseInt(monthStr, 10);
+            if (!isNaN(monthNum) && monthNum >= 1 && monthNum <= 12) {
+              key = `${yearStr}-${monthStr}`;
+              label = `${monthNames[monthNum - 1]} ${yearStr}`;
+            }
+          }
+
+          if (!monthGroupsMap.has(key)) {
+            monthGroupsMap.set(key, {
+              key,
+              label,
+              debitTotal: 0,
+              creditTotal: 0,
+              monthEndBalance: tx.balanceAfter,
+              transactions: []
+            });
+          }
+
+          const group = monthGroupsMap.get(key)!;
+          group.transactions.push(tx);
+          // Update month-end balance to the latest transaction in this month
+          group.monthEndBalance = tx.balanceAfter;
+
+          // Debit transactions
+          if (tx.type === 'invoice' || tx.type === 'vendor_payment' || (tx.type === 'journal' && tx.netEffect > 0)) {
+            group.debitTotal += Number(tx.amount || 0);
+          }
+          // Credit transactions
+          if (tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) {
+            group.creditTotal += Number(tx.amount || 0);
+          }
+        });
+
+        const monthGroups = Array.from(monthGroupsMap.values());
+        const latestMonthKey = monthGroups.length > 0 ? monthGroups[monthGroups.length - 1].key : null;
+        const effectiveExpandedMonths = userExpandedMonths !== null
+          ? userExpandedMonths
+          : (latestMonthKey ? new Set([latestMonthKey]) : new Set<string>());
+
+        const toggleMonthExpand = (monthKey: string) => {
+          const next = new Set(effectiveExpandedMonths);
+          if (next.has(monthKey)) {
+            next.delete(monthKey);
+          } else {
+            next.add(monthKey);
+          }
+          setUserExpandedMonths(next);
         };
 
         return (
@@ -1315,37 +1539,48 @@ export default function CustomerStatementView() {
             <div className="space-y-4 pb-20">
               {/* ── Section 1: Customer card ──────────────────────────────── */}
               {statementMode === 'single' && (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
-                  <User size={14} className="text-[#1A2766]" />
-                  <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
-                    {s.customer.associatedVendorId ? 'Hybrid Account' : 'Customer'}
-                  </span>
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-5 py-2.5 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <User size={14} className="text-[#1A2766]" />
+                    <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
+                      {s.customer.associatedVendorId ? 'Hybrid Account' : 'Customer Details'}
+                    </span>
+                  </div>
+                  {s.customer.gstNo && (
+                    <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
+                      GST: {s.customer.gstNo}
+                    </span>
+                  )}
                 </div>
-                <div className="px-4 py-2.5 flex flex-col md:grid md:grid-cols-4 gap-3 text-xs">
-                  <div className="col-span-2 sm:col-span-2 md:col-span-2">
-                    <div className="text-[10px] uppercase text-gray-500 font-bold mb-0.5">Name</div>
+                <div className="px-5 py-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-center text-xs">
+                  {/* Col 1-2: Customer Name */}
+                  <div className="sm:col-span-2 lg:col-span-2">
+                    <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5 tracking-wider">Account Name</div>
                     <a 
                       href={`https://books.zoho.in/app/60027595766#/contacts/${s.customer.contactId}`}
                       target="_blank" rel="noreferrer"
-                      className="text-sm font-extrabold text-blue-700 hover:text-blue-900 hover:underline leading-tight flex items-center gap-1 w-fit"
+                      className="text-sm font-extrabold text-blue-700 hover:text-blue-900 hover:underline leading-tight inline-flex items-center gap-1"
                     >
-                      {s.customer.contactName} ↗
+                      {s.customer.contactName}
+                      <span className="text-xs text-blue-500">↗</span>
                     </a>
-                    {s.customer.gstNo && (
-                      <div className="text-[11px] font-mono text-gray-400 leading-tight mt-0.5 tracking-wide">{s.customer.gstNo}</div>
-                    )}
+                    <div className="text-[10px] text-gray-400 font-mono mt-0.5">ID: {s.customer.contactId}</div>
                   </div>
-                  <div className="col-span-1">
-                    <div className="text-[10px] uppercase text-gray-500 font-bold mb-0.5">Mobile</div>
-                    <div className="flex items-center gap-1.5 text-[13px] font-semibold text-gray-800">
-                      <Phone size={12} className="text-gray-400" />
-                      {s.customer.mobile || '—'}
+
+                  {/* Col 3: Mobile */}
+                  <div className="lg:col-span-1">
+                    <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5 tracking-wider">Mobile</div>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800">
+                      <Phone size={12} className="text-gray-400 shrink-0" />
+                      <span>{s.customer.mobile || '—'}</span>
                     </div>
                   </div>
-                  <div className="col-span-1 min-w-0">
-                    <div className="text-[10px] uppercase text-gray-500 font-bold mb-0.5">Address</div>
-                    <div className="text-[12px] font-medium text-gray-800 leading-tight">
+
+                  {/* Col 4: Address */}
+                  <div className="lg:col-span-1 min-w-0">
+                    <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5 tracking-wider">Address</div>
+                    <div className="text-xs font-medium text-gray-700 leading-tight">
                       {(() => {
                         const addr = s.customer.rawAddress;
                         if (!addr) return '—';
@@ -1360,10 +1595,24 @@ export default function CustomerStatementView() {
                         return (
                           <div title={fullAddress} className="flex flex-col">
                             {line1 && <div className="truncate">{line1}</div>}
-                            {line2 && <div className="truncate text-gray-500">{line2}</div>}
+                            {line2 && <div className="truncate text-gray-400 text-[11px]">{line2}</div>}
                           </div>
                         );
                       })()}
+                    </div>
+                  </div>
+
+                  {/* Col 5: Outstanding Balance */}
+                  <div className="lg:col-span-1 flex flex-col items-start lg:items-end justify-center pt-2 lg:pt-0 border-t lg:border-t-0 border-gray-100">
+                    <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5 tracking-wider">Outstanding Balance</div>
+                    <div className={`text-base font-black tabular-nums flex items-center ${
+                      s.closingBalance > 0 ? 'text-rose-600' : s.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-500'
+                    }`}>
+                      <BalanceIndicator balance={s.closingBalance} />
+                      {fmtBalance(s.closingBalance)}
+                    </div>
+                    <div className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider mt-0.5">
+                      {Math.abs(s.closingBalance) < 0.01 ? 'Settled' : s.closingBalance > 0 ? 'Receivable' : 'Advance'}
                     </div>
                   </div>
                 </div>
@@ -1540,7 +1789,7 @@ export default function CustomerStatementView() {
                       }
 
                       // Decouple from combined visibleTransactions to act as independent financial snapshots
-                      const firmVisibleTxs = isExpanded ? stmt.transactions : stmt.transactions.slice(-10);
+                      const firmVisibleTxs = stmt.transactions;
                       const firmInvoiced = firmVisibleTxs.filter((tx: any) => tx.type === 'invoice').reduce((sum: number, tx: any) => sum + Math.abs(tx.netEffect), 0);
                       const firmPaid = firmVisibleTxs.filter((tx: any) => tx.type === 'payment').reduce((sum: number, tx: any) => sum + Math.abs(tx.netEffect), 0);
                       
@@ -1680,17 +1929,44 @@ export default function CustomerStatementView() {
                   </div>
                 )}
                 {/* Table header bar */}
-                <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp size={14} className="text-[#1A2766]" />
-                    <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
-                      Statement Ledger
-                    </span>
-                    <span className="text-[10px] text-gray-400 font-medium">
-                      ({visibleTransactions.length} transaction{visibleTransactions.length !== 1 ? 's' : ''})
-                    </span>
+                <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="flex items-center gap-2 shrink-0">
+                      <TrendingUp size={14} className="text-[#1A2766]" />
+                      <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
+                        Statement Ledger
+                      </span>
+                      <span className="text-[10px] text-gray-400 font-medium">
+                        ({filteredTransactions.length} transaction{filteredTransactions.length !== 1 ? 's' : ''})
+                      </span>
+                    </div>
+
+                    {/* Quick Date Filter Chips */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {DATE_FILTER_CHIPS.map((chip) => {
+                        const isActive = dateFilter === chip.id;
+                        return (
+                          <button
+                            key={chip.id}
+                            type="button"
+                            onClick={() => {
+                              setDateFilter(chip.id);
+                              setUserExpandedMonths(null);
+                            }}
+                            className={`px-2.5 py-1 text-xs rounded-full border transition-all select-none font-semibold ${
+                              isActive
+                                ? 'bg-[#1A2766] text-white border-[#1A2766] shadow-sm'
+                                : 'bg-white text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-gray-200'
+                            }`}
+                          >
+                            {chip.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
                     {s.isHybrid && (
                       <div className="flex bg-white border border-gray-200 rounded-md shadow-sm p-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-600">
                         <label className={`cursor-pointer px-2 py-1 rounded transition-colors ${filterSales ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50 text-gray-400'}`}>
@@ -1711,14 +1987,14 @@ export default function CustomerStatementView() {
                         </label>
                       </div>
                     )}
-                    <div className="relative">
+                    <div className="relative w-full sm:w-auto">
                       <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input 
                         type="text" 
                         placeholder="Filter transactions..."
                         value={ledgerSearch}
                         onChange={(e) => setLedgerSearch(e.target.value)}
-                        className="pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-[#1A2766] focus:ring-1 focus:ring-[#1A2766] w-[180px]"
+                        className="pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:border-[#1A2766] focus:ring-1 focus:ring-[#1A2766] w-full sm:w-[180px]"
                       />
                     </div>
                   </div>
@@ -1728,26 +2004,15 @@ export default function CustomerStatementView() {
                   <table className="w-full text-sm relative" style={{ fontVariantNumeric: 'tabular-nums' }}>
                     <thead className="sticky top-0 bg-gray-50 text-[10px] uppercase text-gray-500 font-bold border-b border-gray-200 z-10 shadow-sm">
                       <tr>
-                        <th className="px-4 py-3 text-left w-24 tracking-wider">Date</th>
-                        <th className="w-[45px] text-center px-1 py-3" title="Clip column"></th>
-                        {statementMode === 'group' && <th className="px-4 py-3 text-left whitespace-nowrap tracking-wider">Firm</th>}
-                        <th className="px-4 py-3 text-left min-w-[100px] whitespace-nowrap tracking-wider">Type</th>
-                        <th className="px-4 py-3 text-left tracking-wider">Document & Details</th>
-                        <th className="px-4 py-3 text-right whitespace-nowrap tracking-wider">Debit</th>
-                        <th className="px-4 py-3 text-right whitespace-nowrap tracking-wider">Credit</th>
-                        <th className="px-4 py-3 text-right tracking-wider">
-                          <div className="inline-flex items-center gap-2 float-right">
-                            <span>Running Balance</span>
-                            <label className="relative inline-flex items-center cursor-pointer" title="Toggle Running Balance Colors">
-                              <input
-                                type="checkbox"
-                                checked={invertBalanceColor}
-                                onChange={(e) => setInvertBalanceColor(e.target.checked)}
-                                className="sr-only peer"
-                              />
-                              <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-[#1A2766]"></div>
-                            </label>
-                          </div>
+                        <th className="px-3 py-3 text-left w-28 whitespace-nowrap tracking-wider">Date</th>
+                        <th className="w-[36px] text-center px-1 py-3" title="Clip column"></th>
+                        {statementMode === 'group' && <th className="px-3 py-3 text-left whitespace-nowrap tracking-wider">Firm</th>}
+                        <th className="px-3 py-3 text-left whitespace-nowrap tracking-wider">Type</th>
+                        <th className="px-4 py-3 text-left tracking-wider w-full min-w-[200px]">Document & Details</th>
+                        <th className="px-3 py-3 text-right whitespace-nowrap tracking-wider w-28">Debit</th>
+                        <th className="px-3 py-3 text-right whitespace-nowrap tracking-wider w-28">Credit</th>
+                        <th className="px-4 py-3 text-right tracking-wider w-36 whitespace-nowrap">
+                          Running Balance
                         </th>
                       </tr>
                     </thead>
@@ -1768,7 +2033,7 @@ export default function CustomerStatementView() {
                             </span>
                           ) : (
                             <span className="font-bold text-gray-800">
-                              Opening Balance {isExpanded ? '' : '(Visible Period)'}
+                              Opening Balance
                             </span>
                           )}
                         </td>
@@ -1784,252 +2049,330 @@ export default function CustomerStatementView() {
                         </td>
                       </tr>
 
-                      {/* Transaction rows */}
-                      {visibleTransactions.map((tx: any) => {
-                        const displayDesc = cleanDescription(tx.description, tx.type);
-                        const isExpanded = expandedTx[tx.id];
-                        const lineItems = txLineItems[tx.id];
-                        const isLoading = loadingTx[tx.id];
-                        const errorMsg = txErrors[tx.id];
+                      {/* Monthly Groups with Summary Rows */}
+                      {monthGroups.map((mg) => {
+                        const isMonthExpanded = effectiveExpandedMonths.has(mg.key);
+                        const isGroupMode = statementMode === 'group';
+                        const totalCols = isGroupMode ? 8 : 7;
 
                         return (
-                          <React.Fragment key={tx.id}>
-                            <tr 
-                              className={`group even:bg-gray-50/40 hover:bg-blue-50/80 transition-all relative ${
-                                calcEntries.some(e => e.id === tx.id) ? 'bg-purple-50/50 even:bg-purple-50/50' : ''
-                              }`}
-                              onClick={(tx.type === 'bill' || tx.type === 'invoice') ? (e) => toggleTxExpand(tx.id, tx.type, e) : undefined}
-                              style={{ cursor: (tx.type === 'bill' || tx.type === 'invoice') ? 'pointer' : 'default' }}
+                          <React.Fragment key={`group-${mg.key}`}>
+                            {/* Monthly Summary Row */}
+                            <tr
+                              onClick={() => toggleMonthExpand(mg.key)}
+                              className="bg-slate-100/80 hover:bg-slate-200/70 border-y border-slate-200 cursor-pointer select-none transition-colors"
+                              title={isMonthExpanded ? 'Click to collapse month' : 'Click to expand month'}
                             >
-                            <td className="px-4 py-1.5 text-[10.5px] text-gray-500 whitespace-nowrap align-middle">
-                              {fmtDateTime(tx.datetime || tx.date)}
-                            </td>
-                            <td className="w-[45px] text-center px-1 py-1.5 align-middle">
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); setClipFromIndex(s.transactions.indexOf(tx)); }}
-                                className={`text-gray-300 hover:text-blue-500 transition-colors print:hidden focus:opacity-100 ${clipIdx === s.transactions.indexOf(tx) ? 'opacity-100 text-blue-600' : 'opacity-0 group-hover:opacity-100'}`}
-                                title="Start statement from this transaction"
-                              >
-                                📌
-                              </button>
-                            </td>
-                            {statementMode === 'group' && (
-                              <td className="px-4 py-1.5 align-middle whitespace-nowrap">
+                              {/* Date / Month Label with Chevron */}
+                              <td colSpan={isGroupMode ? 4 : 3} className="px-3 py-2.5 align-middle">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] font-bold text-slate-500 w-3 text-center transition-transform">
+                                    {isMonthExpanded ? '▼' : '▶'}
+                                  </span>
+                                  <span className="text-xs font-black tracking-wider text-slate-800 uppercase">
+                                    {mg.label}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-medium ml-1">
+                                    ({mg.transactions.length} txn{mg.transactions.length !== 1 ? 's' : ''})
+                                  </span>
+                                </div>
+                              </td>
+
+                              {/* Document & Details column in summary row */}
+                              <td className="px-4 py-2.5 text-xs text-slate-400 italic">
+                                Month Summary
+                              </td>
+
+                              {/* Month Total Debit */}
+                              <td className="px-3 py-2.5 text-right text-[11.5px] font-extrabold whitespace-nowrap align-middle tabular-nums text-slate-900">
+                                {mg.debitTotal > 0 ? fmt(mg.debitTotal) : '—'}
+                              </td>
+
+                              {/* Month Total Credit */}
+                              <td className="px-3 py-2.5 text-right text-[11.5px] font-extrabold whitespace-nowrap align-middle tabular-nums text-emerald-700">
+                                {mg.creditTotal > 0 ? fmt(mg.creditTotal) : '—'}
+                              </td>
+
+                              {/* Net Monthly Movement (Credit - Debit) */}
+                              <td className="px-4 py-2.5 text-right whitespace-nowrap align-middle">
                                 {(() => {
-                                  const fc = firmColors[tx.firmId] || { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200' };
+                                  const net = mg.creditTotal - mg.debitTotal;
+                                  const isZero = Math.abs(net) < 0.01;
+                                  if (isZero) {
+                                    return <span className="text-[11.5px] tabular-nums font-black text-gray-400">₹0.00</span>;
+                                  }
+                                  const isPositive = net > 0;
+                                  const colorClass = isPositive ? 'text-emerald-600' : 'text-rose-600';
                                   return (
-                                    <span className={`inline-flex items-center px-2 py-0.5 rounded border border-opacity-80 text-[10px] font-bold uppercase tracking-wide shadow-sm ${fc.bg} ${fc.text} ${fc.border}`}>
-                                      {tx.firmName}
+                                    <span className={`text-[11.5px] tabular-nums font-black flex items-center justify-end ${colorClass}`}>
+                                      <span className="mr-1 text-[11px] font-bold" title={isPositive ? 'Net Inflow / Surplus' : 'Net Outflow / Deficit'}>
+                                        {isPositive ? '↗' : '↙'}
+                                      </span>
+                                      {fmtBalance(net)}
                                     </span>
                                   );
                                 })()}
                               </td>
-                            )}
-                            <td className="px-4 py-1.5 align-middle whitespace-nowrap">
-                              {(() => {
-                                if (tx.type === 'invoice') return (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className={`text-[10px] text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[9px] font-bold text-slate-700 uppercase tracking-wide">Sales Invoice</span>
-                                  </div>
-                                );
-                                if (tx.type === 'payment') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-emerald-200 bg-emerald-50 text-[9px] font-bold text-emerald-700 uppercase tracking-wide">Customer Payment</span>;
-                                if (tx.type === 'vendor_payment') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-purple-200 bg-purple-50 text-[9px] font-bold text-purple-700 uppercase tracking-wide">Vendor Payment</span>;
-                                if (tx.type === 'bill') return (
-                                  <div className="flex items-center gap-1.5">
-                                    <span className={`text-[10px] text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-[9px] font-bold text-orange-700 uppercase tracking-wide">Purchase Bill</span>
-                                  </div>
-                                );
-                                if (tx.type === 'journal') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px] font-bold text-gray-600 uppercase tracking-wide">JOURNAL</span>;
-                                return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px] font-bold text-gray-500 uppercase tracking-wide">{tx.type}</span>;
-                              })()}
-                            </td>
-                            <td className="px-4 py-1.5 align-middle">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-5 shrink-0 flex justify-center print:hidden">
-                                  {!calcEntries.some(e => e.id === tx.id) ? (
-                                    <button 
-                                      onClick={(e) => { e.stopPropagation(); addCalcEntry(tx); }}
-                                      className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                      title="Add to Calculator"
-                                    >
-                                      <div className="bg-purple-100 text-purple-700 w-5 h-5 flex items-center justify-center rounded hover:bg-purple-200 shadow-sm border border-purple-200">
-                                        <Plus size={12} strokeWidth={3} />
-                                      </div>
-                                    </button>
-                                  ) : (
-                                    <div className="text-purple-600 flex items-center justify-center w-5 h-5 bg-purple-50 rounded border border-purple-100" title="Added to Calculator">
-                                      <Check size={12} strokeWidth={4} />
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="flex flex-col">
-                                  <div className="flex items-center gap-1.5 text-[11px] font-medium text-blue-700 underline-offset-2">
-                                    {tx.zohoUrl ? (
-                                      <a href={tx.zohoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-blue-900 hover:underline">
-                                        {tx.type === 'journal' ? (tx.entryNumber || 'Journal') : (tx.referenceNumber || displayDesc)}
-                                      </a>
-                                    ) : (
-                                      <span>{tx.type === 'journal' ? (tx.entryNumber || 'Journal') : (tx.referenceNumber || displayDesc)}</span>
+                            </tr>
+
+                            {/* Transactions inside this month when expanded */}
+                            {isMonthExpanded && mg.transactions.map((tx: any) => {
+                              const txIdx = visibleTransactions.indexOf(tx);
+                              const displayDesc = cleanDescription(tx.description, tx.type);
+                              const isTxExpanded = expandedTx[tx.id];
+                              const lineItems = txLineItems[tx.id];
+                              const isLoading = loadingTx[tx.id];
+                              const errorMsg = txErrors[tx.id];
+
+                              return (
+                                <React.Fragment key={tx.id}>
+                                  <tr 
+                                    className={`group even:bg-gray-50/40 hover:bg-blue-50/80 transition-all relative ${
+                                      calcEntries.some(e => e.id === tx.id) ? 'bg-purple-50/50 even:bg-purple-50/50' : ''
+                                    }`}
+                                    onClick={(tx.type === 'bill' || tx.type === 'invoice') ? (e) => toggleTxExpand(tx.id, tx.type, e) : undefined}
+                                    style={{ cursor: (tx.type === 'bill' || tx.type === 'invoice') ? 'pointer' : 'default' }}
+                                  >
+                                    <td className="px-3 py-1.5 text-[10.5px] text-gray-500 whitespace-nowrap align-middle">
+                                      {fmtDateTime(tx.datetime || tx.date)}
+                                    </td>
+                                    <td className="w-[36px] text-center px-1 py-1.5 align-middle">
+                                      <button 
+                                        onClick={(e) => { e.stopPropagation(); setClipFromIndex(s.transactions.indexOf(tx)); }}
+                                        className={`text-gray-300 hover:text-blue-500 transition-colors print:hidden focus:opacity-100 ${clipIdx === s.transactions.indexOf(tx) ? 'opacity-100 text-blue-600' : 'opacity-0 group-hover:opacity-100'}`}
+                                        title="Start statement from this transaction"
+                                      >
+                                        📌
+                                      </button>
+                                    </td>
+                                    {isGroupMode && (
+                                      <td className="px-3 py-1.5 align-middle whitespace-nowrap">
+                                        {(() => {
+                                          const fc = firmColors[tx.firmId] || { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200' };
+                                          return (
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded border border-opacity-80 text-[10px] font-bold uppercase tracking-wide shadow-sm ${fc.bg} ${fc.text} ${fc.border}`}>
+                                              {tx.firmName}
+                                            </span>
+                                          );
+                                        })()}
+                                      </td>
                                     )}
-                                    {draftStatuses[tx.id] && (
-                                      <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50">
-                                        Draft
-                                      </span>
-                                    )}
-                                    {tx.isVerified && (
-                                      <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
-                                        <Check size={9} strokeWidth={4} />
-                                      </span>
-                                    )}
-                                  </div>
-                                  {tx.type === 'journal' ? (
-                                    <>
+                                    <td className="px-3 py-1.5 align-middle whitespace-nowrap">
                                       {(() => {
-                                        const entryNum = (tx.entryNumber || '').trim();
-                                        const refNum = (tx.referenceNumber || '').trim();
-                                        const cleanDesc = tx.description ? cleanDescription(tx.description, tx.type).trim() : '';
-                                        const cleanNotes = tx.notes ? tx.notes.trim() : '';
+                                        if (tx.type === 'invoice') return (
+                                          <div className="flex items-center gap-1.5">
+                                            <span className={`text-[10px] text-gray-400 transition-transform ${isTxExpanded ? 'rotate-90' : ''}`}>▶</span>
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-[9px] font-bold text-slate-700 uppercase tracking-wide">Sales Invoice</span>
+                                          </div>
+                                        );
+                                        if (tx.type === 'payment') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-emerald-200 bg-emerald-50 text-[9px] font-bold text-emerald-700 uppercase tracking-wide">Customer Payment</span>;
+                                        if (tx.type === 'vendor_payment') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-purple-200 bg-purple-50 text-[9px] font-bold text-purple-700 uppercase tracking-wide">Vendor Payment</span>;
+                                        if (tx.type === 'bill') return (
+                                          <div className="flex items-center gap-1.5">
+                                            <span className={`text-[10px] text-gray-400 transition-transform ${isTxExpanded ? 'rotate-90' : ''}`}>▶</span>
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-orange-200 bg-orange-50 text-[9px] font-bold text-orange-700 uppercase tracking-wide">Purchase Bill</span>
+                                          </div>
+                                        );
+                                        if (tx.type === 'journal') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px] font-bold text-gray-600 uppercase tracking-wide">JOURNAL</span>;
+                                        return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px] font-bold text-gray-500 uppercase tracking-wide">{tx.type}</span>;
+                                      })()}
+                                    </td>
+                                    <td className="px-4 py-1.5 align-middle">
+                                      <div className="flex items-center gap-2.5">
+                                        <div className="w-5 shrink-0 flex justify-center print:hidden">
+                                          {!calcEntries.some(e => e.id === tx.id) ? (
+                                            <button 
+                                              onClick={(e) => { e.stopPropagation(); addCalcEntry(tx); }}
+                                              className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                              title="Add to Calculator"
+                                            >
+                                              <div className="bg-purple-100 text-purple-700 w-5 h-5 flex items-center justify-center rounded hover:bg-purple-200 shadow-sm border border-purple-200">
+                                                <Plus size={12} strokeWidth={3} />
+                                              </div>
+                                            </button>
+                                          ) : (
+                                            <div className="text-purple-600 flex items-center justify-center w-5 h-5 bg-purple-50 rounded border border-purple-100" title="Added to Calculator">
+                                              <Check size={12} strokeWidth={4} />
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="flex flex-col min-w-0 flex-1">
+                                          <div className="flex items-center gap-1.5 text-[11px] font-medium text-blue-700 underline-offset-2">
+                                            {tx.zohoUrl ? (
+                                              <a 
+                                                href={tx.zohoUrl} 
+                                                target="_blank" 
+                                                rel="noreferrer" 
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="hover:text-blue-900 hover:underline flex items-center gap-1 truncate"
+                                              >
+                                                <span className="truncate">{tx.type === 'journal' ? (tx.entryNumber || 'Journal') : (tx.referenceNumber || displayDesc)}</span>
+                                                <span className="text-[9px] shrink-0">↗</span>
+                                              </a>
+                                            ) : (
+                                              <span className="truncate">{tx.type === 'journal' ? (tx.entryNumber || 'Journal') : (tx.referenceNumber || displayDesc)}</span>
+                                            )}
+                                            {draftStatuses[tx.id] && (
+                                              <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50 shrink-0">
+                                                Draft
+                                              </span>
+                                            )}
+                                            {tx.isVerified && (
+                                              <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
+                                                <Check size={9} strokeWidth={4} />
+                                              </span>
+                                            )}
+                                          </div>
+                                          {tx.type === 'journal' ? (
+                                            <>
+                                              {(() => {
+                                                const entryNum = (tx.entryNumber || '').trim();
+                                                const refNum = (tx.referenceNumber || '').trim();
+                                                const cleanDesc = tx.description ? cleanDescription(tx.description, tx.type).trim() : '';
+                                                const cleanNotes = tx.notes ? tx.notes.trim() : '';
 
-                                        const showRef = refNum && (refNum !== cleanDesc) && (refNum !== entryNum);
-                                        const showNotes = cleanNotes && (cleanNotes !== cleanDesc);
+                                                const showRef = refNum && (refNum !== cleanDesc) && (refNum !== entryNum);
+                                                const showNotes = cleanNotes && (cleanNotes !== cleanDesc);
 
+                                                return (
+                                                  <>
+                                                    {showRef && (
+                                                      <span className="text-[11px] text-gray-500 mt-0.5 leading-tight truncate">Ref: {refNum}</span>
+                                                    )}
+                                                    {cleanDesc && (
+                                                      <div title={cleanDesc} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight truncate">
+                                                        {cleanDesc}
+                                                      </div>
+                                                    )}
+                                                    {showNotes && (
+                                                      <div title={cleanNotes} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight truncate">
+                                                        {cleanNotes}
+                                                      </div>
+                                                    )}
+                                                  </>
+                                                );
+                                              })()}
+                                            </>
+                                          ) : (
+                                            <>
+                                              {tx.referenceNumber && tx.referenceNumber !== displayDesc && (
+                                                <span title={displayDesc} className="text-[10px] text-gray-500 mt-0.5 leading-tight truncate">{displayDesc}</span>
+                                              )}
+                                              {(tx.type === 'payment' || tx.type === 'vendor_payment') && tx.notes && (
+                                                <div title={tx.notes} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight truncate">
+                                                  {tx.notes}
+                                                </div>
+                                              )}
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </td>
+                                    {/* DEBIT Column */}
+                                    <td className="px-3 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums text-slate-800">
+                                      {(tx.type === 'invoice' || tx.type === 'vendor_payment' || (tx.type === 'journal' && tx.netEffect > 0)) ? fmt(tx.amount) : '—'}
+                                    </td>
+                                    {/* CREDIT Column */}
+                                    <td className="px-3 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums" style={{ color: (tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) ? ((tx.type === 'payment' || (tx.type === 'journal' && tx.netEffect <= 0)) ? '#059669' : '#c2410c') : 'transparent' }}>
+                                      {(tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) ? fmt(tx.amount) : '—'}
+                                    </td>
+                                    {/* RUNNING BALANCE */}
+                                    <td className="px-4 py-1.5 text-right whitespace-nowrap align-middle">
+                                      {(() => {
+                                        const b = tx.balanceAfter;
+                                        const isZero = b === 0 || Math.abs(b) < 0.01;
+                                        
+                                        if (isZero) {
+                                          return (
+                                            <span className="text-[11.5px] tabular-nums font-extrabold text-gray-400">
+                                              ₹0
+                                            </span>
+                                          );
+                                        }
+                                        
+                                        const isPositive = b > 0;
+                                        const colorClass = isPositive ? 'text-rose-600' : b < 0 ? 'text-emerald-600' : 'text-gray-400';
+                                        const overallTxIdx = visibleTransactions.findIndex((t: any) => t.id === tx.id);
+                                        const prevBalance = overallTxIdx > 0 ? visibleTransactions[overallTxIdx - 1].balanceAfter : dynamicOpeningBalance;
                                         return (
-                                          <>
-                                            {showRef && (
-                                              <span className="text-[11px] text-gray-500 mt-0.5 leading-tight">Ref: {refNum}</span>
-                                            )}
-                                            {cleanDesc && (
-                                              <div className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal max-w-sm">
-                                                {cleanDesc}
-                                              </div>
-                                            )}
-                                            {showNotes && (
-                                              <div className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal max-w-sm">
-                                                {cleanNotes}
-                                              </div>
-                                            )}
-                                          </>
+                                          <span className={`text-[11.5px] tabular-nums font-extrabold flex items-center justify-end ${colorClass}`}>
+                                            <BalanceChangeIndicator current={b} previous={prevBalance} />
+                                            {fmtBalance(b)}
+                                          </span>
                                         );
                                       })()}
-                                    </>
-                                  ) : (
-                                    <>
-                                      {tx.referenceNumber && tx.referenceNumber !== displayDesc && (
-                                        <span className="text-[10px] text-gray-500 mt-0.5 leading-tight">{displayDesc}</span>
-                                      )}
-                                      {(tx.type === 'payment' || tx.type === 'vendor_payment') && tx.notes && (
-                                        <div className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal max-w-sm">
-                                          {tx.notes}
-                                        </div>
-                                      )}
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                            {/* DEBIT Column: Sales Invoices & Vendor Payments */}
-                            <td className="px-4 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums text-slate-800">
-                              {(tx.type === 'invoice' || tx.type === 'vendor_payment' || (tx.type === 'journal' && tx.netEffect > 0)) ? fmt(tx.amount) : '—'}
-                            </td>
-                            {/* CREDIT Column: Customer Payments & Purchase Bills */}
-                            <td className="px-4 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums" style={{ color: (tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) ? ((tx.type === 'payment' || (tx.type === 'journal' && tx.netEffect <= 0)) ? '#059669' : '#c2410c') : 'transparent' }}>
-                              {(tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) ? fmt(tx.amount) : '—'}
-                            </td>
-                            {/* RUNNING BALANCE */}
-                            <td className="px-4 py-1.5 text-right whitespace-nowrap align-middle pr-5">
-                              {(() => {
-                                const b = tx.balanceAfter;
-                                const isZero = b === 0 || Math.abs(b) < 0.01;
-                                
-                                if (isZero) {
-                                  return (
-                                    <span className="text-[11.5px] tabular-nums font-extrabold text-gray-400">
-                                      ₹0
-                                    </span>
-                                  );
-                                }
-                                
-                                const isPositive = b > 0;
-                                const positiveColorClass = invertBalanceColor ? 'text-emerald-600' : 'text-rose-600';
-                                const negativeColorClass = invertBalanceColor ? 'text-rose-600' : 'text-emerald-600';
-                                return (
-                                  <span className={`text-[11.5px] tabular-nums font-extrabold flex items-center justify-end ${isPositive ? positiveColorClass : negativeColorClass}`}>
-                                    <BalanceIndicator balance={b} />
-                                    {fmtBalance(b)}
-                                  </span>
-                                );
-                              })()}
-                            </td>
-                            </tr>
-                            {isExpanded && (tx.type === 'bill' || tx.type === 'invoice') && (() => {
-                              const isBill = tx.type === 'bill';
-                              const theme = isBill ? {
-                                bg: 'bg-orange-50/20',
-                                borderLeft: 'border-orange-300',
-                                spinner: 'border-orange-400',
-                                rowBorder: 'border-orange-100/60'
-                              } : {
-                                bg: 'bg-slate-50/40',
-                                borderLeft: 'border-slate-300',
-                                spinner: 'border-slate-400',
-                                rowBorder: 'border-slate-200/60'
-                              };
-                              return (
-                              <tr className={theme.bg}>
-                                <td colSpan={statementMode === 'group' ? 8 : 7} className={`px-4 py-3 border-l-[3px] ${theme.borderLeft}`}>
-                                  <div className="pl-6">
-                                    {isLoading ? (
-                                      <div className="text-xs text-gray-500 flex items-center gap-2">
-                                        <span className={`w-3 h-3 border-2 ${theme.spinner} border-t-transparent rounded-full animate-spin`}></span>
-                                        Loading items...
-                                      </div>
-                                    ) : errorMsg ? (
-                                      <div className="text-xs text-red-500 flex items-center gap-1.5">
-                                        <span className="font-bold">⚠️</span> {errorMsg}
-                                      </div>
-                                    ) : lineItems && lineItems.length > 0 ? (
-                                      <div className="flex flex-col gap-1.5 max-w-3xl">
-                                        {lineItems.map((item: any, idx: number) => {
-                                          let qty = Number(item.quantity || 0);
-                                          let rate = Number(item.rate || 0);
-                                          let unit = item.unit ? ` ${item.unit}` : '';
-                                          
-                                          const caseSize = Number(item.case_size || 0);
-                                          if (caseSize > 0) {
-                                            rate = rate / caseSize;
-                                          }
+                                    </td>
+                                  </tr>
+                                  {isTxExpanded && (tx.type === 'bill' || tx.type === 'invoice') && (() => {
+                                    const isBill = tx.type === 'bill';
+                                    const theme = isBill ? {
+                                      bg: 'bg-orange-50/20',
+                                      borderLeft: 'border-orange-300',
+                                      spinner: 'border-orange-400',
+                                      rowBorder: 'border-orange-100/60'
+                                    } : {
+                                      bg: 'bg-slate-50/40',
+                                      borderLeft: 'border-slate-300',
+                                      spinner: 'border-slate-400',
+                                      rowBorder: 'border-slate-200/60'
+                                    };
+                                    return (
+                                      <tr className={theme.bg}>
+                                        <td colSpan={totalCols} className={`px-4 py-3 border-l-[3px] ${theme.borderLeft}`}>
+                                          <div className="pl-6">
+                                            {isLoading ? (
+                                              <div className="text-xs text-gray-500 flex items-center gap-2">
+                                                <span className={`w-3 h-3 border-2 ${theme.spinner} border-t-transparent rounded-full animate-spin`}></span>
+                                                Loading items...
+                                              </div>
+                                            ) : errorMsg ? (
+                                              <div className="text-xs text-red-500 flex items-center gap-1.5">
+                                                <span className="font-bold">⚠️</span> {errorMsg}
+                                              </div>
+                                            ) : lineItems && lineItems.length > 0 ? (
+                                              <div className="flex flex-col gap-1.5 max-w-3xl">
+                                                {lineItems.map((item: any, idx: number) => {
+                                                  let qty = Number(item.quantity || 0);
+                                                  let rate = Number(item.rate || 0);
+                                                  let unit = item.unit ? ` ${item.unit}` : '';
+                                                  
+                                                  const caseSize = Number(item.case_size || 0);
+                                                  if (caseSize > 0) {
+                                                    rate = rate / caseSize;
+                                                  }
 
-                                          return (
-                                            <div key={item.line_item_id || idx} className={`text-[11px] flex items-center justify-between text-gray-600 pb-1.5 border-b ${theme.rowBorder} last:border-0 last:pb-0`}>
-                                              <div className="flex items-center gap-2">
-                                                <span className="text-[10px] text-gray-400 font-mono">#{idx + 1}</span>
-                                                <span className="font-medium text-gray-800">{item.name}</span>
+                                                  return (
+                                                    <div key={item.line_item_id || idx} className={`text-[11px] flex items-center justify-between text-gray-600 pb-1.5 border-b ${theme.rowBorder} last:border-0 last:pb-0`}>
+                                                      <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] text-gray-400 font-mono">#{idx + 1}</span>
+                                                        <span className="font-medium text-gray-800">{item.name}</span>
+                                                      </div>
+                                                      <div className="flex items-center gap-4 text-right tabular-nums">
+                                                        <span className="w-32 text-gray-500 whitespace-nowrap">{qty}{unit} @ {fmt(rate)}</span>
+                                                        <span className="w-20 font-semibold text-gray-900">{fmt(item.item_total)}</span>
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })}
                                               </div>
-                                              <div className="flex items-center gap-4 text-right tabular-nums">
-                                                <span className="w-32 text-gray-500 whitespace-nowrap">{qty}{unit} @ {fmt(rate)}</span>
-                                                <span className="w-20 font-semibold text-gray-900">{fmt(item.item_total)}</span>
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    ) : (
-                                      <div className="text-xs text-gray-500 italic">No line items found.</div>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
+                                            ) : (
+                                              <div className="text-xs text-gray-500 italic">No line items found.</div>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })()}
+                                </React.Fragment>
                               );
-                            })()}
+                            })}
                           </React.Fragment>
                         );
                       })}
 
                       {visibleTransactions.length === 0 && (
                         <tr>
-                          <td colSpan={statementMode === 'group' ? 9 : 7} className="px-3 py-6 text-center text-xs text-gray-400 font-medium">
+                          <td colSpan={statementMode === 'group' ? 8 : 7} className="px-3 py-6 text-center text-xs text-gray-400 font-medium">
                             No transactions in window.
                           </td>
                         </tr>
@@ -2057,667 +2400,436 @@ export default function CustomerStatementView() {
                     </div>
                   </div>
 
-                  {/* Transaction Cards */}
+                  {/* Transaction Cards grouped by Month */}
                   {visibleTransactions.length === 0 ? (
                     <div className="p-6 text-center text-xs text-gray-400 font-medium bg-white">
                       No transactions in window.
                     </div>
                   ) : (
-                    visibleTransactions.map((tx: any) => {
-                      const displayDesc = cleanDescription(tx.description, tx.type);
-                      const isInvoice = tx.type === 'invoice';
-                      const isPayment = tx.type === 'payment';
-                      
+                    monthGroups.map((mg) => {
+                      const isMonthExpanded = effectiveExpandedMonths.has(mg.key);
                       return (
-                        <div 
-                          key={tx.id} 
-                          className={`p-4 bg-white hover:bg-blue-50/80 transition-all flex flex-col gap-3 relative ${calcEntries.some(e => e.id === tx.id) ? 'bg-purple-50/50' : ''}`}
-                        >
-                          {/* Header: Date & Type */}
-                          <div className="flex justify-between items-center">
-                            <span className="text-[11px] text-gray-500 font-medium">{fmtDateTime(tx.datetime || tx.date)}</span>
-                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                              {isInvoice ? 'Invoice' : isPayment ? 'Payment' : tx.type === 'vendor_payment' ? 'Vendor Pmt' : tx.type === 'journal' ? 'JOURNAL' : 'Purchase Bill'}
-                            </span>
-                          </div>
-
-                          {/* Details */}
-                          <div className="flex flex-col gap-1">
-                            <div className="text-sm font-bold text-blue-700 underline-offset-2 flex flex-wrap items-center gap-1.5">
-                              {tx.zohoUrl ? (
-                                <a href={tx.zohoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-blue-900 hover:underline">
-                                  {tx.type === 'journal' ? (tx.entryNumber || 'Journal') : displayDesc}
-                                </a>
-                              ) : (
-                                <span>{tx.type === 'journal' ? (tx.entryNumber || 'Journal') : displayDesc}</span>
-                              )}
-                              {draftStatuses[tx.id] && (
-                                <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50">
-                                  Draft
+                        <div key={mg.key} className="flex flex-col">
+                          {/* Monthly Summary Header Bar */}
+                          <button
+                            type="button"
+                            onClick={() => toggleMonthExpand(mg.key)}
+                            className="w-full text-left px-4 py-2.5 bg-slate-100 hover:bg-slate-200/80 transition-colors border-y border-slate-200 flex flex-col gap-1 focus:outline-none"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[9px] text-slate-500 font-bold transition-transform inline-block ${isMonthExpanded ? 'rotate-90' : ''}`}>
+                                  ▶
                                 </span>
-                              )}
-                              {tx.isVerified && (
-                                <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
-                                  <Check size={9} strokeWidth={4} />
+                                <span className="text-xs font-black text-slate-800 tracking-wide">
+                                  {mg.label}
                                 </span>
-                              )}
-                            </div>
-                            {tx.type === 'journal' ? (
-                              <>
+                                <span className="text-[10px] text-slate-500 font-normal">
+                                  ({mg.transactions.length} txn{mg.transactions.length === 1 ? '' : 's'})
+                                </span>
+                              </div>
+                              {/* Net Monthly Movement */}
+                              <div className="text-right">
                                 {(() => {
-                                  const entryNum = (tx.entryNumber || '').trim();
-                                  const refNum = (tx.referenceNumber || '').trim();
-                                  const cleanDesc = tx.description ? cleanDescription(tx.description, tx.type).trim() : '';
-                                  const cleanNotes = tx.notes ? tx.notes.trim() : '';
-
-                                  const showRef = refNum && (refNum !== cleanDesc) && (refNum !== entryNum);
-                                  const showNotes = cleanNotes && (cleanNotes !== cleanDesc);
-
+                                  const net = mg.creditTotal - mg.debitTotal;
+                                  const isZero = Math.abs(net) < 0.01;
+                                  if (isZero) return <span className="text-xs font-bold text-gray-400">₹0.00</span>;
+                                  const isPositive = net > 0;
+                                  const colorClass = isPositive ? 'text-emerald-600' : 'text-rose-600';
                                   return (
-                                    <>
-                                      {showRef && (
-                                        <span className="text-[11px] text-gray-500 mt-0.5 leading-tight">Ref: {refNum}</span>
-                                      )}
-                                      {cleanDesc && (
-                                        <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
-                                          {cleanDesc}
-                                        </div>
-                                      )}
-                                      {showNotes && (
-                                        <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
-                                          {cleanNotes}
-                                        </div>
-                                      )}
-                                    </>
+                                    <span className={`text-xs font-black tabular-nums flex items-center justify-end ${colorClass}`}>
+                                      <span className="mr-0.5 text-[10px] font-bold">{isPositive ? '↗' : '↙'}</span>
+                                      {fmtBalance(net)}
+                                    </span>
                                   );
                                 })()}
-                              </>
-                            ) : (
-                              (tx.type === 'payment' || tx.type === 'vendor_payment') && tx.notes && (
-                                <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
-                                  {tx.notes}
-                                </div>
-                              )
-                            )}
-                          </div>
-
-                          {/* Amounts */}
-                          <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-50">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-[10px] text-gray-400 font-medium">Inv Amt</span>
-                              <span className="text-xs font-bold text-gray-700">{tx.netEffect > 0 ? fmt(tx.amount) : '—'}</span>
+                              </div>
                             </div>
-                            <div className="flex flex-col gap-0.5 text-right">
-                              <span className="text-[10px] text-gray-400 font-medium">Pay Amt</span>
-                              <span className="text-xs font-bold text-emerald-600">{tx.netEffect <= 0 ? fmt(tx.amount) : '—'}</span>
-                            </div>
-                          </div>
 
-                          {/* Balance */}
-                          <div className="flex justify-between items-center pt-2 border-t border-gray-50">
-                            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Balance</span>
-                            {(() => {
-                              const b = tx.balanceAfter;
-                              if (b === 0) return <span className="text-xs font-extrabold text-emerald-600 tabular-nums">{fmtBalance(b)}</span>;
-                              if (Math.abs(b) <= 100) return (
-                                <div className="flex flex-col items-end">
-                                  <span className="text-xs font-extrabold text-emerald-700 tabular-nums">{fmtBalance(b)}</span>
-                                  <span className="text-[8px] font-bold text-emerald-600/80 uppercase">Settled</span>
-                                </div>
-                              );
-                              
-                              const isPositive = b > 0;
-                              const positiveColorClass = invertBalanceColor ? 'text-emerald-600' : 'text-rose-600';
-                              const negativeColorClass = invertBalanceColor ? 'text-rose-600' : 'text-emerald-600';
-                              
-                              return (
-                                <span className={`text-xs font-bold tabular-nums ${isPositive ? positiveColorClass : negativeColorClass}`}>
-                                  {fmtBalance(b)}
+                            <div className="flex items-center justify-between text-[11px] tabular-nums">
+                              <div>
+                                <span className="text-slate-400 text-[10px] mr-1">Dr:</span>
+                                <span className="font-semibold text-slate-800">{mg.debitTotal > 0 ? fmt(mg.debitTotal) : '—'}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 text-[10px] mr-1">Cr:</span>
+                                <span className="font-semibold text-emerald-700">{mg.creditTotal > 0 ? fmt(mg.creditTotal) : '—'}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 text-[10px] mr-1">Net:</span>
+                                <span className={`font-bold ${Math.abs(mg.creditTotal - mg.debitTotal) < 0.01 ? 'text-gray-400' : (mg.creditTotal > mg.debitTotal ? 'text-emerald-600' : 'text-rose-600')}`}>
+                                  {fmtBalance(mg.creditTotal - mg.debitTotal)}
                                 </span>
-                              );
-                            })()}
-                          </div>
+                              </div>
+                            </div>
+                          </button>
+
+                          {/* Expanded Month Transactions */}
+                          {isMonthExpanded && (
+                            <div className="flex flex-col divide-y divide-gray-100">
+                              {mg.transactions.map((tx: any) => {
+                                const displayDesc = cleanDescription(tx.description, tx.type);
+                                const isInvoice = tx.type === 'invoice';
+                                const isPayment = tx.type === 'payment';
+                                const overallTxIdx = visibleTransactions.findIndex((t: any) => t.id === tx.id);
+                                const prevBalance = overallTxIdx > 0 ? visibleTransactions[overallTxIdx - 1].balanceAfter : dynamicOpeningBalance;
+                                
+                                return (
+                                  <div 
+                                    key={tx.id} 
+                                    className={`p-4 bg-white hover:bg-blue-50/80 transition-all flex flex-col gap-3 relative ${calcEntries.some(e => e.id === tx.id) ? 'bg-purple-50/50' : ''}`}
+                                  >
+                                    {/* Header: Date & Type */}
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-[11px] text-gray-500 font-medium">{fmtDateTime(tx.datetime || tx.date)}</span>
+                                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                                        {isInvoice ? 'Invoice' : isPayment ? 'Payment' : tx.type === 'vendor_payment' ? 'Vendor Pmt' : tx.type === 'journal' ? 'JOURNAL' : 'Purchase Bill'}
+                                      </span>
+                                    </div>
+
+                                    {/* Details */}
+                                    <div className="flex flex-col gap-1">
+                                      <div className="text-sm font-bold text-blue-700 underline-offset-2 flex flex-wrap items-center gap-1.5">
+                                        {tx.zohoUrl ? (
+                                          <a href={tx.zohoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-blue-900 hover:underline">
+                                            {tx.type === 'journal' ? (tx.entryNumber || 'Journal') : displayDesc}
+                                          </a>
+                                        ) : (
+                                          <span>{tx.type === 'journal' ? (tx.entryNumber || 'Journal') : displayDesc}</span>
+                                        )}
+                                        {draftStatuses[tx.id] && (
+                                          <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50">
+                                            Draft
+                                          </span>
+                                        )}
+                                        {tx.isVerified && (
+                                          <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
+                                            <Check size={9} strokeWidth={4} />
+                                          </span>
+                                        )}
+                                      </div>
+                                      {tx.type === 'journal' ? (
+                                        <>
+                                          {(() => {
+                                            const entryNum = (tx.entryNumber || '').trim();
+                                            const refNum = (tx.referenceNumber || '').trim();
+                                            const cleanDesc = tx.description ? cleanDescription(tx.description, tx.type).trim() : '';
+                                            const cleanNotes = tx.notes ? tx.notes.trim() : '';
+
+                                            const showRef = refNum && (refNum !== cleanDesc) && (refNum !== entryNum);
+                                            const showNotes = cleanNotes && (cleanNotes !== cleanDesc);
+
+                                            return (
+                                              <>
+                                                {showRef && (
+                                                  <span className="text-[11px] text-gray-500 mt-0.5 leading-tight">Ref: {refNum}</span>
+                                                )}
+                                                {cleanDesc && (
+                                                  <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
+                                                    {cleanDesc}
+                                                  </div>
+                                                )}
+                                                {showNotes && (
+                                                  <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
+                                                    {cleanNotes}
+                                                  </div>
+                                                )}
+                                              </>
+                                            );
+                                          })()}
+                                        </>
+                                      ) : (
+                                        <>
+                                          {tx.referenceNumber && tx.referenceNumber !== displayDesc && (
+                                            <span className="text-[10px] text-gray-500">{displayDesc}</span>
+                                          )}
+                                          {(isPayment || tx.type === 'vendor_payment') && tx.notes && (
+                                            <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
+                                              {tx.notes}
+                                            </div>
+                                          )}
+                                        </>
+                                      )}
+                                    </div>
+
+                                    {/* Amounts */}
+                                    <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-50">
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="text-[10px] text-gray-400 font-medium">Inv Amt</span>
+                                        <span className="text-xs font-bold text-gray-700">{tx.netEffect > 0 ? fmt(tx.amount) : '—'}</span>
+                                      </div>
+                                      <div className="flex flex-col gap-0.5 text-right">
+                                        <span className="text-[10px] text-gray-400 font-medium">Pay Amt</span>
+                                        <span className="text-xs font-bold text-emerald-600">{tx.netEffect <= 0 ? fmt(tx.amount) : '—'}</span>
+                                      </div>
+                                    </div>
+
+                                    {/* Balance */}
+                                    <div className="flex justify-between items-center pt-2 border-t border-gray-50">
+                                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Balance</span>
+                                      {(() => {
+                                        const b = tx.balanceAfter;
+                                        const isPositive = b > 0;
+                                        const colorClass = isPositive ? 'text-rose-600' : b < 0 ? 'text-emerald-600' : 'text-gray-400';
+                                        return (
+                                          <span className={`text-xs font-bold tabular-nums flex items-center ${colorClass}`}>
+                                            <BalanceChangeIndicator current={b} previous={prevBalance} />
+                                            {fmtBalance(b)}
+                                          </span>
+                                        );
+                                      })()}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       );
                     })
                   )}
 
                 </div>
-                {/* View All Toggle */}
-                {s.transactions.length > 10 && (
-                  <div className="border-t border-gray-100 bg-gray-50 p-2 text-center print:hidden">
-                    <button
-                      onClick={() => setIsExpanded(!isExpanded)}
-                      className="text-xs font-bold text-[#1A2766] hover:text-[#25368a] px-4 py-1.5 rounded-md hover:bg-blue-50 transition-colors"
-                    >
-                      {isExpanded ? 'Show Less' : `View Remaining Transactions (${s.transactions.length - 10})`}
-                    </button>
-                  </div>
-                )}
               </div>{/* end ledger card */}
-
-            {/* ── Secondary Section: moved below ledger ─────────────────────── */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
-                  <Activity size={14} className="text-[#1A2766]" />
-                  <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">
-                    Period Summary {isExpanded ? '(All)' : '(Visible)'}
-                  </span>
-                </div>
-                <div className="p-5 space-y-3">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-500 font-medium">Opening Balance</span>
-                    {openingPresentation.isCredit ? (
-                      <div className="text-right">
-                        <div className="font-semibold text-emerald-600 tabular-nums">{openingPresentation.amount}</div>
-                        <div className="text-[9px] font-bold text-emerald-500 uppercase tracking-wide mt-0.5">Advance / Credit</div>
-                      </div>
-                    ) : (
-                      <span className="font-semibold text-gray-900 tabular-nums">{openingPresentation.amount}</span>
-                    )}
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-500 font-medium">Total Debit</span>
-                    <span className="font-semibold text-blue-700 tabular-nums">{fmt(totalDebitAmount)}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-500 font-medium">Total Credit</span>
-                    <span className="font-semibold text-emerald-600 tabular-nums">− {fmt(totalCreditAmount)}</span>
-                  </div>
-                  <div className="pt-3 border-t border-gray-100 flex justify-between items-center">
-                    <span className="text-gray-900 font-bold uppercase text-xs tracking-wider">Closing Balance</span>
-                    <div className="text-right">
-                      <div className={`text-lg font-extrabold tabular-nums ${
-                        Math.abs(dynamicClosingBalance) < 0.01 ? 'text-gray-500' :
-                        dynamicClosingBalance > 0 ? 'text-rose-600' : 'text-emerald-600'
-                      }`}>
-                        {fmtBalance(dynamicClosingBalance)}
-                      </div>
-                    </div>
-                  </div>
-                  {Object.keys(paymentBreakdown).length > 0 && (
-                    <div className="pt-3 border-t border-gray-100">
-                      <div className="text-[10px] uppercase text-gray-400 font-bold mb-2">Payment Breakdown</div>
-                      <div className="space-y-1.5">
-                        {Object.entries(paymentBreakdown).map(([mode, amt]) => (
-                          <div key={mode} className="flex justify-between items-center text-xs">
-                            <span className="text-gray-500">{mode}</span>
-                            <span className="font-medium text-gray-700 tabular-nums">{fmt(amt as number)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Unpaid Invoices */}
-              {s.unpaidInvoices && s.unpaidInvoices.length > 0 ? (
-                <div className="bg-white rounded-xl border border-rose-100 shadow-sm overflow-hidden">
-                  <div className="px-5 py-3 border-b border-rose-100 bg-rose-50/50 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle size={14} className="text-rose-600" />
-                      <span className="text-xs font-bold text-gray-900 uppercase tracking-wide">
-                        Outstanding Invoices
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {s.unpaidInvoices.length > 0 && (
-                        <span className="text-[10px] font-bold text-rose-600 border border-rose-200 px-2 py-0.5 rounded-md bg-white">
-                          Oldest Due: {Math.max(...s.unpaidInvoices.map((inv: any) => Math.floor((Date.now() - new Date(inv.invoiceDate).getTime()) / (1000 * 60 * 60 * 24))))}d
-                        </span>
-                      )}
-                      <span className="bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                        {s.unpaidInvoices.length} Due
-                      </span>
-                    </div>
-                  </div>
-                  
-                  {/* Card Table Header */}
-                  <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                    <div className="col-span-4">Invoice</div>
-                    <div className="col-span-3 text-right">Value</div>
-                    <div className="col-span-3 text-right">Pending</div>
-                    <div className="col-span-2 text-right">Age</div>
-                  </div>
-
-                  <div className="divide-y divide-gray-50">
-                    {statementMode === 'group' ? (
-                      Object.entries(
-                        s.unpaidInvoices.reduce((acc: any, inv: any) => {
-                          const firmId = inv.firmId || 'Unknown';
-                          if (!acc[firmId]) acc[firmId] = { firmName: inv.firmName, invoices: [] };
-                          acc[firmId].invoices.push(inv);
-                          return acc;
-                        }, {})
-                      ).map(([firmId, data]: [string, any]) => {
-                        const { firmName, invoices } = data;
-                        const totalOut = invoices.reduce((sum: number, inv: any) => sum + inv.balance, 0);
-                        const count = invoices.length;
-                        const oldest = Math.max(...invoices.map((inv: any) => Math.floor((Date.now() - new Date(inv.invoiceDate).getTime()) / (1000 * 60 * 60 * 24))));
-                        const fc = firmColors[firmId] || { bg: 'bg-gray-50', text: 'text-gray-800', border: 'border-gray-200' };
-                        
-                        return (
-                          <details key={firmId} open className="group/details">
-                            <summary className={`flex justify-between items-center px-4 py-2.5 cursor-pointer list-none border-y border-white/50 hover:opacity-80 transition-opacity ${fc.bg}`}>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-[9px] group-open/details:rotate-90 transition-transform ${fc.text}`}>▶</span>
-                                <span className={`text-[11px] font-bold uppercase tracking-wide ${fc.text}`}>{firmName}</span>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <span className="text-[10px] text-gray-500 font-semibold hidden md:inline">{count} Invoices</span>
-                                <span className="text-[10px] text-rose-500 font-semibold hidden md:inline">Oldest: {oldest}d</span>
-                                <span className="text-[11px] text-gray-900 font-bold tabular-nums">{fmt(totalOut)}</span>
-                              </div>
-                            </summary>
-                            <div className="divide-y divide-gray-50 bg-white">
-                              {invoices.map((inv: any) => {
-                                const pendingDays = Math.floor((Date.now() - new Date(inv.invoiceDate).getTime()) / (1000 * 60 * 60 * 24));
-                                let pillClass = "bg-gray-100 text-gray-600";
-                                if (pendingDays > 60) pillClass = "bg-orange-100 text-orange-700 border border-orange-200/60";
-                                else if (pendingDays > 30) pillClass = "bg-amber-50 text-amber-700 border border-amber-200/60";
-                                return (
-                                  <div key={inv.invoiceId} className="flex flex-col md:grid md:grid-cols-12 gap-2 px-4 py-3 md:py-2.5 items-start md:items-center hover:bg-blue-50/30 transition-colors pl-8">
-                                    <div className="flex justify-between items-start md:block w-full md:w-auto md:col-span-4">
-                                      <div>
-                                        <span className="text-[11px] font-bold text-blue-700">{inv.invoiceNumber}</span>
-                                        <div className="text-[9px] text-gray-400 mt-0.5">{fmtDate(inv.invoiceDate)}</div>
-                                      </div>
-                                    </div>
-                                    <div className="flex justify-between md:block w-full md:w-auto md:col-span-3 md:text-right text-[11px] text-gray-500 tabular-nums">
-                                      <span>{fmt(inv.total)}</span>
-                                    </div>
-                                    <div className="flex justify-between md:block w-full md:w-auto md:col-span-3 md:text-right text-[11px] font-bold text-rose-600 tabular-nums">
-                                      <span>{fmt(inv.balance)}</span>
-                                    </div>
-                                    <div className="hidden md:flex md:col-span-2 justify-end">
-                                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${pillClass}`}>{pendingDays}d</span>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </details>
-                        );
-                      })
-                    ) : (
-                      s.unpaidInvoices.slice(0, 8).map((inv: any) => {
-                        const pendingDays = Math.floor((Date.now() - new Date(inv.invoiceDate).getTime()) / (1000 * 60 * 60 * 24));
-                        
-                        let pillClass = "bg-gray-100 text-gray-600";
-                        if (pendingDays > 60) pillClass = "bg-orange-100 text-orange-700 border border-orange-200/60";
-                        else if (pendingDays > 30) pillClass = "bg-amber-50 text-amber-700 border border-amber-200/60";
-
-                        return (
-                          <div key={inv.invoiceId} className="flex flex-col md:grid md:grid-cols-12 gap-2 px-4 py-3 md:py-2.5 items-start md:items-center hover:bg-gray-50/80 transition-colors border-b border-gray-50 md:border-none">
-                            <div className="flex justify-between items-start md:block w-full md:w-auto md:col-span-4">
-                              <div>
-                                <a 
-                                  href={`https://books.zoho.in/app/60027595766#/invoices/${inv.invoiceId}`}
-                                  target="_blank" 
-                                  rel="noreferrer"
-                                  className="text-[11px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
-                                >
-                                  {inv.invoiceNumber}
-                                </a>
-                                <div className="text-[9px] text-gray-400 mt-0.5">{fmtDate(inv.invoiceDate)}</div>
-                              </div>
-                              <div className="md:hidden">
-                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${pillClass}`}>
-                                  {pendingDays}d
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex justify-between md:block w-full md:w-auto md:col-span-3 md:text-right text-[11px] text-gray-500 tabular-nums">
-                              <span className="md:hidden text-gray-400">Value</span>
-                              <span>{fmt(inv.total)}</span>
-                            </div>
-                            <div className="flex justify-between md:block w-full md:w-auto md:col-span-3 md:text-right text-[11px] font-bold text-rose-600 tabular-nums">
-                              <span className="md:hidden text-gray-400 font-medium">Pending</span>
-                              <span>{fmt(inv.balance)}</span>
-                            </div>
-                            <div className="hidden md:flex md:col-span-2 justify-end">
-                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${pillClass}`}>
-                                {pendingDays}d
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                    {s.unpaidInvoices.length > 8 && (
-                      <div className="px-4 py-2 bg-gray-50 text-center text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                        + {s.unpaidInvoices.length - 8} more
-                      </div>
-                    )}
-                    <div className="px-4 py-3 bg-rose-50/10 border-t border-rose-100 flex flex-col gap-1.5">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Total Pending</span>
-                        <span className="text-xs font-bold text-rose-600 tabular-nums">
-                          {fmt(s.unpaidInvoices.reduce((sum: number, i: any) => sum + i.balance, 0))}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Unused Credits</span>
-                        <span className="text-xs font-bold text-emerald-600 tabular-nums">
-                          − {fmt(s.customer.unusedCreditsReceivable || 0)}
-                        </span>
-                      </div>
-                      <div className="pt-2 mt-1 border-t border-gray-100 flex justify-between items-center">
-                        <span className="text-[11px] font-bold text-gray-900 uppercase tracking-wider">Net Receivable</span>
-                        <span className="text-sm font-extrabold text-gray-900 tabular-nums">
-                          {fmt((s.unpaidInvoices.reduce((sum: number, i: any) => sum + i.balance, 0)) - (s.customer.unusedCreditsReceivable || 0))}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden p-6 flex flex-col items-center justify-center gap-2">
-                  <Check size={20} className="text-emerald-500" />
-                  <span className="text-sm font-bold text-gray-600">No outstanding invoices</span>
-                </div>
-              )}
-
-              {/* API Usage KPI Card */}
-              <div className="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden print:hidden">
-                <div className="px-5 py-3 border-b border-blue-100 bg-blue-50/50 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Activity size={14} className="text-blue-700" />
-                    <span className="text-xs font-bold text-gray-900 uppercase tracking-wide">
-                      API Telemetry
-                    </span>
-                  </div>
-                  <div className="flex bg-gray-100/80 p-0.5 rounded-lg">
-                    {['today', '7d', 'month'].map(p => (
-                      <button
-                        key={p}
-                        onClick={() => setUsagePeriod(p as any)}
-                        className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-colors uppercase ${
-                          usagePeriod === p ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                      >
-                        {p === 'today' ? 'Today' : p === '7d' ? '7D' : 'Month'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                
-                <div className="p-5">
-                  {isFetchingUsage && !apiUsage ? (
-                    <div className="flex justify-center py-4"><RefreshCw size={16} className="animate-spin text-gray-400" /></div>
-                  ) : apiUsage ? (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-3 gap-3 text-center">
-                        <div>
-                          <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Calls</div>
-                          <div className="text-lg font-extrabold text-gray-900">{apiUsage.totalCalls}</div>
-                        </div>
-                        <div className="border-l border-gray-100">
-                          <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Users</div>
-                          <div className="text-lg font-extrabold text-blue-600">{apiUsage.activeUsers}</div>
-                        </div>
-                        <div className="border-l border-gray-100">
-                          <div className="text-[10px] uppercase text-gray-400 font-bold mb-0.5">Avg/User</div>
-                          <div className="text-lg font-extrabold text-gray-900">{apiUsage.avgPerUser}</div>
-                        </div>
-                      </div>
-                      
-                      <div className="pt-3 border-t border-gray-100">
-                        <div className="text-[9px] uppercase text-gray-400 font-bold mb-2 tracking-wider">Module Breakdown</div>
-                        <div className="space-y-1.5">
-                          {Object.entries(apiUsage.breakdown).map(([mod, count]) => (
-                            <div key={mod} className="flex justify-between items-center text-xs">
-                              <span className="text-gray-600 font-medium">{mod}</span>
-                              <span className="font-bold text-gray-800 tabular-nums">{count as number}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-center text-gray-400">Failed to load</div>
-                  )}
-                </div>
-              </div>
-
-            </div>{/* end secondary grid */}
-
-              {/* ── Debug accordion: full-width below secondary section ────── */}
-              <div className="rounded-xl border border-gray-200 overflow-hidden text-xs print:hidden">
-                <button
-                  onClick={() => setDebugOpen((v) => !v)}
-                  className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors text-gray-500 font-medium"
-                >
-                  <span className="flex items-center gap-2">
-                    <FileJson size={14} />
-                    Debug Info & API Telemetry
-                  </span>
-                  {debugOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </button>
-                {debugOpen && (
-                  <div className="bg-gray-900 border-t border-gray-200">
-                    <div className="p-4 bg-white grid grid-cols-2 gap-4 border-b border-gray-200">
-                      <div>
-                        <div className="text-[10px] text-gray-400 font-bold uppercase mb-1">API Calls</div>
-                        <div className="text-gray-700 font-bold">Total: {s.telemetry.totalApiCalls}</div>
-                        <div className="text-gray-500 mt-1">Invoices: {s.telemetry.invoiceApiCalls}, Payments: {s.telemetry.paymentApiCalls}</div>
-                        {s.isHybrid && <div className="text-gray-500">Bills: {s.telemetry.billApiCalls}</div>}
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-gray-400 font-bold uppercase mb-1">Items Fetched</div>
-                        <div className="text-gray-700 font-bold">Invoices: {s.telemetry.rawInvoicesFetched}</div>
-                        <div className="text-gray-500 mt-1">Valid: {s.telemetry.validInvoicesAfterFilter}</div>
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center px-4 py-2 border-b border-gray-800">
-                      <span className="text-gray-400 font-bold text-[10px] uppercase">Raw JSON Payload</span>
-                      <button
-                        onClick={copyRaw}
-                        className="flex items-center gap-1 text-gray-400 hover:text-white transition-colors"
-                      >
-                        <Copy size={12} /> Copy
-                      </button>
-                    </div>
-                    <pre className="p-4 text-[11px] text-emerald-400 font-mono overflow-auto max-h-[400px]">
-                      {JSON.stringify(statement?.raw ?? statement, null, 2)}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* ── Sticky Footer ────────────────────────────────────────────── */}
-            <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] print:hidden">
-              <div className="max-w-[96%] mx-auto px-4 h-16 flex items-center justify-center gap-12">
-                <div className="flex flex-col items-center justify-center">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Total Debit</span>
-                  <span className="text-[14px] font-extrabold text-slate-800 tabular-nums">{fmt(totalDebitAmount)}</span>
-                </div>
-                <div className="w-px h-8 bg-gray-200 hidden sm:block"></div>
-                <div className="flex flex-col items-center justify-center">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Opening Balance</span>
-                  <span className={`text-[14px] font-extrabold tabular-nums flex items-center justify-center ${dynamicOpeningBalance > 0 ? 'text-rose-600' : dynamicOpeningBalance < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
-                    <BalanceIndicator balance={dynamicOpeningBalance} />
-                    {fmtBalance(dynamicOpeningBalance)}
-                  </span>
-                </div>
-                <div className="w-px h-8 bg-gray-200 hidden sm:block"></div>
-                <div className="flex flex-col items-center justify-center">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Total Credit</span>
-                  <span className="text-[14px] font-extrabold text-emerald-600 tabular-nums">{fmt(totalCreditAmount)}</span>
-                </div>
-                <div className="w-px h-8 bg-gray-200 hidden sm:block"></div>
-                <div className="flex flex-col items-center justify-center">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-0.5">Final Balance</span>
-                  <span className={`text-[15px] font-black tabular-nums flex items-center justify-center ${dynamicClosingBalance > 0 ? 'text-rose-600' : dynamicClosingBalance < 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
-                    <BalanceIndicator balance={dynamicClosingBalance} />
-                    {fmtBalance(dynamicClosingBalance)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
+            </div>{/* end space-y-4 pb-20 */}
           </div>
         )}
       </div>
     );
   })()}
+        </main>
+
+        {/* ── Persistent Balance Calculator Side Panel ── */}
+        {isCalcOpen && (
+          <aside className="w-full lg:w-[380px] shrink-0 print:hidden sticky top-4 self-start">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
+              {/* Header */}
+              <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-purple-50/60">
+                <div className="flex items-center gap-2">
+                  <Calculator size={16} className="text-purple-700" />
+                  <h2 className="text-xs font-bold text-gray-900 uppercase tracking-wide">Balance Calculator</h2>
+                  {calcEntries.length > 0 && (
+                    <span className="bg-purple-600 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                      {calcEntries.length}
+                    </span>
+                  )}
+                </div>
+                <button 
+                  onClick={() => setIsCalcOpen(false)}
+                  className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+                  title="Close Calculator"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              
+              {/* Manual Entry Form */}
+              <div className="p-3 bg-white border-b border-gray-100 relative">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="number" 
+                      placeholder="Amount" 
+                      value={manualAmount}
+                      onChange={(e) => setManualAmount(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleManualAdd(true);
+                        else if (e.key === '+') { e.preventDefault(); handleManualAdd(true); }
+                        else if (e.key === '-') { e.preventDefault(); handleManualAdd(false); }
+                      }}
+                      className="flex-1 text-xs px-2.5 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <input 
+                    type="text" 
+                    placeholder="Description (optional)" 
+                    value={manualDesc}
+                    onChange={(e) => setManualDesc(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleManualAdd(true)}
+                    className="w-full text-xs px-2.5 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={() => handleManualAdd(true)} className="flex-1 bg-purple-100 hover:bg-purple-200 text-purple-800 text-xs font-bold py-1.5 rounded-md transition-colors flex items-center justify-center gap-1">
+                      <Plus size={12} /> Add
+                    </button>
+                    <button onClick={() => handleManualAdd(false)} className="flex-1 bg-orange-100 hover:bg-orange-200 text-orange-800 text-xs font-bold py-1.5 rounded-md transition-colors flex items-center justify-center gap-1">
+                      <Minus size={12} /> Deduct
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Entry List */}
+              <div className="overflow-y-auto p-3 bg-gray-50/40 max-h-[300px]">
+                {calcEntries.length === 0 ? (
+                  <div className="py-8 flex flex-col items-center justify-center text-center px-4">
+                    <div className="w-10 h-10 bg-purple-50 rounded-full flex items-center justify-center mb-2">
+                      <Calculator size={18} className="text-purple-300" />
+                    </div>
+                    <p className="text-xs font-semibold text-gray-700">Calculator is empty</p>
+                    <p className="text-[11px] text-gray-500 mt-1">Click the <Plus size={10} className="inline text-purple-500"/> button on any ledger row to add it here.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {calcEntries.map((e, idx) => {
+                      let colorClass = 'bg-gray-50 text-gray-600';
+                      let iconClass = 'text-gray-400';
+                      if (e.type === 'invoice') { colorClass = 'bg-blue-50/50 text-blue-700'; iconClass = 'text-blue-500'; }
+                      else if (e.type === 'payment') { colorClass = 'bg-emerald-50/50 text-emerald-700'; iconClass = 'text-emerald-500'; }
+                      else if (e.type === 'manual-add') { colorClass = 'bg-purple-50 text-purple-700'; iconClass = 'text-purple-500'; }
+                      else if (e.type === 'manual-deduct') { colorClass = 'bg-orange-50 text-orange-700'; iconClass = 'text-orange-500'; }
+                      
+                      return (
+                        <div key={idx} className={`flex items-center justify-between px-2.5 py-1.5 rounded-md group transition-colors ${colorClass}`}>
+                          <div className="flex items-center gap-2 overflow-hidden w-full">
+                            <div className={`shrink-0 font-bold text-xs ${iconClass}`}>
+                              {e.netEffect > 0 ? '+' : '-'}
+                            </div>
+                            <div className="truncate flex-1 min-w-0">
+                              <div className="text-[11px] font-bold truncate">{e.description}</div>
+                              <div className="text-[9px] uppercase tracking-wider opacity-60">{e.type.replace('-', ' ')}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                            <div className="text-xs font-bold tabular-nums">
+                              {fmt(e.amount)}
+                            </div>
+                            <button 
+                              onClick={() => removeCalcEntry(e.id)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-red-400 hover:text-red-600"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              
+              {/* Footer / Total */}
+              <div className="p-3 border-t border-gray-200 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                <div className="mb-2">
+                  <div className="flex justify-between items-center text-[10px] uppercase text-gray-400 font-bold mb-1">
+                    <span>Items: {calcEntries.length}</span>
+                    <span>Formula</span>
+                  </div>
+                  <div className="text-[10px] font-mono text-gray-600 bg-gray-50 p-1.5 rounded border border-gray-100 overflow-x-auto whitespace-nowrap scrollbar-hide">
+                    {calcEntries.length > 0 ? calcEntries.map(e => `${e.netEffect > 0 ? '+' : '-'}${e.amount}`).join(' ') : 'Empty'}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mb-3 border-t border-gray-100 pt-2">
+                  <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Result</span>
+                  <span className={`text-lg font-extrabold tabular-nums ${
+                    calcRunningTotal > 0 ? 'text-rose-600' :
+                    calcRunningTotal < 0 ? 'text-emerald-600' : 'text-gray-900'
+                  }`}>
+                    {fmtBalance(calcRunningTotal)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    onClick={copyCalcFormula}
+                    disabled={calcEntries.length === 0}
+                    className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Copy size={13} /> Copy Formula
+                  </button>
+                  <button 
+                    onClick={copyCalcTotal}
+                    disabled={calcEntries.length === 0}
+                    className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Copy size={13} /> Copy Total
+                  </button>
+                </div>
+                <div className="mt-2 text-center">
+                  <button 
+                    onClick={clearCalc}
+                    disabled={calcEntries.length === 0}
+                    className="text-[10px] font-bold text-gray-400 hover:text-red-500 transition-colors uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+            </div>
+          </aside>
+        )}
+      </div>
 
       {/* PDF export is generated programmatically via jspdf — no hidden DOM required */}
       </div>
-      
-      {/* ── Balance Calculator Panel ────────────────────────────────────────── */}
-      {isCalcOpen && (
-        <div className="w-[30%] bg-white border border-gray-200 shadow-sm z-10 flex flex-col sticky top-4 h-[calc(100vh-6.5rem)] rounded-xl overflow-hidden print:hidden shrink-0">
-            {/* Header */}
-            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-purple-50/50">
-              <div className="flex items-center gap-2">
-                <Calculator size={18} className="text-purple-700" />
-                <h2 className="text-sm font-bold text-gray-900">Balance Calculator</h2>
+
+      {/* ── PDF Preview Modal (2-Step PDF Generation) ──────────────────────── */}
+      {pdfPreviewModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 print:hidden" role="dialog" aria-modal="true">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity" 
+            onClick={closePdfPreviewModal} 
+          />
+
+          {/* Modal Content */}
+          <div className="relative bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col w-full max-w-4xl h-[90vh] overflow-hidden z-10">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                  <Download size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">Statement PDF Preview</h3>
+                  <p className="text-xs text-gray-500 font-mono mt-0.5">{pdfPreviewModal.fileName}</p>
+                </div>
               </div>
-              <button 
-                onClick={() => setIsCalcOpen(false)}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            
-            {/* Manual Entry Form */}
-            <div className="px-4 py-3 bg-white border-b border-gray-100 shadow-sm z-10 relative">
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <input 
-                    type="number" 
-                    placeholder="Amount" 
-                    value={manualAmount}
-                    onChange={(e) => setManualAmount(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleManualAdd(true);
-                      else if (e.key === '+') { e.preventDefault(); handleManualAdd(true); }
-                      else if (e.key === '-') { e.preventDefault(); handleManualAdd(false); }
-                    }}
-                    className="flex-1 text-sm px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
-                </div>
-                <input 
-                  type="text" 
-                  placeholder="Description (optional)" 
-                  value={manualDesc}
-                  onChange={(e) => setManualDesc(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleManualAdd(true)}
-                  className="w-full text-xs px-3 py-1.5 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-                <div className="flex gap-2 mt-1">
-                  <button onClick={() => handleManualAdd(true)} className="flex-1 bg-purple-100 hover:bg-purple-200 text-purple-800 text-xs font-bold py-1.5 rounded-md transition-colors flex items-center justify-center gap-1">
-                    <Plus size={12} /> Add
-                  </button>
-                  <button onClick={() => handleManualAdd(false)} className="flex-1 bg-orange-100 hover:bg-orange-200 text-orange-800 text-xs font-bold py-1.5 rounded-md transition-colors flex items-center justify-center gap-1">
-                    <Minus size={12} /> Deduct
-                  </button>
-                </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={closePdfPreviewModal}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  <X size={18} />
+                </button>
               </div>
             </div>
 
-            {/* Entry List */}
-            <div className="flex-1 overflow-y-auto p-4 bg-gray-50/30">
-              {calcEntries.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center px-6">
-                  <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center mb-3">
-                    <Calculator size={20} className="text-purple-300" />
-                  </div>
-                  <p className="text-sm font-semibold text-gray-700">Calculator is empty</p>
-                  <p className="text-xs text-gray-500 mt-1">Click the <Plus size={10} className="inline text-purple-500"/> button on any ledger row to add it here.</p>
-                </div>
+            {/* Modal Body: PDF Preview Frame */}
+            <div className="flex-1 w-full h-full bg-slate-100 relative">
+              {pdfPreviewModal.blobUrl ? (
+                <iframe
+                  src={pdfPreviewModal.blobUrl}
+                  title="PDF Preview"
+                  className="w-full h-full border-none"
+                />
               ) : (
-                <div className="space-y-0.5">
-                  {calcEntries.map((e, idx) => {
-                    let colorClass = 'bg-gray-50 text-gray-600';
-                    let iconClass = 'text-gray-400';
-                    if (e.type === 'invoice') { colorClass = 'bg-blue-50/50 text-blue-700'; iconClass = 'text-blue-500'; }
-                    else if (e.type === 'payment') { colorClass = 'bg-emerald-50/50 text-emerald-700'; iconClass = 'text-emerald-500'; }
-                    else if (e.type === 'manual-add') { colorClass = 'bg-purple-50 text-purple-700'; iconClass = 'text-purple-500'; }
-                    else if (e.type === 'manual-deduct') { colorClass = 'bg-orange-50 text-orange-700'; iconClass = 'text-orange-500'; }
-                    
-                    return (
-                      <div key={idx} className={`flex items-center justify-between px-3 py-2 rounded-md group transition-colors ${colorClass}`}>
-                        <div className="flex items-center gap-2 overflow-hidden w-full">
-                          <div className={`shrink-0 font-bold ${iconClass}`}>
-                            {e.netEffect > 0 ? '+' : '-'}
-                          </div>
-                          <div className="truncate flex-1">
-                            <div className="text-[11px] font-bold truncate">{e.description}</div>
-                            <div className="text-[9px] uppercase tracking-wider opacity-60">{e.type.replace('-', ' ')}</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0 ml-2">
-                          <div className="text-sm font-bold tabular-nums">
-                            {fmt(e.amount)}
-                          </div>
-                          <button 
-                            onClick={() => removeCalcEntry(e.id)}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-red-400 hover:text-red-600"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="w-full h-full flex items-center justify-center text-sm text-gray-500">
+                  <RefreshCw size={18} className="animate-spin mr-2" /> Loading preview...
                 </div>
               )}
             </div>
-            
-            {/* Footer / Total */}
-            <div className="p-4 border-t border-gray-200 bg-white shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-              <div className="mb-3">
-                <div className="flex justify-between items-center text-[10px] uppercase text-gray-400 font-bold mb-1">
-                  <span>Items: {calcEntries.length}</span>
-                  <span>Formula</span>
-                </div>
-                <div className="text-[11px] font-mono text-gray-600 bg-gray-50 p-2 rounded border border-gray-100 overflow-x-auto whitespace-nowrap scrollbar-hide">
-                  {calcEntries.length > 0 ? calcEntries.map(e => `${e.netEffect > 0 ? '+' : '-'}${e.amount}`).join(' ') : 'Empty'}
-                </div>
-              </div>
-              <div className="flex items-center justify-between mb-4 border-t border-gray-100 pt-3">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Result</span>
-                <span className={`text-2xl font-extrabold tabular-nums ${
-                  calcRunningTotal > 0 ? 'text-rose-600' :
-                  calcRunningTotal < 0 ? 'text-emerald-600' : 'text-gray-900'
-                }`}>
-                  {fmtBalance(calcRunningTotal)}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button 
-                  onClick={copyCalcFormula}
-                  disabled={calcEntries.length === 0}
-                  className="flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[11px] font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between text-xs text-gray-500">
+              <span>Review the generated statement pages above before saving to your device.</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={closePdfPreviewModal}
+                  className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 font-semibold rounded-md hover:bg-gray-100 transition-colors"
                 >
-                  <Copy size={14} /> Copy Formula
+                  Close
                 </button>
-                <button 
-                  onClick={copyCalcTotal}
-                  disabled={calcEntries.length === 0}
-                  className="flex items-center justify-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                <button
+                  onClick={confirmPdfDownload}
+                  className="px-4 py-1.5 bg-emerald-600 text-white font-bold rounded-md hover:bg-emerald-700 transition-colors inline-flex items-center gap-1.5"
                 >
-                  <Copy size={14} /> Copy Total
-                </button>
-              </div>
-              <div className="mt-3 text-center">
-                <button 
-                  onClick={clearCalc}
-                  disabled={calcEntries.length === 0}
-                  className="text-[10px] font-bold text-gray-400 hover:text-red-500 transition-colors uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Clear All
+                  <Download size={13} />
+                  Download PDF
                 </button>
               </div>
             </div>
           </div>
+        </div>
       )}
     </div>
   );

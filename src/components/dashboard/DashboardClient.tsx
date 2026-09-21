@@ -227,7 +227,7 @@ export default function DashboardClient({ userName, session }: DashboardClientPr
   }, [handleRefresh]);
 
   return (
-    <div className="w-full h-[calc(100vh-56px)] overflow-hidden flex flex-col gap-2 lg:gap-2.5 px-4 sm:px-6 py-2 min-h-0">
+    <div className="w-full h-[calc(100vh-72px)] overflow-hidden flex flex-col justify-between gap-2 lg:gap-2.5 min-h-0">
       {/* 1. PERSISTENT TOP FRAME */}
       <div className="flex flex-col gap-2 shrink-0">
         {/* A. Header: Eyebrow Greeting + User Name + Subtle Last Updated & Refresh */}

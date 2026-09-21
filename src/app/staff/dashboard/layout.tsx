@@ -35,7 +35,7 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
         </div>
       </header>
 
-      <main className="flex-1 w-full flex flex-col print:p-0 print:m-0 print:max-w-none">
+      <main className="flex-1 w-full px-4 sm:px-6 py-2 flex flex-col print:p-0 print:m-0 print:max-w-none">
         {children}
       </main>
     </div>

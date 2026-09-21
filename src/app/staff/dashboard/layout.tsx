@@ -2,9 +2,9 @@ import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { LogOut, Home, ClipboardList, History, Box, Settings, MapPin, Truck, FileText, Sun, MessageSquare, BookOpen, Users } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import GlobalDispatchNotifier from '@/components/GlobalDispatchNotifier';
+import StaffTopNav from '@/components/dashboard/StaffTopNav';
 
 export default async function StaffDashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -21,7 +21,7 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
       <Toaster position="top-right" />
       <GlobalDispatchNotifier />
       <header className="print:hidden sticky top-0 z-50 bg-gradient-to-r from-[#1A2766] via-[#1f3180] to-[#AE1B1E] shadow-lg">
-        <div className="max-w-[96%] mx-auto px-4 h-14 flex items-center justify-between gap-4">
+        <div className="w-full px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
           {/* Logo */}
           <Link href="/staff/dashboard" className="flex items-center gap-2 flex-shrink-0" title={session.name || 'Staff'}>
             <Image src="/logo.svg" alt="Kamna Traders" width={100} height={40} className="object-contain brightness-0 invert h-9 w-auto" priority />
@@ -30,58 +30,12 @@ export default async function StaffDashboardLayout({ children }: { children: Rea
             </span>
           </Link>
 
-          {/* Nav */}
-          <nav className="flex items-center gap-4 text-sm text-white/80 flex-shrink-0">
-            <Link href="/staff/dashboard" className="flex items-center gap-1.5 hover:text-white transition-colors">
-              <Home size={16} /><span className="hidden md:inline text-xs">Cart</span>
-            </Link>
-            {(session.accountsAccess || session.role === 'ADMIN') && (
-              <Link href="/staff/dashboard/catalog-pricing" className="flex items-center gap-1.5 hover:text-white transition-colors">
-                <BookOpen size={16} /><span className="hidden md:inline text-xs">Catalog & Pricing</span>
-              </Link>
-            )}
-            <Link href="/staff/dashboard/operations" className="flex items-center gap-1.5 hover:text-white transition-colors">
-              <Box size={16} /><span className="hidden md:inline text-xs">Operations</span>
-            </Link>
-            {(session.accounts_customer_statement || session.accounts_transactions || session.accounts_summary_view || session.manage_payments_view_own || session.manage_payments_view_all || session.role === 'ADMIN') && (
-              <Link href="/staff/dashboard/accounts" className="flex items-center gap-1.5 hover:text-white transition-colors">
-                <FileText size={16} /><span className="hidden md:inline text-xs">Accounts</span>
-              </Link>
-            )}
-            {(session.hr_attendance_processor || session.role === 'ADMIN') && (
-              <Link href="/staff/dashboard/hr" className="flex items-center gap-1.5 hover:text-white transition-colors">
-                <Users size={16} /><span className="hidden md:inline text-xs">HR</span>
-              </Link>
-            )}
-            {session.solar_orders_view && (
-              <Link href="/staff/dashboard/solar-orders" className="flex items-center gap-1.5 hover:text-white transition-colors">
-                <Sun size={16} /><span className="hidden md:inline text-xs">Solar Orders</span>
-              </Link>
-            )}
-            {session.communications_view && (
-              <Link href="/staff/dashboard/communications" className="flex items-center gap-1.5 hover:text-white transition-colors">
-                <MessageSquare size={16} /><span className="hidden md:inline text-xs">Communications</span>
-              </Link>
-            )}
-            {(session.dispatch_view || session.role === 'ADMIN') && (
-              <Link href="/staff/dashboard/dispatch" className="flex items-center gap-1.5 hover:text-white transition-colors">
-                <Truck size={16} /><span className="hidden md:inline text-xs">Dispatch</span>
-              </Link>
-            )}
-
-            <Link href="/staff/settings" className="flex items-center gap-1.5 hover:text-white transition-colors">
-              <Settings size={16} /><span className="hidden md:inline text-xs">Settings</span>
-            </Link>
-            <form action="/api/auth/logout" method="POST">
-              <button type="submit" className="flex items-center gap-1.5 text-red-300 hover:text-white transition-colors">
-                <LogOut size={16} /><span className="hidden md:inline text-xs">Logout</span>
-              </button>
-            </form>
-          </nav>
+          {/* Top Navigation */}
+          <StaffTopNav session={session} />
         </div>
       </header>
 
-      <main className="flex-1 max-w-[96%] mx-auto w-full px-2 py-3 print:p-0 print:m-0 print:max-w-none">
+      <main className="flex-1 w-full px-4 sm:px-6 py-2 flex flex-col min-h-0 print:p-0 print:m-0 print:max-w-none">
         {children}
       </main>
     </div>

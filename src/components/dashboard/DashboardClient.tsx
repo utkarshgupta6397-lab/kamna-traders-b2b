@@ -323,7 +323,7 @@ export default function DashboardClient({ userName, session }: DashboardClientPr
       </main>
 
       {/* 3. PERSISTENT STICKY BOTTOM FOOTER: PROMINENT MOTIVATIONAL QUOTE */}
-      <footer aria-label="Today's Motivation" className="shrink-0 w-full pt-1.5 mt-auto">
+      <footer aria-label="Today's Motivation" className="shrink-0 w-auto -mx-4 sm:-mx-6 -mb-2 mt-auto">
         <MotivationalQuoteBanner />
       </footer>
     </div>

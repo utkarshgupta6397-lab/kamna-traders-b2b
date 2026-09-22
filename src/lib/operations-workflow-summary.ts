@@ -60,6 +60,7 @@ export interface OperationsCellInvoiceItem {
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /**
  * Authoritative Post-Dispatch Workflow Predicates (reconciles 100% with Post-Dispatch page):
@@ -162,7 +163,8 @@ export function getIstOperationsDateBuckets(referenceDate: Date = new Date()): O
     const istDayObj = new Date(startUtc.getTime() + istOffsetMs);
     const dayNum = istDayObj.getUTCDate();
     const monthStr = MONTH_NAMES[istDayObj.getUTCMonth()];
-    const label = `${dayNum} ${monthStr}`;
+    const weekdayStr = WEEKDAY_NAMES[istDayObj.getUTCDay()];
+    const label = `${weekdayStr}, ${dayNum} ${monthStr}`;
     const dateKey = `${istDayObj.getUTCFullYear()}-${String(istDayObj.getUTCMonth() + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
 
     days.push({
@@ -174,13 +176,16 @@ export function getIstOperationsDateBuckets(referenceDate: Date = new Date()): O
     });
   }
 
-  // 8th bucket: Before [Day -6]
+  // 8th bucket: Before [Day -6] (e.g. Before 16 Sep - older than 7 days)
   const oldestIndividualDay = days[6];
+  const oldestIstObj = new Date(oldestIndividualDay.start.getTime() + istOffsetMs);
+  const oldestDayNum = oldestIstObj.getUTCDate();
+  const oldestMonthStr = MONTH_NAMES[oldestIstObj.getUTCMonth()];
   const beforeStart = new Date(0);
   const beforeEnd = new Date(oldestIndividualDay.start.getTime() - 1);
   const beforeBucket: OperationsDateBucket = {
     key: 'before',
-    label: `Before ${oldestIndividualDay.label}`,
+    label: `Before ${oldestDayNum} ${oldestMonthStr}`,
     isToday: false,
     start: beforeStart,
     end: beforeEnd,
@@ -409,6 +414,11 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
   for (const name of finalWarehouseKeys) {
     const acc = whMap.get(name)!;
 
+    // Filter out inactive warehouses: only include warehouses with at least 1 pending invoice
+    if (acc.distinctInvoices.size === 0) {
+      continue;
+    }
+
     const totalPendingByDate: Record<string, number> = {};
     for (const b of buckets) {
       totalPendingByDate[b.key] = acc.distinctInvoicesByDate[b.key].size;
@@ -459,7 +469,9 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
   return {
     dateBuckets: buckets.map((b) => ({ key: b.key, label: b.label, isToday: b.isToday })),
     warehouses: warehouseRows,
-    availableWarehouses: finalWarehouseKeys.filter((w) => w !== 'Unassigned'),
+    availableWarehouses: finalWarehouseKeys.filter(
+      (w) => w !== 'Unassigned' && (whMap.get(w)?.distinctInvoices.size || 0) > 0
+    ),
     grandTotal,
     totals: {
       receivingPending: totalR,

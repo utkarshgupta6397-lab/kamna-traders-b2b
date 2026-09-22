@@ -174,8 +174,8 @@ export function getIst9DayRange() {
 export async function getPostDispatchDashboardSummary(): Promise<PostDispatchDashboardSummary> {
   const { allDays, start16Days, todayEnd } = getIst16DayRange();
 
-  // Authoritative SQL aggregation using PostDispatchInvoice with erpStatus = 'Active'
-  // and grouping by date in Asia/Kolkata timezone, alongside pending stock approvals count
+  // Authoritative SQL aggregation using PostDispatchInvoice (Active and valid Archived invoices)
+  // excluding void and draft invoices, grouped by date in Asia/Kolkata timezone
   const [rows, pendingStockApprovals] = await Promise.all([
     prisma.$queryRaw<Array<{ ist_date: string; count: number; total_sales: number }>>`
       SELECT 
@@ -183,7 +183,8 @@ export async function getPostDispatchDashboardSummary(): Promise<PostDispatchDas
         COUNT(*)::int as count,
         COALESCE(SUM("total"), 0)::float as total_sales
       FROM "PostDispatchInvoice"
-      WHERE "erpStatus" = 'Active'
+      WHERE LOWER("zohoStatus") NOT IN ('void', 'draft')
+        AND ("erpSubStatus" IS NULL OR LOWER("erpSubStatus") != 'void')
         AND "zohoCreatedTime" >= ${start16Days}
         AND "zohoCreatedTime" <= ${todayEnd}
       GROUP BY ist_date

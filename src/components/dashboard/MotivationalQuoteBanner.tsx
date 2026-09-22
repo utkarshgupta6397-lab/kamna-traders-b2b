@@ -34,7 +34,7 @@ export default function MotivationalQuoteBanner() {
   const isGita = quoteData.displayMode === 'GITA';
 
   return (
-    <div className="relative rounded-xl border border-blue-100/70 bg-gradient-to-r from-blue-50/50 via-white to-indigo-50/40 px-6 py-2.5 sm:py-3 shadow-xs shrink-0 text-center overflow-hidden">
+    <div className="relative w-full rounded-none border-t border-b-0 border-x-0 border-blue-100/70 bg-gradient-to-r from-blue-50/50 via-white to-indigo-50/40 px-6 py-2.5 sm:py-3 shadow-xs shrink-0 text-center overflow-hidden">
       {/* Centered Compact Quote Composition Container with readable max-width */}
       <div className="max-w-[1000px] mx-auto flex flex-col items-center justify-center">
         <AnimatePresence mode="wait">

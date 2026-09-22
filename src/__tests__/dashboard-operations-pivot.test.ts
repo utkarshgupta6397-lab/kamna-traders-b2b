@@ -76,14 +76,23 @@ async function runPivotTests() {
       `Bucket ${i} (${allBuckets[i].label}) must be more recent than Bucket ${i + 1} (${allBuckets[i + 1].label})`
     );
   }
-  console.log('  ✓ PASS: Latest date appears first, followed by previous 6 individual days and Before bucket');
+  // Verify weekday + date label format (e.g., 'Tue, 22 Sep')
+  assert.ok(
+    /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{1,2} [A-Z][a-z]{2}$/.test(buckets[0].label),
+    `Bucket 0 label "${buckets[0].label}" must match "Weekday, DD Month" format`
+  );
+  assert.ok(
+    buckets[7].label.startsWith('Before '),
+    `Bucket 7 label "${buckets[7].label}" must start with "Before "`
+  );
+  console.log('  ✓ PASS: Latest date appears first, with weekday + date formatting and clean Before bucket');
 
   // ─── TEST 3: Scalable Warehouse Structure & Grand Totals ───────────────
   console.log('\n--- TEST 3: Scalable Warehouse Rows & Grand Total Sums ---');
-  console.log(`  Warehouses Count: ${summary.warehouses.length}`);
+  console.log(`  Active Warehouses Count: ${summary.warehouses.length}`);
   console.log('  Available Warehouses:', summary.availableWarehouses);
 
-  assert.ok(summary.warehouses.length >= 2, 'Must dynamically support multiple warehouses');
+  assert.ok(summary.warehouses.length >= 1, 'Must dynamically support active warehouses');
 
   let sumWarehouseDistinctPending = 0;
   let sumWarehouseReceiving = 0;
@@ -91,6 +100,10 @@ async function runPivotTests() {
   let sumWarehouseInventory = 0;
 
   for (const wh of summary.warehouses) {
+    assert.ok(
+      wh.totalPending > 0,
+      `Warehouse "${wh.name}" has totalPending = 0 but should be excluded from active rows`
+    );
     sumWarehouseDistinctPending += wh.totalPending;
     sumWarehouseReceiving += wh.receiving.total;
     sumWarehouseCheck += wh.check.total;

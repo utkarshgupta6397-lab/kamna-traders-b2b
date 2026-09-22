@@ -432,11 +432,6 @@ export default function BusinessPerformanceCard({
           </>
         )}
       </div>
-
-      {/* 4. Footer */}
-      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 shrink-0">
-        <span>Continuous aggregation</span>
-      </div>
     </div>
   );
 }

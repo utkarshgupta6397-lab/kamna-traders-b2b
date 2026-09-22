@@ -10,6 +10,7 @@ import {
 import Link from 'next/link';
 import WipWidget from '../WipWidget';
 import BusinessPerformanceCard from '../BusinessPerformanceCard';
+import OrderStatusCard from '../OrderStatusCard';
 import { DailySalesTrendPoint } from '@/lib/post-dispatch-summary';
 
 interface OverviewSectionProps {
@@ -31,7 +32,7 @@ export default function OverviewSection({
       {/* ROW 1: PRIMARY OVERVIEW ANALYTICS (3 CARDS)                               */}
       {/* ========================================================================= */}
 
-      {/* 1. Business Performance Card (Authoritative 7-day Sales Trend + 3-day Moving Average) */}
+      {/* 1. Business Performance Card (Authoritative 10-day Sales Trend + 7-day Moving Average) */}
       <BusinessPerformanceCard
         data={salesTrend}
         isLoading={isLoading}
@@ -39,28 +40,8 @@ export default function OverviewSection({
         onRetry={onRetry}
       />
 
-      {/* 2. Order Status Distribution Card */}
-      <div className="bg-white rounded-xl p-3.5 border border-slate-200/90 shadow-2xs flex flex-col justify-between overflow-hidden h-full min-h-0">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-100 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
-              <PieChart size={14} />
-            </div>
-            <div>
-              <h2 className="text-xs font-bold text-slate-800">Order Status</h2>
-              <p className="text-[10px] text-slate-400">Pipeline distribution</p>
-            </div>
-          </div>
-          <span className="text-[10px] font-medium text-slate-400">All channels</span>
-        </div>
-
-        {/* Large translucent WIP Watermark + subtle icon */}
-        <WipWidget size="md" />
-
-        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 shrink-0">
-          <span>Real-time dispatch sync</span>
-        </div>
-      </div>
+      {/* 2. Order Status Card (Live Pre-Dispatch Active Queue) */}
+      <OrderStatusCard onRefreshParent={onRetry} />
 
       {/* 3. Inventory Status Summary Card */}
       <div className="bg-white rounded-xl p-3.5 border border-slate-200/90 shadow-2xs flex flex-col justify-between overflow-hidden h-full min-h-0">

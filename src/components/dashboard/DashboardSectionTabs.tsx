@@ -4,10 +4,8 @@ import React from 'react';
 import {
   LayoutDashboard,
   TrendingUp,
-  Package,
   Box,
   FileText,
-  History,
   LucideIcon,
 } from 'lucide-react';
 import QuickActions from './QuickActions';
@@ -15,10 +13,8 @@ import QuickActions from './QuickActions';
 export type DashboardSectionId =
   | 'overview'
   | 'sales'
-  | 'inventory'
   | 'operations'
-  | 'accounts'
-  | 'activity';
+  | 'accounts';
 
 interface SectionDef {
   id: DashboardSectionId;
@@ -29,10 +25,8 @@ interface SectionDef {
 export const DASHBOARD_SECTIONS: SectionDef[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'sales', label: 'Sales', icon: TrendingUp },
-  { id: 'inventory', label: 'Inventory', icon: Package },
   { id: 'operations', label: 'Operations', icon: Box },
   { id: 'accounts', label: 'Accounts', icon: FileText },
-  { id: 'activity', label: 'Activity', icon: History },
 ];
 
 interface DashboardSectionTabsProps {

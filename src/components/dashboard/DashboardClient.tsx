@@ -7,10 +7,8 @@ import DashboardKpiGrid, { DashboardKpiSummaryData } from './DashboardKpiGrid';
 import DashboardSectionTabs, { DashboardSectionId } from './DashboardSectionTabs';
 import OverviewSection from './sections/OverviewSection';
 import SalesSection from './sections/SalesSection';
-import InventorySection from './sections/InventorySection';
 import OperationsSection from './sections/OperationsSection';
 import AccountsSection from './sections/AccountsSection';
-import ActivitySection from './sections/ActivitySection';
 import MotivationalQuoteBanner from './MotivationalQuoteBanner';
 import {
   StaffSessionUser,
@@ -213,6 +211,7 @@ export default function DashboardClient({ userName, session }: DashboardClientPr
           setKpiData({
             totalSalesToday: Number(json.totalSalesToday || 0),
             totalInvoiceToday: Number(json.totalInvoiceToday || 0),
+            pendingStockApprovals: Number(json.pendingStockApprovals || 0),
           });
           setSalesTrend(Array.isArray(json.salesTrend) ? json.salesTrend : []);
           setIsKpiError(false);
@@ -317,10 +316,8 @@ export default function DashboardClient({ userName, session }: DashboardClientPr
               />
             )}
             {activeSection === 'sales' && <SalesSection />}
-            {activeSection === 'inventory' && <InventorySection />}
             {activeSection === 'operations' && <OperationsSection />}
             {activeSection === 'accounts' && <AccountsSection />}
-            {activeSection === 'activity' && <ActivitySection />}
           </motion.div>
         </AnimatePresence>
       </main>

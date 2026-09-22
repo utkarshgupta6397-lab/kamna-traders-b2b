@@ -25,6 +25,7 @@ export async function GET() {
       success: true,
       totalSalesToday: summary.totalSalesToday,
       totalInvoiceToday: summary.totalInvoiceToday,
+      pendingStockApprovals: summary.pendingStockApprovals,
       dateRange: summary.dateRange,
       salesTrend: summary.salesTrend,
     });

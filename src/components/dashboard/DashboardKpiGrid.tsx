@@ -2,7 +2,7 @@ import React from 'react';
 import {
   IndianRupee,
   ShoppingBag,
-  CreditCard,
+  ClipboardCheck,
   Box,
   AlertTriangle,
   Activity,
@@ -12,6 +12,7 @@ import DashboardKpiCard from './DashboardKpiCard';
 export interface DashboardKpiSummaryData {
   totalSalesToday: number;
   totalInvoiceToday: number;
+  pendingStockApprovals?: number | null;
 }
 
 export interface DashboardKpiGridProps {
@@ -37,6 +38,11 @@ export default function DashboardKpiGrid({
   const formattedInvoices =
     data !== null && data !== undefined
       ? data.totalInvoiceToday.toLocaleString('en-IN')
+      : null;
+
+  const formattedStockApprovals =
+    data !== null && data !== undefined && data.pendingStockApprovals !== undefined && data.pendingStockApprovals !== null
+      ? data.pendingStockApprovals.toLocaleString('en-IN')
       : null;
 
   return (
@@ -65,13 +71,16 @@ export default function DashboardKpiGrid({
         isWip={false}
       />
 
-      {/* 3. WIP: Pending Payments */}
+      {/* 3. Real KPI: Pending Stock Approval Requests */}
       <DashboardKpiCard
-        title="PENDING PAYMENTS"
-        icon={CreditCard}
+        title="PENDING STOCK APPROVAL REQUESTS"
+        icon={ClipboardCheck}
         iconBgClass="bg-amber-50 border border-amber-100"
         iconColorClass="text-amber-600"
-        isWip={true}
+        value={formattedStockApprovals}
+        isLoading={isLoading}
+        isError={isError}
+        isWip={false}
       />
 
       {/* 4. WIP: Inventory Value */}

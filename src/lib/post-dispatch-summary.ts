@@ -18,6 +18,7 @@ export interface DailySalesTrendPoint {
 export interface PostDispatchDashboardSummary {
   totalSalesToday: number;
   totalInvoiceToday: number;
+  pendingStockApprovals: number;
   dateRange: {
     start: string;
     end: string;
@@ -174,19 +175,24 @@ export async function getPostDispatchDashboardSummary(): Promise<PostDispatchDas
   const { allDays, start16Days, todayEnd } = getIst16DayRange();
 
   // Authoritative SQL aggregation using PostDispatchInvoice with erpStatus = 'Active'
-  // and grouping by date in Asia/Kolkata timezone
-  const rows = await prisma.$queryRaw<Array<{ ist_date: string; count: number; total_sales: number }>>`
-    SELECT 
-      TO_CHAR("zohoCreatedTime" AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') as ist_date,
-      COUNT(*)::int as count,
-      COALESCE(SUM("total"), 0)::float as total_sales
-    FROM "PostDispatchInvoice"
-    WHERE "erpStatus" = 'Active'
-      AND "zohoCreatedTime" >= ${start16Days}
-      AND "zohoCreatedTime" <= ${todayEnd}
-    GROUP BY ist_date
-    ORDER BY ist_date ASC;
-  `;
+  // and grouping by date in Asia/Kolkata timezone, alongside pending stock approvals count
+  const [rows, pendingStockApprovals] = await Promise.all([
+    prisma.$queryRaw<Array<{ ist_date: string; count: number; total_sales: number }>>`
+      SELECT 
+        TO_CHAR("zohoCreatedTime" AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') as ist_date,
+        COUNT(*)::int as count,
+        COALESCE(SUM("total"), 0)::float as total_sales
+      FROM "PostDispatchInvoice"
+      WHERE "erpStatus" = 'Active'
+        AND "zohoCreatedTime" >= ${start16Days}
+        AND "zohoCreatedTime" <= ${todayEnd}
+      GROUP BY ist_date
+      ORDER BY ist_date ASC;
+    `,
+    prisma.stockDeductionAllocation.count({
+      where: { status: 'SUBMITTED_FOR_APPROVAL' },
+    }),
+  ]);
 
   const salesMap = new Map<string, { count: number; total: number }>();
   for (const r of rows) {
@@ -249,6 +255,7 @@ export async function getPostDispatchDashboardSummary(): Promise<PostDispatchDas
   return {
     totalSalesToday: todayItem.sales,
     totalInvoiceToday: todayItem.invoiceCount,
+    pendingStockApprovals,
     dateRange: todayRange,
     salesTrend: visibleTrend,
   };

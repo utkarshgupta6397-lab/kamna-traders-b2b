@@ -30,17 +30,16 @@ export function canAccessDashboardSection(
   switch (sectionId) {
     case 'overview':
     case 'sales':
-    case 'inventory':
-    case 'activity':
       // General staff workspaces accessible by default to all authenticated staff
       return true;
 
     case 'operations':
-      // From OperationsLayout: role === 'ADMIN' || canManageTransfers || dispatch_stock_approval_view
-      // If user has either operations privilege, they can view Operations workspace
+      // From OperationsLayout & Dispatch: role === 'ADMIN' || canManageTransfers || dispatch_stock_approval_view || dispatch_post_dispatch || dispatch_view
       return (
         !!session.canManageTransfers ||
-        !!session.dispatch_stock_approval_view
+        !!session.dispatch_stock_approval_view ||
+        !!session.dispatch_post_dispatch ||
+        !!session.dispatch_view
       );
 
     case 'accounts':
@@ -64,7 +63,7 @@ export function canAccessDashboardSection(
 /**
  * Returns the array of accessible Dashboard section IDs for a session,
  * strictly maintaining the canonical sequence:
- * Overview -> Sales -> Inventory -> Operations -> Accounts -> Activity
+ * Overview -> Sales -> Operations -> Accounts
  */
 export function getAccessibleDashboardSections(
   session?: StaffSessionUser | null

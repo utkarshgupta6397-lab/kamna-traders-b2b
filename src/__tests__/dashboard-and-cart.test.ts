@@ -182,11 +182,11 @@ console.log('  10. Settings        -> /staff/settings');
 // 4. Section Navigation Tests
 console.log('\n[Test Suite 4: Switchable Dashboard Sections]');
 
-assert.strictEqual(DASHBOARD_SECTIONS.length, 6, 'Must have exactly 6 switchable sections');
-const expectedSectionIds = ['overview', 'sales', 'inventory', 'operations', 'accounts', 'activity'];
+assert.strictEqual(DASHBOARD_SECTIONS.length, 4, 'Must have exactly 4 switchable sections');
+const expectedSectionIds = ['overview', 'sales', 'operations', 'accounts'];
 const actualSectionIds = DASHBOARD_SECTIONS.map((s) => s.id);
 assert.deepStrictEqual(actualSectionIds, expectedSectionIds);
-console.log('✓ PASS: All 6 switchable dashboard section tabs verified:');
+console.log('✓ PASS: All 4 switchable dashboard section tabs verified:');
 actualSectionIds.forEach((id, idx) => {
   console.log(`  ${idx + 1}. [${id}] - ${DASHBOARD_SECTIONS[idx].label}`);
 });
@@ -211,24 +211,24 @@ console.log('✓ PASS: Exactly 4 compact quick actions configured beside section
 // 6. Idle Auto-Rotation and Permission Gating Tests
 console.log('\n[Test Suite 6: Idle Section Auto-Rotation and Access Gating]');
 
-// Test A: Admin session has access to all 6 sections in exact canonical sequence
+// Test A: Admin session has access to all 4 sections in exact canonical sequence
 const adminSession = { role: 'ADMIN' };
 const adminAccessible = getAccessibleDashboardSections(adminSession);
 assert.deepStrictEqual(
   adminAccessible,
-  ['overview', 'sales', 'inventory', 'operations', 'accounts', 'activity'],
-  'Admin must have access to all 6 sections'
+  ['overview', 'sales', 'operations', 'accounts'],
+  'Admin must have access to all 4 sections'
 );
-console.log('✓ PASS: Admin session can access all 6 sections in canonical order');
+console.log('✓ PASS: Admin session can access all 4 sections in canonical order');
 
-// Test B: Rotation sequence advances correctly through all 6 sections and wraps around to Overview
+// Test B: Rotation sequence advances correctly through all 4 sections and wraps around to Overview
 let curr = 'overview' as any;
-const expectedCycle = ['sales', 'inventory', 'operations', 'accounts', 'activity', 'overview'];
+const expectedCycle = ['sales', 'operations', 'accounts', 'overview'];
 expectedCycle.forEach((expectedNext) => {
   curr = getNextRotatingSection(curr, adminAccessible);
   assert.strictEqual(curr, expectedNext, `Expected next section to be ${expectedNext}`);
 });
-console.log('✓ PASS: Canonical sequence rotates cleanly through Overview -> Sales -> Inventory -> Operations -> Accounts -> Activity -> Overview');
+console.log('✓ PASS: Canonical sequence rotates cleanly through Overview -> Sales -> Operations -> Accounts -> Overview');
 
 // Test C: User without Accounts permission skips Accounts section
 const nonAccountsSession = {
@@ -238,13 +238,13 @@ const nonAccountsSession = {
 const nonAccountsAccessible = getAccessibleDashboardSections(nonAccountsSession);
 assert.deepStrictEqual(
   nonAccountsAccessible,
-  ['overview', 'sales', 'inventory', 'operations', 'activity'],
+  ['overview', 'sales', 'operations'],
   'Must omit accounts'
 );
 assert.strictEqual(
   getNextRotatingSection('operations', nonAccountsAccessible),
-  'activity',
-  'Must skip accounts and advance straight from operations to activity'
+  'overview',
+  'Must wrap around to overview when accounts is omitted'
 );
 console.log('✓ PASS: Section rotation skips Accounts for users without accounts permissions');
 
@@ -256,13 +256,13 @@ const nonOpsSession = {
 const nonOpsAccessible = getAccessibleDashboardSections(nonOpsSession);
 assert.deepStrictEqual(
   nonOpsAccessible,
-  ['overview', 'sales', 'inventory', 'accounts', 'activity'],
+  ['overview', 'sales', 'accounts'],
   'Must omit operations'
 );
 assert.strictEqual(
-  getNextRotatingSection('inventory', nonOpsAccessible),
+  getNextRotatingSection('sales', nonOpsAccessible),
   'accounts',
-  'Must skip operations and advance straight from inventory to accounts'
+  'Must skip operations and advance straight from sales to accounts'
 );
 console.log('✓ PASS: Section rotation skips Operations for users without operations permissions');
 

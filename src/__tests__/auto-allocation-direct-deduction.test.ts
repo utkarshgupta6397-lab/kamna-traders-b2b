@@ -558,6 +558,197 @@ async function runAutoAllocationDirectDeductionTests() {
   assert(manualClass.classification === 'APPROVAL_REQUIRED', 'TEST 5.9b: Manual exploded allocation classifies as APPROVAL_REQUIRED because of explosion');
   assert(manualClass.deviationReasons.includes('ITEM_EXPLODED'), 'TEST 5.9c: Reason is ITEM_EXPLODED (not UOM)');
 
+  // --- TEST 6: Excess Quantity Approval & Inventory Protection ---
+  console.log('\n--- TEST 6: Excess Quantity Approval & Inventory Protection ---');
+
+  const testWhExcessId = 'WH_EXCESS_TEST';
+  const testSkuExcessId = 'SKU_EXCESS_TEST';
+  const testInvExcessId = `${testPrefix}inv_excess`;
+  const testLineExcessId = `${testPrefix}line_excess`;
+
+  await prisma.warehouse.upsert({
+    where: { id: testWhExcessId },
+    create: { id: testWhExcessId, name: 'Excess Test Warehouse', active: true, isSystemWarehouse: false, zohoLocationId: 'loc_excess_test' },
+    update: { active: true, isSystemWarehouse: false, zohoLocationId: 'loc_excess_test' },
+  });
+
+  await prisma.sku.upsert({
+    where: { id: testSkuExcessId },
+    create: { id: testSkuExcessId, name: 'Excess Test SKU', unit: 'Nos' },
+    update: { name: 'Excess Test SKU', unit: 'Nos' },
+  });
+
+  // Set warehouse inventory to 12 Nos
+  await prisma.warehouseInventory.upsert({
+    where: { warehouseId_skuId: { warehouseId: testWhExcessId, skuId: testSkuExcessId } },
+    create: { warehouseId: testWhExcessId, skuId: testSkuExcessId, qty: 12 },
+    update: { qty: 12 },
+  });
+
+  // Invoice line quantity is 11 Nos
+  await prisma.postDispatchInvoice.create({
+    data: {
+      id: testInvExcessId,
+      zohoInvoiceId: testInvExcessId,
+      invoiceNumber: 'INV-EXCESS-11-12',
+      customerName: 'Excess Test Customer',
+      erpStatus: 'Active',
+      zohoStatus: 'sent',
+      zohoCreatedTime: new Date(),
+      lines: {
+        create: [
+          {
+            id: testLineExcessId,
+            itemId: testSkuExcessId,
+            itemName: 'Excess Test SKU',
+            quantity: 11,
+            rate: 100,
+            amount: 1100,
+          },
+        ],
+      },
+    },
+  });
+
+  // 6.1: Requested deduction = 12, invoice qty = 11, inventory = 12
+  // Check stock validation succeeds (12 <= 12 available)
+  const alloc12 = [
+    { skuId: testSkuExcessId, skuName: 'Excess Test SKU', warehouseId: testWhExcessId, warehouseName: 'Excess Test Warehouse', qty: 12, uom: 'Nos' },
+  ];
+  const stockCheck12 = await validateAllocationsStock(prisma, alloc12);
+  assert(stockCheck12.valid === true, 'TEST 6.1a: Stock check succeeds for 12 units when 12 are in warehouse');
+
+  // Check classification is APPROVAL_REQUIRED with QUANTITY_EXCEEDS_EXPECTED
+  const class12 = classifyAllocation({
+    expectedSkuId: testSkuExcessId,
+    expectedWarehouseId: testWhExcessId,
+    expectedQty: 11,
+    allocations: alloc12,
+    isExploded: false,
+  });
+  assert(class12.classification === 'APPROVAL_REQUIRED', 'TEST 6.1b: 12 units against 11 invoice qty classifies as APPROVAL_REQUIRED');
+  assert(class12.deviationReasons.includes('QUANTITY_EXCEEDS_EXPECTED'), 'TEST 6.1c: Deviation reasons includes QUANTITY_EXCEEDS_EXPECTED');
+  assert(class12.allocatedQty === 12, 'TEST 6.1d: Allocated quantity is 12');
+
+  // 6.2: Insufficient stock check: Requested deduction = 13, invoice qty = 11, inventory = 12
+  const alloc13 = [
+    { skuId: testSkuExcessId, skuName: 'Excess Test SKU', warehouseId: testWhExcessId, warehouseName: 'Excess Test Warehouse', qty: 13, uom: 'Nos' },
+  ];
+  const stockCheck13 = await validateAllocationsStock(prisma, alloc13);
+  assert(stockCheck13.valid === false, 'TEST 6.2a: Stock check fails for 13 units when only 12 are available');
+  assert(stockCheck13.error?.includes('Insufficient stock') === true, 'TEST 6.2b: Returns clear Insufficient stock error message');
+
+  // 6.3: Another insufficient stock scenario: invoice qty 11, requested 11, inventory 10
+  await prisma.warehouseInventory.update({
+    where: { warehouseId_skuId: { warehouseId: testWhExcessId, skuId: testSkuExcessId } },
+    data: { qty: 10 },
+  });
+  const alloc11 = [
+    { skuId: testSkuExcessId, skuName: 'Excess Test SKU', warehouseId: testWhExcessId, warehouseName: 'Excess Test Warehouse', qty: 11, uom: 'Nos' },
+  ];
+  const stockCheck11 = await validateAllocationsStock(prisma, alloc11);
+  assert(stockCheck11.valid === false, 'TEST 6.3a: Stock check fails when warehouse inventory (10) < requested (11)');
+
+  // Restore inventory to 12
+  await prisma.warehouseInventory.update({
+    where: { warehouseId_skuId: { warehouseId: testWhExcessId, skuId: testSkuExcessId } },
+    data: { qty: 12 },
+  });
+
+  // 6.4: Direct deduction blocked for excess quantity
+  assert(class12.classification !== 'AUTO_APPROVED', 'TEST 6.4: Excess quantity allocation cannot be auto-deducted directly');
+
+  // 6.5: End-to-end lifecycle: Submission for approval -> Manager Approval -> Deduction of 12 units
+  const snapshot65 = {
+    allocations: alloc12,
+    isExploded: false,
+    expectedSkuId: testSkuExcessId,
+    expectedWarehouseId: testWhExcessId,
+    expectedQty: 11,
+    expectedUom: 'Nos',
+    classification: class12.classification,
+    deviationReasons: class12.deviationReasons,
+    snapshotAt: new Date().toISOString(),
+  };
+
+  const allocRecord6 = await prisma.stockDeductionAllocation.create({
+    data: {
+      invoiceId: testInvExcessId,
+      invoiceLineId: testLineExcessId,
+      expectedItemId: testSkuExcessId,
+      expectedItemName: 'Excess Test SKU',
+      expectedSkuId: testSkuExcessId,
+      expectedWarehouseId: testWhExcessId,
+      expectedQty: 11,
+      expectedUom: 'Nos',
+      allocationData: alloc12 as any,
+      isExploded: false,
+      status: 'SUBMITTED_FOR_APPROVAL',
+      classification: class12.classification,
+      deviationReasons: class12.deviationReasons,
+      submittedById: testUserId,
+      submittedByName: testUserName,
+      submittedAt: new Date(),
+      submittedSnapshot: snapshot65 as any,
+    },
+  });
+
+  assert(allocRecord6.status === 'SUBMITTED_FOR_APPROVAL', 'TEST 6.5a: Allocation successfully submitted for approval');
+
+  // Verify inventory is NOT yet deducted
+  const invBeforeApproval = await prisma.warehouseInventory.findUnique({
+    where: { warehouseId_skuId: { warehouseId: testWhExcessId, skuId: testSkuExcessId } },
+  });
+  assert(Number(invBeforeApproval?.qty) === 12, 'TEST 6.5b: Inventory remains untouched (12) prior to manager approval');
+
+  // 6.6: Manager executes approval -> Atomic deduction of all 12 units
+  const historyIds6 = await prisma.$transaction(async (tx) => {
+    return executeStockDeduction(tx, {
+      entries: alloc12.map(e => ({
+        skuId: e.skuId,
+        skuName: e.skuName,
+        warehouseId: e.warehouseId,
+        warehouseName: e.warehouseName,
+        qty: e.qty,
+        uom: e.uom,
+      })),
+      invoiceId: testInvExcessId,
+      invoiceNumber: 'INV-EXCESS-11-12',
+      invoiceLineId: testLineExcessId,
+      allocationId: allocRecord6.id,
+      userId: testUserId,
+      userName: testUserName,
+    });
+  });
+
+  await prisma.stockDeductionAllocation.update({
+    where: { id: allocRecord6.id },
+    data: {
+      status: 'DEDUCTED',
+      approvedById: testUserId,
+      approvedByName: testUserName,
+      approvedAt: new Date(),
+      deductedAt: new Date(),
+      deductedById: testUserId,
+      deductedByName: testUserName,
+      inventoryHistoryIds: historyIds6 as any,
+    },
+  });
+
+  assert(historyIds6.length === 1, 'TEST 6.6a: Exactly 1 InventoryHistory record created');
+
+  const invAfterApproval = await prisma.warehouseInventory.findUnique({
+    where: { warehouseId_skuId: { warehouseId: testWhExcessId, skuId: testSkuExcessId } },
+  });
+  assert(Number(invAfterApproval?.qty) === 0, 'TEST 6.6b: Inventory decremented by 12 (12 -> 0)');
+
+  const histRecord = await prisma.inventoryHistory.findUnique({
+    where: { id: historyIds6[0] },
+  });
+  assert(Number(histRecord?.qtyChange) === -12, 'TEST 6.6c: InventoryHistory qtyChange is -12');
+  assert(Number(histRecord?.beforeQty) === 12, 'TEST 6.6d: InventoryHistory beforeQty is 12');
+  assert(Number(histRecord?.afterQty) === 0, 'TEST 6.6e: InventoryHistory afterQty is 0');
+
   // Clean up test records
   console.log('\n--- Cleaning up test records ---');
   await prisma.stockDeductionAllocation.deleteMany({
@@ -565,6 +756,7 @@ async function runAutoAllocationDirectDeductionTests() {
       OR: [
         { invoice: { zohoInvoiceId: { startsWith: testPrefix } } },
         { invoiceId: { startsWith: testPrefix } },
+        { invoiceId: testInvExcessId },
       ],
     },
   });
@@ -576,6 +768,7 @@ async function runAutoAllocationDirectDeductionTests() {
       OR: [
         { invoice: { zohoInvoiceId: { startsWith: testPrefix } } },
         { id: { startsWith: testPrefix } },
+        { id: testLineExcessId },
       ],
     },
   });
@@ -584,20 +777,21 @@ async function runAutoAllocationDirectDeductionTests() {
       OR: [
         { zohoInvoiceId: { startsWith: testPrefix } },
         { id: { startsWith: testPrefix } },
+        { id: testInvExcessId },
       ],
     },
   });
   await prisma.inventoryHistory.deleteMany({
-    where: { warehouseId: { in: [testWhId, testWh3256Id] } },
+    where: { warehouseId: { in: [testWhId, testWh3256Id, testWhExcessId] } },
   });
   await prisma.warehouseInventory.deleteMany({
-    where: { warehouseId: { in: [testWhId, testWh3256Id] } },
+    where: { warehouseId: { in: [testWhId, testWh3256Id, testWhExcessId] } },
   });
   await prisma.sku.deleteMany({
-    where: { id: testSkuId },
+    where: { id: { in: [testSkuId, testSkuExcessId] } },
   });
   await prisma.warehouse.deleteMany({
-    where: { id: { in: [testWhId, testWh3256Id] } },
+    where: { id: { in: [testWhId, testWh3256Id, testWhExcessId] } },
   });
 
   console.log('\n======================================================');

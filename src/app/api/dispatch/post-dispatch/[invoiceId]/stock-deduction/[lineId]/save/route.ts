@@ -163,36 +163,20 @@ export async function POST(
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // QUANTITY VALIDATION AGAINST SOURCE INVOICE LINE
-    // For normal (non-exploded) allocations:
-    // - Total allocated quantity cannot exceed the source invoice line quantity (1:1 direct numeric relationship).
-    // - UOM labels are NOT a validation barrier.
-    // For manual / exploded allocations (isExploded = true):
-    // - A source item (e.g. "1 Set") explodes into multiple physical inventory items.
-    //   Blind numerical summation across child components is not applicable without a BOM rule.
-    // - Each individual allocation entry is validated for positive quantity, valid SKU,
-    //   valid warehouse, and sufficient stock.
+    // QUANTITY & APPROVAL ROUTING AGAINST SOURCE INVOICE LINE
+    // Source invoice quantity is an EXPECTED quantity, not a hard maximum.
+    // - If requested quantity <= expected quantity: follows normal deduction rules.
+    // - If requested quantity > expected quantity: allowed ONLY through Manager Approval
+    //   (classified with QUANTITY_EXCEEDS_EXPECTED), provided sufficient warehouse stock exists.
+    // - Insufficient warehouse stock remains a hard operational blocker (Level 1 below).
     // ──────────────────────────────────────────────────────────────────────────
-    const targetSourceQty = parseFloat(String(expectedQty || line.quantity)) || 0;
+    const targetSourceQty = parseFloat(String(expectedQty !== undefined && expectedQty !== null ? expectedQty : line.quantity)) || Number(line.quantity) || 0;
     const targetSourceUom = String(expectedUom || 'Units');
-
-    if (!isExploded && validatedAllocations.length > 0) {
-      const totalAllocatedQty = validatedAllocations.reduce((sum, a) => sum + a.qty, 0);
-
-      // Quantity check for normal allocation: must not exceed source quantity
-      if (totalAllocatedQty > targetSourceQty) {
-        return NextResponse.json(
-          {
-            error: `Total allocated quantity (${totalAllocatedQty}) exceeds source invoice line quantity (${targetSourceQty} ${targetSourceUom}).`,
-          },
-          { status: 400 }
-        );
-      }
-    }
 
     // ──────────────────────────────────────────────────────────────────────────
     // LEVEL 1: PRE-SUBMISSION / SAVE STOCK VALIDATION
-    // Insufficient or missing stock is a hard operational blocker (NOT an approval reason).
+    // Insufficient or missing warehouse stock is a hard operational blocker (NOT an approval reason).
+    // Requested deduction must NEVER exceed valid available warehouse inventory.
     // ──────────────────────────────────────────────────────────────────────────
     if (validatedAllocations.length > 0) {
       const stockCheck = await validateAllocationsStock(prisma, validatedAllocations);
@@ -204,7 +188,7 @@ export async function POST(
     const classifyResult = classifyAllocation({
       expectedSkuId: expectedSkuId || null,
       expectedWarehouseId: expectedWarehouseId || null,
-      expectedQty: parseFloat(expectedQty) || 0,
+      expectedQty: targetSourceQty,
       allocations: validatedAllocations,
       isExploded: Boolean(isExploded),
     });
@@ -228,7 +212,7 @@ export async function POST(
         isExploded: Boolean(isExploded),
         expectedSkuId: expectedSkuId || null,
         expectedWarehouseId: expectedWarehouseId || null,
-        expectedQty: parseFloat(expectedQty) || line.quantity,
+        expectedQty: targetSourceQty,
         expectedUom: expectedUom || null,
         classification: classifyResult.classification,
         deviationReasons: classifyResult.deviationReasons,
@@ -243,7 +227,7 @@ export async function POST(
           expectedItemName: expectedItemName || line.itemName,
           expectedSkuId: expectedSkuId || null,
           expectedWarehouseId: expectedWarehouseId || null,
-          expectedQty: parseFloat(expectedQty) || line.quantity,
+          expectedQty: targetSourceQty,
           expectedUom: expectedUom || null,
           allocationData: validatedAllocations as any,
           isExploded: Boolean(isExploded),
@@ -316,7 +300,7 @@ export async function POST(
           expectedItemName: expectedItemName || line.itemName,
           expectedSkuId: expectedSkuId || null,
           expectedWarehouseId: expectedWarehouseId || null,
-          expectedQty: parseFloat(expectedQty) || line.quantity,
+          expectedQty: targetSourceQty,
           expectedUom: expectedUom || null,
           allocationData: validatedAllocations.length > 0 ? (validatedAllocations as any) : null,
           isExploded: Boolean(isExploded),
@@ -415,7 +399,7 @@ export async function POST(
       expectedItemName: expectedItemName || line.itemName,
       expectedSkuId: expectedSkuId || null,
       expectedWarehouseId: expectedWarehouseId || null,
-      expectedQty: parseFloat(expectedQty) || line.quantity,
+      expectedQty: targetSourceQty,
       expectedUom: expectedUom || null,
       allocationData: validatedAllocations.length > 0 ? (validatedAllocations as any) : null,
       isExploded: Boolean(isExploded),

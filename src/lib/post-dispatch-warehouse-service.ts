@@ -27,6 +27,26 @@ export interface ReassignWarehouseResult {
   auditRecord?: any;
 }
 
+/**
+ * Canonical helper returning only warehouses originating from / configured from Zoho Books
+ * for the Post-Dispatch workflow (active, non-system, and mapped via zohoLocationId).
+ */
+export async function getEligibleZohoDispatchWarehouses() {
+  return prisma.warehouse.findMany({
+    where: {
+      active: true,
+      isSystemWarehouse: false,
+      zohoLocationId: { not: null },
+    },
+    select: {
+      id: true,
+      name: true,
+      zohoLocationId: true,
+    },
+    orderBy: { name: 'asc' },
+  });
+}
+
 export async function reassignPostDispatchWarehouse(
   input: ReassignWarehouseInput
 ): Promise<ReassignWarehouseResult> {
@@ -78,8 +98,13 @@ export async function reassignPostDispatchWarehouse(
     where: { id: targetWarehouseId.trim() },
   });
 
-  if (!targetWarehouse || !targetWarehouse.active || targetWarehouse.isSystemWarehouse) {
-    throw new Error('Target warehouse is invalid, inactive, or not allowed.');
+  if (
+    !targetWarehouse ||
+    !targetWarehouse.active ||
+    targetWarehouse.isSystemWarehouse ||
+    !targetWarehouse.zohoLocationId
+  ) {
+    throw new Error('Target warehouse is invalid, inactive, or not configured from Zoho Books.');
   }
 
   // 3. Concurrency & Same warehouse check
@@ -138,8 +163,15 @@ export async function reassignPostDispatchWarehouse(
 
   // Prepare updated zohoDetailsJson
   const updatedZohoDetailsJson = detailsJson && typeof detailsJson === 'object'
-    ? { ...detailsJson, location_name: targetWarehouse.name }
-    : { location_name: targetWarehouse.name };
+    ? {
+        ...detailsJson,
+        location_name: targetWarehouse.name,
+        location_id: targetWarehouse.zohoLocationId,
+      }
+    : {
+        location_name: targetWarehouse.name,
+        location_id: targetWarehouse.zohoLocationId,
+      };
 
   // 6. Atomic database transaction
   const result = await prisma.$transaction(async (tx) => {

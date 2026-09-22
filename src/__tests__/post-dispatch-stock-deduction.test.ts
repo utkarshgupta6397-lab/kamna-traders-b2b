@@ -1734,8 +1734,16 @@ async function runStockDeductionTests() {
   // If isExploded is true, quantity cap must NOT apply
   const shouldEnforceSumCapForExploded = !isExplodedFlag && (simulatedSum > testTargetSourceQty);
   assert(shouldEnforceSumCapForExploded === false, 'TEST 26a: Exploded lines bypass source quantity sum cap');
-  const shouldEnforceSumCapForStandard = !false && (simulatedSum > testTargetSourceQty);
-  assert(shouldEnforceSumCapForStandard === true, 'TEST 26b: Standard non-exploded lines retain source quantity sum cap');
+  // Non-exploded lines allow excess quantities when inventory permits, routing to APPROVAL_REQUIRED
+  const excessClassification = classifyAllocation({
+    expectedSkuId: testSku1Id,
+    expectedWarehouseId: testWh1Id,
+    expectedQty: testTargetSourceQty,
+    allocations: [{ skuId: testSku1Id, skuName: 'Component A', warehouseId: testWh1Id, warehouseName: 'Warehouse 1', qty: simulatedSum, uom: 'UNIT' }],
+    isExploded: false,
+  });
+  assert(excessClassification.classification === 'APPROVAL_REQUIRED', 'TEST 26b: Non-exploded excess quantity routes to APPROVAL_REQUIRED');
+  assert(excessClassification.deviationReasons.includes('QUANTITY_EXCEEDS_EXPECTED'), 'TEST 26c: Includes QUANTITY_EXCEEDS_EXPECTED reason');
 
   // TEST 27: Multi-warehouse classification evaluates distinct warehouse IDs, not entry count
   console.log('--- TEST 27: Distinct warehouse evaluation for multi-warehouse allocation ---');

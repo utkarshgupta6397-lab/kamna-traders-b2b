@@ -6,6 +6,8 @@ export interface PostDispatchFilterParams {
   statusFilter?: string | null;
   warehouseFilter?: string | null;
   warehouse?: string | null;
+  warehouseId?: string | null;
+  warehouseLocationId?: string | null;
   startDate?: string | null;
   endDate?: string | null;
 }
@@ -157,12 +159,42 @@ export function buildPostDispatchWhereClause(params: PostDispatchFilterParams): 
     where.zohoCreatedTime = dateFilter;
   }
 
-  // 4. Warehouse filter on zohoDetailsJson->location_name
+  // 4. Warehouse filter
   if (warehouse && warehouse !== 'ALL') {
-    where.zohoDetailsJson = {
-      path: ['location_name'],
-      equals: warehouse,
-    };
+    const whOrConditions: Prisma.PostDispatchInvoiceWhereInput[] = [
+      ...(params.warehouseId ? [{ dispatchWarehouseId: params.warehouseId }] : []),
+      { dispatchWarehouse: warehouse },
+      {
+        zohoDetailsJson: {
+          path: ['location_name'],
+          equals: warehouse,
+        },
+      },
+    ];
+
+    if (params.warehouseLocationId) {
+      whOrConditions.push({
+        AND: [
+          {
+            OR: [
+              { dispatchWarehouseId: null },
+              ...(params.warehouseId ? [{ dispatchWarehouseId: params.warehouseId }] : []),
+            ],
+          },
+          {
+            zohoDetailsJson: {
+              path: ['location_id'],
+              equals: params.warehouseLocationId,
+            },
+          },
+        ],
+      });
+    }
+
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      { OR: whOrConditions },
+    ];
   }
 
   // 5. Search filter (Invoice #, Customer Name, Sales Order #)

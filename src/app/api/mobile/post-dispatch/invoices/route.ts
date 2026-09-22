@@ -5,6 +5,7 @@ import { hasPostDispatchAccess } from '@/lib/post-dispatch-auth';
 import { isConsumerCustomer } from '@/lib/post-dispatch-sync';
 import { buildPostDispatchWhereClause } from '@/lib/post-dispatch-query';
 import { computeAggregateInventoryStatus } from '@/lib/stock-deduction-service';
+import { getEligibleZohoDispatchWarehouses } from '@/lib/post-dispatch-warehouse-service';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,10 +38,31 @@ export async function GET(request: Request) {
   const pageSize = isAllPages ? undefined : Math.max(1, parseInt(pageSizeParam || '10', 10) || 10);
 
   try {
+    // 1. Fetch only eligible Zoho Books warehouses (active, non-system, zohoLocationId mapped)
+    const eligibleWarehouses = await getEligibleZohoDispatchWarehouses();
+    const zohoWhMapByLocationId = new Map<string, { id: string; name: string }>();
+    const zohoWhMapByName = new Map<string, { id: string; name: string }>();
+    for (const w of eligibleWarehouses) {
+      if (w.zohoLocationId) zohoWhMapByLocationId.set(w.zohoLocationId, w);
+      zohoWhMapByName.set(w.name.toLowerCase(), w);
+    }
+
+    const selectedWh =
+      warehouseFilter && warehouseFilter !== 'ALL'
+        ? eligibleWarehouses.find(
+            (w) =>
+              w.name.toLowerCase() === warehouseFilter.toLowerCase() ||
+              w.id === warehouseFilter ||
+              (w.zohoLocationId && w.zohoLocationId === warehouseFilter)
+          ) || null
+        : null;
+
     const commonFilterParams = {
       search,
       statusFilter,
-      warehouseFilter,
+      warehouseFilter: selectedWh ? selectedWh.name : warehouseFilter,
+      warehouseId: selectedWh?.id || null,
+      warehouseLocationId: selectedWh?.zohoLocationId || null,
       startDate,
       endDate,
     };
@@ -86,8 +108,6 @@ export async function GET(request: Request) {
       inventoryCount,
       einvoiceCount,
       archivedCount,
-      rawWarehouses,
-      activeWarehousesMaster,
     ] = await Promise.all([
       prisma.postDispatchInvoice.count({
         where: buildPostDispatchWhereClause({ ...commonFilterParams, tab: 'all_pending' }),
@@ -110,29 +130,10 @@ export async function GET(request: Request) {
       prisma.postDispatchInvoice.count({
         where: buildPostDispatchWhereClause({ ...commonFilterParams, tab: 'archived' }),
       }),
-      prisma.$queryRaw<{ wh: string | null }[]>`
-        SELECT DISTINCT COALESCE("dispatchWarehouse", "zohoDetailsJson"->>'location_name') as wh
-        FROM "PostDispatchInvoice"
-        WHERE ("dispatchWarehouse" IS NOT NULL AND "dispatchWarehouse" != '')
-           OR ("zohoDetailsJson" IS NOT NULL AND "zohoDetailsJson"->>'location_name' IS NOT NULL)
-        ORDER BY wh ASC
-      `,
-      prisma.warehouse.findMany({
-        where: { active: true, isSystemWarehouse: false },
-        select: { id: true, name: true },
-        orderBy: { name: 'asc' },
-      }),
     ]);
 
-    const activeWarehouses = activeWarehousesMaster.map((w) => ({ id: w.id, name: w.name }));
-    const distinctWhSet = new Set<string>();
-    for (const rw of rawWarehouses) {
-      if (rw.wh && rw.wh.trim()) distinctWhSet.add(rw.wh.trim());
-    }
-    for (const aw of activeWarehousesMaster) {
-      if (aw.name && aw.name.trim()) distinctWhSet.add(aw.name.trim());
-    }
-    const availableWarehouses = Array.from(distinctWhSet).sort((a, b) => a.localeCompare(b));
+    const activeWarehouses = eligibleWarehouses.map((w) => ({ id: w.id, name: w.name }));
+    const availableWarehouses = eligibleWarehouses.map((w) => w.name);
 
     // Extract customer IDs to batch lookup local customer records for GSTIN if missing
     const customerIds = Array.from(
@@ -199,12 +200,22 @@ export async function GET(request: Request) {
         ? isConsumerCustomer({ gstTreatment: detailsJson.gst_treatment, gstNumber: gstin })
         : false;
 
-      const warehouseName =
-        inv.dispatchWarehouse || (detailsJson?.location_name as string) || null;
-      const originalWarehouse =
-        inv.originalWarehouse || warehouseName;
+      const locId = detailsJson?.location_id ? String(detailsJson.location_id) : null;
+      const canonicalWh = locId ? zohoWhMapByLocationId.get(locId) : null;
+
+      const rawWhName = inv.dispatchWarehouse || (detailsJson?.location_name as string) || null;
+      const warehouseName = inv.dispatchWarehouseId
+        ? inv.dispatchWarehouse
+        : (canonicalWh?.name || rawWhName);
+
+      const rawOriginalWh = inv.originalWarehouse || rawWhName;
+      const originalWarehouse = inv.dispatchWarehouseId
+        ? (rawOriginalWh ? (zohoWhMapByName.get(rawOriginalWh.toLowerCase())?.name || rawOriginalWh) : warehouseName)
+        : (canonicalWh?.name || warehouseName);
+
       const isReassigned = Boolean(
-        originalWarehouse && warehouseName && originalWarehouse !== warehouseName
+        inv.dispatchWarehouseId ||
+        (originalWarehouse && warehouseName && originalWarehouse !== warehouseName)
       );
 
       return {

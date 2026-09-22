@@ -1,6 +1,9 @@
 import { prisma } from '../lib/db';
 import { buildPostDispatchWhereClause } from '../lib/post-dispatch-query';
-import { reassignPostDispatchWarehouse } from '../lib/post-dispatch-warehouse-service';
+import {
+  reassignPostDispatchWarehouse,
+  getEligibleZohoDispatchWarehouses,
+} from '../lib/post-dispatch-warehouse-service';
 import { hasPostDispatchAccess } from '../lib/post-dispatch-auth';
 
 let passed = 0;
@@ -26,6 +29,7 @@ async function runTests() {
   const whBId = 'WH_TEST_PWR_B';
   const whCId = 'WH_TEST_PWR_C';
   const whInactiveId = 'WH_TEST_PWR_INACTIVE';
+  const whNonZohoId = 'WH_TEST_PWR_NON_ZOHO';
 
   const sku1Id = 'SKU_TEST_PWR_1';
 
@@ -57,25 +61,26 @@ async function runTests() {
     where: { zohoInvoiceId: { startsWith: testPrefix } },
   });
   await prisma.inventoryHistory.deleteMany({
-    where: { warehouseId: { in: [whAId, whBId, whCId, whInactiveId] } },
+    where: { warehouseId: { in: [whAId, whBId, whCId, whInactiveId, whNonZohoId] } },
   });
   await prisma.warehouseInventory.deleteMany({
-    where: { warehouseId: { in: [whAId, whBId, whCId, whInactiveId] } },
+    where: { warehouseId: { in: [whAId, whBId, whCId, whInactiveId, whNonZohoId] } },
   });
   await prisma.sku.deleteMany({
     where: { id: sku1Id },
   });
   await prisma.warehouse.deleteMany({
-    where: { id: { in: [whAId, whBId, whCId, whInactiveId] } },
+    where: { id: { in: [whAId, whBId, whCId, whInactiveId, whNonZohoId] } },
   });
 
   // ── Setup Warehouses ──
   await prisma.warehouse.createMany({
     data: [
-      { id: whAId, name: 'PWR Warehouse A', active: true, isSystemWarehouse: false },
-      { id: whBId, name: 'PWR Warehouse B', active: true, isSystemWarehouse: false },
-      { id: whCId, name: 'PWR Warehouse C', active: true, isSystemWarehouse: false },
-      { id: whInactiveId, name: 'PWR Inactive Warehouse', active: false, isSystemWarehouse: false },
+      { id: whAId, name: 'PWR Warehouse A', active: true, isSystemWarehouse: false, zohoLocationId: `${testPrefix}loc_a` },
+      { id: whBId, name: 'PWR Warehouse B', active: true, isSystemWarehouse: false, zohoLocationId: `${testPrefix}loc_b` },
+      { id: whCId, name: 'PWR Warehouse C', active: true, isSystemWarehouse: false, zohoLocationId: `${testPrefix}loc_c` },
+      { id: whInactiveId, name: 'PWR Inactive Warehouse', active: false, isSystemWarehouse: false, zohoLocationId: `${testPrefix}loc_inact` },
+      { id: whNonZohoId, name: 'PWR Non-Zoho Warehouse', active: true, isSystemWarehouse: false, zohoLocationId: null },
     ],
   });
 
@@ -269,7 +274,7 @@ async function runTests() {
     inactiveWhError = err;
   }
   assert(
-    inactiveWhError?.message === 'Target warehouse is invalid, inactive, or not allowed.',
+    inactiveWhError?.message === 'Target warehouse is invalid, inactive, or not configured from Zoho Books.',
     'Inactive warehouse rejected with 400 error'
   );
 
@@ -287,8 +292,26 @@ async function runTests() {
     missingWhError = err;
   }
   assert(
-    missingWhError?.message === 'Target warehouse is invalid, inactive, or not allowed.',
+    missingWhError?.message === 'Target warehouse is invalid, inactive, or not configured from Zoho Books.',
     'Nonexistent warehouse rejected with error'
+  );
+
+  // 4c2. Non-Zoho Books warehouse rejected (zohoLocationId is null)
+  let nonZohoWhError: any = null;
+  try {
+    await reassignPostDispatchWarehouse({
+      invoiceId: inv1.id,
+      targetWarehouseId: whNonZohoId,
+      reason: 'Attempting non-Zoho ERP warehouse',
+      userId: testUserId,
+      userName: testUserName,
+    });
+  } catch (err: any) {
+    nonZohoWhError = err;
+  }
+  assert(
+    nonZohoWhError?.message === 'Target warehouse is invalid, inactive, or not configured from Zoho Books.',
+    'Non-Zoho ERP warehouse (zohoLocationId: null) rejected with error'
   );
 
   // 4d. Same warehouse reassignment is a safe no-op
@@ -469,6 +492,19 @@ async function runTests() {
     'Receiving submission remains APPROVED'
   );
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // TEST 7: Canonical Eligible Zoho Dispatch Warehouses Helper
+  // ──────────────────────────────────────────────────────────────────────────
+  console.log('\n--- TEST 7: Canonical Eligible Zoho Dispatch Warehouses ---');
+  const eligibleWarehouses = await getEligibleZohoDispatchWarehouses();
+  const eligibleIds = eligibleWarehouses.map((w) => w.id);
+
+  assert(eligibleIds.includes(whAId), 'Eligible warehouses includes active Zoho warehouse A');
+  assert(eligibleIds.includes(whBId), 'Eligible warehouses includes active Zoho warehouse B');
+  assert(eligibleIds.includes(whCId), 'Eligible warehouses includes active Zoho warehouse C');
+  assert(!eligibleIds.includes(whInactiveId), 'Eligible warehouses excludes inactive warehouse');
+  assert(!eligibleIds.includes(whNonZohoId), 'Eligible warehouses excludes active non-Zoho warehouse (null zohoLocationId)');
+
   // ── Final Cleanup ──
   console.log('\n--- Final Cleanup ---');
   await prisma.dispatchWarehouseAudit.deleteMany({
@@ -493,16 +529,16 @@ async function runTests() {
     where: { zohoInvoiceId: { startsWith: testPrefix } },
   });
   await prisma.inventoryHistory.deleteMany({
-    where: { warehouseId: { in: [whAId, whBId, whCId, whInactiveId] } },
+    where: { warehouseId: { in: [whAId, whBId, whCId, whInactiveId, whNonZohoId] } },
   });
   await prisma.warehouseInventory.deleteMany({
-    where: { warehouseId: { in: [whAId, whBId, whCId, whInactiveId] } },
+    where: { warehouseId: { in: [whAId, whBId, whCId, whInactiveId, whNonZohoId] } },
   });
   await prisma.sku.deleteMany({
     where: { id: sku1Id },
   });
   await prisma.warehouse.deleteMany({
-    where: { id: { in: [whAId, whBId, whCId, whInactiveId] } },
+    where: { id: { in: [whAId, whBId, whCId, whInactiveId, whNonZohoId] } },
   });
 
   console.log('\n======================================================');

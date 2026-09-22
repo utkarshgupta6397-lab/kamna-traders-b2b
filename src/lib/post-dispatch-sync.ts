@@ -424,8 +424,16 @@ export function isConsumerCustomer(params: {
   gstTreatment?: string | null;
   gstNumber?: string | null;
 }): boolean {
+  if (params.gstNumber && params.gstNumber !== 'NOT_AVAILABLE' && params.gstNumber.trim().length >= 15) {
+    return false;
+  }
   const treatment = (params.gstTreatment || '').toLowerCase().trim();
-  if (treatment === 'consumer' || treatment.includes('consumer')) {
+  if (
+    treatment === 'consumer' ||
+    treatment.includes('consumer') ||
+    treatment === 'unregistered' ||
+    treatment.includes('unregistered')
+  ) {
     return true;
   }
   return false;

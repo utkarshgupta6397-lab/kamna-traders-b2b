@@ -174,11 +174,6 @@ export async function GET(request: Request) {
         !isVoid;
 
       const detailsJson = inv.zohoDetailsJson as any;
-      const isConsumer = detailsJson?.gst_treatment
-        ? isConsumerCustomer({ gstTreatment: detailsJson.gst_treatment })
-        : false;
-      const warehouseName = (detailsJson?.location_name as string) || null;
-
       let gstin: string | null = null;
       if (detailsJson?.gst_no && String(detailsJson.gst_no).trim()) {
         gstin = String(detailsJson.gst_no).trim();
@@ -187,6 +182,11 @@ export async function GET(request: Request) {
       } else if (inv.customerId && customerGstMap.has(inv.customerId)) {
         gstin = customerGstMap.get(inv.customerId) || null;
       }
+
+      const isConsumer = detailsJson?.gst_treatment
+        ? isConsumerCustomer({ gstTreatment: detailsJson.gst_treatment, gstNumber: gstin })
+        : false;
+      const warehouseName = (detailsJson?.location_name as string) || null;
 
       return {
         id: inv.id,

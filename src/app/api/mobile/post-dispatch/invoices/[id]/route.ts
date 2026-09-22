@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { hasDesktopPostDispatchReviewAccess, hasPostDispatchAccess } from '@/lib/post-dispatch-auth';
+import { isConsumerCustomer } from '@/lib/post-dispatch-sync';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,7 +83,7 @@ export async function GET(
 
     const warehouseName = (detailsJson?.location_name as string) || null;
     const isConsumer = detailsJson?.gst_treatment
-      ? ['consumer', 'unregistered'].includes(String(detailsJson.gst_treatment).toLowerCase().trim())
+      ? isConsumerCustomer({ gstTreatment: detailsJson.gst_treatment, gstNumber: gstin })
       : false;
 
     const currentUserId = session.userId || session.id;

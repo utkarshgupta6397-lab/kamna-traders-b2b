@@ -79,10 +79,43 @@ export function buildPostDispatchWhereClause(params: PostDispatchFilterParams): 
         ],
       },
     ];
-  } else if (tab === 'einvoice_pending') {
+  } else if (tab === 'einvoice_pending' || tab === 'e_invoice_pending') {
     where.erpStatus = 'Active';
     where.eInvoiceGenerated = false;
     where.zohoStatus = { notIn: ['void', 'draft'] };
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      {
+        OR: [
+          {
+            zohoDetailsJson: {
+              path: ['gst_treatment'],
+              equals: Prisma.AnyNull,
+            },
+          },
+          {
+            AND: [
+              {
+                NOT: {
+                  zohoDetailsJson: {
+                    path: ['gst_treatment'],
+                    string_contains: 'consumer',
+                  },
+                },
+              },
+              {
+                NOT: {
+                  zohoDetailsJson: {
+                    path: ['gst_treatment'],
+                    string_contains: 'unregistered',
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ];
   } else if (tab === 'verification' || tab === 'verification_pending') {
     where.erpStatus = 'Active';
     where.workflows = {

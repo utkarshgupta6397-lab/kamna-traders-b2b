@@ -389,9 +389,11 @@ export default function DesktopPostDispatchView({
   const searchParams = useSearchParams();
 
   // URL state synchronization
-  const urlTab = searchParams.get('tab') as PrimaryTabKey | null;
+  const rawUrlTab = searchParams.get('tab');
+  const normalizedUrlTab: PrimaryTabKey | null =
+    rawUrlTab === 'e_invoice_pending' ? 'einvoice_pending' : (rawUrlTab as PrimaryTabKey | null);
   const initialActiveTab: PrimaryTabKey =
-    urlTab && VALID_TABS.includes(urlTab) ? urlTab : initialTab;
+    normalizedUrlTab && VALID_TABS.includes(normalizedUrlTab) ? normalizedUrlTab : initialTab;
 
   const [activeTab, setActiveTab] = useState<PrimaryTabKey>(initialActiveTab);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');

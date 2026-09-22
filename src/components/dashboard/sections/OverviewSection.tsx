@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  TrendingUp,
   PieChart,
   Package,
   CreditCard,
@@ -10,35 +9,35 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import WipWidget from '../WipWidget';
+import BusinessPerformanceCard from '../BusinessPerformanceCard';
+import { DailySalesTrendPoint } from '@/lib/post-dispatch-summary';
 
-export default function OverviewSection() {
+interface OverviewSectionProps {
+  salesTrend?: DailySalesTrendPoint[] | null;
+  isLoading?: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
+}
+
+export default function OverviewSection({
+  salesTrend,
+  isLoading,
+  isError,
+  onRetry,
+}: OverviewSectionProps = {}) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 lg:grid-rows-2 gap-2.5 h-full w-full min-h-0 overflow-y-auto lg:overflow-hidden pr-0.5">
       {/* ========================================================================= */}
       {/* ROW 1: PRIMARY OVERVIEW ANALYTICS (3 CARDS)                               */}
       {/* ========================================================================= */}
 
-      {/* 1. Business Performance Card */}
-      <div className="bg-white rounded-xl p-3.5 border border-slate-200/90 shadow-2xs flex flex-col justify-between overflow-hidden h-full min-h-0">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-100 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
-              <TrendingUp size={14} />
-            </div>
-            <div>
-              <h2 className="text-xs font-bold text-slate-800">Business Performance</h2>
-              <p className="text-[10px] text-slate-400">Sales & revenue trend</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Large translucent WIP Watermark + subtle icon */}
-        <WipWidget size="md" />
-
-        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 shrink-0">
-          <span>Continuous aggregation</span>
-        </div>
-      </div>
+      {/* 1. Business Performance Card (Authoritative 7-day Sales Trend + 3-day Moving Average) */}
+      <BusinessPerformanceCard
+        data={salesTrend}
+        isLoading={isLoading}
+        isError={isError}
+        onRetry={onRetry}
+      />
 
       {/* 2. Order Status Distribution Card */}
       <div className="bg-white rounded-xl p-3.5 border border-slate-200/90 shadow-2xs flex flex-col justify-between overflow-hidden h-full min-h-0">

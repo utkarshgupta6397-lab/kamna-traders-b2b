@@ -23,15 +23,13 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      totalSalesToday: summary.totalSalesToday,
-      totalInvoiceToday: summary.totalInvoiceToday,
+      days: summary.salesTrend,
       dateRange: summary.dateRange,
-      salesTrend: summary.salesTrend,
     });
   } catch (error: any) {
-    console.error('[Dashboard PostDispatch Summary API] Error:', error);
+    console.error('[Dashboard PostDispatch Sales Trend API] Error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch Post-Dispatch summary' },
+      { error: 'Failed to fetch Post-Dispatch sales trend' },
       { status: 500 }
     );
   }

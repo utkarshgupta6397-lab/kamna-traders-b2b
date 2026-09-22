@@ -17,6 +17,7 @@ import {
   getAccessibleDashboardSections,
   getNextRotatingSection,
 } from '@/utils/dashboardSectionRotation';
+import { DailySalesTrendPoint } from '@/lib/post-dispatch-summary';
 
 interface DashboardClientProps {
   userName?: string | null;
@@ -34,8 +35,9 @@ export default function DashboardClient({ userName, session }: DashboardClientPr
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const autoRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Real Post-Dispatch KPI State
+  // Real Post-Dispatch KPI & Sales Trend State
   const [kpiData, setKpiData] = useState<DashboardKpiSummaryData | null>(null);
+  const [salesTrend, setSalesTrend] = useState<DailySalesTrendPoint[] | null>(null);
   const [isKpiLoading, setIsKpiLoading] = useState<boolean>(true);
   const [isKpiError, setIsKpiError] = useState<boolean>(false);
   const isFetchingKpiRef = useRef<boolean>(false);
@@ -212,6 +214,7 @@ export default function DashboardClient({ userName, session }: DashboardClientPr
             totalSalesToday: Number(json.totalSalesToday || 0),
             totalInvoiceToday: Number(json.totalInvoiceToday || 0),
           });
+          setSalesTrend(Array.isArray(json.salesTrend) ? json.salesTrend : []);
           setIsKpiError(false);
         } else {
           setIsKpiError(true);
@@ -305,7 +308,14 @@ export default function DashboardClient({ userName, session }: DashboardClientPr
             transition={{ duration: 0.15, ease: 'easeOut' }}
             className="h-full w-full min-h-0 flex-1 flex flex-col motion-reduce:transition-none motion-reduce:transform-none"
           >
-            {activeSection === 'overview' && <OverviewSection />}
+            {activeSection === 'overview' && (
+              <OverviewSection
+                salesTrend={salesTrend}
+                isLoading={isKpiLoading}
+                isError={isKpiError}
+                onRetry={handleRefresh}
+              />
+            )}
             {activeSection === 'sales' && <SalesSection />}
             {activeSection === 'inventory' && <InventorySection />}
             {activeSection === 'operations' && <OperationsSection />}

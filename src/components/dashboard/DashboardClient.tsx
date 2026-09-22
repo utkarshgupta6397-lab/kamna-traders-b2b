@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import DashboardHeader from './DashboardHeader';
-import DashboardKpiGrid from './DashboardKpiGrid';
+import DashboardKpiGrid, { DashboardKpiSummaryData } from './DashboardKpiGrid';
 import DashboardSectionTabs, { DashboardSectionId } from './DashboardSectionTabs';
 import OverviewSection from './sections/OverviewSection';
 import SalesSection from './sections/SalesSection';
@@ -33,6 +33,12 @@ export default function DashboardClient({ userName, session }: DashboardClientPr
   const [lastUpdated, setLastUpdated] = useState<Date>(() => new Date());
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const autoRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Real Post-Dispatch KPI State
+  const [kpiData, setKpiData] = useState<DashboardKpiSummaryData | null>(null);
+  const [isKpiLoading, setIsKpiLoading] = useState<boolean>(true);
+  const [isKpiError, setIsKpiError] = useState<boolean>(false);
+  const isFetchingKpiRef = useRef<boolean>(false);
 
   // Compute authorized sections based on existing permissions
   const accessibleSections = useMemo(() => {
@@ -193,21 +199,54 @@ export default function DashboardClient({ userName, session }: DashboardClientPr
     [resetIdleTimer]
   );
 
-  // Refresh handler: updates timestamp and shows subtle loading animation
-  const handleRefresh = useCallback(() => {
-    // User triggered refresh: reset idle timer
+  // Authoritative real KPI data fetcher
+  const fetchKpiData = useCallback(async () => {
+    if (isFetchingKpiRef.current) return;
+    isFetchingKpiRef.current = true;
+    try {
+      const res = await fetch('/api/dashboard/post-dispatch-summary');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) {
+          setKpiData({
+            totalSalesToday: Number(json.totalSalesToday || 0),
+            totalInvoiceToday: Number(json.totalInvoiceToday || 0),
+          });
+          setIsKpiError(false);
+        } else {
+          setIsKpiError(true);
+        }
+      } else {
+        setIsKpiError(true);
+      }
+    } catch (err) {
+      console.error('[Dashboard PostDispatch KPI Fetch Error]', err);
+      setIsKpiError(true);
+    } finally {
+      setIsKpiLoading(false);
+      isFetchingKpiRef.current = false;
+    }
+  }, []);
+
+  // Initial load of real Post-Dispatch KPIs
+  useEffect(() => {
+    fetchKpiData();
+  }, [fetchKpiData]);
+
+  // Refresh handler: updates timestamp and re-fetches real Post-Dispatch data
+  const handleRefresh = useCallback(async () => {
     resetIdleTimer();
 
     if (isRefreshing) return;
 
     setIsRefreshing(true);
-
-    // Simulate architecture refresh call (ready for real API data fetching later)
-    setTimeout(() => {
+    try {
+      await fetchKpiData();
       setLastUpdated(new Date());
+    } finally {
       setIsRefreshing(false);
-    }, 500);
-  }, [isRefreshing, resetIdleTimer]);
+    }
+  }, [fetchKpiData, isRefreshing, resetIdleTimer]);
 
   // Set up 5-minute auto refresh interval
   useEffect(() => {
@@ -222,6 +261,7 @@ export default function DashboardClient({ userName, session }: DashboardClientPr
     return () => {
       if (autoRefreshTimerRef.current) {
         clearInterval(autoRefreshTimerRef.current);
+        autoRefreshTimerRef.current = null;
       }
     };
   }, [handleRefresh]);
@@ -240,7 +280,11 @@ export default function DashboardClient({ userName, session }: DashboardClientPr
 
         {/* B. Persistent 6-KPI Row */}
         <section aria-label="Key Performance Indicators">
-          <DashboardKpiGrid />
+          <DashboardKpiGrid
+            data={kpiData}
+            isLoading={isKpiLoading}
+            isError={isKpiError}
+          />
         </section>
 
         {/* C. Section Navigation Tabs (Left) + Compact Quick Actions (Right) */}

@@ -81,7 +81,13 @@ export async function GET(
       }
     }
 
-    const warehouseName = (detailsJson?.location_name as string) || null;
+    const warehouseName =
+      invoice.dispatchWarehouse || (detailsJson?.location_name as string) || null;
+    const originalWarehouse =
+      invoice.originalWarehouse || warehouseName;
+    const isReassigned = Boolean(
+      originalWarehouse && warehouseName && originalWarehouse !== warehouseName
+    );
     const isConsumer = detailsJson?.gst_treatment
       ? isConsumerCustomer({ gstTreatment: detailsJson.gst_treatment, gstNumber: gstin })
       : false;
@@ -93,6 +99,10 @@ export async function GET(
         ...invoice,
         gstin,
         warehouseName,
+        dispatchWarehouse: warehouseName,
+        originalWarehouse,
+        dispatchWarehouseId: invoice.dispatchWarehouseId || null,
+        isReassigned,
         isConsumer,
         isActionable,
         isVoid,

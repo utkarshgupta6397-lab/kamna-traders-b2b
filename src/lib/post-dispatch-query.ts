@@ -5,6 +5,7 @@ export interface PostDispatchFilterParams {
   search?: string | null;
   statusFilter?: string | null;
   warehouseFilter?: string | null;
+  warehouse?: string | null;
   startDate?: string | null;
   endDate?: string | null;
 }
@@ -23,7 +24,7 @@ export function buildPostDispatchWhereClause(params: PostDispatchFilterParams): 
   const tab = params.tab || 'all_pending';
   const search = (params.search || '').trim();
   const statusFilter = (params.statusFilter || '').trim();
-  const warehouse = (params.warehouseFilter || '').trim();
+  const warehouse = (params.warehouseFilter || params.warehouse || '').trim();
   const { startDate, endDate } = params;
 
   // 1. Tab filter

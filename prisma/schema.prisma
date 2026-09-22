@@ -1803,6 +1803,12 @@ model PostDispatchInvoice {
   eInvoiceStatus       String?
   lastZohoSync         DateTime                  @default(now())
   zohoDetailsJson      Json?
+  originalWarehouse    String?
+  dispatchWarehouse    String?
+  dispatchWarehouseId  String?
+  reassignedAt         DateTime?
+  reassignedById       String?
+  reassignedByName     String?
   createdAt            DateTime                  @default(now())
   updatedAt            DateTime                  @updatedAt
 
@@ -1810,11 +1816,34 @@ model PostDispatchInvoice {
   workflows            PostDispatchWorkflow[]
   history              PostDispatchHistory[]
   stockDeductionAllocations StockDeductionAllocation[]
+  warehouseAudits      DispatchWarehouseAudit[]
 
   @@index([zohoStatus])
   @@index([erpStatus])
   @@index([invoiceNumber])
   @@index([zohoInvoiceId])
+  @@index([dispatchWarehouse])
+}
+
+model DispatchWarehouseAudit {
+  id                               String              @id @default(cuid())
+  invoiceId                        String
+  invoiceNumber                    String
+  originalWarehouse                String
+  previousDispatchWarehouse        String
+  newDispatchWarehouse             String
+  changedByUserId                  String
+  changedByUserName                String?
+  changedAt                        DateTime            @default(now())
+  reason                           String
+  workflowStageAtChange            String
+  inventoryDeductionStatusAtChange String
+  createdAt                        DateTime            @default(now())
+
+  invoice                          PostDispatchInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([changedAt])
 }
 
 model PostDispatchInvoiceLine {

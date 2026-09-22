@@ -87,6 +87,7 @@ export async function GET(request: Request) {
       einvoiceCount,
       archivedCount,
       rawWarehouses,
+      activeWarehousesMaster,
     ] = await Promise.all([
       prisma.postDispatchInvoice.count({
         where: buildPostDispatchWhereClause({ ...commonFilterParams, tab: 'all_pending' }),
@@ -110,17 +111,28 @@ export async function GET(request: Request) {
         where: buildPostDispatchWhereClause({ ...commonFilterParams, tab: 'archived' }),
       }),
       prisma.$queryRaw<{ wh: string | null }[]>`
-        SELECT DISTINCT "zohoDetailsJson"->>'location_name' as wh
+        SELECT DISTINCT COALESCE("dispatchWarehouse", "zohoDetailsJson"->>'location_name') as wh
         FROM "PostDispatchInvoice"
-        WHERE "zohoDetailsJson" IS NOT NULL
-          AND "zohoDetailsJson"->>'location_name' IS NOT NULL
+        WHERE ("dispatchWarehouse" IS NOT NULL AND "dispatchWarehouse" != '')
+           OR ("zohoDetailsJson" IS NOT NULL AND "zohoDetailsJson"->>'location_name' IS NOT NULL)
         ORDER BY wh ASC
       `,
+      prisma.warehouse.findMany({
+        where: { active: true, isSystemWarehouse: false },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
     ]);
 
-    const availableWarehouses = rawWarehouses
-      .map((w) => w.wh)
-      .filter((wh): wh is string => Boolean(wh && wh.trim()));
+    const activeWarehouses = activeWarehousesMaster.map((w) => ({ id: w.id, name: w.name }));
+    const distinctWhSet = new Set<string>();
+    for (const rw of rawWarehouses) {
+      if (rw.wh && rw.wh.trim()) distinctWhSet.add(rw.wh.trim());
+    }
+    for (const aw of activeWarehousesMaster) {
+      if (aw.name && aw.name.trim()) distinctWhSet.add(aw.name.trim());
+    }
+    const availableWarehouses = Array.from(distinctWhSet).sort((a, b) => a.localeCompare(b));
 
     // Extract customer IDs to batch lookup local customer records for GSTIN if missing
     const customerIds = Array.from(
@@ -186,7 +198,14 @@ export async function GET(request: Request) {
       const isConsumer = detailsJson?.gst_treatment
         ? isConsumerCustomer({ gstTreatment: detailsJson.gst_treatment, gstNumber: gstin })
         : false;
-      const warehouseName = (detailsJson?.location_name as string) || null;
+
+      const warehouseName =
+        inv.dispatchWarehouse || (detailsJson?.location_name as string) || null;
+      const originalWarehouse =
+        inv.originalWarehouse || warehouseName;
+      const isReassigned = Boolean(
+        originalWarehouse && warehouseName && originalWarehouse !== warehouseName
+      );
 
       return {
         id: inv.id,
@@ -196,6 +215,12 @@ export async function GET(request: Request) {
         customerName: inv.customerName,
         gstin,
         warehouseName,
+        dispatchWarehouse: warehouseName,
+        originalWarehouse,
+        dispatchWarehouseId: inv.dispatchWarehouseId || null,
+        isReassigned,
+        reassignedAt: inv.reassignedAt ? inv.reassignedAt.toISOString() : null,
+        reassignedByName: inv.reassignedByName || null,
         total: inv.total,
         currencyCode: inv.currencyCode,
         salesOrderId: inv.salesOrderId,
@@ -240,6 +265,8 @@ export async function GET(request: Request) {
       archived: archivedCount,
     };
 
+    const canForceArchive = session.role === 'ADMIN' || Boolean(session.dispatch_force_archive);
+
     return NextResponse.json({
       invoices: formatted,
       data: formatted,
@@ -251,6 +278,8 @@ export async function GET(request: Request) {
       },
       tabCounts,
       availableWarehouses,
+      activeWarehouses,
+      canForceArchive,
     });
   } catch (error: any) {
     console.error('[PostDispatch Invoices API] Error:', error);

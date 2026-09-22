@@ -606,6 +606,12 @@ export async function runPostDispatchSync(options: {
         const erpSubStatus = isVoid ? 'Void' : null;
         const timerStoppedAt = isVoid ? new Date() : null;
 
+        const initialWarehouse =
+          zohoInv.location_name ||
+          (Array.isArray(zohoInv.locations) && zohoInv.locations[0]?.location_name) ||
+          (Array.isArray(zohoInv.line_items) && zohoInv.line_items[0]?.warehouse_name) ||
+          'Not Assigned';
+
         try {
           await prisma.$transaction(async (tx) => {
             const newInvoice = await tx.postDispatchInvoice.create({
@@ -628,6 +634,8 @@ export async function runPostDispatchSync(options: {
                 eInvoiceAckNo,
                 eInvoiceAckDate,
                 eInvoiceStatus,
+                originalWarehouse: initialWarehouse,
+                dispatchWarehouse: initialWarehouse,
                 lastZohoSync: new Date(),
                 zohoDetailsJson: zohoInv as unknown as Prisma.InputJsonObject,
               },
@@ -925,10 +933,15 @@ export async function getOrFetchInvoiceDetail(params: {
         });
       }
 
+      const finalZohoDetail = { ...(zohoDetail || {}) };
+      if (invoice.dispatchWarehouse) {
+        finalZohoDetail.location_name = invoice.dispatchWarehouse;
+      }
+
       await tx.postDispatchInvoice.update({
         where: { id: invoice.id },
         data: {
-          zohoDetailsJson: zohoDetail as unknown as Prisma.InputJsonObject,
+          zohoDetailsJson: finalZohoDetail as unknown as Prisma.InputJsonObject,
           lastZohoSync: new Date(),
         },
       });

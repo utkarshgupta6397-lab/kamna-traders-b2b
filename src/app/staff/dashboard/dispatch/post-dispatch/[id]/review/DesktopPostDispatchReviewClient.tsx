@@ -555,10 +555,19 @@ export default function DesktopPostDispatchReviewClient({
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 pt-0.5">
                     <div className="flex items-center gap-1.5">
                       <Building2 size={13} className="text-gray-400" />
-                      <span>Source Warehouse:</span>
+                      <span>Dispatch Warehouse:</span>
                       <span className="font-medium text-gray-800">
-                        {invoice.warehouseName || "Not Assigned"}
+                        {invoice.warehouseName || invoice.dispatchWarehouse || "Not Assigned"}
                       </span>
+                      {invoice.isReassigned && (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/80 px-1.5 py-0.5 rounded ml-1"
+                          title={`Originally assigned to ${invoice.originalWarehouse || 'Unknown'}`}
+                        >
+                          <RotateCcw size={9} className="text-amber-600" />
+                          <span>Reassigned</span>
+                        </span>
+                      )}
                     </div>
                     {invoice.salesOrderNumber && (
                       <div className="flex items-center gap-1.5 font-mono">
@@ -1126,6 +1135,7 @@ export default function DesktopPostDispatchReviewClient({
                       const isApprove = hist.eventType.includes("APPROVED");
                       const isReject = hist.eventType.includes("REJECTED");
                       const isForceArchive = hist.eventType === "INVOICE_FORCE_ARCHIVED";
+                      const isWarehouseChange = hist.eventType === "DISPATCH_WAREHOUSE_CHANGED";
 
                       return (
                         <div key={hist.id} className="relative">
@@ -1138,13 +1148,17 @@ export default function DesktopPostDispatchReviewClient({
                                 ? "border-amber-600 bg-amber-50"
                                 : isForceArchive
                                 ? "border-purple-600 bg-purple-50"
+                                : isWarehouseChange
+                                ? "border-indigo-600 bg-indigo-50"
                                 : "border-[#1A2766] bg-blue-50"
                             }`}
                           />
                           <div className="space-y-1">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span className="text-xs font-bold font-mono text-gray-900">
-                                {hist.eventType.replace(/_/g, " ")}
+                                {hist.eventType === "DISPATCH_WAREHOUSE_CHANGED"
+                                  ? "DISPATCH WAREHOUSE REASSIGNED"
+                                  : hist.eventType.replace(/_/g, " ")}
                               </span>
                               {hist.workflowType && (
                                 <span className="text-[9px] font-semibold uppercase bg-gray-100 text-gray-600 px-1 py-0.2 rounded">
@@ -1161,7 +1175,22 @@ export default function DesktopPostDispatchReviewClient({
                               By: <strong className="text-gray-800">{hist.userName || "System"}</strong>
                             </p>
 
-                            {hist.rejectionReason && (
+                            {isWarehouseChange && hist.metadata && (
+                              <div className="text-xs text-indigo-950 bg-indigo-50/80 p-2.5 rounded-lg border border-indigo-200/80 mt-1 space-y-1">
+                                <div className="flex items-center gap-1.5 font-medium">
+                                  <span className="text-gray-600">{hist.metadata.previous_dispatch_warehouse || 'Old'}</span>
+                                  <span className="text-indigo-400 font-bold">&rarr;</span>
+                                  <span className="font-bold text-[#1A2766]">{hist.metadata.new_dispatch_warehouse || 'New'}</span>
+                                </div>
+                                {hist.metadata.reason && (
+                                  <div className="text-[11px] text-gray-700">
+                                    <strong className="text-gray-800">Reason:</strong> {hist.metadata.reason}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {!isWarehouseChange && hist.rejectionReason && (
                               <div className="text-xs text-amber-900 bg-amber-50 p-2 rounded-lg border border-amber-200 mt-1">
                                 <strong>Reason:</strong> {hist.rejectionReason}
                               </div>

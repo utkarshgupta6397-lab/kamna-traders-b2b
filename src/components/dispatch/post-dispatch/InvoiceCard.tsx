@@ -10,6 +10,12 @@ export interface PostDispatchInvoiceSummary {
   customerId?: string | null;
   customerName: string;
   warehouseName?: string | null;
+  dispatchWarehouse?: string | null;
+  originalWarehouse?: string | null;
+  dispatchWarehouseId?: string | null;
+  isReassigned?: boolean;
+  reassignedAt?: string | null;
+  reassignedByName?: string | null;
   total: number;
   currencyCode: string;
   salesOrderNumber?: string | null;

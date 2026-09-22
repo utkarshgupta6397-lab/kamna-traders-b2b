@@ -28,6 +28,7 @@ import {
   ExternalLink,
   Building2,
   Archive,
+  Pencil,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { PostDispatchInvoiceSummary } from '@/components/dispatch/post-dispatch/InvoiceCard';
@@ -431,6 +432,19 @@ export default function DesktopPostDispatchView({
   const [archiveReason, setArchiveReason] = useState('');
   const [unauthorizedMessage, setUnauthorizedMessage] = useState<string | null>(null);
 
+  // Warehouse Reassignment State
+  const [serverCanForceArchive, setServerCanForceArchive] = useState<boolean>(false);
+  const effectiveCanForceArchive = canForceArchive || serverCanForceArchive;
+  const [activeWarehousesList, setActiveWarehousesList] = useState<{ id: string; name: string }[]>([]);
+  const [editingWarehouseInvoiceId, setEditingWarehouseInvoiceId] = useState<string | null>(null);
+  const [reassignModalState, setReassignModalState] = useState<{
+    invoice: PostDispatchInvoiceSummary;
+    targetWarehouseId: string;
+    targetWarehouseName: string;
+  } | null>(null);
+  const [reassignReason, setReassignReason] = useState('');
+  const [submittingReassign, setSubmittingReassign] = useState(false);
+
   // Archive All Modal State
   const [archiveAllModalOpen, setArchiveAllModalOpen] = useState(false);
   const [archiveAllSubmitting, setArchiveAllSubmitting] = useState(false);
@@ -561,6 +575,12 @@ export default function DesktopPostDispatchView({
         }
         if (Array.isArray(data.availableWarehouses) && data.availableWarehouses.length > 0) {
           setAvailableWarehouses(data.availableWarehouses);
+        }
+        if (Array.isArray(data.activeWarehouses)) {
+          setActiveWarehousesList(data.activeWarehouses);
+        }
+        if (typeof data.canForceArchive === 'boolean') {
+          setServerCanForceArchive(data.canForceArchive);
         }
         setUnauthorizedMessage(null);
       } else if (res.status === 403) {
@@ -735,6 +755,76 @@ export default function DesktopPostDispatchView({
       toast.error(err.message || 'Failed to execute Archive All');
     } finally {
       setArchiveAllSubmitting(false);
+    }
+  };
+
+  // Start inline warehouse selection
+  const handleStartEditWarehouse = (invId: string) => {
+    setEditingWarehouseInvoiceId(invId);
+  };
+
+  // Warehouse selected from dropdown
+  const handleSelectWarehouse = (
+    inv: PostDispatchInvoiceSummary,
+    selectedWhId: string
+  ) => {
+    setEditingWarehouseInvoiceId(null);
+    if (!selectedWhId) return;
+
+    const target = activeWarehousesList.find((w) => w.id === selectedWhId);
+    if (!target) return;
+
+    const currentWhName = (inv.dispatchWarehouse || inv.warehouseName || '').trim();
+    if (target.name.trim().toLowerCase() === currentWhName.toLowerCase()) {
+      // Reassigning to the same warehouse is a no-op
+      return;
+    }
+
+    setReassignModalState({
+      invoice: inv,
+      targetWarehouseId: target.id,
+      targetWarehouseName: target.name,
+    });
+    setReassignReason('');
+  };
+
+  // Confirm and persist warehouse reassignment
+  const handleConfirmReassignWarehouse = async () => {
+    if (!reassignModalState) return;
+    const trimmedReason = reassignReason.trim();
+    if (!trimmedReason) {
+      toast.error('Reason is mandatory for warehouse reassignment');
+      return;
+    }
+
+    setSubmittingReassign(true);
+    try {
+      const res = await fetch(
+        `/api/mobile/post-dispatch/invoices/${reassignModalState.invoice.id}/reassign-warehouse`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            warehouseId: reassignModalState.targetWarehouseId,
+            reason: trimmedReason,
+          }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to reassign warehouse');
+      }
+
+      toast.success(data.message || `Dispatch warehouse reassigned to ${reassignModalState.targetWarehouseName}`);
+      setReassignModalState(null);
+      setReassignReason('');
+
+      // Refresh invoices immediately to reflect new operational queue and counts
+      await fetchInvoices();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to reassign warehouse');
+    } finally {
+      setSubmittingReassign(false);
     }
   };
 
@@ -1096,7 +1186,7 @@ export default function DesktopPostDispatchView({
                 />
 
                 {/* HORIZONTALLY SCROLLING MIDDLE COLUMNS */}
-                <SortableHeader label="Source Warehouse" sortKey="warehouse" sortConfig={sortConfig} onSort={handleSort} />
+                <SortableHeader label="Dispatch Warehouse" sortKey="warehouse" sortConfig={sortConfig} onSort={handleSort} />
                 <SortableHeader label="Amount" sortKey="amount" align="right" sortConfig={sortConfig} onSort={handleSort} />
                 <SortableHeader label="Zoho Status" sortKey="status" sortConfig={sortConfig} onSort={handleSort} />
                 <SortableHeader label="E-Invoice" sortKey="eInvoice" sortConfig={sortConfig} onSort={handleSort} />
@@ -1244,18 +1334,94 @@ export default function DesktopPostDispatchView({
                         )}
                       </td>
 
-                      {/* Source Warehouse */}
+                      {/* Dispatch Warehouse */}
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border ${
-                            inv.warehouseName
-                              ? 'bg-slate-50 text-slate-700 border-slate-200'
-                              : 'bg-gray-50 text-gray-400 border-gray-200 italic'
-                          }`}
-                        >
-                          <Building2 size={11} className={inv.warehouseName ? 'text-slate-500' : 'text-gray-300'} />
-                          <span>{inv.warehouseName || 'Not Assigned'}</span>
-                        </span>
+                        {editingWarehouseInvoiceId === inv.id ? (
+                          <div className="flex items-center gap-1">
+                            <select
+                              autoFocus
+                              defaultValue=""
+                              onChange={(e) => handleSelectWarehouse(inv, e.target.value)}
+                              onBlur={() => setEditingWarehouseInvoiceId(null)}
+                              className="text-xs bg-white border border-blue-400 rounded-md px-2 py-1 text-slate-800 font-medium shadow-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="" disabled>
+                                Select warehouse…
+                              </option>
+                              {activeWarehousesList.map((wh) => (
+                                <option
+                                  key={wh.id}
+                                  value={wh.id}
+                                  disabled={
+                                    wh.name.trim().toLowerCase() ===
+                                    (inv.dispatchWarehouse || inv.warehouseName || '').trim().toLowerCase()
+                                  }
+                                >
+                                  {wh.name}{' '}
+                                  {wh.name.trim().toLowerCase() ===
+                                  (inv.dispatchWarehouse || inv.warehouseName || '').trim().toLowerCase()
+                                    ? '(Current)'
+                                    : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => setEditingWarehouseInvoiceId(null)}
+                              className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                              title="Cancel"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex flex-col items-start gap-1 group/wh">
+                            <div className="inline-flex items-center gap-1.5">
+                              <span
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border ${
+                                  inv.dispatchWarehouse || inv.warehouseName
+                                    ? 'bg-slate-50 text-slate-700 border-slate-200'
+                                    : 'bg-gray-50 text-gray-400 border-gray-200 italic'
+                                }`}
+                              >
+                                <Building2
+                                  size={11}
+                                  className={
+                                    inv.dispatchWarehouse || inv.warehouseName
+                                      ? 'text-slate-500'
+                                      : 'text-gray-300'
+                                  }
+                                />
+                                <span>{inv.dispatchWarehouse || inv.warehouseName || 'Not Assigned'}</span>
+                              </span>
+
+                              {effectiveCanForceArchive && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditWarehouse(inv.id)}
+                                  className="opacity-0 group-hover/wh:opacity-100 p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all cursor-pointer"
+                                  title="Reassign Dispatch Warehouse"
+                                  aria-label="Reassign Dispatch Warehouse"
+                                >
+                                  <Pencil size={11} />
+                                </button>
+                              )}
+                            </div>
+
+                            {inv.isReassigned && (
+                              <span
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200/80 cursor-help"
+                                title={`Reassigned from ${inv.originalWarehouse || 'original warehouse'}${
+                                  inv.reassignedAt
+                                    ? ` on ${format(new Date(inv.reassignedAt), 'dd MMM yyyy, hh:mm a')}`
+                                    : ''
+                                }${inv.reassignedByName ? ` by ${inv.reassignedByName}` : ''}`}
+                              >
+                                <span className="text-[9px]">↻</span> Reassigned
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
 
                       {/* Amount */}
@@ -1506,6 +1672,92 @@ export default function DesktopPostDispatchView({
           fetchInvoices();
         }}
       />
+
+      {/* Reassign Dispatch Warehouse Confirmation Modal */}
+      {reassignModalState && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden border border-gray-200">
+            <div className="p-6">
+              <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center mb-4">
+                <Building2 size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-1">Change Dispatch Warehouse?</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                Invoice <strong className="text-gray-900 font-mono text-sm">{reassignModalState.invoice.invoiceNumber}</strong>
+              </p>
+
+              {/* Transition Banner */}
+              <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 mb-4 flex items-center justify-between text-xs">
+                <div className="flex flex-col">
+                  <span className="text-[10px] uppercase font-bold text-gray-400">Current</span>
+                  <span className="font-semibold text-gray-700">
+                    {reassignModalState.invoice.dispatchWarehouse ||
+                      reassignModalState.invoice.warehouseName ||
+                      'Not Assigned'}
+                  </span>
+                </div>
+                <div className="text-blue-500 font-bold px-2 text-sm">→</div>
+                <div className="flex flex-col items-end">
+                  <span className="text-[10px] uppercase font-bold text-blue-500">New Operational</span>
+                  <span className="font-bold text-blue-700">
+                    {reassignModalState.targetWarehouseName}
+                  </span>
+                </div>
+              </div>
+
+              {/* Operational impact note */}
+              <div className="bg-blue-50/70 p-3 rounded-xl border border-blue-200/80 mb-4 text-xs text-blue-900 leading-relaxed">
+                <p className="font-semibold mb-1">Immediate Operational Transfer:</p>
+                <p>
+                  Pending receiving, check, and inventory deduction queues will transfer immediately to{' '}
+                  <strong>{reassignModalState.targetWarehouseName}</strong>. Original warehouse and full reassignment history are permanently preserved in audit records.
+                </p>
+              </div>
+
+              {/* Mandatory Reason Input */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Reason for Reassignment <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={reassignReason}
+                  onChange={(e) => setReassignReason(e.target.value)}
+                  placeholder="e.g. Stock arriving at Budh Vihar instead of Main Hub (required)"
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setReassignModalState(null);
+                  setReassignReason('');
+                }}
+                disabled={submittingReassign}
+                className="px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReassignWarehouse}
+                disabled={submittingReassign || !reassignReason.trim()}
+                className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {submittingReassign && <Loader2 size={13} className="animate-spin" />}
+                <span>Confirm Reassignment</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Force Archive Confirmation Modal */}
       {forceArchiveInvoice && (

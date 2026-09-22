@@ -246,6 +246,7 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
       id: true,
       zohoStatus: true,
       zohoCreatedTime: true,
+      dispatchWarehouse: true,
       zohoDetailsJson: true,
       workflows: {
         select: {
@@ -266,10 +267,10 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
 
   // Discover all distinct warehouses from DB
   const rawWarehouses = await prisma.$queryRaw<{ wh: string | null }[]>`
-    SELECT DISTINCT "zohoDetailsJson"->>'location_name' as wh
+    SELECT DISTINCT COALESCE("dispatchWarehouse", "zohoDetailsJson"->>'location_name') as wh
     FROM "PostDispatchInvoice"
-    WHERE "zohoDetailsJson" IS NOT NULL
-      AND "zohoDetailsJson"->>'location_name' IS NOT NULL
+    WHERE ("dispatchWarehouse" IS NOT NULL AND "dispatchWarehouse" != '')
+       OR ("zohoDetailsJson" IS NOT NULL AND "zohoDetailsJson"->>'location_name' IS NOT NULL)
     ORDER BY wh ASC
   `;
 
@@ -293,7 +294,7 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
 
   // Ensure warehouses from the current dataset are present
   for (const inv of invoices) {
-    const wh = ((inv.zohoDetailsJson as any)?.location_name || '').trim();
+    const wh = (inv.dispatchWarehouse || (inv.zohoDetailsJson as any)?.location_name || '').trim();
     if (wh) distinctWarehousesSet.add(wh);
   }
 
@@ -368,7 +369,7 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
 
     if (!isAct) continue; // Skip completed / non-pending invoices
 
-    const rawWh = ((inv.zohoDetailsJson as any)?.location_name || '').trim() || 'Unassigned';
+    const rawWh = (inv.dispatchWarehouse || (inv.zohoDetailsJson as any)?.location_name || '').trim() || 'Unassigned';
     if (!whMap.has(rawWh)) {
       whMap.set(rawWh, createEmptyWhAcc(rawWh));
     }
@@ -543,6 +544,7 @@ export async function getOperationsCellInvoices(params: {
       total: true,
       zohoStatus: true,
       zohoCreatedTime: true,
+      dispatchWarehouse: true,
       zohoDetailsJson: true,
       workflows: {
         select: {
@@ -566,7 +568,7 @@ export async function getOperationsCellInvoices(params: {
   const matchingInvoices = rawInvoices.filter((inv) => {
     // If specific warehouse was Unassigned, ensure location_name is empty
     if (warehouse === 'Unassigned') {
-      const wh = ((inv.zohoDetailsJson as any)?.location_name || '').trim();
+      const wh = (inv.dispatchWarehouse || (inv.zohoDetailsJson as any)?.location_name || '').trim();
       if (wh) return false;
     }
 
@@ -609,7 +611,7 @@ export async function getOperationsCellInvoices(params: {
       id: inv.id,
       invoiceNumber: inv.invoiceNumber,
       customerName: inv.customerName,
-      warehouse: ((inv.zohoDetailsJson as any)?.location_name || '').trim() || 'Unassigned',
+      warehouse: (inv.dispatchWarehouse || (inv.zohoDetailsJson as any)?.location_name || '').trim() || 'Unassigned',
       amount: inv.total,
       formattedAmount: new Intl.NumberFormat('en-IN', {
         style: 'currency',

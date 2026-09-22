@@ -138,6 +138,11 @@ export async function POST(
       }
 
       // 2. Update postDispatchInvoice
+      const finalZohoDetail = { ...(zohoDetail || {}) };
+      if (invoice.dispatchWarehouse) {
+        finalZohoDetail.location_name = invoice.dispatchWarehouse;
+      }
+
       const inv = await tx.postDispatchInvoice.update({
         where: { id: invoice.id },
         data: {
@@ -147,7 +152,7 @@ export async function POST(
           erpSubStatus: newErpSubStatus,
           timerStoppedAt: newTimerStoppedAt,
           lastZohoSync: new Date(),
-          zohoDetailsJson: zohoDetail as unknown as Prisma.InputJsonObject,
+          zohoDetailsJson: finalZohoDetail as unknown as Prisma.InputJsonObject,
           eInvoiceGenerated,
           eInvoiceIrn,
           eInvoiceAckNo,
@@ -214,7 +219,13 @@ export async function POST(
     const isConsumer = zohoDetail.gst_treatment
       ? isConsumerCustomer({ gstTreatment: zohoDetail.gst_treatment })
       : false;
-    const warehouseName = (zohoDetail.location_name as string) || null;
+    const warehouseName =
+      updated.dispatchWarehouse || (zohoDetail.location_name as string) || null;
+    const originalWarehouse =
+      updated.originalWarehouse || warehouseName;
+    const isReassigned = Boolean(
+      originalWarehouse && warehouseName && originalWarehouse !== warehouseName
+    );
 
     let gstin: string | null = null;
     if (zohoDetail.gst_no && String(zohoDetail.gst_no).trim()) {
@@ -248,6 +259,10 @@ export async function POST(
       customerName: updated.customerName,
       gstin,
       warehouseName,
+      dispatchWarehouse: warehouseName,
+      originalWarehouse,
+      dispatchWarehouseId: updated.dispatchWarehouseId || null,
+      isReassigned,
       total: updated.total,
       currencyCode: updated.currencyCode,
       salesOrderId: updated.salesOrderId,

@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { getDatabaseUrl } from './database-url';
 
-const CURRENT_SCHEMA_TAG = '2026-09-09-post-dispatch-phase1-v1';
+const CURRENT_SCHEMA_TAG = '2026-09-22-post-dispatch-reassign-warehouse-v2';
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient; __prisma_schema_tag?: string };
 
 // Invalidate stale PrismaClient instance cached across dev server reloads
@@ -10,6 +10,13 @@ if (globalForPrisma.prisma && globalForPrisma.__prisma_schema_tag !== CURRENT_SC
     globalForPrisma.prisma.$disconnect();
   } catch {}
   delete globalForPrisma.prisma;
+  if (typeof require !== 'undefined' && require.cache) {
+    Object.keys(require.cache).forEach((key) => {
+      if (key.includes('@prisma') || key.includes('.prisma')) {
+        delete require.cache[key];
+      }
+    });
+  }
 }
 
 const datasourceUrl = getDatabaseUrl() || process.env.DATABASE_URL;

@@ -131,10 +131,19 @@ export async function GET(
     const zohoLocationId = zohoDetails?.location_id ? String(zohoDetails.location_id) : null;
     const zohoLocationName = zohoDetails?.location_name ? String(zohoDetails.location_name) : null;
 
-    // Resolve expected warehouse from Zoho location
-    const expectedWarehouse = zohoLocationId
-      ? warehouses.find(w => w.zohoLocationId === zohoLocationId) || null
+    // Resolve expected warehouse from dispatch warehouse or Zoho location
+    let expectedWarehouse = invoice.dispatchWarehouseId
+      ? warehouses.find(w => w.id === invoice.dispatchWarehouseId) || null
       : null;
+    if (!expectedWarehouse && invoice.dispatchWarehouse) {
+      expectedWarehouse = warehouses.find(w => w.name.toLowerCase() === invoice.dispatchWarehouse!.toLowerCase()) || null;
+    }
+    if (!expectedWarehouse && zohoLocationId) {
+      expectedWarehouse = warehouses.find(w => w.zohoLocationId === zohoLocationId) || null;
+    }
+    if (!expectedWarehouse && zohoLocationName) {
+      expectedWarehouse = warehouses.find(w => w.name.toLowerCase() === zohoLocationName.toLowerCase()) || null;
+    }
 
     // Build allocation map for quick lookup
     const allocationMap = new Map<string, any>();

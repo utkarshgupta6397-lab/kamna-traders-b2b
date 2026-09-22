@@ -3,14 +3,16 @@ import { prisma } from './db';
 export interface DailySalesTrendPoint {
   date: string; // ISO date format in IST: YYYY-MM-DD
   dayOfWeek: string; // 'Mon', 'Tue', 'Wed', etc.
-  formattedDate: string; // '16 Sep'
-  fullDate: string; // '16 Sep 2026'
+  formattedDate: string; // '13 Sep'
+  fullDate: string; // '13 Sep 2026'
   isToday: boolean;
   sales: number;
   invoiceCount: number;
   movingAverage: number;
-  formattedSales: string;
-  formattedMovingAverage: string;
+  formattedSales: string; // Compact Indian format e.g. "₹30.91 L" or "₹85,500"
+  formattedMovingAverage: string; // Compact Indian format e.g. "₹24.52 L"
+  fullFormattedSales?: string; // Standard INR e.g. "₹30,91,331"
+  fullFormattedMovingAverage?: string; // Standard INR e.g. "₹24,51,890"
 }
 
 export interface PostDispatchDashboardSummary {
@@ -20,7 +22,7 @@ export interface PostDispatchDashboardSummary {
     start: string;
     end: string;
   };
-  salesTrend: DailySalesTrendPoint[];
+  salesTrend: DailySalesTrendPoint[]; // 10 visible days (oldest to newest, today is index 9)
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -35,10 +37,64 @@ export function formatInr(amount: number): string {
 }
 
 /**
- * Computes the 9-day IST calendar days (2 historical buffer days + 7 visible days).
- * IST offset: UTC+5:30.
+ * Formats currency values in compact Indian notation:
+ * >= ₹1,00,00,000: Crores (e.g. ₹1.00 Cr, ₹2.50 Cr)
+ * >= ₹1,00,000: Lakhs (e.g. ₹30.91 L, ₹1.00 L, ₹8.50 L)
+ * < ₹1,00,000: Standard rupees (e.g. ₹85,500, ₹50,000, ₹9,999, ₹0)
  */
-export function getIst9DayRange(): {
+export function formatCompactInr(amount: number): string {
+  if (!amount || amount === 0) return '₹0';
+  const absAmount = Math.abs(amount);
+  const sign = amount < 0 ? '-' : '';
+
+  if (absAmount >= 10000000) {
+    const cr = absAmount / 10000000;
+    return `${sign}₹${cr.toFixed(2)} Cr`;
+  } else if (absAmount >= 100000) {
+    const lakh = absAmount / 100000;
+    return `${sign}₹${lakh.toFixed(2)} L`;
+  } else {
+    return `${sign}${new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0,
+    }).format(absAmount)}`;
+  }
+}
+
+/**
+ * Formatter for compact Y-axis tick values (e.g. ₹0, ₹5 L, ₹10 L, ₹1 Cr)
+ */
+export function formatCompactInrAxis(amount: number): string {
+  if (!amount || amount === 0) return '₹0';
+  const absAmount = Math.abs(amount);
+  const sign = amount < 0 ? '-' : '';
+
+  if (absAmount >= 10000000) {
+    const cr = absAmount / 10000000;
+    const formatted = cr % 1 === 0 ? cr.toFixed(0) : cr.toFixed(1);
+    return `${sign}₹${formatted} Cr`;
+  } else if (absAmount >= 100000) {
+    const lakh = absAmount / 100000;
+    const formatted = lakh % 1 === 0 ? lakh.toFixed(0) : lakh.toFixed(1);
+    return `${sign}₹${formatted} L`;
+  } else {
+    return `${sign}${new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0,
+    }).format(absAmount)}`;
+  }
+}
+
+/**
+ * Computes 16-day IST calendar days (6 historical buffer days + 10 visible days).
+ * IST offset: UTC+5:30.
+ *
+ * Days index 0..5: 6 buffer days (Day -15 through Day -10)
+ * Days index 6..15: 10 visible days (Day -9 through Day 0/Today)
+ */
+export function getIst16DayRange(): {
   allDays: Array<{
     dateStr: string;
     dayOfWeek: string;
@@ -48,7 +104,7 @@ export function getIst9DayRange(): {
     end: Date;
     isToday: boolean;
   }>;
-  start9Days: Date;
+  start16Days: Date;
   todayEnd: Date;
 } {
   const now = new Date();
@@ -61,8 +117,8 @@ export function getIst9DayRange(): {
 
   const allDays = [];
 
-  // Generate 9 days in chronological order: i=8 (8 days ago) down to i=0 (today)
-  for (let i = 8; i >= 0; i--) {
+  // Generate 16 days in chronological order: i=15 (15 days ago) down to i=0 (today)
+  for (let i = 15; i >= 0; i--) {
     const dayStartUtc = Date.UTC(istYear, istMonth, istDate - i, 0, 0, 0, 0) - istOffsetMs;
     const dayEndUtc = Date.UTC(istYear, istMonth, istDate - i, 23, 59, 59, 999) - istOffsetMs;
 
@@ -91,17 +147,31 @@ export function getIst9DayRange(): {
 
   return {
     allDays,
-    start9Days: allDays[0].start,
-    todayEnd: allDays[8].end,
+    start16Days: allDays[0].start,
+    todayEnd: allDays[15].end,
   };
 }
 
 /**
- * Authoritative service to fetch Post-Dispatch summary KPIs and 7-day sales trend
- * with a 3-day moving average overlay.
+ * Deprecated alias maintained for backward compatibility.
+ */
+export function getIst9DayRange() {
+  const { allDays, todayEnd } = getIst16DayRange();
+  // Return last 9 days
+  const subDays = allDays.slice(7);
+  return {
+    allDays: subDays,
+    start9Days: subDays[0].start,
+    todayEnd,
+  };
+}
+
+/**
+ * Authoritative service to fetch Post-Dispatch summary KPIs and 10-day sales trend
+ * with a 7-day rolling moving average overlay.
  */
 export async function getPostDispatchDashboardSummary(): Promise<PostDispatchDashboardSummary> {
-  const { allDays, start9Days, todayEnd } = getIst9DayRange();
+  const { allDays, start16Days, todayEnd } = getIst16DayRange();
 
   // Authoritative SQL aggregation using PostDispatchInvoice with erpStatus = 'Active'
   // and grouping by date in Asia/Kolkata timezone
@@ -112,7 +182,7 @@ export async function getPostDispatchDashboardSummary(): Promise<PostDispatchDas
       COALESCE(SUM("total"), 0)::float as total_sales
     FROM "PostDispatchInvoice"
     WHERE "erpStatus" = 'Active'
-      AND "zohoCreatedTime" >= ${start9Days}
+      AND "zohoCreatedTime" >= ${start16Days}
       AND "zohoCreatedTime" <= ${todayEnd}
     GROUP BY ist_date
     ORDER BY ist_date ASC;
@@ -126,7 +196,7 @@ export async function getPostDispatchDashboardSummary(): Promise<PostDispatchDas
     });
   }
 
-  // Populate sales data across all 9 calendar days (including zero-sales days)
+  // Populate sales data across all 16 calendar days (including zero-sales days)
   const populatedDays = allDays.map((d) => {
     const data = salesMap.get(d.dateStr) || { count: 0, total: 0 };
     return {
@@ -136,22 +206,22 @@ export async function getPostDispatchDashboardSummary(): Promise<PostDispatchDas
     };
   });
 
-  // Calculate 3-day trailing moving average for the 7 visible days (indices 2 to 8)
-  // For visible index v (0 to 6), full index is v + 2
-  // MA = (sales[v+2] + sales[v+1] + sales[v]) / 3
+  // Calculate 7-day trailing moving average for the 10 visible days (indices 6 to 15)
+  // For visible index v (0 to 9), full index is v + 6
+  // MA(v) = (sum of sales for day fullIdx and previous 6 days) / 7
   const visibleTrend: DailySalesTrendPoint[] = [];
 
-  for (let v = 0; v < 7; v++) {
-    const fullIdx = v + 2;
+  for (let v = 0; v < 10; v++) {
+    const fullIdx = v + 6;
     const currentDay = populatedDays[fullIdx];
-    const prevDay1 = populatedDays[fullIdx - 1];
-    const prevDay2 = populatedDays[fullIdx - 2];
+
+    let sum7 = 0;
+    for (let k = 0; k < 7; k++) {
+      sum7 += populatedDays[fullIdx - k].sales;
+    }
+    const ma7 = sum7 / 7;
 
     const s0 = currentDay.sales;
-    const s1 = prevDay1.sales;
-    const s2 = prevDay2.sales;
-
-    const ma = (s0 + s1 + s2) / 3;
 
     visibleTrend.push({
       date: currentDay.dateStr,
@@ -161,17 +231,19 @@ export async function getPostDispatchDashboardSummary(): Promise<PostDispatchDas
       isToday: currentDay.isToday,
       sales: Math.round(s0 * 100) / 100,
       invoiceCount: currentDay.invoiceCount,
-      movingAverage: Math.round(ma * 100) / 100,
-      formattedSales: formatInr(s0),
-      formattedMovingAverage: formatInr(Math.round(ma)),
+      movingAverage: Math.round(ma7 * 100) / 100,
+      formattedSales: formatCompactInr(s0),
+      formattedMovingAverage: formatCompactInr(ma7),
+      fullFormattedSales: formatInr(s0),
+      fullFormattedMovingAverage: formatInr(Math.round(ma7)),
     });
   }
 
-  // Today is the last day (index 6 of visibleTrend)
-  const todayItem = visibleTrend[6];
+  // Today is the right-most day (index 9 of visibleTrend)
+  const todayItem = visibleTrend[9];
   const todayRange = {
-    start: allDays[8].start.toISOString(),
-    end: allDays[8].end.toISOString(),
+    start: allDays[15].start.toISOString(),
+    end: allDays[15].end.toISOString(),
   };
 
   return {

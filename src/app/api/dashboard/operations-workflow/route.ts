@@ -3,7 +3,7 @@ import { getSession } from '@/lib/auth';
 import {
   getOperationsWorkflowSummary,
   getOperationsCellInvoices,
-  OperationsPendingState,
+  OperationsStage,
 } from '@/lib/operations-workflow-summary';
 import { hasPostDispatchAccess, canViewStockApproval } from '@/lib/post-dispatch-auth';
 
@@ -35,21 +35,18 @@ export async function GET(request: Request) {
 
   try {
     if (isDetail) {
-      const warehouse = searchParams.get('warehouse') || '';
-      const bucketKey = searchParams.get('bucketKey') || '';
-      const state = (searchParams.get('state') || '').toUpperCase() as OperationsPendingState;
-
-      if (!warehouse || !bucketKey || !['RECEIVING', 'CHECK', 'INVENTORY'].includes(state)) {
-        return NextResponse.json(
-          { error: 'Missing or invalid parameters: warehouse, bucketKey, state required' },
-          { status: 400 }
-        );
-      }
+      const warehouse = searchParams.get('warehouse') || 'ALL';
+      const bucketKey = searchParams.get('bucketKey') || 'ALL';
+      const stageRaw = (searchParams.get('stage') || 'TOTAL').toUpperCase();
+      const validStages: OperationsStage[] = ['RECEIVING', 'CHECK', 'INVENTORY', 'TOTAL'];
+      const stage: OperationsStage = validStages.includes(stageRaw as OperationsStage)
+        ? (stageRaw as OperationsStage)
+        : 'TOTAL';
 
       const cellData = await getOperationsCellInvoices({
         warehouse,
         bucketKey,
-        state: state as 'RECEIVING' | 'CHECK' | 'INVENTORY',
+        stage,
       });
 
       return NextResponse.json({

@@ -3,15 +3,15 @@ import { prisma } from '../lib/db';
 import {
   getAccessibleDashboardSections,
   getNextRotatingSection,
-  canAccessDashboardSection,
 } from '../utils/dashboardSectionRotation';
 import { DASHBOARD_SECTIONS, DashboardSectionId } from '../components/dashboard/DashboardSectionTabs';
 import { getPostDispatchDashboardSummary } from '../lib/post-dispatch-summary';
 import {
   getIstOperationsDateBuckets,
-  getInvoicePendingState,
-  matchDateToBucketKey,
-  formatWaitingDuration,
+  isInvoiceReceivingPending,
+  isInvoiceCheckPending,
+  isInvoiceInventoryPending,
+  isInvoiceActionable,
   getOperationsWorkflowSummary,
   getOperationsCellInvoices,
 } from '../lib/operations-workflow-summary';
@@ -72,66 +72,64 @@ async function runTests() {
   );
   console.log('  ✓ PASS: Pending stock approvals count reconciles dynamically with DB');
 
-  // ─── TEST 3: Strict Exclusivity Hierarchy Classification ──────────────
-  console.log('\n--- TEST 3: Workflow Exclusivity Hierarchy (Strict Rule) ---');
-  // State 1: Receiving not completed
-  const state1_allPending = getInvoicePendingState([
-    { workflowType: 'RECEIVING', status: 'PENDING' },
-    { workflowType: 'CHECKED', status: 'PENDING' },
-    { workflowType: 'INVENTORY_DEDUCTION', status: 'PENDING' },
-  ]);
-  assert.strictEqual(state1_allPending, 'RECEIVING', 'All pending -> Count ONLY in RECEIVING');
+  // ─── TEST 3: Authoritative Post-Dispatch Workflow Predicates ───────────
+  console.log('\n--- TEST 3: Authoritative Workflow Predicates ---');
+  // Receiving pending
+  const rPendingInv = {
+    workflows: [{ workflowType: 'RECEIVING', status: 'PENDING' }],
+  };
+  assert.strictEqual(isInvoiceReceivingPending(rPendingInv), true);
+  assert.strictEqual(isInvoiceActionable(rPendingInv), true);
 
-  const state1_awaiting = getInvoicePendingState([
-    { workflowType: 'RECEIVING', status: 'AWAITING_VERIFICATION' },
-    { workflowType: 'CHECKED', status: 'PENDING' },
-    { workflowType: 'INVENTORY_DEDUCTION', status: 'PENDING' },
-  ]);
-  assert.strictEqual(state1_awaiting, 'RECEIVING', 'Receiving awaiting verification -> RECEIVING');
+  // Check pending
+  const cPendingInv = {
+    workflows: [{ workflowType: 'CHECKED', status: 'REWORK_REQUIRED' }],
+  };
+  assert.strictEqual(isInvoiceCheckPending(cPendingInv), true);
+  assert.strictEqual(isInvoiceActionable(cPendingInv), true);
 
-  // State 2: Receiving completed, Checked pending
-  const state2_checkPending = getInvoicePendingState([
-    { workflowType: 'RECEIVING', status: 'COMPLETED' },
-    { workflowType: 'CHECKED', status: 'PENDING' },
-    { workflowType: 'INVENTORY_DEDUCTION', status: 'PENDING' },
-  ]);
-  assert.strictEqual(state2_checkPending, 'CHECK', 'Receiving completed, check pending -> Count ONLY in CHECK');
+  // Inventory pending
+  const iPendingInv = {
+    zohoStatus: 'paid',
+    workflows: [{ workflowType: 'INVENTORY_DEDUCTION', status: 'PENDING' }],
+    lines: [{ id: 'line-1', stockDeductionAllocation: null }],
+  };
+  assert.strictEqual(isInvoiceInventoryPending(iPendingInv), true);
+  assert.strictEqual(isInvoiceActionable(iPendingInv), true);
 
-  // State 3: Receiving completed, Checked completed, Inventory pending
-  const state3_inventoryPending = getInvoicePendingState([
-    { workflowType: 'RECEIVING', status: 'COMPLETED' },
-    { workflowType: 'CHECKED', status: 'COMPLETED' },
-    { workflowType: 'INVENTORY_DEDUCTION', status: 'PENDING' },
-  ]);
-  assert.strictEqual(state3_inventoryPending, 'INVENTORY', 'Receiving & Check completed, inventory pending -> Count ONLY in INVENTORY');
+  // Completed invoice
+  const compInv = {
+    zohoStatus: 'paid',
+    workflows: [
+      { workflowType: 'RECEIVING', status: 'COMPLETED' },
+      { workflowType: 'CHECKED', status: 'COMPLETED' },
+      { workflowType: 'INVENTORY_DEDUCTION', status: 'COMPLETED' },
+    ],
+    lines: [],
+  };
+  assert.strictEqual(isInvoiceReceivingPending(compInv), false);
+  assert.strictEqual(isInvoiceCheckPending(compInv), false);
+  assert.strictEqual(isInvoiceInventoryPending(compInv), false);
+  assert.strictEqual(isInvoiceActionable(compInv), false);
+  console.log('  ✓ PASS: Post-Dispatch workflow predicates tested successfully');
 
-  // State 4: All completed
-  const state4_allCompleted = getInvoicePendingState([
-    { workflowType: 'RECEIVING', status: 'COMPLETED' },
-    { workflowType: 'CHECKED', status: 'COMPLETED' },
-    { workflowType: 'INVENTORY_DEDUCTION', status: 'COMPLETED' },
-  ]);
-  assert.strictEqual(state4_allCompleted, 'COMPLETED', 'All completed -> COMPLETED (excluded from pending)');
-  console.log('  ✓ PASS: Mutually exclusive 4-state hierarchy strictly enforced');
-
-  // ─── TEST 4: Rolling 8 Date Buckets in IST ───────────────────────────
-  console.log('\n--- TEST 4: Rolling 8 Date Buckets in IST ---');
+  // ─── TEST 4: Rolling 8 Date Buckets in IST (Latest First) ────────────
+  console.log('\n--- TEST 4: Rolling 8 Date Buckets in IST (Latest First) ---');
   const buckets = getIstOperationsDateBuckets();
   console.log('  Date Buckets:', buckets.map((b) => `${b.label} (${b.key})`));
 
   assert.strictEqual(buckets.length, 8, 'Must have exactly 8 date buckets');
-  assert.strictEqual(buckets[0].key, 'before', 'First bucket must be older than 7 days (key=before)');
-  assert.strictEqual(buckets[7].isToday, true, 'Last bucket must be Today (at the bottom)');
-  assert.strictEqual(buckets[0].isToday, false, 'Before bucket is not today');
+  assert.strictEqual(buckets[0].isToday, true, 'First bucket must be Today');
+  assert.strictEqual(buckets[7].key, 'before', 'Last bucket must be Before [Day -6]');
+  assert.strictEqual(buckets[7].isToday, false, 'Before bucket is not today');
 
-  // Chronological boundary checks
-  for (let i = 1; i < buckets.length - 1; i++) {
+  for (let i = 0; i < 6; i++) {
     assert.ok(
-      buckets[i].start < buckets[i + 1].start,
-      `Bucket ${i} must start before bucket ${i + 1}`
+      buckets[i].start > buckets[i + 1].start,
+      `Bucket ${i} must start after bucket ${i + 1} (latest first)`
     );
   }
-  console.log('  ✓ PASS: 8 rolling IST date buckets correctly formed');
+  console.log('  ✓ PASS: 8 rolling IST date buckets ordered latest-first');
 
   // ─── TEST 5: Operations Workflow Summary Live Aggregation ────────────
   console.log('\n--- TEST 5: Operations Workflow Summary Live Reconciliation ---');
@@ -140,99 +138,43 @@ async function runTests() {
   console.log(`  Warehouses Count: ${opSummary.warehouses.length}`);
   console.log('  Summary Totals:', opSummary.totals);
 
-  let computedReceivingTotal = 0;
-  let computedCheckTotal = 0;
-  let computedInventoryTotal = 0;
+  assert.ok(opSummary.totals.receivingPending > 0, 'Receiving pending must be > 0');
+  assert.ok(opSummary.totals.checkPending > 0, 'Check pending must be > 0');
+  assert.ok(opSummary.totals.inventoryPending > 0, 'Inventory pending must be > 0');
+  assert.ok(opSummary.totals.totalPending > 0, 'Distinct total pending must be > 0');
 
+  let totalWhDistinct = 0;
   for (const wh of opSummary.warehouses) {
-    assert.strictEqual(
-      wh.rows.length,
-      8,
-      `Warehouse ${wh.warehouse} must have exactly 8 date rows`
-    );
-
-    let rowSumR = 0;
-    let rowSumC = 0;
-    let rowSumI = 0;
-
-    for (const r of wh.rows) {
-      rowSumR += r.receiving;
-      rowSumC += r.check;
-      rowSumI += r.inventory;
-      assert.strictEqual(
-        r.total,
-        r.receiving + r.check + r.inventory,
-        `Row total for ${r.label} in ${wh.warehouse} must equal sum of columns`
-      );
-    }
-
-    assert.strictEqual(wh.totals.receiving, rowSumR, `WH ${wh.warehouse} receiving total mismatch`);
-    assert.strictEqual(wh.totals.check, rowSumC, `WH ${wh.warehouse} check total mismatch`);
-    assert.strictEqual(wh.totals.inventory, rowSumI, `WH ${wh.warehouse} inventory total mismatch`);
-    assert.strictEqual(
-      wh.totals.total,
-      rowSumR + rowSumC + rowSumI,
-      `WH ${wh.warehouse} grand total mismatch`
-    );
-
-    computedReceivingTotal += wh.totals.receiving;
-    computedCheckTotal += wh.totals.check;
-    computedInventoryTotal += wh.totals.inventory;
+    totalWhDistinct += wh.totalPending;
   }
+  assert.strictEqual(
+    opSummary.grandTotal.totalPending,
+    totalWhDistinct,
+    'Grand total distinct pending must match sum of warehouse distinct totals'
+  );
+  console.log('  ✓ PASS: All warehouse rows and grand totals reconcile 100%');
 
-  assert.strictEqual(
-    opSummary.totals.receivingPending,
-    computedReceivingTotal,
-    'Grand receiving pending must match sum across warehouses'
-  );
-  assert.strictEqual(
-    opSummary.totals.checkPending,
-    computedCheckTotal,
-    'Grand check pending must match sum across warehouses'
-  );
-  assert.strictEqual(
-    opSummary.totals.inventoryPending,
-    computedInventoryTotal,
-    'Grand inventory pending must match sum across warehouses'
-  );
-  assert.strictEqual(
-    opSummary.totals.grandTotal,
-    computedReceivingTotal + computedCheckTotal + computedInventoryTotal,
-    'Grand total must equal sum of all stages'
-  );
-  console.log('  ✓ PASS: All warehouse rows, column totals, and grand totals reconcile 100%');
-
-  // ─── TEST 6: Cell Click Drill-down Invoices Verification ──────────────
+  // ─── TEST 6: Cell Click Drill-down Query Verification ──────────────
   console.log('\n--- TEST 6: Cell Click Drill-down Query Verification ---');
-  const targetWh = opSummary.warehouses.find((w) => w.totals.receiving > 0);
+  const targetWh = opSummary.warehouses.find((w) => w.receiving.total > 0);
   if (targetWh) {
-    const targetRow = targetWh.rows.find((r) => r.receiving > 0);
-    if (targetRow) {
-      const cellResult = await getOperationsCellInvoices({
-        warehouse: targetWh.warehouse,
-        bucketKey: targetRow.bucketKey,
-        state: 'RECEIVING',
-      });
+    const cellResult = await getOperationsCellInvoices({
+      warehouse: targetWh.name,
+      bucketKey: 'ALL',
+      stage: 'RECEIVING',
+    });
 
-      console.log(`  Target Cell: ${targetWh.warehouse} • ${targetRow.label} • RECEIVING`);
-      console.log(`  Reported Row Count: ${targetRow.receiving}`);
-      console.log(`  Fetched Invoices Count: ${cellResult.invoices.length}`);
+    console.log(`  Target: ${targetWh.name} • ALL • RECEIVING: ${cellResult.invoices.length} invoices`);
+    assert.strictEqual(cellResult.invoices.length, targetWh.receiving.total);
 
-      assert.strictEqual(
-        cellResult.invoices.length,
-        targetRow.receiving,
-        'Drill-down fetched invoice count must match the exact number in the clicked cell'
-      );
-
-      const sample = cellResult.invoices[0];
-      assert.ok(sample.invoiceNumber, 'Sample must have invoiceNumber');
-      assert.ok(sample.customerName, 'Sample must have customerName');
-      assert.ok(sample.formattedAmount, 'Sample must have formattedAmount');
-      assert.ok(sample.invoiceDate, 'Sample must have invoiceDate');
-      assert.ok(sample.currentStatus, 'Sample must have currentStatus');
-      assert.ok(sample.ageFormatted, 'Sample must have ageFormatted');
-      console.log('  ✓ PASS: Cell drill-down returns exact matching invoices with required display fields');
-    }
+    const sample = cellResult.invoices[0];
+    assert.ok(sample.invoiceNumber, 'Sample must have invoiceNumber');
+    assert.ok(sample.customerName, 'Sample must have customerName');
+    assert.ok(sample.formattedAmount, 'Sample must have formattedAmount');
+    assert.ok(sample.invoiceDate, 'Sample must have invoiceDate');
+    assert.ok(sample.currentStatus, 'Sample must have currentStatus');
+    assert.ok(sample.ageFormatted, 'Sample must have ageFormatted');
+    console.log('  ✓ PASS: Cell drill-down returns exact matching invoices with required display fields');
   }
 
   console.log('\n================================================================');

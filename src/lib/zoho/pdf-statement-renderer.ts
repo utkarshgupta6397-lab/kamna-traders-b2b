@@ -35,6 +35,8 @@ export type Telemetry = {
   totalApiCalls: number;
   rawInvoicesFetched: number;
   validInvoicesAfterFilter: number;
+  rawPaymentsFetched?: number;
+  validPaymentsAfterFilter?: number;
   rawBillsFetched: number;
   validBillsAfterFilter: number;
   debugReceivable: number;

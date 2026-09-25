@@ -8,12 +8,12 @@ import {
   StatementTransaction,
   CustomerStatement,
   CustomerStatementCustomer,
+  CustomerStatementInvoice,
   StatementFetchOptions,
-  getVendorBills,
   getVendorPayments,
-  CustomerStatementBill,
   CustomerStatementVendorPayment
 } from './customer-statement';
+import { getTodayIST } from './native-contact-statement';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
@@ -39,7 +39,7 @@ export async function getNativeVendorStatementPdf(
     }
 
     const fetchImpl = options?.fetchFn || fetch;
-    const endDate = maxDate || new Date().toISOString().slice(0, 10);
+    const endDate = maxDate || getTodayIST();
     const url = `${API_BASE_URL}/books/v3/vendors/${vendorId}/statements?organization_id=${orgId}&from_date=${minDate}&to_date=${endDate}`;
 
     console.log(`[Native Vendor Statement] Fetching statement PDF for vendor ${vendorId} (${minDate} → ${endDate})`);
@@ -95,11 +95,10 @@ export async function getNativeVendorStatement(
   try {
     const orgId = options?.orgId || getZohoOrgId();
 
-    // 1. Fetch native PDF and metadata lists (bills & vendor payments) concurrently
+    // 1. Fetch native PDF and vendor payments list concurrently
     console.time('nativeVendorStatementFetch');
-    const [pdfResult, billsResult, vpResult] = await Promise.all([
+    const [pdfResult, vpResult] = await Promise.all([
       getNativeVendorStatementPdf(vendorId, minDate, maxDate, options),
-      getVendorBills(vendorId, options),
       getVendorPayments(vendorId, options)
     ]);
     console.timeEnd('nativeVendorStatementFetch');
@@ -116,27 +115,25 @@ export async function getNativeVendorStatement(
     // 2. Parse native PDF
     const parsed: NativeVendorStatementParsedData = await parseNativeVendorStatementPdf(pdfResult.data);
 
-    // 3. Build lookup maps for bills and vendor payments to resolve IDs and enriched details
-    const bills: CustomerStatementBill[] = billsResult.success && billsResult.data ? billsResult.data : [];
+    // 3. Build lookup maps directly from vendor payments list response (NO detail calls)
     const vendorPayments: CustomerStatementVendorPayment[] = vpResult.success && vpResult.data ? vpResult.data : [];
-
-    const billByNumber = new Map<string, CustomerStatementBill>();
-    for (const b of bills) {
-      if (b.billNumber) {
-        billByNumber.set(b.billNumber.toLowerCase().trim(), b);
-      }
-      if (b.referenceNumber) {
-        billByNumber.set(b.referenceNumber.toLowerCase().trim(), b);
-      }
-    }
-
+    const vpById = new Map<string, CustomerStatementVendorPayment>();
     const vpByNumber = new Map<string, CustomerStatementVendorPayment>();
+    const vpByRef = new Map<string, CustomerStatementVendorPayment>();
+    const vpByDateAmt = new Map<string, CustomerStatementVendorPayment>();
+
     for (const vp of vendorPayments) {
+      if (vp.paymentId) {
+        vpById.set(vp.paymentId, vp);
+      }
       if (vp.paymentNumber) {
         vpByNumber.set(vp.paymentNumber.toLowerCase().trim(), vp);
       }
       if (vp.referenceNumber) {
-        vpByNumber.set(vp.referenceNumber.toLowerCase().trim(), vp);
+        vpByRef.set(vp.referenceNumber.toLowerCase().trim(), vp);
+      }
+      if (vp.date && vp.amount !== undefined) {
+        vpByDateAmt.set(`${vp.date}_${Number(vp.amount).toFixed(2)}`, vp);
       }
     }
 
@@ -148,16 +145,13 @@ export async function getNativeVendorStatement(
 
     for (let idx = 0; idx < financialRows.length; idx++) {
       const row = financialRows[idx];
-      const timestamp = new Date(row.isoDate || 0).getTime();
+      const timestamp = new Date(row.isoDate || 0).getTime() + idx;
 
       if (row.type === 'bill') {
-        const billNum = row.billNumber || row.reference || '';
-        const matchedBill = billByNumber.get(billNum.toLowerCase());
-        const billId = matchedBill?.billId;
-        const actualBillNumber = matchedBill?.billNumber || billNum;
+        const actualBillNumber = row.billNumber || row.reference || '';
 
         transactions.push({
-          id: billId || `bill-${actualBillNumber || idx}`,
+          id: `bill-${actualBillNumber || idx}`,
           type: 'bill',
           date: row.isoDate,
           datetime: row.isoDate,
@@ -170,16 +164,20 @@ export async function getNativeVendorStatement(
           customerNetEffect: 0,
           vendorNetEffect: -row.billedAmount,
           balanceAfter: row.balance,
-          referenceNumber: matchedBill?.referenceNumber || actualBillNumber,
-          zohoUrl: orgId && billId ? `https://books.zoho.in/app/${orgId}#/bills/${billId}` : undefined
+          referenceNumber: row.reference || actualBillNumber,
+          zohoUrl: undefined
         });
       } else if (row.type === 'payment_made') {
         const vpNum = row.paymentNumber || row.reference || '';
-        const matchedVp = vpByNumber.get(vpNum.toLowerCase());
+        const vpKey = vpNum.toLowerCase().trim();
+        let matchedVp = vpKey ? (vpByNumber.get(vpKey) || vpByRef.get(vpKey)) : undefined;
+        if (!matchedVp && row.isoDate && row.paidAmount) {
+          matchedVp = vpByDateAmt.get(`${row.isoDate}_${Number(row.paidAmount).toFixed(2)}`);
+        }
         const paymentId = matchedVp?.paymentId;
         const pmtMode = matchedVp?.paymentMode || '';
         const pmtRef = matchedVp?.referenceNumber || vpNum;
-        const pmtDesc = matchedVp?.description || row.details || '';
+        const pmtDesc = matchedVp?.description || matchedVp?.notes || row.details || '';
 
         let desc = pmtMode ? `Payment Made - ${pmtMode}` : 'Payment Made';
         if (pmtRef) {
@@ -208,10 +206,38 @@ export async function getNativeVendorStatement(
           notes: pmtDesc,
           zohoUrl: undefined
         });
+      } else if (row.type === 'vendor_credit') {
+        const vcNum = row.reference || '';
+        const txAmount = row.amount || row.billedAmount || row.paidAmount || 0;
+
+        let desc = 'Vendor Credit Note';
+        if (row.billNumber) {
+          desc = `Applied to ${row.billNumber}`;
+        } else if (row.details) {
+          desc = row.details;
+        }
+
+        transactions.push({
+          id: `vc-${vcNum || idx}`,
+          type: 'vendor_credit',
+          date: row.isoDate,
+          datetime: row.isoDate,
+          timestamp,
+          description: desc,
+          amount: txAmount,
+          debit: txAmount,
+          credit: 0,
+          netEffect: txAmount,
+          customerNetEffect: 0,
+          vendorNetEffect: txAmount,
+          balanceAfter: row.balance,
+          referenceNumber: vcNum,
+          zohoUrl: undefined
+        });
       } else {
-        // Fallback for vendor credit or other transactions
-        const isCredit = row.type === 'vendor_credit' || row.paidAmount > 0;
-        const txAmount = isCredit ? row.paidAmount : row.billedAmount;
+        // Fallback for other transactions
+        const isCredit = row.paidAmount > 0;
+        const txAmount = row.amount || (isCredit ? row.paidAmount : row.billedAmount);
         const net = isCredit ? txAmount : -txAmount;
 
         transactions.push({
@@ -234,9 +260,7 @@ export async function getNativeVendorStatement(
       }
     }
 
-    // Unpaid bills for statement
-    const unpaidBills = bills.filter(b => (b.balance ?? 0) > 0);
-    unpaidBills.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const unpaidBills: CustomerStatementInvoice[] = [];
 
     // Assemble CustomerStatement object
     const vendorCustomerObj: CustomerStatementCustomer = vendorMetadata || {
@@ -261,18 +285,18 @@ export async function getNativeVendorStatement(
       isHybrid: false,
       transactions,
       transactionCount: transactions.length,
-      unpaidInvoices: unpaidBills as any,
+      unpaidInvoices: unpaidBills,
       isTruncated: false,
       telemetry: {
-        customerApiCalls: 1,
+        customerApiCalls: vendorMetadata ? 0 : 1,
         invoiceApiCalls: 0,
         paymentApiCalls: 1,
-        billApiCalls: 1,
-        totalApiCalls: 3,
+        billApiCalls: 0,
+        totalApiCalls: (vendorMetadata ? 1 : 2) + 1,
         rawInvoicesFetched: 0,
         validInvoicesAfterFilter: 0,
-        rawBillsFetched: bills.length,
-        validBillsAfterFilter: bills.length,
+        rawBillsFetched: 0,
+        validBillsAfterFilter: 0,
         debugReceivable: 0,
         debugPayable: parsed.accountSummary.balanceDue,
         debugNetClosingBalance: parsed.accountSummary.balanceDue,

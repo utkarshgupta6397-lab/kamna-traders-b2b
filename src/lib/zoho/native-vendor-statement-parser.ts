@@ -182,16 +182,16 @@ export async function parseNativeVendorStatementPdf(
       if (!currentRow) continue;
       currentRow.rawItems.push(it);
 
-      if (it.x >= 100 && it.x <= 185) {
-        currentRow.typeItems.push(it.str);
-      } else if (it.x >= 180 && it.x <= 335) {
-        currentRow.detailItems.push(it.str);
-      } else if (it.x >= 335 && it.x <= 395 && isAmountStr(it.str)) {
-        currentRow.billedAmount = parseAmount(it.str);
+      if (it.x >= 480 && it.x <= 580 && isAmountStr(it.str)) {
+        currentRow.balance = parseAmount(it.str);
       } else if (it.x >= 395 && it.x <= 480 && isAmountStr(it.str)) {
         currentRow.paidAmount = parseAmount(it.str);
-      } else if (it.x >= 480 && it.x <= 580 && isAmountStr(it.str)) {
-        currentRow.balance = parseAmount(it.str);
+      } else if (it.x >= 320 && it.x <= 395 && isAmountStr(it.str)) {
+        currentRow.billedAmount = parseAmount(it.str);
+      } else if (it.x >= 100 && it.x <= 185) {
+        currentRow.typeItems.push(it.str);
+      } else if (it.x >= 180 && it.x < 320) {
+        currentRow.detailItems.push(it.str);
       }
     }
     if (currentRow) { rawRows.push(currentRow); currentRow = null; }
@@ -221,7 +221,7 @@ export async function parseNativeVendorStatementPdf(
       cleanType = 'bill';
     } else if (rawType.toLowerCase().includes('payment')) {
       cleanType = 'payment_made';
-    } else if (rawType.toLowerCase().includes('vendor credit') || rawType.toLowerCase().includes('credit note')) {
+    } else if (rawType.toLowerCase().includes('credit')) {
       cleanType = 'vendor_credit';
     }
 
@@ -250,9 +250,21 @@ export async function parseNativeVendorStatementPdf(
           reference = firstToken || '';
         }
       }
+    } else if (cleanType === 'vendor_credit') {
+      // Typically: "187 1,24,766.00 for payment of NSS/26-27/03732" or "187"
+      const vcMatch = rawDetails.match(/^(\S+)/);
+      if (vcMatch) {
+        reference = vcMatch[1].trim();
+      }
+      const billMatch = rawDetails.match(/for payment of\s+(\S+)/i);
+      if (billMatch) {
+        billNumber = billMatch[1].trim();
+      }
     }
 
-    const amount = r.billedAmount > 0 ? r.billedAmount : (r.paidAmount > 0 ? r.paidAmount : 0);
+    const absBilled = Math.abs(r.billedAmount);
+    const absPaid = Math.abs(r.paidAmount);
+    const amount = absBilled > 0 ? absBilled : (absPaid > 0 ? absPaid : 0);
 
     return {
       rowNumber: idx + 1,
@@ -267,8 +279,8 @@ export async function parseNativeVendorStatementPdf(
       billNumber,
       paymentNumber,
       details: rawDetails,
-      billedAmount: r.billedAmount,
-      paidAmount: r.paidAmount,
+      billedAmount: absBilled,
+      paidAmount: absPaid,
       amount,
       balance: r.balance
     };

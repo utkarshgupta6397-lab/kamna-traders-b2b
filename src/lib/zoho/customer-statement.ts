@@ -38,7 +38,7 @@ export type CustomerStatementInvoice = {
 
 export type StatementTransaction = {
   id: string;
-  type: 'invoice' | 'payment' | 'bill' | 'vendor_payment' | 'journal' | 'payment_refund';
+  type: 'invoice' | 'payment' | 'bill' | 'vendor_payment' | 'journal' | 'payment_refund' | 'vendor_credit' | 'other';
   datetime?: string;
   date: string;
   timestamp?: number;
@@ -320,6 +320,7 @@ export type CustomerStatementPayment = {
   referenceNumber?: string;
   isVerified?: boolean;
   notes?: string;
+  description?: string;
 };
 
 export async function getCustomerPayments(
@@ -442,6 +443,7 @@ export async function getCustomerPayments(
           referenceNumber: pmt.reference_number,
           isVerified,
           notes: pmt.description,
+          description: pmt.description,
         };
       });
 
@@ -741,7 +743,7 @@ export async function getVendorPayments(
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
     const fetchImpl = options?.fetchFn || fetch;
-    const url = `${API_BASE_URL}/books/v3/vendorpayments?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=50&sort_column=date&sort_order=D`;
+    const url = `${API_BASE_URL}/books/v3/vendorpayments?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=200&sort_column=date&sort_order=D`;
     console.log('[Zoho Vendor Payments] API URL:', url);
     const response = await fetchImpl(url, {
       method: 'GET',
@@ -755,55 +757,23 @@ export async function getVendorPayments(
     }
     const raw: any[] = data.vendorpayments ?? [];
     
-    // Fetch detailed allocations
-    const detailedPayments = await Promise.all(
-      raw.map(async (vp: any) => {
-        try {
-          const detailUrl = `${API_BASE_URL}/books/v3/vendorpayments/${vp.payment_id}?organization_id=${orgId}`;
-          const detailRes = await fetchImpl(detailUrl, {
-            method: 'GET',
-            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
-          });
-          const detailData = await detailRes.json();
-          let appliedBills = [];
-          if (detailRes.ok && detailData.vendorpayment?.bills) {
-            appliedBills = detailData.vendorpayment.bills.map((b: any) => ({
-              billNumber: b.bill_number,
-              appliedAmount: Number(b.amount_applied),
-            }));
-          }
-          return {
-            paymentId: vp.payment_id,
-            paymentNumber: vp.payment_number,
-            paymentMode: vp.payment_mode,
-            date: vp.date,
-            amount: Number(vp.amount),
-            referenceNumber: vp.reference_number,
-            appliedBills,
-            notes: vp.description,
-            description: vp.description || '',
-          };
-        } catch (e) {
-          return {
-            paymentId: vp.payment_id,
-            paymentNumber: vp.payment_number,
-            paymentMode: vp.payment_mode,
-            date: vp.date,
-            amount: Number(vp.amount),
-            referenceNumber: vp.reference_number,
-            appliedBills: [],
-            notes: vp.description,
-            description: vp.description || '',
-          };
-        }
-      })
-    );
+    const mappedPayments: CustomerStatementVendorPayment[] = raw.map((vp: any) => ({
+      paymentId: vp.payment_id,
+      paymentNumber: vp.payment_number,
+      paymentMode: vp.payment_mode,
+      date: vp.date,
+      amount: Number(vp.amount),
+      referenceNumber: vp.reference_number,
+      appliedBills: [],
+      notes: vp.description,
+      description: vp.description || '',
+    }));
       
     return {
       success: true,
-      data: detailedPayments,
+      data: mappedPayments,
       raw: data,
-      _meta: { rawFetched: raw.length, validCount: detailedPayments.length, apiCalls: 1 + raw.length },
+      _meta: { rawFetched: raw.length, validCount: mappedPayments.length, apiCalls: 1 },
     } as any;
   } catch (error: any) {
     return { success: false, error: error.message || 'Internal Server Error' };
@@ -1033,11 +1003,10 @@ export async function getCustomerStatementHybridNative(
 
   console.log(`[Hybrid Native Statement] Fetching native statements for Customer ${customerId} and Vendor ${vendorId}`);
 
-  // Fetch Native Customer Statement, Native Vendor Statement, and Journals concurrently
-  const [custRes, vendRes, journalsRes] = await Promise.all([
+  // Fetch Native Customer Statement and Native Vendor Statement concurrently
+  const [custRes, vendRes] = await Promise.all([
     getNativeCustomerStatement(customerId, minDate, maxDate, options, customer),
-    getNativeVendorStatement(vendorId, minDate, maxDate, options),
-    getHybridJournals(customerId, vendorId)
+    getNativeVendorStatement(vendorId, minDate, maxDate, options)
   ]);
 
   if (!custRes.success || !custRes.data) {
@@ -1049,9 +1018,6 @@ export async function getCustomerStatementHybridNative(
 
   const custData = custRes.data;
   const vendData = vendRes.data;
-  const journals = journalsRes.success && journalsRes.data ? journalsRes.data : [];
-
-  const orgId = getZohoOrgId() || process.env.ZOHO_BOOKS_ORG_ID;
 
   // Tag customer transactions
   const customerTransactions: StatementTransaction[] = custData.transactions.map(tx => ({
@@ -1067,30 +1033,10 @@ export async function getCustomerStatementHybridNative(
     vendorNetEffect: tx.netEffect,
   }));
 
-  // Map journal transactions
-  const journalTransactions: StatementTransaction[] = journals.map(j => ({
-    id: j.journalId,
-    type: 'journal' as const,
-    date: j.date,
-    datetime: j.date,
-    timestamp: new Date(j.date || 0).getTime(),
-    description: j.description || j.notes || 'Journal Entry',
-    amount: j.amount,
-    netEffect: j.netEffect,
-    customerNetEffect: j.customerNetEffect,
-    vendorNetEffect: j.vendorNetEffect,
-    balanceAfter: 0,
-    zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/accountant/journals/${j.journalId}?filter_by=Status.All%2CJournalDate.All&per_page=25&sort_column=journal_date&sort_order=D` : undefined,
-    notes: j.notes,
-    entryNumber: j.entryNumber,
-    referenceNumber: j.referenceNumber,
-  }));
-
-  // Merge all transactions
+  // Merge customer and vendor transactions
   let merged: StatementTransaction[] = [
     ...customerTransactions,
-    ...vendorTransactions,
-    ...journalTransactions
+    ...vendorTransactions
   ];
 
   // Optional date filtering
@@ -1146,10 +1092,10 @@ export async function getCustomerStatementHybridNative(
     isTruncated: false,
     telemetry: {
       customerApiCalls: 1,
-      invoiceApiCalls: 1,
-      paymentApiCalls: 1,
-      billApiCalls: 1,
-      totalApiCalls: 4,
+      invoiceApiCalls: 0,
+      paymentApiCalls: 2,
+      billApiCalls: 0,
+      totalApiCalls: 5,
       rawInvoicesFetched: custData.transactionCount,
       validInvoicesAfterFilter: custData.transactionCount,
       rawPaymentsFetched: 0,

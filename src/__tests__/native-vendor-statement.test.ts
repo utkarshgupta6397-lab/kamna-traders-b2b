@@ -110,4 +110,111 @@ describe('Native Vendor Statement & Hybrid Engine', () => {
       assert.ok(!invoice3117.description.includes('SO-'), 'Description must not show SO- number');
     });
   });
+
+  describe('Live Hybrid Statement: NITASHI SOLAR SOLUTIONS (Customer 1759923000000103217)', () => {
+    it('correctly handles transaction 187 as a financial Vendor Credit of ₹1,24,766.00', async () => {
+      const custId = '1759923000000103217';
+      const res = await getCustomerStatement(custId, '2026-03-01', '2026-09-25');
+
+      assert.ok(res.success, `Statement fetch failed: ${res.error}`);
+      assert.ok(res.data, 'Statement data must exist');
+      const stmt = res.data;
+
+      // Find transaction 187
+      const tx187 = stmt.transactions.find(t => (t.referenceNumber === '187' && t.date.includes('2026-09-17')) || t.type === 'vendor_credit');
+      assert.ok(tx187, 'Transaction 187 must exist in statement ledger');
+
+      // Assert financial accounting attributes
+      assert.equal(tx187.type, 'vendor_credit', 'Transaction 187 must be typed as vendor_credit');
+      assert.equal(tx187.amount, 124766, 'Amount must be 124766');
+      assert.equal(tx187.debit, 124766, 'Debit must be 124766');
+      assert.equal(tx187.credit, 0, 'Credit must be 0');
+      assert.equal(tx187.netEffect, 124766, 'Net effect must be +124766');
+      assert.equal(tx187.referenceNumber, '187', 'Reference number must be 187');
+      assert.ok(tx187.description.includes('NSS/26-27/03732'), 'Description must link to applied bill NSS/26-27/03732');
+
+      // Verify running balance correctly reflects +124766
+      const tx187Index = stmt.transactions.findIndex(t => t.id === tx187.id);
+      assert.ok(tx187Index > 0, 'Transaction 187 must not be the first transaction');
+      const prevTx = stmt.transactions[tx187Index - 1];
+
+      assert.equal(
+        tx187.balanceAfter,
+        prevTx.balanceAfter + tx187.netEffect,
+        'Running balance after transaction 187 must equal balance before + netEffect (+124766)'
+      );
+      assert.equal(tx187.balanceAfter, -198980, 'Running balance after transaction 187 must be -198980');
+    });
+
+    it('verifies complete 126-transaction mathematical running balance chain and monthly reconciliations', async () => {
+      const custId = '1759923000000103217';
+      const res = await getCustomerStatement(custId, '2026-03-01', '2026-09-25');
+
+      assert.ok(res.success, `Statement fetch failed: ${res.error}`);
+      assert.ok(res.data, 'Statement data must exist');
+      const stmt = res.data;
+
+      // 1. Opening Balance
+      assert.equal(stmt.openingBalance, -32117, 'Opening balance on 2026-03-01 must be -32,117 (₹32,117 advance/credit)');
+
+      // 2. Transaction Count
+      assert.equal(stmt.transactions.length, 126, 'NITASHI SOLAR SOLUTIONS must have 126 unified transactions');
+
+      // 3. Continuous Running Balance Chain: every transaction must satisfy balanceAfter = prevBalance + netEffect
+      let running = stmt.openingBalance;
+      let sumNetEffect = 0;
+      for (let i = 0; i < stmt.transactions.length; i++) {
+        const tx = stmt.transactions[i];
+        const expectedBalance = Math.round((running + tx.netEffect) * 100) / 100;
+        assert.equal(
+          tx.balanceAfter,
+          expectedBalance,
+          `Transaction #${i + 1} (${tx.date} ${tx.type} ${tx.referenceNumber || ''}): balanceAfter ${tx.balanceAfter} does not match expected ${expectedBalance}`
+        );
+        running = tx.balanceAfter;
+        sumNetEffect += tx.netEffect;
+      }
+
+      // 4. Net sum and final closing balance
+      assert.equal(Math.round(sumNetEffect * 100) / 100, 1763211, 'Sum of all net effects must equal +1,763,211');
+      assert.equal(stmt.closingBalance, 1731094, 'Closing balance must be 1,731,094 (-32,117 + 1,763,211)');
+      assert.equal(running, stmt.closingBalance, 'Last transaction balanceAfter must equal statement closingBalance');
+
+      // 5. Verification of the September 1st transaction (KT/26-27/2906)
+      const sep1TxIndex = stmt.transactions.findIndex(t => t.date.startsWith('2026-09-01'));
+      assert.ok(sep1TxIndex > 0, 'September 1st transaction must exist');
+      const sep1Tx = stmt.transactions[sep1TxIndex];
+      const preSepBalance = stmt.transactions[sep1TxIndex - 1].balanceAfter;
+      assert.equal(preSepBalance, 1487740, 'Balance immediately preceding September 1st transaction must be 1,487,740');
+      assert.equal(sep1Tx.debit, 455654, 'September 1st invoice KT/26-27/2906 debit must be 455,654');
+      assert.equal(sep1Tx.balanceAfter, 1943394, 'Running balance after September 1st invoice must be exactly 1,943,394 (1,487,740 + 455,654)');
+
+      // 6. Monthly totals reconciliation
+      const expectedMonthly = [
+        { month: '2026-03', start: -32117, debits: 604828, credits: 220842, end: 351869 },
+        { month: '2026-04', start: 351869, debits: 241964, credits: 410975, end: 182858 },
+        { month: '2026-05', start: 182858, debits: 3208497, credits: 2392830, end: 998525 },
+        { month: '2026-06', start: 998525, debits: 4721025, credits: 1956525, end: 3763025 },
+        { month: '2026-07', start: 3763025, debits: 9751902, credits: 9963663, end: 3551264 },
+        { month: '2026-08', start: 3551264, debits: 8570311, credits: 10633835, end: 1487740 },
+        { month: '2026-09', start: 1487740, debits: 4787172, credits: 4543818, end: 1731094 },
+      ];
+
+      for (const expected of expectedMonthly) {
+        const mTxns = stmt.transactions.filter(t => t.date.startsWith(expected.month));
+        const mDebits = mTxns.reduce((s, t) => s + (t.debit || 0), 0);
+        const mCredits = mTxns.reduce((s, t) => s + (t.credit || 0), 0);
+        const mEnd = mTxns[mTxns.length - 1].balanceAfter;
+
+        assert.equal(Math.round(mDebits), expected.debits, `${expected.month} debit total`);
+        assert.equal(Math.round(mCredits), expected.credits, `${expected.month} credit total`);
+        assert.equal(mEnd, expected.end, `${expected.month} end balance`);
+        assert.equal(
+          Math.round((expected.start + mDebits - mCredits) * 100) / 100,
+          expected.end,
+          `${expected.month} mathematical identity: start + debits - credits == end`
+        );
+      }
+    });
+  });
 });

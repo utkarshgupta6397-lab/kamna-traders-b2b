@@ -122,6 +122,9 @@ export function cleanDescription(desc: string, type: string): string {
   if (type === 'vendor_payment') {
     return desc.replace(/^payment made\s*[-\u2013]\s*/i, '').trim();
   }
+  if (type === 'vendor_credit') {
+    return desc.replace(/^vendor credit(\s+note)?\s*[-\u2013]?\s*/i, '').trim();
+  }
   return desc;
 }
 
@@ -647,22 +650,6 @@ export async function renderStatementToPdf(
       finalTableRows.push(isGroup ? [
         {
           content: currentMonth,
-          colSpan: 4,
-          styles: {
-            fillColor:   [241, 245, 249],
-            textColor:   [26, 39, 102],
-            fontStyle:   'bold',
-            halign:      'left',
-            fontSize:    7,
-            cellPadding: { top: 1.3, bottom: 1.3, left: 3, right: 1 },
-          },
-        },
-        { content: pdfFmt(totals.debit), styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
-        { content: pdfFmt(totals.credit), styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
-        { content: pdfFmtBalanceWithIndicator(monthlyNet), styles: { fontStyle: 'bold', fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
-      ] : [
-        {
-          content: currentMonth,
           colSpan: 3,
           styles: {
             fillColor:   [241, 245, 249],
@@ -673,19 +660,58 @@ export async function renderStatementToPdf(
             cellPadding: { top: 1.3, bottom: 1.3, left: 3, right: 1 },
           },
         },
-        { content: pdfFmt(totals.debit), styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
-        { content: pdfFmt(totals.credit), styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
-        { content: pdfFmtBalanceWithIndicator(monthlyNet), styles: { fontStyle: 'bold', fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
+        {
+          content: 'Month Summary',
+          styles: {
+            fillColor:   [241, 245, 249],
+            textColor:   [100, 116, 139],
+            fontStyle:   'bold',
+            halign:      'left',
+            fontSize:    7,
+            cellPadding: { top: 1.3, bottom: 1.3, left: 1, right: 1 },
+          },
+        },
+        { content: totals.debit > 0 ? pdfFmt(totals.debit) : '\u2014', styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
+        { content: totals.credit > 0 ? pdfFmt(totals.credit) : '\u2014', styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
+        { content: Math.abs(monthlyNet) < 0.01 ? '\u2014' : pdfFmtBalanceWithIndicator(monthlyNet), styles: { fontStyle: 'bold', fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
+      ] : [
+        {
+          content: currentMonth,
+          colSpan: 2,
+          styles: {
+            fillColor:   [241, 245, 249],
+            textColor:   [26, 39, 102],
+            fontStyle:   'bold',
+            halign:      'left',
+            fontSize:    7,
+            cellPadding: { top: 1.3, bottom: 1.3, left: 3, right: 1 },
+          },
+        },
+        {
+          content: 'Month Summary',
+          styles: {
+            fillColor:   [241, 245, 249],
+            textColor:   [100, 116, 139],
+            fontStyle:   'bold',
+            halign:      'left',
+            fontSize:    7,
+            cellPadding: { top: 1.3, bottom: 1.3, left: 1, right: 1 },
+          },
+        },
+        { content: totals.debit > 0 ? pdfFmt(totals.debit) : '\u2014', styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
+        { content: totals.credit > 0 ? pdfFmt(totals.credit) : '\u2014', styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
+        { content: Math.abs(monthlyNet) < 0.01 ? '\u2014' : pdfFmtBalanceWithIndicator(monthlyNet), styles: { fontStyle: 'bold', fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
       ]);
     }
 
     // ── Transaction type label ─────────────────────────────────────────────
     const typeLabel =
-      tx.type === 'invoice'        ? 'Invoice'        :
-      tx.type === 'payment'        ? 'Payment'        :
-      tx.type === 'payment_refund' ? 'Payment Refund' :
-      tx.type === 'vendor_payment' ? 'Payment Made'   :
-      tx.type === 'journal'        ? 'Journal'        : 'Bill';
+      tx.type === 'invoice'        ? 'Sales Invoice'      :
+      tx.type === 'payment'        ? 'Customer Payment'   :
+      tx.type === 'payment_refund' ? 'Payment Refund'     :
+      tx.type === 'vendor_payment' ? 'Vendor Payment'     :
+      tx.type === 'vendor_credit'  ? 'Vendor Credit Note' :
+      tx.type === 'journal'        ? 'Journal'            : 'Purchase Bill';
 
     const displayDesc = cleanDescription(tx.description, tx.type);
     let primary = tx.referenceNumber || displayDesc;
@@ -693,8 +719,8 @@ export async function renderStatementToPdf(
 
     // Smart description cleanup — strip redundant category words & format identifiers
     if (tx.type === 'invoice') {
-      primary = tx.invoiceNumber || displayDesc || (tx.referenceNumber && !tx.referenceNumber.startsWith('SO-') ? tx.referenceNumber : '') || 'Invoice';
-      if (tx.referenceNumber && tx.referenceNumber !== primary) {
+      primary = tx.invoiceNumber || (displayDesc && !displayDesc.startsWith('SO-') ? displayDesc.replace(/^(?:Invoice|Bill of Supply)\s+/i, '') : '') || (tx.referenceNumber && !tx.referenceNumber.startsWith('SO-') ? tx.referenceNumber : '') || (displayDesc ? displayDesc.replace(/^(?:Invoice|Bill of Supply)\s+/i, '') : '') || 'Invoice';
+      if (tx.referenceNumber && tx.referenceNumber !== primary && !tx.referenceNumber.startsWith('SO-')) {
         secondary = `Ref: ${tx.referenceNumber}`;
       } else {
         secondary = tx.notes || '';
@@ -711,14 +737,46 @@ export async function renderStatementToPdf(
         primary = pmtNum;
       } else if (tx.paymentMode) {
         primary = tx.paymentMode;
+      } else {
+        primary = displayDesc || 'Customer Payment';
       }
-      secondary = tx.notes || tx.paymentDescription || '';
-      secondary = secondary.replace(/Bank Transfer Payment/ig, '').trim();
-      secondary = secondary.replace(/Payment received/ig, '').trim();
+      secondary = tx.notes || tx.paymentDescription || (displayDesc !== primary ? displayDesc : '') || '';
+      secondary = secondary
+        .replace(/Bank Transfer Payment/ig, '')
+        .replace(/Payment received/ig, '')
+        .replace(/Customer Payment/ig, '')
+        .trim();
+      if (secondary === primary) secondary = '';
     } else if (tx.type === 'vendor_payment') {
-      secondary = secondary.replace(/Payment made/ig, '').trim();
+      const pmtNum = tx.paymentReference || (!tx.referenceNumber?.startsWith('PT-KT/') ? tx.referenceNumber : '') || (!tx.paymentNumber?.startsWith('PT-KT/') ? tx.paymentNumber : '');
+      if (pmtNum && tx.paymentMode) {
+        primary = `${pmtNum} - ${tx.paymentMode}`;
+      } else if (pmtNum) {
+        primary = pmtNum;
+      } else if (tx.paymentMode) {
+        primary = tx.paymentMode;
+      }
+      secondary = tx.notes || tx.paymentDescription || (displayDesc !== primary ? displayDesc : '') || '';
+      secondary = secondary
+        .replace(/Payment made/ig, '')
+        .replace(/Vendor Payment/ig, '')
+        .trim();
+      if (secondary === primary) secondary = '';
     } else if (tx.type === 'bill') {
+      primary = tx.referenceNumber || displayDesc || 'Purchase Bill';
+      secondary = primary !== displayDesc ? displayDesc : (tx.notes || '');
       secondary = secondary.replace(/Purchase Bill/ig, '').trim();
+      if (secondary === primary) secondary = '';
+    } else if (tx.type === 'vendor_credit') {
+      primary = tx.referenceNumber || (displayDesc ? displayDesc.replace(/^Vendor Credit(?:\s*Note)?\s*-\s*/i, '') : '') || 'Vendor Credit Note';
+      secondary = primary !== displayDesc ? displayDesc : (tx.notes || '');
+      secondary = secondary.replace(/Vendor Credit(\s+Note)?/ig, '').trim();
+      if (secondary === primary) secondary = '';
+    }
+
+    primary = primary.replace(/↗/g, '').trim();
+    if (secondary) {
+      secondary = secondary.replace(/↗/g, '').trim();
     }
 
     const descObj = {
@@ -735,8 +793,8 @@ export async function renderStatementToPdf(
         tx.firmName || '\u2014',
         typeLabel,
         descObj,
-        tx.netEffect >  0 ? pdfFmt(tx.amount) : '\u2014',
-        tx.netEffect <= 0 ? pdfFmt(tx.amount) : '\u2014',
+        (tx.debit !== undefined && tx.debit > 0) ? pdfFmt(tx.debit) : (tx.netEffect > 0 ? pdfFmt(tx.amount) : '\u2014'),
+        (tx.credit !== undefined && tx.credit > 0) ? pdfFmt(tx.credit) : (tx.netEffect <= 0 ? pdfFmt(tx.amount) : '\u2014'),
         pdfFmtBalanceWithIndicator(tx.balanceAfter),
       ]);
     } else {
@@ -744,8 +802,8 @@ export async function renderStatementToPdf(
         fmtDate(tx.date),
         typeLabel,
         descObj,
-        tx.netEffect >  0 ? pdfFmt(tx.amount) : '\u2014',
-        tx.netEffect <= 0 ? pdfFmt(tx.amount) : '\u2014',
+        (tx.debit !== undefined && tx.debit > 0) ? pdfFmt(tx.debit) : (tx.netEffect > 0 ? pdfFmt(tx.amount) : '\u2014'),
+        (tx.credit !== undefined && tx.credit > 0) ? pdfFmt(tx.credit) : (tx.netEffect <= 0 ? pdfFmt(tx.amount) : '\u2014'),
         pdfFmtBalanceWithIndicator(tx.balanceAfter),
       ]);
     }
@@ -806,17 +864,17 @@ export async function renderStatementToPdf(
     columnStyles: isGroup ? {
       0: { cellWidth: 16, overflow: 'visible' },
       1: { cellWidth: 24, overflow: 'linebreak' },
-      2: { cellWidth: 13, overflow: 'linebreak' },
-      3: { cellWidth: 60, overflow: 'ellipsize' },
+      2: { cellWidth: 19, overflow: 'linebreak' },
+      3: { cellWidth: 55, overflow: 'ellipsize' },
       4: { halign: 'right', cellWidth: 22, fontSize: 6.5, overflow: 'visible' },
-      5: { halign: 'right', cellWidth: 22, textColor: [5, 150, 105], fontSize: 6.5, overflow: 'visible' },
+      5: { halign: 'right', cellWidth: 22, fontSize: 6.5, overflow: 'visible' },
       6: { halign: 'right', cellWidth: 24, fontSize: 6.5, overflow: 'visible' },
     } : {
       0: { cellWidth: 16, overflow: 'visible' },
-      1: { cellWidth: 13, overflow: 'linebreak' },
-      2: { cellWidth: 70, overflow: 'ellipsize' },      // max space for details
+      1: { cellWidth: 20, overflow: 'linebreak' },
+      2: { cellWidth: 64, overflow: 'ellipsize' },      // max space for details
       3: { halign: 'right', cellWidth: 24, fontSize: 6.5, overflow: 'visible' },
-      4: { halign: 'right', cellWidth: 24, textColor: [5, 150, 105], fontSize: 6.5, overflow: 'visible' },
+      4: { halign: 'right', cellWidth: 24, fontSize: 6.5, overflow: 'visible' },
       5: { halign: 'right', cellWidth: 26, fontSize: 6.5, overflow: 'visible' },
     },
 
@@ -908,8 +966,10 @@ export async function renderStatementToPdf(
           data.cell.styles.fontStyle = 'bold';
           data.cell.styles.textColor = [26, 39, 102];
           data.cell.styles.fontSize  = 7;
+          const descColIdx = isGroup ? 3 : 2;
+          if (data.column.index === descColIdx) data.cell.styles.textColor = [100, 116, 139];
           if (data.column.index === invColIdx) data.cell.styles.textColor = [15, 23, 42];
-          if (data.column.index === pmtColIdx) data.cell.styles.textColor = [5, 150, 105];
+          if (data.column.index === pmtColIdx) data.cell.styles.textColor = [15, 23, 42];
         }
 
         // ── Grand totals row: navy top border, larger font ─────────────
@@ -921,7 +981,7 @@ export async function renderStatementToPdf(
           data.cell.styles.fontSize  = 7.5;
           data.cell.styles.textColor = [15, 23, 42];
           if (data.column.index === invColIdx) data.cell.styles.textColor = [15, 23, 42];
-          if (data.column.index === pmtColIdx) data.cell.styles.textColor = [5, 150, 105];
+          if (data.column.index === pmtColIdx) data.cell.styles.textColor = [15, 23, 42];
           if (data.column.index === balColIdx) {
             data.cell.styles.textColor = s.closingBalance > 0 ? [220, 38, 38]
               : s.closingBalance < 0  ? [5, 150, 105] : [15, 23, 42];

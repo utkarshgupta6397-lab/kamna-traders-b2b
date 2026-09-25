@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Search, RefreshCw, ChevronDown, ChevronRight,
   FileJson, Copy, AlertCircle, User, Phone,
@@ -51,34 +51,21 @@ function fmtBalance(n: number) {
   return n > 0 ? val : `-${val}`;
 }
 
-const BalanceIndicator = ({ balance }: { balance: number }) => {
+/**
+ * Accounting State Indicator for Running Balances, Summaries & Closings:
+ * - Positive (> 0): Receivable (Customer/Vendor owes us money) -> RED (text-rose-600) + ↙
+ * - Negative (< 0): Payable (We owe Customer/Vendor money) -> GREEN (text-emerald-600) + ↗
+ * - Zero (=== 0): Settled -> null (no arrow)
+ */
+const BalanceStateIndicator = ({ balance }: { balance: number }) => {
   if (balance === 0 || Math.abs(balance) < 0.01) return null;
   const isReceivable = balance > 0;
   return (
     <span 
-      className={`inline-flex items-center justify-center mr-1 text-[11px] font-bold ${isReceivable ? 'text-emerald-500' : 'text-rose-500'}`} 
-      title={isReceivable ? 'Receivable (Owes You)' : 'Payable (You Owe)'}
+      className={`inline-flex items-center justify-center mr-1 text-[11px] font-bold ${isReceivable ? 'text-rose-600' : 'text-emerald-600'}`} 
+      title={isReceivable ? 'Receivable (Owes You)' : 'Payable / Advance (You Owe)'}
     >
       {isReceivable ? '↙' : '↗'}
-    </span>
-  );
-};
-
-// Directional indicator for running balance changes:
-// current > previous: balance increased (rose / ↗)
-// current < previous: balance decreased (emerald / ↙)
-// current === previous: no change (null)
-const BalanceChangeIndicator = ({ current, previous }: { current: number; previous: number | null }) => {
-  if (previous === null || Math.abs(current - previous) < 0.01) return null;
-  const isIncrease = current > previous;
-  return (
-    <span
-      className={`inline-flex items-center justify-center mr-1 text-[11px] font-bold ${
-        isIncrease ? 'text-rose-500' : 'text-emerald-600'
-      }`}
-      title={isIncrease ? 'Balance increased (more receivable / owed)' : 'Balance decreased (less receivable / paid down)'}
-    >
-      {isIncrease ? '↗' : '↙'}
     </span>
   );
 };
@@ -254,6 +241,12 @@ export default function CustomerStatementView() {
   const [userExpandedMonths, setUserExpandedMonths] = useState<Set<string> | null>(null);
   const [cachedAt, setCachedAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
+
+  // Stale Request & Abort Controller Refs
+  const singleAbortControllerRef = useRef<AbortController | null>(null);
+  const singleRequestSeqRef = useRef<number>(0);
+  const groupAbortControllerRef = useRef<AbortController | null>(null);
+  const groupRequestSeqRef = useRef<number>(0);
 
   // Autocomplete State
   const [searchQuery, setSearchQuery] = useState('');
@@ -628,6 +621,14 @@ export default function CustomerStatementView() {
   const handleFetch = async (overrideCustomerId?: string, force = false) => {
     const cid = overrideCustomerId || customerId;
     if (!cid) return;
+
+    // Abort any in-flight request
+    if (singleAbortControllerRef.current) {
+      singleAbortControllerRef.current.abort();
+    }
+    const currentSeq = ++singleRequestSeqRef.current;
+    const controller = new AbortController();
+    singleAbortControllerRef.current = controller;
     
     // Check session cache if not forced
     const cacheKey = `customer-statement-${cid}`;
@@ -636,10 +637,12 @@ export default function CustomerStatementView() {
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
-          setStatement({ success: true, data: parsed.data });
-          setCachedAt(parsed.cachedAt);
-          setUserExpandedMonths(null);
-          setExpandedMonths(new Set());
+          if (currentSeq === singleRequestSeqRef.current) {
+            setStatement({ success: true, data: parsed.data });
+            setCachedAt(parsed.cachedAt);
+            setUserExpandedMonths(null);
+            setExpandedMonths(new Set());
+          }
           return;
         } catch (e) {}
       }
@@ -652,8 +655,15 @@ export default function CustomerStatementView() {
     setUserExpandedMonths(null);
     setExpandedMonths(new Set());
     try {
-      const res = await fetch(`/api/admin/customer-statement/statement?customerId=${cid}`);
+      const res = await fetch(`/api/admin/customer-statement/statement?customerId=${cid}`, {
+        signal: controller.signal
+      });
       const data = await res.json();
+
+      if (currentSeq !== singleRequestSeqRef.current) {
+        // Discard response if a newer request was dispatched
+        return;
+      }
 
       if (!res.ok) {
           console.error(data);
@@ -671,9 +681,14 @@ export default function CustomerStatementView() {
         toast.error(data.error || 'Failed to load statement.');
       }
     } catch (err: any) {
+      if (err?.name === 'AbortError' || currentSeq !== singleRequestSeqRef.current) {
+        return; // Silent return for aborted or superseded requests
+      }
       toast.error(err.message || 'Network error');
     } finally {
-      setLoading(false);
+      if (currentSeq === singleRequestSeqRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -687,15 +702,25 @@ export default function CustomerStatementView() {
     }
     const ids = activeCustomers.map(c => c.id).join(',');
     const cacheKey = `group-statement-${ids}`;
+
+    // Abort any in-flight group request
+    if (groupAbortControllerRef.current) {
+      groupAbortControllerRef.current.abort();
+    }
+    const currentSeq = ++groupRequestSeqRef.current;
+    const controller = new AbortController();
+    groupAbortControllerRef.current = controller;
     
     if (!force) {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
-          setGroupStatement({ success: true, statements: parsed.data });
-          setVisibleFirmIds(activeCustomers.map(c => c.id));
-          setCachedAt(parsed.cachedAt);
+          if (currentSeq === groupRequestSeqRef.current) {
+            setGroupStatement({ success: true, statements: parsed.data });
+            setVisibleFirmIds(activeCustomers.map(c => c.id));
+            setCachedAt(parsed.cachedAt);
+          }
           return;
         } catch (e) {}
       }
@@ -705,8 +730,15 @@ export default function CustomerStatementView() {
     setGroupStatement(null);
     setCachedAt(null);
     try {
-      const res = await fetch(`/api/admin/customer-statement/group?customerIds=${ids}`);
+      const res = await fetch(`/api/admin/customer-statement/group?customerIds=${ids}`, {
+        signal: controller.signal
+      });
       const data = await res.json();
+
+      if (currentSeq !== groupRequestSeqRef.current) {
+        return;
+      }
+
       if (data.success && data.data) {
         setGroupStatement({ success: true, statements: data.data });
         setVisibleFirmIds(activeCustomers.map(c => c.id));
@@ -719,9 +751,14 @@ export default function CustomerStatementView() {
         toast.error(data.error || 'Failed to load group statement.');
       }
     } catch (err: any) {
+      if (err?.name === 'AbortError' || currentSeq !== groupRequestSeqRef.current) {
+        return;
+      }
       toast.error(err.message || 'Network error');
     } finally {
-      setGroupLoading(false);
+      if (currentSeq === groupRequestSeqRef.current) {
+        setGroupLoading(false);
+      }
     }
   };
 
@@ -1138,7 +1175,12 @@ export default function CustomerStatementView() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={15} />
             <input
               id="customer-id-input"
+              name="customer-search-field"
               type="text"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               placeholder={statementMode === 'group' 
                 ? (selectedCustomers.length >= 5 ? "Maximum 5 firms selected" : "+ Search...") 
                 : "Name, Mobile, GST or ID..."}
@@ -1149,9 +1191,12 @@ export default function CustomerStatementView() {
               onKeyDown={(e) => {
                 if (isLocked) return;
                 if (e.key === 'Enter' && statementMode === 'single') {
-                  setCustomerId(searchQuery);
-                  handleFetch(searchQuery, true);
-                  setShowSuggestions(false);
+                  const cidToFetch = customerId || searchQuery;
+                  if (cidToFetch) {
+                    setCustomerId(cidToFetch);
+                    handleFetch(cidToFetch, true);
+                    setShowSuggestions(false);
+                  }
                 }
               }}
               disabled={isLocked || (statementMode === 'group' && selectedCustomers.length >= 5)}
@@ -1192,10 +1237,19 @@ export default function CustomerStatementView() {
                               setSearchQuery('');
                               setShowSuggestions(false);
                             } else {
+                              if (singleAbortControllerRef.current) {
+                                singleAbortControllerRef.current.abort();
+                              }
+                              singleRequestSeqRef.current += 1;
+                              setLoading(false);
                               setSearchQuery(c.name);
                               setCustomerId(c.id);
                               setShowSuggestions(false);
-                              handleFetch(c.id);
+                              setStatement(null);
+                              setCachedAt(null);
+                              setClipFromIndex(null);
+                              setUserExpandedMonths(null);
+                              setExpandedMonths(new Set());
                             }
                           }}
                         >
@@ -1243,10 +1297,11 @@ export default function CustomerStatementView() {
               if (statementMode === 'group') {
                 handleFetchGroup(true);
               } else {
-                handleFetch(undefined, true);
+                const cidToFetch = customerId || searchQuery;
+                handleFetch(cidToFetch, true);
               }
             }}
-            disabled={(statementMode === 'single' && loading) || (statementMode === 'group' && (groupLoading || selectedCustomers.length === 0))}
+            disabled={(statementMode === 'single' && (loading || (!customerId && !searchQuery.trim()))) || (statementMode === 'group' && (groupLoading || selectedCustomers.length === 0))}
             className="flex items-center justify-center gap-2 px-4 h-[36px] bg-[#1A2766] text-white rounded-md text-sm font-medium hover:bg-[#25368a] transition-colors shadow-sm disabled:opacity-50 w-full sm:w-auto whitespace-nowrap"
           >
             {(loading || groupLoading) ? <RefreshCw size={14} className="animate-spin" /> : (
@@ -1466,11 +1521,15 @@ export default function CustomerStatementView() {
           group.monthEndBalance = tx.balanceAfter;
 
           // Debit transactions
-          if (tx.type === 'invoice' || tx.type === 'vendor_payment' || (tx.type === 'journal' && tx.netEffect > 0)) {
+          if (tx.debit !== undefined && tx.debit > 0) {
+            group.debitTotal += Number(tx.debit);
+          } else if (tx.type === 'invoice' || tx.type === 'vendor_payment' || tx.type === 'vendor_credit' || (tx.type === 'journal' && tx.netEffect > 0)) {
             group.debitTotal += Number(tx.amount || 0);
           }
           // Credit transactions
-          if (tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) {
+          if (tx.credit !== undefined && tx.credit > 0) {
+            group.creditTotal += Number(tx.credit);
+          } else if (tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) {
             group.creditTotal += Number(tx.amount || 0);
           }
         });
@@ -1594,7 +1653,7 @@ export default function CustomerStatementView() {
                     <div className={`text-base font-black tabular-nums flex items-center ${
                       s.closingBalance > 0 ? 'text-rose-600' : s.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-500'
                     }`}>
-                      <BalanceIndicator balance={s.closingBalance} />
+                      <BalanceStateIndicator balance={s.closingBalance} />
                       {fmtBalance(s.closingBalance)}
                     </div>
                     <div className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider mt-0.5">
@@ -1764,7 +1823,7 @@ export default function CustomerStatementView() {
                               <div className="flex justify-between items-center pt-3 border-t border-gray-100 mt-auto">
                                 <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wide">Closing Balance</span>
                                 <span className={`font-extrabold tabular-nums flex items-center justify-end ${stmt.closingBalance > 0 ? 'text-rose-600' : stmt.closingBalance < 0 ? 'text-emerald-600' : 'text-gray-900'}`}>
-                                  <BalanceIndicator balance={stmt.closingBalance} />
+                                  <BalanceStateIndicator balance={stmt.closingBalance} />
                                   {fmtBalance(stmt.closingBalance)}
                                 </span>
                               </div>
@@ -1888,11 +1947,11 @@ export default function CustomerStatementView() {
                         <td className="px-4 py-1.5 text-right text-[11px] text-gray-400">—</td>
                         <td className="px-4 py-1.5 text-right text-[11px] text-gray-400">—</td>
                         <td className="px-4 py-1.5 text-right text-[11.5px] font-extrabold tabular-nums">
-                          <BalanceIndicator balance={dynamicOpeningBalance} />
+                          <BalanceStateIndicator balance={dynamicOpeningBalance} />
                           {openingPresentation.isCredit ? (
                             <span className="text-emerald-600">{openingPresentation.amount}</span>
                           ) : (
-                            <span className="text-gray-900">{openingPresentation.amount}</span>
+                            <span className="text-rose-600">{openingPresentation.amount}</span>
                           )}
                         </td>
                       </tr>
@@ -1912,22 +1971,22 @@ export default function CustomerStatementView() {
                               title={isMonthExpanded ? 'Click to collapse month' : 'Click to expand month'}
                             >
                               {/* Date / Month Label with Chevron */}
-                              <td colSpan={isGroupMode ? 4 : 3} className="px-3 py-2.5 align-middle">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[11px] font-bold text-slate-500 w-3 text-center transition-transform">
+                              <td colSpan={isGroupMode ? 4 : 3} className="px-3 py-2.5 align-middle whitespace-nowrap">
+                                <div className="flex items-center gap-2 flex-nowrap whitespace-nowrap min-w-max">
+                                  <span className="text-[11px] font-bold text-slate-500 w-3 text-center transition-transform shrink-0">
                                     {isMonthExpanded ? '▼' : '▶'}
                                   </span>
-                                  <span className="text-xs font-black tracking-wider text-slate-800 uppercase">
+                                  <span className="text-xs font-black tracking-wider text-slate-800 uppercase whitespace-nowrap shrink-0">
                                     {mg.label}
                                   </span>
-                                  <span className="text-[10px] text-slate-400 font-medium ml-1">
+                                  <span className="text-[10px] text-slate-400 font-medium ml-1 whitespace-nowrap shrink-0">
                                     ({mg.transactions.length} txn{mg.transactions.length !== 1 ? 's' : ''})
                                   </span>
                                 </div>
                               </td>
 
                               {/* Document & Details column in summary row */}
-                              <td className="px-4 py-2.5 text-xs text-slate-400 italic">
+                              <td className="px-4 py-2.5 text-xs text-slate-500 font-medium whitespace-nowrap">
                                 Month Summary
                               </td>
 
@@ -1941,21 +2000,19 @@ export default function CustomerStatementView() {
                                 {mg.creditTotal > 0 ? fmt(mg.creditTotal) : '—'}
                               </td>
 
-                              {/* Net Monthly Movement (Credit - Debit) */}
+                              {/* Monthly Net Movement (Debit - Credit) */}
                               <td className="px-4 py-2.5 text-right whitespace-nowrap align-middle">
                                 {(() => {
-                                  const net = mg.creditTotal - mg.debitTotal;
+                                  const net = mg.debitTotal - mg.creditTotal;
                                   const isZero = Math.abs(net) < 0.01;
                                   if (isZero) {
-                                    return <span className="text-[11.5px] tabular-nums font-black text-gray-400">₹0.00</span>;
+                                    return <span className="text-[11.5px] tabular-nums font-black text-gray-400">—</span>;
                                   }
                                   const isPositive = net > 0;
-                                  const colorClass = isPositive ? 'text-emerald-600' : 'text-rose-600';
+                                  const colorClass = isPositive ? 'text-rose-600' : 'text-emerald-600';
                                   return (
                                     <span className={`text-[11.5px] tabular-nums font-black flex items-center justify-end ${colorClass}`}>
-                                      <span className="mr-1 text-[11px] font-bold" title={isPositive ? 'Net Inflow / Surplus' : 'Net Outflow / Deficit'}>
-                                        {isPositive ? '↗' : '↙'}
-                                      </span>
+                                      <BalanceStateIndicator balance={net} />
                                       {fmtBalance(net)}
                                     </span>
                                   );
@@ -2022,6 +2079,7 @@ export default function CustomerStatementView() {
                                           </div>
                                         );
                                         if (tx.type === 'journal') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px] font-bold text-gray-600 uppercase tracking-wide">JOURNAL</span>;
+                                        if (tx.type === 'vendor_credit') return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-indigo-200 bg-indigo-50 text-[9px] font-bold text-indigo-700 uppercase tracking-wide">Vendor Credit Note</span>;
                                         return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px] font-bold text-gray-500 uppercase tracking-wide">{tx.type}</span>;
                                       })()}
                                     </td>
@@ -2061,6 +2119,9 @@ export default function CustomerStatementView() {
                                                 if (pmtRef) return pmtRef;
                                                 if (tx.paymentMode) return tx.paymentMode;
                                                 return displayDesc || 'Payment';
+                                              }
+                                              if (tx.type === 'vendor_credit') {
+                                                return tx.referenceNumber || (displayDesc ? displayDesc.replace(/^Vendor Credit(?:\s*Note)?\s*-\s*/i, '') : '') || 'Vendor Credit Note';
                                               }
                                               return tx.referenceNumber || displayDesc;
                                             })();
@@ -2134,7 +2195,10 @@ export default function CustomerStatementView() {
                                                   </>
                                                 ) : (
                                                   <>
-                                                    {tx.type !== 'payment' && tx.referenceNumber && tx.referenceNumber !== detailsText && (
+                                                    {tx.type === 'vendor_credit' && displayDesc && (
+                                                      <span title={displayDesc} className="text-[10px] text-gray-500 mt-0.5 leading-tight truncate">{displayDesc}</span>
+                                                    )}
+                                                    {tx.type !== 'payment' && tx.type !== 'vendor_credit' && tx.referenceNumber && tx.referenceNumber !== detailsText && (
                                                       <span title={displayDesc} className="text-[10px] text-gray-500 mt-0.5 leading-tight truncate">{displayDesc}</span>
                                                     )}
                                                     {(tx.type === 'payment' || tx.type === 'vendor_payment') && (tx.notes || tx.paymentDescription) && (
@@ -2152,11 +2216,11 @@ export default function CustomerStatementView() {
                                     </td>
                                     {/* DEBIT Column */}
                                     <td className="px-3 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums text-slate-800">
-                                      {(tx.type === 'invoice' || tx.type === 'vendor_payment' || (tx.type === 'journal' && tx.netEffect > 0)) ? fmt(tx.amount) : '—'}
+                                      {(tx.debit !== undefined && tx.debit > 0) ? fmt(tx.debit) : ((tx.type === 'invoice' || tx.type === 'vendor_payment' || tx.type === 'vendor_credit' || (tx.type === 'journal' && tx.netEffect > 0)) ? fmt(tx.amount) : '—')}
                                     </td>
                                     {/* CREDIT Column */}
                                     <td className="px-3 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums text-slate-800">
-                                      {(tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) ? fmt(tx.amount) : '—'}
+                                      {(tx.credit !== undefined && tx.credit > 0) ? fmt(tx.credit) : ((tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) ? fmt(tx.amount) : '—')}
                                     </td>
                                     {/* RUNNING BALANCE */}
                                     <td className="px-4 py-1.5 text-right whitespace-nowrap align-middle">
@@ -2174,11 +2238,9 @@ export default function CustomerStatementView() {
                                         
                                         const isPositive = b > 0;
                                         const colorClass = isPositive ? 'text-rose-600' : b < 0 ? 'text-emerald-600' : 'text-gray-400';
-                                        const overallTxIdx = visibleTransactions.findIndex((t: any) => t.id === tx.id);
-                                        const prevBalance = overallTxIdx > 0 ? visibleTransactions[overallTxIdx - 1].balanceAfter : dynamicOpeningBalance;
                                         return (
                                           <span className={`text-[11.5px] tabular-nums font-extrabold flex items-center justify-end ${colorClass}`}>
-                                            <BalanceChangeIndicator current={b} previous={prevBalance} />
+                                            <BalanceStateIndicator balance={b} />
                                             {fmtBalance(b)}
                                           </span>
                                         );
@@ -2277,7 +2339,8 @@ export default function CustomerStatementView() {
                         </span>
                       )}
                     </div>
-                    <div className={`text-sm font-bold tabular-nums ${openingPresentation.isCredit ? 'text-emerald-600' : 'text-gray-900'}`}>
+                    <div className={`text-sm font-bold tabular-nums flex items-center ${openingPresentation.isCredit ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      <BalanceStateIndicator balance={dynamicOpeningBalance} />
                       {openingPresentation.amount}
                     </div>
                   </div>
@@ -2298,29 +2361,29 @@ export default function CustomerStatementView() {
                             onClick={() => toggleMonthExpand(mg.key)}
                             className="w-full text-left px-4 py-2.5 bg-slate-100 hover:bg-slate-200/80 transition-colors border-y border-slate-200 flex flex-col gap-1 focus:outline-none"
                           >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className={`text-[9px] text-slate-500 font-bold transition-transform inline-block ${isMonthExpanded ? 'rotate-90' : ''}`}>
+                            <div className="flex items-center justify-between gap-2 flex-nowrap">
+                              <div className="flex items-center gap-2 flex-nowrap shrink-0 min-w-0">
+                                <span className={`text-[9px] text-slate-500 font-bold transition-transform inline-block shrink-0 ${isMonthExpanded ? 'rotate-90' : ''}`}>
                                   ▶
                                 </span>
-                                <span className="text-xs font-black text-slate-800 tracking-wide">
+                                <span className="text-xs font-black text-slate-800 tracking-wide whitespace-nowrap shrink-0">
                                   {mg.label}
                                 </span>
-                                <span className="text-[10px] text-slate-500 font-normal">
+                                <span className="text-[10px] text-slate-500 font-normal whitespace-nowrap shrink-0">
                                   ({mg.transactions.length} txn{mg.transactions.length === 1 ? '' : 's'})
                                 </span>
                               </div>
-                              {/* Net Monthly Movement */}
-                              <div className="text-right">
+                              {/* Monthly Net Movement */}
+                              <div className="text-right shrink-0">
                                 {(() => {
-                                  const net = mg.creditTotal - mg.debitTotal;
+                                  const net = mg.debitTotal - mg.creditTotal;
                                   const isZero = Math.abs(net) < 0.01;
-                                  if (isZero) return <span className="text-xs font-bold text-gray-400">₹0.00</span>;
+                                  if (isZero) return <span className="text-xs font-bold text-gray-400">—</span>;
                                   const isPositive = net > 0;
-                                  const colorClass = isPositive ? 'text-emerald-600' : 'text-rose-600';
+                                  const colorClass = isPositive ? 'text-rose-600' : 'text-emerald-600';
                                   return (
                                     <span className={`text-xs font-black tabular-nums flex items-center justify-end ${colorClass}`}>
-                                      <span className="mr-0.5 text-[10px] font-bold">{isPositive ? '↗' : '↙'}</span>
+                                      <BalanceStateIndicator balance={net} />
                                       {fmtBalance(net)}
                                     </span>
                                   );
@@ -2328,7 +2391,7 @@ export default function CustomerStatementView() {
                               </div>
                             </div>
 
-                            <div className="flex items-center justify-between text-[11px] tabular-nums">
+                            <div className="flex items-center gap-4 text-[11px] tabular-nums pt-0.5">
                               <div>
                                 <span className="text-slate-400 text-[10px] mr-1">Dr:</span>
                                 <span className="font-semibold text-slate-800">{mg.debitTotal > 0 ? fmt(mg.debitTotal) : '—'}</span>
@@ -2336,12 +2399,6 @@ export default function CustomerStatementView() {
                               <div>
                                 <span className="text-slate-400 text-[10px] mr-1">Cr:</span>
                                 <span className="font-semibold text-slate-800">{mg.creditTotal > 0 ? fmt(mg.creditTotal) : '—'}</span>
-                              </div>
-                              <div>
-                                <span className="text-slate-400 text-[10px] mr-1">Net:</span>
-                                <span className={`font-bold ${Math.abs(mg.creditTotal - mg.debitTotal) < 0.01 ? 'text-gray-400' : (mg.creditTotal > mg.debitTotal ? 'text-emerald-600' : 'text-rose-600')}`}>
-                                  {fmtBalance(mg.creditTotal - mg.debitTotal)}
-                                </span>
                               </div>
                             </div>
                           </button>
@@ -2353,8 +2410,6 @@ export default function CustomerStatementView() {
                                 const displayDesc = cleanDescription(tx.description, tx.type);
                                 const isInvoice = tx.type === 'invoice';
                                 const isPayment = tx.type === 'payment';
-                                const overallTxIdx = visibleTransactions.findIndex((t: any) => t.id === tx.id);
-                                const prevBalance = overallTxIdx > 0 ? visibleTransactions[overallTxIdx - 1].balanceAfter : dynamicOpeningBalance;
                                 
                                 return (
                                   <div 
@@ -2365,7 +2420,7 @@ export default function CustomerStatementView() {
                                     <div className="flex justify-between items-center">
                                       <span className="text-[11px] text-gray-500 font-medium">{fmtDateTime(tx.datetime || tx.date)}</span>
                                       <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                                        {isInvoice ? 'Invoice' : isPayment ? 'Payment' : tx.type === 'vendor_payment' ? 'Vendor Pmt' : tx.type === 'journal' ? 'JOURNAL' : 'Purchase Bill'}
+                                        {isInvoice ? 'Invoice' : isPayment ? 'Payment' : tx.type === 'vendor_payment' ? 'Vendor Pmt' : tx.type === 'vendor_credit' ? 'Vendor Credit Note' : tx.type === 'journal' ? 'JOURNAL' : 'Purchase Bill'}
                                       </span>
                                     </div>
 
@@ -2387,6 +2442,9 @@ export default function CustomerStatementView() {
                                             if (pmtRef) return pmtRef;
                                             if (tx.paymentMode) return tx.paymentMode;
                                             return displayDesc || 'Payment';
+                                          }
+                                          if (tx.type === 'vendor_credit') {
+                                            return tx.referenceNumber || (displayDesc ? displayDesc.replace(/^Vendor Credit(?:\s*Note)?\s*-\s*/i, '') : '') || 'Vendor Credit Note';
                                           }
                                           return tx.referenceNumber || displayDesc;
                                         })();
@@ -2454,7 +2512,10 @@ export default function CustomerStatementView() {
                                               </>
                                             ) : (
                                               <>
-                                                {tx.type !== 'payment' && tx.referenceNumber && tx.referenceNumber !== detailsText && (
+                                                {tx.type === 'vendor_credit' && displayDesc && (
+                                                  <span className="text-[10px] text-gray-500">{displayDesc}</span>
+                                                )}
+                                                {tx.type !== 'payment' && tx.type !== 'vendor_credit' && tx.referenceNumber && tx.referenceNumber !== detailsText && (
                                                   <span className="text-[10px] text-gray-500">{displayDesc}</span>
                                                 )}
                                                 {(isPayment || tx.type === 'vendor_payment') && (tx.notes || tx.paymentDescription) && (
@@ -2473,11 +2534,11 @@ export default function CustomerStatementView() {
                                     <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-50">
                                       <div className="flex flex-col gap-0.5">
                                         <span className="text-[10px] text-gray-400 font-medium">Inv Amt</span>
-                                        <span className="text-xs font-bold text-gray-700">{tx.netEffect > 0 ? fmt(tx.amount) : '—'}</span>
+                                        <span className="text-xs font-bold text-gray-700">{(tx.debit !== undefined && tx.debit > 0) ? fmt(tx.debit) : ((tx.netEffect > 0 || tx.type === 'invoice' || tx.type === 'vendor_payment' || tx.type === 'vendor_credit') ? fmt(tx.amount) : '—')}</span>
                                       </div>
                                       <div className="flex flex-col gap-0.5 text-right">
                                         <span className="text-[10px] text-gray-400 font-medium">Pay Amt</span>
-                                        <span className="text-xs font-bold text-gray-700">{tx.netEffect <= 0 ? fmt(tx.amount) : '—'}</span>
+                                        <span className="text-xs font-bold text-gray-700">{(tx.credit !== undefined && tx.credit > 0) ? fmt(tx.credit) : ((tx.netEffect < 0 || tx.type === 'payment' || tx.type === 'bill') ? fmt(tx.amount) : '—')}</span>
                                       </div>
                                     </div>
 
@@ -2490,7 +2551,7 @@ export default function CustomerStatementView() {
                                         const colorClass = isPositive ? 'text-rose-600' : b < 0 ? 'text-emerald-600' : 'text-gray-400';
                                         return (
                                           <span className={`text-xs font-bold tabular-nums flex items-center ${colorClass}`}>
-                                            <BalanceChangeIndicator current={b} previous={prevBalance} />
+                                            <BalanceStateIndicator balance={b} />
                                             {fmtBalance(b)}
                                           </span>
                                         );

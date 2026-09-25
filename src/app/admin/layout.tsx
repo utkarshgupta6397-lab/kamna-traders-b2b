@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { Package, Users, Warehouse, Tags, Database, LayoutDashboard, LogOut, Bookmark, RefreshCw, Terminal, Printer, Shield, Lock, FileText, Briefcase, MessageCircle, Server, Wrench, Webhook, DownloadCloud } from 'lucide-react';
+import { Users, Warehouse, Database, LayoutDashboard, LogOut, Bookmark, RefreshCw, Terminal, Printer, Shield, Lock, Briefcase, MessageCircle, Server, Webhook, DownloadCloud } from 'lucide-react';
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { Toaster } from 'react-hot-toast';
@@ -14,27 +14,18 @@ const navItems = [
   { href: '/admin/warehouses', label: 'Warehouses', icon: Warehouse },
   { href: '/admin/sub-vendors', label: 'Sub-Vendors', icon: Briefcase },
   { href: '/admin/cities', label: 'Cities', icon: Bookmark },
-  { href: '/admin/categories', label: 'Categories', icon: Tags },
-  { href: '/admin/brands', label: 'Brands', icon: Bookmark },
-  { href: '/admin/skus', label: 'SKUs', icon: Package },
   { href: '/admin/sku-sync', label: 'SKU Sync', icon: RefreshCw },
   { href: '/admin/catalog-sync', label: 'Catalog Maintenance', icon: RefreshCw },
   { href: '/admin/zoho-books', label: 'Zoho Books Sync', icon: Database },
-  { href: '/admin/post-dispatch', label: 'Post Dispatch', icon: Package },
   { href: '/admin/incoming-so', label: 'Incoming SO', icon: DownloadCloud },
   { href: '/admin/zoho-creator', label: 'Zoho Creator', icon: Webhook },
   { href: '/admin/inventory', label: 'Inventory', icon: Database },
   { href: '/admin/zoho-debug', label: 'Zoho Debug', icon: Terminal },
-  { href: '/admin/print-debug', label: 'Print Debug', icon: Printer },
   { href: '/admin/printers', label: 'Printer Management', icon: Printer },
-  { href: '/admin/accounts/summary', label: 'Accounts Summary', icon: FileText },
-  { href: '/admin/customer-statement', label: 'Customer Statement', icon: FileText },
-  { href: '/admin/transactions', label: 'Transactions', icon: Database },
+  { href: '/admin/transactions', label: 'Zoho Banking Debug', icon: Database },
   { href: '/admin/sessions', label: 'Sessions', icon: Shield },
-  { href: '/admin/system-utilities', label: 'System Utilities', icon: Wrench },
   { href: '/admin/gateway-settings', label: 'Gateway Settings', icon: Server },
   { href: '/admin/dev-tools/gateway-test', label: 'Gateway Test', icon: Terminal },
-  { href: '/admin/dev-tools/test-communication', label: 'Test Communication', icon: Terminal },
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

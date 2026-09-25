@@ -84,6 +84,8 @@ export type CustomerStatement = {
     totalApiCalls: number;
     rawInvoicesFetched: number;
     validInvoicesAfterFilter: number;
+    rawPaymentsFetched?: number;
+    validPaymentsAfterFilter?: number;
     rawBillsFetched: number;
     validBillsAfterFilter: number;
     // Net position debug
@@ -94,37 +96,136 @@ export type CustomerStatement = {
   };
 };
 
+export type StatementFetchMeta = {
+  rawFetched: number;
+  validCount: number;
+  apiCalls: number;
+  isTruncated?: boolean;
+};
+
+export type StatementFetchOptions = {
+  fetchFn?: typeof fetch;
+  orgId?: string;
+  accessToken?: string;
+  pageSize?: number;
+  maxPages?: number;
+};
+
 /**
- * Fetch up to 10 latest non-void invoices for a contact, sorted newest-first.
- * Returns the raw list for the debugger.
+ * Fetch all non-void invoices for a contact across all pages, sorted newest-first.
+ * Uses Zoho Books maximum page size of 200 per call and automatically paginates
+ * until all invoices are retrieved or safety limits are reached.
  */
-export async function getCustomerInvoices(contactId: string): Promise<{
+export async function getCustomerInvoices(
+  contactId: string,
+  options?: StatementFetchOptions
+): Promise<{
   success: boolean;
   data?: CustomerStatementInvoice[];
   raw?: any;
   error?: string;
+  _meta?: StatementFetchMeta;
 }> {
   try {
-    const orgId = getZohoOrgId();
+    const orgId = options?.orgId || getZohoOrgId();
     if (!orgId) throw new Error('Missing ZOHO_BOOKS_ORG_ID or ZOHO_ORGANIZATION_ID in environment variables');
-    const accessToken = await getZohoTokens();
+    const accessToken = options?.accessToken || await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    // Fetch invoices — no custom sort/status params (Zoho rejects unsupported enums)
-    // We filter void and sort locally after receiving the response
-    // Fetch 15 as buffer — void invoices are filtered in-app
-    const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=50&sort_column=date&sort_order=D`;
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      return { success: false, error: data.message || 'Failed to fetch invoices', raw: data };
+    const fetchImpl = options?.fetchFn || fetch;
+    const perPage = options?.pageSize || 200;
+    const maxPages = options?.maxPages || 50;
+
+    let page = 1;
+    let hasMore = true;
+    let apiCalls = 0;
+    let isTruncated = false;
+    const rawInvoices: any[] = [];
+    const seenIds = new Set<string>();
+    let lastRawResponse: any = null;
+
+    while (hasMore) {
+      const url = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&customer_id=${contactId}&page=${page}&per_page=${perPage}&sort_column=date&sort_order=D`;
+      const response = await fetchImpl(url, {
+        method: 'GET',
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+      });
+      apiCalls++;
+
+      const data = await response.json();
+      lastRawResponse = data;
+
+      if (!response.ok) {
+        console.error(`[Zoho Invoices] Error on page ${page}:`, data);
+        return {
+          success: false,
+          error: data.message || `Failed to fetch invoices (page ${page})`,
+          raw: data,
+          _meta: {
+            rawFetched: rawInvoices.length,
+            validCount: 0,
+            apiCalls,
+            isTruncated: true,
+          },
+        };
+      }
+
+      const pageInvoices: any[] = data.invoices ?? [];
+      const hasMorePage = Boolean(data.page_context?.has_more_page);
+
+      console.log(`[Zoho Invoices] Customer: ${contactId}`);
+      console.log(`[Zoho Invoices] Page: ${page}`);
+      console.log(`[Zoho Invoices] Requested: ${perPage}`);
+      console.log(`[Zoho Invoices] Received: ${pageInvoices.length}`);
+      console.log(`[Zoho Invoices] Has more: ${hasMorePage}`);
+
+      let newItemsOnThisPage = 0;
+      for (const inv of pageInvoices) {
+        if (!inv.invoice_id) continue;
+        if (!seenIds.has(inv.invoice_id)) {
+          seenIds.add(inv.invoice_id);
+          rawInvoices.push(inv);
+          newItemsOnThisPage++;
+        } else {
+          console.warn(`[Zoho Invoices] Duplicate invoice detected across pages: ${inv.invoice_id} (${inv.invoice_number})`);
+        }
+      }
+
+      // Determine whether more pages exist
+      if (data.page_context && typeof data.page_context.has_more_page === 'boolean') {
+        if (!data.page_context.has_more_page || pageInvoices.length === 0) {
+          hasMore = false;
+        } else {
+          if (newItemsOnThisPage === 0 && pageInvoices.length > 0) {
+            console.warn('[Zoho Invoices] Page returned only duplicate records, stopping pagination to prevent loop');
+            hasMore = false;
+            break;
+          }
+          page++;
+        }
+      } else {
+        // Fallback when page_context is absent
+        if (pageInvoices.length < perPage || pageInvoices.length === 0) {
+          hasMore = false;
+        } else {
+          if (newItemsOnThisPage === 0) {
+            hasMore = false;
+            break;
+          }
+          page++;
+        }
+      }
+
+      if (hasMore && page > maxPages) {
+        console.warn(`[Zoho Invoices] Reached safety limit of ${maxPages} pages for customer ${contactId}. Halting pagination.`);
+        isTruncated = true;
+        hasMore = false;
+        break;
+      }
     }
-    const raw: any[] = data.invoices ?? [];
-    const items: CustomerStatementInvoice[] = raw
-      .filter((inv: any) => inv.status !== 'void')       // exclude void in app-layer
+
+    const items: CustomerStatementInvoice[] = rawInvoices
+      .filter((inv: any) => inv.status !== 'void') // exclude void in app-layer
       .map((inv: any) => {
         if (!inv.date) {
           console.warn('[Zoho] Invoice missing date field. Raw object:', inv);
@@ -132,7 +233,7 @@ export async function getCustomerInvoices(contactId: string): Promise<{
         return {
           invoiceId: inv.invoice_id,
           invoiceNumber: inv.invoice_number,
-          invoiceDate: inv.date || inv.created_time || inv.last_modified_time || '', // fallback to created_time
+          invoiceDate: inv.date || inv.created_time || inv.last_modified_time || '',
           dueDate: inv.due_date,
           status: inv.status,
           total: Number(inv.total),
@@ -142,13 +243,26 @@ export async function getCustomerInvoices(contactId: string): Promise<{
           salespersonName: inv.salesperson_name,
         };
       });
+
+    // Ensure sorting by date descending
+    items.sort((a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime());
+
+    console.log('[Zoho Invoices] Complete');
+    console.log(`[Zoho Invoices] Total raw invoices: ${rawInvoices.length}`);
+    console.log(`[Zoho Invoices] Valid invoices: ${items.length}`);
+    console.log(`[Zoho Invoices] API calls: ${apiCalls}`);
+
     return {
       success: true,
       data: items,
-      raw: data,
-      // telemetry fields for caller
-      _meta: { rawFetched: raw.length, validCount: items.length },
-    } as any;
+      raw: lastRawResponse,
+      _meta: {
+        rawFetched: rawInvoices.length,
+        validCount: items.length,
+        apiCalls,
+        isTruncated,
+      },
+    };
   } catch (error: any) {
     return { success: false, error: error.message || 'Internal Server Error' };
   }
@@ -194,35 +308,114 @@ export type CustomerStatementPayment = {
   notes?: string;
 };
 
-export async function getCustomerPayments(contactId: string): Promise<{
+export async function getCustomerPayments(
+  contactId: string,
+  options?: StatementFetchOptions
+): Promise<{
   success: boolean;
   data?: CustomerStatementPayment[];
   raw?: any;
   error?: string;
+  _meta?: StatementFetchMeta;
 }> {
   try {
-    const orgId = getZohoOrgId();
+    const orgId = options?.orgId || getZohoOrgId();
     if (!orgId) throw new Error('Missing ZOHO_BOOKS_ORG_ID or ZOHO_ORGANIZATION_ID in environment variables');
-    const accessToken = await getZohoTokens();
+    const accessToken = options?.accessToken || await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    const url = `${API_BASE_URL}/books/v3/customerpayments?organization_id=${orgId}&customer_id=${contactId}&page=1&per_page=50&sort_column=date&sort_order=D`;
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
-    });
-    const data = await response.json();
-    console.log('[Zoho Payments] API URL:', url);
-    
-    if (!response.ok) {
-      console.warn('[Zoho Payments] Failed to fetch payments:', data);
-      return { success: false, error: data.message || 'Failed to fetch payments', raw: data };
+    const fetchImpl = options?.fetchFn || fetch;
+    const perPage = options?.pageSize || 200;
+    const maxPages = options?.maxPages || 50;
+
+    let page = 1;
+    let hasMore = true;
+    let apiCalls = 0;
+    let isTruncated = false;
+    const rawPayments: any[] = [];
+    const seenIds = new Set<string>();
+    let lastRawResponse: any = null;
+
+    while (hasMore) {
+      const url = `${API_BASE_URL}/books/v3/customerpayments?organization_id=${orgId}&customer_id=${contactId}&page=${page}&per_page=${perPage}&sort_column=date&sort_order=D`;
+      const response = await fetchImpl(url, {
+        method: 'GET',
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+      });
+      apiCalls++;
+
+      const data = await response.json();
+      lastRawResponse = data;
+
+      if (!response.ok) {
+        console.warn(`[Zoho Payments] Failed to fetch payments (page ${page}):`, data);
+        return {
+          success: false,
+          error: data.message || `Failed to fetch payments (page ${page})`,
+          raw: data,
+          _meta: {
+            rawFetched: rawPayments.length,
+            validCount: 0,
+            apiCalls,
+            isTruncated: true,
+          },
+        };
+      }
+
+      const pagePayments: any[] = data.customerpayments ?? [];
+      const hasMorePage = Boolean(data.page_context?.has_more_page);
+
+      console.log(`[Zoho Payments] Customer: ${contactId}`);
+      console.log(`[Zoho Payments] Page: ${page}`);
+      console.log(`[Zoho Payments] Requested: ${perPage}`);
+      console.log(`[Zoho Payments] Received: ${pagePayments.length}`);
+      console.log(`[Zoho Payments] Has more: ${hasMorePage}`);
+
+      let newItemsOnThisPage = 0;
+      for (const pmt of pagePayments) {
+        if (!pmt.payment_id) continue;
+        if (!seenIds.has(pmt.payment_id)) {
+          seenIds.add(pmt.payment_id);
+          rawPayments.push(pmt);
+          newItemsOnThisPage++;
+        } else {
+          console.warn(`[Zoho Payments] Duplicate payment detected across pages: ${pmt.payment_id} (${pmt.payment_number})`);
+        }
+      }
+
+      if (data.page_context && typeof data.page_context.has_more_page === 'boolean') {
+        if (!data.page_context.has_more_page || pagePayments.length === 0) {
+          hasMore = false;
+        } else {
+          if (newItemsOnThisPage === 0 && pagePayments.length > 0) {
+            console.warn('[Zoho Payments] Page returned only duplicate records, stopping pagination to prevent loop');
+            hasMore = false;
+            break;
+          }
+          page++;
+        }
+      } else {
+        if (pagePayments.length < perPage || pagePayments.length === 0) {
+          hasMore = false;
+        } else {
+          if (newItemsOnThisPage === 0) {
+            hasMore = false;
+            break;
+          }
+          page++;
+        }
+      }
+
+      if (hasMore && page > maxPages) {
+        console.warn(`[Zoho Payments] Reached safety limit of ${maxPages} pages for customer ${contactId}. Halting.`);
+        isTruncated = true;
+        hasMore = false;
+        break;
+      }
     }
-    const raw: any[] = data.customerpayments ?? [];
-    console.log('[Zoho Payments] Raw payment count:', raw.length);
-    
-    const items: CustomerStatementPayment[] = raw
-      .filter((pmt: any) => !(pmt.deleted === true || pmt.status === 'void' || pmt.status === 'cancelled'))
+
+    const items: CustomerStatementPayment[] = rawPayments
+      .filter((pmt: any) => !(pmt.deleted === true || pmt.status === 'void' || pmt.status === 'cancelled' || pmt.status === 'failure'))
       .map((pmt: any) => {
         const verifiedVal = String(pmt.custom_field_hash?.cf_is_verified ?? pmt.cf_is_verified ?? '').toLowerCase();
         const isVerified = ['true', '1'].includes(verifiedVal);
@@ -237,15 +430,25 @@ export async function getCustomerPayments(contactId: string): Promise<{
           notes: pmt.description,
         };
       });
-      
-    console.log('[Zoho Payments] Normalized payment count:', items.length);
-    
+
+    items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    console.log('[Zoho Payments] Complete');
+    console.log(`[Zoho Payments] Total raw payments: ${rawPayments.length}`);
+    console.log(`[Zoho Payments] Valid payments: ${items.length}`);
+    console.log(`[Zoho Payments] API calls: ${apiCalls}`);
+
     return {
       success: true,
       data: items,
-      raw: data,
-      _meta: { rawFetched: raw.length, validCount: items.length },
-    } as any;
+      raw: lastRawResponse,
+      _meta: {
+        rawFetched: rawPayments.length,
+        validCount: items.length,
+        apiCalls,
+        isTruncated,
+      },
+    };
   } catch (error: any) {
     return { success: false, error: error.message || 'Internal Server Error' };
   }
@@ -259,63 +462,136 @@ export type CustomerStatementBill = {
   referenceNumber?: string;
 };
 
-export async function getVendorBills(vendorId: string): Promise<{
+export async function getVendorBills(
+  vendorId: string,
+  options?: StatementFetchOptions
+): Promise<{
   success: boolean;
   data?: CustomerStatementBill[];
   raw?: any;
   error?: string;
+  _meta?: StatementFetchMeta;
 }> {
   try {
-    const orgId = getZohoOrgId();
+    const orgId = options?.orgId || getZohoOrgId();
     if (!orgId) throw new Error('Missing ZOHO_BOOKS_ORG_ID or ZOHO_ORGANIZATION_ID in environment variables');
-    const accessToken = await getZohoTokens();
+    const accessToken = options?.accessToken || await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    const url = `${API_BASE_URL}/books/v3/bills?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=50&sort_column=date&sort_order=D`;
-    console.log('[Zoho Bills] Vendor ID Used:', vendorId);
-    console.log('[Zoho Bills] API URL:', url);
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
-    });
-    const data = await response.json();
-    
-    if (!response.ok) {
-      console.warn('[Zoho Bills] Failed to fetch bills:', data);
-      return { success: false, error: data.message || 'Failed to fetch bills', raw: data };
-    }
-    const raw: any[] = data.bills ?? [];
-    console.log('[Zoho Bills] Raw bill count:', raw.length);
-    if (raw.length > 0) {
-      console.log('RAW BILL PAYLOAD (First Bill):', JSON.stringify(raw[0], null, 2));
-    }
-    
-    const items: CustomerStatementBill[] = raw
-      .filter((b: any) => !(b.deleted === true || b.status === 'void' || b.status === 'cancelled'))
-      .map((b: any) => {
-        console.log('BILL DEBUG', {
-          bill_id: b.bill_id,
-          bill_number: b.bill_number,
-          reference_number: b.reference_number,
-          vendor_name: b.vendor_name
-        });
-        return {
-          billId: b.bill_id,
-          billNumber: b.bill_number,
-          date: b.date || b.created_time || b.last_modified_time || '',
-          amount: Number(b.total),
-          referenceNumber: b.reference_number,
-        };
+    const fetchImpl = options?.fetchFn || fetch;
+    const perPage = options?.pageSize || 200;
+    const maxPages = options?.maxPages || 50;
+
+    let page = 1;
+    let hasMore = true;
+    let apiCalls = 0;
+    let isTruncated = false;
+    const rawBills: any[] = [];
+    const seenIds = new Set<string>();
+    let lastRawResponse: any = null;
+
+    while (hasMore) {
+      const url = `${API_BASE_URL}/books/v3/bills?organization_id=${orgId}&vendor_id=${vendorId}&page=${page}&per_page=${perPage}&sort_column=date&sort_order=D`;
+      const response = await fetchImpl(url, {
+        method: 'GET',
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
       });
-      
-    console.log('[Zoho Bills] Normalized bill count:', items.length);
-    
+      apiCalls++;
+
+      const data = await response.json();
+      lastRawResponse = data;
+
+      if (!response.ok) {
+        console.warn(`[Zoho Bills] Failed to fetch bills (page ${page}):`, data);
+        return {
+          success: false,
+          error: data.message || `Failed to fetch bills (page ${page})`,
+          raw: data,
+          _meta: {
+            rawFetched: rawBills.length,
+            validCount: 0,
+            apiCalls,
+            isTruncated: true,
+          },
+        };
+      }
+
+      const pageBills: any[] = data.bills ?? [];
+      const hasMorePage = Boolean(data.page_context?.has_more_page);
+
+      console.log(`[Zoho Bills] Vendor: ${vendorId}`);
+      console.log(`[Zoho Bills] Page: ${page}`);
+      console.log(`[Zoho Bills] Requested: ${perPage}`);
+      console.log(`[Zoho Bills] Received: ${pageBills.length}`);
+      console.log(`[Zoho Bills] Has more: ${hasMorePage}`);
+
+      let newItemsOnThisPage = 0;
+      for (const b of pageBills) {
+        if (!b.bill_id) continue;
+        if (!seenIds.has(b.bill_id)) {
+          seenIds.add(b.bill_id);
+          rawBills.push(b);
+          newItemsOnThisPage++;
+        }
+      }
+
+      if (data.page_context && typeof data.page_context.has_more_page === 'boolean') {
+        if (!data.page_context.has_more_page || pageBills.length === 0) {
+          hasMore = false;
+        } else {
+          if (newItemsOnThisPage === 0 && pageBills.length > 0) {
+            hasMore = false;
+            break;
+          }
+          page++;
+        }
+      } else {
+        if (pageBills.length < perPage || pageBills.length === 0) {
+          hasMore = false;
+        } else {
+          if (newItemsOnThisPage === 0) {
+            hasMore = false;
+            break;
+          }
+          page++;
+        }
+      }
+
+      if (hasMore && page > maxPages) {
+        isTruncated = true;
+        hasMore = false;
+        break;
+      }
+    }
+
+    const items: CustomerStatementBill[] = rawBills
+      .filter((b: any) => !(b.deleted === true || b.status === 'void' || b.status === 'cancelled'))
+      .map((b: any) => ({
+        billId: b.bill_id,
+        billNumber: b.bill_number,
+        date: b.date || b.created_time || b.last_modified_time || '',
+        amount: Number(b.total),
+        referenceNumber: b.reference_number,
+      }));
+
+    items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    console.log('[Zoho Bills] Complete');
+    console.log(`[Zoho Bills] Total raw bills: ${rawBills.length}`);
+    console.log(`[Zoho Bills] Valid bills: ${items.length}`);
+    console.log(`[Zoho Bills] API calls: ${apiCalls}`);
+
     return {
       success: true,
       data: items,
-      raw: data,
-      _meta: { rawFetched: raw.length, validCount: items.length },
-    } as any;
+      raw: lastRawResponse,
+      _meta: {
+        rawFetched: rawBills.length,
+        validCount: items.length,
+        apiCalls,
+        isTruncated,
+      },
+    };
   } catch (error: any) {
     return { success: false, error: error.message || 'Internal Server Error' };
   }
@@ -433,7 +709,7 @@ export async function getVendorPayments(vendorId: string): Promise<{
       success: true,
       data: detailedPayments,
       raw: data,
-      _meta: { rawFetched: raw.length, validCount: detailedPayments.length },
+      _meta: { rawFetched: raw.length, validCount: detailedPayments.length, apiCalls: 1 + raw.length },
     } as any;
   } catch (error: any) {
     return { success: false, error: error.message || 'Internal Server Error' };
@@ -569,7 +845,7 @@ export async function getHybridJournals(contactId: string, associatedVendorId: s
       success: true,
       data: validJournals,
       raw: { rawC, rawV },
-      _meta: { rawFetched: raw.length, validCount: validJournals.length },
+      _meta: { rawFetched: raw.length, validCount: validJournals.length, apiCalls: 2 + raw.length },
     } as any;
   } catch (error: any) {
     return { success: false, error: error.message || 'Internal Server Error' };
@@ -639,8 +915,12 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
     return { success: false, error: invoicesResult.error, raw: invoicesResult.raw };
   }
 
+  if (!paymentsResult.success) {
+    return { success: false, error: paymentsResult.error || 'Failed to fetch customer payments', raw: paymentsResult.raw };
+  }
+
   const invoices = invoicesResult.data ?? [];
-  const payments = (paymentsResult.success ? paymentsResult.data : []) ?? [];
+  const payments = paymentsResult.data ?? [];
   const bills = (billsResult.success ? billsResult.data : []) ?? [];
   const vendorPayments = (vendorPaymentsResult.success ? vendorPaymentsResult.data : []) ?? [];
 
@@ -661,6 +941,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
     zohoUrl?: string;
     appliedBills?: { billNumber: string; appliedAmount: number }[];
     notes?: string;
+    referenceNumber?: string;
   }> = [
     ...invoices.map((inv: any) => ({
       id: inv.invoiceId,
@@ -673,6 +954,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
       netEffect: inv.total,
       customerNetEffect: inv.total,
       vendorNetEffect: 0,
+      referenceNumber: inv.referenceNumber,
       zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/invoices/${inv.invoiceId}` : undefined,
     })),
     ...payments.map((pmt: any) => {
@@ -690,6 +972,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
         customerNetEffect: -pmt.amount,
         vendorNetEffect: 0,
         isVerified: pmt.isVerified,
+        referenceNumber: pmt.referenceNumber,
         zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/paymentsreceived/${pmt.paymentId}?customview_id=1759923000006656536&per_page=200&sort_column=date&sort_order=D` : undefined,
         notes: pmt.notes,
       };
@@ -812,9 +1095,23 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
   const unpaidInvoices = invoices.filter((i: any) => i.balance > 0);
   unpaidInvoices.sort((a, b) => new Date(a.invoiceDate).getTime() - new Date(b.invoiceDate).getTime());
 
-  const invMeta  = (invoicesResult as any)._meta  ?? { rawFetched: invoices.length, validCount: invoices.length };
-  const pmtMeta  = paymentsResult.success ? ((paymentsResult as any)._meta ?? { rawFetched: 0, validCount: 0 }) : { rawFetched: 0, validCount: 0 };
-  const billMeta = (billsResult.success && (billsResult as any)._meta) ? (billsResult as any)._meta : { rawFetched: 0, validCount: 0 };
+  const invMeta  = (invoicesResult as any)._meta  ?? { rawFetched: invoices.length, validCount: invoices.length, apiCalls: 1, isTruncated: false };
+  const pmtMeta  = paymentsResult.success ? ((paymentsResult as any)._meta ?? { rawFetched: 0, validCount: 0, apiCalls: 1, isTruncated: false }) : { rawFetched: 0, validCount: 0, apiCalls: 1, isTruncated: false };
+  const billMeta = (billsResult.success && (billsResult as any)._meta) ? (billsResult as any)._meta : { rawFetched: 0, validCount: 0, apiCalls: 0, isTruncated: false };
+  const vpMeta   = (vendorPaymentsResult.success && (vendorPaymentsResult as any)._meta) ? (vendorPaymentsResult as any)._meta : { rawFetched: 0, validCount: 0, apiCalls: 0, isTruncated: false };
+  const jMeta    = (journalsResult.success && (journalsResult as any)._meta) ? (journalsResult as any)._meta : { rawFetched: 0, validCount: 0, apiCalls: 0, isTruncated: false };
+
+  const invoiceApiCalls = invMeta.apiCalls ?? 1;
+  const paymentApiCalls = pmtMeta.apiCalls ?? 1;
+  const billApiCalls = isHybrid ? ((billMeta.apiCalls ?? 0) + (vpMeta.apiCalls ?? 0)) : 0;
+  const journalApiCalls = isHybrid ? (jMeta.apiCalls ?? 0) : 0;
+  const totalApiCalls = 1 + invoiceApiCalls + paymentApiCalls + billApiCalls + journalApiCalls;
+
+  const isTruncated = Boolean(
+    invMeta.isTruncated ||
+    pmtMeta.isTruncated ||
+    (isHybrid && (billMeta.isTruncated || vpMeta.isTruncated || jMeta.isTruncated))
+  );
 
   return {
     success: true,
@@ -830,17 +1127,19 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
       transactions,
       transactionCount: transactions.length,
       unpaidInvoices,
-      isTruncated: false,
+      isTruncated,
       telemetry: {
         customerApiCalls: 1,
-        invoiceApiCalls: 1,
-        paymentApiCalls: 1,
-        billApiCalls: isHybrid ? 2 : 0, // bills + vendor payments
-        totalApiCalls: isHybrid ? 5 : 3,
-        rawInvoicesFetched: invMeta.rawFetched + pmtMeta.rawFetched,
-        validInvoicesAfterFilter: invMeta.validCount + pmtMeta.validCount,
-        rawBillsFetched: billMeta.rawFetched + (vendorPaymentsResult._meta?.rawFetched || 0),
-        validBillsAfterFilter: billMeta.validCount + (vendorPaymentsResult._meta?.validCount || 0),
+        invoiceApiCalls,
+        paymentApiCalls,
+        billApiCalls,
+        totalApiCalls,
+        rawInvoicesFetched: invMeta.rawFetched,
+        validInvoicesAfterFilter: invMeta.validCount,
+        rawPaymentsFetched: pmtMeta.rawFetched,
+        validPaymentsAfterFilter: pmtMeta.validCount,
+        rawBillsFetched: isHybrid ? (billMeta.rawFetched + (vpMeta.rawFetched || 0)) : 0,
+        validBillsAfterFilter: isHybrid ? (billMeta.validCount + (vpMeta.validCount || 0)) : 0,
         debugReceivable: outstandingReceivable,
         debugPayable: outstandingPayable,
         debugNetClosingBalance: netClosingBalance,

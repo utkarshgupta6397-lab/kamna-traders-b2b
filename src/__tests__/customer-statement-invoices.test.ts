@@ -578,7 +578,7 @@ describe('Customer Statement Invoice Fetching & Pagination Logic', () => {
       process.env.ZOHO_ORGANIZATION_ID = dummyOrgId;
       process.env.ZOHO_BOOKS_ORG_ID = dummyOrgId;
 
-      const stmtRes = await getCustomerStatement(dummyContactId);
+      const stmtRes = await getCustomerStatement(dummyContactId, undefined, undefined, { useCustomEngine: true });
       assert.equal(stmtRes.success, true);
       const stmt = stmtRes.data!;
 

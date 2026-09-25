@@ -28,8 +28,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    const minDate = '2026-03-01';
-    const result = await getCustomerStatement(customerId.trim(), minDate);
+    const minDate = searchParams.get('startDate') || searchParams.get('minDate') || '2026-03-01';
+    const maxDate = searchParams.get('endDate') || searchParams.get('maxDate') || undefined;
+    const result = await getCustomerStatement(customerId.trim(), minDate, maxDate);
     if (!result.success) {
       return NextResponse.json({ error: result.error, raw: result.raw }, { status: 400 });
     }

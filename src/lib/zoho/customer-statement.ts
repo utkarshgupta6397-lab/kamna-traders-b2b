@@ -1,10 +1,13 @@
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
+import { getNativeCustomerStatement } from './native-contact-statement';
+import { getNativeVendorStatement } from './native-vendor-statement';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
 export type CustomerStatementCustomer = {
   contactId: string;
   contactName: string;
+  contactType?: string;
   companyName?: string;
   gstNo?: string;
   mobile?: string;
@@ -13,6 +16,7 @@ export type CustomerStatementCustomer = {
   outstandingReceivableFormatted?: string;
   unusedCreditsReceivable?: number;
   associatedVendorId?: string;
+  associatedCustomerId?: string;
   outstandingPayable?: number;
   unusedCreditsPayable?: number;
   billingAddress?: string;
@@ -34,12 +38,14 @@ export type CustomerStatementInvoice = {
 
 export type StatementTransaction = {
   id: string;
-  type: 'invoice' | 'payment' | 'bill' | 'vendor_payment' | 'journal';
+  type: 'invoice' | 'payment' | 'bill' | 'vendor_payment' | 'journal' | 'payment_refund';
   datetime?: string;
   date: string;
   timestamp?: number;
   description: string;
   amount: number;
+  debit?: number;
+  credit?: number;
   /**
    * Signed net effect on the party's receivable position.
    * invoice => +amount, payment => -amount, bill => -amount, vendor_payment => +amount
@@ -51,9 +57,16 @@ export type StatementTransaction = {
   isVerified?: boolean;
   zohoUrl?: string;
   appliedBills?: { billNumber: string; appliedAmount: number }[];
+  appliedInvoices?: { invoiceNumber: string; invoiceId?: string; amountApplied: number; date?: string }[];
   notes?: string;
   entryNumber?: string;
   referenceNumber?: string;
+  invoiceNumber?: string;
+  paymentId?: string;
+  paymentNumber?: string;
+  paymentMode?: string;
+  paymentReference?: string;
+  paymentDescription?: string;
 };
 
 export type CustomerStatement = {
@@ -109,6 +122,7 @@ export type StatementFetchOptions = {
   accessToken?: string;
   pageSize?: number;
   maxPages?: number;
+  useCustomEngine?: boolean;
 };
 
 /**
@@ -454,11 +468,83 @@ export async function getCustomerPayments(
   }
 }
 
+export type CustomerPaymentDetail = {
+  paymentId: string;
+  paymentNumber: string;
+  referenceNumber?: string;
+  paymentMode?: string;
+  description?: string;
+  notes?: string;
+  isVerified?: boolean;
+  amount?: number;
+  date?: string;
+  raw?: any;
+};
+
+export async function getCustomerPaymentById(
+  paymentId: string,
+  options?: StatementFetchOptions
+): Promise<{
+  success: boolean;
+  data?: CustomerPaymentDetail;
+  error?: string;
+}> {
+  try {
+    const orgId = options?.orgId || getZohoOrgId();
+    if (!orgId) throw new Error('Missing ZOHO_BOOKS_ORG_ID or ZOHO_ORGANIZATION_ID in environment variables');
+    const accessToken = options?.accessToken || await getZohoTokens();
+    if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
+
+    const fetchImpl = options?.fetchFn || fetch;
+    const url = `${API_BASE_URL}/books/v3/customerpayments/${paymentId}?organization_id=${orgId}`;
+    const res = await fetchImpl(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Zoho-oauthtoken ${accessToken}`,
+        Accept: 'application/json',
+      },
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      return { success: false, error: `HTTP ${res.status}: ${errText}` };
+    }
+
+    const data = await res.json();
+    const p = data?.payment;
+    if (!p) {
+      return { success: false, error: 'Payment object not found in response' };
+    }
+
+    const verifiedVal = String(p.custom_field_hash?.cf_is_verified ?? p.cf_is_verified ?? '').toLowerCase();
+    const isVerified = ['true', '1'].includes(verifiedVal);
+
+    return {
+      success: true,
+      data: {
+        paymentId: p.payment_id,
+        paymentNumber: p.payment_number,
+        referenceNumber: (p.reference_number || '').trim(),
+        paymentMode: (p.payment_mode || '').trim(),
+        description: (p.description || '').trim(),
+        notes: (p.notes || p.description || '').trim(),
+        isVerified,
+        amount: Number(p.amount || 0),
+        date: p.date,
+        raw: p,
+      },
+    };
+  } catch (error: any) {
+    return { success: false, error: error.message || 'Internal Server Error' };
+  }
+}
+
 export type CustomerStatementBill = {
   billId: string;
   billNumber: string;
   date: string;
   amount: number;
+  balance?: number;
   referenceNumber?: string;
 };
 
@@ -571,6 +657,7 @@ export async function getVendorBills(
         billNumber: b.bill_number,
         date: b.date || b.created_time || b.last_modified_time || '',
         amount: Number(b.total),
+        balance: Number(b.balance ?? 0),
         referenceNumber: b.reference_number,
       }));
 
@@ -635,23 +722,28 @@ export type CustomerStatementVendorPayment = {
   referenceNumber?: string;
   appliedBills?: { billNumber: string; appliedAmount: number }[];
   notes?: string;
+  description?: string;
 };
 
-export async function getVendorPayments(vendorId: string): Promise<{
+export async function getVendorPayments(
+  vendorId: string,
+  options?: StatementFetchOptions
+): Promise<{
   success: boolean;
   data?: CustomerStatementVendorPayment[];
   raw?: any;
   error?: string;
 }> {
   try {
-    const orgId = getZohoOrgId();
+    const orgId = options?.orgId || getZohoOrgId();
     if (!orgId) throw new Error('Missing ZOHO_BOOKS_ORG_ID or ZOHO_ORGANIZATION_ID in environment variables');
-    const accessToken = await getZohoTokens();
+    const accessToken = options?.accessToken || await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
+    const fetchImpl = options?.fetchFn || fetch;
     const url = `${API_BASE_URL}/books/v3/vendorpayments?organization_id=${orgId}&vendor_id=${vendorId}&page=1&per_page=50&sort_column=date&sort_order=D`;
     console.log('[Zoho Vendor Payments] API URL:', url);
-    const response = await fetch(url, {
+    const response = await fetchImpl(url, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
     });
@@ -668,7 +760,7 @@ export async function getVendorPayments(vendorId: string): Promise<{
       raw.map(async (vp: any) => {
         try {
           const detailUrl = `${API_BASE_URL}/books/v3/vendorpayments/${vp.payment_id}?organization_id=${orgId}`;
-          const detailRes = await fetch(detailUrl, {
+          const detailRes = await fetchImpl(detailUrl, {
             method: 'GET',
             headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
           });
@@ -689,6 +781,7 @@ export async function getVendorPayments(vendorId: string): Promise<{
             referenceNumber: vp.reference_number,
             appliedBills,
             notes: vp.description,
+            description: vp.description || '',
           };
         } catch (e) {
           return {
@@ -700,6 +793,7 @@ export async function getVendorPayments(vendorId: string): Promise<{
             referenceNumber: vp.reference_number,
             appliedBills: [],
             notes: vp.description,
+            description: vp.description || '',
           };
         }
       })
@@ -722,8 +816,11 @@ export type CustomerStatementJournal = {
   date: string;
   amount: number;
   netEffect: number; // calculated from line items
+  customerNetEffect?: number;
+  vendorNetEffect?: number;
   referenceNumber?: string;
   notes?: string;
+  description?: string;
 };
 
 export async function getHybridJournals(contactId: string, associatedVendorId: string): Promise<{
@@ -863,32 +960,243 @@ export async function getHybridJournals(contactId: string, associatedVendorId: s
  * This is NOT full reconciliation. Payments, credits and adjustments are
  * excluded and will be added in a future ledger engine phase.
  */
-export async function getCustomerStatement(contactId: string, minDate?: string): Promise<{
+/**
+ * Customer Statement Entry Point.
+ *
+ * For standard customers, Zoho Books native Contact Statement is the authoritative SOURCE OF TRUTH.
+ * For hybrid accounts (customer + vendor), the clearly isolated hybrid ledger engine is executed.
+ */
+export async function getCustomerStatement(
+  contactId: string,
+  minDate: string = '2026-03-01',
+  maxDate?: string,
+  options?: StatementFetchOptions
+): Promise<{
   success: boolean;
   data?: CustomerStatement;
   raw?: any;
   error?: string;
 }> {
-  // 1. Parallelize base API calls
-  console.time('customer');
-  const customerPromise = getCustomerById(contactId).finally(() => console.timeEnd('customer'));
-  
-  console.time('invoices');
-  const invoicesPromise = getCustomerInvoices(contactId).finally(() => console.timeEnd('invoices'));
-  
-  console.time('payments');
-  const paymentsPromise = getCustomerPayments(contactId).finally(() => console.timeEnd('payments'));
-
-  const [customerResult, invoicesResult, paymentsResult] = await Promise.all([
-    customerPromise,
-    invoicesPromise,
-    paymentsPromise
-  ]);
-
+  // 1. Fetch customer metadata to check if this is a hybrid account or pure vendor
+  const customerResult = await getCustomerById(contactId, options);
   if (!customerResult.success || !customerResult.data) {
     return { success: false, error: customerResult.error, raw: customerResult.raw };
   }
   const customer = customerResult.data;
+
+  // Vendor account: Use Zoho Native Vendor Statement as authoritative source of truth
+  if (customer.contactType === 'vendor') {
+    console.log(`[Customer Statement] Contact ${contactId} is a Vendor. Using Zoho Native Vendor Statement.`);
+    return getNativeVendorStatement(contactId, minDate, maxDate, options, customer);
+  }
+
+  // Explicit custom engine request: execute isolated custom engine
+  if (options?.useCustomEngine) {
+    console.log(`[Customer Statement] Contact ${contactId}: explicit custom engine requested. Using custom hybrid engine.`);
+    return getCustomerStatementHybrid(contactId, customerResult, minDate, maxDate, options);
+  }
+
+  // Hybrid accounts: execute authoritative hybrid native statement engine
+  if (customer.associatedVendorId || customer.associatedCustomerId) {
+    console.log(`[Customer Statement] Contact ${contactId} is a Hybrid account. Using native hybrid engine.`);
+    return getCustomerStatementHybridNative(contactId, customerResult, minDate, maxDate, options);
+  }
+
+  // Standard customer accounts: Zoho Native Contact Statement is the authoritative single source of truth
+  console.log(`[Customer Statement] Contact ${contactId} is a standard customer. Using Zoho Native Contact Statement as source of truth.`);
+  const nativeResult = await getNativeCustomerStatement(contactId, minDate, maxDate, options, customer);
+  if (!nativeResult.success || !nativeResult.data) {
+    return { success: false, error: nativeResult.error, raw: nativeResult.raw };
+  }
+
+  return { success: true, data: nativeResult.data };
+}
+
+/**
+ * Authoritative Hybrid Statement Engine combining Native Customer Statement and Native Vendor Statement.
+ */
+export async function getCustomerStatementHybridNative(
+  contactId: string,
+  customerResult: { success: boolean; data?: CustomerStatementCustomer; raw?: any; error?: string },
+  minDate: string = '2026-03-01',
+  maxDate?: string,
+  options?: StatementFetchOptions
+): Promise<{
+  success: boolean;
+  data?: CustomerStatement;
+  raw?: any;
+  error?: string;
+}> {
+  const customer = customerResult.data!;
+  const customerId = customer.contactType === 'vendor' ? customer.associatedCustomerId! : contactId;
+  const vendorId = customer.contactType === 'vendor' ? contactId : customer.associatedVendorId!;
+
+  console.log(`[Hybrid Native Statement] Fetching native statements for Customer ${customerId} and Vendor ${vendorId}`);
+
+  // Fetch Native Customer Statement, Native Vendor Statement, and Journals concurrently
+  const [custRes, vendRes, journalsRes] = await Promise.all([
+    getNativeCustomerStatement(customerId, minDate, maxDate, options, customer),
+    getNativeVendorStatement(vendorId, minDate, maxDate, options),
+    getHybridJournals(customerId, vendorId)
+  ]);
+
+  if (!custRes.success || !custRes.data) {
+    return { success: false, error: custRes.error || 'Failed to fetch native customer statement', raw: custRes.raw };
+  }
+  if (!vendRes.success || !vendRes.data) {
+    return { success: false, error: vendRes.error || 'Failed to fetch native vendor statement', raw: vendRes.raw };
+  }
+
+  const custData = custRes.data;
+  const vendData = vendRes.data;
+  const journals = journalsRes.success && journalsRes.data ? journalsRes.data : [];
+
+  const orgId = getZohoOrgId() || process.env.ZOHO_BOOKS_ORG_ID;
+
+  // Tag customer transactions
+  const customerTransactions: StatementTransaction[] = custData.transactions.map(tx => ({
+    ...tx,
+    customerNetEffect: tx.netEffect,
+    vendorNetEffect: 0,
+  }));
+
+  // Tag vendor transactions
+  const vendorTransactions: StatementTransaction[] = vendData.transactions.map(tx => ({
+    ...tx,
+    customerNetEffect: 0,
+    vendorNetEffect: tx.netEffect,
+  }));
+
+  // Map journal transactions
+  const journalTransactions: StatementTransaction[] = journals.map(j => ({
+    id: j.journalId,
+    type: 'journal' as const,
+    date: j.date,
+    datetime: j.date,
+    timestamp: new Date(j.date || 0).getTime(),
+    description: j.description || j.notes || 'Journal Entry',
+    amount: j.amount,
+    netEffect: j.netEffect,
+    customerNetEffect: j.customerNetEffect,
+    vendorNetEffect: j.vendorNetEffect,
+    balanceAfter: 0,
+    zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/accountant/journals/${j.journalId}?filter_by=Status.All%2CJournalDate.All&per_page=25&sort_column=journal_date&sort_order=D` : undefined,
+    notes: j.notes,
+    entryNumber: j.entryNumber,
+    referenceNumber: j.referenceNumber,
+  }));
+
+  // Merge all transactions
+  let merged: StatementTransaction[] = [
+    ...customerTransactions,
+    ...vendorTransactions,
+    ...journalTransactions
+  ];
+
+  // Optional date filtering
+  if (minDate) {
+    merged = merged.filter(tx => new Date(tx.date) >= new Date(minDate));
+  }
+  if (maxDate) {
+    merged = merged.filter(tx => new Date(tx.date) <= new Date(maxDate));
+  }
+
+  // Sort newest first to calculate running balances
+  merged.sort((a, b) => {
+    const timeA = a.timestamp || new Date(a.date).getTime();
+    const timeB = b.timestamp || new Date(b.date).getTime();
+    return timeB - timeA;
+  });
+
+  const outstandingReceivable = customer.outstandingReceivable ?? custData.outstandingReceivable ?? 0;
+  const outstandingPayable = customer.outstandingPayable ?? vendData.outstandingPayable ?? 0;
+
+  // Native statement closing balances (balanceDue) already represent the authoritative net positions
+  const customerNet = custData.closingBalance;
+  const vendorNet = vendData.closingBalance;
+  const netClosingBalance = customerNet - vendorNet;
+
+  // Reverse calculate running balance starting from netClosingBalance
+  let runningBalance = netClosingBalance;
+  const transactions: StatementTransaction[] = [];
+
+  for (const item of merged) {
+    transactions.push({
+      ...item,
+      balanceAfter: runningBalance,
+    });
+    runningBalance -= item.netEffect;
+  }
+
+  const openingBalance = runningBalance;
+  transactions.reverse(); // oldest first for UI display
+
+  const statement: CustomerStatement = {
+    customer,
+    openingBalance,
+    closingBalance: netClosingBalance,
+    outstandingReceivable,
+    outstandingPayable,
+    customerNet,
+    vendorNet,
+    isHybrid: true,
+    transactions,
+    transactionCount: transactions.length,
+    unpaidInvoices: custData.unpaidInvoices,
+    isTruncated: false,
+    telemetry: {
+      customerApiCalls: 1,
+      invoiceApiCalls: 1,
+      paymentApiCalls: 1,
+      billApiCalls: 1,
+      totalApiCalls: 4,
+      rawInvoicesFetched: custData.transactionCount,
+      validInvoicesAfterFilter: custData.transactionCount,
+      rawPaymentsFetched: 0,
+      validPaymentsAfterFilter: 0,
+      rawBillsFetched: vendData.transactionCount,
+      validBillsAfterFilter: vendData.transactionCount,
+      debugReceivable: outstandingReceivable,
+      debugPayable: outstandingPayable,
+      debugNetClosingBalance: netClosingBalance,
+      debugIsHybrid: true,
+    },
+  };
+
+  return {
+    success: true,
+    data: statement,
+    raw: { customer: customerResult.raw, nativeCustomer: custRes.raw, nativeVendor: vendRes.raw },
+  };
+}
+
+/**
+ * Isolated Hybrid Statement Engine for contacts that are simultaneously Customers and Vendors.
+ */
+export async function getCustomerStatementHybrid(
+  contactId: string,
+  customerResult: { success: boolean; data?: CustomerStatementCustomer; raw?: any; error?: string },
+  minDate?: string,
+  maxDate?: string,
+  options?: StatementFetchOptions
+): Promise<{
+  success: boolean;
+  data?: CustomerStatement;
+  raw?: any;
+  error?: string;
+}> {
+  const customer = customerResult.data!;
+  // 1. Parallelize base API calls for invoices and payments
+  console.time('invoices');
+  const invoicesPromise = getCustomerInvoices(contactId, options).finally(() => console.timeEnd('invoices'));
+  
+  console.time('payments');
+  const paymentsPromise = getCustomerPayments(contactId, options).finally(() => console.timeEnd('payments'));
+
+  const [invoicesResult, paymentsResult] = await Promise.all([
+    invoicesPromise,
+    paymentsPromise
+  ]);
 
   // 2. Conditionally fetch bills, vendor payments, and journals for Hybrid accounts
   let billsResult: any = { success: true, data: [] };
@@ -942,6 +1250,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
     appliedBills?: { billNumber: string; appliedAmount: number }[];
     notes?: string;
     referenceNumber?: string;
+    invoiceNumber?: string;
   }> = [
     ...invoices.map((inv: any) => ({
       id: inv.invoiceId,
@@ -954,6 +1263,7 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
       netEffect: inv.total,
       customerNetEffect: inv.total,
       vendorNetEffect: 0,
+      invoiceNumber: inv.invoiceNumber,
       referenceNumber: inv.referenceNumber,
       zohoUrl: orgId ? `https://books.zoho.in/app/${orgId}#/invoices/${inv.invoiceId}` : undefined,
     })),
@@ -1037,6 +1347,13 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
       const txDate = new Date(tx.date);
       const limit = new Date(minDate);
       return txDate >= limit;
+    });
+  }
+  if (maxDate) {
+    mergedRaw = mergedRaw.filter(tx => {
+      const txDate = new Date(tx.date);
+      const limit = new Date(maxDate);
+      return txDate <= limit;
     });
   }
 
@@ -1151,22 +1468,25 @@ export async function getCustomerStatement(contactId: string, minDate?: string):
 }
 
 
-// Existing exports
-export async function getCustomerById(contactId: string): Promise<{ success: boolean; data?: CustomerStatementCustomer; raw?: any; error?: string }> {
+export async function getCustomerById(
+  contactId: string,
+  options?: StatementFetchOptions
+): Promise<{ success: boolean; data?: CustomerStatementCustomer; raw?: any; error?: string }> {
   try {
-    const orgId = getZohoOrgId();
+    const orgId = options?.orgId || getZohoOrgId();
     if (!orgId) {
       throw new Error('Missing ZOHO_BOOKS_ORG_ID or ZOHO_ORGANIZATION_ID in environment variables');
     }
     
-    const accessToken = await getZohoTokens();
+    const accessToken = options?.accessToken || await getZohoTokens();
     if (!accessToken) {
       throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
     }
 
+    const fetchImpl = options?.fetchFn || fetch;
     const url = `${API_BASE_URL}/books/v3/contacts/${contactId}?organization_id=${orgId}`;
     
-    const response = await fetch(url, {
+    const response = await fetchImpl(url, {
       method: 'GET',
       headers: {
         'Authorization': `Zoho-oauthtoken ${accessToken}`
@@ -1201,17 +1521,18 @@ export async function getCustomerById(contactId: string): Promise<{ success: boo
     const normalized: CustomerStatementCustomer = {
       contactId: contact.contact_id,
       contactName: contact.contact_name,
+      contactType: contact.contact_type,
       companyName: contact.company_name,
       gstNo: contact.gst_no,
       mobile: contact.mobile,
       email: contact.email,
-      outstandingReceivable: contact.outstanding_receivable_amount,
-      unusedCreditsReceivable: contact.unused_credits_receivable_amount,
+      outstandingReceivable: contact.outstanding_receivable_amount ?? contact.associated_customer_details?.outstanding_receivable_amount ?? 0,
+      unusedCreditsReceivable: contact.unused_credits_receivable_amount ?? contact.associated_customer_details?.unused_credits_receivable_amount ?? 0,
       outstandingReceivableFormatted: contact.outstanding_receivable_amount_formatted,
       associatedVendorId: contact.associated_vendor_details?.vendor_id,
-      // NOTE: outstanding_payable_amount lives inside associated_vendor_details, NOT at top level
-      outstandingPayable: contact.associated_vendor_details?.outstanding_payable_amount ?? 0,
-      unusedCreditsPayable: contact.associated_vendor_details?.unused_credits_payable_amount ?? 0,
+      associatedCustomerId: contact.associated_customer_details?.customer_id,
+      outstandingPayable: contact.outstanding_payable_amount ?? contact.associated_vendor_details?.outstanding_payable_amount ?? 0,
+      unusedCreditsPayable: contact.unused_credits_payable_amount ?? contact.associated_vendor_details?.unused_credits_payable_amount ?? 0,
       billingAddress: billingAddr,
       rawAddress: contact.billing_address || contact.shipping_address || null
     };

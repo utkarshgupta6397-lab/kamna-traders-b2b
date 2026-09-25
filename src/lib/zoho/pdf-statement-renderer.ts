@@ -16,15 +16,31 @@ export type Customer = {
 
 export type Transaction = {
   id: string;
-  type: 'invoice' | 'payment' | 'bill' | 'vendor_payment';
+  type: 'invoice' | 'payment' | 'bill' | 'vendor_payment' | 'journal' | 'payment_refund';
   date: string;
   datetime?: string;
+  timestamp?: number;
   description: string;
   amount: number;
+  debit?: number;
+  credit?: number;
   netEffect: number;
+  customerNetEffect?: number;
+  vendorNetEffect?: number;
   balanceAfter: number;
   isVerified?: boolean;
   zohoUrl?: string;
+  appliedBills?: { billNumber: string; appliedAmount: number }[];
+  appliedInvoices?: { invoiceNumber: string; invoiceId?: string; amountApplied: number; date?: string }[];
+  notes?: string;
+  entryNumber?: string;
+  referenceNumber?: string;
+  paymentId?: string;
+  paymentNumber?: string;
+  paymentMode?: string;
+  paymentReference?: string;
+  paymentDescription?: string;
+  invoiceNumber?: string;
 };
 
 export type Telemetry = {
@@ -98,7 +114,7 @@ export function getOpeningBalancePresentation(n: number): { label: string; amoun
 export function cleanDescription(desc: string, type: string): string {
   if (!desc) return desc;
   if (type === 'payment') {
-    return desc.replace(/^payment\s*[-\u2013]\s*/i, '').trim();
+    return desc.replace(/^(customer\s+)?payment\s*[-\u2013]\s*/i, '').trim();
   }
   if (type === 'invoice' || type === 'bill') {
     return desc.replace(/^(invoice|bill)\s+/i, '').trim();
@@ -642,7 +658,7 @@ export async function renderStatementToPdf(
           },
         },
         { content: pdfFmt(totals.debit), styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
-        { content: pdfFmt(totals.credit), styles: { fontStyle: 'bold', textColor: [5, 150, 105], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
+        { content: pdfFmt(totals.credit), styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
         { content: pdfFmtBalanceWithIndicator(monthlyNet), styles: { fontStyle: 'bold', fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
       ] : [
         {
@@ -658,30 +674,49 @@ export async function renderStatementToPdf(
           },
         },
         { content: pdfFmt(totals.debit), styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
-        { content: pdfFmt(totals.credit), styles: { fontStyle: 'bold', textColor: [5, 150, 105], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
+        { content: pdfFmt(totals.credit), styles: { fontStyle: 'bold', textColor: [15, 23, 42], fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
         { content: pdfFmtBalanceWithIndicator(monthlyNet), styles: { fontStyle: 'bold', fillColor: [241, 245, 249], fontSize: 7, cellPadding: { top: 1.3, bottom: 1.3 } } },
       ]);
     }
 
     // ── Transaction type label ─────────────────────────────────────────────
     const typeLabel =
-      tx.type === 'invoice'        ? 'Invoice'      :
-      tx.type === 'payment'        ? 'Payment'      :
-      tx.type === 'vendor_payment' ? 'Payment Made' :
-      tx.type === 'journal'        ? 'Journal'      : 'Bill';
+      tx.type === 'invoice'        ? 'Invoice'        :
+      tx.type === 'payment'        ? 'Payment'        :
+      tx.type === 'payment_refund' ? 'Payment Refund' :
+      tx.type === 'vendor_payment' ? 'Payment Made'   :
+      tx.type === 'journal'        ? 'Journal'        : 'Bill';
 
     const displayDesc = cleanDescription(tx.description, tx.type);
-    let primary   = tx.type === 'journal' ? (tx.entryNumber || 'Journal') : (tx.referenceNumber || displayDesc);
+    let primary = tx.referenceNumber || displayDesc;
     let secondary = primary !== displayDesc ? displayDesc : (tx.notes || '');
 
-    // Smart description cleanup — strip redundant category words
-    if (tx.type === 'payment') {
+    // Smart description cleanup — strip redundant category words & format identifiers
+    if (tx.type === 'invoice') {
+      primary = tx.invoiceNumber || displayDesc || (tx.referenceNumber && !tx.referenceNumber.startsWith('SO-') ? tx.referenceNumber : '') || 'Invoice';
+      if (tx.referenceNumber && tx.referenceNumber !== primary) {
+        secondary = `Ref: ${tx.referenceNumber}`;
+      } else {
+        secondary = tx.notes || '';
+      }
+      secondary = secondary.replace(/Sales Invoice/ig, '').trim();
+    } else if (tx.type === 'journal') {
+      primary = tx.entryNumber || 'Journal';
+      secondary = primary !== displayDesc ? displayDesc : (tx.notes || '');
+    } else if (tx.type === 'payment') {
+      const pmtNum = tx.paymentReference || (!tx.referenceNumber?.startsWith('PT-KT/') ? tx.referenceNumber : '') || (!tx.paymentNumber?.startsWith('PT-KT/') ? tx.paymentNumber : '');
+      if (pmtNum && tx.paymentMode) {
+        primary = `${pmtNum} - ${tx.paymentMode}`;
+      } else if (pmtNum) {
+        primary = pmtNum;
+      } else if (tx.paymentMode) {
+        primary = tx.paymentMode;
+      }
+      secondary = tx.notes || tx.paymentDescription || '';
       secondary = secondary.replace(/Bank Transfer Payment/ig, '').trim();
       secondary = secondary.replace(/Payment received/ig, '').trim();
     } else if (tx.type === 'vendor_payment') {
       secondary = secondary.replace(/Payment made/ig, '').trim();
-    } else if (tx.type === 'invoice') {
-      secondary = secondary.replace(/Sales Invoice/ig, '').trim();
     } else if (tx.type === 'bill') {
       secondary = secondary.replace(/Purchase Bill/ig, '').trim();
     }

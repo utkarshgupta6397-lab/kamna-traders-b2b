@@ -286,10 +286,6 @@ export default function CustomerStatementView() {
 
   // Ledger Filter State
   const [dateFilter, setDateFilter] = useState<DateFilterType>('all-time');
-  const [filterSales, setFilterSales] = useState(true);
-  const [filterCustPmts, setFilterCustPmts] = useState(true);
-  const [filterBills, setFilterBills] = useState(true);
-  const [filterVendorPmts, setFilterVendorPmts] = useState(true);
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [userName, setUserName] = useState('Staff');
 
@@ -342,13 +338,8 @@ export default function CustomerStatementView() {
       }
     }
 
-    // 3. Search & Type Filter
+    // 3. Search Filter
     const filteredTransactions = dateFilteredTxs.filter((tx: any) => {
-      if (tx.type === 'invoice' && !filterSales) return false;
-      if (tx.type === 'payment' && !filterCustPmts) return false;
-      if (tx.type === 'bill' && !filterBills) return false;
-      if (tx.type === 'vendor_payment' && !filterVendorPmts) return false;
-      
       if (ledgerSearch.trim()) {
         const term = ledgerSearch.toLowerCase();
         const searchable = [
@@ -388,7 +379,7 @@ export default function CustomerStatementView() {
       transactionCount: filteredTransactions.length,
       unpaidInvoices: activeUnpaidInvoices
     };
-  }, [statementMode, groupStatement, statement, clipFromIndex, isExpanded, filterSales, filterCustPmts, filterBills, filterVendorPmts, ledgerSearch, dateFilter]);
+  }, [statementMode, groupStatement, statement, clipFromIndex, isExpanded, ledgerSearch, dateFilter]);
 
   // Expanded Transactions State
   const [expandedTx, setExpandedTx] = useState<Record<string, boolean>>({});
@@ -1365,13 +1356,8 @@ export default function CustomerStatementView() {
           }
         }
 
-        // 3. Search & Type Filter
+        // 3. Search Filter
         const filteredTransactions = dateFilteredTxs.filter((tx: any) => {
-          if (tx.type === 'invoice' && !filterSales) return false;
-          if (tx.type === 'payment' && !filterCustPmts) return false;
-          if (tx.type === 'bill' && !filterBills) return false;
-          if (tx.type === 'vendor_payment' && !filterVendorPmts) return false;
-          
           if (ledgerSearch.trim()) {
             const term = ledgerSearch.toLowerCase();
             const searchable = [
@@ -1619,126 +1605,7 @@ export default function CustomerStatementView() {
                 </div>
               )}
 
-              {/* ── Section 1b: Net Account Position summary (hybrid only) ── */}
-              {s.isHybrid && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Sales Card */}
-                  <div className="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden flex flex-col">
-                    <div className="px-4 py-2 border-b border-blue-100 bg-blue-50/50 flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wide">Sales</span>
-                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">Receivable</span>
-                    </div>
-                    <div className="px-4 py-3 flex-1 flex flex-col justify-between gap-2.5">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-gray-500 font-medium">Opening Balance</span>
-                        {(() => {
-                          const customerNetEffectSum = s.transactions.reduce((sum: number, t: any) => sum + (t.customerNetEffect || 0), 0);
-                          const salesOpening = s.customerNet - customerNetEffectSum;
-                          const isCredit = salesOpening < 0;
-                          return (
-                            <div className="flex items-center gap-1.5">
-                              <span className={`font-bold ${isCredit ? 'text-emerald-600' : 'text-gray-800'}`}>{fmt(Math.abs(salesOpening))}</span>
-                              {isCredit && <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded-sm uppercase font-bold tracking-wider leading-none">Cr</span>}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-gray-500 font-medium">Total Invoiced</span>
-                        <span className="font-bold text-gray-800">{fmt(s.transactions.filter((t:any) => (t.customerNetEffect || 0) > 0).reduce((sum:number, t:any) => sum + Math.abs(t.customerNetEffect), 0))}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-gray-500 font-medium">Total Received</span>
-                        <span className="font-bold text-emerald-600">{fmt(s.transactions.filter((t:any) => (t.customerNetEffect || 0) < 0).reduce((sum:number, t:any) => sum + Math.abs(t.customerNetEffect), 0))}</span>
-                      </div>
-                      <div className="pt-2 border-t border-gray-100 flex justify-between items-center">
-                        <span className="text-[10px] uppercase font-bold text-gray-400">Outstanding</span>
-                        {(() => {
-                          const isCredit = s.customerNet < 0;
-                          return (
-                            <div className="flex items-center gap-1.5">
-                              <span className={`font-extrabold text-sm ${isCredit ? 'text-emerald-600' : 'text-gray-800'}`}>{fmt(Math.abs(s.customerNet))}</span>
-                              {isCredit && <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded-sm uppercase font-bold tracking-wider leading-none">Cr</span>}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* Purchase Card */}
-                  <div className="bg-white rounded-xl border border-orange-100 shadow-sm overflow-hidden flex flex-col">
-                    <div className="px-4 py-2 border-b border-orange-100 bg-orange-50/50 flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-orange-800 uppercase tracking-wide">Purchase</span>
-                      <span className="text-[10px] font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">Payable</span>
-                    </div>
-                    <div className="px-4 py-3 flex-1 flex flex-col justify-between gap-2.5">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-gray-500 font-medium">Opening Balance</span>
-                        {(() => {
-                          const vendorNetEffectSum = s.transactions.reduce((sum: number, t: any) => sum + (t.vendorNetEffect || 0), 0);
-                          const purchaseOpening = s.vendorNet - vendorNetEffectSum;
-                          const isCredit = purchaseOpening < 0;
-                          return (
-                            <div className="flex items-center gap-1.5">
-                              <span className={`font-bold ${isCredit ? 'text-rose-600' : 'text-gray-800'}`}>{fmt(Math.abs(purchaseOpening))}</span>
-                              {isCredit && <span className="text-[8px] bg-rose-100 text-rose-700 px-1 py-0.5 rounded-sm uppercase font-bold tracking-wider leading-none">Cr</span>}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-gray-500 font-medium">Total Billed</span>
-                        <span className="font-bold text-gray-800">{fmt(s.transactions.filter((t:any) => (t.vendorNetEffect || 0) < 0).reduce((sum:number, t:any) => sum + Math.abs(t.vendorNetEffect), 0))}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="text-gray-500 font-medium">Total Paid</span>
-                        <span className="font-bold text-blue-600">{fmt(s.transactions.filter((t:any) => (t.vendorNetEffect || 0) > 0).reduce((sum:number, t:any) => sum + Math.abs(t.vendorNetEffect), 0))}</span>
-                      </div>
-                      <div className="pt-2 border-t border-gray-100 flex justify-between items-center">
-                        <span className="text-[10px] uppercase font-bold text-gray-400">Outstanding</span>
-                        {(() => {
-                          const isCredit = s.vendorNet < 0;
-                          return (
-                            <div className="flex items-center gap-1.5">
-                              <span className={`font-extrabold text-sm ${isCredit ? 'text-rose-600' : 'text-gray-800'}`}>{fmt(Math.abs(s.vendorNet))}</span>
-                              {isCredit && <span className="text-[9px] bg-rose-100 text-rose-700 px-1 py-0.5 rounded-sm uppercase font-bold tracking-wider leading-none">Cr</span>}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Net Position Card */}
-                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-                    <div className="px-4 py-2 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wide">Net Position</span>
-                      {(() => {
-                        const net = s.closingBalance;
-                        const isZero = net === 0 || Math.abs(net) < 0.01;
-                        if (isZero) return <span className="text-[10px] font-bold text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">Settled</span>;
-                        return net > 0 
-                          ? <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">Receivable</span>
-                          : <span className="text-[10px] font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">Payable</span>;
-                      })()}
-                    </div>
-                    <div className="px-4 py-3 flex-1 flex flex-col justify-center items-center text-center">
-                      <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Final Balance</div>
-                      <div className={`text-xl font-black tabular-nums flex items-center justify-center ${
-                        s.closingBalance === 0 || Math.abs(s.closingBalance) < 0.01 ? 'text-gray-800' :
-                        s.closingBalance > 0 ? 'text-emerald-600' : 'text-rose-600'
-                      }`}>
-                        <BalanceIndicator balance={s.closingBalance} />
-                        {s.closingBalance === 0 || Math.abs(s.closingBalance) < 0.01 ? '₹0' : fmt(Math.abs(s.closingBalance))}
-                      </div>
-                      <div className="text-[9px] text-gray-400 mt-2 font-medium bg-gray-50 px-2 py-1 rounded">
-                        Receivables − Payables
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* ── Unified Firm KPI Section (Group Mode) ── */}
               {statementMode === 'group' && groupStatement?.success && groupStatement.statements.length > 0 && (
@@ -1967,26 +1834,7 @@ export default function CustomerStatementView() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    {s.isHybrid && (
-                      <div className="flex bg-white border border-gray-200 rounded-md shadow-sm p-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-600">
-                        <label className={`cursor-pointer px-2 py-1 rounded transition-colors ${filterSales ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50 text-gray-400'}`}>
-                          <input type="checkbox" className="hidden" checked={filterSales} onChange={e => setFilterSales(e.target.checked)} />
-                          Sales Invoices
-                        </label>
-                        <label className={`cursor-pointer px-2 py-1 rounded transition-colors ${filterCustPmts ? 'bg-emerald-50 text-emerald-700' : 'hover:bg-gray-50 text-gray-400'}`}>
-                          <input type="checkbox" className="hidden" checked={filterCustPmts} onChange={e => setFilterCustPmts(e.target.checked)} />
-                          Cust Payments
-                        </label>
-                        <label className={`cursor-pointer px-2 py-1 rounded transition-colors ${filterBills ? 'bg-orange-50 text-orange-700' : 'hover:bg-gray-50 text-gray-400'}`}>
-                          <input type="checkbox" className="hidden" checked={filterBills} onChange={e => setFilterBills(e.target.checked)} />
-                          Purchase Bills
-                        </label>
-                        <label className={`cursor-pointer px-2 py-1 rounded transition-colors ${filterVendorPmts ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50 text-gray-400'}`}>
-                          <input type="checkbox" className="hidden" checked={filterVendorPmts} onChange={e => setFilterVendorPmts(e.target.checked)} />
-                          Vendor Payments
-                        </label>
-                      </div>
-                    )}
+
                     <div className="relative w-full sm:w-auto">
                       <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                       <input 
@@ -2089,7 +1937,7 @@ export default function CustomerStatementView() {
                               </td>
 
                               {/* Month Total Credit */}
-                              <td className="px-3 py-2.5 text-right text-[11.5px] font-extrabold whitespace-nowrap align-middle tabular-nums text-emerald-700">
+                              <td className="px-3 py-2.5 text-right text-[11.5px] font-extrabold whitespace-nowrap align-middle tabular-nums text-slate-900">
                                 {mg.creditTotal > 0 ? fmt(mg.creditTotal) : '—'}
                               </td>
 
@@ -2197,74 +2045,108 @@ export default function CustomerStatementView() {
                                           )}
                                         </div>
                                         <div className="flex flex-col min-w-0 flex-1">
-                                          <div className="flex items-center gap-1.5 text-[11px] font-medium text-blue-700 underline-offset-2">
-                                            {tx.zohoUrl ? (
-                                              <a 
-                                                href={tx.zohoUrl} 
-                                                target="_blank" 
-                                                rel="noreferrer" 
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="hover:text-blue-900 hover:underline flex items-center gap-1 truncate"
-                                              >
-                                                <span className="truncate">{tx.type === 'journal' ? (tx.entryNumber || 'Journal') : (tx.referenceNumber || displayDesc)}</span>
-                                                <span className="text-[9px] shrink-0">↗</span>
-                                              </a>
-                                            ) : (
-                                              <span className="truncate">{tx.type === 'journal' ? (tx.entryNumber || 'Journal') : (tx.referenceNumber || displayDesc)}</span>
-                                            )}
-                                            {draftStatuses[tx.id] && (
-                                              <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50 shrink-0">
-                                                Draft
-                                              </span>
-                                            )}
-                                            {tx.isVerified && (
-                                              <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
-                                                <Check size={9} strokeWidth={4} />
-                                              </span>
-                                            )}
-                                          </div>
-                                          {tx.type === 'journal' ? (
-                                            <>
-                                              {(() => {
-                                                const entryNum = (tx.entryNumber || '').trim();
-                                                const refNum = (tx.referenceNumber || '').trim();
-                                                const cleanDesc = tx.description ? cleanDescription(tx.description, tx.type).trim() : '';
-                                                const cleanNotes = tx.notes ? tx.notes.trim() : '';
+                                          {(() => {
+                                            const detailsText = (() => {
+                                              if (tx.type === 'invoice') {
+                                                return tx.invoiceNumber || (displayDesc ? displayDesc.replace(/^(?:Invoice|Bill of Supply)\s+/i, '') : '') || (tx.referenceNumber && !tx.referenceNumber.startsWith('SO-') ? tx.referenceNumber : '') || 'Invoice';
+                                              }
+                                              if (tx.type === 'journal') {
+                                                return tx.entryNumber || 'Journal';
+                                              }
+                                              if (tx.type === 'payment') {
+                                                const pmtRef = tx.paymentReference || (!tx.referenceNumber?.startsWith('PT-KT/') ? tx.referenceNumber : '') || (!tx.paymentNumber?.startsWith('PT-KT/') ? tx.paymentNumber : '');
+                                                if (pmtRef && tx.paymentMode) {
+                                                  return `${pmtRef} - ${tx.paymentMode}`;
+                                                }
+                                                if (pmtRef) return pmtRef;
+                                                if (tx.paymentMode) return tx.paymentMode;
+                                                return displayDesc || 'Payment';
+                                              }
+                                              return tx.referenceNumber || displayDesc;
+                                            })();
 
-                                                const showRef = refNum && (refNum !== cleanDesc) && (refNum !== entryNum);
-                                                const showNotes = cleanNotes && (cleanNotes !== cleanDesc);
+                                            return (
+                                              <>
+                                                <div className="flex items-center gap-1.5 text-[11px] font-medium text-blue-700 underline-offset-2">
+                                                  {tx.zohoUrl ? (
+                                                    <a 
+                                                      href={tx.zohoUrl} 
+                                                      target="_blank" 
+                                                      rel="noreferrer" 
+                                                      onClick={(e) => e.stopPropagation()}
+                                                      className="hover:text-blue-900 hover:underline flex items-center gap-1 truncate"
+                                                    >
+                                                      <span className="truncate">{detailsText}</span>
+                                                      <span className="text-[9px] shrink-0">↗</span>
+                                                    </a>
+                                                  ) : (
+                                                    <span className="truncate">{detailsText}</span>
+                                                  )}
+                                                  {draftStatuses[tx.id] && (
+                                                    <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50 shrink-0">
+                                                      Draft
+                                                    </span>
+                                                  )}
+                                                  {tx.isVerified && (
+                                                    <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
+                                                      <Check size={9} strokeWidth={4} />
+                                                    </span>
+                                                  )}
+                                                </div>
 
-                                                return (
+                                                {tx.type === 'invoice' ? (
                                                   <>
-                                                    {showRef && (
-                                                      <span className="text-[11px] text-gray-500 mt-0.5 leading-tight truncate">Ref: {refNum}</span>
+                                                    {tx.referenceNumber && tx.referenceNumber !== detailsText && (
+                                                      <span title={`Ref: ${tx.referenceNumber}`} className="text-[10px] text-gray-500 mt-0.5 leading-tight truncate">
+                                                        Ref: {tx.referenceNumber}
+                                                      </span>
                                                     )}
-                                                    {cleanDesc && (
-                                                      <div title={cleanDesc} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight truncate">
-                                                        {cleanDesc}
-                                                      </div>
+                                                  </>
+                                                ) : tx.type === 'journal' ? (
+                                                  <>
+                                                    {(() => {
+                                                      const entryNum = (tx.entryNumber || '').trim();
+                                                      const refNum = (tx.referenceNumber || '').trim();
+                                                      const cleanDesc = tx.description ? cleanDescription(tx.description, tx.type).trim() : '';
+                                                      const cleanNotes = tx.notes ? tx.notes.trim() : '';
+
+                                                      const showRef = refNum && (refNum !== cleanDesc) && (refNum !== entryNum);
+                                                      const showNotes = cleanNotes && (cleanNotes !== cleanDesc);
+
+                                                      return (
+                                                        <>
+                                                          {showRef && (
+                                                            <span className="text-[11px] text-gray-500 mt-0.5 leading-tight truncate">Ref: {refNum}</span>
+                                                          )}
+                                                          {cleanDesc && (
+                                                            <div title={cleanDesc} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight truncate">
+                                                              {cleanDesc}
+                                                            </div>
+                                                          )}
+                                                          {showNotes && (
+                                                            <div title={cleanNotes} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight truncate">
+                                                              {cleanNotes}
+                                                            </div>
+                                                          )}
+                                                        </>
+                                                      );
+                                                    })()}
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    {tx.type !== 'payment' && tx.referenceNumber && tx.referenceNumber !== detailsText && (
+                                                      <span title={displayDesc} className="text-[10px] text-gray-500 mt-0.5 leading-tight truncate">{displayDesc}</span>
                                                     )}
-                                                    {showNotes && (
-                                                      <div title={cleanNotes} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight truncate">
-                                                        {cleanNotes}
+                                                    {(tx.type === 'payment' || tx.type === 'vendor_payment') && (tx.notes || tx.paymentDescription) && (
+                                                      <div title={tx.notes || tx.paymentDescription} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight truncate">
+                                                        {tx.notes || tx.paymentDescription}
                                                       </div>
                                                     )}
                                                   </>
-                                                );
-                                              })()}
-                                            </>
-                                          ) : (
-                                            <>
-                                              {tx.referenceNumber && tx.referenceNumber !== displayDesc && (
-                                                <span title={displayDesc} className="text-[10px] text-gray-500 mt-0.5 leading-tight truncate">{displayDesc}</span>
-                                              )}
-                                              {(tx.type === 'payment' || tx.type === 'vendor_payment') && tx.notes && (
-                                                <div title={tx.notes} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight truncate">
-                                                  {tx.notes}
-                                                </div>
-                                              )}
-                                            </>
-                                          )}
+                                                )}
+                                              </>
+                                            );
+                                          })()}
                                         </div>
                                       </div>
                                     </td>
@@ -2273,7 +2155,7 @@ export default function CustomerStatementView() {
                                       {(tx.type === 'invoice' || tx.type === 'vendor_payment' || (tx.type === 'journal' && tx.netEffect > 0)) ? fmt(tx.amount) : '—'}
                                     </td>
                                     {/* CREDIT Column */}
-                                    <td className="px-3 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums" style={{ color: (tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) ? ((tx.type === 'payment' || (tx.type === 'journal' && tx.netEffect <= 0)) ? '#059669' : '#c2410c') : 'transparent' }}>
+                                    <td className="px-3 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums text-slate-800">
                                       {(tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) ? fmt(tx.amount) : '—'}
                                     </td>
                                     {/* RUNNING BALANCE */}
@@ -2453,7 +2335,7 @@ export default function CustomerStatementView() {
                               </div>
                               <div>
                                 <span className="text-slate-400 text-[10px] mr-1">Cr:</span>
-                                <span className="font-semibold text-emerald-700">{mg.creditTotal > 0 ? fmt(mg.creditTotal) : '—'}</span>
+                                <span className="font-semibold text-slate-800">{mg.creditTotal > 0 ? fmt(mg.creditTotal) : '—'}</span>
                               </div>
                               <div>
                                 <span className="text-slate-400 text-[10px] mr-1">Net:</span>
@@ -2489,67 +2371,102 @@ export default function CustomerStatementView() {
 
                                     {/* Details */}
                                     <div className="flex flex-col gap-1">
-                                      <div className="text-sm font-bold text-blue-700 underline-offset-2 flex flex-wrap items-center gap-1.5">
-                                        {tx.zohoUrl ? (
-                                          <a href={tx.zohoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-blue-900 hover:underline">
-                                            {tx.type === 'journal' ? (tx.entryNumber || 'Journal') : displayDesc}
-                                          </a>
-                                        ) : (
-                                          <span>{tx.type === 'journal' ? (tx.entryNumber || 'Journal') : displayDesc}</span>
-                                        )}
-                                        {draftStatuses[tx.id] && (
-                                          <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50">
-                                            Draft
-                                          </span>
-                                        )}
-                                        {tx.isVerified && (
-                                          <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
-                                            <Check size={9} strokeWidth={4} />
-                                          </span>
-                                        )}
-                                      </div>
-                                      {tx.type === 'journal' ? (
-                                        <>
-                                          {(() => {
-                                            const entryNum = (tx.entryNumber || '').trim();
-                                            const refNum = (tx.referenceNumber || '').trim();
-                                            const cleanDesc = tx.description ? cleanDescription(tx.description, tx.type).trim() : '';
-                                            const cleanNotes = tx.notes ? tx.notes.trim() : '';
+                                      {(() => {
+                                        const detailsText = (() => {
+                                          if (tx.type === 'invoice') {
+                                            return tx.invoiceNumber || (displayDesc ? displayDesc.replace(/^(?:Invoice|Bill of Supply)\s+/i, '') : '') || (tx.referenceNumber && !tx.referenceNumber.startsWith('SO-') ? tx.referenceNumber : '') || 'Invoice';
+                                          }
+                                          if (tx.type === 'journal') {
+                                            return tx.entryNumber || 'Journal';
+                                          }
+                                          if (tx.type === 'payment') {
+                                            const pmtRef = tx.paymentReference || (!tx.referenceNumber?.startsWith('PT-KT/') ? tx.referenceNumber : '') || (!tx.paymentNumber?.startsWith('PT-KT/') ? tx.paymentNumber : '');
+                                            if (pmtRef && tx.paymentMode) {
+                                              return `${pmtRef} - ${tx.paymentMode}`;
+                                            }
+                                            if (pmtRef) return pmtRef;
+                                            if (tx.paymentMode) return tx.paymentMode;
+                                            return displayDesc || 'Payment';
+                                          }
+                                          return tx.referenceNumber || displayDesc;
+                                        })();
 
-                                            const showRef = refNum && (refNum !== cleanDesc) && (refNum !== entryNum);
-                                            const showNotes = cleanNotes && (cleanNotes !== cleanDesc);
+                                        return (
+                                          <>
+                                            <div className="text-sm font-bold text-blue-700 underline-offset-2 flex flex-wrap items-center gap-1.5">
+                                              {tx.zohoUrl ? (
+                                                <a href={tx.zohoUrl} target="_blank" rel="noopener noreferrer" className="hover:text-blue-900 hover:underline flex items-center gap-1">
+                                                  <span>{detailsText}</span>
+                                                  <span className="text-[10px]">↗</span>
+                                                </a>
+                                              ) : (
+                                                <span>{detailsText}</span>
+                                              )}
+                                              {draftStatuses[tx.id] && (
+                                                <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50">
+                                                  Draft
+                                                </span>
+                                              )}
+                                              {tx.isVerified && (
+                                                <span className="inline-flex items-center justify-center bg-emerald-500 text-white rounded-full w-[14px] h-[14px] shrink-0 shadow-sm" title="Verified Payment">
+                                                  <Check size={9} strokeWidth={4} />
+                                                </span>
+                                              )}
+                                            </div>
 
-                                            return (
+                                            {tx.type === 'invoice' ? (
                                               <>
-                                                {showRef && (
-                                                  <span className="text-[11px] text-gray-500 mt-0.5 leading-tight">Ref: {refNum}</span>
+                                                {tx.referenceNumber && tx.referenceNumber !== detailsText && (
+                                                  <span title={`Ref: ${tx.referenceNumber}`} className="text-[11px] text-gray-500 mt-0.5 leading-tight">
+                                                    Ref: {tx.referenceNumber}
+                                                  </span>
                                                 )}
-                                                {cleanDesc && (
-                                                  <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
-                                                    {cleanDesc}
-                                                  </div>
+                                              </>
+                                            ) : tx.type === 'journal' ? (
+                                              <>
+                                                {(() => {
+                                                  const entryNum = (tx.entryNumber || '').trim();
+                                                  const refNum = (tx.referenceNumber || '').trim();
+                                                  const cleanDesc = tx.description ? cleanDescription(tx.description, tx.type).trim() : '';
+                                                  const cleanNotes = tx.notes ? tx.notes.trim() : '';
+
+                                                  const showRef = refNum && (refNum !== cleanDesc) && (refNum !== entryNum);
+                                                  const showNotes = cleanNotes && (cleanNotes !== cleanDesc);
+
+                                                  return (
+                                                    <>
+                                                      {showRef && (
+                                                        <span className="text-[11px] text-gray-500 mt-0.5 leading-tight">Ref: {refNum}</span>
+                                                      )}
+                                                      {cleanDesc && (
+                                                        <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
+                                                          {cleanDesc}
+                                                        </div>
+                                                      )}
+                                                      {showNotes && (
+                                                        <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
+                                                          {cleanNotes}
+                                                        </div>
+                                                      )}
+                                                    </>
+                                                  );
+                                                })()}
+                                              </>
+                                            ) : (
+                                              <>
+                                                {tx.type !== 'payment' && tx.referenceNumber && tx.referenceNumber !== detailsText && (
+                                                  <span className="text-[10px] text-gray-500">{displayDesc}</span>
                                                 )}
-                                                {showNotes && (
+                                                {(isPayment || tx.type === 'vendor_payment') && (tx.notes || tx.paymentDescription) && (
                                                   <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
-                                                    {cleanNotes}
+                                                    {tx.notes || tx.paymentDescription}
                                                   </div>
                                                 )}
                                               </>
-                                            );
-                                          })()}
-                                        </>
-                                      ) : (
-                                        <>
-                                          {tx.referenceNumber && tx.referenceNumber !== displayDesc && (
-                                            <span className="text-[10px] text-gray-500">{displayDesc}</span>
-                                          )}
-                                          {(isPayment || tx.type === 'vendor_payment') && tx.notes && (
-                                            <div className="text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal mt-0.5">
-                                              {tx.notes}
-                                            </div>
-                                          )}
-                                        </>
-                                      )}
+                                            )}
+                                          </>
+                                        );
+                                      })()}
                                     </div>
 
                                     {/* Amounts */}
@@ -2560,7 +2477,7 @@ export default function CustomerStatementView() {
                                       </div>
                                       <div className="flex flex-col gap-0.5 text-right">
                                         <span className="text-[10px] text-gray-400 font-medium">Pay Amt</span>
-                                        <span className="text-xs font-bold text-emerald-600">{tx.netEffect <= 0 ? fmt(tx.amount) : '—'}</span>
+                                        <span className="text-xs font-bold text-gray-700">{tx.netEffect <= 0 ? fmt(tx.amount) : '—'}</span>
                                       </div>
                                     </div>
 

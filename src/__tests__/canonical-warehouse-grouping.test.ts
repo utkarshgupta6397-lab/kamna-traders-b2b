@@ -131,7 +131,7 @@ async function runCanonicalWarehouseGroupingTests() {
       zohoCreatedTime: new Date(),
       dispatchWarehouse: 'Rithani Delhi Unmapped',
       dispatchWarehouseId: unmappedLocalWhId,
-      zohoDetailsJson: null,
+      zohoDetailsJson: undefined,
       workflows: {
         create: [
           { workflowType: 'RECEIVING', status: 'PENDING' },

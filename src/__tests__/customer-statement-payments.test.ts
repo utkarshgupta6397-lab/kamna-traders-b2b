@@ -541,7 +541,7 @@ describe('Customer Statement Customer Payments Audit & Pagination Logic', () => 
       process.env.ZOHO_ORGANIZATION_ID = dummyOrgId;
       process.env.ZOHO_BOOKS_ORG_ID = dummyOrgId;
 
-      const res = await getCustomerStatement(dummyContactId);
+      const res = await getCustomerStatement(dummyContactId, undefined, undefined, { useCustomEngine: true });
       assert.equal(res.success, true);
       const data = res.data!;
 

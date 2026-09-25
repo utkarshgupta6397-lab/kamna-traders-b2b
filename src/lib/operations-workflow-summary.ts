@@ -1,4 +1,8 @@
 import { prisma } from './db';
+import {
+  getCanonicalWarehouseResolverIndex,
+  resolveCanonicalWarehouse,
+} from './post-dispatch-warehouse-service';
 
 export type OperationsStage = 'RECEIVING' | 'CHECK' | 'INVENTORY' | 'TOTAL';
 
@@ -16,6 +20,7 @@ export interface OperationsStageCounts {
 }
 
 export interface OperationsWarehouseRow {
+  id?: string;
   name: string;
   totalPending: number;
   totalPendingByDate: Record<string, number>;
@@ -237,71 +242,41 @@ export function formatWaitingDuration(fromDate: Date, toDate: Date = new Date())
 export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflowSummary> {
   const buckets = getIstOperationsDateBuckets();
 
-  // Query all active invoices with their workflows, lines, and allocations
-  const invoices = await prisma.postDispatchInvoice.findMany({
-    where: {
-      erpStatus: 'Active',
-    },
-    select: {
-      id: true,
-      zohoStatus: true,
-      zohoCreatedTime: true,
-      dispatchWarehouse: true,
-      zohoDetailsJson: true,
-      workflows: {
-        select: {
-          workflowType: true,
-          status: true,
-        },
+  // Query canonical warehouse resolver index and active invoices concurrently
+  const [resolverIndex, invoices] = await Promise.all([
+    getCanonicalWarehouseResolverIndex(prisma),
+    prisma.postDispatchInvoice.findMany({
+      where: {
+        erpStatus: 'Active',
       },
-      lines: {
-        select: {
-          id: true,
-          stockDeductionAllocation: {
-            select: { status: true },
+      select: {
+        id: true,
+        zohoStatus: true,
+        zohoCreatedTime: true,
+        dispatchWarehouse: true,
+        dispatchWarehouseId: true,
+        zohoDetailsJson: true,
+        workflows: {
+          select: {
+            workflowType: true,
+            status: true,
+          },
+        },
+        lines: {
+          select: {
+            id: true,
+            stockDeductionAllocation: {
+              select: { status: true },
+            },
           },
         },
       },
-    },
-  });
+    }),
+  ]);
 
-  // Discover all distinct warehouses from DB
-  const rawWarehouses = await prisma.$queryRaw<{ wh: string | null }[]>`
-    SELECT DISTINCT COALESCE("dispatchWarehouse", "zohoDetailsJson"->>'location_name') as wh
-    FROM "PostDispatchInvoice"
-    WHERE ("dispatchWarehouse" IS NOT NULL AND "dispatchWarehouse" != '')
-       OR ("zohoDetailsJson" IS NOT NULL AND "zohoDetailsJson"->>'location_name' IS NOT NULL)
-    ORDER BY wh ASC
-  `;
-
-  const distinctWarehousesSet = new Set<string>();
-  for (const r of rawWarehouses) {
-    if (r.wh && r.wh.trim()) {
-      distinctWarehousesSet.add(r.wh.trim());
-    }
-  }
-
-  // Also include any active system warehouses
-  const activeSystemWarehouses = await prisma.warehouse.findMany({
-    where: { active: true, isSystemWarehouse: false },
-    select: { name: true },
-  });
-  for (const sw of activeSystemWarehouses) {
-    if (sw.name && sw.name.trim()) {
-      distinctWarehousesSet.add(sw.name.trim());
-    }
-  }
-
-  // Ensure warehouses from the current dataset are present
-  for (const inv of invoices) {
-    const wh = (inv.dispatchWarehouse || (inv.zohoDetailsJson as any)?.location_name || '').trim();
-    if (wh) distinctWarehousesSet.add(wh);
-  }
-
-  const sortedWarehouseNames = Array.from(distinctWarehousesSet).sort((a, b) => a.localeCompare(b));
-
-  // Initialize data structures for each warehouse
+  // Initialize data structures for each canonical warehouse
   interface WhAcc {
+    id: string;
     name: string;
     distinctInvoices: Set<string>;
     distinctInvoicesByDate: Record<string, Set<string>>;
@@ -314,7 +289,7 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
   }
 
   const whMap = new Map<string, WhAcc>();
-  const createEmptyWhAcc = (name: string): WhAcc => {
+  const createEmptyWhAcc = (id: string, name: string): WhAcc => {
     const distinctByDate: Record<string, Set<string>> = {};
     const rByDate: Record<string, number> = {};
     const cByDate: Record<string, number> = {};
@@ -326,6 +301,7 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
       iByDate[b.key] = 0;
     }
     return {
+      id,
       name,
       distinctInvoices: new Set<string>(),
       distinctInvoicesByDate: distinctByDate,
@@ -337,10 +313,6 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
       inventoryTotal: 0,
     };
   };
-
-  for (const name of sortedWarehouseNames) {
-    whMap.set(name, createEmptyWhAcc(name));
-  }
 
   // Grand Total accumulators
   const grandDistinctInvoices = new Set<string>();
@@ -360,7 +332,7 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
   let totalC = 0;
   let totalI = 0;
 
-  // Process all invoices
+  // Process all invoices with canonical warehouse resolution BEFORE grouping
   for (const inv of invoices) {
     const isR = isInvoiceReceivingPending(inv);
     const isC = isInvoiceCheckPending(inv);
@@ -369,12 +341,14 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
 
     if (!isAct) continue; // Skip completed / non-pending invoices
 
-    const rawWh = (inv.dispatchWarehouse || (inv.zohoDetailsJson as any)?.location_name || '').trim() || 'Unassigned';
-    if (!whMap.has(rawWh)) {
-      whMap.set(rawWh, createEmptyWhAcc(rawWh));
+    // Authoritative resolution of canonical warehouse identity
+    const canonical = resolveCanonicalWarehouse(inv, resolverIndex);
+
+    if (!whMap.has(canonical.id)) {
+      whMap.set(canonical.id, createEmptyWhAcc(canonical.id, canonical.name));
     }
 
-    const whAcc = whMap.get(rawWh)!;
+    const whAcc = whMap.get(canonical.id)!;
     const bucketKey = matchDateToBucketKey(new Date(inv.zohoCreatedTime), buckets);
 
     // Track distinct pending invoices
@@ -406,14 +380,10 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
 
   // Format warehouse rows
   const warehouseRows: OperationsWarehouseRow[] = [];
-  const finalWarehouseKeys = Array.from(whMap.keys()).sort((a, b) => {
-    if (a === 'Unassigned') return 1;
-    if (b === 'Unassigned') return -1;
-    return a.localeCompare(b);
-  });
+  const finalWarehouseKeys = Array.from(whMap.keys());
 
-  for (const name of finalWarehouseKeys) {
-    const acc = whMap.get(name)!;
+  for (const whId of finalWarehouseKeys) {
+    const acc = whMap.get(whId)!;
 
     // Filter out inactive warehouses: only include warehouses with at least 1 pending invoice
     if (acc.distinctInvoices.size === 0) {
@@ -426,7 +396,8 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
     }
 
     warehouseRows.push({
-      name,
+      id: acc.id,
+      name: acc.name,
       totalPending: acc.distinctInvoices.size,
       totalPendingByDate,
       receiving: {
@@ -443,6 +414,16 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
       },
     });
   }
+
+  // Sort rows alphabetically by canonical warehouse name, Unassigned at the end
+  warehouseRows.sort((a, b) => {
+    if (a.name === 'Unassigned') return 1;
+    if (b.name === 'Unassigned') return -1;
+    return a.name.localeCompare(b.name);
+  });
+
+  // Available warehouses list for filter: exactly matches the active canonical warehouse rows
+  const availableWarehouses = warehouseRows.map((w) => w.name);
 
   // Format grand totals
   const grandTotalPendingByDate: Record<string, number> = {};
@@ -470,9 +451,7 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
   return {
     dateBuckets: buckets.map((b) => ({ key: b.key, label: b.label, isToday: b.isToday })),
     warehouses: warehouseRows,
-    availableWarehouses: finalWarehouseKeys.filter(
-      (w) => w !== 'Unassigned' && (whMap.get(w)?.distinctInvoices.size || 0) > 0
-    ),
+    availableWarehouses,
     grandTotal,
     totals: {
       receivingPending: totalR,
@@ -489,7 +468,7 @@ export async function getOperationsWorkflowSummary(): Promise<OperationsWorkflow
  * Fetches the specific list of invoices for a clicked cell in the pivot table or KPI cards.
  */
 export async function getOperationsCellInvoices(params: {
-  warehouse?: string; // Specific warehouse or 'ALL'
+  warehouse?: string; // Specific canonical warehouse name/id or 'ALL'
   bucketKey?: string; // Specific bucket key or 'ALL'
   stage: OperationsStage; // 'RECEIVING' | 'CHECK' | 'INVENTORY' | 'TOTAL'
 }): Promise<{
@@ -503,16 +482,71 @@ export async function getOperationsCellInvoices(params: {
   const { warehouse = 'ALL', bucketKey = 'ALL', stage = 'TOTAL' } = params;
   const buckets = getIstOperationsDateBuckets();
 
+  const resolverIndex = await getCanonicalWarehouseResolverIndex(prisma);
+
   const where: any = {
     erpStatus: 'Active',
   };
 
-  // Warehouse filter
-  if (warehouse && warehouse !== 'ALL' && warehouse !== 'Unassigned') {
-    where.zohoDetailsJson = {
-      path: ['location_name'],
-      equals: warehouse,
-    };
+  // Determine target canonical warehouse if specific warehouse was requested
+  let targetCanonical: { id: string; name: string; zohoLocationId: string | null } | null = null;
+  const isAllWarehouses = !warehouse || warehouse === 'ALL';
+  const isUnassigned = warehouse === 'Unassigned';
+
+  if (!isAllWarehouses && !isUnassigned) {
+    const qLower = warehouse.trim().toLowerCase();
+    targetCanonical =
+      resolverIndex.whByNameLower.get(qLower) ||
+      resolverIndex.whById.get(warehouse) ||
+      Array.from(resolverIndex.whById.values()).find(
+        (w) => w.name.toLowerCase() === qLower || w.id === warehouse || w.zohoLocationId === warehouse
+      ) ||
+      null;
+
+    if (targetCanonical) {
+      const whOrConditions: any[] = [
+        { dispatchWarehouseId: targetCanonical.id },
+        { dispatchWarehouse: targetCanonical.name },
+      ];
+      if (targetCanonical.zohoLocationId) {
+        whOrConditions.push({
+          AND: [
+            {
+              OR: [
+                { dispatchWarehouseId: null },
+                { dispatchWarehouseId: targetCanonical.id },
+              ],
+            },
+            {
+              zohoDetailsJson: {
+                path: ['location_id'],
+                equals: targetCanonical.zohoLocationId,
+              },
+            },
+          ],
+        });
+      }
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        { OR: whOrConditions },
+      ];
+    } else {
+      // Unmapped named warehouse fallback
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        {
+          OR: [
+            { dispatchWarehouse: warehouse },
+            {
+              zohoDetailsJson: {
+                path: ['location_name'],
+                equals: warehouse,
+              },
+            },
+          ],
+        },
+      ];
+    }
   }
 
   // Date filter
@@ -545,6 +579,7 @@ export async function getOperationsCellInvoices(params: {
       zohoStatus: true,
       zohoCreatedTime: true,
       dispatchWarehouse: true,
+      dispatchWarehouseId: true,
       zohoDetailsJson: true,
       workflows: {
         select: {
@@ -564,26 +599,34 @@ export async function getOperationsCellInvoices(params: {
     orderBy: { zohoCreatedTime: 'desc' },
   });
 
-  // Filter invoices according to the clicked stage
-  const matchingInvoices = rawInvoices.filter((inv) => {
-    // If specific warehouse was Unassigned, ensure location_name is empty
-    if (warehouse === 'Unassigned') {
-      const wh = (inv.dispatchWarehouse || (inv.zohoDetailsJson as any)?.location_name || '').trim();
-      if (wh) return false;
+  // Filter invoices according to canonical warehouse and clicked stage
+  const matchingInvoicesWithCanonical: Array<{
+    inv: typeof rawInvoices[number];
+    canonical: ReturnType<typeof resolveCanonicalWarehouse>;
+  }> = [];
+
+  for (const inv of rawInvoices) {
+    const canonical = resolveCanonicalWarehouse(inv, resolverIndex);
+
+    // Warehouse match validation
+    if (!isAllWarehouses) {
+      if (isUnassigned) {
+        if (canonical.id !== 'unassigned') continue;
+      } else if (targetCanonical) {
+        if (canonical.id !== targetCanonical.id) continue;
+      } else {
+        if (canonical.name.toLowerCase() !== warehouse.toLowerCase() && canonical.id !== warehouse) continue;
+      }
     }
 
-    if (stage === 'RECEIVING') {
-      return isInvoiceReceivingPending(inv);
-    }
-    if (stage === 'CHECK') {
-      return isInvoiceCheckPending(inv);
-    }
-    if (stage === 'INVENTORY') {
-      return isInvoiceInventoryPending(inv);
-    }
-    // stage === 'TOTAL'
-    return isInvoiceActionable(inv);
-  });
+    // Stage validation
+    if (stage === 'RECEIVING' && !isInvoiceReceivingPending(inv)) continue;
+    if (stage === 'CHECK' && !isInvoiceCheckPending(inv)) continue;
+    if (stage === 'INVENTORY' && !isInvoiceInventoryPending(inv)) continue;
+    if (stage === 'TOTAL' && !isInvoiceActionable(inv)) continue;
+
+    matchingInvoicesWithCanonical.push({ inv, canonical });
+  }
 
   const now = new Date();
   const stageLabels: Record<OperationsStage, string> = {
@@ -593,7 +636,7 @@ export async function getOperationsCellInvoices(params: {
     TOTAL: 'Total Pending',
   };
 
-  const formattedInvoices: OperationsCellInvoiceItem[] = matchingInvoices.map((inv) => {
+  const formattedInvoices: OperationsCellInvoiceItem[] = matchingInvoicesWithCanonical.map(({ inv, canonical }) => {
     const createdDate = new Date(inv.zohoCreatedTime);
     const istCreated = new Date(createdDate.getTime() + 5.5 * 60 * 60 * 1000);
     const day = istCreated.getUTCDate();
@@ -611,7 +654,7 @@ export async function getOperationsCellInvoices(params: {
       id: inv.id,
       invoiceNumber: inv.invoiceNumber,
       customerName: inv.customerName,
-      warehouse: (inv.dispatchWarehouse || (inv.zohoDetailsJson as any)?.location_name || '').trim() || 'Unassigned',
+      warehouse: canonical.name,
       amount: inv.total,
       formattedAmount: new Intl.NumberFormat('en-IN', {
         style: 'currency',
@@ -626,7 +669,7 @@ export async function getOperationsCellInvoices(params: {
   });
 
   return {
-    warehouse: warehouse === 'ALL' ? 'All Warehouses' : warehouse,
+    warehouse: targetCanonical ? targetCanonical.name : (warehouse === 'ALL' ? 'All Warehouses' : warehouse),
     bucketKey,
     bucketLabel: targetBucketLabel,
     stage,

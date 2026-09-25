@@ -27,6 +27,153 @@ export interface ReassignWarehouseResult {
   auditRecord?: any;
 }
 
+export interface CanonicalWarehouse {
+  id: string; // Immutable canonical identifier
+  name: string; // Configured canonical display name
+  zohoLocationId: string | null;
+  isMapped: boolean;
+}
+
+export interface CanonicalWarehouseResolverIndex {
+  whById: Map<string, { id: string; name: string; zohoLocationId: string | null }>;
+  whByZohoLocationId: Map<string, { id: string; name: string; zohoLocationId: string | null }>;
+  whByNameLower: Map<string, { id: string; name: string; zohoLocationId: string | null }>;
+}
+
+/**
+ * Builds an in-memory indexed lookup of warehouses to resolve any invoice
+ * to its canonical warehouse identity in O(1) time without N+1 queries.
+ */
+export async function getCanonicalWarehouseResolverIndex(
+  db: typeof prisma = prisma
+): Promise<CanonicalWarehouseResolverIndex> {
+  const warehouses = await db.warehouse.findMany({
+    where: { isSystemWarehouse: false },
+    select: { id: true, name: true, active: true, zohoLocationId: true },
+  });
+
+  const whById = new Map<string, { id: string; name: string; zohoLocationId: string | null }>();
+  const whByZohoLocationId = new Map<string, { id: string; name: string; zohoLocationId: string | null }>();
+  const whByNameLower = new Map<string, { id: string; name: string; zohoLocationId: string | null }>();
+
+  for (const w of warehouses) {
+    const item = { id: w.id, name: w.name, zohoLocationId: w.zohoLocationId };
+    whById.set(w.id, item);
+    if (w.zohoLocationId) {
+      whByZohoLocationId.set(w.zohoLocationId, item);
+    }
+    whByNameLower.set(w.name.trim().toLowerCase(), item);
+  }
+
+  return { whById, whByZohoLocationId, whByNameLower };
+}
+
+/**
+ * Resolves an operational invoice to its canonical warehouse identity.
+ *
+ * Precedence / Source of Truth:
+ * 1. Explicit local warehouse ID (dispatchWarehouseId) -> resolves to mapped Warehouse.
+ * 2. Zoho Books Location ID (zohoDetailsJson.location_id) -> resolves via Warehouse.zohoLocationId mapping.
+ * 3. Exact configured warehouse name match (dispatchWarehouse or zohoDetailsJson.location_name).
+ * 4. Deterministic fallback for unmapped warehouses (preserves their distinct identities without silent merging).
+ */
+export function resolveCanonicalWarehouse(
+  inv: {
+    dispatchWarehouse?: string | null;
+    dispatchWarehouseId?: string | null;
+    zohoDetailsJson?: any;
+  },
+  resolverIndex: CanonicalWarehouseResolverIndex
+): CanonicalWarehouse {
+  const { whById, whByZohoLocationId, whByNameLower } = resolverIndex;
+
+  // 1. Resolve by local warehouse ID (dispatchWarehouseId)
+  if (inv.dispatchWarehouseId && whById.has(inv.dispatchWarehouseId)) {
+    const wh = whById.get(inv.dispatchWarehouseId)!;
+    return {
+      id: wh.id,
+      name: wh.name,
+      zohoLocationId: wh.zohoLocationId,
+      isMapped: Boolean(wh.zohoLocationId),
+    };
+  }
+
+  // 2. Resolve by Zoho Location ID (zohoDetailsJson.location_id)
+  const locId = inv.zohoDetailsJson?.location_id
+    ? String(inv.zohoDetailsJson.location_id).trim()
+    : null;
+  if (locId && whByZohoLocationId.has(locId)) {
+    const wh = whByZohoLocationId.get(locId)!;
+    return {
+      id: wh.id,
+      name: wh.name,
+      zohoLocationId: wh.zohoLocationId,
+      isMapped: true,
+    };
+  }
+
+  // 3. Resolve by exact configured warehouse name (dispatchWarehouse or zohoDetailsJson.location_name)
+  const dispatchName = inv.dispatchWarehouse?.trim();
+  if (dispatchName && whByNameLower.has(dispatchName.toLowerCase())) {
+    const wh = whByNameLower.get(dispatchName.toLowerCase())!;
+    return {
+      id: wh.id,
+      name: wh.name,
+      zohoLocationId: wh.zohoLocationId,
+      isMapped: Boolean(wh.zohoLocationId),
+    };
+  }
+
+  const locName = inv.zohoDetailsJson?.location_name
+    ? String(inv.zohoDetailsJson.location_name).trim()
+    : null;
+  if (locName && whByNameLower.has(locName.toLowerCase())) {
+    const wh = whByNameLower.get(locName.toLowerCase())!;
+    return {
+      id: wh.id,
+      name: wh.name,
+      zohoLocationId: wh.zohoLocationId,
+      isMapped: Boolean(wh.zohoLocationId),
+    };
+  }
+
+  // 4. Deterministic fallback for unmapped warehouses (Step 6)
+  if (inv.dispatchWarehouseId) {
+    return {
+      id: inv.dispatchWarehouseId,
+      name: dispatchName || locName || inv.dispatchWarehouseId,
+      zohoLocationId: null,
+      isMapped: false,
+    };
+  }
+
+  if (locId) {
+    return {
+      id: `zoho:${locId}`,
+      name: locName || dispatchName || `Zoho Location ${locId}`,
+      zohoLocationId: locId,
+      isMapped: false,
+    };
+  }
+
+  const rawName = dispatchName || locName;
+  if (rawName) {
+    return {
+      id: `raw:${rawName.toLowerCase()}`,
+      name: rawName,
+      zohoLocationId: null,
+      isMapped: false,
+    };
+  }
+
+  return {
+    id: 'unassigned',
+    name: 'Unassigned',
+    zohoLocationId: null,
+    isMapped: false,
+  };
+}
+
 /**
  * Canonical helper returning only warehouses originating from / configured from Zoho Books
  * for the Post-Dispatch workflow (active, non-system, and mapped via zohoLocationId).

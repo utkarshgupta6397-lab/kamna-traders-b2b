@@ -27,23 +27,61 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Order/Workflow not found' }, { status: 404 });
     }
 
-    if (order.preDispatchWorkflow.currentStep > 1 && action === 'complete') {
-      return NextResponse.json({ error: 'Rate Review is already completed and cannot be modified.' }, { status: 400 });
+    const currentWf = order.preDispatchWorkflow;
+
+    // Concurrency protection: If the workflow has already moved past Rate Review
+    const isPastRateReview = currentWf.currentStep > 1 || currentWf.rateReviewStatus === 'COMPLETED';
+
+    if (isPastRateReview) {
+      if (action === 'save') {
+        // Safe no-op: Do NOT mutate database or regress status; return current workflow
+        return NextResponse.json({
+          success: true,
+          message: 'Rate review is already completed; auto-save ignored.',
+          data: currentWf
+        });
+      }
+      if (action === 'complete') {
+        return NextResponse.json({ error: 'Rate Review is already completed and cannot be modified.' }, { status: 400 });
+      }
     }
-    
+
     // Intermediate Save
     if (action === 'save') {
       const numVerified = Object.keys(audit?.items || {}).length;
-      
       const newStatus = numVerified > 0 ? 'IN_PROGRESS' : 'NOT_STARTED';
-      
-      const updated = await prisma.preDispatchWorkflow.update({
-        where: { id: order.preDispatchWorkflow.id },
+
+      // Atomic conditional update: enforces currentStep == 1 AND rateReviewStatus != 'COMPLETED'
+      // If a concurrent complete request committed microseconds ago, count will be 0
+      const updateResult = await prisma.preDispatchWorkflow.updateMany({
+        where: {
+          id: currentWf.id,
+          currentStep: 1,
+          rateReviewStatus: { not: 'COMPLETED' }
+        },
         data: {
           rateReviewAudit: audit,
           rateReviewStatus: newStatus,
-          overallStatus: newStatus === 'NOT_STARTED' && order.preDispatchWorkflow.overallStatus === 'IN_PROGRESS' ? 'NOT_STARTED' : (newStatus === 'IN_PROGRESS' ? 'IN_PROGRESS' : undefined)
+          overallStatus: newStatus === 'NOT_STARTED' && currentWf.overallStatus === 'IN_PROGRESS' 
+            ? 'NOT_STARTED' 
+            : (newStatus === 'IN_PROGRESS' ? 'IN_PROGRESS' : undefined)
         }
+      });
+
+      if (updateResult.count === 0) {
+        // Stale save detected via atomic DB check! Fetch fresh workflow
+        const freshWf = await prisma.preDispatchWorkflow.findUnique({
+          where: { id: currentWf.id }
+        });
+        return NextResponse.json({
+          success: true,
+          message: 'Workflow already progressed beyond Rate Review; stale save ignored.',
+          data: freshWf
+        });
+      }
+
+      const updated = await prisma.preDispatchWorkflow.findUnique({
+        where: { id: currentWf.id }
       });
       return NextResponse.json({ success: true, data: updated });
     }
@@ -59,14 +97,22 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       }
 
       const [updatedWf, updatedOrder] = await prisma.$transaction(async (tx) => {
+        // Double-check row state inside transaction to prevent double-complete
+        const fresh = await tx.preDispatchWorkflow.findUnique({
+          where: { id: currentWf.id }
+        });
+        if (!fresh || fresh.currentStep > 1 || fresh.rateReviewStatus === 'COMPLETED') {
+          throw new Error('Rate Review is already completed.');
+        }
+
         const wf = await tx.preDispatchWorkflow.update({
-          where: { id: order.preDispatchWorkflow!.id },
+          where: { id: currentWf.id },
           data: {
             rateReviewStatus: 'COMPLETED',
             rateReviewCompletedBy: session.userId,
             rateReviewCompletedAt: new Date(),
             rateReviewAudit: audit,
-            currentStep: Math.max(order.preDispatchWorkflow!.currentStep, 2),
+            currentStep: Math.max(fresh.currentStep, 2),
             overallStatus: 'IN_PROGRESS'
           }
         });

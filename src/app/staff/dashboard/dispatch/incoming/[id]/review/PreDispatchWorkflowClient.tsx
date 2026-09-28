@@ -180,9 +180,9 @@ export default function PreDispatchWorkflowClient({
 
   const canAccessStep = (stepId: number) => {
     if (stepId === 1) return true;
-    if (stepId === 2) return workflow.rateReviewStatus === 'COMPLETED';
-    if (stepId === 3) return workflow.paymentStatus === 'COMPLETED' && (!isTruckRequired || isTruckCompleted);
-    if (stepId === 4) return workflow.readyForInvoiceStatus === 'COMPLETED';
+    if (stepId === 2) return currentStep >= 2 || workflow.rateReviewStatus === 'COMPLETED';
+    if (stepId === 3) return currentStep >= 3 || (workflow.paymentStatus === 'COMPLETED' && (!isTruckRequired || isTruckCompleted));
+    if (stepId === 4) return currentStep >= 4 || workflow.readyForInvoiceStatus === 'COMPLETED';
     return false;
   };
 
@@ -415,6 +415,34 @@ export default function PreDispatchWorkflowClient({
             {activeStep === 3 && canAccessStep(3) && <div className="p-6"><ReadyForInvoiceStep order={order} workflow={workflow} meta={data} onRefresh={fetchWorkflow} hasPermission={permissions?.canReadyForInvoice ?? true} /></div>}
             {activeStep === 4 && canAccessStep(4) && <div className="p-6"><InvoiceConfirmationStep order={order} workflow={workflow} onRefresh={fetchWorkflow} hasPermission={permissions?.canInvoiceConfirm ?? true} /></div>}
             
+            {/* Fallback state when activeStep cannot be safely rendered or prerequisites are locked */}
+            {activeStep > 1 && !canAccessStep(activeStep) && workflow.overallStatus !== 'PRE_DISPATCH_COMPLETED' && (
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center min-h-[360px]">
+                <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mb-4 shadow-inner">
+                  <CircleAlert size={32} />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 mb-1">Workflow State Needs Attention</h3>
+                <p className="text-sm text-gray-600 max-w-md mb-6">
+                  {steps.find(s => s.id === activeStep)?.title || `Step ${activeStep}`} cannot be accessed because prior workflow requirements are incomplete or local state is out of sync.
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    onClick={fetchWorkflow}
+                    className="px-4 py-2 bg-[#1A2766] text-white rounded-lg text-sm font-semibold hover:bg-blue-900 transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
+                  >
+                    <RefreshCw size={15} />
+                    <span>Refresh Workflow State</span>
+                  </button>
+                  <button
+                    onClick={() => setViewStep(1)}
+                    className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
+                  >
+                    View Rate Review
+                  </button>
+                </div>
+              </div>
+            )}
+
             {workflow.overallStatus === 'PRE_DISPATCH_COMPLETED' && (
                <div className="flex flex-col items-center justify-center p-12 text-center h-full">
                  <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-6 shadow-inner">

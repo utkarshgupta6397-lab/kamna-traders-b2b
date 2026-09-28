@@ -51,7 +51,7 @@ export async function POST(
 
     const getStageName = () => {
       const wf = order.preDispatchWorkflow;
-      if (!wf || wf.rateReviewStatus !== 'COMPLETED') return 'Rate Review';
+      if (!wf || (wf.rateReviewStatus !== 'COMPLETED' && wf.currentStep <= 1)) return 'Rate Review';
       if (wf.paymentStatus !== 'COMPLETED') return 'Payment Verification';
       const isTruckRequired = (order.total ?? 0) > 50000;
       if (isTruckRequired && wf.truckDetailsStatus !== 'COMPLETED') return 'Truck Details';

@@ -1521,16 +1521,16 @@ export default function CustomerStatementView() {
           group.monthEndBalance = tx.balanceAfter;
 
           // Debit transactions
-          if (tx.debit !== undefined && tx.debit > 0) {
+          if (tx.debit !== undefined && tx.debit > 0 && tx.netEffect > 0) {
             group.debitTotal += Number(tx.debit);
-          } else if (tx.type === 'invoice' || tx.type === 'vendor_payment' || tx.type === 'vendor_credit' || (tx.type === 'journal' && tx.netEffect > 0)) {
-            group.debitTotal += Number(tx.amount || 0);
+          } else if (tx.netEffect > 0) {
+            group.debitTotal += Number(tx.amount || tx.debit || 0);
           }
           // Credit transactions
-          if (tx.credit !== undefined && tx.credit > 0) {
+          if (tx.credit !== undefined && tx.credit > 0 && tx.netEffect < 0) {
             group.creditTotal += Number(tx.credit);
-          } else if (tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) {
-            group.creditTotal += Number(tx.amount || 0);
+          } else if (tx.netEffect < 0) {
+            group.creditTotal += Number(tx.amount || tx.credit || 0);
           }
         });
 
@@ -2216,11 +2216,11 @@ export default function CustomerStatementView() {
                                     </td>
                                     {/* DEBIT Column */}
                                     <td className="px-3 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums text-slate-800">
-                                      {(tx.debit !== undefined && tx.debit > 0) ? fmt(tx.debit) : ((tx.type === 'invoice' || tx.type === 'vendor_payment' || tx.type === 'vendor_credit' || (tx.type === 'journal' && tx.netEffect > 0)) ? fmt(tx.amount) : '—')}
+                                      {tx.netEffect > 0 ? fmt((tx.debit !== undefined && tx.debit > 0) ? tx.debit : (tx.amount || tx.netEffect)) : '—'}
                                     </td>
                                     {/* CREDIT Column */}
                                     <td className="px-3 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums text-slate-800">
-                                      {(tx.credit !== undefined && tx.credit > 0) ? fmt(tx.credit) : ((tx.type === 'payment' || tx.type === 'bill' || (tx.type === 'journal' && tx.netEffect <= 0)) ? fmt(tx.amount) : '—')}
+                                      {tx.netEffect < 0 ? fmt((tx.credit !== undefined && tx.credit > 0) ? tx.credit : (tx.amount || Math.abs(tx.netEffect))) : '—'}
                                     </td>
                                     {/* RUNNING BALANCE */}
                                     <td className="px-4 py-1.5 text-right whitespace-nowrap align-middle">
@@ -2534,11 +2534,11 @@ export default function CustomerStatementView() {
                                     <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-50">
                                       <div className="flex flex-col gap-0.5">
                                         <span className="text-[10px] text-gray-400 font-medium">Inv Amt</span>
-                                        <span className="text-xs font-bold text-gray-700">{(tx.debit !== undefined && tx.debit > 0) ? fmt(tx.debit) : ((tx.netEffect > 0 || tx.type === 'invoice' || tx.type === 'vendor_payment' || tx.type === 'vendor_credit') ? fmt(tx.amount) : '—')}</span>
+                                        <span className="text-xs font-bold text-gray-700">{tx.netEffect > 0 ? fmt((tx.debit !== undefined && tx.debit > 0) ? tx.debit : (tx.amount || tx.netEffect)) : '—'}</span>
                                       </div>
                                       <div className="flex flex-col gap-0.5 text-right">
                                         <span className="text-[10px] text-gray-400 font-medium">Pay Amt</span>
-                                        <span className="text-xs font-bold text-gray-700">{(tx.credit !== undefined && tx.credit > 0) ? fmt(tx.credit) : ((tx.netEffect < 0 || tx.type === 'payment' || tx.type === 'bill') ? fmt(tx.amount) : '—')}</span>
+                                        <span className="text-xs font-bold text-gray-700">{tx.netEffect < 0 ? fmt((tx.credit !== undefined && tx.credit > 0) ? tx.credit : (tx.amount || Math.abs(tx.netEffect))) : '—'}</span>
                                       </div>
                                     </div>
 

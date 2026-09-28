@@ -173,6 +173,21 @@ describe('Native Contact Statement Parser & Helpers', () => {
     });
   });
 
+  describe('Signed amount and parenthesized credit mapping regression', () => {
+    it('correctly maps parenthesized negative amounts in Amount column to Credit column with debit=0 and credit=amount', async () => {
+      const pdfPath = path.resolve(__dirname, '../../scratch/statement-audit/nitashi-all-time.pdf');
+      if (fs.existsSync(pdfPath)) {
+        const buf = fs.readFileSync(pdfPath);
+        const parsed = await parseNativeContactStatementPdf(buf);
+        const nettingRow = parsed.rows.find(r => r.date === '28 Sep 2026');
+        assert.ok(nettingRow, '28 Sep 2026 transaction row should be present');
+        assert.equal(nettingRow?.amount, 891396);
+        assert.equal(nettingRow?.debit, 0, 'Negative / parenthesized amount in Amount column must not be debit');
+        assert.equal(nettingRow?.credit, 891396, 'Negative / parenthesized amount in Amount column must be credit');
+      }
+    });
+  });
+
   describe('Error handling', () => {
     it('throws NativeStatementParseError on empty or invalid buffer', async () => {
       await assert.rejects(

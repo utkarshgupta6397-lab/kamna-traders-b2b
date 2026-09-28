@@ -320,7 +320,11 @@ export async function getNativeCustomerStatement(
     } else {
       // Fallback for any other native row type
       const isDebit = row.debit > 0;
-      const amt = isDebit ? row.debit : row.credit;
+      const amt = isDebit ? row.debit : (row.credit > 0 ? row.credit : row.amount);
+      const debitVal = isDebit ? amt : 0;
+      const creditVal = !isDebit ? amt : 0;
+      const net = isDebit ? amt : -amt;
+
       transactions.push({
         id: `tx-${row.reference || idx}`,
         type: 'journal',
@@ -331,10 +335,10 @@ export async function getNativeCustomerStatement(
         entryNumber: row.rawType,
         referenceNumber: row.reference,
         amount: amt,
-        debit: isDebit ? amt : 0,
-        credit: !isDebit ? amt : 0,
-        netEffect: isDebit ? amt : -amt,
-        customerNetEffect: isDebit ? amt : -amt,
+        debit: debitVal,
+        credit: creditVal,
+        netEffect: net,
+        customerNetEffect: net,
         vendorNetEffect: 0,
         balanceAfter: row.balance
       });

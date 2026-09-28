@@ -27,7 +27,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Order/Workflow not found' }, { status: 404 });
     }
 
-    if (order.preDispatchWorkflow.rateReviewStatus !== 'COMPLETED') {
+    if (order.preDispatchWorkflow.rateReviewStatus !== 'COMPLETED' && order.preDispatchWorkflow.currentStep < 2) {
       return NextResponse.json({ error: 'Rate Review must be completed first' }, { status: 400 });
     }
 
@@ -41,6 +41,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       const wf = await tx.preDispatchWorkflow.update({
         where: { id: order.preDispatchWorkflow!.id },
         data: {
+          rateReviewStatus: 'COMPLETED',
           paymentStatus: 'COMPLETED',
           paymentDecision: decision,
           paymentNote: note,

@@ -25,13 +25,17 @@ export async function PATCH(
     }
 
     // Build update payload with parent/child hierarchy support
-    const updateData: Record<string, boolean> = { [key]: Boolean(value) };
+    let updateValue: any = Boolean(value);
+    if (key === 'holdQueueReviewLimit') {
+      updateValue = value === null || value === '' || isNaN(Number(value)) ? null : Number(value);
+    }
+    const updateData: Record<string, any> = { [key]: updateValue };
     const postDispatchChildren = [
       'mobile_dispatch_post_dispatch_receiving_upload',
       'mobile_dispatch_post_dispatch_checked_upload',
     ];
 
-    if (Boolean(value)) {
+    if (Boolean(value) && key !== 'holdQueueReviewLimit') {
       if (postDispatchChildren.includes(key)) {
         updateData.mobile_dispatch = true;
         updateData.mobile_dispatch_post_dispatch = true;
@@ -108,7 +112,7 @@ export async function PATCH(
       for (const [col, val] of Object.entries(updateData)) {
         await prisma.$executeRawUnsafe(
           `UPDATE "User" SET "${col}" = $1 WHERE "id" = $2`,
-          Boolean(val),
+          val,
           id
         );
       }

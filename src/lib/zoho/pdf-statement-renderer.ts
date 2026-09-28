@@ -787,14 +787,17 @@ export async function renderStatementToPdf(
     };
 
     // Transaction row
+    const debitCell = tx.netEffect > 0 ? pdfFmt((tx.debit !== undefined && tx.debit > 0) ? tx.debit : (tx.amount || tx.netEffect)) : '\u2014';
+    const creditCell = tx.netEffect < 0 ? pdfFmt((tx.credit !== undefined && tx.credit > 0) ? tx.credit : (tx.amount || Math.abs(tx.netEffect))) : '\u2014';
+
     if (isGroup) {
       finalTableRows.push([
         fmtDate(tx.date),
         tx.firmName || '\u2014',
         typeLabel,
         descObj,
-        (tx.debit !== undefined && tx.debit > 0) ? pdfFmt(tx.debit) : (tx.netEffect > 0 ? pdfFmt(tx.amount) : '\u2014'),
-        (tx.credit !== undefined && tx.credit > 0) ? pdfFmt(tx.credit) : (tx.netEffect <= 0 ? pdfFmt(tx.amount) : '\u2014'),
+        debitCell,
+        creditCell,
         pdfFmtBalanceWithIndicator(tx.balanceAfter),
       ]);
     } else {
@@ -802,8 +805,8 @@ export async function renderStatementToPdf(
         fmtDate(tx.date),
         typeLabel,
         descObj,
-        (tx.debit !== undefined && tx.debit > 0) ? pdfFmt(tx.debit) : (tx.netEffect > 0 ? pdfFmt(tx.amount) : '\u2014'),
-        (tx.credit !== undefined && tx.credit > 0) ? pdfFmt(tx.credit) : (tx.netEffect <= 0 ? pdfFmt(tx.amount) : '\u2014'),
+        debitCell,
+        creditCell,
         pdfFmtBalanceWithIndicator(tx.balanceAfter),
       ]);
     }

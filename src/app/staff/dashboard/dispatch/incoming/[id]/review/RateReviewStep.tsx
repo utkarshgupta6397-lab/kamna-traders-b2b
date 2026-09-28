@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { CheckCircle2, Loader2, Edit2, X, Check, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -32,6 +32,12 @@ export default function RateReviewStep({
   
   const initialAudit = workflow.rateReviewAudit || { items: {} };
   const [audit, setAudit] = useState<any>(initialAudit);
+  const latestAuditRef = useRef<any>(initialAudit);
+  latestAuditRef.current = audit;
+
+  const activeSaveControllerRef = useRef<AbortController | null>(null);
+  const isSubmittingCompleteRef = useRef<boolean>(false);
+  const inFlightSavesCountRef = useRef<number>(0);
   
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [editRate, setEditRate] = useState<number>(0);
@@ -42,27 +48,54 @@ export default function RateReviewStep({
   // Use the actual currentStep from workflow to lock down edits
   const isEditable = workflow.currentStep === 1;
 
+  useEffect(() => {
+    return () => {
+      if (activeSaveControllerRef.current) {
+        activeSaveControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   const saveAuditState = async (newAudit: any) => {
+    // If workflow is no longer in Step 1 or completion has started, do NOT send auto-saves
+    if (!isEditable || isSubmittingCompleteRef.current) return;
+
+    // Abort previous in-flight auto-save to ensure stale requests don't race
+    if (activeSaveControllerRef.current) {
+      activeSaveControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    activeSaveControllerRef.current = controller;
+    inFlightSavesCountRef.current++;
     setSavingIntermediate(true);
+
     try {
       const res = await fetch(`/api/dispatch/incoming-orders/${order.id}/workflow/rate-review`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audit: newAudit, action: 'save' })
+        body: JSON.stringify({ audit: newAudit, action: 'save' }),
+        signal: controller.signal
       });
       const data = await res.json();
       if (res.ok && data.success) {
         onRefresh(); // To update the header status immediately
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        return; // Gracefully ignore intentionally aborted auto-save
+      }
       console.error('Failed to save audit state', err);
     } finally {
-      setSavingIntermediate(false);
+      inFlightSavesCountRef.current = Math.max(0, inFlightSavesCountRef.current - 1);
+      if (inFlightSavesCountRef.current === 0) {
+        setSavingIntermediate(false);
+      }
     }
   };
 
   const handleVerify = (itemId: string, lineItem: any) => {
-    if (!isEditable) return;
+    if (!isEditable || isSubmittingCompleteRef.current) return;
     const nextAudit = {
       ...audit,
       items: {
@@ -74,16 +107,18 @@ export default function RateReviewStep({
         }
       }
     };
+    latestAuditRef.current = nextAudit;
     setAudit(nextAudit);
     saveAuditState(nextAudit);
   };
 
   const handleUnverify = (itemId: string) => {
-    if (!isEditable) return;
+    if (!isEditable || isSubmittingCompleteRef.current) return;
     const nextAudit = { ...audit };
     if (nextAudit.items && nextAudit.items[itemId]) {
       delete nextAudit.items[itemId];
     }
+    latestAuditRef.current = nextAudit;
     setAudit(nextAudit);
     saveAuditState(nextAudit);
   };
@@ -106,6 +141,7 @@ export default function RateReviewStep({
       if (nextAudit.items && nextAudit.items[itemId]) {
         delete nextAudit.items[itemId];
       }
+      latestAuditRef.current = nextAudit;
       setAudit(nextAudit);
       saveAuditState(nextAudit);
     } catch (err: any) {
@@ -121,13 +157,29 @@ export default function RateReviewStep({
   const isAllVerified = totalItems > 0 && pendingItems === 0;
 
   const handleComplete = async () => {
-    if (!isAllVerified || !isEditable) return;
+    if (!isAllVerified || !isEditable || submittingComplete || isSubmittingCompleteRef.current) return;
+    
+    // Lock submission immediately against double-clicks
+    isSubmittingCompleteRef.current = true;
     setSubmittingComplete(true);
+
+    // Cancel any active background auto-save to ensure it doesn't fire or race
+    if (activeSaveControllerRef.current) {
+      activeSaveControllerRef.current.abort();
+      activeSaveControllerRef.current = null;
+    }
+
+    // Use latestAuditRef as the authoritative final audit state
+    const finalAudit = {
+      ...latestAuditRef.current,
+      completedAt: new Date().toISOString()
+    };
+
     try {
       const res = await fetch(`/api/dispatch/incoming-orders/${order.id}/workflow/rate-review`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audit, action: 'complete' })
+        body: JSON.stringify({ audit: finalAudit, action: 'complete' })
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to complete Rate Review');
@@ -135,9 +187,9 @@ export default function RateReviewStep({
       toast.success('Rate Review Completed');
       onRefresh();
     } catch (err: any) {
-      toast.error(err.message);
-    } finally {
+      isSubmittingCompleteRef.current = false;
       setSubmittingComplete(false);
+      toast.error(err.message);
     }
   };
 

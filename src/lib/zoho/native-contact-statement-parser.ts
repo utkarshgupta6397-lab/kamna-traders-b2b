@@ -210,12 +210,26 @@ export async function parseNativeContactStatementPdf(
 
       if (it.x >= 100 && it.x <= 185) {
         currentRow.typeItems.push(it.str);
-      } else if (it.x >= 180 && it.x <= 335) {
+      } else if (it.x >= 320 && it.x <= 390 && isAmountStr(it.str)) {
+        const val = parseAmount(it.str);
+        // In Amount column (x=320..390): positive is debit, negative (x) is credit
+        if (val < 0) {
+          currentRow.credit = Math.abs(val);
+          currentRow.debit = 0;
+        } else {
+          currentRow.debit = val;
+        }
+      } else if (it.x >= 180 && it.x < 335) {
         currentRow.detailItems.push(it.str);
-      } else if (it.x >= 335 && it.x <= 390 && isAmountStr(it.str)) {
-        currentRow.debit = parseAmount(it.str);
       } else if (it.x >= 390 && it.x <= 480 && isAmountStr(it.str)) {
-        currentRow.credit = parseAmount(it.str);
+        const val = parseAmount(it.str);
+        // In Payments column (x=390..480): positive is credit, negative (x) is debit (refund)
+        if (val < 0) {
+          currentRow.debit = Math.abs(val);
+          currentRow.credit = 0;
+        } else {
+          currentRow.credit = val;
+        }
       } else if (it.x >= 480 && it.x <= 580 && isAmountStr(it.str)) {
         currentRow.balance = parseAmount(it.str);
       }
@@ -303,14 +317,23 @@ export async function parseNativeContactStatementPdf(
 
     let txAmount = 0;
     if (cleanType === 'invoice') {
-      txAmount = r.debit;
+      txAmount = Math.abs(r.debit);
     } else if (cleanType === 'payment') {
-      txAmount = r.credit;
+      txAmount = Math.abs(r.credit);
     } else if (cleanType === 'refund') {
       txAmount = Math.abs(r.credit !== 0 ? r.credit : r.debit);
     } else if (cleanType === 'credit_note') {
-      txAmount = r.credit !== 0 ? r.credit : r.debit;
+      txAmount = Math.abs(r.credit !== 0 ? r.credit : r.debit);
+    } else {
+      txAmount = Math.abs(r.credit !== 0 ? r.credit : r.debit);
     }
+
+    const rowDebit = cleanType === 'invoice' || cleanType === 'refund' 
+      ? txAmount 
+      : (cleanType === 'payment' || cleanType === 'credit_note' ? 0 : r.debit);
+    const rowCredit = cleanType === 'payment' || cleanType === 'credit_note' 
+      ? txAmount 
+      : (cleanType === 'invoice' || cleanType === 'refund' ? 0 : r.credit);
 
     return {
       rowNumber: idx + 1,
@@ -325,8 +348,8 @@ export async function parseNativeContactStatementPdf(
       invoiceNumber,
       paymentNumber,
       details: rawDetails,
-      debit: cleanType === 'invoice' ? r.debit : (cleanType === 'refund' ? txAmount : 0),
-      credit: cleanType === 'payment' ? r.credit : (cleanType === 'credit_note' ? txAmount : 0),
+      debit: rowDebit,
+      credit: rowCredit,
       amount: txAmount,
       balance: r.balance,
       applicationPairs

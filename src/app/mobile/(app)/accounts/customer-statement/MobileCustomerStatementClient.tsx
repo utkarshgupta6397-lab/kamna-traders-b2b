@@ -303,7 +303,7 @@ export default function MobileCustomerStatementClient({ userName }: { userName: 
     setLoadingTxId(tx.id);
     try {
       const endpoint = tx.type === 'invoice' ? 'invoice' : 'bill';
-      const res = await fetch(`/api/admin/customer-statement/${endpoint}/${tx.id}`);
+      const res = await fetch(`/api/admin/customer-statement/${endpoint}/${encodeURIComponent(tx.id)}`);
       const data = await res.json();
       
       if (data.success && data.data) {

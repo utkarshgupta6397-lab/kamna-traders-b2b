@@ -72,6 +72,16 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async rewrites() {
+    return {
+      fallback: [
+        {
+          source: '/api/admin/dcr/invoices/:path*',
+          destination: '/api/admin/customer-statement/invoice/:path*',
+        },
+      ],
+    };
+  },
   /* config options here */
   experimental: {
     optimizePackageImports: ['lucide-react', 'date-fns', 'echarts', 'recharts'],

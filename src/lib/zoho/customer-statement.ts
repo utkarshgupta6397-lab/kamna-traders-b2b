@@ -282,7 +282,7 @@ export async function getCustomerInvoices(
   }
 }
 
-export async function getCustomerInvoiceById(invoiceId: string): Promise<{
+export async function getCustomerInvoiceById(invoiceIdOrNumber: string): Promise<{
   success: boolean;
   data?: any;
   raw?: any;
@@ -294,18 +294,74 @@ export async function getCustomerInvoiceById(invoiceId: string): Promise<{
     const accessToken = await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    const url = `${API_BASE_URL}/books/v3/invoices/${invoiceId}?organization_id=${orgId}`;
-    const response = await fetch(url, {
+    let cleanId = decodeURIComponent(invoiceIdOrNumber).trim();
+    if (cleanId.toLowerCase().startsWith('inv-')) {
+      cleanId = cleanId.slice(4).trim();
+    } else if (cleanId.toLowerCase().startsWith('invoice-')) {
+      cleanId = cleanId.slice(8).trim();
+    }
+
+    let targetInvoiceId: string | null = null;
+
+    // If cleanId is purely numeric (Zoho internal ID, 15+ digits), attempt direct fetch first
+    if (/^\d{15,}$/.test(cleanId)) {
+      const url = `${API_BASE_URL}/books/v3/invoices/${cleanId}?organization_id=${orgId}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+      });
+      const data = await response.json();
+      if (response.ok && data.invoice) {
+        return { success: true, data: data.invoice, raw: data };
+      }
+    }
+
+    // Search by invoice_number in Zoho Books
+    const searchUrl = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&invoice_number=${encodeURIComponent(cleanId)}`;
+    const searchRes = await fetch(searchUrl, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
     });
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { success: false, error: data.message || 'Failed to fetch invoice details', raw: data };
+    const searchData = await searchRes.json();
+    if (searchRes.ok && searchData.invoices && searchData.invoices.length > 0) {
+      const matched = searchData.invoices.find((inv: any) =>
+        inv.invoice_number?.toLowerCase() === cleanId.toLowerCase()
+      ) || searchData.invoices[0];
+      targetInvoiceId = matched.invoice_id;
     }
-    
-    return { success: true, data: data.invoice, raw: data };
+
+    // Fallback: search_text
+    if (!targetInvoiceId) {
+      const textUrl = `${API_BASE_URL}/books/v3/invoices?organization_id=${orgId}&search_text=${encodeURIComponent(cleanId)}`;
+      const textRes = await fetch(textUrl, {
+        method: 'GET',
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+      });
+      const textData = await textRes.json();
+      if (textRes.ok && textData.invoices && textData.invoices.length > 0) {
+        const matched = textData.invoices.find((inv: any) =>
+          inv.invoice_number?.toLowerCase() === cleanId.toLowerCase()
+        ) || textData.invoices[0];
+        targetInvoiceId = matched.invoice_id;
+      }
+    }
+
+    if (!targetInvoiceId) {
+      return { success: false, error: `Invoice '${cleanId}' not found in Zoho Books.` };
+    }
+
+    // Fetch full invoice details (with line_items)
+    const detailUrl = `${API_BASE_URL}/books/v3/invoices/${targetInvoiceId}?organization_id=${orgId}`;
+    const detailRes = await fetch(detailUrl, {
+      method: 'GET',
+      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+    });
+    const detailData = await detailRes.json();
+    if (!detailRes.ok) {
+      return { success: false, error: detailData.message || 'Failed to fetch invoice details', raw: detailData };
+    }
+
+    return { success: true, data: detailData.invoice, raw: detailData };
   } catch (error: any) {
     return { success: false, error: error.message || 'Internal Server Error' };
   }
@@ -686,7 +742,7 @@ export async function getVendorBills(
   }
 }
 
-export async function getVendorBillById(billId: string): Promise<{
+export async function getVendorBillById(billIdOrNumber: string): Promise<{
   success: boolean;
   data?: any;
   raw?: any;
@@ -698,18 +754,71 @@ export async function getVendorBillById(billId: string): Promise<{
     const accessToken = await getZohoTokens();
     if (!accessToken) throw new Error('Failed to get Zoho Access Token. Please re-authenticate.');
 
-    const url = `${API_BASE_URL}/books/v3/bills/${billId}?organization_id=${orgId}`;
-    const response = await fetch(url, {
+    let cleanId = decodeURIComponent(billIdOrNumber).trim();
+    if (cleanId.toLowerCase().startsWith('bill-')) {
+      cleanId = cleanId.slice(5).trim();
+    }
+
+    let targetBillId: string | null = null;
+
+    // If cleanId is purely numeric (Zoho internal ID, 15+ digits), attempt direct fetch first
+    if (/^\d{15,}$/.test(cleanId)) {
+      const url = `${API_BASE_URL}/books/v3/bills/${cleanId}?organization_id=${orgId}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+      });
+      const data = await response.json();
+      if (response.ok && data.bill) {
+        return { success: true, data: data.bill, raw: data };
+      }
+    }
+
+    // Search by bill_number in Zoho Books
+    const searchUrl = `${API_BASE_URL}/books/v3/bills?organization_id=${orgId}&bill_number=${encodeURIComponent(cleanId)}`;
+    const searchRes = await fetch(searchUrl, {
       method: 'GET',
       headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
     });
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { success: false, error: data.message || 'Failed to fetch bill details', raw: data };
+    const searchData = await searchRes.json();
+    if (searchRes.ok && searchData.bills && searchData.bills.length > 0) {
+      const matched = searchData.bills.find((b: any) =>
+        b.bill_number?.toLowerCase() === cleanId.toLowerCase()
+      ) || searchData.bills[0];
+      targetBillId = matched.bill_id;
     }
-    
-    return { success: true, data: data.bill, raw: data };
+
+    // Fallback: search_text
+    if (!targetBillId) {
+      const textUrl = `${API_BASE_URL}/books/v3/bills?organization_id=${orgId}&search_text=${encodeURIComponent(cleanId)}`;
+      const textRes = await fetch(textUrl, {
+        method: 'GET',
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+      });
+      const textData = await textRes.json();
+      if (textRes.ok && textData.bills && textData.bills.length > 0) {
+        const matched = textData.bills.find((b: any) =>
+          b.bill_number?.toLowerCase() === cleanId.toLowerCase()
+        ) || textData.bills[0];
+        targetBillId = matched.bill_id;
+      }
+    }
+
+    if (!targetBillId) {
+      return { success: false, error: `Bill '${cleanId}' not found in Zoho Books.` };
+    }
+
+    const detailUrl = `${API_BASE_URL}/books/v3/bills/${targetBillId}?organization_id=${orgId}`;
+    const detailRes = await fetch(detailUrl, {
+      method: 'GET',
+      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+    });
+    const detailData = await detailRes.json();
+    if (!detailRes.ok) {
+      return { success: false, error: detailData.message || 'Failed to fetch bill details', raw: detailData };
+    }
+
+    return { success: true, data: detailData.bill, raw: detailData };
   } catch (error: any) {
     return { success: false, error: error.message || 'Internal Server Error' };
   }

@@ -21,9 +21,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           serialAllocations: true,
         },
       });
-    } else {
+    } else if (/^\d{15,}$/.test(id)) {
       invoice = await prisma.dcrInvoice.findUnique({
         where: { zohoInvoiceId: id },
+        include: {
+          items: true,
+          serialAllocations: true,
+        },
+      });
+    } else {
+      const cleanNumber = id.replace(/^(inv-|invoice-)/i, '').trim();
+      invoice = await prisma.dcrInvoice.findFirst({
+        where: { invoiceNumber: cleanNumber },
         include: {
           items: true,
           serialAllocations: true,
@@ -32,6 +41,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     }
 
     if (!invoice) {
+      // Fallback: fetch from Zoho directly
+      try {
+        const { getCustomerInvoiceById } = await import('@/lib/zoho/customer-statement');
+        const zohoRes = await getCustomerInvoiceById(id);
+        if (zohoRes.success && zohoRes.data) {
+          return NextResponse.json({
+            success: true,
+            invoice: zohoRes.data,
+            data: zohoRes.data,
+          });
+        }
+      } catch (e) {
+        // fall through to 404
+      }
+
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
 

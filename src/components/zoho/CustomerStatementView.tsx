@@ -394,7 +394,7 @@ export default function CustomerStatementView() {
         setTxErrors(prev => ({ ...prev, [txId]: '' }));
         try {
           const endpoint = txType === 'invoice' ? 'invoice' : 'bill';
-          const res = await fetch(`/api/admin/customer-statement/${endpoint}/${txId}`);
+          const res = await fetch(`/api/admin/customer-statement/${endpoint}/${encodeURIComponent(txId)}`);
           const data = await res.json();
           if (data.success && data.data && data.data.line_items) {
             setTxLineItems(prev => ({ ...prev, [txId]: data.data.line_items }));
@@ -794,7 +794,7 @@ export default function CustomerStatementView() {
           
           try {
             console.log(`[DRAFT CHECK] Fetching status for invoice ID: ${inv.id}`);
-            const res = await fetch(`/api/admin/dcr/invoices/${inv.id}`);
+            const res = await fetch(`/api/admin/customer-statement/invoice/${encodeURIComponent(inv.id)}`);
             if (res.ok) {
               const data = await res.json();
               const invoice = data.invoice || data.data;

@@ -163,6 +163,7 @@ export async function parseNativeContactStatementPdf(
     }
 
     let inTable = false;
+    let tableHeaderY: number | null = null;
     let currentRow: any = null;
 
     for (let i = 0; i < items.length; i++) {
@@ -172,17 +173,27 @@ export async function parseNativeContactStatementPdf(
       if (inTable && (it.str.includes('Balance Due') || it.str.includes('Aging Summary') || it.str.includes('Period (in Days)'))) {
         if (currentRow) { rawRows.push(currentRow); currentRow = null; }
         inTable = false;
+        tableHeaderY = null;
         break;
       }
 
-      if (it.str === 'Date' && it.x >= 40 && it.x <= 60 && it.y <= (p === 1 ? 440 : 790)) {
-        inTable = true;
-        continue;
+      if (!inTable && it.str === 'Date' && it.x >= 40 && it.x <= 60 && it.y <= (p === 1 ? 580 : 800)) {
+        const hasHeaderSiblings = items.some(
+          other => other !== it &&
+            Math.abs(other.y - it.y) <= 3 &&
+            ['Transactions', 'Details', 'Amount', 'Payments', 'Balance'].includes(other.str)
+        );
+        if (hasHeaderSiblings) {
+          inTable = true;
+          tableHeaderY = it.y;
+          continue;
+        }
       }
 
       if (!inTable) continue;
 
-      if (['Transactions', 'Details', 'Amount', 'Payments', 'Balance'].includes(it.str) && it.y > (p === 1 ? 420 : 760)) {
+      if (tableHeaderY !== null && Math.abs(it.y - tableHeaderY) <= 3 &&
+          ['Transactions', 'Details', 'Amount', 'Payments', 'Balance'].includes(it.str)) {
         continue;
       }
 

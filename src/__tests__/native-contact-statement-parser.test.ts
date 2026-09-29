@@ -188,6 +188,60 @@ describe('Native Contact Statement Parser & Helpers', () => {
     });
   });
 
+  describe('Real PDF Regression: Swissmatic (Contact ID: 1759923000000112204)', () => {
+    const pdfPath = path.resolve(__dirname, '../../scratch/statement-audit/1759923000000112204-swissmatic-native-statement.pdf');
+    let parsed: any;
+
+    before(async () => {
+      assert.equal(fs.existsSync(pdfPath), true, 'Swissmatic regression fixture PDF must exist');
+      const buf = fs.readFileSync(pdfPath);
+      parsed = await parseNativeContactStatementPdf(buf);
+    });
+
+    it('recognizes page-1 table header at y=460 and parses total 4 rows (1 OB + 3 financial)', () => {
+      assert.equal(parsed.totalRows, 4);
+      assert.equal(parsed.accountSummary.openingBalance, 0);
+      assert.equal(parsed.accountSummary.balanceDue, 140);
+    });
+
+    it('Row 1: Opening balance = 0 is recognized', () => {
+      const obRow = parsed.rows[0];
+      assert.equal(obRow.isOpeningBalance, true);
+      assert.equal(obRow.type, 'opening_balance');
+      assert.equal(obRow.balance, 0);
+    });
+
+    it('Row 2: PT-KT/26-27/3848 Payment Received ₹52,500 credit, balance -₹52,500', () => {
+      const row = parsed.rows.find((r: any) => r.reference === 'PT-KT/26-27/3848');
+      assert.ok(row, 'PT-KT/26-27/3848 must be parsed');
+      assert.equal(row.type, 'payment');
+      assert.equal(row.date, '28 Sep 2026');
+      assert.equal(row.credit, 52500);
+      assert.equal(row.debit, 0);
+      assert.equal(row.balance, -52500);
+    });
+
+    it('Row 3: PT-KT/26-27/3844 Payment Received ₹70,000 credit, balance -₹1,22,500', () => {
+      const row = parsed.rows.find((r: any) => r.reference === 'PT-KT/26-27/3844');
+      assert.ok(row, 'PT-KT/26-27/3844 must be parsed');
+      assert.equal(row.type, 'payment');
+      assert.equal(row.date, '28 Sep 2026');
+      assert.equal(row.credit, 70000);
+      assert.equal(row.debit, 0);
+      assert.equal(row.balance, -122500);
+    });
+
+    it('Row 4: KT/26-27/3470 Invoice ₹1,22,640 debit, balance ₹140', () => {
+      const row = parsed.rows.find((r: any) => r.reference === 'KT/26-27/3470' || r.invoiceNumber === 'KT/26-27/3470');
+      assert.ok(row, 'KT/26-27/3470 must be parsed');
+      assert.equal(row.type, 'invoice');
+      assert.equal(row.date, '29 Sep 2026');
+      assert.equal(row.debit, 122640);
+      assert.equal(row.credit, 0);
+      assert.equal(row.balance, 140);
+    });
+  });
+
   describe('Error handling', () => {
     it('throws NativeStatementParseError on empty or invalid buffer', async () => {
       await assert.rejects(
@@ -199,3 +253,4 @@ describe('Native Contact Statement Parser & Helpers', () => {
     });
   });
 });
+

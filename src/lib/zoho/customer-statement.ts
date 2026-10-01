@@ -1015,7 +1015,8 @@ export async function getHybridJournals(contactId: string, associatedVendorId: s
       })
     );
       
-    const validJournals = detailedJournals.filter(Boolean) as CustomerStatementJournal[];
+    const validJournals = (detailedJournals.filter(Boolean) as CustomerStatementJournal[])
+      .filter(j => !isNettingTransaction(j));
     
     return {
       success: true,
@@ -1026,6 +1027,40 @@ export async function getHybridJournals(contactId: string, associatedVendorId: s
   } catch (error: any) {
     return { success: false, error: error.message || 'Internal Server Error' };
   }
+}
+
+/**
+ * Authoritative helper to identify Zoho Books Netting transactions.
+ * Netting is an AR/AP offset between linked customer and vendor records
+ * which must never participate in statement ledger presentation or balance calculations.
+ */
+export function isNettingTransaction(tx: {
+  type?: string;
+  rawType?: string;
+  entryNumber?: string;
+  reference?: string;
+  referenceNumber?: string;
+  description?: string;
+  details?: string;
+  paymentNumber?: string;
+  paymentReference?: string;
+  isNetting?: boolean;
+}): boolean {
+  if (!tx) return false;
+  if (tx.isNetting) return true;
+  if (tx.type === 'netting') return true;
+  if (tx.rawType && /netting/i.test(tx.rawType)) return true;
+  if (tx.entryNumber && /netting/i.test(tx.entryNumber)) return true;
+
+  const ref = (tx.referenceNumber || tx.reference || tx.paymentNumber || tx.paymentReference || '').trim();
+  if (/^net[-_]?\d+/i.test(ref) || /^netting$/i.test(ref)) return true;
+
+  const desc = (tx.description || tx.details || '').trim();
+  if (/^netting\b/i.test(desc) || /^net[-_]\d+/i.test(desc) || /\bnet-\d+/i.test(desc)) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -1128,25 +1163,29 @@ export async function getCustomerStatementHybridNative(
   const custData = custRes.data;
   const vendData = vendRes.data;
 
-  // Tag customer transactions
-  const customerTransactions: StatementTransaction[] = custData.transactions.map(tx => ({
-    ...tx,
-    customerNetEffect: tx.netEffect,
-    vendorNetEffect: 0,
-  }));
+  // Tag customer transactions (excluding any Netting transactions)
+  const customerTransactions: StatementTransaction[] = custData.transactions
+    .filter(tx => !isNettingTransaction(tx))
+    .map(tx => ({
+      ...tx,
+      customerNetEffect: tx.netEffect,
+      vendorNetEffect: 0,
+    }));
 
-  // Tag vendor transactions
-  const vendorTransactions: StatementTransaction[] = vendData.transactions.map(tx => ({
-    ...tx,
-    customerNetEffect: 0,
-    vendorNetEffect: tx.netEffect,
-  }));
+  // Tag vendor transactions (excluding any Netting transactions)
+  const vendorTransactions: StatementTransaction[] = vendData.transactions
+    .filter(tx => !isNettingTransaction(tx))
+    .map(tx => ({
+      ...tx,
+      customerNetEffect: 0,
+      vendorNetEffect: tx.netEffect,
+    }));
 
-  // Merge customer and vendor transactions
+  // Merge customer and vendor transactions, guaranteeing complete Netting exclusion
   let merged: StatementTransaction[] = [
     ...customerTransactions,
     ...vendorTransactions
-  ];
+  ].filter(tx => !isNettingTransaction(tx));
 
   // Optional date filtering
   if (minDate) {
@@ -1396,6 +1435,8 @@ export async function getCustomerStatementHybrid(
       };
     }),
   ];
+
+  mergedRaw = mergedRaw.filter(tx => !isNettingTransaction(tx));
 
   if (minDate) {
     mergedRaw = mergedRaw.filter(tx => {

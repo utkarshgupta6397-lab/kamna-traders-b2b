@@ -17,6 +17,7 @@ export interface NativeStatementParsedRow {
   type: 'opening_balance' | 'invoice' | 'payment' | 'refund' | 'payment_applied' | 'credit_note' | 'other';
   isInformational: boolean;
   isOpeningBalance: boolean;
+  isNetting?: boolean;
   reference: string;
   invoiceNumber?: string;
   paymentNumber?: string;
@@ -346,6 +347,8 @@ export async function parseNativeContactStatementPdf(
       ? txAmount 
       : (cleanType === 'invoice' || cleanType === 'refund' ? 0 : r.credit);
 
+    const isNetting = /netting/i.test(rawType) || /^net[-_]?\d+/i.test(reference) || /netting/i.test(rawDetails) || /\bnet-\d+/i.test(rawDetails);
+
     return {
       rowNumber: idx + 1,
       page: r.page,
@@ -355,6 +358,7 @@ export async function parseNativeContactStatementPdf(
       type: cleanType,
       isInformational,
       isOpeningBalance,
+      isNetting,
       reference,
       invoiceNumber,
       paymentNumber,

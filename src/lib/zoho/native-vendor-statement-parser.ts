@@ -17,6 +17,7 @@ export interface NativeVendorStatementParsedRow {
   type: 'opening_balance' | 'bill' | 'payment_made' | 'vendor_credit' | 'other';
   isInformational: boolean;
   isOpeningBalance: boolean;
+  isNetting?: boolean;
   reference: string;
   billNumber?: string;
   paymentNumber?: string;
@@ -266,6 +267,8 @@ export async function parseNativeVendorStatementPdf(
     const absPaid = Math.abs(r.paidAmount);
     const amount = absBilled > 0 ? absBilled : (absPaid > 0 ? absPaid : 0);
 
+    const isNetting = /netting/i.test(rawType) || /^net[-_]?\d+/i.test(reference) || /netting/i.test(rawDetails) || /\bnet-\d+/i.test(rawDetails);
+
     return {
       rowNumber: idx + 1,
       page: r.page,
@@ -275,6 +278,7 @@ export async function parseNativeVendorStatementPdf(
       type: cleanType,
       isInformational,
       isOpeningBalance,
+      isNetting,
       reference,
       billNumber,
       paymentNumber,

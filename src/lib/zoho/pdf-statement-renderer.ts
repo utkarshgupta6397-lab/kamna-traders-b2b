@@ -1,3 +1,5 @@
+import { isNettingTransaction } from './customer-statement';
+
 export type Customer = {
   contactId: string;
   contactName: string;
@@ -318,7 +320,7 @@ export async function renderStatementToPdf(
   const cGreen: [number, number, number] = [5,   150, 105];
 
   // ─── Clip / Truncation ───────────────────────────────────────────────────
-  let visibleTxs = s.transactions;
+  let visibleTxs = s.transactions.filter(t => !isNettingTransaction(t));
   let isTruncated = false;
   const isGroup = !!(s as any).isGroup;
 
@@ -532,7 +534,7 @@ export async function renderStatementToPdf(
       const firmName = stmt.customer.companyName || stmt.customer.contactName || 'Unknown Firm';
       const fc = options.firmColors?.[stmt.customer.contactId] || { hex: [100,116,139] };
 
-      const fVisibleTxs = options.isExpanded ? stmt.transactions : stmt.transactions.slice(-12);
+      const fVisibleTxs = (options.isExpanded ? stmt.transactions : stmt.transactions.slice(-12)).filter((tx: any) => !isNettingTransaction(tx));
       const fInvoiced   = fVisibleTxs.filter((tx: any) => tx.type === 'invoice').reduce((a: number, t: any) => a + Math.abs(t.netEffect), 0);
       const fPaid       = fVisibleTxs.filter((tx: any) => tx.type === 'payment').reduce((a: number, t: any) => a + Math.abs(t.netEffect), 0);
       const fOpening    = fVisibleTxs.length > 0 ? (fVisibleTxs[0].balanceAfter - fVisibleTxs[0].netEffect) : stmt.closingBalance;

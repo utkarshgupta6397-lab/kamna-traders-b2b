@@ -11,7 +11,8 @@ import {
   CustomerStatementInvoice,
   StatementFetchOptions,
   getVendorPayments,
-  CustomerStatementVendorPayment
+  CustomerStatementVendorPayment,
+  isNettingTransaction
 } from './customer-statement';
 import { getTodayIST } from './native-contact-statement';
 
@@ -137,8 +138,8 @@ export async function getNativeVendorStatement(
       }
     }
 
-    // Filter financial rows
-    const financialRows = parsed.rows.filter(r => !r.isOpeningBalance && !r.isInformational);
+    // Filter financial rows (excluding opening balance, informational rows, and Netting)
+    const financialRows = parsed.rows.filter(r => !r.isOpeningBalance && !r.isInformational && !isNettingTransaction(r));
 
     // 4. Transform parsed rows into ERP StatementTransaction[]
     const transactions: StatementTransaction[] = [];
@@ -262,26 +263,48 @@ export async function getNativeVendorStatement(
 
     const unpaidBills: CustomerStatementInvoice[] = [];
 
+    // Track cumulative netting offset so transactions appearing after Netting (if any)
+    // have their balanceAfter restored, and closingBalance restores the netting deduction.
+    let cumulativeNettingOffset = 0;
+    const nettingPriorToRow = new Map<any, number>();
+    for (const r of parsed.rows) {
+      if (isNettingTransaction(r)) {
+        cumulativeNettingOffset += (r.paidAmount || r.amount || r.billedAmount || 0);
+      } else {
+        nettingPriorToRow.set(r, cumulativeNettingOffset);
+      }
+    }
+
+    // Adjust balanceAfter for each transaction if any prior Netting was excluded
+    for (let i = 0; i < transactions.length; i++) {
+      const rawRow = financialRows[i];
+      const priorNetting = rawRow ? (nettingPriorToRow.get(rawRow) || 0) : 0;
+      if (priorNetting > 0) {
+        transactions[i].balanceAfter = Math.round((transactions[i].balanceAfter + priorNetting) * 100) / 100;
+      }
+    }
+
+    const openingBalance = parsed.accountSummary.openingBalance;
+    const closingBalance = Math.round((parsed.accountSummary.balanceDue + cumulativeNettingOffset) * 100) / 100;
+
     // Assemble CustomerStatement object
     const vendorCustomerObj: CustomerStatementCustomer = vendorMetadata || {
       contactId: vendorId,
       contactName: parsed.vendorName || 'Vendor',
-      outstandingPayable: parsed.accountSummary.balanceDue,
+      outstandingPayable: closingBalance,
       outstandingReceivable: 0,
       contactType: 'vendor'
     };
-
-    const openingBalance = parsed.accountSummary.openingBalance;
-    const closingBalance = parsed.accountSummary.balanceDue;
+    vendorCustomerObj.outstandingPayable = closingBalance;
 
     const statementData: CustomerStatement = {
       customer: vendorCustomerObj,
       openingBalance,
       closingBalance,
       outstandingReceivable: 0,
-      outstandingPayable: parsed.accountSummary.balanceDue,
+      outstandingPayable: closingBalance,
       customerNet: 0,
-      vendorNet: parsed.accountSummary.balanceDue,
+      vendorNet: closingBalance,
       isHybrid: false,
       transactions,
       transactionCount: transactions.length,

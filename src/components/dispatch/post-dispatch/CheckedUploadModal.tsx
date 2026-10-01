@@ -5,6 +5,8 @@ import { Camera, X, Loader2, Upload, AlertCircle, Trash2, AlertTriangle, Eye, Ar
 import toast from 'react-hot-toast';
 import { compressImage } from '@/lib/image-compress';
 import MobileImagePreview from '@/components/mobile/MobileImagePreview';
+import { format } from 'date-fns';
+import { useSharedClock } from '@/hooks/useSharedClock';
 
 export interface ImportedEvidenceItem {
   id: string;
@@ -44,15 +46,37 @@ export default function CheckedUploadModal({
     title: '',
   });
 
-  const [checkedBy, setCheckedBy] = useState(currentUserName || '');
-  // Format current local date-time for datetime-local input (YYYY-MM-DDTHH:mm)
-  const nowStr = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
-  const [checkedAt, setCheckedAt] = useState(nowStr);
+  const [sessionUserName, setSessionUserName] = useState<string>('');
+  const [mounted, setMounted] = useState(false);
+  const nowMs = useSharedClock(1000, isOpen);
+  const uploaderName = currentUserName?.trim() || sessionUserName.trim() || 'Warehouse Staff';
+  const displayTime = mounted && nowMs ? new Date(nowMs) : new Date();
+  const formattedUploadedAt = format(displayTime, "d MMM yyyy 'at' h:mm a");
+
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Fetch session user name if currentUserName prop is not supplied
+  useEffect(() => {
+    if (currentUserName || !isOpen) return;
+    let isMounted = true;
+    fetch('/api/auth/session')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (isMounted && data?.session?.name) {
+          setSessionUserName(data.session.name);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUserName, isOpen]);
 
   // Auto-fetch eligible receiving check evidence if not provided via props
   useEffect(() => {
@@ -160,20 +184,6 @@ export default function CheckedUploadModal({
     // Prevent duplicate triggers if already submitting
     if (submitting) return;
 
-    if (!checkedBy.trim()) {
-      const msg = 'Checked By name is required.';
-      setErrorMessage(msg);
-      toast.error(msg);
-      return;
-    }
-
-    if (!checkedAt) {
-      const msg = 'Checked At timestamp is required.';
-      setErrorMessage(msg);
-      toast.error(msg);
-      return;
-    }
-
     if (totalEvidenceCount === 0) {
       const msg = 'At least one photo is required.';
       setErrorMessage(msg);
@@ -220,9 +230,14 @@ export default function CheckedUploadModal({
         throw new Error('At least one valid photo is required.');
       }
 
+      const submissionTime = new Date();
+      const finalUploader = uploaderName;
+
       const formData = new FormData();
-      formData.append('checkedBy', checkedBy.trim());
-      formData.append('checkedAt', new Date(checkedAt).toISOString());
+      formData.append('checkedBy', finalUploader);
+      formData.append('checkedAt', submissionTime.toISOString());
+      formData.append('uploadedBy', finalUploader);
+      formData.append('uploadedAt', submissionTime.toISOString());
       filesToSubmit.forEach((file) => {
         formData.append('files', file);
       });
@@ -312,7 +327,7 @@ export default function CheckedUploadModal({
           {/* Header */}
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70 shrink-0">
             <div>
-              <h3 className="font-bold text-[#1A2766] text-base">Checked By / Checked At</h3>
+              <h3 className="font-bold text-[#1A2766] text-base">Physical Check Evidence</h3>
               <p className="text-xs text-slate-500 truncate max-w-[260px]">
                 {invoiceNumber} • {customerName}
               </p>
@@ -517,36 +532,36 @@ export default function CheckedUploadModal({
               </span>
             </div>
 
-            {/* Checked By (manual entry, does not have to equal logged-in uploader) */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Checked By *
-              </label>
-              <input
-                type="text"
-                value={checkedBy}
-                onChange={(e) => setCheckedBy(e.target.value)}
-                placeholder="e.g. Rahul Sharma"
-                disabled={submitting}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
-              />
-              <span className="text-[11px] text-slate-500 mt-1 block">
-                Enter the name of the staff member who conducted the physical check.
-              </span>
-            </div>
-
-            {/* Checked At (manual entry) */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Checked At *
-              </label>
-              <input
-                type="datetime-local"
-                value={checkedAt}
-                onChange={(e) => setCheckedAt(e.target.value)}
-                disabled={submitting}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
-              />
+            {/* Upload Metadata (Read-only, automatically recorded) */}
+            <div
+              className="rounded-2xl bg-slate-50 border border-slate-200/70 p-3.5 text-xs"
+              role="region"
+              aria-label="Upload Metadata"
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">
+                    Uploaded By
+                  </span>
+                  <span
+                    className="font-medium text-slate-800 text-xs truncate block select-text"
+                    title={uploaderName}
+                  >
+                    {uploaderName}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">
+                    Uploaded At
+                  </span>
+                  <span className="font-medium text-slate-800 text-xs block select-text">
+                    {formattedUploadedAt}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-2 pt-1.5 border-t border-slate-200/50 flex items-center justify-between text-[10px] text-slate-500">
+                <span>Automatically recorded on submission</span>
+              </div>
             </div>
 
             <div className="rounded-xl bg-amber-50 border border-amber-200/60 p-3 text-xs text-amber-800 flex items-start gap-2">
@@ -570,7 +585,7 @@ export default function CheckedUploadModal({
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={submitting || totalEvidenceCount === 0 || !checkedBy.trim()}
+              disabled={submitting || totalEvidenceCount === 0}
               className="flex-1 py-3 px-4 rounded-xl bg-[#1A2766] hover:bg-[#141f52] text-white font-bold text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-blue-900/10"
             >
               {submitting ? (

@@ -741,6 +741,7 @@ export default function MobilePostDispatchView({
           isOpen={!!detailInvoiceId}
           onClose={() => setDetailInvoiceId(null)}
           invoiceId={detailInvoiceId}
+          currentUserName={user.name}
           onPhotoClick={(url, title) => setPreviewPhoto({ isOpen: true, url, title })}
           onUpdated={() => fetchData(false)}
         />

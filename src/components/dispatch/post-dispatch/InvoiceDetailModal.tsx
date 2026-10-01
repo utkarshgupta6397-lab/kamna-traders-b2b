@@ -29,6 +29,7 @@ interface InvoiceDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   invoiceId: string;
+  currentUserName?: string;
   onPhotoClick: (url: string, title?: string) => void;
   onUpdated: () => void;
 }
@@ -54,6 +55,7 @@ export default function InvoiceDetailModal({
   isOpen,
   onClose,
   invoiceId,
+  currentUserName,
   onPhotoClick,
   onUpdated,
 }: InvoiceDetailModalProps) {
@@ -684,6 +686,7 @@ export default function InvoiceDetailModal({
             invoiceId={invoice.id}
             invoiceNumber={invoice.invoiceNumber}
             customerName={invoice.customerName}
+            currentUserName={currentUserName}
             onSuccess={() => {
               fetchDetail();
               onUpdated();

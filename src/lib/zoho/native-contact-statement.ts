@@ -7,7 +7,8 @@ import {
   StatementTransaction,
   StatementFetchOptions,
   getCustomerById,
-  getCustomerPayments
+  getCustomerPayments,
+  isNettingTransaction
 } from './customer-statement';
 import {
   parseNativeContactStatementPdf,
@@ -121,7 +122,7 @@ export async function getNativeCustomerStatement(
   console.log(`[Native Statement] Parsed ${parsed.totalRows} rows across statement period: ${parsed.statementPeriod}`);
 
   // Fetch base customer details and customer payments list concurrently
-  const financialRows = parsed.rows.filter(r => !r.isOpeningBalance && !r.isInformational);
+  const financialRows = parsed.rows.filter(r => !r.isOpeningBalance && !r.isInformational && !isNettingTransaction(r));
   const paymentRows = financialRows.filter(r => r.type === 'payment');
 
   const [customerResult, paymentsListResult] = await Promise.all([
@@ -347,8 +348,32 @@ export async function getNativeCustomerStatement(
 
   const unpaidInvoices: CustomerStatementInvoice[] = [];
 
-  const closingBalance = parsed.accountSummary.balanceDue;
+  // Track cumulative netting credit so transactions appearing after Netting (if any)
+  // have their balanceAfter restored, and closingBalance restores the netting deduction.
+  let cumulativeNettingCredit = 0;
+  const nettingPriorToRow = new Map<any, number>();
+  for (const r of parsed.rows) {
+    if (isNettingTransaction(r)) {
+      cumulativeNettingCredit += (r.credit || r.amount || 0);
+    } else {
+      nettingPriorToRow.set(r, cumulativeNettingCredit);
+    }
+  }
+
+  // Adjust balanceAfter for each transaction if any prior Netting was excluded
+  for (let i = 0; i < transactions.length; i++) {
+    const rawRow = financialRows[i];
+    const priorNetting = rawRow ? (nettingPriorToRow.get(rawRow) || 0) : 0;
+    if (priorNetting > 0) {
+      transactions[i].balanceAfter = Math.round((transactions[i].balanceAfter + priorNetting) * 100) / 100;
+    }
+  }
+
   const openingBalance = parsed.accountSummary.openingBalance;
+  const closingBalance = Math.round((parsed.accountSummary.balanceDue + cumulativeNettingCredit) * 100) / 100;
+
+  customer.outstandingReceivable = closingBalance;
+  customer.outstandingReceivableFormatted = `₹${closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
   const paymentListCalls = (paymentsListResult as any)?._meta?.apiCalls || (customerPayments.length > 0 ? 1 : 0);
   const totalPaymentApiCalls = paymentListCalls;

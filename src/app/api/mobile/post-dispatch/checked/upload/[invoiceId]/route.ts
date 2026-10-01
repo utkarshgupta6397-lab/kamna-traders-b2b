@@ -77,28 +77,18 @@ export async function POST(
     }
 
     const formData = await request.formData();
-    const checkedBy = (formData.get('checkedBy') as string | null) || '';
-    const checkedAtStr = (formData.get('checkedAt') as string | null) || '';
+    const rawUploadedBy = (formData.get('uploadedBy') as string | null) || (formData.get('checkedBy') as string | null) || '';
+    const rawUploadedAt = (formData.get('uploadedAt') as string | null) || (formData.get('checkedAt') as string | null) || '';
     const files = formData.getAll('files') as File[];
 
-    if (!checkedBy.trim()) {
-      return NextResponse.json(
-        { error: 'Checked By name is required.' },
-        { status: 400 }
-      );
-    }
+    const uploaderUserId = session.userId || session.id;
+    const uploaderUserName = rawUploadedBy.trim() || session.name || 'Warehouse Staff';
+    const checkedBy = uploaderUserName;
+    const checkedAtDate = rawUploadedAt.trim() ? new Date(rawUploadedAt) : new Date();
 
-    if (!checkedAtStr.trim()) {
-      return NextResponse.json(
-        { error: 'Checked At timestamp is required.' },
-        { status: 400 }
-      );
-    }
-
-    const checkedAtDate = new Date(checkedAtStr);
     if (isNaN(checkedAtDate.getTime())) {
       return NextResponse.json(
-        { error: 'Invalid Checked At timestamp.' },
+        { error: 'Invalid upload timestamp.' },
         { status: 400 }
       );
     }
@@ -113,9 +103,6 @@ export async function POST(
     const lastSub = checkedWorkflow.submissions[0];
     const nextSubNumber = lastSub ? lastSub.submissionNumber + 1 : 1;
     const isReUpload = nextSubNumber > 1;
-
-    const uploaderUserId = session.userId || session.id;
-    const uploaderUserName = session.name || 'Warehouse Staff';
 
     const result = await prisma.$transaction(async (tx) => {
       const submission = await tx.postDispatchSubmission.create({

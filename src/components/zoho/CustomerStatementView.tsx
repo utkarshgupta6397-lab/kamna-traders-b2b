@@ -20,6 +20,7 @@ import {
   getOpeningBalancePresentation, cleanDescription,
   renderStatementToPdf 
 } from '@/lib/zoho/pdf-statement-renderer';
+import { isNettingTransaction } from '@/lib/zoho/customer-statement';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 // Re-using types from pdf-statement-renderer.ts
@@ -293,7 +294,7 @@ export default function CustomerStatementView() {
     const isValidClip = clipFromIndex !== null && clipFromIndex >= 0 && clipFromIndex < s.transactions.length && !!s.transactions[clipFromIndex];
     const clipIdx = isValidClip ? clipFromIndex : -1;
     const isClipped = clipIdx !== -1;
-    const activeTxs = isClipped ? s.transactions.slice(clipIdx) : s.transactions;
+    const activeTxs = (isClipped ? s.transactions.slice(clipIdx) : s.transactions).filter((t: any) => !isNettingTransaction(t));
 
     // 1. Date Range Filter
     const { start: dateStart, end: dateEnd } = getDateFilterRange(dateFilter);
@@ -1008,7 +1009,7 @@ export default function CustomerStatementView() {
       const combinedOpeningRaw = visible.reduce((acc, stmt) => acc + stmt.openingBalance, 0);
 
       const mergedTransactionsRaw = visible.flatMap(stmt =>
-        stmt.transactions.map(t => ({
+        stmt.transactions.filter((t: any) => !isNettingTransaction(t)).map(t => ({
           ...t,
           firmName: stmt.customer.companyName || stmt.customer.contactName,
           firmId: stmt.customer.contactId
@@ -1373,7 +1374,7 @@ export default function CustomerStatementView() {
         const isValidClip = clipFromIndex !== null && clipFromIndex >= 0 && clipFromIndex < s.transactions.length && !!s.transactions[clipFromIndex];
         const clipIdx = isValidClip ? clipFromIndex : -1;
         const isClipped = clipIdx !== -1;
-        const activeTxs = isClipped ? s.transactions.slice(clipIdx) : s.transactions;
+        const activeTxs = (isClipped ? s.transactions.slice(clipIdx) : s.transactions).filter((t: any) => !isNettingTransaction(t));
 
         // 1. Date Range Filter
         const { start: dateStart, end: dateEnd } = getDateFilterRange(dateFilter);
@@ -1908,17 +1909,17 @@ export default function CustomerStatementView() {
                 </div>
 
                 <div className="hidden md:block overflow-x-auto max-h-[75vh] overflow-y-auto">
-                  <table className="w-full text-sm relative" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <table className="w-full table-fixed text-sm relative" style={{ fontVariantNumeric: 'tabular-nums' }}>
                     <thead className="sticky top-0 bg-gray-50 text-[10px] uppercase text-gray-500 font-bold border-b border-gray-200 z-10 shadow-sm">
                       <tr>
-                        <th className="px-3 py-3 text-left w-28 whitespace-nowrap tracking-wider">Date</th>
-                        <th className="w-[36px] text-center px-1 py-3" title="Clip column"></th>
-                        {statementMode === 'group' && <th className="px-3 py-3 text-left whitespace-nowrap tracking-wider">Firm</th>}
-                        <th className="px-3 py-3 text-left whitespace-nowrap tracking-wider">Type</th>
-                        <th className="px-4 py-3 text-left tracking-wider w-full min-w-[200px]">Document & Details</th>
-                        <th className="px-3 py-3 text-right whitespace-nowrap tracking-wider w-28">Debit</th>
-                        <th className="px-3 py-3 text-right whitespace-nowrap tracking-wider w-28">Credit</th>
-                        <th className="px-4 py-3 text-right tracking-wider w-36 whitespace-nowrap">
+                        <th className="px-3 py-3 text-left w-28 whitespace-nowrap tracking-wider shrink-0">Date</th>
+                        <th className="w-[36px] text-center px-1 py-3 shrink-0" title="Clip column"></th>
+                        {statementMode === 'group' && <th className="px-3 py-3 text-left w-28 whitespace-nowrap tracking-wider shrink-0">Firm</th>}
+                        <th className="px-3 py-3 text-left w-32 whitespace-nowrap tracking-wider shrink-0">Type</th>
+                        <th className="px-4 py-3 text-left tracking-wider">Document & Details</th>
+                        <th className="px-3 py-3 text-right whitespace-nowrap tracking-wider w-28 shrink-0">Debit</th>
+                        <th className="px-3 py-3 text-right whitespace-nowrap tracking-wider w-28 shrink-0">Credit</th>
+                        <th className="px-4 py-3 text-right tracking-wider w-36 whitespace-nowrap shrink-0">
                           Running Balance
                         </th>
                       </tr>
@@ -2038,10 +2039,10 @@ export default function CustomerStatementView() {
                                     onClick={(tx.type === 'bill' || tx.type === 'invoice') ? (e) => toggleTxExpand(tx.id, tx.type, e) : undefined}
                                     style={{ cursor: (tx.type === 'bill' || tx.type === 'invoice') ? 'pointer' : 'default' }}
                                   >
-                                    <td className="px-3 py-1.5 text-[10.5px] text-gray-500 whitespace-nowrap align-middle">
+                                    <td className="px-3 py-2 text-[10.5px] text-gray-500 whitespace-nowrap align-top">
                                       {fmtDateTime(tx.datetime || tx.date)}
                                     </td>
-                                    <td className="w-[36px] text-center px-1 py-1.5 align-middle">
+                                    <td className="w-[36px] text-center px-1 py-2 align-top">
                                       <button 
                                         onClick={(e) => { e.stopPropagation(); setClipFromIndex(s.transactions.indexOf(tx)); }}
                                         className={`text-gray-300 hover:text-blue-500 transition-colors print:hidden focus:opacity-100 ${clipIdx === s.transactions.indexOf(tx) ? 'opacity-100 text-blue-600' : 'opacity-0 group-hover:opacity-100'}`}
@@ -2051,7 +2052,7 @@ export default function CustomerStatementView() {
                                       </button>
                                     </td>
                                     {isGroupMode && (
-                                      <td className="px-3 py-1.5 align-middle whitespace-nowrap">
+                                      <td className="px-3 py-2 align-top whitespace-nowrap">
                                         {(() => {
                                           const fc = firmColors[tx.firmId] || { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200' };
                                           return (
@@ -2062,7 +2063,7 @@ export default function CustomerStatementView() {
                                         })()}
                                       </td>
                                     )}
-                                    <td className="px-3 py-1.5 align-middle whitespace-nowrap">
+                                    <td className="px-3 py-2 align-top whitespace-nowrap">
                                       {(() => {
                                         if (tx.type === 'invoice') return (
                                           <div className="flex items-center gap-1.5">
@@ -2083,9 +2084,9 @@ export default function CustomerStatementView() {
                                         return <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[9px] font-bold text-gray-500 uppercase tracking-wide">{tx.type}</span>;
                                       })()}
                                     </td>
-                                    <td className="px-4 py-1.5 align-middle">
-                                      <div className="flex items-center gap-2.5">
-                                        <div className="w-5 shrink-0 flex justify-center print:hidden">
+                                    <td className="px-4 py-2 align-top">
+                                      <div className="flex items-start gap-2.5">
+                                        <div className="w-5 shrink-0 flex justify-center pt-0.5 print:hidden">
                                           {!calcEntries.some(e => e.id === tx.id) ? (
                                             <button 
                                               onClick={(e) => { e.stopPropagation(); addCalcEntry(tx); }}
@@ -2128,20 +2129,20 @@ export default function CustomerStatementView() {
 
                                             return (
                                               <>
-                                                <div className="flex items-center gap-1.5 text-[11px] font-medium text-blue-700 underline-offset-2">
+                                                <div className="flex items-start gap-1.5 text-[11px] font-medium text-blue-700 underline-offset-2 flex-wrap">
                                                   {tx.zohoUrl ? (
                                                     <a 
                                                       href={tx.zohoUrl} 
                                                       target="_blank" 
                                                       rel="noreferrer" 
                                                       onClick={(e) => e.stopPropagation()}
-                                                      className="hover:text-blue-900 hover:underline flex items-center gap-1 truncate"
+                                                      className="hover:text-blue-900 hover:underline inline-flex items-center gap-1 break-words whitespace-normal"
                                                     >
-                                                      <span className="truncate">{detailsText}</span>
+                                                      <span className="break-words whitespace-normal">{detailsText}</span>
                                                       <span className="text-[9px] shrink-0">↗</span>
                                                     </a>
                                                   ) : (
-                                                    <span className="truncate">{detailsText}</span>
+                                                    <span className="break-words whitespace-normal">{detailsText}</span>
                                                   )}
                                                   {draftStatuses[tx.id] && (
                                                     <span className="text-[8px] font-bold bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded uppercase tracking-wider whitespace-nowrap leading-none border border-orange-200/50 shrink-0">
@@ -2158,7 +2159,7 @@ export default function CustomerStatementView() {
                                                 {tx.type === 'invoice' ? (
                                                   <>
                                                     {tx.referenceNumber && tx.referenceNumber !== detailsText && (
-                                                      <span title={`Ref: ${tx.referenceNumber}`} className="text-[10px] text-gray-500 mt-0.5 leading-tight truncate">
+                                                      <span title={`Ref: ${tx.referenceNumber}`} className="text-[10px] text-gray-500 mt-0.5 leading-tight break-words whitespace-normal">
                                                         Ref: {tx.referenceNumber}
                                                       </span>
                                                     )}
@@ -2177,15 +2178,15 @@ export default function CustomerStatementView() {
                                                       return (
                                                         <>
                                                           {showRef && (
-                                                            <span className="text-[11px] text-gray-500 mt-0.5 leading-tight truncate">Ref: {refNum}</span>
+                                                            <span className="text-[11px] text-gray-500 mt-0.5 leading-tight break-words whitespace-normal">Ref: {refNum}</span>
                                                           )}
                                                           {cleanDesc && (
-                                                            <div title={cleanDesc} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight truncate">
+                                                            <div title={cleanDesc} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal [overflow-wrap:anywhere]">
                                                               {cleanDesc}
                                                             </div>
                                                           )}
                                                           {showNotes && (
-                                                            <div title={cleanNotes} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight truncate">
+                                                            <div title={cleanNotes} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal [overflow-wrap:anywhere]">
                                                               {cleanNotes}
                                                             </div>
                                                           )}
@@ -2196,13 +2197,13 @@ export default function CustomerStatementView() {
                                                 ) : (
                                                   <>
                                                     {tx.type === 'vendor_credit' && displayDesc && (
-                                                      <span title={displayDesc} className="text-[10px] text-gray-500 mt-0.5 leading-tight truncate">{displayDesc}</span>
+                                                      <span title={displayDesc} className="text-[10px] text-gray-500 mt-0.5 leading-tight break-words whitespace-normal [overflow-wrap:anywhere]">{displayDesc}</span>
                                                     )}
                                                     {tx.type !== 'payment' && tx.type !== 'vendor_credit' && tx.referenceNumber && tx.referenceNumber !== detailsText && (
-                                                      <span title={displayDesc} className="text-[10px] text-gray-500 mt-0.5 leading-tight truncate">{displayDesc}</span>
+                                                      <span title={displayDesc} className="text-[10px] text-gray-500 mt-0.5 leading-tight break-words whitespace-normal [overflow-wrap:anywhere]">{displayDesc}</span>
                                                     )}
                                                     {(tx.type === 'payment' || tx.type === 'vendor_payment') && (tx.notes || tx.paymentDescription) && (
-                                                      <div title={tx.notes || tx.paymentDescription} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight truncate">
+                                                      <div title={tx.notes || tx.paymentDescription} className="mt-0.5 text-[#6B7280] italic text-[11px] leading-tight break-words whitespace-normal [overflow-wrap:anywhere]">
                                                         {tx.notes || tx.paymentDescription}
                                                       </div>
                                                     )}
@@ -2215,15 +2216,15 @@ export default function CustomerStatementView() {
                                       </div>
                                     </td>
                                     {/* DEBIT Column */}
-                                    <td className="px-3 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums text-slate-800">
+                                    <td className="px-3 py-2 text-right text-[11.5px] font-semibold whitespace-nowrap align-top tabular-nums text-slate-800">
                                       {tx.netEffect > 0 ? fmt((tx.debit !== undefined && tx.debit > 0) ? tx.debit : (tx.amount || tx.netEffect)) : '—'}
                                     </td>
                                     {/* CREDIT Column */}
-                                    <td className="px-3 py-1.5 text-right text-[11.5px] font-semibold whitespace-nowrap align-middle tabular-nums text-slate-800">
+                                    <td className="px-3 py-2 text-right text-[11.5px] font-semibold whitespace-nowrap align-top tabular-nums text-slate-800">
                                       {tx.netEffect < 0 ? fmt((tx.credit !== undefined && tx.credit > 0) ? tx.credit : (tx.amount || Math.abs(tx.netEffect))) : '—'}
                                     </td>
                                     {/* RUNNING BALANCE */}
-                                    <td className="px-4 py-1.5 text-right whitespace-nowrap align-middle">
+                                    <td className="px-4 py-2 text-right whitespace-nowrap align-top">
                                       {(() => {
                                         const b = tx.balanceAfter;
                                         const isZero = b === 0 || Math.abs(b) < 0.01;

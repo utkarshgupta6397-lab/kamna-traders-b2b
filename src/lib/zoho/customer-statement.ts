@@ -123,6 +123,8 @@ export type StatementFetchOptions = {
   pageSize?: number;
   maxPages?: number;
   useCustomEngine?: boolean;
+  balanceOnly?: boolean;
+  prefetchedCustomer?: CustomerStatementCustomer;
 };
 
 /**
@@ -1092,7 +1094,9 @@ export async function getCustomerStatement(
   error?: string;
 }> {
   // 1. Fetch customer metadata to check if this is a hybrid account or pure vendor
-  const customerResult = await getCustomerById(contactId, options);
+  const customerResult = options?.prefetchedCustomer
+    ? { success: true, data: options.prefetchedCustomer, raw: undefined }
+    : await getCustomerById(contactId, options);
   if (!customerResult.success || !customerResult.data) {
     return { success: false, error: customerResult.error, raw: customerResult.raw };
   }
@@ -1163,6 +1167,53 @@ export async function getCustomerStatementHybridNative(
   const custData = custRes.data;
   const vendData = vendRes.data;
 
+  const customerNet = custData.closingBalance;
+  const vendorNet = vendData.closingBalance;
+  const netClosingBalance = customerNet - vendorNet;
+  const outstandingReceivable = customer.outstandingReceivable ?? custData.outstandingReceivable ?? 0;
+  const outstandingPayable = vendData.closingBalance;
+
+  // Lightweight balance-only path: return closing balances directly without transaction processing
+  if (options?.balanceOnly) {
+    const statement: CustomerStatement = {
+      customer,
+      openingBalance: netClosingBalance,
+      closingBalance: netClosingBalance,
+      outstandingReceivable,
+      outstandingPayable,
+      customerNet,
+      vendorNet,
+      isHybrid: true,
+      transactions: [],
+      transactionCount: 0,
+      unpaidInvoices: [],
+      isTruncated: false,
+      telemetry: {
+        customerApiCalls: options?.prefetchedCustomer ? 0 : 1,
+        invoiceApiCalls: 0,
+        paymentApiCalls: 0,
+        billApiCalls: 0,
+        totalApiCalls: (options?.prefetchedCustomer ? 0 : 1) + 2,
+        rawInvoicesFetched: 0,
+        validInvoicesAfterFilter: 0,
+        rawPaymentsFetched: 0,
+        validPaymentsAfterFilter: 0,
+        rawBillsFetched: 0,
+        validBillsAfterFilter: 0,
+        debugReceivable: outstandingReceivable,
+        debugPayable: outstandingPayable,
+        debugNetClosingBalance: netClosingBalance,
+        debugIsHybrid: true,
+      },
+    };
+
+    return {
+      success: true,
+      data: statement,
+      raw: { customer: customerResult.raw, nativeCustomer: custRes.raw, nativeVendor: vendRes.raw },
+    };
+  }
+
   // Tag customer transactions (excluding any Netting transactions)
   const customerTransactions: StatementTransaction[] = custData.transactions
     .filter(tx => !isNettingTransaction(tx))
@@ -1201,14 +1252,6 @@ export async function getCustomerStatementHybridNative(
     const timeB = b.timestamp || new Date(b.date).getTime();
     return timeB - timeA;
   });
-
-  const outstandingReceivable = customer.outstandingReceivable ?? custData.outstandingReceivable ?? 0;
-  const outstandingPayable = customer.outstandingPayable ?? vendData.outstandingPayable ?? 0;
-
-  // Native statement closing balances (balanceDue) already represent the authoritative net positions
-  const customerNet = custData.closingBalance;
-  const vendorNet = vendData.closingBalance;
-  const netClosingBalance = customerNet - vendorNet;
 
   // Reverse calculate running balance starting from netClosingBalance
   let runningBalance = netClosingBalance;
@@ -1622,13 +1665,13 @@ export async function getCustomerById(
       gstNo: contact.gst_no,
       mobile: contact.mobile,
       email: contact.email,
-      outstandingReceivable: contact.outstanding_receivable_amount ?? contact.associated_customer_details?.outstanding_receivable_amount ?? 0,
-      unusedCreditsReceivable: contact.unused_credits_receivable_amount ?? contact.associated_customer_details?.unused_credits_receivable_amount ?? 0,
+      outstandingReceivable: contact.outstanding_receivable_amount || contact.associated_customer_details?.outstanding_receivable_amount || 0,
+      unusedCreditsReceivable: contact.unused_credits_receivable_amount || contact.associated_customer_details?.unused_credits_receivable_amount || 0,
       outstandingReceivableFormatted: contact.outstanding_receivable_amount_formatted,
       associatedVendorId: contact.associated_vendor_details?.vendor_id,
       associatedCustomerId: contact.associated_customer_details?.customer_id,
-      outstandingPayable: contact.outstanding_payable_amount ?? contact.associated_vendor_details?.outstanding_payable_amount ?? 0,
-      unusedCreditsPayable: contact.unused_credits_payable_amount ?? contact.associated_vendor_details?.unused_credits_payable_amount ?? 0,
+      outstandingPayable: contact.outstanding_payable_amount || contact.associated_vendor_details?.outstanding_payable_amount || 0,
+      unusedCreditsPayable: contact.unused_credits_payable_amount || contact.associated_vendor_details?.unused_credits_payable_amount || 0,
       billingAddress: billingAddr,
       rawAddress: contact.billing_address || contact.shipping_address || null
     };
@@ -1637,4 +1680,44 @@ export async function getCustomerById(
   } catch (error: any) {
     return { success: false, error: error.message || 'Internal Server Error' };
   }
+}
+
+/**
+ * Fast balance-only query using authoritative native statement closing balances.
+ * Skips payment enrichment API calls.
+ * - Customer-only: Exactly 1 statement API call (+ prefetched/cached contact lookup if needed)
+ * - Hybrid: Exactly 2 statement API calls (Customer statement + Vendor statement)
+ */
+export async function getContactClosingBalance(
+  contactId: string,
+  options?: StatementFetchOptions
+): Promise<{
+  success: boolean;
+  closingBalance?: number;
+  customerNet?: number;
+  vendorNet?: number;
+  isHybrid?: boolean;
+  error?: string;
+  data?: CustomerStatement;
+}> {
+  const result = await getCustomerStatement(contactId, undefined, undefined, {
+    ...options,
+    balanceOnly: true,
+  });
+
+  if (!result.success || !result.data) {
+    return {
+      success: false,
+      error: result.error || 'Failed to fetch closing balance',
+    };
+  }
+
+  return {
+    success: true,
+    closingBalance: result.data.closingBalance,
+    customerNet: result.data.customerNet,
+    vendorNet: result.data.vendorNet,
+    isHybrid: result.data.isHybrid,
+    data: result.data,
+  };
 }

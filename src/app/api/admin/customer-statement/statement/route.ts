@@ -125,8 +125,10 @@ export async function GET(request: Request) {
   try {
     const minDate = searchParams.get('startDate') || searchParams.get('minDate') || '2026-03-01';
     const maxDate = searchParams.get('endDate') || searchParams.get('maxDate') || undefined;
+    const balanceOnly = searchParams.get('balanceOnly') === 'true';
     const result = await getCustomerStatement(customerId.trim(), minDate, maxDate, {
-      fetchFn: tracedFetch as any
+      fetchFn: tracedFetch as any,
+      balanceOnly,
     });
 
     console.log(`STATEMENT_LOAD_END`);

@@ -96,12 +96,14 @@ export async function getNativeVendorStatement(
   try {
     const orgId = options?.orgId || getZohoOrgId();
 
-    // 1. Fetch native PDF and vendor payments list concurrently
+    // 1. Fetch native PDF and vendor payments list concurrently (skip payments if balanceOnly)
     console.time('nativeVendorStatementFetch');
-    const [pdfResult, vpResult] = await Promise.all([
-      getNativeVendorStatementPdf(vendorId, minDate, maxDate, options),
-      getVendorPayments(vendorId, options)
-    ]);
+    const pdfPromise = getNativeVendorStatementPdf(vendorId, minDate, maxDate, options);
+    const vpPromise = options?.balanceOnly
+      ? Promise.resolve({ success: true, data: [] as CustomerStatementVendorPayment[] })
+      : getVendorPayments(vendorId, options);
+
+    const [pdfResult, vpResult] = await Promise.all([pdfPromise, vpPromise]);
     console.timeEnd('nativeVendorStatementFetch');
 
     if (!pdfResult.success || !pdfResult.data) {
@@ -115,6 +117,64 @@ export async function getNativeVendorStatement(
 
     // 2. Parse native PDF
     const parsed: NativeVendorStatementParsedData = await parseNativeVendorStatementPdf(pdfResult.data);
+
+    // Lightweight balance-only fast path:
+    // Extracts closing balance directly from accountSummary.balanceDue, applies cumulative netting offset,
+    // and returns immediately without payment list enrichment or transaction assembly.
+    if (options?.balanceOnly) {
+      let cumulativeNettingOffset = 0;
+      for (const r of parsed.rows) {
+        if (isNettingTransaction(r)) {
+          cumulativeNettingOffset += (r.paidAmount || r.amount || r.billedAmount || 0);
+        }
+      }
+      const openingBalance = parsed.accountSummary.openingBalance;
+      const closingBalance = Math.round((parsed.accountSummary.balanceDue + cumulativeNettingOffset) * 100) / 100;
+
+      const vendorCustomerObj: CustomerStatementCustomer = vendorMetadata || {
+        contactId: vendorId,
+        contactName: parsed.vendorName || 'Vendor',
+        outstandingPayable: closingBalance,
+        outstandingReceivable: 0,
+        contactType: 'vendor'
+      };
+      vendorCustomerObj.outstandingPayable = closingBalance;
+
+      const statementData: CustomerStatement = {
+        customer: vendorCustomerObj,
+        openingBalance,
+        closingBalance,
+        outstandingReceivable: 0,
+        outstandingPayable: closingBalance,
+        customerNet: 0,
+        vendorNet: closingBalance,
+        isHybrid: false,
+        transactions: [],
+        transactionCount: 0,
+        unpaidInvoices: [],
+        isTruncated: false,
+        telemetry: {
+          customerApiCalls: vendorMetadata ? 0 : 1,
+          invoiceApiCalls: 0,
+          paymentApiCalls: 0,
+          billApiCalls: 0,
+          totalApiCalls: (vendorMetadata ? 0 : 1) + 1,
+          rawInvoicesFetched: 0,
+          validInvoicesAfterFilter: 0,
+          rawBillsFetched: 0,
+          validBillsAfterFilter: 0,
+          debugReceivable: 0,
+          debugPayable: closingBalance,
+          debugNetClosingBalance: closingBalance,
+          debugIsHybrid: false,
+        }
+      };
+
+      return {
+        success: true,
+        data: statementData
+      };
+    }
 
     // 3. Build lookup maps directly from vendor payments list response (NO detail calls)
     const vendorPayments: CustomerStatementVendorPayment[] = vpResult.success && vpResult.data ? vpResult.data : [];

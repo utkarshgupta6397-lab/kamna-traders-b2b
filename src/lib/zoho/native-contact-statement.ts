@@ -121,6 +121,70 @@ export async function getNativeCustomerStatement(
   const parsed = await parseNativeContactStatementPdf(pdfBuffer);
   console.log(`[Native Statement] Parsed ${parsed.totalRows} rows across statement period: ${parsed.statementPeriod}`);
 
+  // Lightweight balance-only fast path:
+  // Extracts closing balance directly from accountSummary.balanceDue, applies cumulative netting offset,
+  // and returns immediately without payment list enrichment or transaction assembly.
+  if (options?.balanceOnly) {
+    let cumulativeNettingCredit = 0;
+    for (const r of parsed.rows) {
+      if (isNettingTransaction(r)) {
+        cumulativeNettingCredit += (r.credit || r.amount || 0);
+      }
+    }
+    const openingBalance = parsed.accountSummary.openingBalance;
+    const closingBalance = Math.round((parsed.accountSummary.balanceDue + cumulativeNettingCredit) * 100) / 100;
+
+    const customer: CustomerStatementCustomer = prefetchedCustomer || {
+      contactId,
+      contactName: parsed.customerName || 'Customer',
+      outstandingReceivable: closingBalance,
+      outstandingReceivableFormatted: `₹${closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+      unusedCreditsReceivable: 0,
+      outstandingPayable: 0,
+      unusedCreditsPayable: 0
+    };
+    customer.outstandingReceivable = closingBalance;
+    customer.outstandingReceivableFormatted = `₹${closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+    const finalStatement: CustomerStatement = {
+      customer,
+      openingBalance,
+      closingBalance,
+      outstandingReceivable: closingBalance,
+      outstandingPayable: 0,
+      customerNet: closingBalance,
+      vendorNet: 0,
+      isHybrid: false,
+      transactions: [],
+      transactionCount: 0,
+      unpaidInvoices: [],
+      isTruncated: false,
+      telemetry: {
+        customerApiCalls: prefetchedCustomer ? 0 : 1,
+        invoiceApiCalls: 0,
+        paymentApiCalls: 0,
+        billApiCalls: 0,
+        totalApiCalls: (prefetchedCustomer ? 0 : 1) + 1,
+        rawInvoicesFetched: 0,
+        validInvoicesAfterFilter: 0,
+        rawPaymentsFetched: 0,
+        validPaymentsAfterFilter: 0,
+        rawBillsFetched: 0,
+        validBillsAfterFilter: 0,
+        debugReceivable: closingBalance,
+        debugPayable: 0,
+        debugNetClosingBalance: closingBalance,
+        debugIsHybrid: false
+      }
+    };
+
+    return {
+      success: true,
+      data: finalStatement,
+      parsedNativeData: parsed
+    };
+  }
+
   // Fetch base customer details and customer payments list concurrently
   const financialRows = parsed.rows.filter(r => !r.isOpeningBalance && !r.isInformational && !isNettingTransaction(r));
   const paymentRows = financialRows.filter(r => r.type === 'payment');

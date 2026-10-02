@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { CustomerBalanceService } from '@/lib/services/customer-balance.service';
+import { getContactClosingBalance } from '@/lib/zoho/customer-statement';
 
 export async function GET(req: Request) {
   try {
@@ -180,11 +181,28 @@ export async function GET(req: Request) {
     
     const customerIds = customers.map(c => c.customerId);
     const customerBalances = await CustomerBalanceService.getCustomerBalances(customerIds);
+
+    // Fetch authoritative closing balance (customer - vendor if hybrid, customer if standard)
+    // using lightweight balance-only statement API
+    const closingBalances = await Promise.all(
+      customerIds.map(async (cid) => {
+        try {
+          const res = await getContactClosingBalance(cid);
+          if (res.success && res.closingBalance !== undefined) {
+            return { cid, balance: res.closingBalance };
+          }
+        } catch (e) {
+          console.error(`[HoldQueue] Error fetching closing balance for ${cid}:`, e);
+        }
+        return { cid, balance: customerBalances[cid]?.netOutstandingBalance || 0 };
+      })
+    );
+    const closingBalanceMap = new Map(closingBalances.map(b => [b.cid, b.balance]));
     
-    // We get the accurate customer-wide outstanding balance from the DB balance
+    // We get the accurate customer-wide outstanding balance from the closing balance
     for (const c of customers) {
       c.customerGstNo = customerDbMap.get(c.customerId)?.gstNumber || null;
-      c.outstandingBalance = customerBalances[c.customerId]?.netOutstandingBalance || 0;
+      c.outstandingBalance = closingBalanceMap.get(c.customerId) ?? customerBalances[c.customerId]?.netOutstandingBalance ?? 0;
       c.balanceUpdatedAt = customerBalances[c.customerId]?.balanceUpdatedAt || null;
       c.oldestInvoiceDate = new Date(Math.min(...c.invoices.map((i: any) => new Date(i.invoiceDate).getTime()))).toISOString();
     }

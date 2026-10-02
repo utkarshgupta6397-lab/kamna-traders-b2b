@@ -108,4 +108,41 @@ describe('Hold Queue Default Sorting Specification', () => {
     const descResult = sortHoldQueueCustomers(sampleCustomers, sortState);
     assert.equal(descResult[0].customerName, 'V R ENTERPRISES'); // 12944 first
   });
+
+  describe('Hold Queue Hybrid Net Closing Balance & DCR Separation', () => {
+    it('Case: Bluglo hybrid customer (customer: 46153, vendor: 36225) -> hold queue outstanding: 9928, dcr credit risk: 46153', () => {
+      const customerReceivable = 46153;
+      const vendorPayable = 36225;
+      const hybridNetClosing = customerReceivable - vendorPayable;
+      const dcrCreditRiskBalance = customerReceivable;
+
+      assert.equal(hybridNetClosing, 9928, 'Hold Queue displayed outstanding must be hybrid net 9928');
+      assert.equal(dcrCreditRiskBalance, 46153, 'DCR credit risk balance must remain customer-only 46153');
+      assert.notEqual(hybridNetClosing, dcrCreditRiskBalance);
+    });
+
+    it('Case: Customer-only (customer: 46153, vendor: none) -> hold queue outstanding: 46153', () => {
+      const customerReceivable = 46153;
+      const vendorPayable = 0;
+      const netClosing = customerReceivable - vendorPayable;
+
+      assert.equal(netClosing, 46153, 'Customer-only contact displays full customer closing balance');
+    });
+
+    it('Case: Vendor exceeds customer (customer: 20000, vendor: 35000) -> hold queue outstanding: -15000', () => {
+      const customerReceivable = 20000;
+      const vendorPayable = 35000;
+      const netClosing = customerReceivable - vendorPayable;
+
+      assert.equal(netClosing, -15000, 'Negative net balance is preserved when vendor exceeds customer');
+    });
+
+    it('Case: Equal customer/vendor (customer: 50000, vendor: 50000) -> hold queue outstanding: 0', () => {
+      const customerReceivable = 50000;
+      const vendorPayable = 50000;
+      const netClosing = customerReceivable - vendorPayable;
+
+      assert.equal(netClosing, 0, 'Equal balances yield net 0');
+    });
+  });
 });

@@ -1,10 +1,12 @@
 /**
  * Audio Notification Manager for Dispatch Incoming Queue
- * Handles preloading, browser interaction unlocking, and reliable chime playback.
+ * Handles preloading, browser interaction unlocking, HTMLAudioElement playback,
+ * and graceful fallback chime synthesis via Web Audio API.
  */
 
 class DispatchAudioManager {
   private audio: HTMLAudioElement | null = null;
+  private audioCtx: AudioContext | null = null;
   private isUnlocked = false;
   private unlockListenersAttached = false;
   private readonly audioSrc = '/sounds/dispatch-bell.wav';
@@ -22,8 +24,23 @@ class DispatchAudioManager {
       this.audio.load();
       this.attachUnlockListeners();
     } catch (err) {
-      console.warn('[DispatchAudio] Failed to initialize audio:', err);
+      console.warn('[DispatchAudio] Failed to initialize audio element:', err);
     }
+  }
+
+  private getAudioContext(): AudioContext | null {
+    if (typeof window === 'undefined') return null;
+    if (!this.audioCtx) {
+      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtxClass) {
+        try {
+          this.audioCtx = new AudioCtxClass();
+        } catch (e) {
+          console.warn('[DispatchAudio] Could not create AudioContext:', e);
+        }
+      }
+    }
+    return this.audioCtx;
   }
 
   private attachUnlockListeners() {
@@ -34,31 +51,84 @@ class DispatchAudioManager {
       this.unlockAudio();
     };
 
-    window.addEventListener('click', handleUnlock, { once: true, passive: true });
-    window.addEventListener('keydown', handleUnlock, { once: true, passive: true });
-    window.addEventListener('touchstart', handleUnlock, { once: true, passive: true });
+    window.addEventListener('click', handleUnlock, { passive: true });
+    window.addEventListener('keydown', handleUnlock, { passive: true });
+    window.addEventListener('pointerdown', handleUnlock, { passive: true });
+    window.addEventListener('touchstart', handleUnlock, { passive: true });
   }
 
-  public unlockAudio(): Promise<boolean> {
-    if (this.isUnlocked || !this.audio) return Promise.resolve(this.isUnlocked);
+  public async unlockAudio(): Promise<boolean> {
+    if (this.isUnlocked) return true;
 
-    return new Promise<boolean>((resolve) => {
-      // Attempt silent playback to satisfy browser autoplay policy
-      this.audio!.volume = 0;
-      this.audio!.play()
-        .then(() => {
-          this.audio!.pause();
-          this.audio!.currentTime = 0;
-          this.audio!.volume = 1;
-          this.isUnlocked = true;
-          console.log('[DispatchAudio] Audio successfully unlocked by user interaction.');
-          resolve(true);
-        })
-        .catch((err) => {
-          console.warn('[DispatchAudio] Interaction unlock could not start:', err);
-          if (this.audio) this.audio.volume = 1;
-          resolve(false);
-        });
+    // 1. Resume AudioContext if suspended
+    const ctx = this.getAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+      try {
+        await ctx.resume();
+      } catch (err) {
+        console.warn('[DispatchAudio] AudioContext resume failed:', err);
+      }
+    }
+
+    // 2. Unlock HTMLAudioElement via brief silent play
+    if (this.audio) {
+      try {
+        this.audio.volume = 0;
+        await this.audio.play();
+        this.audio.pause();
+        this.audio.currentTime = 0;
+        this.audio.volume = 1;
+        this.isUnlocked = true;
+        console.log('[DispatchAudio] Audio successfully unlocked by user interaction.');
+        return true;
+      } catch (err) {
+        // May fail if interaction was not trusted yet, keep volume at 1
+        this.audio.volume = 1;
+      }
+    }
+
+    if (ctx && ctx.state === 'running') {
+      this.isUnlocked = true;
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Synthesizes a pleasant melodic bell chime using Web Audio API
+   * as a rock-solid zero-network fallback if the audio file fails or is blocked.
+   */
+  private playSynthesizedChime(frequency = 880): Promise<void> {
+    return new Promise((resolve) => {
+      try {
+        const ctx = this.getAudioContext();
+        if (!ctx) return resolve();
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(frequency, ctx.currentTime);
+        // Exponential frequency drop for bell harmonic feel
+        osc.frequency.exponentialRampToValueAtTime(frequency * 0.6, ctx.currentTime + 0.35);
+
+        gain.gain.setValueAtTime(0.4, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.35);
+        osc.onended = () => resolve();
+      } catch (err) {
+        console.warn('[DispatchAudio] Web Audio fallback synthesis error:', err);
+        resolve();
+      }
     });
   }
 
@@ -69,14 +139,19 @@ class DispatchAudioManager {
       this.init();
     }
 
-    if (!this.audio) return;
-
-    try {
-      this.audio.currentTime = 0;
-      this.audio.volume = 1;
-      await this.audio.play();
-    } catch (err: any) {
-      console.warn('[DispatchAudio] Chime playback blocked or failed:', err?.message || err);
+    if (this.audio) {
+      try {
+        this.audio.currentTime = 0;
+        this.audio.volume = 1;
+        await this.audio.play();
+        return;
+      } catch (err: any) {
+        console.warn('[DispatchAudio] HTMLAudioElement.play() blocked or failed:', err?.message || err);
+        // Fallback to Web Audio synthesis
+        await this.playSynthesizedChime(880);
+      }
+    } else {
+      await this.playSynthesizedChime(880);
     }
   }
 
@@ -146,4 +221,3 @@ export function playNotificationSound(eventType: NotificationEventType): Promise
 export function playDispatchChime(count: 1 | 2 = 2): Promise<void> {
   return getDispatchAudioManager().playChimes(count);
 }
-

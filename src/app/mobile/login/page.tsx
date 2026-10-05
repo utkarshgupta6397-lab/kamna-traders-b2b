@@ -89,7 +89,7 @@ function MobileLoginContent() {
             <p className="text-slate-500 mt-1.5 text-[13px] font-medium">Sign in to Kamna ERP</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+          <form onSubmit={handleSubmit} autoComplete="off" className="flex flex-col gap-5">
             {error && (
               <div className="bg-red-50 text-red-600 p-3.5 rounded-xl text-[13px] font-semibold border border-red-100 text-center flex items-center justify-center gap-2">
                 <span>{error}</span>
@@ -106,6 +106,7 @@ function MobileLoginContent() {
                 <div className="w-[1.5px] h-4 bg-slate-200 mr-3 rounded-full" />
                 <input
                   id="mobile"
+                  name="phone-number"
                   type="tel"
                   inputMode="numeric"
                   maxLength={10}
@@ -114,7 +115,9 @@ function MobileLoginContent() {
                   placeholder="10-digit number"
                   className="bg-transparent w-full outline-none text-slate-800 placeholder:text-slate-300 font-semibold text-[15px]"
                   required
-                  autoComplete="tel-national"
+                  autoComplete="off"
+                  data-1p-ignore
+                  data-lpignore="true"
                 />
               </div>
             </div>
@@ -128,6 +131,7 @@ function MobileLoginContent() {
                 <Lock size={18} className="text-slate-400 mr-3" strokeWidth={2.5} />
                 <input
                   id="pin"
+                  name="security-code"
                   type="password"
                   inputMode="numeric"
                   pattern="[0-9]*"
@@ -137,7 +141,9 @@ function MobileLoginContent() {
                   placeholder="••••••"
                   className="bg-transparent w-full outline-none text-slate-800 placeholder:text-slate-300 font-bold tracking-[0.3em] text-lg h-[22px]"
                   required
-                  autoComplete="current-password"
+                  autoComplete="one-time-code"
+                  data-1p-ignore
+                  data-lpignore="true"
                 />
               </div>
             </div>

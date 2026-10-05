@@ -252,9 +252,10 @@ function StaffLoginContent() {
               {/* ── Step: Mobile ── */}
               <AnimatePresence mode="wait">
                 {step === 'mobile' && (
-                  <motion.form
+                    <motion.form
                     key="m"
                     onSubmit={handleMobileSubmit}
+                    autoComplete="off"
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -20 }}
@@ -273,6 +274,7 @@ function StaffLoginContent() {
                         </span>
                         <input
                           id="mobile-input"
+                          name="phone-number"
                           type="tel"
                           inputMode="numeric"
                           value={mobile}
@@ -282,7 +284,9 @@ function StaffLoginContent() {
                           maxLength={10}
                           required
                           autoFocus
-                          autoComplete="tel"
+                          autoComplete="off"
+                          data-1p-ignore
+                          data-lpignore="true"
                         />
                       </InputRow>
                     </div>
@@ -297,6 +301,7 @@ function StaffLoginContent() {
                   <motion.form
                     key="p"
                     onSubmit={handlePinSubmit}
+                    autoComplete="off"
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -20 }}
@@ -315,6 +320,7 @@ function StaffLoginContent() {
                         </span>
                         <input
                           id="pin-input"
+                          name="security-code"
                           type="password"
                           inputMode="numeric"
                           value={pin}
@@ -327,7 +333,9 @@ function StaffLoginContent() {
                           required
                           autoFocus
                           disabled={loading || isTransition}
-                          autoComplete="current-password"
+                          autoComplete="one-time-code"
+                          data-1p-ignore
+                          data-lpignore="true"
                         />
                       </InputRow>
                     </div>

@@ -12,6 +12,7 @@ interface AccountsTabsProps {
   canManageDcr?: boolean;
   canProcessInvoices?: boolean;
   canManagePayments?: boolean;
+  canVerifyPayments?: boolean;
   children: React.ReactNode;
 }
 
@@ -23,13 +24,16 @@ export default function AccountsTabs({
   canManageDcr,
   canProcessInvoices,
   canManagePayments,
+  canVerifyPayments,
   children,
 }: AccountsTabsProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
   let activeTab = 'statement';
-  if (pathname.includes('/accounts/manage-payments')) {
+  if (pathname.includes('/accounts/payment-verification')) {
+    activeTab = 'payment-verification';
+  } else if (pathname.includes('/accounts/manage-payments')) {
     activeTab = 'manage-payments';
   } else if (pathname.includes('/accounts/dcr')) {
     activeTab = 'dcr';
@@ -95,6 +99,12 @@ export default function AccountsTabs({
           <Link href="/staff/dashboard/accounts/reports" className={tabCls('reports')}>
             <BarChart3 size={16} strokeWidth={1.8} />
             Reports
+          </Link>
+        )}
+        {canVerifyPayments && (
+          <Link href="/staff/dashboard/accounts/payment-verification" className={tabCls('payment-verification')}>
+            <ShieldCheck size={16} strokeWidth={1.8} />
+            Verify Payments
           </Link>
         )}
       </div>

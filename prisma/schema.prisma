@@ -122,6 +122,9 @@ model User {
   manage_payments_view_all           Boolean              @default(false)
   manage_payments_approve            Boolean              @default(false)
   manage_payments_reject             Boolean              @default(false)
+  accounts_payment_verify_view       Boolean              @default(false)
+  accounts_payment_verify_action     Boolean              @default(false)
+  customerPaymentsVerified           CustomerPayment[]    @relation("CustomerPaymentVerifiedBy")
   sessions                           ActiveSession[]
   paymentRequestsCreated             PaymentRequest[]     @relation("PaymentRequestCreatedBy")
   paymentRequestsApproved            PaymentRequest[]     @relation("PaymentRequestApprovedBy")
@@ -2174,5 +2177,83 @@ model PaymentRequest {
 model PaymentSequence {
   date     String @id
   sequence Int    @default(0)
+}
+
+enum CustomerPaymentVerificationStatus {
+  PENDING
+  VERIFIED
+}
+
+enum CustomerPaymentVerificationMethod {
+  AUTO_BANK_MATCH
+  MANUAL
+}
+
+enum CustomerPaymentBankMatchStatus {
+  MATCHED
+  CATEGORIZED
+  UNMATCHED
+  NONE
+}
+
+model CustomerPayment {
+  id                     String                             @id @default(cuid())
+  zohoPaymentId          String                             @unique
+  paymentNumber          String
+  customerId             String
+  customerName           String
+  amount                 Decimal                            @db.Decimal(14, 2)
+  paymentDate            DateTime                           @db.Date
+  paymentMode            String
+  referenceNumber        String?
+  accountId              String?
+  accountName            String?
+  description            String?
+  invoiceNumbers         String?
+  isVerified             Boolean                            @default(false)
+  verificationStatus     CustomerPaymentVerificationStatus  @default(PENDING)
+  verificationMethod     CustomerPaymentVerificationMethod?
+  bankMatchStatus        CustomerPaymentBankMatchStatus?
+  importedTransactionId  String?
+  lastZohoModifiedTime   String?
+  bankMatchLastCheckedAt DateTime?
+  verificationAttemptCount Int                              @default(0)
+  lastVerificationAttemptAt DateTime?
+  lastVerificationError   String?
+  zohoData               Json?
+  lastSyncedAt           DateTime                           @default(now())
+  verifiedAt             DateTime?
+  verifiedById           String?
+  verifiedBy             User?                              @relation("CustomerPaymentVerifiedBy", fields: [verifiedById], references: [id])
+  createdAt              DateTime                           @default(now())
+  updatedAt              DateTime                           @updatedAt
+
+  @@index([isVerified])
+  @@index([verificationStatus])
+  @@index([paymentDate])
+  @@index([paymentMode])
+  @@index([customerId])
+  @@index([lastZohoModifiedTime])
+  @@index([verificationStatus, isVerified, paymentDate])
+}
+
+enum ZohoApiEndpointType {
+  PAYMENT_LIST
+  PAYMENT_DETAIL
+  PAYMENT_UPDATE
+}
+
+model ZohoApiUsageLog {
+  id           String              @id @default(cuid())
+  service      String              @default("customer_payment_verification")
+  endpointType ZohoApiEndpointType
+  method       String
+  success      Boolean             @default(true)
+  httpStatus   Int?
+  createdAt    DateTime            @default(now())
+
+  @@index([service, createdAt])
+  @@index([createdAt])
+  @@index([endpointType])
 }
 

@@ -24,6 +24,7 @@ interface StaffTopNavProps {
     accounts_customer_statement?: boolean;
     accounts_transactions?: boolean;
     accounts_summary_view?: boolean;
+    accounts_payment_verify_view?: boolean;
     manage_payments_view_own?: boolean;
     manage_payments_view_all?: boolean;
     hr_attendance_processor?: boolean;
@@ -54,6 +55,7 @@ export default function StaffTopNav({ session }: StaffTopNavProps) {
     session.accounts_customer_statement ||
     session.accounts_transactions ||
     session.accounts_summary_view ||
+    session.accounts_payment_verify_view ||
     session.manage_payments_view_own ||
     session.manage_payments_view_all ||
     session.role === 'ADMIN';

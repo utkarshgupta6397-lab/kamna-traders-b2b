@@ -65,9 +65,13 @@ export async function PATCH(
         'mobile_accounts_summary_view'
       ].includes(key)) {
         updateData.mobile_accounts = true;
+      } else if (key === 'accounts_payment_verify_action') {
+        updateData.accounts_payment_verify_view = true;
       }
     } else {
-      if (key === 'dispatch_stock_approval_view') {
+      if (key === 'accounts_payment_verify_view') {
+        updateData.accounts_payment_verify_action = false;
+      } else if (key === 'dispatch_stock_approval_view') {
         updateData.dispatch_stock_approval_approve = false;
       } else if (key === 'mobile_accounts') {
         updateData.mobile_accounts_customer_statement = false;

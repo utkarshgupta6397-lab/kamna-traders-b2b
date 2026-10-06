@@ -2289,3 +2289,25 @@ model ZohoApiUsageLog {
   @@index([endpointType])
 }
 
+model PaymentOperationExecution {
+  id                String    @id @default(cuid())
+  operationKey      String    @unique // 'audit_verified_payments' | 'sync_zoho_data'
+  operationName     String    // 'Audit Verified Payments' | 'Sync Zoho Data'
+  currentRunStatus  String    @default("idle") // 'idle' | 'running' | 'success' | 'failed'
+  activeRunId       String?
+  lastRunStatus     String?   // 'success' | 'failed' | 'idle'
+  lastRunStartedAt  DateTime?
+  lastRunCompletedAt DateTime?
+  lastRunTrigger    String?   // 'MANUAL' | 'AUTOMATIC'
+  lastRunRecordsProcessed Int @default(0)
+  lastRunError      String?
+  // Independent timestamps for manual and automatic executions
+  lastManualRunAt   DateTime?
+  lastAutomaticRunAt DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([operationKey])
+}
+
+

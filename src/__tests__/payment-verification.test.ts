@@ -799,8 +799,143 @@ async function testVoidPaymentEligibility() {
   console.log('✓ PASS: Void and cancelled payment exclusion, case-insensitivity, and defensive verification rejections verified');
 }
 
+async function testExecutionTracker() {
+  console.log('--- 20. Testing Persistent Last-Run Execution Tracking & Concurrency ---');
+  const {
+    recordOperationStart,
+    recordOperationComplete,
+    getPaymentOperationsMetadata,
+  } = await import('../lib/services/customer-payment-operation-tracker.service');
+  const { prisma } = await import('../lib/db');
+
+  // Reset tracking state for clean test
+  await prisma.paymentOperationExecution.deleteMany({
+    where: {
+      operationKey: { in: ['audit_verified_payments', 'sync_zoho_data'] },
+    },
+  });
+
+  // Case 20.1: Default metadata returns 'Never run' (null timestamps)
+  const initialMeta = await getPaymentOperationsMetadata();
+  assert(initialMeta.auditVerifiedPayments.currentRunStatus === 'idle', 'Initial audit status should be idle');
+  assert(initialMeta.auditVerifiedPayments.lastRunCompletedAt === null, 'Initial audit lastRunCompletedAt should be null');
+  assert(initialMeta.auditVerifiedPayments.lastManualRunAt === null, 'Initial audit lastManualRunAt should be null');
+  assert(initialMeta.auditVerifiedPayments.lastAutomaticRunAt === null, 'Initial audit lastAutomaticRunAt should be null');
+  assert(initialMeta.syncZohoData.currentRunStatus === 'idle', 'Initial sync status should be idle');
+  assert(initialMeta.syncZohoData.lastManualRunAt === null, 'Initial sync lastManualRunAt should be null');
+  assert(initialMeta.syncZohoData.lastAutomaticRunAt === null, 'Initial sync lastAutomaticRunAt should be null');
+
+  // Case 20.2: Start manual sync operation
+  const startSyncManual = await recordOperationStart({
+    operationKey: 'sync_zoho_data',
+    runId: 'sync_test_run_1',
+    trigger: 'MANUAL',
+  });
+  assert(startSyncManual.acquired === true, 'Manual sync lock must be acquired');
+
+  const runningSyncMeta = await getPaymentOperationsMetadata();
+  assert(runningSyncMeta.syncZohoData.currentRunStatus === 'running', 'Sync status should be running');
+  assert(runningSyncMeta.syncZohoData.activeRunId === 'sync_test_run_1', 'Active run ID should match');
+
+  // Case 20.3: Concurrency protection — duplicate simultaneous execution is rejected
+  const duplicateSync = await recordOperationStart({
+    operationKey: 'sync_zoho_data',
+    runId: 'sync_test_run_2',
+    trigger: 'MANUAL',
+  });
+  assert(duplicateSync.acquired === false, 'Duplicate simultaneous sync must be rejected');
+  assert(duplicateSync.currentRunId === 'sync_test_run_1', 'Current run ID must identify active run');
+
+  // Case 20.4: Complete manual sync operation
+  await recordOperationComplete({
+    operationKey: 'sync_zoho_data',
+    runId: 'sync_test_run_1',
+    trigger: 'MANUAL',
+    success: true,
+    recordsProcessed: 42,
+  });
+
+  const completedManualSyncMeta = await getPaymentOperationsMetadata();
+  assert(completedManualSyncMeta.syncZohoData.currentRunStatus === 'idle', 'Sync status must return to idle');
+  assert(completedManualSyncMeta.syncZohoData.lastRunStatus === 'success', 'Last run status must be success');
+  assert(completedManualSyncMeta.syncZohoData.lastRunRecordsProcessed === 42, 'Records processed must be 42');
+  assert(completedManualSyncMeta.syncZohoData.lastManualRunAt !== null, 'lastManualRunAt must be recorded');
+  assert(completedManualSyncMeta.syncZohoData.lastAutomaticRunAt === null, 'lastAutomaticRunAt must remain null after manual run');
+  const recordedManualSyncTime = completedManualSyncMeta.syncZohoData.lastManualRunAt;
+
+  // Case 20.5: Automatic sync execution does NOT overwrite lastManualRunAt
+  await recordOperationStart({
+    operationKey: 'sync_zoho_data',
+    runId: 'sync_auto_run_1',
+    trigger: 'AUTOMATIC',
+  });
+  await recordOperationComplete({
+    operationKey: 'sync_zoho_data',
+    runId: 'sync_auto_run_1',
+    trigger: 'AUTOMATIC',
+    success: true,
+    recordsProcessed: 15,
+  });
+
+  const completedAutoSyncMeta = await getPaymentOperationsMetadata();
+  assert(completedAutoSyncMeta.syncZohoData.lastAutomaticRunAt !== null, 'lastAutomaticRunAt must be recorded');
+  assert(
+    completedAutoSyncMeta.syncZohoData.lastManualRunAt === recordedManualSyncTime,
+    'lastManualRunAt must NOT be overwritten by automatic run'
+  );
+  assert(completedAutoSyncMeta.syncZohoData.lastRunTrigger === 'AUTOMATIC', 'lastRunTrigger must be AUTOMATIC');
+
+  // Case 20.6: Manual Audit Verified Payments execution records manual timestamp and does not affect sync
+  await recordOperationStart({
+    operationKey: 'audit_verified_payments',
+    runId: 'audit_manual_run_1',
+    trigger: 'MANUAL',
+  });
+  await recordOperationComplete({
+    operationKey: 'audit_verified_payments',
+    runId: 'audit_manual_run_1',
+    trigger: 'MANUAL',
+    success: true,
+    recordsProcessed: 88,
+  });
+
+  const auditCompletedMeta = await getPaymentOperationsMetadata();
+  assert(auditCompletedMeta.auditVerifiedPayments.currentRunStatus === 'idle', 'Audit must be idle');
+  assert(auditCompletedMeta.auditVerifiedPayments.lastRunStatus === 'success', 'Audit last run must be success');
+  assert(auditCompletedMeta.auditVerifiedPayments.lastManualRunAt !== null, 'Audit lastManualRunAt must be set');
+  assert(auditCompletedMeta.auditVerifiedPayments.lastAutomaticRunAt === null, 'Audit lastAutomaticRunAt must be null');
+  assert(
+    auditCompletedMeta.syncZohoData.lastManualRunAt === recordedManualSyncTime,
+    'Audit execution must NOT overwrite syncZohoData metadata'
+  );
+
+  // Case 20.7: Failed run records failure status and error without corrupting previous run timestamps
+  await recordOperationStart({
+    operationKey: 'audit_verified_payments',
+    runId: 'audit_fail_run',
+    trigger: 'AUTOMATIC',
+  });
+  await recordOperationComplete({
+    operationKey: 'audit_verified_payments',
+    runId: 'audit_fail_run',
+    trigger: 'AUTOMATIC',
+    success: false,
+    recordsProcessed: 0,
+    error: 'Zoho Books connection timed out',
+  });
+
+  const failedAuditMeta = await getPaymentOperationsMetadata();
+  assert(failedAuditMeta.auditVerifiedPayments.currentRunStatus === 'idle', 'Failed audit must be idle');
+  assert(failedAuditMeta.auditVerifiedPayments.lastRunStatus === 'failed', 'Audit status must be failed');
+  assert(failedAuditMeta.auditVerifiedPayments.lastRunError === 'Zoho Books connection timed out', 'Error must be preserved');
+  assert(failedAuditMeta.auditVerifiedPayments.lastManualRunAt !== null, 'Previous manual timestamp must remain intact');
+
+  console.log('✓ PASS: Persistent execution tracking, manual/automatic separation, and concurrency protection verified');
+}
+
 testSixFieldIntegrityLogic();
 testVoidPaymentEligibility()
+  .then(() => testExecutionTracker())
   .then(() => {
     console.log('========================================');
     console.log('All Payment Verification tests passed!');
@@ -810,5 +945,6 @@ testVoidPaymentEligibility()
     console.error('Test failed:', err);
     process.exit(1);
   });
+
 
 

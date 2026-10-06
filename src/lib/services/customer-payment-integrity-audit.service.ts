@@ -17,12 +17,18 @@ import {
   DEFAULT_SYNC_START_DATE,
   ZOHO_IS_VERIFIED_CF_ID,
 } from '@/lib/services/customer-payment-verification.service';
+import {
+  recordOperationStart,
+  recordOperationComplete,
+  PaymentOperationTrigger,
+} from '@/lib/services/customer-payment-operation-tracker.service';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
 export interface PaymentIntegrityAuditOptions {
   startDate?: string; // defaults to '2026-03-01'
   endDate?: string;   // defaults to today in IST
+  trigger?: PaymentOperationTrigger; // 'MANUAL' | 'AUTOMATIC', defaults to 'MANUAL'
   allowZohoWrites?: boolean;
   auditRunId?: string;
   forceFullAudit?: boolean; // if true, ignores checkpoint and checks all records
@@ -222,9 +228,17 @@ export async function auditVerifiedPaymentIntegrity(
 ): Promise<PaymentIntegrityAuditResult> {
   const auditStartTime = new Date();
   const auditRunId = options.auditRunId || `audit_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  const trigger = options.trigger || 'MANUAL';
   const dateStartStr = options.startDate || DEFAULT_SYNC_START_DATE;
   const dateEndStr = options.endDate || getIstTodayDateStr();
   const errors: string[] = [];
+
+  // Track operation start
+  await recordOperationStart({
+    operationKey: 'audit_verified_payments',
+    runId: auditRunId,
+    trigger,
+  });
 
   const dispatchEvent = (event: any) => {
     if (options.onEvent && auditRunId) {
@@ -668,6 +682,15 @@ export async function auditVerifiedPaymentIntegrity(
       finalSummary,
     });
 
+    await recordOperationComplete({
+      operationKey: 'audit_verified_payments',
+      runId: auditRunId,
+      trigger,
+      success: errors.length === 0,
+      recordsProcessed: paymentsEvaluated,
+      error: errors.length > 0 ? errors.join('; ') : null,
+    });
+
     return {
       success: errors.length === 0,
       auditedCount: verifiedAudited,
@@ -683,6 +706,16 @@ export async function auditVerifiedPaymentIntegrity(
       stage: 'AUDIT_EXECUTION',
       error: err.message || 'Audit execution failed',
     });
+
+    await recordOperationComplete({
+      operationKey: 'audit_verified_payments',
+      runId: auditRunId,
+      trigger,
+      success: false,
+      recordsProcessed: paymentsEvaluated,
+      error: err.message || 'Audit execution failed',
+    });
+
     return {
       success: false,
       auditedCount: verifiedAudited,
@@ -706,3 +739,4 @@ export async function auditVerifiedPaymentIntegrity(
     };
   }
 }
+

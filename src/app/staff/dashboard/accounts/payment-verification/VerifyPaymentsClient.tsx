@@ -77,6 +77,98 @@ interface ZohoApiUsageData {
   paymentUpdateCalls: number;
 }
 
+interface OperationMetadata {
+  operationKey: 'audit_verified_payments' | 'sync_zoho_data';
+  operationName: string;
+  currentRunStatus: 'idle' | 'running' | 'success' | 'failed';
+  activeRunId: string | null;
+  lastRunStatus: 'idle' | 'running' | 'success' | 'failed' | null;
+  lastRunStartedAt: string | null;
+  lastRunCompletedAt: string | null;
+  lastRunTrigger: 'MANUAL' | 'AUTOMATIC' | null;
+  lastRunRecordsProcessed: number;
+  lastRunError: string | null;
+  lastManualRunAt: string | null;
+  lastAutomaticRunAt: string | null;
+}
+
+interface OperationsMetadataMap {
+  auditVerifiedPayments: OperationMetadata;
+  syncZohoData: OperationMetadata;
+}
+
+function formatOperationStatus(meta?: OperationMetadata | null): { text: string; fullTimestamp: string } {
+  if (!meta) {
+    return { text: 'Never run', fullTimestamp: 'No run recorded' };
+  }
+
+  // 1. Current running state takes precedence
+  if (meta.currentRunStatus === 'running') {
+    const startedTime = meta.lastRunStartedAt
+      ? new Date(meta.lastRunStartedAt).toLocaleTimeString('en-IN', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        })
+      : '';
+    const full = meta.lastRunStartedAt ? new Date(meta.lastRunStartedAt).toLocaleString('en-IN') : 'Now';
+    return {
+      text: startedTime ? `Running · Started ${startedTime}` : 'Running...',
+      fullTimestamp: `Started at ${full}`,
+    };
+  }
+
+  // 2. Check for completed execution
+  const completedDate = meta.lastRunCompletedAt ? new Date(meta.lastRunCompletedAt) : null;
+  if (!completedDate) {
+    return { text: 'Never run', fullTimestamp: 'No run recorded' };
+  }
+
+  // Format date: "Today, 6:12 PM" or "Yesterday, 6:12 PM" or "05 Oct, 6:12 PM"
+  const now = new Date();
+  const isToday =
+    completedDate.getDate() === now.getDate() &&
+    completedDate.getMonth() === now.getMonth() &&
+    completedDate.getFullYear() === now.getFullYear();
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    completedDate.getDate() === yesterday.getDate() &&
+    completedDate.getMonth() === yesterday.getMonth() &&
+    completedDate.getFullYear() === yesterday.getFullYear();
+
+  const timeStr = completedDate.toLocaleTimeString('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  const dayStr = isToday
+    ? 'Today'
+    : isYesterday
+    ? 'Yesterday'
+    : completedDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+
+  const triggerLabel = meta.lastRunTrigger === 'AUTOMATIC' ? 'Auto' : 'Manual';
+  const fullTimestamp = completedDate.toLocaleString('en-IN');
+
+  // Failed state
+  if (meta.lastRunStatus === 'failed') {
+    return {
+      text: `Last run failed: ${dayStr}, ${timeStr} · ${triggerLabel}`,
+      fullTimestamp: `Failed at ${fullTimestamp}${meta.lastRunError ? `: ${meta.lastRunError}` : ''}`,
+    };
+  }
+
+  // Success state: Include records processed if > 0
+  const countPart = meta.lastRunRecordsProcessed > 0 ? ` · ${meta.lastRunRecordsProcessed} processed` : '';
+  return {
+    text: `Last run: ${dayStr}, ${timeStr} · ${triggerLabel}${countPart}`,
+    fullTimestamp: `Completed at ${fullTimestamp}`,
+  };
+}
+
 interface VerifyPaymentsClientProps {
   canAction: boolean;
 }
@@ -95,6 +187,7 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
     paymentDetailCalls: 0,
     paymentUpdateCalls: 0,
   });
+  const [operationsMeta, setOperationsMeta] = useState<OperationsMetadataMap | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [syncing, setSyncing] = useState<boolean>(false);
@@ -164,6 +257,9 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
         });
         if (data.zohoApiUsage) {
           setZohoApiUsage(data.zohoApiUsage);
+        }
+        if (data.operationsMetadata) {
+          setOperationsMeta(data.operationsMetadata);
         }
       } else {
         toast.error(data.error || 'Failed to fetch queue');
@@ -486,24 +582,61 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
             </div>
           )}
 
-          <button
-            onClick={handleAudit}
-            disabled={auditing}
-            className="flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg shadow-2xs hover:bg-indigo-100 disabled:opacity-50 transition-colors h-fit self-center"
-            title="Scan Zoho Books for modified payment amount/date on verified payments"
-          >
-            <ShieldCheck size={14} className={auditing ? 'animate-spin text-indigo-600' : ''} />
-            {auditing ? 'Auditing...' : 'Audit Verified Payments'}
-          </button>
+          {/* Action Button: Audit Verified Payments */}
+          <div className="flex flex-col items-start sm:items-end gap-1">
+            <button
+              onClick={handleAudit}
+              disabled={auditing || operationsMeta?.auditVerifiedPayments?.currentRunStatus === 'running'}
+              className="flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg shadow-2xs hover:bg-indigo-100 disabled:opacity-50 transition-colors h-fit"
+              title={formatOperationStatus(operationsMeta?.auditVerifiedPayments).fullTimestamp}
+            >
+              <ShieldCheck
+                size={14}
+                className={
+                  auditing || operationsMeta?.auditVerifiedPayments?.currentRunStatus === 'running'
+                    ? 'animate-spin text-indigo-600'
+                    : ''
+                }
+              />
+              {auditing || operationsMeta?.auditVerifiedPayments?.currentRunStatus === 'running'
+                ? 'Auditing...'
+                : 'Audit Verified Payments'}
+            </button>
+            <span
+              className="text-[11px] text-gray-500 font-normal px-0.5 tracking-tight"
+              title={formatOperationStatus(operationsMeta?.auditVerifiedPayments).fullTimestamp}
+            >
+              {formatOperationStatus(operationsMeta?.auditVerifiedPayments).text}
+            </span>
+          </div>
 
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-gray-700 bg-white border border-gray-300 rounded-lg shadow-2xs hover:bg-gray-50 disabled:opacity-50 transition-colors h-fit self-center"
-          >
-            <RotateCw size={14} className={syncing ? 'animate-spin text-[#1A2766]' : ''} />
-            {syncing ? 'Syncing...' : 'Sync Zoho Data'}
-          </button>
+          {/* Action Button: Sync Zoho Data */}
+          <div className="flex flex-col items-start sm:items-end gap-1">
+            <button
+              onClick={handleSync}
+              disabled={syncing || operationsMeta?.syncZohoData?.currentRunStatus === 'running'}
+              className="flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-gray-700 bg-white border border-gray-300 rounded-lg shadow-2xs hover:bg-gray-50 disabled:opacity-50 transition-colors h-fit"
+              title={formatOperationStatus(operationsMeta?.syncZohoData).fullTimestamp}
+            >
+              <RotateCw
+                size={14}
+                className={
+                  syncing || operationsMeta?.syncZohoData?.currentRunStatus === 'running'
+                    ? 'animate-spin text-[#1A2766]'
+                    : ''
+                }
+              />
+              {syncing || operationsMeta?.syncZohoData?.currentRunStatus === 'running'
+                ? 'Syncing...'
+                : 'Sync Zoho Data'}
+            </button>
+            <span
+              className="text-[11px] text-gray-500 font-normal px-0.5 tracking-tight"
+              title={formatOperationStatus(operationsMeta?.syncZohoData).fullTimestamp}
+            >
+              {formatOperationStatus(operationsMeta?.syncZohoData).text}
+            </span>
+          </div>
         </div>
       </div>
 

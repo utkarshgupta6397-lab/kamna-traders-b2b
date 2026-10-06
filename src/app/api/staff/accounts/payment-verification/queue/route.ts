@@ -7,6 +7,7 @@ import {
   DEFAULT_SYNC_START_DATE,
   isPaymentEligibleForVerification,
 } from '@/lib/services/customer-payment-verification.service';
+import { getPaymentOperationsMetadata } from '@/lib/services/customer-payment-operation-tracker.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,11 +68,12 @@ export async function GET(request: Request) {
       (p) => ['Cash', 'cash', 'CASH'].includes(p.paymentMode || '')
     ).length;
 
-    // 2. Verified metrics (Total manual + auto, Auto-verified this week) & Zoho API usage
+    // 2. Verified metrics (Total manual + auto, Auto-verified this week), Zoho API usage, and operations metadata
     const [
       autoVerifiedThisWeekCount,
       verifiedThisWeekCount,
       zohoApiUsage,
+      operationsMetadata,
     ] = await Promise.all([
       prisma.customerPayment.count({
         where: {
@@ -87,6 +89,7 @@ export async function GET(request: Request) {
         },
       }),
       getZohoApiUsageToday(),
+      getPaymentOperationsMetadata(),
     ]);
 
     // 3. Query pending queue payments (Earliest first: paymentDate ASC, from 2026-03-01 onwards)
@@ -129,6 +132,7 @@ export async function GET(request: Request) {
         verifiedThisWeek: verifiedThisWeekCount,
       },
       zohoApiUsage,
+      operationsMetadata,
       payments: eligiblePendingPayments,
     });
   } catch (error: any) {

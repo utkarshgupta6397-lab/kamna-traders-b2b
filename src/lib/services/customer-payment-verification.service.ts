@@ -11,6 +11,11 @@ import {
   CustomerPaymentSyncEventCallback,
   SyncFinalSummary,
 } from '@/lib/types/customer-payment-sync-events';
+import {
+  recordOperationStart,
+  recordOperationComplete,
+  PaymentOperationTrigger,
+} from '@/lib/services/customer-payment-operation-tracker.service';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 export const ZOHO_IS_VERIFIED_CF_ID = '1759923000005543022';
@@ -275,6 +280,14 @@ export async function syncCustomerPayments(
 ): Promise<CustomerPaymentSyncResult> {
   const syncStartTime = new Date();
   const syncRunId = options.syncRunId || `sync_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  const trigger: PaymentOperationTrigger = options.trigger === 'CRON' ? 'AUTOMATIC' : 'MANUAL';
+
+  // Record operation start in database
+  await recordOperationStart({
+    operationKey: 'sync_zoho_data',
+    runId: syncRunId,
+    trigger,
+  });
 
   const dispatchEvent = (event: any) => {
     if (options.onEvent) {
@@ -292,6 +305,14 @@ export async function syncCustomerPayments(
 
   const token = await getZohoTokens();
   if (!token) {
+    await recordOperationComplete({
+      operationKey: 'sync_zoho_data',
+      runId: syncRunId,
+      trigger,
+      success: false,
+      recordsProcessed: 0,
+      error: 'Zoho access token is missing or expired. Please re-authenticate Zoho Books.',
+    });
     dispatchEvent({
       type: 'SYNC_FAILED',
       stage: 'AUTH',
@@ -302,6 +323,14 @@ export async function syncCustomerPayments(
 
   const orgId = getZohoOrgId();
   if (!orgId) {
+    await recordOperationComplete({
+      operationKey: 'sync_zoho_data',
+      runId: syncRunId,
+      trigger,
+      success: false,
+      recordsProcessed: 0,
+      error: 'Zoho Organization ID is missing in environment variables.',
+    });
     dispatchEvent({
       type: 'SYNC_FAILED',
       stage: 'CONFIG',
@@ -859,6 +888,15 @@ export async function syncCustomerPayments(
     completedAt: syncEndTime.toISOString(),
     durationMs: totalDurationMs,
     finalSummary,
+  });
+
+  await recordOperationComplete({
+    operationKey: 'sync_zoho_data',
+    runId: syncRunId,
+    trigger,
+    success: errors.length === 0,
+    recordsProcessed: paymentsProcessed,
+    error: errors.length > 0 ? errors.join('; ') : null,
   });
 
   console.log('[CustomerPaymentSync] Diagnostics:', JSON.stringify(diagnostics, null, 2));

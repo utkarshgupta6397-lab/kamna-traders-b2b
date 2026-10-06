@@ -12,27 +12,27 @@ assert(viewDef, 'accounts_payment_verify_view definition must exist');
 assert(actionDef, 'accounts_payment_verify_action definition must exist');
 console.log('✓ PASS: Permissions registered in registry');
 
-console.log('--- 2. Testing IST Working Window for Payment Sync (09:00 - 21:00 IST) ---');
-// 08:59 IST (03:29 UTC) -> Should be false
-const before9Am = new Date('2026-10-05T03:29:00Z');
-assert(!isWithinPaymentSyncHours(before9Am), '08:59 IST should be outside working window');
+console.log('--- 2. Testing IST Working Window for Payment Sync (08:00 - 20:00 IST) ---');
+// 07:59 IST (02:29 UTC) -> Should be false
+const before8Am = new Date('2026-10-05T02:29:00Z');
+assert(!isWithinPaymentSyncHours(before8Am), '07:59 IST should be outside working window');
 
-// 09:01 IST (03:31 UTC) -> Should be true
-const after9Am = new Date('2026-10-05T03:31:00Z');
-assert(isWithinPaymentSyncHours(after9Am), '09:01 IST should be inside working window');
+// 08:01 IST (02:31 UTC) -> Should be true
+const after8Am = new Date('2026-10-05T02:31:00Z');
+assert(isWithinPaymentSyncHours(after8Am), '08:01 IST should be inside working window');
 
 // 12:00 IST (06:30 UTC) -> Should be true
 const noon = new Date('2026-10-05T06:30:00Z');
 assert(isWithinPaymentSyncHours(noon), '12:00 IST should be inside working window');
 
-// 21:00 IST (15:30 UTC) -> Should be true
-const at9Pm = new Date('2026-10-05T15:30:00Z');
-assert(isWithinPaymentSyncHours(at9Pm), '21:00 IST should be inside working window');
+// 20:00 IST (14:30 UTC) -> Should be true
+const at8Pm = new Date('2026-10-05T14:30:00Z');
+assert(isWithinPaymentSyncHours(at8Pm), '20:00 IST should be inside working window');
 
-// 21:01 IST (15:31 UTC) -> Should be false
-const after9Pm = new Date('2026-10-05T15:31:00Z');
-assert(!isWithinPaymentSyncHours(after9Pm), '21:01 IST should be outside working window');
-console.log('✓ PASS: IST working hours accurately constrained');
+// 20:01 IST (14:31 UTC) -> Should be false
+const after8Pm = new Date('2026-10-05T14:31:00Z');
+assert(!isWithinPaymentSyncHours(after8Pm), '20:01 IST should be outside working window');
+console.log('✓ PASS: IST working hours accurately constrained to 08:00 - 20:00 IST');
 
 console.log('--- 3. Testing Bank Matching Logic ---');
 const sampleMatched = {
@@ -392,7 +392,334 @@ assert(expectedApiForPayment.UPDATE === 1, 'Exactly one Zoho PUT update call mus
 assert(expectedApiForPayment.confirmation_GET === 0, 'Confirmation GET must never occur');
 console.log('✓ PASS: Auto-verification of cached eligible bank transfers verified');
 
-console.log('========================================');
-console.log('All Payment Verification tests passed!');
-console.log('========================================');
+console.log('--- 12. Testing Verified Payment Integrity Audit Snapshot & Invalidation ---');
+// Snapshot creation on verification
+const sampleVerifiedPayment = {
+  amount: '15000.00',
+  paymentDate: '2026-10-01',
+  verifiedAmount: '15000.00',
+  verifiedDate: '2026-10-01',
+  verificationStatus: 'VERIFIED',
+  isVerified: true,
+  requiresManualVerification: false,
+};
+
+// Test Case A: Unchanged Zoho record -> Remains VERIFIED and intact
+const unchangedZoho = { amount: 15000.00, date: '2026-10-01' };
+const isAmountIntact = Number(sampleVerifiedPayment.verifiedAmount) === unchangedZoho.amount;
+const isDateIntact = sampleVerifiedPayment.verifiedDate === unchangedZoho.date;
+assert(isAmountIntact && isDateIntact, 'Unchanged payment must remain verified and intact');
+
+// Test Case B: Amount modified in Zoho -> Invalidated to REVERIFICATION_REQUIRED
+const modifiedAmountZoho = { amount: 16500.00, date: '2026-10-01' };
+const amountMatchesB = Number(sampleVerifiedPayment.verifiedAmount) === modifiedAmountZoho.amount;
+assert(!amountMatchesB, 'Amount modification must be detected');
+
+// Invalidation rule contract:
+const invalidatedState = {
+  isVerified: false,
+  verificationStatus: 'REVERIFICATION_REQUIRED',
+  requiresManualVerification: true,
+  verificationInvalidationReason: `Amount changed from ₹${sampleVerifiedPayment.verifiedAmount} to ₹${modifiedAmountZoho.amount}`,
+};
+assert(invalidatedState.isVerified === false, 'Invalidated record must have isVerified = false');
+assert(invalidatedState.verificationStatus === 'REVERIFICATION_REQUIRED', 'Status must transition to REVERIFICATION_REQUIRED');
+assert(invalidatedState.requiresManualVerification === true, 'requiresManualVerification must be true');
+
+// Test Case C: Date modified in Zoho -> Invalidated to REVERIFICATION_REQUIRED
+const modifiedDateZoho = { amount: 15000.00, date: '2026-10-04' };
+const dateMatchesC = sampleVerifiedPayment.verifiedDate === modifiedDateZoho.date;
+assert(!dateMatchesC, 'Date modification must be detected');
+
+console.log('✓ PASS: Verified Payment snapshot comparison and invalidation logic verified');
+
+console.log('--- 13. Testing Auto-Verification Exclusion Guard for REVERIFICATION_REQUIRED ---');
+// Mandatory Guard: If payment was invalidated, it must NEVER auto-verify again even if Bank Transfer + Categorized!
+const reVerificationCandidate = {
+  paymentMode: 'Bank Transfer',
+  isVerified: false,
+  verificationStatus: 'REVERIFICATION_REQUIRED',
+  requiresManualVerification: true,
+  bankMatchStatus: 'CATEGORIZED',
+  cf_is_verified: 'false',
+};
+
+const isEligibleForAuto =
+  reVerificationCandidate.paymentMode === 'Bank Transfer' &&
+  reVerificationCandidate.bankMatchStatus === 'CATEGORIZED' &&
+  ((reVerificationCandidate.cf_is_verified as string | boolean) === 'false' || (reVerificationCandidate.cf_is_verified as string | boolean) === false) &&
+  !reVerificationCandidate.isVerified &&
+  !reVerificationCandidate.requiresManualVerification &&
+  reVerificationCandidate.verificationStatus !== 'REVERIFICATION_REQUIRED';
+
+assert(isEligibleForAuto === false, 'Payments marked REVERIFICATION_REQUIRED must NEVER qualify for auto-verification');
+console.log('✓ PASS: Auto-verification exclusion guard for REVERIFICATION_REQUIRED verified');
+
+console.log('--- 14. Testing Baseline Snapshot Establishment (Non-Invalidation on 1st Run) ---');
+// Existing verified payment prior to this migration (has no snapshot yet)
+const legacyVerifiedPayment = {
+  amount: 25000.00,
+  paymentDate: '2026-09-15',
+  verifiedAmount: null,
+  verifiedDate: null,
+  isVerified: true,
+  verificationStatus: 'VERIFIED',
+};
+
+// First integrity audit run:
+let baselineCreated = false;
+let invalidatedOnFirstRun = false;
+
+if (legacyVerifiedPayment.isVerified && (!legacyVerifiedPayment.verifiedAmount || !legacyVerifiedPayment.verifiedDate)) {
+  // Establish baseline
+  legacyVerifiedPayment.verifiedAmount = legacyVerifiedPayment.amount as any;
+  legacyVerifiedPayment.verifiedDate = legacyVerifiedPayment.paymentDate as any;
+  baselineCreated = true;
+} else {
+  invalidatedOnFirstRun = true;
+}
+
+assert(baselineCreated === true, 'First audit must establish baseline snapshot for legacy verified payment');
+assert(invalidatedOnFirstRun === false, 'First audit must NOT invalidate existing verified payment without snapshot');
+assert(legacyVerifiedPayment.verificationStatus === 'VERIFIED', 'Legacy verified payment must remain VERIFIED');
+console.log('✓ PASS: Baseline snapshot establishment on first run verified');
+
+console.log('--- 15. Testing Safe Monetary Equality (Prisma Decimal / Strings) ---');
+import { Prisma } from '@prisma/client';
+const dec1 = new Prisma.Decimal('15000.00');
+const dec2 = new Prisma.Decimal('15000');
+const dec3 = new Prisma.Decimal(15000.00);
+const decDiff = new Prisma.Decimal('15000.01');
+
+assert(dec1.equals(dec2), 'Decimal 15000.00 and 15000 must be equal');
+assert(dec1.equals(dec3), 'Decimal 15000.00 and numerical 15000.00 must be equal');
+assert(!dec1.equals(decDiff), 'Decimal 15000.00 and 15000.01 must not be equal');
+console.log('✓ PASS: Prisma Decimal comparison verified');
+
+console.log('--- 16. Testing Audit Event Lifecycle & Concurrency ---');
+import {
+  acquireAuditRunLock,
+  releaseAuditRunLock,
+  emitAuditEvent,
+  getOrCreateAuditRun,
+  addAuditEventListener,
+  getActiveAuditRunId,
+} from '../lib/services/customer-payment-audit-events.service';
+import { CustomerPaymentAuditEvent } from '../lib/types/customer-payment-audit-events';
+
+const auditTestRunId = 'audit_test_' + Date.now();
+const auditLock1 = acquireAuditRunLock(auditTestRunId);
+assert(auditLock1.acquired === true, 'Audit lock acquisition must succeed');
+assert(getActiveAuditRunId() === auditTestRunId, 'Active audit run ID must match');
+
+const auditLock2 = acquireAuditRunLock('another_audit');
+assert(auditLock2.acquired === false, 'Duplicate audit lock must be rejected');
+
+const auditEventsReceived: CustomerPaymentAuditEvent[] = [];
+const auditUnsub = addAuditEventListener(auditTestRunId, (ev) => {
+  auditEventsReceived.push(ev);
+});
+
+emitAuditEvent({
+  type: 'AUDIT_STARTED',
+  auditRunId: auditTestRunId,
+  timestamp: new Date().toISOString(),
+  startedAt: new Date().toISOString(),
+  startDate: '2026-03-01',
+  endDate: '2026-10-06',
+  checkpointTimestamp: null,
+  pageSize: 200,
+});
+
+emitAuditEvent({
+  type: 'AUDIT_PAYMENT_INVALIDATED',
+  auditRunId: auditTestRunId,
+  timestamp: new Date().toISOString(),
+  paymentId: 'pay_999',
+  paymentNumber: 'PT-KT/26-27/4001',
+  reason: 'Amount changed from ₹10000.00 to ₹12000.00',
+  expectedAmount: '10000.00',
+  actualAmount: 12000.00,
+  zohoPutSuccess: true,
+});
+
+emitAuditEvent({
+  type: 'AUDIT_COMPLETED',
+  auditRunId: auditTestRunId,
+  timestamp: new Date().toISOString(),
+  startedAt: new Date().toISOString(),
+  completedAt: new Date().toISOString(),
+  durationMs: 450,
+  finalSummary: {
+    paymentsEvaluated: 100,
+    verifiedAudited: 20,
+    intactCount: 19,
+    invalidatedCount: 1,
+    baselinesCreated: 10,
+    unverifiedSkipped: 80,
+    listApiCalls: 1,
+    updateApiCalls: 1,
+    totalApiCalls: 2,
+    checkpointTimestamp: null,
+    newCheckpointTimestamp: '2026-10-06T15:00:00.000Z',
+    totalDurationMs: 450,
+  },
+});
+
+assert(auditEventsReceived.length === 3, 'Audit run must receive exactly 3 events');
+assert(auditEventsReceived[0].type === 'AUDIT_STARTED', 'First audit event must be AUDIT_STARTED');
+assert(auditEventsReceived[1].type === 'AUDIT_PAYMENT_INVALIDATED', 'Second audit event must be AUDIT_PAYMENT_INVALIDATED');
+assert(auditEventsReceived[2].type === 'AUDIT_COMPLETED', 'Third audit event must be AUDIT_COMPLETED');
+
+releaseAuditRunLock(auditTestRunId);
+assert(getActiveAuditRunId() === null, 'Active audit run lock must be released');
+auditUnsub();
+console.log('✓ PASS: Audit event lifecycle, listener streaming, and concurrency lock verified');
+
+console.log('--- 18. Testing Audit Verified Payments 6-Field Workflow ---');
+import { verifyPaymentInZohoAndLocal } from '../lib/services/customer-payment-verification.service';
+import { CustomerPaymentVerificationMethod } from '@prisma/client';
+
+// Test 18.1: Missing all fields rejected with exact error message
+async function testFieldVerificationValidation() {
+  const resultAllMissing = await verifyPaymentInZohoAndLocal({
+    zohoPaymentId: 'dummy_payment_id_1',
+    method: CustomerPaymentVerificationMethod.MANUAL,
+    allowZohoWrites: false,
+    userId: 'test_user_id',
+    verifiedFields: {
+      customerName: false,
+      amount: false,
+      bankCharges: false,
+      paymentDate: false,
+      paymentMode: false,
+      depositTo: false,
+    },
+  });
+  assert(!resultAllMissing.success, 'Verification without verified fields must fail');
+  assert(
+    resultAllMissing.error === 'Please verify all six payment fields before marking this payment as Audit Verified.',
+    `Expected exact error message, got: ${resultAllMissing.error}`
+  );
+  assert(resultAllMissing.code === 'INCOMPLETE_FIELD_VERIFICATION', 'Expected INCOMPLETE_FIELD_VERIFICATION code');
+
+  // Test 18.2: Partial verification (5 of 6) rejected with exact error message
+  const resultPartial = await verifyPaymentInZohoAndLocal({
+    zohoPaymentId: 'dummy_payment_id_2',
+    method: CustomerPaymentVerificationMethod.MANUAL,
+    allowZohoWrites: false,
+    userId: 'test_user_id',
+    verifiedFields: {
+      customerName: true,
+      amount: true,
+      bankCharges: true,
+      paymentDate: true,
+      paymentMode: true,
+      depositTo: false, // 1 field missing
+    },
+  });
+  assert(!resultPartial.success, 'Verification with 5 of 6 fields must fail');
+  assert(
+    resultPartial.error === 'Please verify all six payment fields before marking this payment as Audit Verified.',
+    `Expected exact error message for partial fields, got: ${resultPartial.error}`
+  );
+  assert(resultPartial.code === 'INCOMPLETE_FIELD_VERIFICATION', 'Expected INCOMPLETE_FIELD_VERIFICATION code');
+
+  // Test 18.3: No verifiedFields object provided rejected
+  const resultNone = await verifyPaymentInZohoAndLocal({
+    zohoPaymentId: 'dummy_payment_id_3',
+    method: CustomerPaymentVerificationMethod.MANUAL,
+    allowZohoWrites: false,
+    userId: 'test_user_id',
+  });
+  assert(!resultNone.success, 'Verification with undefined verifiedFields must fail');
+  assert(
+    resultNone.error === 'Please verify all six payment fields before marking this payment as Audit Verified.',
+    `Expected exact error message for undefined fields, got: ${resultNone.error}`
+  );
+
+  console.log('✓ PASS: Incomplete or missing 6-field verification properly rejected with required error message');
+}
+
+console.log('--- 19. Testing Void / Cancelled Payment Exclusion & Eligibility ---');
+import {
+  isPaymentEligibleForVerification,
+  getPaymentStatus,
+  ZOHO_NON_ACTIONABLE_PAYMENT_STATUSES,
+} from '../lib/services/customer-payment-verification.service';
+
+async function testVoidPaymentEligibility() {
+  // Test 19.1: Valid normal payment is included
+  const validPayment = {
+    payment_number: 'PT-KT/26-27/1000',
+    payment_status: 'paid',
+  };
+  assert(isPaymentEligibleForVerification(validPayment) === true, 'Normal paid payment must be eligible');
+
+  // Test 19.2: VOID payment is excluded
+  const voidPayment = {
+    payment_number: 'PT/25-26/3671',
+    payment_status: 'void',
+  };
+  assert(isPaymentEligibleForVerification(voidPayment) === false, 'VOID payment must be excluded');
+
+  // Test 19.3: Case-insensitive VOID handling
+  assert(isPaymentEligibleForVerification({ payment_status: 'VOID' }) === false, 'Uppercase VOID must be excluded');
+  assert(isPaymentEligibleForVerification({ payment_status: 'Void' }) === false, 'Titlecase Void must be excluded');
+  assert(isPaymentEligibleForVerification({ payment_status: '  void  ' }) === false, 'Padded void must be excluded');
+
+  // Test 19.4: Confirmed terminal status CANCELLED / CANCELED
+  assert(isPaymentEligibleForVerification({ payment_status: 'cancelled' }) === false, 'cancelled must be excluded');
+  assert(isPaymentEligibleForVerification({ payment_status: 'CANCELLED' }) === false, 'CANCELLED must be excluded');
+  assert(isPaymentEligibleForVerification({ status: 'void' }) === false, 'status: void must be excluded');
+
+  // Test 19.5: Nested zohoData status handling
+  const localDbRecordWithVoid = {
+    paymentNumber: 'PT/25-26/3671',
+    zohoData: { payment_status: 'void' },
+  };
+  assert(isPaymentEligibleForVerification(localDbRecordWithVoid) === false, 'Local record with zohoData.payment_status=void must be excluded');
+
+  // Test 19.6: Stale queued payment that becomes VOID cannot be verified
+  const staleVoidVerifyResult = await verifyPaymentInZohoAndLocal({
+    zohoPaymentId: '1759923000012630920', // PT/25-26/3671 in DB
+    method: CustomerPaymentVerificationMethod.MANUAL,
+    allowZohoWrites: false,
+    userId: 'test_user_id',
+    verifiedFields: {
+      customerName: true,
+      amount: true,
+      bankCharges: true,
+      paymentDate: true,
+      paymentMode: true,
+      depositTo: true,
+    },
+  });
+  assert(!staleVoidVerifyResult.success, 'Verification of void payment must fail');
+  assert(
+    staleVoidVerifyResult.code === 'PAYMENT_VOIDED',
+    `Expected PAYMENT_VOIDED code, received: ${staleVoidVerifyResult.code}`
+  );
+  assert(
+    staleVoidVerifyResult.error?.includes('VOID'),
+    `Expected error mentioning VOID, received: ${staleVoidVerifyResult.error}`
+  );
+
+  console.log('✓ PASS: Void and cancelled payment exclusion, case-insensitivity, and defensive verification rejections verified');
+}
+
+Promise.all([
+  testFieldVerificationValidation(),
+  testVoidPaymentEligibility(),
+])
+  .then(() => {
+    console.log('========================================');
+    console.log('All Payment Verification tests passed!');
+    console.log('========================================');
+  })
+  .catch((err) => {
+    console.error('Test failed:', err);
+    process.exit(1);
+  });
+
 

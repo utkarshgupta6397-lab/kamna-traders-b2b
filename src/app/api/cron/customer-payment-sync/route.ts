@@ -11,8 +11,9 @@ export const dynamic = 'force-dynamic';
  *
  * Rules:
  * - Requires CRON_SECRET authorization.
- * - Runs every 30 minutes.
- * - Active between 09:00 AM IST to 09:00 PM IST.
+ * - Runs every 4 hours from 8 AM through 8 PM IST (08:00, 12:00, 16:00, 20:00 IST).
+ *   (Corresponding UTC cron: 30 2,6,10,14 * * *)
+ * - Active between 08:00 AM IST to 08:00 PM IST.
  * - Does NOT run outside working hours unless explicit bypass param 'force=true' is passed.
  */
 async function handleCronSync(request: Request) {
@@ -25,11 +26,11 @@ async function handleCronSync(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Check IST working hours: 09:00 AM - 09:00 PM IST
+  // Check IST working hours: 08:00 AM - 08:00 PM IST
   if (!force && !isWithinPaymentSyncHours()) {
     return NextResponse.json({
       status: 'SKIPPED',
-      message: 'Outside automatic sync window (09:00 AM - 09:00 PM IST).',
+      message: 'Outside automatic sync window (08:00 AM - 08:00 PM IST; runs at 08:00, 12:00, 16:00, 20:00 IST).',
       skipped: true,
     });
   }

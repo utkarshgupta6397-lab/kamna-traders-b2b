@@ -2182,6 +2182,7 @@ model PaymentSequence {
 enum CustomerPaymentVerificationStatus {
   PENDING
   VERIFIED
+  REVERIFICATION_REQUIRED
 }
 
 enum CustomerPaymentVerificationMethod {
@@ -2197,36 +2198,52 @@ enum CustomerPaymentBankMatchStatus {
 }
 
 model CustomerPayment {
-  id                     String                             @id @default(cuid())
-  zohoPaymentId          String                             @unique
-  paymentNumber          String
-  customerId             String
-  customerName           String
-  amount                 Decimal                            @db.Decimal(14, 2)
-  paymentDate            DateTime                           @db.Date
-  paymentMode            String
-  referenceNumber        String?
-  accountId              String?
-  accountName            String?
-  description            String?
-  invoiceNumbers         String?
-  isVerified             Boolean                            @default(false)
-  verificationStatus     CustomerPaymentVerificationStatus  @default(PENDING)
-  verificationMethod     CustomerPaymentVerificationMethod?
-  bankMatchStatus        CustomerPaymentBankMatchStatus?
-  importedTransactionId  String?
-  lastZohoModifiedTime   String?
-  bankMatchLastCheckedAt DateTime?
-  verificationAttemptCount Int                              @default(0)
-  lastVerificationAttemptAt DateTime?
-  lastVerificationError   String?
-  zohoData               Json?
-  lastSyncedAt           DateTime                           @default(now())
-  verifiedAt             DateTime?
-  verifiedById           String?
-  verifiedBy             User?                              @relation("CustomerPaymentVerifiedBy", fields: [verifiedById], references: [id])
-  createdAt              DateTime                           @default(now())
-  updatedAt              DateTime                           @updatedAt
+  id                         String                             @id @default(cuid())
+  zohoPaymentId              String                             @unique
+  paymentNumber              String
+  customerId                 String
+  customerName               String
+  amount                     Decimal                            @db.Decimal(14, 2)
+  bankCharges                Decimal                            @default(0) @db.Decimal(14, 2)
+  paymentDate                DateTime                           @db.Date
+  paymentMode                String
+  referenceNumber            String?
+  accountId                  String?
+  accountName                String?
+  description                String?
+  invoiceNumbers             String?
+  isVerified                 Boolean                            @default(false)
+  verificationStatus         CustomerPaymentVerificationStatus  @default(PENDING)
+  verificationMethod         CustomerPaymentVerificationMethod?
+  bankMatchStatus            CustomerPaymentBankMatchStatus?
+  importedTransactionId      String?
+  lastZohoModifiedTime       String?
+  bankMatchLastCheckedAt     DateTime?
+  verificationAttemptCount   Int                              @default(0)
+  lastVerificationAttemptAt  DateTime?
+  lastVerificationError      String?
+  // Snapshot of verified payment state for integrity auditing
+  verifiedAmount             Decimal?                           @db.Decimal(14, 2)
+  verifiedDate               DateTime?                          @db.Date
+  lastVerifiedZohoModifiedTime String?
+  requiresManualVerification Boolean                            @default(false)
+  verificationInvalidatedAt  DateTime?
+  verificationInvalidationReason String?
+  // Explicit 6-field Audit Verification flags
+  isAuditVerified            Boolean                            @default(false)
+  verifiedFieldCustomerName  Boolean                            @default(false)
+  verifiedFieldAmount        Boolean                            @default(false)
+  verifiedFieldBankCharges   Boolean                            @default(false)
+  verifiedFieldPaymentDate   Boolean                            @default(false)
+  verifiedFieldPaymentMode   Boolean                            @default(false)
+  verifiedFieldDepositTo     Boolean                            @default(false)
+  zohoData                   Json?
+  lastSyncedAt               DateTime                           @default(now())
+  verifiedAt                 DateTime?
+  verifiedById               String?
+  verifiedBy                 User?                              @relation("CustomerPaymentVerifiedBy", fields: [verifiedById], references: [id])
+  createdAt                  DateTime                           @default(now())
+  updatedAt                  DateTime                           @updatedAt
 
   @@index([isVerified])
   @@index([verificationStatus])
@@ -2234,7 +2251,16 @@ model CustomerPayment {
   @@index([paymentMode])
   @@index([customerId])
   @@index([lastZohoModifiedTime])
+  @@index([requiresManualVerification])
   @@index([verificationStatus, isVerified, paymentDate])
+}
+
+model PaymentIntegrityAuditCheckpoint {
+  id                    String    @id @default(cuid())
+  service               String    @unique @default("customer_payment_integrity_audit")
+  lastAuditedModifiedTime String? // Canonical ISO string of latest Zoho payment last_modified_time seen
+  lastAuditedAt         DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 }
 
 enum ZohoApiEndpointType {

@@ -5,13 +5,14 @@ import { CustomerPaymentVerificationStatus } from '@prisma/client';
 import {
   getZohoApiUsageToday,
   DEFAULT_SYNC_START_DATE,
+  isPaymentEligibleForVerification,
 } from '@/lib/services/customer-payment-verification.service';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * Returns pending payments queue, summary KPI statistics, and Zoho API usage for Payment Verification workspace.
- * Active queue operates on all unverified payments from 2026-03-01 through today.
+ * Active queue operates on all unverified, non-void payments from 2026-03-01 through today.
  * Pending payments are strictly ordered earliest first (paymentDate ASC).
  */
 export async function GET(request: Request) {
@@ -38,23 +39,40 @@ export async function GET(request: Request) {
     startOfWeek.setDate(now.getDate() - distanceToMonday);
     startOfWeek.setHours(0, 0, 0, 0);
 
-    // 1. Calculate KPI summary metrics and Zoho API usage concurrently
+    // 1. Fetch unverified candidates in active window to compute eligible KPI counts
+    const unverifiedCandidates = await prisma.customerPayment.findMany({
+      where: {
+        verificationStatus: {
+          in: [
+            CustomerPaymentVerificationStatus.PENDING,
+            CustomerPaymentVerificationStatus.REVERIFICATION_REQUIRED,
+          ],
+        },
+        isVerified: false,
+        paymentDate: { gte: activeWindowStartDate },
+      },
+      select: {
+        verificationStatus: true,
+        paymentMode: true,
+        zohoData: true,
+      },
+    });
+
+    const eligibleUnverified = unverifiedCandidates.filter(isPaymentEligibleForVerification);
+    const pendingVerificationCount = eligibleUnverified.length;
+    const reverificationRequiredCount = eligibleUnverified.filter(
+      (p) => p.verificationStatus === CustomerPaymentVerificationStatus.REVERIFICATION_REQUIRED
+    ).length;
+    const cashPendingCount = eligibleUnverified.filter(
+      (p) => ['Cash', 'cash', 'CASH'].includes(p.paymentMode || '')
+    ).length;
+
+    // 2. Verified metrics (Total manual + auto, Auto-verified this week) & Zoho API usage
     const [
-      pendingVerificationCount,
       autoVerifiedThisWeekCount,
-      cashPendingCount,
       verifiedThisWeekCount,
       zohoApiUsage,
     ] = await Promise.all([
-      // 1. Pending Verification (from 2026-03-01 through today)
-      prisma.customerPayment.count({
-        where: {
-          verificationStatus: CustomerPaymentVerificationStatus.PENDING,
-          isVerified: false,
-          paymentDate: { gte: activeWindowStartDate },
-        },
-      }),
-      // 2. Auto Verified This Week
       prisma.customerPayment.count({
         where: {
           verificationStatus: CustomerPaymentVerificationStatus.VERIFIED,
@@ -62,29 +80,23 @@ export async function GET(request: Request) {
           verifiedAt: { gte: startOfWeek },
         },
       }),
-      // 3. Cash Pending (from 2026-03-01 through today)
-      prisma.customerPayment.count({
-        where: {
-          verificationStatus: CustomerPaymentVerificationStatus.PENDING,
-          isVerified: false,
-          paymentMode: { in: ['Cash', 'cash', 'CASH'] },
-          paymentDate: { gte: activeWindowStartDate },
-        },
-      }),
-      // 4. Verified This Week (Total manual + auto)
       prisma.customerPayment.count({
         where: {
           verificationStatus: CustomerPaymentVerificationStatus.VERIFIED,
           verifiedAt: { gte: startOfWeek },
         },
       }),
-      // 5. Zoho API usage today (00:00 IST to 24:00 IST)
       getZohoApiUsageToday(),
     ]);
 
-    // 2. Query pending queue payments (Earliest first: paymentDate ASC, from 2026-03-01 onwards)
+    // 3. Query pending queue payments (Earliest first: paymentDate ASC, from 2026-03-01 onwards)
     const whereClause: any = {
-      verificationStatus: CustomerPaymentVerificationStatus.PENDING,
+      verificationStatus: {
+        in: [
+          CustomerPaymentVerificationStatus.PENDING,
+          CustomerPaymentVerificationStatus.REVERIFICATION_REQUIRED,
+        ],
+      },
       isVerified: false,
       paymentDate: { gte: activeWindowStartDate },
     };
@@ -93,7 +105,7 @@ export async function GET(request: Request) {
       whereClause.paymentMode = mode;
     }
 
-    const pendingPayments = await prisma.customerPayment.findMany({
+    const fetchedPayments = await prisma.customerPayment.findMany({
       where: whereClause,
       orderBy: { paymentDate: 'asc' },
       take: 500,
@@ -104,16 +116,20 @@ export async function GET(request: Request) {
       },
     });
 
+    // Exclude VOID, cancelled, or inactive payments deterministically
+    const eligiblePendingPayments = fetchedPayments.filter(isPaymentEligibleForVerification);
+
     return NextResponse.json({
       success: true,
       stats: {
         pendingVerification: pendingVerificationCount,
+        reverificationRequired: reverificationRequiredCount,
         autoVerifiedThisWeek: autoVerifiedThisWeekCount,
         cashPending: cashPendingCount,
         verifiedThisWeek: verifiedThisWeekCount,
       },
       zohoApiUsage,
-      payments: pendingPayments,
+      payments: eligiblePendingPayments,
     });
   } catch (error: any) {
     console.error('[PaymentVerificationQueue] Error:', error);

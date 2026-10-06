@@ -45,11 +45,25 @@ export async function POST(
       );
     }
 
+    let verifiedFields: any = undefined;
+    try {
+      const contentType = request.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const body = await request.json().catch(() => ({}));
+        if (body && typeof body === 'object') {
+          verifiedFields = body.verifiedFields;
+        }
+      }
+    } catch {
+      // Body reading error handled gracefully
+    }
+
     const result = await verifyPaymentInZohoAndLocal({
       zohoPaymentId: id,
       method: CustomerPaymentVerificationMethod.MANUAL,
       userId: session.userId,
       allowZohoWrites,
+      verifiedFields,
     });
 
     if (!result.success) {

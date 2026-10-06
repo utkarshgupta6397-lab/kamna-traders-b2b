@@ -132,6 +132,39 @@ export function normalizeZohoTimestamp(val: string | Date | null | undefined): s
 }
 
 /**
+ * Authoritative non-actionable Zoho Books payment statuses.
+ * Payments marked with these statuses must never enter Pending Verification,
+ * must not contribute to verification counts, and must never be verified.
+ */
+export const ZOHO_NON_ACTIONABLE_PAYMENT_STATUSES = ['void', 'cancelled', 'canceled'] as const;
+
+/**
+ * Extracts and normalizes the authoritative payment status from a raw Zoho payment object or local record.
+ */
+export function getPaymentStatus(payment: any): string {
+  if (!payment) return '';
+  const rawStatus =
+    payment.payment_status ||
+    payment.status ||
+    payment.zohoData?.payment_status ||
+    payment.zohoData?.status ||
+    '';
+  return String(rawStatus).toLowerCase().trim();
+}
+
+/**
+ * Centralized payment eligibility function for Payment Verification.
+ * Returns true if a payment is valid and actionable for verification.
+ * Returns false if the payment is VOID, cancelled, or otherwise non-actionable in Zoho Books.
+ */
+export function isPaymentEligibleForVerification(payment: any): boolean {
+  if (!payment) return false;
+  const status = getPaymentStatus(payment);
+  if (!status) return true; // Defaults to eligible if no status property exists
+  return !(ZOHO_NON_ACTIONABLE_PAYMENT_STATUSES as readonly string[]).includes(status);
+}
+
+/**
  * Persists an outbound Zoho API call to ZohoApiUsageLog for audit & usage tracking.
  */
 export async function logZohoApiCall(params: {
@@ -209,7 +242,8 @@ export async function getZohoApiUsageToday(): Promise<ZohoApiUsageToday> {
 }
 
 /**
- * Checks if current time is within Indian Standard Time (IST, UTC+5:30) 09:00 AM to 09:00 PM operating window.
+ * Checks if current time is within Indian Standard Time (IST, UTC+5:30) 08:00 AM to 08:00 PM operating window.
+ * Schedule: Every 4 hours from 8 AM through 8 PM IST (08:00, 12:00, 16:00, 20:00 IST).
  */
 export function isWithinPaymentSyncHours(date: Date = new Date()): boolean {
   const istOffsetMs = 5.5 * 60 * 60 * 1000;
@@ -217,8 +251,8 @@ export function isWithinPaymentSyncHours(date: Date = new Date()): boolean {
   const hours = istNow.getUTCHours();
   const minutes = istNow.getUTCMinutes();
   const totalMinutes = hours * 60 + minutes;
-  // 09:00 IST = 540 min, 21:00 IST = 1260 min
-  return totalMinutes >= 540 && totalMinutes <= 1260;
+  // 08:00 IST = 480 min, 20:00 IST = 1200 min
+  return totalMinutes >= 480 && totalMinutes <= 1200;
 }
 
 /**
@@ -629,6 +663,7 @@ export async function syncCustomerPayments(
 
       const paymentDate = new Date(detail?.date || rawPayment.date);
       const amount = new Prisma.Decimal(detail?.amount ?? rawPayment.amount ?? 0);
+      const bankCharges = new Prisma.Decimal(detail?.bank_charges ?? rawPayment.bank_charges ?? 0);
       const effectiveLastModified =
         listLastModifiedTime ||
         detail?.last_modified_time ||
@@ -650,6 +685,7 @@ export async function syncCustomerPayments(
           customerId: String(detail?.customer_id || rawPayment.customer_id || ''),
           customerName: detail?.customer_name || rawPayment.customer_name || '',
           amount,
+          bankCharges,
           paymentDate,
           paymentMode: detail?.payment_mode || rawPayment.payment_mode || '',
           referenceNumber: detail?.reference_number || rawPayment.reference_number || '',
@@ -658,10 +694,14 @@ export async function syncCustomerPayments(
           description: detail?.description || rawPayment.description || null,
           invoiceNumbers: invoiceNumbers || null,
           ...(!isZohoReportedVerified
-            ? {
-                isVerified: false,
-                verificationStatus: CustomerPaymentVerificationStatus.PENDING,
-              }
+            ? existingLocal?.verificationStatus === CustomerPaymentVerificationStatus.REVERIFICATION_REQUIRED
+              ? {
+                  isVerified: false,
+                }
+              : {
+                  isVerified: false,
+                  verificationStatus: CustomerPaymentVerificationStatus.PENDING,
+                }
             : {}),
           bankMatchStatus,
           importedTransactionId,
@@ -678,6 +718,7 @@ export async function syncCustomerPayments(
           customerId: String(detail?.customer_id || rawPayment.customer_id || ''),
           customerName: detail?.customer_name || rawPayment.customer_name || '',
           amount,
+          bankCharges,
           paymentDate,
           paymentMode: detail?.payment_mode || rawPayment.payment_mode || '',
           referenceNumber: detail?.reference_number || rawPayment.reference_number || '',
@@ -700,11 +741,15 @@ export async function syncCustomerPayments(
 
       // 3. AUTO VERIFICATION for qualifying Bank Transfer payments
       // Condition: Bank Transfer + Bank Matched (CATEGORIZED / MATCHED) + Zoho reports cf_is_verified=false
+      // GUARD: Payments marked REVERIFICATION_REQUIRED, requiresManualVerification, or VOID/cancelled MUST NEVER auto-verify!
       const isEligibleForAutoVerification =
         isBankTransfer &&
         isBankMatched &&
+        isPaymentEligibleForVerification(detail || rawPayment) &&
         !isZohoReportedVerified &&
-        !localRecord.isVerified;
+        !localRecord.isVerified &&
+        !localRecord.requiresManualVerification &&
+        localRecord.verificationStatus !== CustomerPaymentVerificationStatus.REVERIFICATION_REQUIRED;
 
       if (isEligibleForAutoVerification) {
         autoVerificationEligible++;
@@ -848,6 +893,15 @@ export function canPerformZohoVerificationWrite(allowZohoWrites: boolean = false
  * - If allowZohoWrites is false, blocks actual Zoho PUT and keeps local record PENDING (NO fake success).
  * - Real local isVerified = true transition occurs ONLY AFTER successful Zoho PUT response.
  */
+export interface PaymentAuditVerifiedFields {
+  customerName?: boolean;
+  amount?: boolean;
+  bankCharges?: boolean;
+  paymentDate?: boolean;
+  paymentMode?: boolean;
+  depositTo?: boolean;
+}
+
 export async function verifyPaymentInZohoAndLocal(params: {
   zohoPaymentId: string;
   method: CustomerPaymentVerificationMethod;
@@ -858,8 +912,29 @@ export async function verifyPaymentInZohoAndLocal(params: {
   allowZohoWrites?: boolean;
   syncRunId?: string;
   onEvent?: CustomerPaymentSyncEventCallback;
+  verifiedFields?: PaymentAuditVerifiedFields;
 }): Promise<{ success: boolean; error?: string; skipped?: boolean; code?: string }> {
-  const { zohoPaymentId, method, userId, allowZohoWrites, syncRunId, onEvent } = params;
+  const { zohoPaymentId, method, userId, allowZohoWrites, syncRunId, onEvent, verifiedFields } = params;
+
+  // Strict validation for MANUAL audit verification:
+  // All six critical payment fields must be verified before marking Audit Verified.
+  if (method === CustomerPaymentVerificationMethod.MANUAL) {
+    const isComplete =
+      verifiedFields?.customerName === true &&
+      verifiedFields?.amount === true &&
+      verifiedFields?.bankCharges === true &&
+      verifiedFields?.paymentDate === true &&
+      verifiedFields?.paymentMode === true &&
+      verifiedFields?.depositTo === true;
+
+    if (!isComplete) {
+      return {
+        success: false,
+        error: 'Please verify all six payment fields before marking this payment as Audit Verified.',
+        code: 'INCOMPLETE_FIELD_VERIFICATION',
+      };
+    }
+  }
 
   const dispatchEvent = (event: any) => {
     if (onEvent && syncRunId) {
@@ -885,6 +960,16 @@ export async function verifyPaymentInZohoAndLocal(params: {
 
   const paymentNumber = local.paymentNumber || zohoPaymentId;
 
+  // Defensive check 1: Check local cached eligibility
+  if (!isPaymentEligibleForVerification(local)) {
+    const localStatus = getPaymentStatus(local).toUpperCase() || 'VOID';
+    return {
+      success: false,
+      code: 'PAYMENT_VOIDED',
+      error: `This payment is not eligible for verification because its status is ${localStatus} in Zoho Books.`,
+    };
+  }
+
   if (local.isVerified && local.verificationStatus === CustomerPaymentVerificationStatus.VERIFIED) {
     // Already verified locally (idempotent success)
     return { success: true };
@@ -895,6 +980,43 @@ export async function verifyPaymentInZohoAndLocal(params: {
 
   if (!token || !orgId) {
     return { success: false, error: 'Zoho credentials or organization ID missing.' };
+  }
+
+  // Defensive check 2: Validate live status from Zoho Books
+  // If paymentSnapshot is provided and authoritative, check it; otherwise fetch live Detail API to ensure payment has not been voided since local sync
+  let currentZohoStatus = '';
+  if (params.paymentSnapshot) {
+    currentZohoStatus = getPaymentStatus(params.paymentSnapshot);
+  }
+
+  if (!currentZohoStatus) {
+    try {
+      const liveCheckUrl = `${API_BASE_URL}/books/v3/customerpayments/${zohoPaymentId}?organization_id=${orgId}`;
+      const liveCheckRes = await fetch(liveCheckUrl, {
+        headers: { Authorization: `Zoho-oauthtoken ${token}` },
+      });
+      if (liveCheckRes.ok) {
+        const liveCheckData = await liveCheckRes.json();
+        if (liveCheckData.payment) {
+          currentZohoStatus = getPaymentStatus(liveCheckData.payment);
+          // Also update local zohoData cache with fresh state
+          await prisma.customerPayment.update({
+            where: { zohoPaymentId },
+            data: { zohoData: liveCheckData.payment as any },
+          }).catch(() => {});
+        }
+      }
+    } catch (liveErr) {
+      console.warn(`[verifyPaymentInZohoAndLocal] Live status check warning for ${paymentNumber}:`, liveErr);
+    }
+  }
+
+  if (currentZohoStatus && (ZOHO_NON_ACTIONABLE_PAYMENT_STATUSES as readonly string[]).includes(currentZohoStatus)) {
+    return {
+      success: false,
+      code: 'PAYMENT_VOIDED',
+      error: `This payment is no longer eligible for verification because it has been voided in Zoho Books.`,
+    };
   }
 
   // ── CENTRAL BACKEND WRITE GATE ──
@@ -1007,7 +1129,12 @@ export async function verifyPaymentInZohoAndLocal(params: {
     }
 
     // STEP 2 — Successful Zoho PUT response is sufficient to mark the payment VERIFIED locally.
-    // Update local DB to VERIFIED
+    // Update local DB to VERIFIED with verified snapshot for integrity auditing
+    const verifiedAmount = local.amount;
+    const verifiedDate = local.paymentDate;
+    const lastVerifiedZohoModifiedTime =
+      local.lastZohoModifiedTime || (params.paymentSnapshot?.last_modified_time ?? null);
+
     await prisma.customerPayment.update({
       where: { zohoPaymentId },
       data: {
@@ -1019,6 +1146,21 @@ export async function verifyPaymentInZohoAndLocal(params: {
         verificationAttemptCount: { increment: 1 },
         lastVerificationAttemptAt: now,
         lastVerificationError: null,
+        // Integrity Audit Snapshot
+        verifiedAmount,
+        verifiedDate,
+        lastVerifiedZohoModifiedTime,
+        requiresManualVerification: false,
+        verificationInvalidatedAt: null,
+        verificationInvalidationReason: null,
+        // Explicit 6-field Audit Verification flags
+        isAuditVerified: true,
+        verifiedFieldCustomerName: verifiedFields?.customerName ?? true,
+        verifiedFieldAmount: verifiedFields?.amount ?? true,
+        verifiedFieldBankCharges: verifiedFields?.bankCharges ?? true,
+        verifiedFieldPaymentDate: verifiedFields?.paymentDate ?? true,
+        verifiedFieldPaymentMode: verifiedFields?.paymentMode ?? true,
+        verifiedFieldDepositTo: verifiedFields?.depositTo ?? true,
       },
     });
 

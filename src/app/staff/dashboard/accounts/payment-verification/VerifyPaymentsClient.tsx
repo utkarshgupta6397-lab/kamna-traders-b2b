@@ -49,12 +49,15 @@ interface PaymentItem {
   verificationInvalidatedAt?: string | null;
   verificationInvalidationReason?: string | null;
   isAuditVerified?: boolean;
-  verifiedFieldCustomerName?: boolean;
-  verifiedFieldAmount?: boolean;
-  verifiedFieldBankCharges?: boolean;
-  verifiedFieldPaymentDate?: boolean;
-  verifiedFieldPaymentMode?: boolean;
-  verifiedFieldDepositTo?: boolean;
+  verifiedCustomerName?: string | null;
+  verifiedCustomerId?: string | null;
+  verifiedAmount?: number | string | null;
+  verifiedBankCharges?: number | string | null;
+  verifiedDate?: string | null;
+  verifiedPaymentMode?: string | null;
+  verifiedAccountId?: string | null;
+  verifiedAccountName?: string | null;
+  lastVerifiedZohoModifiedTime?: string | null;
   zohoData?: any;
   lastSyncedAt: string;
 }
@@ -98,23 +101,6 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
   const [verifying, setVerifying] = useState<boolean>(false);
   const isVerifyingRef = useRef<boolean>(false);
   const [modeFilter, setModeFilter] = useState<string>('ALL');
-
-  // Explicit 6-field Audit Verification states for current payment
-  const [verifiedFields, setVerifiedFields] = useState<{
-    customerName: boolean;
-    amount: boolean;
-    bankCharges: boolean;
-    paymentDate: boolean;
-    paymentMode: boolean;
-    depositTo: boolean;
-  }>({
-    customerName: false,
-    amount: false,
-    bankCharges: false,
-    paymentDate: false,
-    paymentMode: false,
-    depositTo: false,
-  });
 
   // Live Sync Modal states
   const [showSyncModal, setShowSyncModal] = useState<boolean>(false);
@@ -301,54 +287,6 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
     }
   };
 
-  // Reset field verification status when switching selected payment
-  useEffect(() => {
-    if (currentPayment) {
-      setVerifiedFields({
-        customerName: Boolean(currentPayment.verifiedFieldCustomerName),
-        amount: Boolean(currentPayment.verifiedFieldAmount),
-        bankCharges: Boolean(currentPayment.verifiedFieldBankCharges),
-        paymentDate: Boolean(currentPayment.verifiedFieldPaymentDate),
-        paymentMode: Boolean(currentPayment.verifiedFieldPaymentMode),
-        depositTo: Boolean(currentPayment.verifiedFieldDepositTo),
-      });
-    }
-  }, [currentPayment?.zohoPaymentId]);
-
-  const toggleFieldVerification = (field: keyof typeof verifiedFields) => {
-    setVerifiedFields((prev) => ({
-      ...prev,
-      [field]: !prev[field],
-    }));
-  };
-
-  const verifyAllFields = () => {
-    setVerifiedFields({
-      customerName: true,
-      amount: true,
-      bankCharges: true,
-      paymentDate: true,
-      paymentMode: true,
-      depositTo: true,
-    });
-    toast.success('All 6 fields marked as verified');
-  };
-
-  const allFieldsVerified = useMemo(() => {
-    return (
-      verifiedFields.customerName &&
-      verifiedFields.amount &&
-      verifiedFields.bankCharges &&
-      verifiedFields.paymentDate &&
-      verifiedFields.paymentMode &&
-      verifiedFields.depositTo
-    );
-  }, [verifiedFields]);
-
-  const verifiedFieldsCount = useMemo(() => {
-    return Object.values(verifiedFields).filter(Boolean).length;
-  }, [verifiedFields]);
-
   const handleVerify = async () => {
     if (!currentPayment) return;
     if (isVerifyingRef.current || verifying) return;
@@ -357,8 +295,8 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
       return;
     }
 
-    if (!allFieldsVerified) {
-      toast.error('Please verify all six payment fields before marking this payment as Audit Verified.');
+    if (isVoidPayment) {
+      toast.error('This payment is voided in Zoho Books and cannot be verified.');
       return;
     }
 
@@ -378,9 +316,6 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
       const res = await fetch(verifyUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          verifiedFields,
-        }),
       });
       const data = await res.json();
 
@@ -1075,224 +1010,234 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
                   )}
                 </div>
 
-                {/* ── 6-FIELD AUDIT VERIFICATION CARD ── */}
+                {/* ── PAYMENT DETAILS CHECKED AUTOMATICALLY (QUIET SUPPORTING AUDIT SECTION) ── */}
                 {!isVoidPayment ? (
-                  <div className="border border-indigo-100 bg-indigo-50/30 rounded-xl p-4 space-y-3.5 shadow-2xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-2.5 border-b border-indigo-100/80">
+                  <div className="pt-2 pb-1 space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-black text-[#1A2766] uppercase tracking-wider">
-                            Audit Verification Checklist
+                          <span className="text-xs font-medium text-gray-500">
+                            Payment details checked automatically
                           </span>
-                          <span className={`text-[11px] font-black px-2 py-0.5 rounded-full ${
-                            allFieldsVerified
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                              : 'bg-amber-100 text-amber-800 border border-amber-300'
-                          }`}>
-                            {verifiedFieldsCount} of 6 verified
-                          </span>
+                          {currentPayment.verificationStatus === 'REVERIFICATION_REQUIRED' && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300">
+                              Integrity Mismatch
+                            </span>
+                          )}
                         </div>
-                        <p className="text-[11px] text-gray-500 mt-0.5">
-                          Verify all 6 critical payment fields (read-only) before marking this payment as Audit Verified.
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                          Six critical payment fields are checked automatically before verification.
                         </p>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={verifyAllFields}
-                        className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-white border border-indigo-300 hover:bg-indigo-50 rounded-lg shadow-2xs transition-colors self-start sm:self-auto flex items-center gap-1.5 shrink-0"
-                      >
-                        <CheckCircle2 size={13} className="text-indigo-600" />
-                        Verify All (6 Fields)
-                      </button>
                     </div>
 
-                    {/* 6 Fields Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {/* 6 Fields Compact Two-Column Metadata Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 pt-1 border-t border-gray-100 text-xs">
                       {/* 1. Customer Name */}
-                      <div className="p-3 bg-white rounded-lg border border-gray-200/80 flex items-center justify-between gap-3 shadow-2xs">
-                        <div className="min-w-0 flex-1">
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                            1. Customer Name
-                          </span>
-                          <span className="text-xs font-bold text-gray-900 truncate block mt-0.5" title={currentPayment.customerName}>
-                            {currentPayment.customerName}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleFieldVerification('customerName')}
-                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all shrink-0 ${
-                            verifiedFields.customerName
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
-                              : 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
-                          }`}
-                        >
-                          {verifiedFields.customerName ? (
-                            <>
-                              <Check size={12} strokeWidth={3} className="text-emerald-600" />
-                              Verified
-                            </>
-                          ) : (
-                            'Verify'
-                          )}
-                        </button>
-                      </div>
+                      {(() => {
+                        const isMismatch =
+                          currentPayment.verificationStatus === 'REVERIFICATION_REQUIRED' &&
+                          Boolean(currentPayment.verifiedCustomerName) &&
+                          currentPayment.verifiedCustomerName?.trim().toLowerCase() !== currentPayment.customerName.trim().toLowerCase();
+                        return (
+                          <div
+                            className={`flex items-center justify-between py-1 px-1.5 rounded transition-colors ${
+                              isMismatch ? 'bg-amber-50 border border-amber-300' : ''
+                            }`}
+                          >
+                            <span className="text-gray-500 font-medium text-[11px]">Customer Name</span>
+                            <div className="flex items-center gap-1.5 min-w-0 max-w-[60%] justify-end">
+                              <span className={`truncate font-medium text-[11px] ${isMismatch ? 'text-amber-900 font-bold' : 'text-gray-800'}`} title={currentPayment.customerName}>
+                                {currentPayment.customerName}
+                              </span>
+                              {isMismatch ? (
+                                <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
+                                  <AlertCircle size={10} className="text-amber-600" />
+                                  Mismatch
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center text-[10px] text-gray-400 shrink-0 font-normal">
+                                  <Check size={11} className="text-emerald-500 inline mr-0.5" />
+                                  Match
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* 2. Amount Received */}
-                      <div className="p-3 bg-white rounded-lg border border-gray-200/80 flex items-center justify-between gap-3 shadow-2xs">
-                        <div className="min-w-0 flex-1">
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                            2. Amount Received
-                          </span>
-                          <span className="text-xs font-black text-[#1A2766] truncate block mt-0.5">
-                            {formatCurrency(currentPayment.amount)}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleFieldVerification('amount')}
-                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all shrink-0 ${
-                            verifiedFields.amount
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
-                              : 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
-                          }`}
-                        >
-                          {verifiedFields.amount ? (
-                            <>
-                              <Check size={12} strokeWidth={3} className="text-emerald-600" />
-                              Verified
-                            </>
-                          ) : (
-                            'Verify'
-                          )}
-                        </button>
-                      </div>
+                      {(() => {
+                        const isMismatch =
+                          currentPayment.verificationStatus === 'REVERIFICATION_REQUIRED' &&
+                          currentPayment.verifiedAmount != null &&
+                          Number(currentPayment.verifiedAmount) !== Number(currentPayment.amount);
+                        return (
+                          <div
+                            className={`flex items-center justify-between py-1 px-1.5 rounded transition-colors ${
+                              isMismatch ? 'bg-amber-50 border border-amber-300' : ''
+                            }`}
+                          >
+                            <span className="text-gray-500 font-medium text-[11px]">Amount Received</span>
+                            <div className="flex items-center gap-1.5 min-w-0 max-w-[60%] justify-end">
+                              <span className={`font-medium text-[11px] font-mono ${isMismatch ? 'text-amber-900 font-bold' : 'text-gray-800'}`}>
+                                {formatCurrency(currentPayment.amount)}
+                              </span>
+                              {isMismatch ? (
+                                <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
+                                  <AlertCircle size={10} className="text-amber-600" />
+                                  Mismatch
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center text-[10px] text-gray-400 shrink-0 font-normal">
+                                  <Check size={11} className="text-emerald-500 inline mr-0.5" />
+                                  Match
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* 3. Bank Charges */}
-                      <div className="p-3 bg-white rounded-lg border border-gray-200/80 flex items-center justify-between gap-3 shadow-2xs">
-                        <div className="min-w-0 flex-1">
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                            3. Bank Charges
-                          </span>
-                          <span className="text-xs font-bold text-gray-800 truncate block mt-0.5">
-                            {formatCurrency(currentPayment.bankCharges ?? zohoDetail.bank_charges ?? 0)}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleFieldVerification('bankCharges')}
-                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all shrink-0 ${
-                            verifiedFields.bankCharges
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
-                              : 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
-                          }`}
-                        >
-                          {verifiedFields.bankCharges ? (
-                            <>
-                              <Check size={12} strokeWidth={3} className="text-emerald-600" />
-                              Verified
-                            </>
-                          ) : (
-                            'Verify'
-                          )}
-                        </button>
-                      </div>
+                      {(() => {
+                        const currentCharges = currentPayment.bankCharges ?? zohoDetail.bank_charges ?? 0;
+                        const isMismatch =
+                          currentPayment.verificationStatus === 'REVERIFICATION_REQUIRED' &&
+                          currentPayment.verifiedBankCharges != null &&
+                          Number(currentPayment.verifiedBankCharges) !== Number(currentCharges);
+                        return (
+                          <div
+                            className={`flex items-center justify-between py-1 px-1.5 rounded transition-colors ${
+                              isMismatch ? 'bg-amber-50 border border-amber-300' : ''
+                            }`}
+                          >
+                            <span className="text-gray-500 font-medium text-[11px]">Bank Charges</span>
+                            <div className="flex items-center gap-1.5 min-w-0 max-w-[60%] justify-end">
+                              <span className={`font-medium text-[11px] font-mono ${isMismatch ? 'text-amber-900 font-bold' : 'text-gray-800'}`}>
+                                {formatCurrency(currentCharges)}
+                              </span>
+                              {isMismatch ? (
+                                <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
+                                  <AlertCircle size={10} className="text-amber-600" />
+                                  Mismatch
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center text-[10px] text-gray-400 shrink-0 font-normal">
+                                  <Check size={11} className="text-emerald-500 inline mr-0.5" />
+                                  Match
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* 4. Payment Date */}
-                      <div className="p-3 bg-white rounded-lg border border-gray-200/80 flex items-center justify-between gap-3 shadow-2xs">
-                        <div className="min-w-0 flex-1">
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                            4. Payment Date
-                          </span>
-                          <span className="text-xs font-bold text-gray-800 truncate block mt-0.5">
-                            {formatDate(currentPayment.paymentDate)}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleFieldVerification('paymentDate')}
-                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all shrink-0 ${
-                            verifiedFields.paymentDate
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
-                              : 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
-                          }`}
-                        >
-                          {verifiedFields.paymentDate ? (
-                            <>
-                              <Check size={12} strokeWidth={3} className="text-emerald-600" />
-                              Verified
-                            </>
-                          ) : (
-                            'Verify'
-                          )}
-                        </button>
-                      </div>
+                      {(() => {
+                        const isMismatch =
+                          currentPayment.verificationStatus === 'REVERIFICATION_REQUIRED' &&
+                          Boolean(currentPayment.verifiedDate) &&
+                          formatDate(currentPayment.verifiedDate || '') !== formatDate(currentPayment.paymentDate);
+                        return (
+                          <div
+                            className={`flex items-center justify-between py-1 px-1.5 rounded transition-colors ${
+                              isMismatch ? 'bg-amber-50 border border-amber-300' : ''
+                            }`}
+                          >
+                            <span className="text-gray-500 font-medium text-[11px]">Payment Date</span>
+                            <div className="flex items-center gap-1.5 min-w-0 max-w-[60%] justify-end">
+                              <span className={`font-medium text-[11px] ${isMismatch ? 'text-amber-900 font-bold' : 'text-gray-800'}`}>
+                                {formatDate(currentPayment.paymentDate)}
+                              </span>
+                              {isMismatch ? (
+                                <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
+                                  <AlertCircle size={10} className="text-amber-600" />
+                                  Mismatch
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center text-[10px] text-gray-400 shrink-0 font-normal">
+                                  <Check size={11} className="text-emerald-500 inline mr-0.5" />
+                                  Match
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* 5. Payment Mode */}
-                      <div className="p-3 bg-white rounded-lg border border-gray-200/80 flex items-center justify-between gap-3 shadow-2xs">
-                        <div className="min-w-0 flex-1">
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                            5. Payment Mode
-                          </span>
-                          <div className="mt-0.5">
-                            {getModeBadge(currentPayment.paymentMode)}
+                      {(() => {
+                        const isMismatch =
+                          currentPayment.verificationStatus === 'REVERIFICATION_REQUIRED' &&
+                          Boolean(currentPayment.verifiedPaymentMode) &&
+                          currentPayment.verifiedPaymentMode?.trim().toLowerCase() !== currentPayment.paymentMode.trim().toLowerCase();
+                        return (
+                          <div
+                            className={`flex items-center justify-between py-1 px-1.5 rounded transition-colors ${
+                              isMismatch ? 'bg-amber-50 border border-amber-300' : ''
+                            }`}
+                          >
+                            <span className="text-gray-500 font-medium text-[11px]">Payment Mode</span>
+                            <div className="flex items-center gap-1.5 min-w-0 max-w-[60%] justify-end">
+                              <span className={`font-medium text-[11px] truncate ${isMismatch ? 'text-amber-900 font-bold' : 'text-gray-800'}`}>
+                                {currentPayment.paymentMode}
+                              </span>
+                              {isMismatch ? (
+                                <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
+                                  <AlertCircle size={10} className="text-amber-600" />
+                                  Mismatch
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center text-[10px] text-gray-400 shrink-0 font-normal">
+                                  <Check size={11} className="text-emerald-500 inline mr-0.5" />
+                                  Match
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleFieldVerification('paymentMode')}
-                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all shrink-0 ${
-                            verifiedFields.paymentMode
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
-                              : 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
-                          }`}
-                        >
-                          {verifiedFields.paymentMode ? (
-                            <>
-                              <Check size={12} strokeWidth={3} className="text-emerald-600" />
-                              Verified
-                            </>
-                          ) : (
-                            'Verify'
-                          )}
-                        </button>
-                      </div>
+                        );
+                      })()}
 
                       {/* 6. Deposit To */}
-                      <div className="p-3 bg-white rounded-lg border border-gray-200/80 flex items-center justify-between gap-3 shadow-2xs">
-                        <div className="min-w-0 flex-1">
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                            6. Deposit To
-                          </span>
-                          <span className="text-xs font-bold text-gray-800 truncate block mt-0.5" title={currentPayment.accountName || zohoDetail.account_name || 'N/A'}>
-                            {currentPayment.accountName || zohoDetail.account_name || 'N/A'}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleFieldVerification('depositTo')}
-                          className={`px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all shrink-0 ${
-                            verifiedFields.depositTo
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
-                              : 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
-                          }`}
-                        >
-                          {verifiedFields.depositTo ? (
-                            <>
-                              <Check size={12} strokeWidth={3} className="text-emerald-600" />
-                              Verified
-                            </>
-                          ) : (
-                            'Verify'
-                          )}
-                        </button>
-                      </div>
+                      {(() => {
+                        const isMismatch =
+                          currentPayment.verificationStatus === 'REVERIFICATION_REQUIRED' &&
+                          Boolean(currentPayment.verifiedAccountId) &&
+                          Boolean(currentPayment.accountId) &&
+                          currentPayment.verifiedAccountId?.trim() !== currentPayment.accountId?.trim();
+                        const depositAccountDisplay = currentPayment.accountName || zohoDetail.account_name || 'N/A';
+                        return (
+                          <div
+                            className={`flex items-center justify-between py-1 px-1.5 rounded transition-colors ${
+                              isMismatch ? 'bg-amber-50 border border-amber-300' : ''
+                            }`}
+                          >
+                            <span className="text-gray-500 font-medium text-[11px]">Deposit To</span>
+                            <div className="flex items-center gap-1.5 min-w-0 max-w-[60%] justify-end">
+                              <span className={`truncate font-medium text-[11px] ${isMismatch ? 'text-amber-900 font-bold' : 'text-gray-800'}`} title={depositAccountDisplay}>
+                                {depositAccountDisplay}
+                              </span>
+                              {isMismatch ? (
+                                <span className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 shrink-0">
+                                  <AlertCircle size={10} className="text-amber-600" />
+                                  Mismatch
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center text-[10px] text-gray-400 shrink-0 font-normal">
+                                  <Check size={11} className="text-emerald-500 inline mr-0.5" />
+                                  Match
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ) : (
-                  <div className="border border-red-200 bg-red-50/40 rounded-xl p-4 text-center text-xs text-red-700 font-medium">
-                    Audit Verification Checklist is disabled because this payment is voided in Zoho Books.
+                  <div className="p-3 bg-red-50/50 border border-red-200 rounded-lg text-xs text-red-700 font-medium">
+                    Integrity check is disabled because this payment is voided in Zoho Books.
                   </div>
                 )}
 
@@ -1304,15 +1249,10 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
                         <AlertCircle size={14} className="shrink-0" />
                         Payment is voided in Zoho Books and cannot be verified.
                       </span>
-                    ) : !allFieldsVerified ? (
-                      <span className="text-amber-700 font-semibold flex items-center gap-1.5">
-                        <AlertCircle size={14} className="shrink-0" />
-                        Verify all 6 fields to enable payment verification ({6 - verifiedFieldsCount} remaining)
-                      </span>
                     ) : (
-                      <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
-                        <CheckCircle2 size={14} className="shrink-0" />
-                        All 6 fields verified. Ready to record Audit Verification.
+                      <span className="text-gray-600 font-medium flex items-center gap-1.5">
+                        <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
+                        Click Verify Payment to record verification and update Zoho Books.
                       </span>
                     )}
                   </div>
@@ -1330,18 +1270,16 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
                     <button
                       type="button"
                       onClick={handleVerify}
-                      disabled={verifying || !canAction || !allFieldsVerified || isVoidPayment}
+                      disabled={verifying || !canAction || isVoidPayment}
                       title={
                         isVoidPayment
                           ? 'This payment is no longer eligible for verification because it has been voided in Zoho Books.'
                           : !canAction
                           ? 'You do not have action permissions to verify'
-                          : !allFieldsVerified
-                          ? 'Please verify all six payment fields before marking this payment as Audit Verified.'
                           : 'Verify this payment and update Zoho Books'
                       }
                       className={`flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white rounded-lg transition-all shadow-xs ${
-                        !allFieldsVerified || isVoidPayment
+                        isVoidPayment
                           ? 'bg-gray-400 cursor-not-allowed opacity-60'
                           : 'bg-[#1A2766] hover:bg-[#003347] disabled:opacity-40 disabled:cursor-not-allowed'
                       }`}

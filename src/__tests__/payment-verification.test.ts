@@ -576,69 +576,166 @@ assert(getActiveAuditRunId() === null, 'Active audit run lock must be released')
 auditUnsub();
 console.log('✓ PASS: Audit event lifecycle, listener streaming, and concurrency lock verified');
 
-console.log('--- 18. Testing Audit Verified Payments 6-Field Workflow ---');
-import { verifyPaymentInZohoAndLocal } from '../lib/services/customer-payment-verification.service';
-import { CustomerPaymentVerificationMethod } from '@prisma/client';
+console.log('--- 18. Testing Verified Payments Integrity Logic (6-Field Evaluation) ---');
+import { evaluatePaymentIntegrity } from '../lib/services/customer-payment-integrity-audit.service';
 
-// Test 18.1: Missing all fields rejected with exact error message
-async function testFieldVerificationValidation() {
-  const resultAllMissing = await verifyPaymentInZohoAndLocal({
-    zohoPaymentId: 'dummy_payment_id_1',
-    method: CustomerPaymentVerificationMethod.MANUAL,
-    allowZohoWrites: false,
-    userId: 'test_user_id',
-    verifiedFields: {
-      customerName: false,
-      amount: false,
-      bankCharges: false,
-      paymentDate: false,
-      paymentMode: false,
-      depositTo: false,
+function testSixFieldIntegrityLogic() {
+  const baseline = {
+    customerName: 'ACME CORP',
+    customerId: 'cust_101',
+    amount: new Prisma.Decimal('50000.00'),
+    bankCharges: new Prisma.Decimal('15.00'),
+    paymentDate: '2026-03-15',
+    paymentMode: 'Bank Transfer',
+    accountId: 'acc_icici_01',
+    accountName: 'ICICI Bank Current',
+  };
+
+  // 18.1 All six fields match -> PASS
+  const passResult = evaluatePaymentIntegrity({
+    snapshot: baseline,
+    current: {
+      customerName: 'ACME CORP',
+      customerId: 'cust_101',
+      amount: 50000,
+      bankCharges: 15,
+      paymentDate: '2026-03-15',
+      paymentMode: 'bank transfer',
+      accountId: 'acc_icici_01',
+      accountName: 'ICICI Bank Current',
     },
   });
-  assert(!resultAllMissing.success, 'Verification without verified fields must fail');
-  assert(
-    resultAllMissing.error === 'Please verify all six payment fields before marking this payment as Audit Verified.',
-    `Expected exact error message, got: ${resultAllMissing.error}`
-  );
-  assert(resultAllMissing.code === 'INCOMPLETE_FIELD_VERIFICATION', 'Expected INCOMPLETE_FIELD_VERIFICATION code');
+  assert(passResult.overallIntegrityStatus === 'PASS', 'Exact 6-field match must PASS');
+  assert(passResult.customerNameMatch === true, 'Customer name must match');
+  assert(passResult.amountReceivedMatch === true, 'Amount must match');
+  assert(passResult.bankChargesMatch === true, 'Bank charges must match');
+  assert(passResult.paymentDateMatch === true, 'Date must match');
+  assert(passResult.paymentModeMatch === true, 'Payment mode must match');
+  assert(passResult.depositToMatch === true, 'Deposit to must match');
+  assert(passResult.mismatchedFields.length === 0, 'No mismatched fields on PASS');
 
-  // Test 18.2: Partial verification (5 of 6) rejected with exact error message
-  const resultPartial = await verifyPaymentInZohoAndLocal({
-    zohoPaymentId: 'dummy_payment_id_2',
-    method: CustomerPaymentVerificationMethod.MANUAL,
-    allowZohoWrites: false,
-    userId: 'test_user_id',
-    verifiedFields: {
-      customerName: true,
-      amount: true,
-      bankCharges: true,
-      paymentDate: true,
-      paymentMode: true,
-      depositTo: false, // 1 field missing
+  // 18.2 Customer Name mismatch -> FAIL
+  const failCust = evaluatePaymentIntegrity({
+    snapshot: baseline,
+    current: {
+      ...baseline,
+      customerId: 'cust_999',
+      customerName: 'DIFFERENT CUSTOMER',
     },
   });
-  assert(!resultPartial.success, 'Verification with 5 of 6 fields must fail');
-  assert(
-    resultPartial.error === 'Please verify all six payment fields before marking this payment as Audit Verified.',
-    `Expected exact error message for partial fields, got: ${resultPartial.error}`
-  );
-  assert(resultPartial.code === 'INCOMPLETE_FIELD_VERIFICATION', 'Expected INCOMPLETE_FIELD_VERIFICATION code');
+  assert(failCust.overallIntegrityStatus === 'FAIL', 'Customer Name mismatch must FAIL');
+  assert(failCust.customerNameMatch === false, 'customerNameMatch must be false');
+  assert(failCust.mismatchedFields.includes('Customer Name'), 'mismatchedFields must include Customer Name');
 
-  // Test 18.3: No verifiedFields object provided rejected
-  const resultNone = await verifyPaymentInZohoAndLocal({
-    zohoPaymentId: 'dummy_payment_id_3',
-    method: CustomerPaymentVerificationMethod.MANUAL,
-    allowZohoWrites: false,
-    userId: 'test_user_id',
+  // 18.3 Amount Received mismatch -> FAIL
+  const failAmt = evaluatePaymentIntegrity({
+    snapshot: baseline,
+    current: {
+      ...baseline,
+      amount: 55000.00,
+    },
   });
-  assert(!resultNone.success, 'Verification with undefined verifiedFields must fail');
-  assert(
-    resultNone.error === 'Please verify all six payment fields before marking this payment as Audit Verified.',
-    `Expected exact error message for undefined fields, got: ${resultNone.error}`
-  );
+  assert(failAmt.overallIntegrityStatus === 'FAIL', 'Amount Received mismatch must FAIL');
+  assert(failAmt.amountReceivedMatch === false, 'amountReceivedMatch must be false');
+  assert(failAmt.mismatchedFields.includes('Amount Received'), 'mismatchedFields must include Amount Received');
 
-  console.log('✓ PASS: Incomplete or missing 6-field verification properly rejected with required error message');
+  // 18.4 Bank Charges mismatch -> FAIL
+  const failCharges = evaluatePaymentIntegrity({
+    snapshot: baseline,
+    current: {
+      ...baseline,
+      bankCharges: 0,
+    },
+  });
+  assert(failCharges.overallIntegrityStatus === 'FAIL', 'Bank Charges mismatch must FAIL');
+  assert(failCharges.bankChargesMatch === false, 'bankChargesMatch must be false');
+  assert(failCharges.mismatchedFields.includes('Bank Charges'), 'mismatchedFields must include Bank Charges');
+
+  // 18.5 Payment Date mismatch -> FAIL
+  const failDate = evaluatePaymentIntegrity({
+    snapshot: baseline,
+    current: {
+      ...baseline,
+      paymentDate: '2026-03-20',
+    },
+  });
+  assert(failDate.overallIntegrityStatus === 'FAIL', 'Payment Date mismatch must FAIL');
+  assert(failDate.paymentDateMatch === false, 'paymentDateMatch must be false');
+  assert(failDate.mismatchedFields.includes('Payment Date'), 'mismatchedFields must include Payment Date');
+
+  // 18.6 Payment Mode mismatch -> FAIL (even if Date & Amount match!)
+  const failMode = evaluatePaymentIntegrity({
+    snapshot: baseline,
+    current: {
+      ...baseline,
+      paymentMode: 'Cash',
+    },
+  });
+  assert(failMode.overallIntegrityStatus === 'FAIL', 'Payment Mode mismatch must FAIL');
+  assert(failMode.paymentModeMatch === false, 'paymentModeMatch must be false');
+  assert(failMode.amountReceivedMatch === true, 'Amount must still match');
+  assert(failMode.paymentDateMatch === true, 'Date must still match');
+  assert(failMode.mismatchedFields.includes('Payment Mode'), 'mismatchedFields must include Payment Mode');
+
+  // 18.7 Deposit To mismatch -> FAIL (even if Date & Amount match!)
+  const failDeposit = evaluatePaymentIntegrity({
+    snapshot: baseline,
+    current: {
+      ...baseline,
+      accountId: 'acc_hdfc_02',
+      accountName: 'HDFC Bank Main',
+    },
+  });
+  assert(failDeposit.overallIntegrityStatus === 'FAIL', 'Deposit To mismatch must FAIL');
+  assert(failDeposit.depositToMatch === false, 'depositToMatch must be false');
+  assert(failDeposit.mismatchedFields.includes('Deposit To'), 'mismatchedFields must include Deposit To');
+
+  // 18.8 Multiple mismatches -> FAIL with all reported
+  const failMulti = evaluatePaymentIntegrity({
+    snapshot: baseline,
+    current: {
+      ...baseline,
+      paymentMode: 'Cash',
+      accountId: 'acc_hdfc_02',
+      amount: 10000,
+    },
+  });
+  assert(failMulti.overallIntegrityStatus === 'FAIL', 'Multiple mismatches must FAIL');
+  assert(failMulti.mismatchedFields.length === 3, 'Must report exactly 3 mismatched fields');
+  assert(failMulti.mismatchedFields.includes('Amount Received'));
+  assert(failMulti.mismatchedFields.includes('Payment Mode'));
+  assert(failMulti.mismatchedFields.includes('Deposit To'));
+
+  // 18.9 Formatting normalization: whitespace & casing
+  const passWhitespace = evaluatePaymentIntegrity({
+    snapshot: {
+      ...baseline,
+      customerName: '  ACME Corp  ',
+      paymentMode: '  Bank Transfer  ',
+    },
+    current: {
+      ...baseline,
+      customerId: null, // Test string fallback
+      customerName: 'acme corp',
+      paymentMode: 'bank transfer',
+    },
+  });
+  assert(passWhitespace.overallIntegrityStatus === 'PASS', 'Whitespace and case differences must normalize to PASS');
+
+  // 18.10 Bank charges null vs 0 equality
+  const passZeroCharges = evaluatePaymentIntegrity({
+    snapshot: {
+      ...baseline,
+      bankCharges: null,
+    },
+    current: {
+      ...baseline,
+      bankCharges: 0,
+    },
+  });
+  assert(passZeroCharges.bankChargesMatch === true, 'null and 0 bank charges must match');
+
+  console.log('✓ PASS: 6-field evaluation unit tests and regressions validated');
 }
 
 console.log('--- 19. Testing Void / Cancelled Payment Exclusion & Eligibility ---');
@@ -647,6 +744,8 @@ import {
   getPaymentStatus,
   ZOHO_NON_ACTIONABLE_PAYMENT_STATUSES,
 } from '../lib/services/customer-payment-verification.service';
+import { verifyPaymentInZohoAndLocal } from '../lib/services/customer-payment-verification.service';
+import { CustomerPaymentVerificationMethod } from '@prisma/client';
 
 async function testVoidPaymentEligibility() {
   // Test 19.1: Valid normal payment is included
@@ -686,14 +785,6 @@ async function testVoidPaymentEligibility() {
     method: CustomerPaymentVerificationMethod.MANUAL,
     allowZohoWrites: false,
     userId: 'test_user_id',
-    verifiedFields: {
-      customerName: true,
-      amount: true,
-      bankCharges: true,
-      paymentDate: true,
-      paymentMode: true,
-      depositTo: true,
-    },
   });
   assert(!staleVoidVerifyResult.success, 'Verification of void payment must fail');
   assert(
@@ -708,10 +799,8 @@ async function testVoidPaymentEligibility() {
   console.log('✓ PASS: Void and cancelled payment exclusion, case-insensitivity, and defensive verification rejections verified');
 }
 
-Promise.all([
-  testFieldVerificationValidation(),
-  testVoidPaymentEligibility(),
-])
+testSixFieldIntegrityLogic();
+testVoidPaymentEligibility()
   .then(() => {
     console.log('========================================');
     console.log('All Payment Verification tests passed!');

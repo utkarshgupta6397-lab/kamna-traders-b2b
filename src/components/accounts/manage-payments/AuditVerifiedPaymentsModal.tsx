@@ -434,7 +434,7 @@ export default function AuditVerifiedPaymentsModal({
 
               if (ev.type === 'AUDIT_PAYMENT_INVALIDATED') {
                 return (
-                  <div key={index} className="p-2.5 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-[11px] space-y-1">
+                  <div key={index} className="p-2.5 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-[11px] space-y-1.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 font-bold text-amber-950">
                         <AlertTriangle size={13} className="text-amber-600" />
@@ -442,6 +442,19 @@ export default function AuditVerifiedPaymentsModal({
                       </div>
                       <span className="text-amber-700 text-[10px]">{timeStr}</span>
                     </div>
+                    {ev.mismatchedFields && ev.mismatchedFields.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap pl-4">
+                        <span className="text-[10px] font-bold text-gray-500 uppercase">Mismatched Fields:</span>
+                        {ev.mismatchedFields.map((f, fi) => (
+                          <span
+                            key={fi}
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-300"
+                          >
+                            {f}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <div className="text-[11px] font-sans text-amber-900 font-medium pl-4">
                       {ev.reason}
                     </div>

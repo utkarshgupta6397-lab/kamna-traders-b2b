@@ -2222,14 +2222,20 @@ model CustomerPayment {
   verificationAttemptCount   Int                              @default(0)
   lastVerificationAttemptAt  DateTime?
   lastVerificationError      String?
-  // Snapshot of verified payment state for integrity auditing
+  // Snapshot of verified payment state for 6-field integrity auditing
+  verifiedCustomerName       String?
+  verifiedCustomerId         String?
   verifiedAmount             Decimal?                           @db.Decimal(14, 2)
+  verifiedBankCharges        Decimal?                           @db.Decimal(14, 2)
   verifiedDate               DateTime?                          @db.Date
+  verifiedPaymentMode        String?
+  verifiedAccountId          String?
+  verifiedAccountName        String?
   lastVerifiedZohoModifiedTime String?
   requiresManualVerification Boolean                            @default(false)
   verificationInvalidatedAt  DateTime?
   verificationInvalidationReason String?
-  // Explicit 6-field Audit Verification flags
+  // 6-field Audit Verification flags
   isAuditVerified            Boolean                            @default(false)
   verifiedFieldCustomerName  Boolean                            @default(false)
   verifiedFieldAmount        Boolean                            @default(false)

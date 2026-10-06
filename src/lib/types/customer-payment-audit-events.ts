@@ -32,12 +32,22 @@ export interface AuditPageFetchedEvent extends BaseAuditEvent {
   durationMs: number;
 }
 
+export interface PaymentFieldMatchResults {
+  customerName: boolean;
+  amount: boolean;
+  bankCharges: boolean;
+  paymentDate: boolean;
+  paymentMode: boolean;
+  depositTo: boolean;
+}
+
 export interface AuditPaymentEvaluatedEvent extends BaseAuditEvent {
   type: 'AUDIT_PAYMENT_EVALUATED';
   paymentId: string;
   paymentNumber: string;
   action: 'BASELINE_CREATED' | 'VERIFIED_INTACT' | 'UNVERIFIED_IGNORED';
   details?: string;
+  fieldMatchResults?: PaymentFieldMatchResults;
 }
 
 export interface AuditPaymentInvalidatedEvent extends BaseAuditEvent {
@@ -45,6 +55,8 @@ export interface AuditPaymentInvalidatedEvent extends BaseAuditEvent {
   paymentId: string;
   paymentNumber: string;
   reason: string;
+  mismatchedFields?: string[];
+  fieldMatchResults?: PaymentFieldMatchResults;
   expectedAmount?: string | number;
   actualAmount?: string | number;
   expectedDate?: string;

@@ -914,27 +914,7 @@ export async function verifyPaymentInZohoAndLocal(params: {
   onEvent?: CustomerPaymentSyncEventCallback;
   verifiedFields?: PaymentAuditVerifiedFields;
 }): Promise<{ success: boolean; error?: string; skipped?: boolean; code?: string }> {
-  const { zohoPaymentId, method, userId, allowZohoWrites, syncRunId, onEvent, verifiedFields } = params;
-
-  // Strict validation for MANUAL audit verification:
-  // All six critical payment fields must be verified before marking Audit Verified.
-  if (method === CustomerPaymentVerificationMethod.MANUAL) {
-    const isComplete =
-      verifiedFields?.customerName === true &&
-      verifiedFields?.amount === true &&
-      verifiedFields?.bankCharges === true &&
-      verifiedFields?.paymentDate === true &&
-      verifiedFields?.paymentMode === true &&
-      verifiedFields?.depositTo === true;
-
-    if (!isComplete) {
-      return {
-        success: false,
-        error: 'Please verify all six payment fields before marking this payment as Audit Verified.',
-        code: 'INCOMPLETE_FIELD_VERIFICATION',
-      };
-    }
-  }
+  const { zohoPaymentId, method, userId, allowZohoWrites, syncRunId, onEvent } = params;
 
   const dispatchEvent = (event: any) => {
     if (onEvent && syncRunId) {
@@ -1129,9 +1109,16 @@ export async function verifyPaymentInZohoAndLocal(params: {
     }
 
     // STEP 2 — Successful Zoho PUT response is sufficient to mark the payment VERIFIED locally.
-    // Update local DB to VERIFIED with verified snapshot for integrity auditing
+    // Update local DB to VERIFIED with 6-field verified snapshot for integrity auditing
+    const rawZoho = (local.zohoData as any) || params.paymentSnapshot || {};
+    const verifiedCustomerName = local.customerName || rawZoho.customer_name || null;
+    const verifiedCustomerId = local.customerId || (rawZoho.customer_id ? String(rawZoho.customer_id) : null);
     const verifiedAmount = local.amount;
+    const verifiedBankCharges = local.bankCharges ?? (rawZoho.bank_charges != null ? Number(rawZoho.bank_charges) : 0);
     const verifiedDate = local.paymentDate;
+    const verifiedPaymentMode = local.paymentMode || rawZoho.payment_mode || null;
+    const verifiedAccountId = local.accountId || (rawZoho.account_id ? String(rawZoho.account_id) : null);
+    const verifiedAccountName = local.accountName || rawZoho.account_name || null;
     const lastVerifiedZohoModifiedTime =
       local.lastZohoModifiedTime || (params.paymentSnapshot?.last_modified_time ?? null);
 
@@ -1146,21 +1133,27 @@ export async function verifyPaymentInZohoAndLocal(params: {
         verificationAttemptCount: { increment: 1 },
         lastVerificationAttemptAt: now,
         lastVerificationError: null,
-        // Integrity Audit Snapshot
+        // 6-Field Integrity Audit Snapshot
+        verifiedCustomerName,
+        verifiedCustomerId,
         verifiedAmount,
+        verifiedBankCharges,
         verifiedDate,
+        verifiedPaymentMode,
+        verifiedAccountId,
+        verifiedAccountName,
         lastVerifiedZohoModifiedTime,
         requiresManualVerification: false,
         verificationInvalidatedAt: null,
         verificationInvalidationReason: null,
-        // Explicit 6-field Audit Verification flags
+        // 6-field Audit Verification flags
         isAuditVerified: true,
-        verifiedFieldCustomerName: verifiedFields?.customerName ?? true,
-        verifiedFieldAmount: verifiedFields?.amount ?? true,
-        verifiedFieldBankCharges: verifiedFields?.bankCharges ?? true,
-        verifiedFieldPaymentDate: verifiedFields?.paymentDate ?? true,
-        verifiedFieldPaymentMode: verifiedFields?.paymentMode ?? true,
-        verifiedFieldDepositTo: verifiedFields?.depositTo ?? true,
+        verifiedFieldCustomerName: true,
+        verifiedFieldAmount: true,
+        verifiedFieldBankCharges: true,
+        verifiedFieldPaymentDate: true,
+        verifiedFieldPaymentMode: true,
+        verifiedFieldDepositTo: true,
       },
     });
 

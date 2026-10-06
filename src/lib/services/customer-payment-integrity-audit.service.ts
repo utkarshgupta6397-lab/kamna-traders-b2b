@@ -54,7 +54,10 @@ function formatDateToYmd(d: Date | string): string {
 /**
  * Compares two monetary amounts safely using Decimal string/numerical equality.
  */
-function areAmountsEqual(amtA: Prisma.Decimal | number | string | null | undefined, amtB: number | string | null | undefined): boolean {
+function areAmountsEqual(
+  amtA: Prisma.Decimal | number | string | null | undefined,
+  amtB: Prisma.Decimal | number | string | null | undefined
+): boolean {
   if (amtA === null || amtA === undefined || amtB === null || amtB === undefined) return false;
   try {
     const decA = new Prisma.Decimal(amtA.toString());
@@ -63,6 +66,141 @@ function areAmountsEqual(amtA: Prisma.Decimal | number | string | null | undefin
   } catch {
     return false;
   }
+}
+
+/**
+ * Normalizes string by trimming whitespace and converting to lowercase for comparison.
+ */
+function normalizeString(val: string | null | undefined): string {
+  if (val === null || val === undefined) return '';
+  return String(val).trim().toLowerCase();
+}
+
+export interface PaymentIntegrityEvaluation {
+  overallIntegrityStatus: 'PASS' | 'FAIL';
+  customerNameMatch: boolean;
+  amountReceivedMatch: boolean;
+  bankChargesMatch: boolean;
+  paymentDateMatch: boolean;
+  paymentModeMatch: boolean;
+  depositToMatch: boolean;
+  mismatchedFields: string[];
+  reasons: string[];
+  checkedAt: string;
+}
+
+/**
+ * Authoritative 6-field integrity comparison function.
+ * Evaluates snapshot values against authoritative Zoho payment values across:
+ * 1. Customer Name
+ * 2. Amount Received
+ * 3. Bank Charges
+ * 4. Payment Date
+ * 5. Payment Mode
+ * 6. Deposit To
+ */
+export function evaluatePaymentIntegrity(params: {
+  snapshot: {
+    customerName?: string | null;
+    customerId?: string | null;
+    amount?: Prisma.Decimal | number | string | null;
+    bankCharges?: Prisma.Decimal | number | string | null;
+    paymentDate?: Date | string | null;
+    paymentMode?: string | null;
+    accountId?: string | null;
+    accountName?: string | null;
+  };
+  current: {
+    customerName?: string | null;
+    customerId?: string | null;
+    amount?: number | string | Prisma.Decimal | null;
+    bankCharges?: number | string | Prisma.Decimal | null;
+    paymentDate?: Date | string | null;
+    paymentMode?: string | null;
+    accountId?: string | null;
+    accountName?: string | null;
+  };
+}): PaymentIntegrityEvaluation {
+  const { snapshot, current } = params;
+  const reasons: string[] = [];
+  const mismatchedFields: string[] = [];
+
+  // 1. Customer Name: Compare stable ID if both exist; otherwise normalized customer name
+  let customerNameMatch = false;
+  if (snapshot.customerId && current.customerId) {
+    customerNameMatch = String(snapshot.customerId).trim() === String(current.customerId).trim();
+  } else {
+    customerNameMatch = normalizeString(snapshot.customerName) === normalizeString(current.customerName);
+  }
+  if (!customerNameMatch) {
+    mismatchedFields.push('Customer Name');
+    reasons.push(
+      `Customer Name changed from "${snapshot.customerName || 'N/A'}" to "${current.customerName || 'N/A'}"`
+    );
+  }
+
+  // 2. Amount Received: Compare numeric monetary value
+  const amountReceivedMatch = areAmountsEqual(snapshot.amount, current.amount);
+  if (!amountReceivedMatch) {
+    mismatchedFields.push('Amount Received');
+    reasons.push(`Amount changed from ₹${snapshot.amount} to ₹${current.amount}`);
+  }
+
+  // 3. Bank Charges: Compare numeric bank-charge amount (defaulting null to 0)
+  const snapCharges = snapshot.bankCharges != null ? snapshot.bankCharges : 0;
+  const currCharges = current.bankCharges != null ? current.bankCharges : 0;
+  const bankChargesMatch = areAmountsEqual(snapCharges, currCharges);
+  if (!bankChargesMatch) {
+    mismatchedFields.push('Bank Charges');
+    reasons.push(`Bank Charges changed from ₹${snapCharges} to ₹${currCharges}`);
+  }
+
+  // 4. Payment Date: Normalized YYYY-MM-DD comparison
+  const snapDateStr = snapshot.paymentDate ? formatDateToYmd(snapshot.paymentDate) : '';
+  const currDateStr = current.paymentDate ? formatDateToYmd(current.paymentDate) : '';
+  const paymentDateMatch = Boolean(snapDateStr && currDateStr && snapDateStr === currDateStr);
+  if (!paymentDateMatch) {
+    mismatchedFields.push('Payment Date');
+    reasons.push(`Date changed from ${snapDateStr} to ${currDateStr}`);
+  }
+
+  // 5. Payment Mode: Normalized string comparison
+  const paymentModeMatch = normalizeString(snapshot.paymentMode) === normalizeString(current.paymentMode);
+  if (!paymentModeMatch) {
+    mismatchedFields.push('Payment Mode');
+    reasons.push(
+      `Payment Mode changed from "${snapshot.paymentMode || 'N/A'}" to "${current.paymentMode || 'N/A'}"`
+    );
+  }
+
+  // 6. Deposit To: Compare stable account ID if both exist; otherwise normalized account name
+  let depositToMatch = false;
+  if (snapshot.accountId && current.accountId) {
+    depositToMatch = String(snapshot.accountId).trim() === String(current.accountId).trim();
+  } else {
+    depositToMatch = normalizeString(snapshot.accountName) === normalizeString(current.accountName);
+  }
+  if (!depositToMatch) {
+    mismatchedFields.push('Deposit To');
+    reasons.push(
+      `Deposit Account changed from "${snapshot.accountName || 'N/A'}" to "${current.accountName || 'N/A'}"`
+    );
+  }
+
+  const overallIntegrityStatus = mismatchedFields.length === 0 ? 'PASS' : 'FAIL';
+
+  return {
+    overallIntegrityStatus,
+    customerNameMatch,
+    amountReceivedMatch,
+    bankChargesMatch,
+    paymentDateMatch,
+    paymentModeMatch,
+    depositToMatch,
+    mismatchedFields,
+    reasons,
+    checkedAt: new Date().toISOString(),
+  };
 }
 
 /**
@@ -285,12 +423,27 @@ export async function auditVerifiedPaymentIntegrity(
 
         // Baseline handling: If local record is verified but has no verified snapshot fields yet
         if (!local.verifiedAmount || !local.verifiedDate) {
-          // Establish baseline using current verified values
+          // Establish 6-field baseline using current verified values
+          const baseCustomerName = local.verifiedCustomerName || local.customerName || p.customer_name || null;
+          const baseCustomerId = local.verifiedCustomerId || local.customerId || String(p.customer_id || '') || null;
+          const baseAmount = local.verifiedAmount || local.amount;
+          const baseBankCharges = local.verifiedBankCharges ?? local.bankCharges ?? (p.bank_charges != null ? Number(p.bank_charges) : 0);
+          const baseDate = local.verifiedDate || local.paymentDate;
+          const basePaymentMode = local.verifiedPaymentMode || local.paymentMode || p.payment_mode || null;
+          const baseAccountId = local.verifiedAccountId || local.accountId || String(p.account_id || '') || null;
+          const baseAccountName = local.verifiedAccountName || local.accountName || p.account_name || null;
+
           await prisma.customerPayment.update({
             where: { zohoPaymentId },
             data: {
-              verifiedAmount: local.amount,
-              verifiedDate: local.paymentDate,
+              verifiedCustomerName: baseCustomerName,
+              verifiedCustomerId: baseCustomerId,
+              verifiedAmount: baseAmount,
+              verifiedBankCharges: baseBankCharges,
+              verifiedDate: baseDate,
+              verifiedPaymentMode: basePaymentMode,
+              verifiedAccountId: baseAccountId,
+              verifiedAccountName: baseAccountName,
               lastVerifiedZohoModifiedTime: currentZohoModified || local.lastZohoModifiedTime,
             },
           });
@@ -300,40 +453,66 @@ export async function auditVerifiedPaymentIntegrity(
             paymentId: zohoPaymentId,
             paymentNumber,
             action: 'BASELINE_CREATED',
-            details: `Established baseline snapshot: Amount ${local.amount}, Date ${formatDateToYmd(local.paymentDate)}`,
+            details: `Established 6-field baseline snapshot (Customer: ${baseCustomerName}, Amount: ${baseAmount}, Charges: ${baseBankCharges}, Date: ${formatDateToYmd(baseDate)}, Mode: ${basePaymentMode}, Account: ${baseAccountName})`,
+            fieldMatchResults: {
+              customerName: true,
+              amount: true,
+              bankCharges: true,
+              paymentDate: true,
+              paymentMode: true,
+              depositTo: true,
+            },
           });
           continue;
         }
 
-        // Integrity Evaluation: Compare Zoho amount and date against local snapshot
-        const zohoAmount = p.amount;
-        const zohoDate = p.date; // YYYY-MM-DD string
-        const snapshotAmount = local.verifiedAmount;
-        const snapshotDate = formatDateToYmd(local.verifiedDate);
+        // 6-Field Integrity Evaluation: Compare Zoho current values against local snapshot
+        const evaluation = evaluatePaymentIntegrity({
+          snapshot: {
+            customerName: local.verifiedCustomerName || local.customerName,
+            customerId: local.verifiedCustomerId || local.customerId,
+            amount: local.verifiedAmount,
+            bankCharges: local.verifiedBankCharges ?? local.bankCharges ?? 0,
+            paymentDate: local.verifiedDate,
+            paymentMode: local.verifiedPaymentMode || local.paymentMode,
+            accountId: local.verifiedAccountId || local.accountId,
+            accountName: local.verifiedAccountName || local.accountName,
+          },
+          current: {
+            customerName: p.customer_name,
+            customerId: p.customer_id ? String(p.customer_id) : null,
+            amount: p.amount,
+            bankCharges: p.bank_charges ?? 0,
+            paymentDate: p.date,
+            paymentMode: p.payment_mode,
+            accountId: p.account_id ? String(p.account_id) : null,
+            accountName: p.account_name,
+          },
+        });
 
-        const amountMatches = areAmountsEqual(snapshotAmount, zohoAmount);
-        const dateMatches = snapshotDate === zohoDate;
+        const fieldMatchResults = {
+          customerName: evaluation.customerNameMatch,
+          amount: evaluation.amountReceivedMatch,
+          bankCharges: evaluation.bankChargesMatch,
+          paymentDate: evaluation.paymentDateMatch,
+          paymentMode: evaluation.paymentModeMatch,
+          depositTo: evaluation.depositToMatch,
+        };
 
-        if (amountMatches && dateMatches) {
+        if (evaluation.overallIntegrityStatus === 'PASS') {
           intactCount++;
           dispatchEvent({
             type: 'AUDIT_PAYMENT_EVALUATED',
             paymentId: zohoPaymentId,
             paymentNumber,
             action: 'VERIFIED_INTACT',
-            details: `Amount (${zohoAmount}) and Date (${zohoDate}) intact`,
+            details: `All 6 fields intact (Customer, Amount, Bank Charges, Date, Mode, Account)`,
+            fieldMatchResults,
           });
         } else {
           // DISCREPANCY DETECTED: INVALIDATE VERIFICATION
           invalidatedCount++;
-          const reasons: string[] = [];
-          if (!amountMatches) {
-            reasons.push(`Amount changed from ₹${snapshotAmount} to ₹${zohoAmount}`);
-          }
-          if (!dateMatches) {
-            reasons.push(`Date changed from ${snapshotDate} to ${zohoDate}`);
-          }
-          const invalidationReason = reasons.join('; ');
+          const invalidationReason = evaluation.reasons.join('; ');
           const nowTs = new Date();
 
           console.warn(`[IntegrityAudit] INVALIDATING ${paymentNumber} (${zohoPaymentId}): ${invalidationReason}`);
@@ -347,8 +526,14 @@ export async function auditVerifiedPaymentIntegrity(
               requiresManualVerification: true,
               verificationInvalidatedAt: nowTs,
               verificationInvalidationReason: invalidationReason,
-              amount: new Prisma.Decimal(zohoAmount),
-              paymentDate: new Date(zohoDate),
+              customerName: p.customer_name || local.customerName,
+              customerId: p.customer_id ? String(p.customer_id) : local.customerId,
+              amount: new Prisma.Decimal(p.amount ?? local.amount),
+              bankCharges: new Prisma.Decimal(p.bank_charges ?? 0),
+              paymentDate: new Date(p.date || local.paymentDate),
+              paymentMode: p.payment_mode || local.paymentMode,
+              accountId: p.account_id ? String(p.account_id) : local.accountId,
+              accountName: p.account_name || local.accountName,
               lastZohoModifiedTime: currentZohoModified || local.lastZohoModifiedTime,
             },
           });
@@ -426,10 +611,12 @@ export async function auditVerifiedPaymentIntegrity(
             paymentId: zohoPaymentId,
             paymentNumber,
             reason: invalidationReason,
-            expectedAmount: snapshotAmount?.toString(),
-            actualAmount: zohoAmount,
-            expectedDate: snapshotDate,
-            actualDate: zohoDate,
+            mismatchedFields: evaluation.mismatchedFields,
+            fieldMatchResults,
+            expectedAmount: local.verifiedAmount?.toString(),
+            actualAmount: p.amount,
+            expectedDate: formatDateToYmd(local.verifiedDate || local.paymentDate),
+            actualDate: p.date,
             zohoPutSuccess,
           });
         }

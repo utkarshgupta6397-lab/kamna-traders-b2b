@@ -28,6 +28,8 @@ export async function GET() {
           accountsAccess: true,
           accounts_customer_statement: true,
           accounts_transactions: true,
+          accounts_payment_verify_view: true,
+          accounts_payment_verify_action: true,
           accounts_summary_view: true,
           accounts_reports_salesman: true,
           stock_alerts_manage: true,

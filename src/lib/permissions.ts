@@ -29,6 +29,8 @@ export type PermissionKey = 'canManageCarts' | 'canAdjustInventory' | 'canRunSku
   | 'mobile_notes_create'
   | 'mobile_notes_edit'
   | 'mobile_notes_archive'
+  | 'accounts_payment_verify_view'
+  | 'accounts_payment_verify_action'
   | 'hr_attendance_processor';
 
 export interface PermissionDefinition {
@@ -97,6 +99,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
     key: 'accounts_transactions',
     label: 'Bank Transactions',
     description: 'Ability to view live incoming bank feeds and transactions'
+  },
+  {
+    key: 'accounts_payment_verify_view',
+    label: 'View Customer Payment Verification',
+    description: 'Ability to view the payment verification queue and statistics'
+  },
+  {
+    key: 'accounts_payment_verify_action',
+    label: 'Verify Customer Payments',
+    description: 'Ability to perform payment verification actions'
   },
   {
     key: 'accounts_summary_view',
@@ -630,6 +642,8 @@ export const ALL_PERMISSION_KEYS: PermissionKey[] = [
   'accounts_customer_statement',
   'accounts_invoice_processor',
   'accounts_transactions',
+  'accounts_payment_verify_view',
+  'accounts_payment_verify_action',
   'accounts_summary_view',
   'accounts_reports_salesman',
   'stock_alerts_manage',

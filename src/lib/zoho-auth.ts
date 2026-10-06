@@ -220,7 +220,7 @@ export async function exchangeAuthCode(code: string): Promise<{ success: boolean
   }
 }
 
-export const CURRENT_SCOPE_VERSION = 6;
+export const CURRENT_SCOPE_VERSION = 7;
 
 // All OAuth Scopes used by Kamna ERP for Zoho Books integration
 const ZOHO_OAUTH_SCOPES = [
@@ -242,6 +242,7 @@ const ZOHO_OAUTH_SCOPES = [
   'ZohoBooks.invoices.CREATE',
   'ZohoBooks.customerpayments.READ',
   'ZohoBooks.customerpayments.CREATE',
+  'ZohoBooks.customerpayments.UPDATE',
   'ZohoBooks.bills.READ',
   'ZohoBooks.vendorpayments.READ',
   'ZohoBooks.banking.READ'

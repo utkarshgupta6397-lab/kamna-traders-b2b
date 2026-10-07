@@ -206,8 +206,13 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
 
   // LOCAL ONLY: Allow Zoho Writes toggle (stored in browser localStorage, default false)
   const isDevelopment = process.env.NODE_ENV === 'development';
+  const [zohoVerificationWritesEnabled, setZohoVerificationWritesEnabled] = useState<boolean>(false);
   const [allowZohoWrites, setAllowZohoWrites] = useState<boolean>(false);
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
+
+  // In production, writes are determined by server-side zohoVerificationWritesEnabled.
+  // In development, writes are determined by the local toggle allowZohoWrites.
+  const effectiveWritesEnabled = isDevelopment ? allowZohoWrites : zohoVerificationWritesEnabled;
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -260,6 +265,9 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
         }
         if (data.operationsMetadata) {
           setOperationsMeta(data.operationsMetadata);
+        }
+        if (typeof data.zohoVerificationWritesEnabled === 'boolean') {
+          setZohoVerificationWritesEnabled(data.zohoVerificationWritesEnabled);
         }
       } else {
         toast.error(data.error || 'Failed to fetch queue');
@@ -426,8 +434,8 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
         }));
         await fetchQueue();
       } else {
-        if (data.skipped || data.code === 'SKIPPED_DUE_TO_LOCAL_WRITE_DISABLED') {
-          toast.error('Zoho writes are disabled in Local Only mode.', {
+        if (data.skipped || data.code === 'SKIPPED_DUE_TO_LOCAL_WRITE_DISABLED' || data.code === 'SKIPPED_DUE_TO_PROD_WRITE_DISABLED') {
+          toast.error(data.error || 'Zoho writes are disabled.', {
             duration: 4000,
           });
         } else {
@@ -645,7 +653,7 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
         isOpen={showSyncModal}
         onClose={() => setShowSyncModal(false)}
         syncRunId={activeSyncRunId}
-        allowZohoWrites={allowZohoWrites}
+        allowZohoWrites={effectiveWritesEnabled}
         onSyncCompleted={() => {
           fetchQueue();
         }}
@@ -656,7 +664,7 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
         isOpen={showAuditModal}
         onClose={() => setShowAuditModal(false)}
         auditRunId={activeAuditRunId}
-        allowZohoWrites={allowZohoWrites}
+        allowZohoWrites={effectiveWritesEnabled}
         onAuditCompleted={() => {
           fetchQueue();
         }}

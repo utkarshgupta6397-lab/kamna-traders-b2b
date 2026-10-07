@@ -82,20 +82,46 @@ const diffHours = (endIstUtc.getTime() - startIstUtc.getTime()) / (1000 * 60 * 6
 assert(diffHours === 24, `IST day range must be exactly 24 hours, received ${diffHours}`);
 console.log('✓ PASS: IST day boundary (00:00 to 24:00) calculated accurately');
 
-console.log('--- 5. Testing Backend Write Gate (canPerformZohoVerificationWrite) ---');
-import { canPerformZohoVerificationWrite } from '../lib/services/customer-payment-verification.service';
+console.log('--- 5. Testing Backend Write Gate (canPerformZohoVerificationWrite & isZohoVerificationWritesEnabled) ---');
+import {
+  canPerformZohoVerificationWrite,
+  isZohoVerificationWritesEnabled,
+} from '../lib/services/customer-payment-verification.service';
+
 // In current environment (development)
 assert(!canPerformZohoVerificationWrite(false), 'Write gate must return false when allowZohoWrites is false');
 assert(canPerformZohoVerificationWrite(true), 'Write gate must return true when allowZohoWrites is true in development');
+assert(!isZohoVerificationWritesEnabled(), 'isZohoVerificationWritesEnabled must be false in development');
 
-// Simulate production NODE_ENV
+// Simulate production NODE_ENV without ZOHO_VERIFICATION_WRITES_ENABLED
 const prevEnv = process.env.NODE_ENV;
+const prevWriteFlag = process.env.ZOHO_VERIFICATION_WRITES_ENABLED;
 try {
   (process.env as any).NODE_ENV = 'production';
-  assert(!canPerformZohoVerificationWrite(true), 'Write gate must strictly return false in production even if allowZohoWrites is true');
-  assert(!canPerformZohoVerificationWrite(false), 'Write gate must strictly return false in production');
+  delete process.env.ZOHO_VERIFICATION_WRITES_ENABLED;
+
+  assert(!isZohoVerificationWritesEnabled(), 'isZohoVerificationWritesEnabled must be false in production when flag unset');
+  assert(!canPerformZohoVerificationWrite(true), 'Write gate must strictly return false in production when flag unset even if client sends allowZohoWrites=true');
+  assert(!canPerformZohoVerificationWrite(false), 'Write gate must strictly return false in production when flag unset');
+
+  // Explicitly disabled in production
+  process.env.ZOHO_VERIFICATION_WRITES_ENABLED = 'false';
+  assert(!isZohoVerificationWritesEnabled(), 'isZohoVerificationWritesEnabled must be false when flag is "false"');
+  assert(!canPerformZohoVerificationWrite(true), 'Write gate must be false when flag is "false"');
+
+  // Explicitly enabled in production
+  process.env.ZOHO_VERIFICATION_WRITES_ENABLED = 'true';
+  assert(isZohoVerificationWritesEnabled(), 'isZohoVerificationWritesEnabled must be true when flag is "true" in production');
+  assert(canPerformZohoVerificationWrite(false), 'Write gate must be true in production when server flag is "true" (client param ignored)');
+  assert(canPerformZohoVerificationWrite(true), 'Write gate must be true in production when server flag is "true"');
+  console.log('✓ PASS: Production Zoho write authorization gate verified');
 } finally {
   (process.env as any).NODE_ENV = prevEnv;
+  if (prevWriteFlag !== undefined) {
+    process.env.ZOHO_VERIFICATION_WRITES_ENABLED = prevWriteFlag;
+  } else {
+    delete process.env.ZOHO_VERIFICATION_WRITES_ENABLED;
+  }
 }
 console.log('--- 6. Testing Active Sync Scope (2026-03-01 through Today in IST) ---');
 import { DEFAULT_SYNC_START_DATE, getIstTodayDateStr } from '../lib/services/customer-payment-verification.service';
@@ -933,9 +959,57 @@ async function testExecutionTracker() {
   console.log('✓ PASS: Persistent execution tracking, manual/automatic separation, and concurrency protection verified');
 }
 
+async function testCronIntegrityAuditRoute() {
+  console.log('--- 21. Testing Customer Payment Integrity Audit Cron Endpoint ---');
+  const { GET, POST } = await import('../app/api/cron/customer-payment-integrity-audit/route');
+
+  const originalCronSecret = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = 'test_secret_integrity_123';
+
+  try {
+    // 21.1 Reject unauthorized requests
+    const unauthReq = new Request('http://localhost:3000/api/cron/customer-payment-integrity-audit');
+    const unauthRes = await GET(unauthReq);
+    assert(unauthRes.status === 401, 'Cron endpoint must return 401 Unauthorized without secret');
+
+    // 21.2 Reject invalid secret
+    const badSecretReq = new Request('http://localhost:3000/api/cron/customer-payment-integrity-audit?secret=wrong');
+    const badSecretRes = await POST(badSecretReq);
+    assert(badSecretRes.status === 401, 'Cron endpoint must return 401 with wrong secret');
+
+    // 21.3 Accept valid secret via header
+    const authHeaderReq = new Request('http://localhost:3000/api/cron/customer-payment-integrity-audit', {
+      headers: { 'x-cron-secret': 'test_secret_integrity_123' },
+    });
+    // This will invoke auditVerifiedPaymentIntegrity. In local test environment without real Zoho,
+    // it will execute and return either success or expected auth/connection result, but status is not 401.
+    // To test concurrency, let's verify lock behavior:
+    const { acquireAuditRunLock, releaseAuditRunLock } = await import(
+      '../lib/services/customer-payment-audit-events.service'
+    );
+    acquireAuditRunLock('test_manual_lock_run');
+    try {
+      const busyRes = await GET(
+        new Request('http://localhost:3000/api/cron/customer-payment-integrity-audit?secret=test_secret_integrity_123')
+      );
+      assert(busyRes.status === 409, 'Cron endpoint must return 409 when audit already running');
+      const busyJson = await busyRes.json();
+      assert(busyJson.status === 'SKIPPED', 'Skipped status expected');
+      assert(busyJson.alreadyRunning === true, 'alreadyRunning flag expected');
+    } finally {
+      releaseAuditRunLock('test_manual_lock_run');
+    }
+
+    console.log('✓ PASS: Customer payment integrity audit cron endpoint authentication and concurrency verified');
+  } finally {
+    process.env.CRON_SECRET = originalCronSecret;
+  }
+}
+
 testSixFieldIntegrityLogic();
 testVoidPaymentEligibility()
   .then(() => testExecutionTracker())
+  .then(() => testCronIntegrityAuditRoute())
   .then(() => {
     console.log('========================================');
     console.log('All Payment Verification tests passed!');

@@ -912,16 +912,35 @@ export async function syncCustomerPayments(
 }
 
 /**
+ * Server-authoritative check for whether Zoho verification writes are enabled in production.
+ * Controlled exclusively by environment variable ZOHO_VERIFICATION_WRITES_ENABLED=true.
+ * Client/browser parameters cannot enable production writes.
+ */
+export function isZohoVerificationWritesEnabled(): boolean {
+  if (process.env.NODE_ENV === 'production') {
+    return process.env.ZOHO_VERIFICATION_WRITES_ENABLED === 'true';
+  }
+  return false;
+}
+
+/**
  * Central backend write gate for Zoho Customer Payment verification updates.
  * STRICT SECURITY:
- * 1. NODE_ENV MUST be 'development' (production rejects real verification writes via this dev toggle).
- * 2. allowZohoWrites must be explicitly true.
+ * 1. In production (NODE_ENV === 'production'):
+ *    - Real writes are permitted ONLY if ZOHO_VERIFICATION_WRITES_ENABLED === 'true'.
+ *    - Client allowZohoWrites toggle is strictly ignored.
+ * 2. In development (NODE_ENV === 'development'):
+ *    - Writes are allowed only if the local developer toggle allowZohoWrites is explicitly true.
+ * 3. In all other environments (test, staging without explicit config): writes are blocked.
  */
 export function canPerformZohoVerificationWrite(allowZohoWrites: boolean = false): boolean {
-  if (process.env.NODE_ENV !== 'development') {
-    return false;
+  if (process.env.NODE_ENV === 'production') {
+    return isZohoVerificationWritesEnabled();
   }
-  return Boolean(allowZohoWrites);
+  if (process.env.NODE_ENV === 'development') {
+    return Boolean(allowZohoWrites);
+  }
+  return false;
 }
 
 /**
@@ -1058,12 +1077,16 @@ export async function verifyPaymentInZohoAndLocal(params: {
       console.error('[VerifyPayment] Failed to record diagnostic audit log:', auditErr);
     }
 
-    // Keep local record as isVerified: false, verificationStatus: PENDING
+    const isProd = process.env.NODE_ENV === 'production';
+    const blockedReason = isProd
+      ? 'Zoho verification writes are currently disabled in production (ZOHO_VERIFICATION_WRITES_ENABLED=false).'
+      : 'Zoho writes are disabled in Local Only mode.';
+
     return {
       success: false,
       skipped: true,
-      code: 'SKIPPED_DUE_TO_LOCAL_WRITE_DISABLED',
-      error: 'Zoho writes are disabled in Local Only mode.',
+      code: isProd ? 'SKIPPED_DUE_TO_PROD_WRITE_DISABLED' : 'SKIPPED_DUE_TO_LOCAL_WRITE_DISABLED',
+      error: blockedReason,
     };
   }
 

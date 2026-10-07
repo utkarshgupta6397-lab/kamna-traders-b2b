@@ -33,13 +33,9 @@ export async function POST(request: Request) {
     const allowZohoWritesQuery = searchParams.get('allowZohoWrites') === 'true';
     const allowZohoWrites = allowZohoWritesHeader || allowZohoWritesQuery;
 
-    // Production safety: reject attempts to use allowZohoWrites outside development
-    if (allowZohoWrites && process.env.NODE_ENV !== 'development') {
-      return NextResponse.json(
-        { error: 'Zoho verification write override is strictly disallowed outside local development.' },
-        { status: 403 }
-      );
-    }
+    // In development, staff can explicitly opt into Zoho writes via header/query parameter.
+    // In production, writes are strictly governed server-side by ZOHO_VERIFICATION_WRITES_ENABLED (client toggle ignored).
+    const effectiveAllowZohoWrites = process.env.NODE_ENV === 'development' ? allowZohoWrites : false;
 
     const syncRunId = requestedSyncRunId || `sync_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
@@ -64,7 +60,7 @@ export async function POST(request: Request) {
           startDate,
           endDate,
           trigger: 'MANUAL',
-          allowZohoWrites,
+          allowZohoWrites: effectiveAllowZohoWrites,
           syncRunId,
           onEvent: (event) => {
             emitSyncEvent(event);

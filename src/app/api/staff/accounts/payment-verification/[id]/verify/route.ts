@@ -36,14 +36,9 @@ export async function POST(
     const allowZohoWritesHeader = request.headers.get('x-allow-zoho-writes') === 'true';
     const allowZohoWritesQuery = new URL(request.url).searchParams.get('allowZohoWrites') === 'true';
     const allowZohoWrites = allowZohoWritesHeader || allowZohoWritesQuery;
-
-    // Production safety: reject attempts to use allowZohoWrites outside development
-    if (allowZohoWrites && process.env.NODE_ENV !== 'development') {
-      return NextResponse.json(
-        { error: 'Zoho verification write override is strictly disallowed outside local development.' },
-        { status: 403 }
-      );
-    }
+    // In development, staff can explicitly opt into Zoho writes via header/query parameter.
+    // In production, writes are strictly governed server-side by ZOHO_VERIFICATION_WRITES_ENABLED (client toggle ignored).
+    const effectiveAllowZohoWrites = process.env.NODE_ENV === 'development' ? allowZohoWrites : false;
 
     let verifiedFields: any = undefined;
     try {
@@ -62,7 +57,7 @@ export async function POST(
       zohoPaymentId: id,
       method: CustomerPaymentVerificationMethod.MANUAL,
       userId: session.userId,
-      allowZohoWrites,
+      allowZohoWrites: effectiveAllowZohoWrites,
       verifiedFields,
     });
 

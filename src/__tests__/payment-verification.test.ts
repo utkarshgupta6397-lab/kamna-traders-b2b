@@ -82,46 +82,24 @@ const diffHours = (endIstUtc.getTime() - startIstUtc.getTime()) / (1000 * 60 * 6
 assert(diffHours === 24, `IST day range must be exactly 24 hours, received ${diffHours}`);
 console.log('✓ PASS: IST day boundary (00:00 to 24:00) calculated accurately');
 
-console.log('--- 5. Testing Backend Write Gate (canPerformZohoVerificationWrite & isZohoVerificationWritesEnabled) ---');
-import {
-  canPerformZohoVerificationWrite,
-  isZohoVerificationWritesEnabled,
-} from '../lib/services/customer-payment-verification.service';
+console.log('--- 5. Testing Backend Write Gate (canPerformZohoVerificationWrite) ---');
+import { canPerformZohoVerificationWrite } from '../lib/services/customer-payment-verification.service';
 
-// In current environment (development)
-assert(!canPerformZohoVerificationWrite(false), 'Write gate must return false when allowZohoWrites is false');
-assert(canPerformZohoVerificationWrite(true), 'Write gate must return true when allowZohoWrites is true in development');
-assert(!isZohoVerificationWritesEnabled(), 'isZohoVerificationWritesEnabled must be false in development');
+// In development
+assert(canPerformZohoVerificationWrite(), 'Write gate must return true by default in development');
+assert(canPerformZohoVerificationWrite(true), 'Write gate must return true when called with true');
+assert(canPerformZohoVerificationWrite(false), 'Write gate must return true even if called with false');
 
-// Simulate production NODE_ENV without ZOHO_VERIFICATION_WRITES_ENABLED
+// In production: must allow legitimate Zoho writes without environment restrictions
 const prevEnv = process.env.NODE_ENV;
-const prevWriteFlag = process.env.ZOHO_VERIFICATION_WRITES_ENABLED;
 try {
   (process.env as any).NODE_ENV = 'production';
-  delete process.env.ZOHO_VERIFICATION_WRITES_ENABLED;
-
-  assert(!isZohoVerificationWritesEnabled(), 'isZohoVerificationWritesEnabled must be false in production when flag unset');
-  assert(!canPerformZohoVerificationWrite(true), 'Write gate must strictly return false in production when flag unset even if client sends allowZohoWrites=true');
-  assert(!canPerformZohoVerificationWrite(false), 'Write gate must strictly return false in production when flag unset');
-
-  // Explicitly disabled in production
-  process.env.ZOHO_VERIFICATION_WRITES_ENABLED = 'false';
-  assert(!isZohoVerificationWritesEnabled(), 'isZohoVerificationWritesEnabled must be false when flag is "false"');
-  assert(!canPerformZohoVerificationWrite(true), 'Write gate must be false when flag is "false"');
-
-  // Explicitly enabled in production
-  process.env.ZOHO_VERIFICATION_WRITES_ENABLED = 'true';
-  assert(isZohoVerificationWritesEnabled(), 'isZohoVerificationWritesEnabled must be true when flag is "true" in production');
-  assert(canPerformZohoVerificationWrite(false), 'Write gate must be true in production when server flag is "true" (client param ignored)');
-  assert(canPerformZohoVerificationWrite(true), 'Write gate must be true in production when server flag is "true"');
-  console.log('✓ PASS: Production Zoho write authorization gate verified');
+  assert(canPerformZohoVerificationWrite(), 'Write gate must allow legitimate writes in production');
+  assert(canPerformZohoVerificationWrite(true), 'Write gate must allow legitimate writes in production with arg true');
+  assert(canPerformZohoVerificationWrite(false), 'Write gate must allow legitimate writes in production with arg false');
+  console.log('✓ PASS: Production and development direct Zoho write communication verified');
 } finally {
   (process.env as any).NODE_ENV = prevEnv;
-  if (prevWriteFlag !== undefined) {
-    process.env.ZOHO_VERIFICATION_WRITES_ENABLED = prevWriteFlag;
-  } else {
-    delete process.env.ZOHO_VERIFICATION_WRITES_ENABLED;
-  }
 }
 console.log('--- 6. Testing Active Sync Scope (2026-03-01 through Today in IST) ---');
 import { DEFAULT_SYNC_START_DATE, getIstTodayDateStr } from '../lib/services/customer-payment-verification.service';
@@ -1006,10 +984,40 @@ async function testCronIntegrityAuditRoute() {
   }
 }
 
+async function testProductionModeDirectApiRoutes() {
+  console.log('--- 22. Testing API Routes in Production Mode (No Artificial 403 on NODE_ENV=production) ---');
+  const syncRoute = await import('../app/api/staff/accounts/payment-verification/sync/route');
+  const auditRoute = await import('../app/api/staff/accounts/payment-verification/integrity-audit/route');
+  const verifyRoute = await import('../app/api/staff/accounts/payment-verification/[id]/verify/route');
+
+  const prevEnv = process.env.NODE_ENV;
+  try {
+    (process.env as any).NODE_ENV = 'production';
+
+    // 22.1 Authentication is strictly preserved: without session, routes return 401 / 403 Forbidden for auth
+    const unauthSyncRes = await syncRoute.POST(new Request('http://localhost:3000/api/staff/accounts/payment-verification/sync', { method: 'POST' }));
+    assert(unauthSyncRes.status === 401, 'Unauthenticated sync request must return 401 in production');
+
+    const unauthAuditRes = await auditRoute.POST(new Request('http://localhost:3000/api/staff/accounts/payment-verification/integrity-audit', { method: 'POST' }));
+    assert(unauthAuditRes.status === 401, 'Unauthenticated audit request must return 401 in production');
+
+    const unauthVerifyRes = await verifyRoute.POST(
+      new Request('http://localhost:3000/api/staff/accounts/payment-verification/123/verify', { method: 'POST' }),
+      { params: Promise.resolve({ id: '123' }) }
+    );
+    assert(unauthVerifyRes.status === 403, 'Unauthenticated verify payment request must return 403 for permission');
+
+    console.log('✓ PASS: Production mode preserves authentication/authorization and does not reject with artificial environment write blocks');
+  } finally {
+    (process.env as any).NODE_ENV = prevEnv;
+  }
+}
+
 testSixFieldIntegrityLogic();
 testVoidPaymentEligibility()
   .then(() => testExecutionTracker())
   .then(() => testCronIntegrityAuditRoute())
+  .then(() => testProductionModeDirectApiRoutes())
   .then(() => {
     console.log('========================================');
     console.log('All Payment Verification tests passed!');

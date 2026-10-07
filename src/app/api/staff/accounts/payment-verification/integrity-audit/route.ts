@@ -29,14 +29,6 @@ export async function POST(request: Request) {
     const requestedAuditRunId = searchParams.get('auditRunId');
     const forceFullAudit = searchParams.get('forceFullAudit') === 'true';
 
-    const allowZohoWritesHeader = request.headers.get('x-allow-zoho-writes') === 'true';
-    const allowZohoWritesQuery = searchParams.get('allowZohoWrites') === 'true';
-    const allowZohoWrites = allowZohoWritesHeader || allowZohoWritesQuery;
-
-    // In development, staff can explicitly opt into Zoho writes via header/query parameter.
-    // In production, writes are strictly governed server-side by ZOHO_VERIFICATION_WRITES_ENABLED (client toggle ignored).
-    const effectiveAllowZohoWrites = process.env.NODE_ENV === 'development' ? allowZohoWrites : false;
-
     const auditRunId = requestedAuditRunId || `audit_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     // Concurrency protection: prevent duplicate overlapping audits
@@ -59,7 +51,6 @@ export async function POST(request: Request) {
           startDate,
           endDate,
           trigger: 'MANUAL',
-          allowZohoWrites: effectiveAllowZohoWrites,
           auditRunId,
           forceFullAudit,
           onEvent: (event) => {

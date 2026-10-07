@@ -24,7 +24,7 @@ interface AuditVerifiedPaymentsModalProps {
   isOpen: boolean;
   onClose: () => void;
   auditRunId: string | null;
-  allowZohoWrites: boolean;
+  allowZohoWrites?: boolean;
   onAuditCompleted?: () => void;
 }
 
@@ -32,7 +32,6 @@ export default function AuditVerifiedPaymentsModal({
   isOpen,
   onClose,
   auditRunId,
-  allowZohoWrites,
   onAuditCompleted,
 }: AuditVerifiedPaymentsModalProps) {
   const [status, setStatus] = useState<'CONNECTING' | 'LIVE' | 'COMPLETED' | 'FAILED'>('CONNECTING');
@@ -265,11 +264,6 @@ export default function AuditVerifiedPaymentsModal({
                 }`}>
                   {status}
                 </span>
-                {allowZohoWrites && (
-                  <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-300">
-                    Zoho Writes ON
-                  </span>
-                )}
               </div>
               <p className="text-xs text-gray-500 mt-0.5 font-medium">
                 Detects modifications to amount or payment date in Zoho Books using descending last_modified_time scan.

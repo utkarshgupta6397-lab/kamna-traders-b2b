@@ -25,7 +25,7 @@ interface SyncZohoProgressModalProps {
   isOpen: boolean;
   onClose: () => void;
   syncRunId: string | null;
-  allowZohoWrites: boolean;
+  allowZohoWrites?: boolean;
   onSyncCompleted?: () => void;
 }
 
@@ -33,7 +33,6 @@ export default function SyncZohoProgressModal({
   isOpen,
   onClose,
   syncRunId,
-  allowZohoWrites,
   onSyncCompleted,
 }: SyncZohoProgressModalProps) {
   const [status, setStatus] = useState<'CONNECTING' | 'LIVE' | 'COMPLETED' | 'FAILED'>('CONNECTING');
@@ -355,16 +354,6 @@ export default function SyncZohoProgressModal({
             </span>
             <span className="font-bold text-gray-800 truncate">{currentOperation}</span>
           </div>
-
-          {allowZohoWrites ? (
-            <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 shrink-0">
-              ⚡ LIVE WRITES ON
-            </span>
-          ) : (
-            <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 border border-gray-200 shrink-0">
-              🛡️ DRY RUN (WRITES OFF)
-            </span>
-          )}
         </div>
 
         {/* ── KPI COUNTERS STRIP ── */}

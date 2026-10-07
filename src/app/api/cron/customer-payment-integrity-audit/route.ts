@@ -49,18 +49,10 @@ async function handleCronIntegrityAudit(request: Request) {
     const endDate = searchParams.get('endDate') || undefined;
     const forceFullAudit = searchParams.get('forceFullAudit') === 'true';
 
-    const allowZohoWritesHeader = request.headers.get('x-allow-zoho-writes') === 'true';
-    const allowZohoWritesQuery = searchParams.get('allowZohoWrites') === 'true';
-    const allowZohoWrites = allowZohoWritesHeader || allowZohoWritesQuery;
-    // In development, staff can test with manual override.
-    // In production, writes are strictly governed server-side by ZOHO_VERIFICATION_WRITES_ENABLED.
-    const effectiveAllowZohoWrites = process.env.NODE_ENV === 'development' ? allowZohoWrites : false;
-
     const result = await auditVerifiedPaymentIntegrity({
       startDate,
       endDate,
       trigger: 'AUTOMATIC',
-      allowZohoWrites: effectiveAllowZohoWrites,
       auditRunId,
       forceFullAudit,
     });

@@ -32,14 +32,6 @@ export async function POST(
       return NextResponse.json({ error: 'Payment ID is required' }, { status: 400 });
     }
 
-    // Check allowZohoWrites header or query parameter
-    const allowZohoWritesHeader = request.headers.get('x-allow-zoho-writes') === 'true';
-    const allowZohoWritesQuery = new URL(request.url).searchParams.get('allowZohoWrites') === 'true';
-    const allowZohoWrites = allowZohoWritesHeader || allowZohoWritesQuery;
-    // In development, staff can explicitly opt into Zoho writes via header/query parameter.
-    // In production, writes are strictly governed server-side by ZOHO_VERIFICATION_WRITES_ENABLED (client toggle ignored).
-    const effectiveAllowZohoWrites = process.env.NODE_ENV === 'development' ? allowZohoWrites : false;
-
     let verifiedFields: any = undefined;
     try {
       const contentType = request.headers.get('content-type') || '';
@@ -57,21 +49,10 @@ export async function POST(
       zohoPaymentId: id,
       method: CustomerPaymentVerificationMethod.MANUAL,
       userId: session.userId,
-      allowZohoWrites: effectiveAllowZohoWrites,
       verifiedFields,
     });
 
     if (!result.success) {
-      if (result.skipped) {
-        return NextResponse.json(
-          {
-            error: result.error || 'Zoho writes are disabled in Local Only mode.',
-            skipped: true,
-            code: result.code || 'SKIPPED_DUE_TO_LOCAL_WRITE_DISABLED',
-          },
-          { status: 400 }
-        );
-      }
       return NextResponse.json(
         { error: result.error || 'Verification failed in Zoho Books.' },
         { status: 400 }

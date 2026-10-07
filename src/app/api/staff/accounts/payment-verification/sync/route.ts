@@ -29,14 +29,6 @@ export async function POST(request: Request) {
     const endDate = searchParams.get('endDate') || undefined;
     const requestedSyncRunId = searchParams.get('syncRunId');
 
-    const allowZohoWritesHeader = request.headers.get('x-allow-zoho-writes') === 'true';
-    const allowZohoWritesQuery = searchParams.get('allowZohoWrites') === 'true';
-    const allowZohoWrites = allowZohoWritesHeader || allowZohoWritesQuery;
-
-    // In development, staff can explicitly opt into Zoho writes via header/query parameter.
-    // In production, writes are strictly governed server-side by ZOHO_VERIFICATION_WRITES_ENABLED (client toggle ignored).
-    const effectiveAllowZohoWrites = process.env.NODE_ENV === 'development' ? allowZohoWrites : false;
-
     const syncRunId = requestedSyncRunId || `sync_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     // Concurrency protection: prevent duplicate overlapping executions
@@ -60,7 +52,6 @@ export async function POST(request: Request) {
           startDate,
           endDate,
           trigger: 'MANUAL',
-          allowZohoWrites: effectiveAllowZohoWrites,
           syncRunId,
           onEvent: (event) => {
             emitSyncEvent(event);

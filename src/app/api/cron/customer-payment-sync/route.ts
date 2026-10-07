@@ -39,18 +39,10 @@ async function handleCronSync(request: Request) {
     const startDate = searchParams.get('startDate') || undefined;
     const endDate = searchParams.get('endDate') || undefined;
 
-    const allowZohoWritesHeader = request.headers.get('x-allow-zoho-writes') === 'true';
-    const allowZohoWritesQuery = searchParams.get('allowZohoWrites') === 'true';
-    const allowZohoWrites = allowZohoWritesHeader || allowZohoWritesQuery;
-    // In development, allowZohoWrites can be toggled manually.
-    // In production, writes are strictly governed server-side by ZOHO_VERIFICATION_WRITES_ENABLED (client toggle ignored).
-    const effectiveAllowZohoWrites = process.env.NODE_ENV === 'development' ? allowZohoWrites : false;
-
     const result = await syncCustomerPayments({
       startDate,
       endDate,
       trigger: 'CRON',
-      allowZohoWrites: effectiveAllowZohoWrites,
     });
 
     return NextResponse.json(result);

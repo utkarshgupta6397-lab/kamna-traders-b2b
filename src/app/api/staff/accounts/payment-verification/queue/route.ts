@@ -6,7 +6,6 @@ import {
   getZohoApiUsageToday,
   DEFAULT_SYNC_START_DATE,
   isPaymentEligibleForVerification,
-  isZohoVerificationWritesEnabled,
 } from '@/lib/services/customer-payment-verification.service';
 import { getPaymentOperationsMetadata } from '@/lib/services/customer-payment-operation-tracker.service';
 
@@ -134,7 +133,6 @@ export async function GET(request: Request) {
       },
       zohoApiUsage,
       operationsMetadata,
-      zohoVerificationWritesEnabled: isZohoVerificationWritesEnabled(),
       payments: eligiblePendingPayments,
     });
   } catch (error: any) {

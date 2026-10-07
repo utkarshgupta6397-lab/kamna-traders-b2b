@@ -204,48 +204,6 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
   const [activeAuditRunId, setActiveAuditRunId] = useState<string | null>(null);
   const [auditing, setAuditing] = useState<boolean>(false);
 
-  // LOCAL ONLY: Allow Zoho Writes toggle (stored in browser localStorage, default false)
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  const [zohoVerificationWritesEnabled, setZohoVerificationWritesEnabled] = useState<boolean>(false);
-  const [allowZohoWrites, setAllowZohoWrites] = useState<boolean>(false);
-  const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
-
-  // In production, writes are determined by server-side zohoVerificationWritesEnabled.
-  // In development, writes are determined by the local toggle allowZohoWrites.
-  const effectiveWritesEnabled = isDevelopment ? allowZohoWrites : zohoVerificationWritesEnabled;
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('customerPaymentVerificationAllowZohoWrites');
-      if (stored === 'true') {
-        setAllowZohoWrites(true);
-      }
-    }
-  }, []);
-
-  const handleToggleClick = () => {
-    if (!allowZohoWrites) {
-      // Prompt confirmation before enabling
-      setShowConfirmModal(true);
-    } else {
-      // Disabling does not need confirmation
-      setAllowZohoWrites(false);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('customerPaymentVerificationAllowZohoWrites', 'false');
-      }
-      toast('Zoho writes disabled (Dry Run mode active)', { icon: 'ℹ️' });
-    }
-  };
-
-  const confirmEnableWrites = () => {
-    setAllowZohoWrites(true);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('customerPaymentVerificationAllowZohoWrites', 'true');
-    }
-    setShowConfirmModal(false);
-    toast.success('Zoho writes ENABLED for this local environment');
-  };
-
   const fetchQueue = useCallback(async (isInitial = false) => {
     if (isInitial) setLoading(true);
     try {
@@ -265,9 +223,6 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
         }
         if (data.operationsMetadata) {
           setOperationsMeta(data.operationsMetadata);
-        }
-        if (typeof data.zohoVerificationWritesEnabled === 'boolean') {
-          setZohoVerificationWritesEnabled(data.zohoVerificationWritesEnabled);
         }
       } else {
         toast.error(data.error || 'Failed to fetch queue');
@@ -293,17 +248,10 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
     setSyncing(true);
 
     try {
-      const headers: Record<string, string> = {};
-      if (allowZohoWrites) {
-        headers['x-allow-zoho-writes'] = 'true';
-      }
-      const syncUrl = `/api/staff/accounts/payment-verification/sync?syncRunId=${encodeURIComponent(runId)}${
-        allowZohoWrites ? '&allowZohoWrites=true' : ''
-      }`;
+      const syncUrl = `/api/staff/accounts/payment-verification/sync?syncRunId=${encodeURIComponent(runId)}`;
 
       const res = await fetch(syncUrl, {
         method: 'POST',
-        headers,
       });
       const data = await res.json();
       if (!res.ok) {
@@ -329,17 +277,10 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
     setAuditing(true);
 
     try {
-      const headers: Record<string, string> = {};
-      if (allowZohoWrites) {
-        headers['x-allow-zoho-writes'] = 'true';
-      }
-      const auditUrl = `/api/staff/accounts/payment-verification/integrity-audit?auditRunId=${encodeURIComponent(runId)}${
-        allowZohoWrites ? '&allowZohoWrites=true' : ''
-      }`;
+      const auditUrl = `/api/staff/accounts/payment-verification/integrity-audit?auditRunId=${encodeURIComponent(runId)}`;
 
       const res = await fetch(auditUrl, {
         method: 'POST',
-        headers,
       });
       const data = await res.json();
       if (!res.ok) {
@@ -407,19 +348,13 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
     isVerifyingRef.current = true;
     setVerifying(true);
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (allowZohoWrites) {
-        headers['x-allow-zoho-writes'] = 'true';
-      }
-      const verifyUrl = `/api/staff/accounts/payment-verification/${currentPayment.zohoPaymentId}/verify${
-        allowZohoWrites ? '?allowZohoWrites=true' : ''
-      }`;
+      const verifyUrl = `/api/staff/accounts/payment-verification/${currentPayment.zohoPaymentId}/verify`;
 
       const res = await fetch(verifyUrl, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
       const data = await res.json();
 
@@ -434,13 +369,7 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
         }));
         await fetchQueue();
       } else {
-        if (data.skipped || data.code === 'SKIPPED_DUE_TO_LOCAL_WRITE_DISABLED' || data.code === 'SKIPPED_DUE_TO_PROD_WRITE_DISABLED') {
-          toast.error(data.error || 'Zoho writes are disabled.', {
-            duration: 4000,
-          });
-        } else {
-          toast.error(data.error || 'Verification failed');
-        }
+        toast.error(data.error || 'Verification failed in Zoho Books');
       }
     } catch {
       toast.error('Network error during verification');
@@ -539,57 +468,6 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          {/* LOCAL ONLY: Yellow warning toggle control for development */}
-          {isDevelopment && (
-            <div className={`p-2.5 rounded-xl border flex flex-col gap-1 transition-all ${
-              allowZohoWrites
-                ? 'bg-amber-500/10 border-amber-400 text-amber-900'
-                : 'bg-amber-50 border-amber-300 text-amber-900'
-            }`}>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm">🟨</span>
-                  <span className="text-[11px] font-black tracking-wider uppercase text-amber-900">
-                    LOCAL ONLY
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleToggleClick}
-                  className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
-                    allowZohoWrites ? 'bg-amber-600' : 'bg-gray-300'
-                  }`}
-                  role="switch"
-                  aria-checked={allowZohoWrites}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                      allowZohoWrites ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-bold text-gray-800">
-                  Allow Zoho Writes
-                </span>
-                <span className={`text-[10px] font-black px-1.5 py-0.2 rounded uppercase ${
-                  allowZohoWrites ? 'bg-amber-600 text-white' : 'bg-gray-200 text-gray-700'
-                }`}>
-                  {allowZohoWrites ? 'ON' : 'OFF'}
-                </span>
-              </div>
-
-              <p className="text-[10px] text-amber-800/90 font-medium leading-tight">
-                {allowZohoWrites
-                  ? '⚠️ Zoho writes enabled for this local environment'
-                  : 'Dry Run — Zoho writes are disabled'}
-              </p>
-            </div>
-          )}
-
           {/* Action Button: Audit Verified Payments */}
           <div className="flex flex-col items-start sm:items-end gap-1">
             <button
@@ -653,7 +531,6 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
         isOpen={showSyncModal}
         onClose={() => setShowSyncModal(false)}
         syncRunId={activeSyncRunId}
-        allowZohoWrites={effectiveWritesEnabled}
         onSyncCompleted={() => {
           fetchQueue();
         }}
@@ -664,50 +541,10 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
         isOpen={showAuditModal}
         onClose={() => setShowAuditModal(false)}
         auditRunId={activeAuditRunId}
-        allowZohoWrites={effectiveWritesEnabled}
         onAuditCompleted={() => {
           fetchQueue();
         }}
       />
-
-      {/* Accidental Click Confirmation Modal */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl border border-amber-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-3 text-amber-600">
-              <div className="p-2 bg-amber-100 rounded-full">
-                <AlertCircle size={24} />
-              </div>
-              <h3 className="text-base font-extrabold text-gray-900">
-                Enable Real Zoho Books Writes?
-              </h3>
-            </div>
-
-            <p className="text-xs text-gray-600 leading-relaxed">
-              This will allow this <strong>LOCAL ERP instance</strong> to make real verification updates to Zoho Books (<code className="font-mono bg-gray-100 px-1 py-0.5 rounded text-[11px]">cf_is_verified = true</code>).
-              <br /><br />
-              Continue?
-            </p>
-
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => setShowConfirmModal(false)}
-                className="px-4 py-2 text-xs font-bold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmEnableWrites}
-                className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs transition-colors"
-              >
-                Enable Zoho Writes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── TOP KPI SUMMARY CARDS ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

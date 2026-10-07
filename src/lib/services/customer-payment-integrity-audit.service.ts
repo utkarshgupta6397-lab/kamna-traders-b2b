@@ -11,7 +11,6 @@ import {
 } from '@/lib/types/customer-payment-audit-events';
 import {
   logZohoApiCall,
-  canPerformZohoVerificationWrite,
   normalizeZohoTimestamp,
   getIstTodayDateStr,
   DEFAULT_SYNC_START_DATE,
@@ -572,51 +571,46 @@ export async function auditVerifiedPaymentIntegrity(
           let zohoPutSuccess = false;
 
           if (isZohoReportedVerified) {
-            const writesAllowed = canPerformZohoVerificationWrite(options.allowZohoWrites);
-            if (writesAllowed) {
-              updateApiCalls++;
-              const putUrl = `${API_BASE_URL}/books/v3/customerpayment/${zohoPaymentId}/customfields?organization_id=${orgId}`;
-              try {
-                const putRes = await fetch(putUrl, {
-                  method: 'PUT',
-                  headers: {
-                    Authorization: `Zoho-oauthtoken ${token}`,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    custom_fields: [
-                      {
-                        customfield_id: ZOHO_IS_VERIFIED_CF_ID,
-                        value: 'false',
-                      },
-                    ],
-                  }),
-                });
+            updateApiCalls++;
+            const putUrl = `${API_BASE_URL}/books/v3/customerpayment/${zohoPaymentId}/customfields?organization_id=${orgId}`;
+            try {
+              const putRes = await fetch(putUrl, {
+                method: 'PUT',
+                headers: {
+                  Authorization: `Zoho-oauthtoken ${token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  custom_fields: [
+                    {
+                      customfield_id: ZOHO_IS_VERIFIED_CF_ID,
+                      value: 'false',
+                    },
+                  ],
+                }),
+              });
 
-                const putData = await putRes.json().catch(() => ({}));
-                zohoPutSuccess = putRes.ok && putData.code === 0;
+              const putData = await putRes.json().catch(() => ({}));
+              zohoPutSuccess = putRes.ok && putData.code === 0;
 
-                await logZohoApiCall({
-                  endpointType: ZohoApiEndpointType.PAYMENT_UPDATE,
-                  method: 'PUT',
-                  success: zohoPutSuccess,
-                  httpStatus: putRes.status,
-                });
+              await logZohoApiCall({
+                endpointType: ZohoApiEndpointType.PAYMENT_UPDATE,
+                method: 'PUT',
+                success: zohoPutSuccess,
+                httpStatus: putRes.status,
+              });
 
-                if (!zohoPutSuccess) {
-                  errors.push(`Failed to reset cf_is_verified in Zoho for ${paymentNumber}: ${putData.message || putRes.statusText}`);
-                }
-              } catch (putErr: any) {
-                await logZohoApiCall({
-                  endpointType: ZohoApiEndpointType.PAYMENT_UPDATE,
-                  method: 'PUT',
-                  success: false,
-                  httpStatus: 500,
-                });
-                errors.push(`Error calling Zoho PUT for ${paymentNumber}: ${putErr.message}`);
+              if (!zohoPutSuccess) {
+                errors.push(`Failed to reset cf_is_verified in Zoho for ${paymentNumber}: ${putData.message || putRes.statusText}`);
               }
-            } else {
-              console.log(`[IntegrityAudit] Zoho write skipped for ${paymentNumber} (allowZohoWrites disabled or outside dev)`);
+            } catch (putErr: any) {
+              await logZohoApiCall({
+                endpointType: ZohoApiEndpointType.PAYMENT_UPDATE,
+                method: 'PUT',
+                success: false,
+                httpStatus: 500,
+              });
+              errors.push(`Error calling Zoho PUT for ${paymentNumber}: ${putErr.message}`);
             }
           }
 

@@ -877,8 +877,8 @@ export async function syncCustomerPayments(
     skipped: nonBankTransferCount,
     paymentListCalls: listApiCalls,
     paymentDetailCalls: detailApiCalls,
-    paymentUpdateCalls: canPerformZohoVerificationWrite(options.allowZohoWrites) ? autoVerificationAttempted : 0,
-    totalApiCalls: listApiCalls + detailApiCalls + (canPerformZohoVerificationWrite(options.allowZohoWrites) ? autoVerificationAttempted : 0),
+    paymentUpdateCalls: autoVerificationAttempted,
+    totalApiCalls: listApiCalls + detailApiCalls + autoVerificationAttempted,
     totalDurationMs,
   };
 
@@ -912,42 +912,18 @@ export async function syncCustomerPayments(
 }
 
 /**
- * Server-authoritative check for whether Zoho verification writes are enabled in production.
- * Controlled exclusively by environment variable ZOHO_VERIFICATION_WRITES_ENABLED=true.
- * Client/browser parameters cannot enable production writes.
- */
-export function isZohoVerificationWritesEnabled(): boolean {
-  if (process.env.NODE_ENV === 'production') {
-    return process.env.ZOHO_VERIFICATION_WRITES_ENABLED === 'true';
-  }
-  return false;
-}
-
-/**
  * Central backend write gate for Zoho Customer Payment verification updates.
- * STRICT SECURITY:
- * 1. In production (NODE_ENV === 'production'):
- *    - Real writes are permitted ONLY if ZOHO_VERIFICATION_WRITES_ENABLED === 'true'.
- *    - Client allowZohoWrites toggle is strictly ignored.
- * 2. In development (NODE_ENV === 'development'):
- *    - Writes are allowed only if the local developer toggle allowZohoWrites is explicitly true.
- * 3. In all other environments (test, staging without explicit config): writes are blocked.
+ * Both local development and production environments communicate directly with Zoho Books
+ * for legitimate authenticated verification write operations.
  */
-export function canPerformZohoVerificationWrite(allowZohoWrites: boolean = false): boolean {
-  if (process.env.NODE_ENV === 'production') {
-    return isZohoVerificationWritesEnabled();
-  }
-  if (process.env.NODE_ENV === 'development') {
-    return Boolean(allowZohoWrites);
-  }
-  return false;
+export function canPerformZohoVerificationWrite(_allowZohoWrites?: boolean): boolean {
+  return true;
 }
 
 /**
  * Updates cf_is_verified = true in Zoho Books and updates local cache.
  * Idempotent:
  * - If Zoho Books already has cf_is_verified = true, synchronizes local cache.
- * - If allowZohoWrites is false, blocks actual Zoho PUT and keeps local record PENDING (NO fake success).
  * - Real local isVerified = true transition occurs ONLY AFTER successful Zoho PUT response.
  */
 export interface PaymentAuditVerifiedFields {
@@ -1053,40 +1029,6 @@ export async function verifyPaymentInZohoAndLocal(params: {
       success: false,
       code: 'PAYMENT_VOIDED',
       error: `This payment is no longer eligible for verification because it has been voided in Zoho Books.`,
-    };
-  }
-
-  // ── CENTRAL BACKEND WRITE GATE ──
-  // Check if real Zoho verification writes are allowed for this local environment
-  const writeAllowed = canPerformZohoVerificationWrite(allowZohoWrites);
-  if (!writeAllowed) {
-    console.log(
-      `[LOCAL_WRITE_GUARD] Zoho verification write BLOCKED for ${zohoPaymentId} (${local.paymentNumber}). Local toggle is OFF or not in development.`
-    );
-
-    // Record diagnostic audit event for blocked attempt (NEVER mark PAYMENT_VERIFIED)
-    try {
-      await prisma.auditLog.create({
-        data: {
-          userId: userId || 'SYSTEM',
-          action: 'PAYMENT_VERIFICATION_WRITE_BLOCKED',
-          details: `Verification write for ${local.paymentNumber} (${zohoPaymentId}) blocked: LOCAL_ZOHO_WRITES_DISABLED`,
-        },
-      });
-    } catch (auditErr) {
-      console.error('[VerifyPayment] Failed to record diagnostic audit log:', auditErr);
-    }
-
-    const isProd = process.env.NODE_ENV === 'production';
-    const blockedReason = isProd
-      ? 'Zoho verification writes are currently disabled in production (ZOHO_VERIFICATION_WRITES_ENABLED=false).'
-      : 'Zoho writes are disabled in Local Only mode.';
-
-    return {
-      success: false,
-      skipped: true,
-      code: isProd ? 'SKIPPED_DUE_TO_PROD_WRITE_DISABLED' : 'SKIPPED_DUE_TO_LOCAL_WRITE_DISABLED',
-      error: blockedReason,
     };
   }
 

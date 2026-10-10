@@ -43,6 +43,7 @@ async function runImportApiTests() {
   const serialDup = `TEST_DUP_${timestamp}`;
   const serialNoData = `TEST_NODATA_${timestamp}`;
   const serialRace = `TEST_RACE_${timestamp}`;
+  const serialFailedExtract = `TEST_FAIL_EXT_${timestamp}`;
 
   try {
     // ----------------------------------------------------
@@ -100,12 +101,32 @@ async function runImportApiTests() {
 
     // ----------------------------------------------------
     // TEST 1: Preview evaluation logic
+    // Includes:
+    // - Chain with Claimed (serialNotReceived) -> Eligible
+    // - Chain without Claimed (Waaree style) (serialRace) -> Eligible
+    // - Chain with RECEIVED status (serialReceived) -> Skipped
+    // - Chain with EXEMPT status (serialExempt) -> Skipped
+    // - Missing serial (serialMissing) -> Skipped
+    // - Explicit "No Data" tag (serialNoData) -> Eligible
+    // - Invalid serial error with no chain -> Extraction failure / Needs review (Never overwrites)
+    // - Duplicate serial (serialDup) -> Last occurrence wins
     // ----------------------------------------------------
-    const rawInput = `${serialNotReceived}\tWaaree Energies Limited -> Eligible Tag (1111) Claimed -> NP-01
+    await prisma.dcrSerial.create({
+      data: {
+        serialNumber: serialFailedExtract,
+        status: 'AVAILABLE',
+        vendorDcrStatus: 'NOT_RECEIVED',
+        tag: { create: { tag: 'Original Tag Must Be Preserved', createdBy: 'Test Runner' } }
+      }
+    });
+
+    const rawInput = `${serialNotReceived}\tMundra Solar -> Mittal -> Eligible Tag (1111) Claimed -> NP-01
+${serialRace}\tWaaree Energies Limited -> AMR Power Solutions (5601016510) -> Kamna Traders (461)
 ${serialReceived}\tWaaree Energies Limited -> Should Skip Received (2222) Claimed -> NP-02
 ${serialExempt}\tWaaree Energies Limited -> Should Skip Exempt (3333) Claimed -> NP-03
 ${serialMissing}\tWaaree Energies Limited -> Should Skip Missing (4444) Claimed -> NP-04
-${serialNoData}\tInvalid serial number (not manufactured)
+${serialNoData}\tNo Data
+${serialFailedExtract}\tInvalid serial number (not manufactured or typographical error)
 ${serialDup}\tWaaree Energies Limited -> First Occ (5555) Claimed -> NP-05
 ${serialDup}\tWaaree Energies Limited -> Winning Occ (6666) Claimed -> NP-06`;
 
@@ -122,9 +143,14 @@ ${serialDup}\tWaaree Energies Limited -> Winning Occ (6666) Claimed -> NP-06`;
     let eligibleCount = 0;
     let skippedVdcrCount = 0;
     let notFoundCount = 0;
+    let needsReviewCount = 0;
 
     for (const row of resolvedRows) {
-      if (!row.isSelectedOccurrence || row.status !== 'VALID') continue;
+      if (row.action === 'SKIP_DUPLICATE') continue;
+      if (row.status === 'NEEDS_REVIEW') {
+        needsReviewCount++;
+        continue;
+      }
       const dcr = previewMap.get(row.serialNumber);
       if (!dcr) {
         notFoundCount++;
@@ -135,10 +161,11 @@ ${serialDup}\tWaaree Energies Limited -> Winning Occ (6666) Claimed -> NP-06`;
       }
     }
 
-    assert(eligibleCount === 2, 'TEST 1a: Preview correctly identifies exactly 2 eligible rows (NOT_RECEIVED + No Data on NOT_RECEIVED)');
+    assert(eligibleCount === 3, 'TEST 1a: Preview correctly identifies exactly 3 eligible rows (NOT_RECEIVED with Claimed + Waaree without Claimed + Explicit No Data)');
     assert(skippedVdcrCount === 2, 'TEST 1b: Preview correctly identifies 2 skipped rows due to Vendor DCR status (RECEIVED + EXEMPT)');
     assert(notFoundCount === 2, 'TEST 1c: Preview correctly identifies 2 not-found rows (missing serial + duplicate serial not in DB)');
-    assert(summary.skippedDuplicatesCount === 1, 'TEST 1d: Preview correctly identifies 1 skipped duplicate occurrence');
+    assert(needsReviewCount === 1, 'TEST 1d: Invalid serial error without chain marked as NEEDS_REVIEW');
+    assert(summary.skippedDuplicatesCount === 1, 'TEST 1e: Preview correctly identifies 1 skipped duplicate occurrence');
 
     // ----------------------------------------------------
     // TEST 2: Preview does NOT mutate the database
@@ -261,7 +288,16 @@ ${serialDup}\tWaaree Energies Limited -> Winning Occ (6666) Claimed -> NP-06`;
     assert(checkRaceSerial?.tag?.tag === 'Old Tag Race', 'TEST 7b: Tag preserved as Old Tag Race');
 
     // ----------------------------------------------------
-    // TEST 8: Re-imports and retries are idempotent
+    // TEST 8: Extraction failure never overwrites an existing tag
+    // ----------------------------------------------------
+    const checkFailedExtractAfter = await prisma.dcrSerial.findUnique({
+      where: { serialNumber: serialFailedExtract },
+      include: { tag: true }
+    });
+    assert(checkFailedExtractAfter?.tag?.tag === 'Original Tag Must Be Preserved', 'TEST 8a: Extraction failure never overwrites an existing tag');
+
+    // ----------------------------------------------------
+    // TEST 9: Re-imports and retries are idempotent
     // ----------------------------------------------------
     const retryBatchId = `RETRY_BATCH_${timestamp}`;
     const audit1 = await prisma.dcrAuditLog.create({
@@ -280,14 +316,14 @@ ${serialDup}\tWaaree Energies Limited -> Winning Occ (6666) Claimed -> NP-06`;
         }
       }
     });
-    assert(audit1.entityId === retryBatchId, 'TEST 8a: Audit log recorded for batch');
+    assert(audit1.entityId === retryBatchId, 'TEST 9a: Audit log recorded for batch');
 
     // Verify history event is TAG_UPDATED, not lifecycle
     const historyCheck = await prisma.dcrSerialHistory.findFirst({
       where: { serialId: dcrNotRecv.id },
       orderBy: { createdAt: 'desc' }
     });
-    assert(historyCheck?.eventType === 'TAG_UPDATED', 'TEST 8b: DcrSerialHistory eventType is strictly TAG_UPDATED');
+    assert(historyCheck?.eventType === 'TAG_UPDATED', 'TEST 9b: DcrSerialHistory eventType is strictly TAG_UPDATED');
 
   } finally {
     // ----------------------------------------------------
@@ -301,6 +337,7 @@ ${serialDup}\tWaaree Energies Limited -> Winning Occ (6666) Claimed -> NP-06`;
       serialDup,
       serialNoData,
       serialRace,
+      serialFailedExtract,
     ];
 
     await prisma.serialTag.deleteMany({

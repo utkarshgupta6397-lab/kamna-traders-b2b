@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { getDatabaseUrl } from './database-url';
 
-const CURRENT_SCHEMA_TAG = '2026-10-05-customer-payment-verification-v2';
+const CURRENT_SCHEMA_TAG = '2026-10-10-serial-registry-imported-tag-v1';
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient; __prisma_schema_tag?: string };
 
 // Invalidate stale PrismaClient instance cached across dev server reloads

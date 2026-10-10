@@ -22,8 +22,15 @@ export async function GET(req: Request) {
     const q = searchParams.get('q') || '';
     const status = searchParams.get('status') || '';
     const vendorDcrStatus = searchParams.get('vendorDcrStatus') || '';
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '50');
+    
+    // Server-side pagination parameters: default page 1, default limit 25, max limit 1,000
+    const parsedPage = parseInt(searchParams.get('page') || '1', 10);
+    const page = isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
+
+    const parsedLimit = parseInt(searchParams.get('limit') || '25', 10);
+    const rawLimit = isNaN(parsedLimit) || parsedLimit < 1 ? 25 : parsedLimit;
+    const limit = Math.min(rawLimit, 1000);
+
     const isExport = searchParams.get('export') === 'true';
     
     const whereClause: any = { isDeleted: false };
@@ -224,11 +231,18 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { serials: requestedSerials = [], page = 1, limit = 50, status = '', vendorDcrStatus = '', invoiceId = '' } = body;
+    const { serials: requestedSerials = [], page: inputPage = 1, limit: inputLimit = 25, status = '', vendorDcrStatus = '', invoiceId = '' } = body;
 
     if (!Array.isArray(requestedSerials) || requestedSerials.length === 0) {
       return NextResponse.json({ error: 'Invalid or empty serials array' }, { status: 400 });
     }
+
+    const parsedPage = parseInt(inputPage?.toString() || '1', 10);
+    const page = isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
+
+    const parsedLimit = parseInt(inputLimit?.toString() || '25', 10);
+    const rawLimit = isNaN(parsedLimit) || parsedLimit < 1 ? 25 : parsedLimit;
+    const limit = Math.min(rawLimit, 1000);
 
     const whereClause: any = { 
       isDeleted: false,

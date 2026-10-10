@@ -1036,6 +1036,20 @@ model SerialTag {
   @@index([serialId])
 }
 
+model DcrImportedSerialTag {
+  id            String   @id @default(cuid())
+  serialNumber  String   @unique
+  tag           String   @db.VarChar(256)
+  errorRemarks  String?  @db.Text
+  importBatchId String?
+  createdBy     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([serialNumber])
+  @@index([importBatchId])
+}
+
 model DcrSerialHistory {
   id               String    @id @default(cuid())
   serialId         String

@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, AlertTriangle, CheckCircle, Shield, Clock, ChevronDown, Download, RefreshCw, CheckSquare, Square, XCircle } from 'lucide-react';
+import { Search, AlertTriangle, CheckCircle, Shield, Clock, ChevronDown, Download, RefreshCw, CheckSquare, Square, XCircle, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+import CleanSerialWhitespaceModal from './CleanSerialWhitespaceModal';
 
 type CorrectionType = 'CHANGE_SKU' | 'FIX_PURCHASE' | 'FIX_DCR' | 'CHANGE_SERIAL' | 'DELETE_SERIAL' | 'UNDO_ISSUE';
 type AppMode = 'SINGLE' | 'BULK';
@@ -26,6 +27,7 @@ export default function SerialCorrectionsClient() {
   const [skuDetails, setSkuDetails] = useState<any | null>(null);
   const [isFetching, setIsFetching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCleanModalOpen, setIsCleanModalOpen] = useState(false);
 
   // Bulk Mode State
   const [bulkInput, setBulkInput] = useState('');
@@ -302,19 +304,29 @@ export default function SerialCorrectionsClient() {
           </div>
         </div>
 
-        {/* Mode Toggle */}
-        <div className="flex items-center bg-white border border-gray-200 p-1 rounded-xl w-max shadow-sm">
+        {/* Mode Toggle & Bulk Maintenance Actions */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center bg-white border border-gray-200 p-1 rounded-xl w-max shadow-sm">
+            <button
+              onClick={() => setAppMode('SINGLE')}
+              className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all ${appMode === 'SINGLE' ? 'bg-[#1A2766] text-white shadow-md' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
+            >
+              Single Serial Mode
+            </button>
+            <button
+              onClick={() => setAppMode('BULK')}
+              className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all ${appMode === 'BULK' ? 'bg-[#1A2766] text-white shadow-md' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
+            >
+              Bulk Correction Mode
+            </button>
+          </div>
+
           <button
-            onClick={() => setAppMode('SINGLE')}
-            className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all ${appMode === 'SINGLE' ? 'bg-[#1A2766] text-white shadow-md' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
+            onClick={() => setIsCleanModalOpen(true)}
+            className="flex items-center gap-2 bg-white hover:bg-indigo-50 border border-indigo-200 text-indigo-700 hover:text-indigo-900 px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm"
           >
-            Single Serial Mode
-          </button>
-          <button
-            onClick={() => setAppMode('BULK')}
-            className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all ${appMode === 'BULK' ? 'bg-[#1A2766] text-white shadow-md' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}
-          >
-            Bulk Correction Mode
+            <Sparkles size={16} className="text-indigo-600" />
+            Clean Non-Issued Serial Numbers
           </button>
         </div>
 
@@ -864,6 +876,16 @@ export default function SerialCorrectionsClient() {
           </div>
         )}
       </div>
+
+      <CleanSerialWhitespaceModal
+        isOpen={isCleanModalOpen}
+        onClose={() => setIsCleanModalOpen(false)}
+        onSuccess={() => {
+          if (searchSerial.trim()) {
+            handleSearch();
+          }
+        }}
+      />
 
       {skuDropdownOpen && (
         <div className="fixed inset-0 z-10" onClick={() => setSkuDropdownOpen(false)} />

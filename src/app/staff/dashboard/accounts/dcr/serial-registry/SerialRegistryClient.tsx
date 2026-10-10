@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Search, Download, ExternalLink, Activity, Filter, Box, CheckCircle, Clock, AlertTriangle, ChevronLeft, ChevronRight, X, Copy } from 'lucide-react';
+import { Search, Download, ExternalLink, Activity, Filter, Box, CheckCircle, Clock, AlertTriangle, ChevronLeft, ChevronRight, X, Copy, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { fetchWithCache } from '@/lib/client-cache';
+import ImportTagModal from './ImportTagModal';
 
 function useDebounce(value: string, delay: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -48,14 +49,18 @@ export default function SerialRegistryClient() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
-  // Filters
+  // Filters & Pagination
   const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 500);
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'ALL');
   const [vendorDcrFilter, setVendorDcrFilter] = useState(searchParams.get('vendorDcr') || 'ALL');
   const [page, setPage] = useState(1);
-  const limit = 50;
+  const [pageSize, setPageSize] = useState<number>(25);
+  const fetchVersionRef = useRef(0);
+
+  // Import Tag Modal
+  const [importTagModalOpen, setImportTagModalOpen] = useState(false);
 
   // Modal
   const [selectedSerial, setSelectedSerial] = useState<string | null>(null);
@@ -83,17 +88,18 @@ export default function SerialRegistryClient() {
     fetchStats();
   }, []);
 
-  const prevFilters = useRef({ debouncedSearch, statusFilter, vendorDcrFilter, invoiceIdFilter });
+  const prevFilters = useRef({ debouncedSearch, statusFilter, vendorDcrFilter, invoiceIdFilter, pageSize });
 
   useEffect(() => {
     const filtersChanged = 
       prevFilters.current.debouncedSearch !== debouncedSearch ||
       prevFilters.current.statusFilter !== statusFilter ||
       prevFilters.current.vendorDcrFilter !== vendorDcrFilter ||
-      prevFilters.current.invoiceIdFilter !== invoiceIdFilter;
+      prevFilters.current.invoiceIdFilter !== invoiceIdFilter ||
+      prevFilters.current.pageSize !== pageSize;
       
     if (filtersChanged) {
-      prevFilters.current = { debouncedSearch, statusFilter, vendorDcrFilter, invoiceIdFilter };
+      prevFilters.current = { debouncedSearch, statusFilter, vendorDcrFilter, invoiceIdFilter, pageSize };
       if (page !== 1) {
         setPage(1);
         return; // State update will trigger the effect again with page=1
@@ -104,7 +110,7 @@ export default function SerialRegistryClient() {
     if (debouncedSearch.trim().length === 0 || debouncedSearch.trim().length >= 3 || invoiceIdFilter) {
       fetchSerials();
     }
-  }, [debouncedSearch, statusFilter, vendorDcrFilter, invoiceIdFilter, page]);
+  }, [debouncedSearch, statusFilter, vendorDcrFilter, invoiceIdFilter, pageSize, page]);
 
   const fetchStats = async () => {
     try {
@@ -120,6 +126,7 @@ export default function SerialRegistryClient() {
   const [multiSerialsCount, setMultiSerialsCount] = useState(0);
 
   const fetchSerials = async () => {
+    const currentFetchVersion = ++fetchVersionRef.current;
     setLoading(true);
     try {
       // Detect Multi Search Mode
@@ -135,10 +142,12 @@ export default function SerialRegistryClient() {
         setMultiSerialsCount(parsedSerials.length);
 
         if (parsedSerials.length === 0) {
-          setSerials([]);
-          setTotal(0);
-          setMissingSerials([]);
-          setLoading(false);
+          if (currentFetchVersion === fetchVersionRef.current) {
+            setSerials([]);
+            setTotal(0);
+            setMissingSerials([]);
+            setLoading(false);
+          }
           return;
         }
 
@@ -148,19 +157,21 @@ export default function SerialRegistryClient() {
           body: JSON.stringify({
             serials: parsedSerials,
             page,
-            limit,
+            limit: pageSize,
             status: statusFilter,
             vendorDcrStatus: vendorDcrFilter,
             invoiceId: invoiceIdFilter
           })
         });
         const data = await res.json();
-        if (res.ok) {
-          setSerials(data.serials);
-          setTotal(data.total);
-          setMissingSerials(data.missingSerials || []);
-        } else {
-          toast.error(data.error || 'Failed to fetch serials');
+        if (currentFetchVersion === fetchVersionRef.current) {
+          if (res.ok) {
+            setSerials(data.serials || []);
+            setTotal(data.total || 0);
+            setMissingSerials(data.missingSerials || []);
+          } else {
+            toast.error(data.error || 'Failed to fetch serials');
+          }
         }
       } else {
         setIsMultiSearch(false);
@@ -169,7 +180,7 @@ export default function SerialRegistryClient() {
         
         const params = new URLSearchParams({
           page: page.toString(),
-          limit: limit.toString(),
+          limit: pageSize.toString(),
           q: debouncedSearch,
           status: statusFilter,
           vendorDcrStatus: vendorDcrFilter,
@@ -179,19 +190,25 @@ export default function SerialRegistryClient() {
         }
 
         const data = await fetchWithCache(`/api/admin/dcr/serial-registry?${params.toString()}`, { ttl: 0 });
-        if (data && data.serials) {
-          setSerials(data.serials);
-          setTotal(data.total);
-        } else if (data && data.error) {
-          toast.error(data.error);
-        } else {
-          toast.error('Failed to fetch serials');
+        if (currentFetchVersion === fetchVersionRef.current) {
+          if (data && data.serials) {
+            setSerials(data.serials || []);
+            setTotal(data.total || 0);
+          } else if (data && data.error) {
+            toast.error(data.error);
+          } else {
+            toast.error('Failed to fetch serials');
+          }
         }
       }
     } catch (err) {
-      toast.error('Failed to fetch serials');
+      if (currentFetchVersion === fetchVersionRef.current) {
+        toast.error('Failed to fetch serials');
+      }
     } finally {
-      setLoading(false);
+      if (currentFetchVersion === fetchVersionRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -314,7 +331,7 @@ export default function SerialRegistryClient() {
     }
   };
 
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = Math.ceil(total / pageSize);
 
   // Vendor Report Logic
   const fetchVendorReport = async () => {
@@ -570,7 +587,14 @@ export default function SerialRegistryClient() {
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Serial Registry</h1>
           <p className="text-sm text-gray-500 mt-1">Search and track every serial number in the DCR ecosystem.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => setImportTagModalOpen(true)}
+            className="bg-[#1A2766]/5 border border-[#1A2766]/20 text-[#1A2766] px-4 py-2 rounded-lg text-sm font-semibold hover:bg-[#1A2766]/10 transition-colors shadow-sm flex items-center gap-2"
+          >
+            <Upload size={16} />
+            Import Tag
+          </button>
           <button
             onClick={handleOpenVendorReport}
             className="bg-orange-50 border border-orange-200 text-orange-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-orange-100 transition-colors shadow-sm flex items-center gap-2"
@@ -747,6 +771,7 @@ export default function SerialRegistryClient() {
                 <th className="px-3 py-2 w-[40px] sticky left-0 z-30 bg-gray-100 border-r border-gray-200 text-center">
                   <input 
                     type="checkbox" 
+                    title="Select all on this page"
                     className="rounded border-gray-300 text-[#1A2766] focus:ring-[#1A2766]"
                     checked={serials.length > 0 && serials.every(s => selectedSerials.has(s.serialNumber))}
                     onChange={handleSelectAll}
@@ -787,7 +812,7 @@ export default function SerialRegistryClient() {
                   const alloc = serial.allocations?.[0];
                   const now = new Date().getTime();
                   const ageDays = Math.floor((now - new Date(serial.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-                  const rowIndex = ((page - 1) * limit) + index + 1;
+                  const rowIndex = ((page - 1) * pageSize) + index + 1;
 
                   return (
                     <tr 
@@ -882,28 +907,66 @@ export default function SerialRegistryClient() {
           </table>
         </div>
         {/* Pagination Footer */}
-        <div className="bg-gray-50 border-t border-gray-200 px-4 py-3 flex items-center justify-between shrink-0">
-          <div className="text-sm text-gray-600">
-            Showing <span className="font-semibold text-gray-900">{serials.length > 0 ? (page - 1) * limit + 1 : 0}</span> to <span className="font-semibold text-gray-900">{Math.min(page * limit, total)}</span> of <span className="font-semibold text-gray-900">{total}</span> results
+        <div className="bg-gray-50 border-t border-gray-200 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+          <div className="text-sm text-gray-600 flex items-center gap-2">
+            {total === 0 ? (
+              <span>Showing <span className="font-semibold text-gray-900">0</span> of <span className="font-semibold text-gray-900">0</span> results</span>
+            ) : pageSize === 1000 && total > 1000 ? (
+              <span>
+                Showing <span className="font-semibold text-gray-900">1</span> to <span className="font-semibold text-gray-900">{Math.min(serials.length, 1000)}</span> of <span className="font-semibold text-gray-900">{total.toLocaleString()}</span> results{' '}
+                <span className="text-amber-800 bg-amber-50 border border-amber-200 text-xs px-2 py-0.5 rounded font-medium ml-1">
+                  Capped at 1,000 — use filters to narrow
+                </span>
+              </span>
+            ) : (
+              <span>
+                Showing <span className="font-semibold text-gray-900">{serials.length > 0 ? (page - 1) * pageSize + 1 : 0}</span> to <span className="font-semibold text-gray-900">{Math.min(page * pageSize, total)}</span> of <span className="font-semibold text-gray-900">{total.toLocaleString()}</span> results
+              </span>
+            )}
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1 || loading}
-              className="p-1.5 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <div className="px-4 py-1.5 text-sm font-medium text-gray-700">
-              Page {page} of {totalPages || 1}
+          <div className="flex items-center gap-4">
+            {/* Page Size Selector */}
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <span>Rows per page:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+                className="bg-white border border-gray-300 rounded-lg px-2.5 py-1 text-xs font-medium text-gray-700 focus:ring-1 focus:ring-[#1A2766] focus:border-[#1A2766]"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={250}>250</option>
+                <option value={500}>500</option>
+                <option value={1000}>View All (max 1,000)</option>
+              </select>
             </div>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages || loading}
-              className="p-1.5 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-            >
-              <ChevronRight size={18} />
-            </button>
+
+            {/* Navigation buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1 || loading}
+                className="p-1.5 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                title="Previous page"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <div className="px-3 py-1.5 text-xs font-semibold text-gray-700 flex items-center">
+                Page {page} of {totalPages || 1}
+              </div>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
+                className="p-1.5 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                title="Next page"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1176,6 +1239,20 @@ export default function SerialRegistryClient() {
           <div className="w-px h-5 bg-gray-700"></div>
           <div className="flex items-center gap-3">
             <button 
+              onClick={() => {
+                const ordered = serials
+                  .filter(s => selectedSerials.has(s.serialNumber))
+                  .map(s => s.serialNumber);
+                const remaining = Array.from(selectedSerials).filter(s => !ordered.includes(s));
+                const allSelected = [...ordered, ...remaining];
+                handleCopySerials(allSelected, 'newline', `${selectedSerials.size} serial numbers copied to clipboard`);
+              }}
+              className="bg-gray-800 hover:bg-gray-700 text-gray-200 hover:text-white px-4 py-1.5 rounded-full text-sm font-semibold transition-colors flex items-center gap-1.5 border border-gray-700"
+            >
+              <Copy size={14} />
+              Copy Serial Numbers
+            </button>
+            <button 
               onClick={() => { setTagInput(''); setTagModalOpen(true); }}
               className="bg-[#1A2766] hover:bg-[#283885] px-4 py-1.5 rounded-full text-sm font-bold transition-colors shadow-sm"
             >
@@ -1429,6 +1506,15 @@ export default function SerialRegistryClient() {
           </div>
         </>
       )}
+
+      <ImportTagModal
+        isOpen={importTagModalOpen}
+        onClose={() => setImportTagModalOpen(false)}
+        onSuccess={() => {
+          fetchSerials();
+          fetchStats();
+        }}
+      />
 
     </div>
   );

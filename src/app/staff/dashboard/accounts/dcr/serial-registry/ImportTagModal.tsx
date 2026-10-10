@@ -172,8 +172,9 @@ export default function ImportTagModal({ isOpen, onClose, onSuccess }: ImportTag
                 <div className="text-blue-800 space-y-1 pl-5">
                   <p>• <strong>Vendor DCR Status:</strong> Serial tags will <em>only</em> be updated if the serial is present in the DCR registry with Vendor DCR status <strong className="text-blue-950 font-bold">Not Received</strong>.</p>
                   <p>• <strong>Other Statuses / Missing:</strong> Serials that are already <em>Received</em>, have other statuses, or are missing from the registry are skipped safely.</p>
-                  <p>• <strong>Rule A:</strong> Remarks with <code className="bg-blue-100/80 px-1 py-0.5 rounded font-mono">Invalid serial number</code> will set tag to <strong className="text-blue-950 font-bold">No Data</strong> (overwriting previous tags).</p>
-                  <p>• <strong>Rule B:</strong> Vendor chains extract the last business/person entity immediately before the <code className="bg-blue-100/80 px-1 py-0.5 rounded font-mono">Claimed</code> marker (excluding the government claim reference). Chains missing <code className="bg-blue-100/80 px-1 py-0.5 rounded font-mono">Claimed</code> are flagged for review.</p>
+                  <p>• <strong>Rule A (Chain with Claimed):</strong> Vendor chains extract the last business/person entity immediately before the <code className="bg-blue-100/80 px-1 py-0.5 rounded font-mono">Claimed</code> marker (excluding the government claim reference).</p>
+                  <p>• <strong>Rule B (Chain without Claimed):</strong> Vendor chains without a <code className="bg-blue-100/80 px-1 py-0.5 rounded font-mono">Claimed</code> marker extract the last valid entity in the vendor chain.</p>
+                  <p>• <strong>Rule C (No Valid Chain):</strong> Remarks containing only error descriptions (such as <code className="bg-blue-100/80 px-1 py-0.5 rounded font-mono">Invalid serial number...</code>) have no vendor chain and are flagged for review without overwriting tags.</p>
                   <p>• <strong>Duplicates:</strong> If a serial appears multiple times, the <em>last valid occurrence</em> wins.</p>
                 </div>
               </div>
@@ -185,7 +186,7 @@ export default function ImportTagModal({ isOpen, onClose, onSuccess }: ImportTag
                 <textarea
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  placeholder={`Serial Number\tError Remarks\nWS08269076443811\tWaaree Energies Limited -> AMR Power Solutions (5601016510)\n26IT1072E100069166\tInvalid serial number (not manufactured or typographical error)`}
+                  placeholder={`Serial Number\tError Remarks\nWS08269076443811\tWaaree Energies Limited -> AMR Power Solutions (5601016510) -> Kamna Traders (461)\nMS2607281A3575\tMundra Solar -> Mittal -> Shree Balaji Claimed -> NP-01`}
                   rows={14}
                   className="w-full p-4 font-mono text-xs bg-gray-50 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#1A2766]/20 focus:border-[#1A2766] transition-all resize-none text-gray-800 leading-relaxed"
                   autoFocus

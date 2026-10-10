@@ -22,7 +22,7 @@ export interface ParsedRawRow {
 
 export interface TagExtractionResult {
   tag: string | null;
-  rule: 'RULE_A_INVALID_SERIAL' | 'RULE_B_VENDOR_CHAIN' | null;
+  rule: 'RULE_A_CHAIN_WITH_CLAIMED' | 'RULE_B_CHAIN_WITHOUT_CLAIMED' | 'RULE_B_VENDOR_CHAIN' | 'EXPLICIT_NO_DATA' | null;
   status: 'VALID' | 'NEEDS_REVIEW' | 'MALFORMED';
   reason?: string;
 }
@@ -32,7 +32,7 @@ export interface ParsedRow {
   serialNumber: string;
   originalRemarks: string;
   extractedTag: string | null;
-  rule: 'RULE_A_INVALID_SERIAL' | 'RULE_B_VENDOR_CHAIN' | null;
+  rule: 'RULE_A_CHAIN_WITH_CLAIMED' | 'RULE_B_CHAIN_WITHOUT_CLAIMED' | 'RULE_B_VENDOR_CHAIN' | 'EXPLICIT_NO_DATA' | null;
   status: 'VALID' | 'NEEDS_REVIEW' | 'MALFORMED';
   reason?: string;
 }
@@ -120,10 +120,11 @@ export function isVendorChainContinuation(line: string): boolean {
 }
 
 /**
- * Extracts a serial tag according to the strict business rules:
- * - Rule A: "Invalid serial number" -> "No Data" (takes precedence)
- * - Rule B: Last business/person entity immediately before `Claimed` in `->` vendor chains
- * - Rule C: Unrecognized or missing `Claimed` -> flag for review
+ * Extracts a serial tag according to the business rules:
+ * - Rule A: When a chain contains a valid `Claimed` marker, extract the entity immediately preceding the marker.
+ * - Rule B: When there is no `Claimed` marker, extract the last valid entity in the vendor chain (e.g. Waaree -> AMR -> Kamna Traders).
+ * - Rule C: If remarks contain only an error message (e.g. Invalid serial number...) or no valid chain, return None (null).
+ * - Rule D: Normalization: trim whitespace, preserve internal spaces and punctuation/parentheses.
  */
 export function extractSerialTag(remarks: string): TagExtractionResult {
   const cleanRemarks = (remarks || '').trim();
@@ -137,52 +138,69 @@ export function extractSerialTag(remarks: string): TagExtractionResult {
     };
   }
 
-  // RULE A: Check for invalid serial number remarks (Case-insensitive, takes precedence)
-  const invalidSerialRegex = /invalid\s+serial\s+number/i;
-  if (invalidSerialRegex.test(cleanRemarks)) {
+  // Explicit "No Data" tag input
+  if (cleanRemarks.toLowerCase() === 'no data') {
     return {
       tag: 'No Data',
-      rule: 'RULE_A_INVALID_SERIAL',
+      rule: 'EXPLICIT_NO_DATA',
       status: 'VALID',
     };
   }
 
-  // RULE B: Vendor chain extraction (Entities separated by `->`)
-  if (cleanRemarks.includes('->')) {
-    // 1. Identify the vendor-chain portion
-    // Error remarks might have prefix lines like "Panel is not in your stock (not claimed or already sold)"
-    // Isolate only the line(s) containing the chain '->'
-    const lines = cleanRemarks.split('\n').map(l => l.trim()).filter(Boolean);
-    const chainLines = lines.filter(l => l.includes('->'));
-    const chainText = chainLines.length > 0 ? chainLines.join(' ') : cleanRemarks;
+  // RULE C: If there is no vendor chain delimiter '->'
+  if (!cleanRemarks.includes('->')) {
+    const isInvalidSerial = /invalid\s+serial\s+number/i.test(cleanRemarks);
+    return {
+      tag: null,
+      rule: null,
+      status: 'NEEDS_REVIEW',
+      reason: isInvalidSerial
+        ? 'Remarks contain invalid-serial error with no vendor chain'
+        : 'Remarks do not contain a recognized vendor chain',
+    };
+  }
 
-    // Split chain into raw segments separated by '->'
-    const rawSegments = chainText.split('->').map(s => s.trim());
+  // Isolating vendor-chain portion (Entities separated by `->`)
+  // Error remarks might have prefix lines like "Panel is not in your stock (not claimed or already sold)"
+  // Isolate only the line(s) containing the chain '->'
+  const lines = cleanRemarks.split('\n').map(l => l.trim()).filter(Boolean);
+  const chainLines = lines.filter(l => l.includes('->'));
+  const chainText = chainLines.length > 0 ? chainLines.join(' ') : cleanRemarks;
 
-    // 2. Find the `Claimed` marker, case-insensitively.
-    // Note: Introductory text (before the first '->') might contain phrases like
-    // "(not claimed or already sold)". The vendor-chain Claimed marker is located
-    // in downstream segments (index >= 1) or immediately before the government claim ID.
-    const claimedRegex = /\bclaimed\b/i;
+  // Split chain into raw segments separated by '->'
+  const rawSegments = chainText
+    .split('->')
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
 
-    let claimedSegmentIndex = -1;
-    for (let i = rawSegments.length - 1; i >= 1; i--) {
-      if (claimedRegex.test(rawSegments[i])) {
-        claimedSegmentIndex = i;
-        break;
-      }
+  // Must have at least manufacturer and one downstream entity
+  if (rawSegments.length < 2) {
+    return {
+      tag: null,
+      rule: null,
+      status: 'NEEDS_REVIEW',
+      reason: 'Vendor chain does not contain valid downstream entities',
+    };
+  }
+
+  const mfrName = rawSegments[0].replace(/[\s\-_:–—]+$/, '').trim();
+
+  // 1. Check for `Claimed` marker in downstream segments (index >= 1)
+  // Introductory text (before the first '->') might contain phrases like "(not claimed or already sold)".
+  // The actual Claimed marker is located downstream.
+  const claimedRegex = /\bclaimed\b/i;
+  let claimedSegmentIndex = -1;
+  for (let i = rawSegments.length - 1; i >= 1; i--) {
+    if (claimedRegex.test(rawSegments[i])) {
+      claimedSegmentIndex = i;
+      break;
     }
+  }
 
-    // 7. If Claimed is absent in downstream segments, flag for review
-    if (claimedSegmentIndex === -1) {
-      return {
-        tag: null,
-        rule: 'RULE_B_VENDOR_CHAIN',
-        status: 'NEEDS_REVIEW',
-        reason: 'Vendor chain does not contain a "Claimed" marker',
-      };
-    }
-
+  // -------------------------------------------------------------
+  // RULE A: Chain contains `Claimed`
+  // -------------------------------------------------------------
+  if (claimedSegmentIndex !== -1) {
     const claimedSegment = rawSegments[claimedSegmentIndex];
     let candidateEntity = '';
 
@@ -193,7 +211,7 @@ export function extractSerialTag(remarks: string): TagExtractionResult {
       if (claimedSegmentIndex - 1 < 1) {
         return {
           tag: null,
-          rule: 'RULE_B_VENDOR_CHAIN',
+          rule: 'RULE_A_CHAIN_WITH_CLAIMED',
           status: 'NEEDS_REVIEW',
           reason: 'No entity found before "Claimed" marker (only manufacturer present)',
         };
@@ -211,26 +229,24 @@ export function extractSerialTag(remarks: string): TagExtractionResult {
       }
     }
 
-    // 5. Remove only trailing whitespace / connector punctuation while preserving
+    // Remove only trailing whitespace / connector punctuation while preserving
     // original name, parentheses, codes, hyphens, and slashes.
     candidateEntity = candidateEntity.replace(/[\s\-_:–—]+$/, '').trim();
 
-    // 8. If the entity immediately before Claimed is missing or cannot be identified
     if (!candidateEntity) {
       return {
         tag: null,
-        rule: 'RULE_B_VENDOR_CHAIN',
+        rule: 'RULE_A_CHAIN_WITH_CLAIMED',
         status: 'NEEDS_REVIEW',
         reason: 'Entity immediately before "Claimed" marker is missing or could not be identified',
       };
     }
 
-    // Do not extract the manufacturer (first segment before any ->)
-    const mfrName = rawSegments[0].replace(/[\s\-_:–—]+$/, '').trim();
+    // Do not extract the manufacturer (first segment)
     if (candidateEntity.toLowerCase() === mfrName.toLowerCase()) {
       return {
         tag: null,
-        rule: 'RULE_B_VENDOR_CHAIN',
+        rule: 'RULE_A_CHAIN_WITH_CLAIMED',
         status: 'NEEDS_REVIEW',
         reason: 'Extracted entity cannot be the manufacturer',
       };
@@ -238,17 +254,48 @@ export function extractSerialTag(remarks: string): TagExtractionResult {
 
     return {
       tag: candidateEntity,
-      rule: 'RULE_B_VENDOR_CHAIN',
+      rule: 'RULE_A_CHAIN_WITH_CLAIMED',
       status: 'VALID',
     };
   }
 
-  // RULE C: Missing or unrecognized remarks
+  // -------------------------------------------------------------
+  // RULE B: Chain does not contain `Claimed`
+  // Extract the last valid entity in the vendor chain
+  // e.g. Waaree Energies Limited -> AMR Power Solutions (5601016510) -> Kamna Traders (461)
+  // Expected tag: Kamna Traders (461)
+  // -------------------------------------------------------------
+  let lastEntityCandidate = '';
+  for (let i = rawSegments.length - 1; i >= 1; i--) {
+    const cleaned = rawSegments[i].replace(/[\s\-_:–—]+$/, '').trim();
+    if (cleaned && !/^[\s\-_:–—[\]()]+$/.test(cleaned)) {
+      lastEntityCandidate = cleaned;
+      break;
+    }
+  }
+
+  if (!lastEntityCandidate) {
+    return {
+      tag: null,
+      rule: 'RULE_B_CHAIN_WITHOUT_CLAIMED',
+      status: 'NEEDS_REVIEW',
+      reason: 'No valid downstream entity found in vendor chain',
+    };
+  }
+
+  if (lastEntityCandidate.toLowerCase() === mfrName.toLowerCase()) {
+    return {
+      tag: null,
+      rule: 'RULE_B_CHAIN_WITHOUT_CLAIMED',
+      status: 'NEEDS_REVIEW',
+      reason: 'Extracted entity cannot be the manufacturer',
+    };
+  }
+
   return {
-    tag: null,
-    rule: null,
-    status: 'NEEDS_REVIEW',
-    reason: 'Remarks do not contain a recognized vendor chain or invalid serial remark',
+    tag: lastEntityCandidate,
+    rule: 'RULE_B_CHAIN_WITHOUT_CLAIMED',
+    status: 'VALID',
   };
 }
 

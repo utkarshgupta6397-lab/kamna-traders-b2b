@@ -64,6 +64,47 @@ npm run lint
 DATABASE_URL="..." DIRECT_URL="..." SESSION_SECRET="..." AISENSY_API_KEY="..." npm run build
 ```
 
+## Hostinger VPS Cron Configuration (DCR Auto-Sync)
+
+The ERP is hosted on Hostinger VPS (Ubuntu 24.04) running Next.js under PM2 (`pm2 reload kamna --update-env`).
+
+### Schedule Requirements
+- **Frequency:** Every 30 minutes from **09:00 AM to 09:00 PM IST (Asia/Kolkata)**, inclusive.
+- **Total daily slots:** Exactly **25 runs per day** (`09:00, 09:30, 10:00, ... 20:30, 21:00 IST`).
+- **Endpoint:** `POST http://localhost:3000/api/cron/dcr-sync`
+- **Authentication:** Header `x-cron-secret: <CRON_SECRET>` or `Authorization: Bearer <CRON_SECRET>`.
+
+### Installing Cron on Hostinger VPS
+Open crontab on the VPS:
+```bash
+crontab -e
+```
+
+**If VPS system clock is in UTC (`timedatectl` shows UTC):**
+Add these two lines (covers all 25 runs):
+```cron
+# DCR Invoice Auto-Sync (UTC 03:30 to 15:30 -> IST 09:00 to 21:00, every 30m)
+30 3-15 * * * curl -s -X POST -H "x-cron-secret: $CRON_SECRET" http://localhost:3000/api/cron/dcr-sync > /dev/null 2>&1
+0 4-15 * * * curl -s -X POST -H "x-cron-secret: $CRON_SECRET" http://localhost:3000/api/cron/dcr-sync > /dev/null 2>&1
+```
+
+**If VPS system clock or cron is in IST (`Asia/Kolkata`):**
+```cron
+# DCR Invoice Auto-Sync (IST 09:00 to 21:00, every 30m)
+0,30 9-20 * * * curl -s -X POST -H "x-cron-secret: $CRON_SECRET" http://localhost:3000/api/cron/dcr-sync > /dev/null 2>&1
+0 21 * * * curl -s -X POST -H "x-cron-secret: $CRON_SECRET" http://localhost:3000/api/cron/dcr-sync > /dev/null 2>&1
+```
+
+### Verification & Testing on Hostinger VPS
+To manually test the cron execution path on the VPS:
+```bash
+curl -s -X POST -H "x-cron-secret: $CRON_SECRET" "http://localhost:3000/api/cron/dcr-sync?force=true"
+```
+Check audit logs in database or PM2 logs:
+```bash
+pm2 logs kamna --lines 50
+```
+
 ## Production Notes
 
 - Rotate any AiSensy key that may have been committed before this cleanup.

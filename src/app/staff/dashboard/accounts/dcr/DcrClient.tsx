@@ -113,6 +113,8 @@ export default function DcrClient() {
     };
   }, [cooldown]);
 
+  // Browser-side local queue auto-refresh while the operator keeps the page active
+  // (Scheduled background synchronization from Zoho Books runs reliably server-side on Hostinger VPS)
   useEffect(() => {
     const interval = setInterval(() => {
       if (selectedQuickSync !== 'today') return;
@@ -122,7 +124,8 @@ export default function DcrClient() {
       const now = new Date();
       const hours = now.getHours();
       const minutes = now.getMinutes();
-      const isWithinWindow = hours >= 9 && (hours < 20 || (hours === 20 && minutes === 0));
+      // Active window: 09:00 to 21:00
+      const isWithinWindow = hours >= 9 && (hours < 21 || (hours === 21 && minutes === 0));
       if (!isWithinWindow) return;
 
       if (document.hidden) return;

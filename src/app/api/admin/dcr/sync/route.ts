@@ -3,8 +3,7 @@ import { getSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { fetchInvoicesByRange, fetchInvoiceById } from '@/lib/zoho/invoices';
 import { ensureCustomerExists } from '@/lib/dcr-customer-sync';
-import { isVoidInvoice } from '@/lib/dcr-utils';
-import { ingestZohoInvoice } from '@/lib/dcr-ingestion';
+import { ingestZohoInvoice, ingestZohoInvoicesFromListing } from '@/lib/dcr-ingestion';
 
 export async function POST(req: Request) {
   try {
@@ -31,8 +30,8 @@ export async function POST(req: Request) {
       fetch(`${origin}/api/admin/dcr/backfill-customers`, { method: 'POST' }).catch(e => console.error('Backfill trigger failed:', e.message));
     }
 
-    const { invoices, apiCallsUsed: syncCalls } = await fetchInvoicesByRange(date_start, date_end);
-    console.log(`[DCR Sync Audit] Zoho invoices fetched: ${invoices.length}`);
+    const { invoices, apiCallsUsed: syncCalls, hasMorePagesRemaining } = await fetchInvoicesByRange(date_start, date_end, { maxLimit: 10000 });
+    console.log(`[DCR Sync Audit] Zoho invoices fetched: ${invoices.length}, hasMore: ${hasMorePagesRemaining}`);
 
     if (syncCalls > 0) {
       await prisma.zohoApiLog.createMany({
@@ -44,23 +43,11 @@ export async function POST(req: Request) {
       });
     }
 
-    let createdCount = 0;
-    let updatedCount = 0;
-
-    for (const invoice of invoices) {
-      console.log(`[DCR Sync Audit] Start ingestion`);
-      console.log(`[DCR Sync Audit] Invoice number: ${invoice.invoice_number}`);
-      console.log(`[DCR Sync Audit] Invoice ID: ${invoice.invoice_id}`);
-      try {
-        const { action } = await ingestZohoInvoice(invoice.invoice_id, userId, 'ZOHO_SYNC');
-        console.log(`[DCR Sync Audit] End ingestion for ${invoice.invoice_id} with action: ${action}`);
-        if (action === 'CREATED') createdCount++;
-        if (action === 'UPDATED') updatedCount++;
-      } catch (err: any) {
-        console.error(`[DCR Sync Audit] Ingestion failed for ${invoice.invoice_id}`, err.stack);
-        throw err;
-      }
-    }
+    const { created: createdCount, updated: updatedCount, skippedVoid, failed } = await ingestZohoInvoicesFromListing(
+      invoices,
+      userId,
+      'ZOHO_SYNC'
+    );
 
     await prisma.dcrAuditLog.create({
       data: {
@@ -71,8 +58,12 @@ export async function POST(req: Request) {
         metadata: {
           startDate: date_start,
           endDate: date_end,
+          totalFetched: invoices.length,
           created: createdCount,
           updated: updatedCount,
+          skippedVoid,
+          failed,
+          hasMorePagesRemaining,
         }
       }
     });
@@ -81,6 +72,9 @@ export async function POST(req: Request) {
       success: true,
       created: createdCount,
       updated: updatedCount,
+      skippedVoid,
+      total: invoices.length,
+      hasMore: hasMorePagesRemaining,
     });
   } catch (error: any) {
     console.error('[DCR Sync API] Error:', error);

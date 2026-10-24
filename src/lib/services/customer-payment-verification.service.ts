@@ -170,6 +170,127 @@ export function isPaymentEligibleForVerification(payment: any): boolean {
 }
 
 /**
+ * Authoritative predicate to determine whether a payment mode is eligible for
+ * bank reconciliation inspection (Detail API fetch & bank feed matching).
+ * Supports Bank Transfer, POS Device, and their recognized electronic variants.
+ * Genuine cash payments do not have bank feed matching and skip Detail API calls.
+ */
+export function isReconciliationEligiblePaymentMode(mode?: string | null): boolean {
+  if (!mode) return false;
+  const m = mode.trim().toLowerCase();
+  if (m === 'cash' || m.includes('cash')) {
+    return false;
+  }
+  return (
+    m === 'bank transfer' ||
+    m === 'pos device' ||
+    m === 'pos' ||
+    m === 'icici bank' ||
+    m === 'bank remittance' ||
+    m.includes('neft') ||
+    m.includes('rtgs') ||
+    m.includes('imps')
+  );
+}
+
+/**
+ * Recognized bank accounts in Zoho Books.
+ * Confirms payment/settlement is deposited into an authoritative business bank account
+ * and excludes petty cash or clearing accounts.
+ */
+export const RECOGNIZED_BANK_ACCOUNT_IDS = new Set([
+  '1759923000003416718', // KAMNA TRADERS ICICI
+  '1759923000000359203', // KAMNA BOB
+  '1759923000000023221', // KAMNA TRADERS
+]);
+
+export const NON_BANK_ACCOUNT_NAMES = [
+  'petty cash',
+  'cash',
+  'undeposited funds',
+  'clearing',
+];
+
+export function isRecognizedBankAccount(accountId?: string | null, accountName?: string | null): boolean {
+  if (accountId && RECOGNIZED_BANK_ACCOUNT_IDS.has(String(accountId).trim())) {
+    return true;
+  }
+  if (!accountName) return false;
+  const name = accountName.trim().toLowerCase();
+  if (NON_BANK_ACCOUNT_NAMES.some((nb) => name.includes(nb))) {
+    return false;
+  }
+  return (
+    name.includes('icici') ||
+    name.includes('bob') ||
+    name.includes('bank') ||
+    name.includes('kamna')
+  );
+}
+
+export interface BankMatchEvaluation {
+  isMatched: boolean;
+  bankMatchStatus: CustomerPaymentBankMatchStatus;
+  importedTransactionId: string | null;
+  matchedTransaction: any | null;
+}
+
+/**
+ * Inspects imported_transactions from a Payment Detail response.
+ * Follows Zoho reconciliation semantics to find a confirmed matched or categorized transaction
+ * associated with a recognized bank account.
+ */
+export function evaluateBankMatchFromDetail(
+  detail: any,
+  depositAccountId?: string | null,
+  depositAccountName?: string | null
+): BankMatchEvaluation {
+  if (!detail || !Array.isArray(detail.imported_transactions) || detail.imported_transactions.length === 0) {
+    return {
+      isMatched: false,
+      bankMatchStatus: CustomerPaymentBankMatchStatus.UNMATCHED,
+      importedTransactionId: null,
+      matchedTransaction: null,
+    };
+  }
+
+  const validMatchedTxn = detail.imported_transactions.find((t: any) => {
+    if (!t || typeof t !== 'object') return false;
+    const status = String(t.status || '').toLowerCase().trim();
+    if (status !== 'matched' && status !== 'categorized') return false;
+    if (!t.imported_transaction_id) return false;
+
+    // If transaction specifies an account_id, ensure it is not an excluded non-bank account
+    if (t.account_id && !isRecognizedBankAccount(t.account_id, depositAccountName)) {
+      return false;
+    }
+    return true;
+  });
+
+  if (validMatchedTxn) {
+    const status = String(validMatchedTxn.status).toLowerCase().trim();
+    return {
+      isMatched: true,
+      bankMatchStatus:
+        status === 'categorized'
+          ? CustomerPaymentBankMatchStatus.CATEGORIZED
+          : CustomerPaymentBankMatchStatus.MATCHED,
+      importedTransactionId: String(validMatchedTxn.imported_transaction_id),
+      matchedTransaction: validMatchedTxn,
+    };
+  }
+
+  return {
+    isMatched: false,
+    bankMatchStatus: CustomerPaymentBankMatchStatus.UNMATCHED,
+    importedTransactionId: null,
+    matchedTransaction: null,
+  };
+}
+
+export const MAX_UNMATCHED_REFRESH_PER_SYNC = 50;
+
+/**
  * Persists an outbound Zoho API call to ZohoApiUsageLog for audit & usage tracking.
  */
 export async function logZohoApiCall(params: {
@@ -458,6 +579,7 @@ export async function syncCustomerPayments(
   let autoVerificationFailed = 0;
   let upsertedCount = 0;
   let paymentsProcessed = 0;
+  let unmatchedRefreshCount = 0;
 
   const emitProgress = (currentOp: string) => {
     dispatchEvent({
@@ -479,7 +601,7 @@ export async function syncCustomerPayments(
     try {
       const zohoPaymentId = String(rawPayment.payment_id);
       const paymentNumber = String(rawPayment.payment_number || zohoPaymentId);
-      const isBankTransfer = rawPayment.payment_mode === 'Bank Transfer';
+      const isReconciliationEligible = isReconciliationEligiblePaymentMode(rawPayment.payment_mode);
       const listLastModifiedTime: string | null =
         rawPayment.last_modified_time || rawPayment.updated_time || null;
 
@@ -490,9 +612,10 @@ export async function syncCustomerPayments(
       let importedTransactionId: string | null = null;
       let isBankMatched = false;
       let needsDetailFetch = false;
+      let isDetailSuccess = false;
 
-      if (!isBankTransfer) {
-        // NON-BANK PAYMENT: Do NOT call Detail API. List data is sufficient.
+      if (!isReconciliationEligible) {
+        // NON-RECONCILABLE PAYMENT (e.g. Cash): Do NOT call Detail API. List data is sufficient.
         nonBankTransferCount++;
         bankMatchStatus = CustomerPaymentBankMatchStatus.NONE;
         importedTransactionId = null;
@@ -503,39 +626,87 @@ export async function syncCustomerPayments(
           paymentId: zohoPaymentId,
           paymentNumber,
           paymentMode: rawPayment.payment_mode || 'Non-Bank',
-          reason: 'Non-bank payment mode; Detail API not required',
+          reason: 'Non-reconcilable payment mode; Detail API not required',
         });
       } else {
-        // BANK TRANSFER: Check local detail cache and last_modified_time
+        // RECONCILIATION-ELIGIBLE PAYMENT (Bank Transfer, POS Device, etc.)
         bankTransferCount++;
+
+        let cacheSkipReason = '';
+        let fetchReason = '';
 
         if (!existingLocal) {
           // CASE A: NEW PAYMENT -> Must fetch Detail API to inspect imported_transactions
           needsDetailFetch = true;
           newBankTransfers++;
-
-          dispatchEvent({
-            type: 'PAYMENT_CACHE_MISS',
-            paymentId: zohoPaymentId,
-            paymentNumber,
-            reason: 'New Bank Transfer not present in local cache',
-          });
+          fetchReason = 'New reconciliation-eligible payment not present in local cache';
         } else {
           // Local record exists
           const localModified = existingLocal.lastZohoModifiedTime;
-          const hasCachedBankMatch = existingLocal.bankMatchStatus !== null;
-
           const normListModified = normalizeZohoTimestamp(listLastModifiedTime);
           const normLocalModified = normalizeZohoTimestamp(localModified);
 
-          const isTimestampUnchanged =
+          const isTimestampChanged =
             normListModified !== null &&
             normLocalModified !== null &&
-            normListModified === normLocalModified;
+            normListModified !== normLocalModified;
 
-          if (isTimestampUnchanged && hasCachedBankMatch) {
-            // CASE B: EXISTING PAYMENT, NOT MODIFIED -> DO NOT call Detail API. Use local cache.
-            needsDetailFetch = false;
+          // Has this record previously had its reconciliation detail inspected?
+          // Existing POS payments previously had bankMatchStatus = NONE and no imported_transactions in zohoData!
+          const hasPreviouslyInspectedDetail =
+            existingLocal.bankMatchStatus !== null &&
+            existingLocal.bankMatchStatus !== CustomerPaymentBankMatchStatus.NONE &&
+            existingLocal.zohoData !== null &&
+            typeof existingLocal.zohoData === 'object' &&
+            'imported_transactions' in (existingLocal.zohoData as any);
+
+          if (!hasPreviouslyInspectedDetail) {
+            // CASE B: PREVIOUSLY UNINSPECTED -> Must fetch Detail API
+            needsDetailFetch = true;
+            modifiedBankTransfers++;
+            fetchReason = 'Previously uninspected reconciliation record (missing detail cache)';
+          } else if (isTimestampChanged) {
+            // CASE C: TIMESTAMP CHANGED -> Must refresh Detail API
+            needsDetailFetch = true;
+            modifiedBankTransfers++;
+            fetchReason = `last_modified_time changed (Zoho: ${normListModified || listLastModifiedTime}, Local: ${normLocalModified || localModified}); refreshing Detail API`;
+          } else {
+            // Timestamp unchanged & detail was previously inspected
+            const isConfirmedMatched =
+              existingLocal.bankMatchStatus === CustomerPaymentBankMatchStatus.MATCHED ||
+              existingLocal.bankMatchStatus === CustomerPaymentBankMatchStatus.CATEGORIZED;
+
+            if (isConfirmedMatched) {
+              // CASE D: ALREADY CONFIRMED MATCHED -> Skip Detail API (Cache Hit)
+              needsDetailFetch = false;
+              cacheSkipReason = `last_modified_time unchanged; using cached bank status ${existingLocal.bankMatchStatus}`;
+            } else {
+              // CASE E: UNMATCHED RECORD PERIODIC REFRESH
+              // Bank reconciliation can occur in Zoho Banking without updating last_modified_time on payment.
+              // Bounded refresh: only for recent payments (last 30 days) if last checked > 4 hours ago, up to MAX_UNMATCHED_REFRESH_PER_SYNC.
+              const paymentDateMs = existingLocal.paymentDate.getTime();
+              const thirtyDaysAgoMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+              const isRecentPayment = paymentDateMs >= thirtyDaysAgoMs;
+
+              const lastCheckedMs = existingLocal.bankMatchLastCheckedAt
+                ? existingLocal.bankMatchLastCheckedAt.getTime()
+                : 0;
+              const fourHoursMs = 4 * 60 * 60 * 1000;
+              const isStaleCheck = Date.now() - lastCheckedMs > fourHoursMs;
+
+              if (isRecentPayment && isStaleCheck && unmatchedRefreshCount < MAX_UNMATCHED_REFRESH_PER_SYNC) {
+                needsDetailFetch = true;
+                unmatchedRefreshCount++;
+                modifiedBankTransfers++;
+                fetchReason = `Recent unmatched payment periodic refresh (last checked ${existingLocal.bankMatchLastCheckedAt ? existingLocal.bankMatchLastCheckedAt.toISOString() : 'never'})`;
+              } else {
+                needsDetailFetch = false;
+                cacheSkipReason = 'Unmatched payment within valid check interval; using cached status';
+              }
+            }
+          }
+
+          if (!needsDetailFetch) {
             unchangedBankTransfers++;
             detailCallsSkippedFromCache++;
             bankMatchStatus =
@@ -547,41 +718,42 @@ export async function syncCustomerPayments(
             detail = existingLocal.zohoData || rawPayment;
 
             console.log(
-              `[PaymentSync] CACHE HIT: ${paymentNumber} — last_modified_time unchanged (${normListModified} === ${normLocalModified}); using cached bank status ${bankMatchStatus}`
+              `[PaymentSync] CACHE HIT: ${paymentNumber} — ${cacheSkipReason}`
             );
 
             dispatchEvent({
               type: 'PAYMENT_CACHE_HIT',
               paymentId: zohoPaymentId,
               paymentNumber,
-              reason: 'last_modified_time unchanged; using cached verification & bank match state',
+              reason: cacheSkipReason,
               lastZohoModifiedTime: localModified,
               cachedBankMatchStatus: existingLocal.bankMatchStatus,
               zohoModifiedTime: normListModified,
               localModifiedTime: normLocalModified,
             });
           } else {
-            // CASE C: EXISTING PAYMENT, MODIFIED or NO CACHED TIMESTAMP -> Fetch Detail API
-            needsDetailFetch = true;
-            modifiedBankTransfers++;
-
-            const refreshReason = !hasCachedBankMatch
-              ? 'missing cached bank status; refreshing Detail API'
-              : `last_modified_time changed (Zoho: ${normListModified || listLastModifiedTime}, Local: ${normLocalModified || localModified}); refreshing Detail API`;
-
             console.log(
-              `[PaymentSync] CACHE REFRESH: ${paymentNumber} — ${refreshReason}`
+              `[PaymentSync] CACHE REFRESH: ${paymentNumber} — ${fetchReason}`
             );
 
             dispatchEvent({
               type: 'PAYMENT_CACHE_REFRESH',
               paymentId: zohoPaymentId,
               paymentNumber,
-              reason: refreshReason,
+              reason: fetchReason,
               zohoModifiedTime: normListModified,
               localModifiedTime: normLocalModified,
             });
           }
+        }
+
+        if (needsDetailFetch && !existingLocal) {
+          dispatchEvent({
+            type: 'PAYMENT_CACHE_MISS',
+            paymentId: zohoPaymentId,
+            paymentNumber,
+            reason: fetchReason,
+          });
         }
 
         if (needsDetailFetch) {
@@ -606,7 +778,7 @@ export async function syncCustomerPayments(
             const detailData = await detailRes.json();
             const durationMs = Date.now() - detailStart;
 
-            const isDetailSuccess = detailRes.ok && detailData.code === 0;
+            isDetailSuccess = detailRes.ok && detailData.code === 0;
 
             await logZohoApiCall({
               endpointType: ZohoApiEndpointType.PAYMENT_DETAIL,
@@ -621,28 +793,16 @@ export async function syncCustomerPayments(
               detail = rawPayment;
             }
 
-            // Inspect imported_transactions from fresh detail
-            const importedTxns: any[] = Array.isArray(detail?.imported_transactions)
-              ? detail.imported_transactions
-              : [];
+            // Authoritative evaluation of imported_transactions
+            const matchEval = evaluateBankMatchFromDetail(
+              detail,
+              detail?.account_id || rawPayment.account_id,
+              detail?.account_name || rawPayment.account_name
+            );
 
-            if (importedTxns.length > 0) {
-              const matchedTxn = importedTxns.find(
-                (t: any) => t.status === 'categorized' || t.status === 'matched'
-              );
-              if (matchedTxn) {
-                isBankMatched = true;
-                importedTransactionId = String(matchedTxn.imported_transaction_id);
-                bankMatchStatus =
-                  matchedTxn.status === 'categorized'
-                    ? CustomerPaymentBankMatchStatus.CATEGORIZED
-                    : CustomerPaymentBankMatchStatus.MATCHED;
-              } else {
-                bankMatchStatus = CustomerPaymentBankMatchStatus.UNMATCHED;
-              }
-            } else {
-              bankMatchStatus = CustomerPaymentBankMatchStatus.UNMATCHED;
-            }
+            isBankMatched = matchEval.isMatched;
+            bankMatchStatus = matchEval.bankMatchStatus;
+            importedTransactionId = matchEval.importedTransactionId;
 
             dispatchEvent({
               type: 'PAYMENT_DETAIL_COMPLETED',
@@ -667,6 +827,13 @@ export async function syncCustomerPayments(
             }
             console.warn(`[PaymentSync] Failed to fetch detail for ${zohoPaymentId}:`, detailErr.message);
             detail = rawPayment;
+            // CRITICAL DEFENSE: Never assume UNMATCHED on network/API failure!
+            // Retain existing local status if present, otherwise preserve NONE.
+            bankMatchStatus = existingLocal?.bankMatchStatus || CustomerPaymentBankMatchStatus.NONE;
+            importedTransactionId = existingLocal?.importedTransactionId || null;
+            isBankMatched =
+              bankMatchStatus === CustomerPaymentBankMatchStatus.MATCHED ||
+              bankMatchStatus === CustomerPaymentBankMatchStatus.CATEGORIZED;
 
             dispatchEvent({
               type: 'PAYMENT_DETAIL_COMPLETED',
@@ -676,8 +843,8 @@ export async function syncCustomerPayments(
               zohoCode: -1,
               durationMs,
               success: false,
-              bankMatchStatus: CustomerPaymentBankMatchStatus.UNMATCHED,
-              importedTransactionId: null,
+              bankMatchStatus,
+              importedTransactionId,
               error: detailErr.message,
             });
           }
@@ -735,7 +902,7 @@ export async function syncCustomerPayments(
           bankMatchStatus,
           importedTransactionId,
           lastZohoModifiedTime: effectiveLastModified,
-          ...(needsDetailFetch || !existingLocal
+          ...(isDetailSuccess || (needsDetailFetch && !existingLocal)
             ? { bankMatchLastCheckedAt: nowTs }
             : {}),
           zohoData: detail as any,
@@ -768,12 +935,24 @@ export async function syncCustomerPayments(
       upsertedCount++;
       paymentsProcessed++;
 
-      // 3. AUTO VERIFICATION for qualifying Bank Transfer payments
-      // Condition: Bank Transfer + Bank Matched (CATEGORIZED / MATCHED) + Zoho reports cf_is_verified=false
-      // GUARD: Payments marked REVERIFICATION_REQUIRED, requiresManualVerification, or VOID/cancelled MUST NEVER auto-verify!
+      // 3. AUTO VERIFICATION for qualifying payments
+      // Condition:
+      // - Reconciliation eligible mode (Bank Transfer, POS Device)
+      // - Bank Matched (CATEGORIZED / MATCHED in recognized bank account)
+      // - Deposited in recognized bank account
+      // - Actionable in Zoho (not void / cancelled)
+      // - Not already verified in Zoho Books
+      // - Not already verified locally
+      // - Not restricted by requiresManualVerification or REVERIFICATION_REQUIRED
+      const isRecognizedDepositAccount = isRecognizedBankAccount(
+        detail?.account_id || rawPayment.account_id || localRecord.accountId,
+        detail?.account_name || rawPayment.account_name || localRecord.accountName
+      );
+
       const isEligibleForAutoVerification =
-        isBankTransfer &&
+        isReconciliationEligible &&
         isBankMatched &&
+        isRecognizedDepositAccount &&
         isPaymentEligibleForVerification(detail || rawPayment) &&
         !isZohoReportedVerified &&
         !localRecord.isVerified &&

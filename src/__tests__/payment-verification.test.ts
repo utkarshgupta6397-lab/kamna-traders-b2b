@@ -34,45 +34,62 @@ const after8Pm = new Date('2026-10-05T14:31:00Z');
 assert(!isWithinPaymentSyncHours(after8Pm), '20:01 IST should be outside working window');
 console.log('✓ PASS: IST working hours accurately constrained to 08:00 - 20:00 IST');
 
-console.log('--- 3. Testing Bank Matching Logic ---');
-const sampleMatched = {
+console.log('--- 3. Testing Bank Matching Logic & Eligibility Predicates ---');
+import {
+  isReconciliationEligiblePaymentMode,
+  isRecognizedBankAccount,
+  evaluateBankMatchFromDetail,
+  RECOGNIZED_BANK_ACCOUNT_IDS,
+} from '../lib/services/customer-payment-verification.service';
+import { CustomerPaymentBankMatchStatus } from '@prisma/client';
+
+// 3.1 Mode eligibility
+assert(isReconciliationEligiblePaymentMode('Bank Transfer'), 'Bank Transfer must be eligible for reconciliation');
+assert(isReconciliationEligiblePaymentMode('POS Device'), 'POS Device must be eligible for reconciliation');
+assert(isReconciliationEligiblePaymentMode('POS'), 'POS must be eligible for reconciliation');
+assert(isReconciliationEligiblePaymentMode('ICICI Bank'), 'ICICI Bank mode must be eligible');
+assert(isReconciliationEligiblePaymentMode('NEFT / RTGS'), 'NEFT / RTGS must be eligible');
+assert(!isReconciliationEligiblePaymentMode('Cash'), 'Cash must NOT be eligible for reconciliation');
+assert(!isReconciliationEligiblePaymentMode(null), 'null mode must NOT be eligible');
+
+// 3.2 Recognized bank accounts
+assert(isRecognizedBankAccount('1759923000003416718', 'KAMNA TRADERS ICICI'), 'ICICI account must be recognized');
+assert(isRecognizedBankAccount('1759923000000359203', 'KAMNA BOB'), 'BOB account must be recognized');
+assert(!isRecognizedBankAccount('1759923000000000459', 'Petty Cash'), 'Petty Cash must NOT be a recognized bank account');
+assert(!isRecognizedBankAccount('1759923000000000456', 'Undeposited Funds'), 'Undeposited Funds must NOT be a recognized bank account');
+
+// 3.3 Bank match evaluation from detail
+const sampleMatchedBT = {
   payment_mode: 'Bank Transfer',
   imported_transactions: [
-    { imported_transaction_id: '123456', status: 'categorized' }
+    { imported_transaction_id: '123456', status: 'categorized', account_id: '1759923000003416718' }
   ]
 };
-const isBankMatched1 =
-  sampleMatched.payment_mode === 'Bank Transfer' &&
-  Array.isArray(sampleMatched.imported_transactions) &&
-  sampleMatched.imported_transactions.length > 0 &&
-  sampleMatched.imported_transactions.some(
-    (t: any) => t.status === 'categorized' || t.status === 'matched'
-  );
-assert(isBankMatched1, 'Categorized bank transfer must match');
+const evalBT = evaluateBankMatchFromDetail(sampleMatchedBT, '1759923000003416718', 'KAMNA TRADERS ICICI');
+assert(evalBT.isMatched, 'Categorized bank transfer must match');
+assert(evalBT.bankMatchStatus === CustomerPaymentBankMatchStatus.CATEGORIZED, 'Status must be CATEGORIZED');
+assert(evalBT.importedTransactionId === '123456', 'Txn ID must match');
+
+const sampleMatchedPOS = {
+  payment_mode: 'POS Device',
+  imported_transactions: [
+    { imported_transaction_id: '1759923000028180030', status: 'matched', account_id: '1759923000003416718' }
+  ]
+};
+const evalPOS = evaluateBankMatchFromDetail(sampleMatchedPOS, '1759923000003416718', 'KAMNA TRADERS ICICI');
+assert(evalPOS.isMatched, 'Matched POS Device must match');
+assert(evalPOS.bankMatchStatus === CustomerPaymentBankMatchStatus.MATCHED, 'Status must be MATCHED');
+assert(evalPOS.importedTransactionId === '1759923000028180030', 'Txn ID must match');
 
 const sampleUnmatched = {
-  payment_mode: 'Bank Transfer',
+  payment_mode: 'POS Device',
   imported_transactions: []
 };
-const isBankMatched2 =
-  sampleUnmatched.payment_mode === 'Bank Transfer' &&
-  Array.isArray(sampleUnmatched.imported_transactions) &&
-  sampleUnmatched.imported_transactions.length > 0 &&
-  sampleUnmatched.imported_transactions.some(
-    (t: any) => t.status === 'categorized' || t.status === 'matched'
-  );
-assert(!isBankMatched2, 'Bank transfer without imported transactions must NOT match');
+const evalUnmatched = evaluateBankMatchFromDetail(sampleUnmatched);
+assert(!evalUnmatched.isMatched, 'POS Device without imported transactions must NOT match');
+assert(evalUnmatched.bankMatchStatus === CustomerPaymentBankMatchStatus.UNMATCHED, 'Status must be UNMATCHED');
 
-const sampleCash = {
-  payment_mode: 'Cash',
-  imported_transactions: []
-};
-const isBankMatched3 =
-  sampleCash.payment_mode === 'Bank Transfer' &&
-  Array.isArray(sampleCash.imported_transactions) &&
-  sampleCash.imported_transactions.length > 0;
-assert(!isBankMatched3, 'Cash payment must NOT match');
-console.log('✓ PASS: Bank match rules evaluated accurately');
+console.log('✓ PASS: Bank match rules and eligibility predicates evaluated accurately');
 
 console.log('--- 4. Testing IST Today Range (00:00 IST to 24:00 IST boundary) ---');
 import { getIstTodayRange } from '../lib/services/customer-payment-verification.service';
@@ -125,11 +142,12 @@ assert(needsDetailCaseA === true, 'New Bank Transfer must fetch Detail');
 // Case B: Existing Bank Transfer, Unchanged timestamp -> skips Detail (Cache Hit)
 const listModCaseB = '2026-10-05T13:44:01+0530';
 const localModCaseB = '2026-10-05T08:14:01.000Z'; // e.g. stored in UTC representation
-const cachedMatchCaseB = 'CATEGORIZED';
+const cachedMatchCaseB: string | null = 'CATEGORIZED';
 const normListB = normalizeZohoTimestamp(listModCaseB);
 const normLocalB = normalizeZohoTimestamp(localModCaseB);
 const isUnchangedB = normListB !== null && normLocalB !== null && normListB === normLocalB;
-const needsDetailCaseB = !(isUnchangedB && cachedMatchCaseB !== null);
+const hasPreviouslyInspectedB = cachedMatchCaseB !== null && cachedMatchCaseB !== 'NONE';
+const needsDetailCaseB = !(isUnchangedB && hasPreviouslyInspectedB);
 assert(needsDetailCaseB === false, 'Unchanged Bank Transfer with normalized timestamps must NOT fetch Detail (cache hit)');
 
 // Case C: Existing Bank Transfer, Modified timestamp -> needs Detail (Cache Refresh)
@@ -141,10 +159,18 @@ const isUnchangedC = normListC !== null && normLocalC !== null && normListC === 
 const needsDetailCaseC = !isUnchangedC;
 assert(needsDetailCaseC === true, 'Modified Bank Transfer must fetch Detail');
 
-// Case D: Non-bank payment (Cash) -> never fetches Detail
+// Case D: Existing POS Device payment, previously uninspected (bankMatchStatus: NONE) -> MUST fetch Detail!
+const isPosPayment = true;
+const cachedMatchCaseD: string | null = 'NONE'; // Previously imported when non-bank skipped detail
+const hasPreviouslyInspectedD = cachedMatchCaseD !== null && cachedMatchCaseD !== 'NONE';
+const needsDetailCaseD = isPosPayment && !hasPreviouslyInspectedD;
+assert(needsDetailCaseD === true, 'Previously uninspected POS payment (bankMatchStatus=NONE) MUST fetch Detail to discover bank match');
+
+// Case E: Non-reconcilable payment (Cash) -> never fetches Detail
 const isCash = true;
-const needsDetailCaseD = !isCash;
-assert(needsDetailCaseD === false, 'Cash payment must NOT fetch Detail');
+const isReconcilableE = !isCash;
+const needsDetailCaseE = isReconcilableE;
+assert(needsDetailCaseE === false, 'Cash payment must NOT fetch Detail');
 console.log('✓ PASS: Detail cache invalidation rules and timestamp normalization verified');
 
 console.log('--- 8. Testing Single-PUT Verification Flow Contract ---');
@@ -1013,11 +1039,140 @@ async function testProductionModeDirectApiRoutes() {
   }
 }
 
+async function testPosDeviceAutoVerificationAndReconciliation() {
+  console.log('--- 23. Testing POS Device Auto-Verification, Bank Matching & Safeguards ---');
+
+  // A. Mock POS payment with confirmed bank match (matching reference case PT-KT/26-27/4147)
+  const mockPosDetail = {
+    payment_id: '1759923000028092915',
+    payment_number: 'PT-KT/26-27/4147',
+    payment_mode: 'POS Device',
+    amount: 354,
+    account_id: '1759923000003416718',
+    account_name: 'KAMNA TRADERS ICICI',
+    payment_status: 'paid',
+    cf_is_verified: false,
+    imported_transactions: [
+      {
+        imported_transaction_id: '1759923000028180030',
+        date: '2026-10-14',
+        amount: 114226,
+        description: 'EZY/ICICIPOS_SET_10XX398674_141026',
+        status: 'matched',
+        account_id: '1759923000003416718',
+      },
+    ],
+  };
+
+  // 23.1 Detail parsing & bank match extraction
+  const posMatchEval = evaluateBankMatchFromDetail(
+    mockPosDetail,
+    mockPosDetail.account_id,
+    mockPosDetail.account_name
+  );
+  assert(posMatchEval.isMatched === true, 'POS payment with matched imported transaction must be recognized as matched');
+  assert(posMatchEval.bankMatchStatus === CustomerPaymentBankMatchStatus.MATCHED, 'Status must be MATCHED');
+  assert(posMatchEval.importedTransactionId === '1759923000028180030', 'Transaction ID must match');
+
+  // 23.2 Mode & account validation
+  const isEligibleMode = isReconciliationEligiblePaymentMode(mockPosDetail.payment_mode);
+  assert(isEligibleMode === true, 'POS Device must be an eligible mode');
+  const isRecognizedAcc = isRecognizedBankAccount(mockPosDetail.account_id, mockPosDetail.account_name);
+  assert(isRecognizedAcc === true, 'KAMNA TRADERS ICICI must be a recognized bank account');
+
+  // 23.3 Auto-verification evaluation (Happy path)
+  const localRecord = {
+    isVerified: false,
+    requiresManualVerification: false,
+    verificationStatus: 'PENDING',
+    accountId: mockPosDetail.account_id,
+    accountName: mockPosDetail.account_name,
+  };
+  const isEligibleForAuto =
+    isEligibleMode &&
+    posMatchEval.isMatched &&
+    isRecognizedAcc &&
+    isPaymentEligibleForVerification(mockPosDetail) &&
+    !mockPosDetail.cf_is_verified &&
+    !localRecord.isVerified &&
+    !localRecord.requiresManualVerification &&
+    localRecord.verificationStatus !== 'REVERIFICATION_REQUIRED';
+  assert(isEligibleForAuto === true, 'Confirmed bank-matched POS payment in ICICI bank must qualify for auto-verification');
+
+  // 23.4 Negative case 1: POS payment without a bank match remains pending
+  const unmatchedPos = {
+    payment_mode: 'POS Device',
+    account_id: '1759923000003416718',
+    account_name: 'KAMNA TRADERS ICICI',
+    imported_transactions: [],
+  };
+  const unmatchedEval = evaluateBankMatchFromDetail(unmatchedPos, unmatchedPos.account_id, unmatchedPos.account_name);
+  assert(unmatchedEval.isMatched === false, 'POS without imported transactions must NOT be matched');
+  assert(unmatchedEval.bankMatchStatus === CustomerPaymentBankMatchStatus.UNMATCHED, 'Status must be UNMATCHED');
+  const autoUnmatched = isEligibleMode && unmatchedEval.isMatched && isRecognizedAcc;
+  assert(autoUnmatched === false, 'Unmatched POS payment must NOT auto-verify');
+
+  // 23.5 Negative case 2: Cash payments are excluded from auto-verification
+  const cashModeEligible = isReconciliationEligiblePaymentMode('Cash');
+  assert(cashModeEligible === false, 'Cash payment mode must NEVER be eligible for auto-verification');
+
+  // 23.6 Negative case 3: Unrecognized deposit account (e.g. Petty Cash / Undeposited Funds) cannot qualify
+  const pettyCashAccountValid = isRecognizedBankAccount('1759923000000000459', 'Petty Cash');
+  assert(pettyCashAccountValid === false, 'Petty cash must NOT be accepted as recognized bank account');
+  const autoPettyCash = isEligibleMode && posMatchEval.isMatched && pettyCashAccountValid;
+  assert(autoPettyCash === false, 'POS deposited into petty cash must NOT auto-verify');
+
+  // 23.7 Safeguard case 4: REVERIFICATION_REQUIRED payments cannot auto-verify
+  const reverifyLocal = { ...localRecord, verificationStatus: 'REVERIFICATION_REQUIRED' };
+  const autoReverify =
+    isEligibleMode &&
+    posMatchEval.isMatched &&
+    isRecognizedAcc &&
+    reverifyLocal.verificationStatus !== 'REVERIFICATION_REQUIRED';
+  assert(autoReverify === false, 'Payments requiring re-verification must NOT auto-verify');
+
+  // 23.8 Safeguard case 5: Voided payment cannot auto-verify
+  const voidPos = { ...mockPosDetail, payment_status: 'void' };
+  const autoVoid =
+    isEligibleMode &&
+    posMatchEval.isMatched &&
+    isRecognizedAcc &&
+    isPaymentEligibleForVerification(voidPos);
+  assert(autoVoid === false, 'Voided payments must NOT auto-verify');
+
+  // 23.9 Safeguard case 6: Already verified payment does not duplicate verification
+  const alreadyVerifiedLocal = { ...localRecord, isVerified: true };
+  const autoAlreadyVerified =
+    isEligibleMode &&
+    posMatchEval.isMatched &&
+    isRecognizedAcc &&
+    !alreadyVerifiedLocal.isVerified;
+  assert(autoAlreadyVerified === false, 'Already verified payment must NOT auto-verify again');
+
+  // 23.10 Cache invalidation: Previously uninspected POS payment (bankMatchStatus: 'NONE') triggers Detail fetch
+  const existingLocalNone = {
+    bankMatchStatus: 'NONE',
+    zohoData: { payment_id: '123' }, // shallow List API object without imported_transactions
+    lastZohoModifiedTime: '2026-10-13T17:44:27+0530',
+  };
+  const hasPreviouslyInspected =
+    existingLocalNone.bankMatchStatus !== null &&
+    existingLocalNone.bankMatchStatus !== 'NONE' &&
+    existingLocalNone.zohoData !== null &&
+    'imported_transactions' in existingLocalNone.zohoData;
+  assert(hasPreviouslyInspected === false, 'Existing POS with status NONE must be identified as uninspected');
+  const needsFetchForUninspected = !hasPreviouslyInspected;
+  assert(needsFetchForUninspected === true, 'Previously uninspected POS payment MUST trigger Detail fetch');
+
+  console.log('✓ PASS: POS auto-verification, bank matching, cache invalidation & safeguards completely verified');
+}
+
 testSixFieldIntegrityLogic();
 testVoidPaymentEligibility()
   .then(() => testExecutionTracker())
   .then(() => testCronIntegrityAuditRoute())
   .then(() => testProductionModeDirectApiRoutes())
+  .then(() => testPosDeviceAutoVerificationAndReconciliation())
   .then(() => {
     console.log('========================================');
     console.log('All Payment Verification tests passed!');

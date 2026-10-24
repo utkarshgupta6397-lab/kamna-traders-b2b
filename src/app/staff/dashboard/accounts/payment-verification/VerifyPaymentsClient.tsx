@@ -445,7 +445,9 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
   const importedTxns: any[] = Array.isArray(zohoDetail.imported_transactions)
     ? zohoDetail.imported_transactions
     : [];
-  const primaryImportedTxn = importedTxns[0];
+  const primaryImportedTxn = importedTxns.find(
+    (t: any) => t && (t.status === 'matched' || t.status === 'categorized')
+  ) || importedTxns[0];
   const appliedInvoices: any[] = Array.isArray(zohoDetail.invoices) ? zohoDetail.invoices : [];
 
   return (
@@ -886,60 +888,115 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
                     Bank Transaction Status
                   </span>
 
-                  {primaryImportedTxn ? (
-                    <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
-                          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-                          Matched with Bank Transaction
-                        </div>
-                        <span className="bg-emerald-200/70 text-emerald-900 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
-                          {primaryImportedTxn.status}
-                        </span>
-                      </div>
+                  {(() => {
+                    const isMatched =
+                      currentPayment.bankMatchStatus === 'MATCHED' ||
+                      currentPayment.bankMatchStatus === 'CATEGORIZED' ||
+                      (primaryImportedTxn && (primaryImportedTxn.status === 'matched' || primaryImportedTxn.status === 'categorized'));
 
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-gray-600 pt-1">
-                        <div>
-                          <span className="text-gray-400 block text-[10px]">Imported Txn ID</span>
-                          <span className="font-mono font-bold text-gray-800">
-                            {primaryImportedTxn.imported_transaction_id}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-gray-400 block text-[10px]">Date</span>
-                          <span className="font-semibold text-gray-800">
-                            {primaryImportedTxn.date}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-gray-400 block text-[10px]">Amount</span>
-                          <span className="font-bold text-gray-800">
-                            {formatCurrency(primaryImportedTxn.amount)}
-                          </span>
-                        </div>
-                      </div>
+                    const isCash = (currentPayment.paymentMode || '').toLowerCase().includes('cash');
+                    const isConfirmedUnmatched = currentPayment.bankMatchStatus === 'UNMATCHED';
 
-                      {primaryImportedTxn.description && (
-                        <div className="text-[10px] font-mono text-emerald-900 bg-white/70 p-2 rounded border border-emerald-100 break-all">
-                          {primaryImportedTxn.description}
+                    if (isMatched) {
+                      const matchStatus = primaryImportedTxn?.status || currentPayment.bankMatchStatus || 'MATCHED';
+                      const txnId = primaryImportedTxn?.imported_transaction_id || currentPayment.importedTransactionId || 'Matched in Bank Feed';
+                      const txnDate = primaryImportedTxn?.date;
+                      const txnAmount = primaryImportedTxn?.amount;
+                      const txnDesc = primaryImportedTxn?.description;
+
+                      return (
+                        <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                              <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                              Matched with Bank Transaction
+                            </div>
+                            <span className="bg-emerald-200/70 text-emerald-900 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+                              {matchStatus}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] text-gray-600 pt-1">
+                            <div>
+                              <span className="text-gray-400 block text-[10px]">Imported Txn ID</span>
+                              <span className="font-mono font-bold text-gray-800">
+                                {txnId}
+                              </span>
+                            </div>
+                            {txnDate && (
+                              <div>
+                                <span className="text-gray-400 block text-[10px]">Date</span>
+                                <span className="font-semibold text-gray-800">
+                                  {txnDate}
+                                </span>
+                              </div>
+                            )}
+                            {txnAmount != null && (
+                              <div>
+                                <span className="text-gray-400 block text-[10px]">Settlement Amount</span>
+                                <span className="font-bold text-gray-800">
+                                  {formatCurrency(txnAmount)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {txnDesc && (
+                            <div className="text-[10px] font-mono text-emerald-900 bg-white/70 p-2 rounded border border-emerald-100 break-all">
+                              {txnDesc}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl flex items-start gap-3">
-                      <div className="p-1 bg-gray-200 text-gray-600 rounded-md shrink-0">
-                        <AlertCircle size={16} />
+                      );
+                    }
+
+                    if (isCash) {
+                      return (
+                        <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-xl flex items-start gap-3">
+                          <div className="p-1 bg-amber-100 text-amber-700 rounded-md shrink-0">
+                            <Banknote size={16} />
+                          </div>
+                          <div className="text-xs">
+                            <div className="font-bold text-gray-900">Manual Verification Required (Cash Payment)</div>
+                            <p className="text-gray-600 text-[11px] mt-0.5 leading-relaxed">
+                              Cash payments are received into cash balances and do not have automated bank feed statement matching. Verify invoice collection manually.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (isConfirmedUnmatched) {
+                      return (
+                        <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl flex items-start gap-3">
+                          <div className="p-1 bg-gray-200 text-gray-600 rounded-md shrink-0">
+                            <Clock size={16} />
+                          </div>
+                          <div className="text-xs">
+                            <div className="font-bold text-gray-800">Awaiting Bank Transaction Match</div>
+                            <p className="text-gray-500 text-[11px] mt-0.5 leading-relaxed">
+                              This payment has not yet been matched with a bank statement feed in Zoho Books. Auto-verification will trigger once bank matching is recorded.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Unknown / lookup not yet completed
+                    return (
+                      <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl flex items-start gap-3">
+                        <div className="p-1 bg-blue-100 text-blue-700 rounded-md shrink-0">
+                          <Info size={16} />
+                        </div>
+                        <div className="text-xs">
+                          <div className="font-bold text-gray-800">Bank Match Status Pending Synchronization</div>
+                          <p className="text-gray-500 text-[11px] mt-0.5 leading-relaxed">
+                            Bank reconciliation details for this payment have not yet been synchronized from Zoho Books. Click &quot;Sync Zoho Data&quot; to refresh.
+                          </p>
+                        </div>
                       </div>
-                      <div className="text-xs">
-                        <div className="font-bold text-gray-800">No Bank Transaction Match</div>
-                        <p className="text-gray-500 text-[11px] mt-0.5">
-                          {currentPayment.paymentMode === 'Bank Transfer'
-                            ? 'This bank transfer has not yet been matched with a bank statement feed in Zoho Books.'
-                            : 'Cash and POS payments do not have bank feed matching and require manual verification.'}
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
 
                 {/* ── APPLIED INVOICES SECTION ── */}

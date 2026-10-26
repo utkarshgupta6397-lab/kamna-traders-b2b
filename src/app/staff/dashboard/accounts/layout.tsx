@@ -18,8 +18,9 @@ export default async function AccountsLayout({ children }: { children: React.Rea
   const canViewReports = isAdmin || !!session.accounts_reports_salesman;
   const canManagePayments = isAdmin || !!session.manage_payments_view_own || !!session.manage_payments_view_all;
   const canVerifyPayments = isAdmin || !!session.accounts_payment_verify_view;
+  const canViewRecovery = isAdmin || !!session.accounts_recovery_manage || !!session.accounts_summary_view;
 
-  if (!canViewStatement && !canViewTransactions && !canViewSummary && !canManageDcr && !canProcessInvoices && !canViewReports && !canManagePayments && !canVerifyPayments) {
+  if (!canViewStatement && !canViewTransactions && !canViewSummary && !canManageDcr && !canProcessInvoices && !canViewReports && !canManagePayments && !canVerifyPayments && !canViewRecovery) {
     redirect('/staff/dashboard?error=unauthorized_accounts');
   }
 
@@ -28,6 +29,7 @@ export default async function AccountsLayout({ children }: { children: React.Rea
       canViewStatement={canViewStatement}
       canViewTransactions={canViewTransactions}
       canViewSummary={canViewSummary}
+      canViewRecovery={canViewRecovery}
       canManagePayments={canManagePayments}
       canManageDcr={canManageDcr}
       canProcessInvoices={canProcessInvoices}

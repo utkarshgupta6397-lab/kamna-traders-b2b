@@ -1472,13 +1472,13 @@ export async function getCustomerById(
       gstNo: contact.gst_no,
       mobile: contact.mobile,
       email: contact.email,
-      outstandingReceivable: contact.outstanding_receivable_amount ?? contact.associated_customer_details?.outstanding_receivable_amount ?? 0,
-      unusedCreditsReceivable: contact.unused_credits_receivable_amount ?? contact.associated_customer_details?.unused_credits_receivable_amount ?? 0,
+      outstandingReceivable: contact.associated_customer_details?.outstanding_receivable_amount || contact.outstanding_receivable_amount || 0,
+      unusedCreditsReceivable: contact.associated_customer_details?.unused_credits_receivable_amount || contact.unused_credits_receivable_amount || 0,
       outstandingReceivableFormatted: contact.outstanding_receivable_amount_formatted,
       associatedVendorId: contact.associated_vendor_details?.vendor_id,
       associatedCustomerId: contact.associated_customer_details?.customer_id,
-      outstandingPayable: contact.outstanding_payable_amount ?? contact.associated_vendor_details?.outstanding_payable_amount ?? 0,
-      unusedCreditsPayable: contact.unused_credits_payable_amount ?? contact.associated_vendor_details?.unused_credits_payable_amount ?? 0,
+      outstandingPayable: contact.associated_vendor_details?.outstanding_payable_amount || contact.outstanding_payable_amount || 0,
+      unusedCreditsPayable: contact.associated_vendor_details?.unused_credits_payable_amount || contact.unused_credits_payable_amount || 0,
       billingAddress: billingAddr,
       rawAddress: contact.billing_address || contact.shipping_address || null
     };

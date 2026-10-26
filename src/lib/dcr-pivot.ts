@@ -39,7 +39,7 @@ export interface RawDcrInvoice {
   date?: string | Date;
   billDate?: string | Date;
   items?: RawDcrItem[];
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface NormalizedPivotRow {
@@ -66,6 +66,60 @@ export interface PivotTotals {
   vendorDcrPending: number;
   onHold: number;
   readyToIssue: number;
+}
+
+export interface InvoicePivotChildItem {
+  childIndex: string; // e.g. "1.1", "1.2"
+  productKey: string;
+  itemDisplayName: string;
+  billedQty: number;
+  issuedQty: number;
+  serialEntryPending: number;
+  vendorDcrPending: number;
+  onHold: number;
+  readyToIssue: number;
+}
+
+export interface InvoicePivotGroup {
+  groupIndex: number;
+  invoiceId: string;
+  invoiceNumber: string;
+  billDate: string;
+  itemCount: number;
+  billedQty: number;
+  issuedQty: number;
+  serialEntryPending: number;
+  vendorDcrPending: number;
+  onHold: number;
+  readyToIssue: number;
+  items: InvoicePivotChildItem[];
+}
+
+export interface ItemPivotChildInvoice {
+  childIndex: string; // e.g. "1.1", "1.2"
+  invoiceId: string;
+  invoiceNumber: string;
+  billDate: string;
+  billedQty: number;
+  issuedQty: number;
+  serialEntryPending: number;
+  vendorDcrPending: number;
+  onHold: number;
+  readyToIssue: number;
+}
+
+export interface ItemPivotGroup {
+  groupIndex: number;
+  productKey: string;
+  itemDisplayName: string;
+  invoiceCount: number;
+  billedQty: number;
+  issuedQty: number;
+  serialEntryPending: number;
+  vendorDcrPending: number;
+  onHold: number;
+  readyToIssue: number;
+  invoices: ItemPivotChildInvoice[];
 }
 
 /**
@@ -195,7 +249,7 @@ export function buildNormalizedPivotRows(invoices: RawDcrInvoice[]): NormalizedP
     if (!inv || !inv.items || !Array.isArray(inv.items)) continue;
 
     // Authoritative bill date resolution from invoice data source
-    const rawBillDate = inv.invoiceDate ?? (inv as any).date ?? (inv as any).billDate;
+    const rawBillDate = inv.invoiceDate ?? inv.date ?? inv.billDate;
     const billDateStr = rawBillDate instanceof Date 
       ? rawBillDate.toISOString() 
       : (rawBillDate ? String(rawBillDate) : '');
@@ -340,6 +394,238 @@ export function calculatePivotTotals(rows: NormalizedPivotRow[]): PivotTotals {
 }
 
 /**
+ * Builds invoice-grouped pivot structures (Invoice No -> Item).
+ * 
+ * Sorts invoice groups by:
+ * 1. Bill Date descending (newest first, undated last).
+ * 2. Tie-breaker: Invoice number (natural order).
+ * 3. Tie-breaker: invoiceId.
+ * 
+ * Within each invoice group, child items are sorted deterministically:
+ * 1. Item display name (A-Z).
+ * 2. Product key.
+ * 
+ * Indices:
+ * Group index: 1, 2, 3...
+ * Child index: 1.1, 1.2...
+ */
+export function buildInvoicePivotGroups(normalizedRows: NormalizedPivotRow[]): InvoicePivotGroup[] {
+  const map = new Map<string, {
+    invoiceId: string;
+    invoiceNumber: string;
+    billDate: string;
+    items: InvoicePivotChildItem[];
+    billedQty: number;
+    issuedQty: number;
+    serialEntryPending: number;
+    vendorDcrPending: number;
+    onHold: number;
+    readyToIssue: number;
+  }>();
+
+  for (const row of normalizedRows) {
+    let group = map.get(row.invoiceId);
+    if (!group) {
+      group = {
+        invoiceId: row.invoiceId,
+        invoiceNumber: row.invoiceNumber,
+        billDate: row.billDate || row.invoiceDate,
+        items: [],
+        billedQty: 0,
+        issuedQty: 0,
+        serialEntryPending: 0,
+        vendorDcrPending: 0,
+        onHold: 0,
+        readyToIssue: 0,
+      };
+      map.set(row.invoiceId, group);
+    }
+
+    group.billedQty += row.billedQty;
+    group.issuedQty += row.issuedQty;
+    group.serialEntryPending += row.serialEntryPending;
+    group.vendorDcrPending += row.vendorDcrPending;
+    group.onHold += row.onHold;
+    group.readyToIssue += row.readyToIssue;
+
+    group.items.push({
+      childIndex: '',
+      productKey: row.productKey,
+      itemDisplayName: row.itemDisplayName,
+      billedQty: row.billedQty,
+      issuedQty: row.issuedQty,
+      serialEntryPending: row.serialEntryPending,
+      vendorDcrPending: row.vendorDcrPending,
+      onHold: row.onHold,
+      readyToIssue: row.readyToIssue,
+    });
+  }
+
+  const groups = Array.from(map.values());
+
+  // Sort groups by Bill Date descending (newest first, undated last), then invoiceNumber natural, then invoiceId
+  groups.sort((a, b) => {
+    const timeA = getBillDateTimestamp(a.billDate);
+    const timeB = getBillDateTimestamp(b.billDate);
+    if (timeA !== timeB) return timeB - timeA;
+
+    const cmpInv = a.invoiceNumber.localeCompare(b.invoiceNumber, undefined, { numeric: true, sensitivity: 'base' });
+    if (cmpInv !== 0) return cmpInv;
+
+    return a.invoiceId.localeCompare(b.invoiceId);
+  });
+
+  // Assign sequential groupIndex and sort child items deterministically (itemDisplayName A-Z, productKey)
+  return groups.map((g, gIdx) => {
+    const groupIndex = gIdx + 1;
+    g.items.sort((a, b) => {
+      const cmp = a.itemDisplayName.localeCompare(b.itemDisplayName, undefined, { sensitivity: 'base' });
+      if (cmp !== 0) return cmp;
+      return a.productKey.localeCompare(b.productKey);
+    });
+
+    const itemsWithIndex = g.items.map((item, itemIdx) => ({
+      ...item,
+      childIndex: `${groupIndex}.${itemIdx + 1}`,
+    }));
+
+    return {
+      groupIndex,
+      invoiceId: g.invoiceId,
+      invoiceNumber: g.invoiceNumber,
+      billDate: g.billDate,
+      itemCount: itemsWithIndex.length,
+      billedQty: g.billedQty,
+      issuedQty: g.issuedQty,
+      serialEntryPending: g.serialEntryPending,
+      vendorDcrPending: g.vendorDcrPending,
+      onHold: g.onHold,
+      readyToIssue: g.readyToIssue,
+      items: itemsWithIndex,
+    };
+  });
+}
+
+/**
+ * Builds item-grouped pivot structures (Item -> Invoice No).
+ * 
+ * Groups by productKey.
+ * Child invoices within each group are sorted by Bill Date descending (newest first, undated last).
+ * Item groups are ordered deterministically:
+ * 1. Most recent invoice bill date descending among child invoices.
+ * 2. Item display name (A-Z).
+ * 3. Product key.
+ * 
+ * Indices:
+ * Group index: 1, 2, 3...
+ * Child index: 1.1, 1.2...
+ */
+export function buildItemPivotGroups(normalizedRows: NormalizedPivotRow[]): ItemPivotGroup[] {
+  const map = new Map<string, {
+    productKey: string;
+    itemDisplayName: string;
+    invoices: ItemPivotChildInvoice[];
+    billedQty: number;
+    issuedQty: number;
+    serialEntryPending: number;
+    vendorDcrPending: number;
+    onHold: number;
+    readyToIssue: number;
+  }>();
+
+  for (const row of normalizedRows) {
+    let group = map.get(row.productKey);
+    if (!group) {
+      group = {
+        productKey: row.productKey,
+        itemDisplayName: row.itemDisplayName,
+        invoices: [],
+        billedQty: 0,
+        issuedQty: 0,
+        serialEntryPending: 0,
+        vendorDcrPending: 0,
+        onHold: 0,
+        readyToIssue: 0,
+      };
+      map.set(row.productKey, group);
+    }
+
+    group.billedQty += row.billedQty;
+    group.issuedQty += row.issuedQty;
+    group.serialEntryPending += row.serialEntryPending;
+    group.vendorDcrPending += row.vendorDcrPending;
+    group.onHold += row.onHold;
+    group.readyToIssue += row.readyToIssue;
+
+    group.invoices.push({
+      childIndex: '',
+      invoiceId: row.invoiceId,
+      invoiceNumber: row.invoiceNumber,
+      billDate: row.billDate || row.invoiceDate,
+      billedQty: row.billedQty,
+      issuedQty: row.issuedQty,
+      serialEntryPending: row.serialEntryPending,
+      vendorDcrPending: row.vendorDcrPending,
+      onHold: row.onHold,
+      readyToIssue: row.readyToIssue,
+    });
+  }
+
+  const groups = Array.from(map.values());
+
+  // Sort child invoices in each group by Bill Date descending (newest first, undated last), then invoiceNumber natural
+  for (const g of groups) {
+    g.invoices.sort((a, b) => {
+      const timeA = getBillDateTimestamp(a.billDate);
+      const timeB = getBillDateTimestamp(b.billDate);
+      if (timeA !== timeB) return timeB - timeA;
+
+      const cmpInv = a.invoiceNumber.localeCompare(b.invoiceNumber, undefined, { numeric: true, sensitivity: 'base' });
+      if (cmpInv !== 0) return cmpInv;
+
+      return a.invoiceId.localeCompare(b.invoiceId);
+    });
+  }
+
+  // Sort groups deterministically:
+  // Primary: max billDate timestamp of child invoices descending (newest activity first)
+  // Tie-breaker: itemDisplayName A-Z
+  // Tie-breaker: productKey
+  groups.sort((a, b) => {
+    const maxTimeA = a.invoices.length > 0 ? getBillDateTimestamp(a.invoices[0].billDate) : -Infinity;
+    const maxTimeB = b.invoices.length > 0 ? getBillDateTimestamp(b.invoices[0].billDate) : -Infinity;
+    if (maxTimeA !== maxTimeB) return maxTimeB - maxTimeA;
+
+    const cmpName = a.itemDisplayName.localeCompare(b.itemDisplayName, undefined, { sensitivity: 'base' });
+    if (cmpName !== 0) return cmpName;
+
+    return a.productKey.localeCompare(b.productKey);
+  });
+
+  return groups.map((g, gIdx) => {
+    const groupIndex = gIdx + 1;
+    const invoicesWithIndex = g.invoices.map((inv, invIdx) => ({
+      ...inv,
+      childIndex: `${groupIndex}.${invIdx + 1}`,
+    }));
+
+    return {
+      groupIndex,
+      productKey: g.productKey,
+      itemDisplayName: g.itemDisplayName,
+      invoiceCount: invoicesWithIndex.length,
+      billedQty: g.billedQty,
+      issuedQty: g.issuedQty,
+      serialEntryPending: g.serialEntryPending,
+      vendorDcrPending: g.vendorDcrPending,
+      onHold: g.onHold,
+      readyToIssue: g.readyToIssue,
+      invoices: invoicesWithIndex,
+    };
+  });
+}
+
+/**
  * Escapes a single cell value for CSV output.
  */
 export function escapeCsvCell(val: string | number | null | undefined): string {
@@ -354,6 +640,7 @@ export function escapeCsvCell(val: string | number | null | undefined): string {
 /**
  * Generates RFC 4180 compliant CSV string with UTF-8 BOM, including
  * leading sequential row index `#` and `Bill Date` column.
+ * Supports rows with custom displayIndex (e.g. "1.1", "1.2") or defaults to sequential index.
  * 
  * View A (ITEM_FIRST):
  *   # | Item | Invoice No | Bill Date | Billed Qty | Issued Qty | Serial Entry Pending | Vendor DCR Pending | On Hold | Ready to Issue
@@ -362,7 +649,7 @@ export function escapeCsvCell(val: string | number | null | undefined): string {
  *   # | Invoice No | Bill Date | Item | Billed Qty | Issued Qty | Serial Entry Pending | Vendor DCR Pending | On Hold | Ready to Issue
  */
 export function generatePivotCsv(
-  rows: NormalizedPivotRow[],
+  rows: (NormalizedPivotRow & { displayIndex?: string | number })[],
   orientation: PivotOrientation,
   totals: PivotTotals
 ): string {
@@ -383,8 +670,9 @@ export function generatePivotCsv(
     ].map(escapeCsvCell).join(','));
 
     rows.forEach((row, idx) => {
+      const rowNum = row.displayIndex !== undefined ? row.displayIndex : idx + 1;
       lines.push([
-        idx + 1,
+        rowNum,
         row.itemDisplayName,
         row.invoiceNumber,
         formatBillDate(row.billDate || row.invoiceDate),
@@ -424,8 +712,9 @@ export function generatePivotCsv(
     ].map(escapeCsvCell).join(','));
 
     rows.forEach((row, idx) => {
+      const rowNum = row.displayIndex !== undefined ? row.displayIndex : idx + 1;
       lines.push([
-        idx + 1,
+        rowNum,
         row.invoiceNumber,
         formatBillDate(row.billDate || row.invoiceDate),
         row.itemDisplayName,
@@ -454,6 +743,63 @@ export function generatePivotCsv(
 
   // Prepend UTF-8 BOM for Excel compatibility
   return '\uFEFF' + lines.join('\r\n');
+}
+
+/**
+ * Generates CSV from grouped structures, preserving subordinate indexing (1.1, 1.2...)
+ * and correct orientation column layout.
+ */
+export function generateGroupedPivotCsv(
+  orientation: PivotOrientation,
+  invoiceGroups: InvoicePivotGroup[],
+  itemGroups: ItemPivotGroup[],
+  totals: PivotTotals
+): string {
+  if (orientation === 'INVOICE_FIRST') {
+    const rows: (NormalizedPivotRow & { displayIndex?: string | number })[] = [];
+    for (const group of invoiceGroups) {
+      for (const item of group.items) {
+        rows.push({
+          displayIndex: item.childIndex,
+          productKey: item.productKey,
+          itemDisplayName: item.itemDisplayName,
+          invoiceId: group.invoiceId,
+          invoiceNumber: group.invoiceNumber,
+          invoiceDate: group.billDate,
+          billDate: group.billDate,
+          billedQty: item.billedQty,
+          issuedQty: item.issuedQty,
+          serialEntryPending: item.serialEntryPending,
+          vendorDcrPending: item.vendorDcrPending,
+          onHold: item.onHold,
+          readyToIssue: item.readyToIssue,
+        });
+      }
+    }
+    return generatePivotCsv(rows, 'INVOICE_FIRST', totals);
+  } else {
+    const rows: (NormalizedPivotRow & { displayIndex?: string | number })[] = [];
+    for (const group of itemGroups) {
+      for (const inv of group.invoices) {
+        rows.push({
+          displayIndex: inv.childIndex,
+          productKey: group.productKey,
+          itemDisplayName: group.itemDisplayName,
+          invoiceId: inv.invoiceId,
+          invoiceNumber: inv.invoiceNumber,
+          invoiceDate: inv.billDate,
+          billDate: inv.billDate,
+          billedQty: inv.billedQty,
+          issuedQty: inv.issuedQty,
+          serialEntryPending: inv.serialEntryPending,
+          vendorDcrPending: inv.vendorDcrPending,
+          onHold: inv.onHold,
+          readyToIssue: inv.readyToIssue,
+        });
+      }
+    }
+    return generatePivotCsv(rows, 'ITEM_FIRST', totals);
+  }
 }
 
 /**

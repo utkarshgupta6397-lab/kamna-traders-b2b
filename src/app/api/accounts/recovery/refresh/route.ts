@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { fetchInvoiceById } from '@/lib/zoho/invoices';
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
+import { CustomerBalanceService } from '@/lib/services/customer-balance.service';
+import { RawInvoiceRow } from '@/lib/recovery/recovery-calculator';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
@@ -28,9 +30,42 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { invoiceIds, dryRun } = await request.json();
+    const body = await request.json().catch(() => ({}));
+    const { invoiceIds, dryRun, type } = body || {};
+
+    // Dedicated Recovery Queue balance sync
     if (!invoiceIds || !Array.isArray(invoiceIds)) {
-      return NextResponse.json({ success: false, error: 'invoiceIds must be an array' }, { status: 400 });
+      const cache = await prisma.invoiceSummaryCache.findUnique({
+        where: { id: 'singleton' },
+      });
+
+      if (!cache || !cache.rows || !Array.isArray(cache.rows)) {
+        return NextResponse.json({
+          success: true,
+          message: 'No open invoices available to sync',
+          lastRefreshedAt: new Date().toISOString(),
+        });
+      }
+
+      const rows = (cache.rows as unknown) as RawInvoiceRow[];
+      const openCustIds = Array.from(
+        new Set(
+          rows
+            .filter((r) => isOperationallyOpen(r))
+            .map((r) => r.customerId)
+            .filter(Boolean)
+        )
+      );
+
+      // Refresh customer balances in bulk (chunks of 25) using official Zoho Contacts bulk endpoint
+      await CustomerBalanceService.refreshCustomerBalances(openCustIds);
+
+      return NextResponse.json({
+        success: true,
+        message: 'Recovery queue customer balances refreshed successfully',
+        refreshedCustomersCount: openCustIds.length,
+        lastRefreshedAt: new Date().toISOString(),
+      });
     }
 
     if (invoiceIds.length > 200) {

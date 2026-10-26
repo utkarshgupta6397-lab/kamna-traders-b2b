@@ -199,9 +199,19 @@ export function getDateFilterRange(type: DateFilterType, refDate = new Date()): 
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
-export default function CustomerStatementView() {
+export interface CustomerStatementViewProps {
+  initialCustomerId?: string;
+  isModal?: boolean;
+  onClose?: () => void;
+}
+
+export default function CustomerStatementView({
+  initialCustomerId: propCustomerId,
+  isModal = false,
+  onClose,
+}: CustomerStatementViewProps = {}) {
   const searchParams = useSearchParams();
-  const initialCustomerId = searchParams?.get('customerId') || '';
+  const initialCustomerId = propCustomerId || searchParams?.get('customerId') || '';
   const isLocked = !!initialCustomerId;
 
   const [customerId, setCustomerId] = useState(initialCustomerId);
@@ -764,11 +774,13 @@ export default function CustomerStatementView() {
   };
 
   useEffect(() => {
-    if (initialCustomerId) {
-      handleFetch(initialCustomerId);
+    const targetId = propCustomerId || initialCustomerId;
+    if (targetId) {
+      setCustomerId(targetId);
+      handleFetch(targetId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialCustomerId]);
+  }, [propCustomerId, initialCustomerId]);
 
   // ── Draft Status Fetcher ───────────────────────────────────────────────────
   useEffect(() => {
@@ -1137,6 +1149,17 @@ export default function CustomerStatementView() {
                 </span>
               )}
             </button>
+
+            {isModal && onClose && (
+              <button
+                onClick={onClose}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 bg-white hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-slate-300 transition-colors shadow-sm cursor-pointer"
+                title="Close Statement"
+              >
+                <X size={15} />
+                <span>Close</span>
+              </button>
+            )}
           </div>
         </div>
 

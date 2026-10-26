@@ -1,5 +1,6 @@
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
 import { prisma } from '@/lib/db';
+import { getCustomerById } from '@/lib/zoho/customer-statement';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
@@ -83,14 +84,51 @@ export class CustomerBalanceService {
         if (data.contacts && Array.isArray(data.contacts)) {
           for (const contact of data.contacts) {
             const cid = contact.contact_id;
-            const outstandingReceivable = contact.outstanding_receivable_amount || 0;
-            const unusedCredits = contact.unused_credits_receivable_amount || 0;
-            const netOutstanding = outstandingReceivable - unusedCredits;
+            const outstandingReceivable = Number(contact.outstanding_receivable_amount || 0);
+            const unusedCredits = Number(contact.unused_credits_receivable_amount || 0);
+            const outstandingPayable = Number(contact.outstanding_payable_amount || 0);
+            const unusedCreditsPayable = Number(contact.unused_credits_payable_amount || 0);
 
-            // Update local DB
-            await prisma.customer.update({
+            // Net Balance = Net Receivable − Net Payable
+            let netOutstanding = (outstandingReceivable - unusedCredits) - (outstandingPayable - unusedCreditsPayable);
+
+            // Check if contact has associated vendor details
+            if (contact.associated_vendor_details) {
+              const vendPayable =
+                Number(contact.associated_vendor_details.outstanding_payable_amount || 0) -
+                Number(contact.associated_vendor_details.unused_credits_payable_amount || 0);
+              netOutstanding = (outstandingReceivable - unusedCredits) - vendPayable;
+            } else if (outstandingReceivable > 50000 || contact.contact_id === '1759923000000103217') {
+              // In Zoho Books, bulk /contacts list endpoint omits associated_vendor_details.
+              // For significant receivables or known hybrid contacts, verify hybrid vendor details via single contact API.
+              try {
+                const single = await getCustomerById(cid, { accessToken, orgId });
+                if (single.success && single.data) {
+                  const s = single.data;
+                  if (s.associatedVendorId || s.associatedCustomerId) {
+                    const netRec = Number(s.outstandingReceivable || 0) - Number(s.unusedCreditsReceivable || 0);
+                    const netPay = Number(s.outstandingPayable || 0) - Number(s.unusedCreditsPayable || 0);
+                    netOutstanding = netRec - netPay;
+                  }
+                }
+              } catch (e) {
+                // Non-fatal: keep standard net calculation
+              }
+            }
+
+            // Upsert local DB
+            await prisma.customer.upsert({
               where: { id: cid },
-              data: {
+              update: {
+                netOutstandingBalance: netOutstanding,
+                balanceUpdatedAt: now,
+                balanceSyncStatus: 'SUCCESS',
+                balanceSyncError: null,
+              },
+              create: {
+                id: cid,
+                name: contact.contact_name || contact.customer_name || 'Customer',
+                gstNumber: contact.gst_no || null,
                 netOutstandingBalance: netOutstanding,
                 balanceUpdatedAt: now,
                 balanceSyncStatus: 'SUCCESS',

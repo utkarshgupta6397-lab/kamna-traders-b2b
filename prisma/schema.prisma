@@ -898,6 +898,49 @@ model RecoveryInvoiceTask {
   @@index([status])
 }
 
+model CustomerRecoveryRecord {
+  id                 String                     @id @default(cuid())
+  customerId         String                     @unique
+  customerName       String
+  status             String                     @default("PENDING_FOLLOW_UP")
+  assignedStaffId    String?
+  assignedStaffName  String?
+  lastActivityAt     DateTime?
+  nextFollowUpDate   DateTime?
+  internalNotes      String?
+  createdById        String?
+  createdByName      String?
+  updatedById        String?
+  updatedByName      String?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  activities         CustomerRecoveryActivity[]
+
+  @@index([status])
+  @@index([assignedStaffId])
+  @@index([nextFollowUpDate])
+}
+
+model CustomerRecoveryActivity {
+  id               String                 @id @default(cuid())
+  recoveryRecordId String
+  customerId       String
+  activityType     String
+  description      String?
+  previousStatus   String?
+  newStatus        String?
+  notes            String?
+  performedById    String
+  performedByName  String
+  metadata         Json?
+  createdAt        DateTime               @default(now())
+  recoveryRecord   CustomerRecoveryRecord @relation(fields: [recoveryRecordId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([recoveryRecordId])
+  @@index([createdAt])
+}
+
 model Customer {
   id                    String       @id
   name                  String

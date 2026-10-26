@@ -26,9 +26,14 @@ import {
   calculatePivotTotals,
   escapeCsvCell,
   generatePivotCsv,
+  generateGroupedPivotCsv,
+  buildInvoicePivotGroups,
+  buildItemPivotGroups,
   sanitizeFilenamePart,
   RawDcrInvoice,
   NormalizedPivotRow,
+  InvoicePivotGroup,
+  ItemPivotGroup,
 } from '../lib/dcr-pivot';
 
 let passed = 0;
@@ -693,6 +698,238 @@ console.log('\n--- SECTION 12.F: REGRESSION VERIFICATION ---');
   assert(m.onHold === 2, 'Regression: 2 on hold (HOLD + ALLOCATED with vendor DCR received)');
 }
 
+// -------------------------------------------------------------
+// SECTION G: GROUPED PIVOT & DUAL VIEW (OPTION 2A) TESTS
+// -------------------------------------------------------------
+console.log('\n--- SECTION 12.G: GROUPED PIVOT & DUAL VIEW TESTS ---');
+
+{
+  const complexInvoices: RawDcrInvoice[] = [
+    {
+      id: 'inv_101',
+      invoiceNumber: 'INV-2026-001',
+      billDate: '2026-08-15',
+      invoiceDate: '2026-08-15',
+      items: [
+        {
+          id: 'item_p1',
+          itemId: 'zoho_p1',
+          itemName: 'TopCon 550W Panel',
+          quantity: 20,
+          selectedForDCR: true,
+          serialAllocations: [
+            { serial: { vendorDcrStatus: 'RECEIVED', status: 'ISSUED' } },
+            { serial: { vendorDcrStatus: 'RECEIVED', status: 'ISSUED' } },
+            { serial: { vendorDcrStatus: 'RECEIVED', status: 'READY_TO_ISSUE' } },
+            { serial: { vendorDcrStatus: 'NOT_RECEIVED', status: 'ALLOCATED' } },
+            { serial: { vendorDcrStatus: 'RECEIVED', status: 'HOLD' } },
+          ], // 5 allocated (2 issued, 1 ready, 1 vendor pending, 1 on hold); 15 serial entry pending
+        },
+        {
+          id: 'item_p2',
+          itemId: 'zoho_p2',
+          itemName: 'Mono 540W Panel',
+          quantity: 10,
+          selectedForDCR: true,
+          serialAllocations: [
+            { serial: { vendorDcrStatus: 'RECEIVED', status: 'ISSUED' } },
+            { serial: { vendorDcrStatus: 'RECEIVED', status: 'ISSUED' } },
+            { serial: { vendorDcrStatus: 'RECEIVED', status: 'ISSUED' } },
+          ], // 3 allocated (3 issued); 7 serial entry pending
+        },
+      ],
+    },
+    {
+      id: 'inv_102',
+      invoiceNumber: 'INV-2026-002',
+      billDate: '2026-08-20', // Newer than INV-2026-001!
+      invoiceDate: '2026-08-20',
+      items: [
+        {
+          id: 'item_p1_b',
+          itemId: 'zoho_p1',
+          itemName: 'TopCon 550W Panel',
+          quantity: 15,
+          selectedForDCR: true,
+          serialAllocations: [
+            { serial: { vendorDcrStatus: 'RECEIVED', status: 'ISSUED' } },
+            { serial: { vendorDcrStatus: 'RECEIVED', status: 'READY_TO_ISSUE' } },
+          ], // 2 allocated (1 issued, 1 ready); 13 serial entry pending
+        },
+      ],
+    },
+    {
+      id: 'inv_103',
+      invoiceNumber: 'INV-2026-003',
+      billDate: '', // Undated invoice!
+      invoiceDate: '',
+      items: [
+        {
+          id: 'item_p2_b',
+          itemId: 'zoho_p2',
+          itemName: 'Mono 540W Panel',
+          quantity: 5,
+          selectedForDCR: true,
+          serialAllocations: [], // 0 allocated; 5 serial entry pending
+        },
+      ],
+    },
+  ];
+
+  const normalized = buildNormalizedPivotRows(complexInvoices);
+  assert(normalized.length === 4, 'Grouped Setup: 4 unique (invoice, item) combinations');
+
+  const grandTotals = calculatePivotTotals(normalized);
+  assert(grandTotals.billedQty === 50, 'Grouped Setup: Total Billed Qty is 50 (20+10+15+5)');
+  assert(grandTotals.issuedQty === 6, 'Grouped Setup: Total Issued Qty is 6 (2+3+1)');
+  assert(grandTotals.serialEntryPending === 40, 'Grouped Setup: Total Serial Entry Pending is 40 (15+7+13+5)');
+  assert(grandTotals.vendorDcrPending === 1, 'Grouped Setup: Total Vendor DCR Pending is 1');
+  assert(grandTotals.onHold === 1, 'Grouped Setup: Total On Hold is 1');
+  assert(grandTotals.readyToIssue === 2, 'Grouped Setup: Total Ready to Issue is 2 (1+1)');
+
+  // 1. Build View A (Invoice No -> Item)
+  const invoiceGroups = buildInvoicePivotGroups(normalized);
+  assert(invoiceGroups.length === 3, 'View A: Exactly 3 invoice groups');
+
+  // Verify Default Sort by Bill Date descending:
+  // 1st: INV-2026-002 (2026-08-20)
+  // 2nd: INV-2026-001 (2026-08-15)
+  // 3rd: INV-2026-003 (Undated, sorted last)
+  assert(invoiceGroups[0].invoiceNumber === 'INV-2026-002', 'View A Sort: 2026-08-20 invoice is Group 1');
+  assert(invoiceGroups[0].groupIndex === 1, 'View A Index: Group 1 index is 1');
+  assert(invoiceGroups[1].invoiceNumber === 'INV-2026-001', 'View A Sort: 2026-08-15 invoice is Group 2');
+  assert(invoiceGroups[1].groupIndex === 2, 'View A Index: Group 2 index is 2');
+  assert(invoiceGroups[2].invoiceNumber === 'INV-2026-003', 'View A Sort: Undated invoice sorted last as Group 3');
+  assert(invoiceGroups[2].groupIndex === 3, 'View A Index: Group 3 index is 3');
+
+  // Verify Child Rows & Subordinate Indexing in Group 2 (INV-2026-001 has 2 items)
+  const g2 = invoiceGroups[1];
+  assert(g2.itemCount === 2, 'View A Group 2: Has 2 items');
+  assert(g2.items[0].childIndex === '2.1', 'View A Subordinate Index: 2.1');
+  assert(g2.items[1].childIndex === '2.2', 'View A Subordinate Index: 2.2');
+  // Child items sorted alphabetically (Mono before TopCon)
+  assert(g2.items[0].itemDisplayName.includes('Mono'), 'View A Child Sort: Mono 540W sorted first');
+  assert(g2.items[1].itemDisplayName.includes('TopCon'), 'View A Child Sort: TopCon 550W sorted second');
+
+  // Verify Group 2 Aggregates match sum of its items
+  assert(g2.billedQty === 30, 'View A Group 2 Billed Qty is 30 (20+10)');
+  assert(g2.issuedQty === 5, 'View A Group 2 Issued Qty is 5 (2+3)');
+  assert(g2.serialEntryPending === 22, 'View A Group 2 Serial Entry Pending is 22 (15+7)');
+
+  // 2. Build View B (Item -> Invoice No)
+  const itemGroups = buildItemPivotGroups(normalized);
+  assert(itemGroups.length === 2, 'View B: Exactly 2 product groups');
+  assert(itemGroups[0].groupIndex === 1, 'View B Index: Group 1 index is 1');
+  assert(itemGroups[1].groupIndex === 2, 'View B Index: Group 2 index is 2');
+
+  // TopCon has invoice from 2026-08-20, so TopCon group is 1
+  assert(itemGroups[0].itemDisplayName.includes('TopCon'), 'View B Sort: TopCon has newest invoice, sorted first');
+  assert(itemGroups[0].invoiceCount === 2, 'View B TopCon: Appears in 2 invoices');
+  assert(itemGroups[0].invoices[0].childIndex === '1.1', 'View B Subordinate Index: 1.1');
+  assert(itemGroups[0].invoices[1].childIndex === '1.2', 'View B Subordinate Index: 1.2');
+  // Child invoices sorted by Bill Date descending (INV-2026-002 [08-20] before INV-2026-001 [08-15])
+  assert(itemGroups[0].invoices[0].invoiceNumber === 'INV-2026-002', 'View B Child Sort: 2026-08-20 before 2026-08-15');
+  assert(itemGroups[0].invoices[1].invoiceNumber === 'INV-2026-001', 'View B Child Sort: 2026-08-15 is second');
+
+  // Verify Mono group child invoices (INV-2026-001 [08-15] before undated INV-2026-003)
+  assert(itemGroups[1].invoices[0].invoiceNumber === 'INV-2026-001', 'View B Child Sort: Dated invoice before undated');
+  assert(itemGroups[1].invoices[1].invoiceNumber === 'INV-2026-003', 'View B Child Sort: Undated invoice sorted last');
+
+  // 3. Perfect Dual-View Reconciliation
+  const sumInvoiceBilled = invoiceGroups.reduce((acc, g) => acc + g.billedQty, 0);
+  const sumItemBilled = itemGroups.reduce((acc, g) => acc + g.billedQty, 0);
+  assert(sumInvoiceBilled === 50 && sumItemBilled === 50, 'Reconciliation: Both views sum to 50 billed qty');
+
+  const sumInvoiceIssued = invoiceGroups.reduce((acc, g) => acc + g.issuedQty, 0);
+  const sumItemIssued = itemGroups.reduce((acc, g) => acc + g.issuedQty, 0);
+  assert(sumInvoiceIssued === 6 && sumItemIssued === 6, 'Reconciliation: Both views sum to 6 issued qty');
+
+  const sumInvoicePending = invoiceGroups.reduce((acc, g) => acc + g.serialEntryPending, 0);
+  const sumItemPending = itemGroups.reduce((acc, g) => acc + g.serialEntryPending, 0);
+  assert(sumInvoicePending === 40 && sumItemPending === 40, 'Reconciliation: Both views sum to 40 serial entry pending');
+
+  const sumInvoiceVendor = invoiceGroups.reduce((acc, g) => acc + g.vendorDcrPending, 0);
+  const sumItemVendor = itemGroups.reduce((acc, g) => acc + g.vendorDcrPending, 0);
+  assert(sumInvoiceVendor === 1 && sumItemVendor === 1, 'Reconciliation: Both views sum to 1 vendor DCR pending');
+
+  const sumInvoiceHold = invoiceGroups.reduce((acc, g) => acc + g.onHold, 0);
+  const sumItemHold = itemGroups.reduce((acc, g) => acc + g.onHold, 0);
+  assert(sumInvoiceHold === 1 && sumItemHold === 1, 'Reconciliation: Both views sum to 1 on hold');
+
+  const sumInvoiceReady = invoiceGroups.reduce((acc, g) => acc + g.readyToIssue, 0);
+  const sumItemReady = itemGroups.reduce((acc, g) => acc + g.readyToIssue, 0);
+  assert(sumInvoiceReady === 2 && sumItemReady === 2, 'Reconciliation: Both views sum to 2 ready to issue');
+
+  // 4. Grouped CSV Generation Tests
+  const csvGroupedA = generateGroupedPivotCsv('INVOICE_FIRST', invoiceGroups, itemGroups, grandTotals);
+  const csvALines = csvGroupedA.split('\r\n');
+  assert(csvGroupedA.startsWith('\uFEFF'), 'Grouped CSV A: Has UTF-8 BOM');
+  assert(
+    csvALines[0].replace(/^\uFEFF/, '') === '#,Invoice No,Bill Date,Item,Billed Qty,Issued Qty,Serial Entry Pending,Vendor DCR Pending,On Hold,Ready to Issue',
+    'Grouped CSV A: Correct header columns'
+  );
+  // First item of Group 1 (INV-2026-002)
+  assert(csvALines[1].startsWith('1.1,INV-2026-002,20 Aug 26,TopCon 550W Panel,15,1,13,0,0,1'), 'Grouped CSV A: Row 1 has subordinate index 1.1');
+  // First item of Group 2 (INV-2026-001)
+  assert(csvALines[2].startsWith('2.1,INV-2026-001,15 Aug 26,Mono 540W Panel,10,3,7,0,0,0'), 'Grouped CSV A: Row 2 has subordinate index 2.1');
+  // Grand Total row at the end
+  const lastLineA = csvALines[csvALines.length - 1];
+  assert(lastLineA.startsWith('Grand Total,,,,50,6,40,1,1,2'), 'Grouped CSV A: Grand Total row matches exactly');
+
+  const csvGroupedB = generateGroupedPivotCsv('ITEM_FIRST', invoiceGroups, itemGroups, grandTotals);
+  const csvBLines = csvGroupedB.split('\r\n');
+  assert(
+    csvBLines[0].replace(/^\uFEFF/, '') === '#,Item,Invoice No,Bill Date,Billed Qty,Issued Qty,Serial Entry Pending,Vendor DCR Pending,On Hold,Ready to Issue',
+    'Grouped CSV B: Correct header columns'
+  );
+  // First invoice of Group 1 (TopCon)
+  assert(csvBLines[1].startsWith('1.1,TopCon 550W Panel,INV-2026-002,20 Aug 26,15,1,13,0,0,1'), 'Grouped CSV B: Row 1 has subordinate index 1.1');
+  const lastLineB = csvBLines[csvBLines.length - 1];
+  assert(lastLineB.startsWith('Grand Total,,,,50,6,40,1,1,2'), 'Grouped CSV B: Grand Total row matches exactly');
+
+  // 5. Empty Invoices Handling
+  const emptyInvGroups = buildInvoicePivotGroups([]);
+  const emptyItemGroups = buildItemPivotGroups([]);
+  assert(emptyInvGroups.length === 0, 'Empty: Invoice groups return empty array');
+  assert(emptyItemGroups.length === 0, 'Empty: Item groups return empty array');
+
+  // 6. Performance with 200 invoices
+  const startPerf = Date.now();
+  const largeInvoices: RawDcrInvoice[] = Array.from({ length: 200 }, (_, i) => ({
+    id: `perf_inv_${i}`,
+    invoiceNumber: `INV-PERF-${1000 + i}`,
+    billDate: `2026-07-${String((i % 28) + 1).padStart(2, '0')}`,
+    invoiceDate: `2026-07-${String((i % 28) + 1).padStart(2, '0')}`,
+    items: [
+      {
+        id: `perf_item_${i}_1`,
+        itemId: `perf_prod_${i % 5}`,
+        itemName: `Solar Panel Model ${(i % 5) + 1}`,
+        quantity: 20,
+        selectedForDCR: true,
+        serialAllocations: [],
+      },
+      {
+        id: `perf_item_${i}_2`,
+        itemId: `perf_prod_${(i + 1) % 5}`,
+        itemName: `Solar Panel Model ${((i + 1) % 5) + 1}`,
+        quantity: 10,
+        selectedForDCR: true,
+        serialAllocations: [],
+      },
+    ],
+  }));
+
+  const largeNormalized = buildNormalizedPivotRows(largeInvoices);
+  const largeInvGroups = buildInvoicePivotGroups(largeNormalized);
+  const largeItemGroups = buildItemPivotGroups(largeNormalized);
+  const elapsed = Date.now() - startPerf;
+
+  assert(largeInvGroups.length === 200, 'Perf: 200 invoice groups built');
+  assert(largeItemGroups.length === 5, 'Perf: 5 distinct product groups built');
+  assert(elapsed < 200, `Perf: Grouping 200 invoices completed in ${elapsed}ms (< 200ms)`);
+}
+
 console.log('\n======================================================');
 console.log(`TEST SUMMARY: ${passed} passed, ${failed} failed.`);
 console.log('======================================================\n');
@@ -700,3 +937,4 @@ console.log('======================================================\n');
 if (failed > 0) {
   process.exit(1);
 }
+

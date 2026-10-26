@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { FileText, ArrowLeftRight, ChartColumn, ShieldCheck, FileSpreadsheet, BarChart3, Banknote } from 'lucide-react';
+import { FileText, ArrowLeftRight, ChartColumn, ShieldCheck, FileSpreadsheet, BarChart3, Banknote, TrendingDown } from 'lucide-react';
 
 interface AccountsTabsProps {
   canViewStatement: boolean;
   canViewTransactions: boolean;
   canViewSummary: boolean;
+  canViewRecovery?: boolean;
   canViewReports?: boolean;
   canManageDcr?: boolean;
   canProcessInvoices?: boolean;
@@ -20,6 +21,7 @@ export default function AccountsTabs({
   canViewStatement,
   canViewTransactions,
   canViewSummary,
+  canViewRecovery,
   canViewReports,
   canManageDcr,
   canProcessInvoices,
@@ -39,6 +41,8 @@ export default function AccountsTabs({
     activeTab = 'dcr';
   } else if (pathname.includes('/accounts/invoice-processor')) {
     activeTab = 'invoice-processor';
+  } else if (pathname.includes('/accounts/recovery')) {
+    activeTab = 'recovery';
   } else if (pathname.includes('/accounts/summary')) {
     activeTab = 'summary';
   } else if (pathname.includes('/accounts/reports')) {
@@ -75,6 +79,12 @@ export default function AccountsTabs({
           <Link href="/staff/dashboard/accounts/summary" className={tabCls('summary')}>
             <ChartColumn size={16} strokeWidth={1.8} />
             Summary
+          </Link>
+        )}
+        {canViewRecovery && (
+          <Link href="/staff/dashboard/accounts/recovery" className={tabCls('recovery')}>
+            <TrendingDown size={16} strokeWidth={1.8} />
+            Recovery Queue
           </Link>
         )}
         {canManagePayments && (

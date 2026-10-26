@@ -41,6 +41,22 @@ export async function GET(request: Request) {
     startOfWeek.setHours(0, 0, 0, 0);
 
     // 1. Fetch unverified candidates in active window to compute eligible KPI counts
+    // Exclude confirmed deleted, voided, or cancelled payments
+    const lifecycleFilter = {
+      OR: [
+        { verificationInvalidationReason: null },
+        {
+          verificationInvalidationReason: {
+            notIn: [
+              'PAYMENT_DELETED_IN_ZOHO',
+              'PAYMENT_VOIDED_IN_ZOHO',
+              'PAYMENT_CANCELLED_IN_ZOHO',
+            ],
+          },
+        },
+      ],
+    };
+
     const unverifiedCandidates = await prisma.customerPayment.findMany({
       where: {
         verificationStatus: {
@@ -51,11 +67,13 @@ export async function GET(request: Request) {
         },
         isVerified: false,
         paymentDate: { gte: activeWindowStartDate },
+        ...lifecycleFilter,
       },
       select: {
         verificationStatus: true,
         paymentMode: true,
         zohoData: true,
+        verificationInvalidationReason: true,
       },
     });
 
@@ -102,6 +120,7 @@ export async function GET(request: Request) {
       },
       isVerified: false,
       paymentDate: { gte: activeWindowStartDate },
+      ...lifecycleFilter,
     };
 
     if (mode && mode !== 'ALL') {

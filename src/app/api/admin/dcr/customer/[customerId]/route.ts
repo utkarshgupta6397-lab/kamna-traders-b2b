@@ -5,6 +5,7 @@ import { getCache, setCache } from '@/lib/cache';
 import { getZohoTokens, getZohoOrgId } from '@/lib/zoho-auth';
 import { isVoidInvoice } from '@/lib/dcr-utils';
 import { hasMobileFeatureAccess } from '@/lib/mobile-auth';
+import { calculateItemDcrMetrics } from '@/lib/dcr-pivot';
 
 const API_BASE_URL = process.env.ZOHO_API_BASE_URL || 'https://www.zohoapis.in';
 
@@ -158,6 +159,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
       let onHold = 0;
       let issued = 0;
       let readyToIssue = 0;
+      let isNoDcr = false;
+      const itemsList: any[] = [];
 
       if (!dcrInv) {
         // No DCR record exists
@@ -167,7 +170,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
         displayStatus = 'UNPROCESSED';
       } else {
         isUnprocessed = dcrInv.dcrStatus === 'NEW' || dcrInv.dcrStatus === 'UNDER_REVIEW';
-        let isNoDcr = dcrInv.dcrStatus === 'NO_DCR_REQUIRED' || dcrInv.dcrStatus === 'PROCESSED_NO_DCR';
+        isNoDcr = dcrInv.dcrStatus === 'NO_DCR_REQUIRED' || dcrInv.dcrStatus === 'PROCESSED_NO_DCR';
 
         if (isNoDcr) {
           processingStatus = 'PROCESSED_NO_DCR';
@@ -182,30 +185,26 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
 
         dcrInv.items.forEach((item: any) => {
           if (item.selectedForDCR) {
-            dcrPanels += item.quantity;
-            
-            if (item.quantity > item.serialAllocations.length) {
-              serialEntryPending += (item.quantity - item.serialAllocations.length);
-            }
+            const itemMetrics = calculateItemDcrMetrics(item);
+            dcrPanels += itemMetrics.billedQty;
+            serialEntryPending += itemMetrics.serialEntryPending;
+            vendorDcrPending += itemMetrics.vendorDcrPending;
+            issued += itemMetrics.issuedQty;
+            readyToIssue += itemMetrics.readyToIssue;
+            onHold += itemMetrics.onHold;
+
+            itemsList.push({
+              id: item.id,
+              itemId: item.itemId,
+              sku: item.sku,
+              itemName: item.itemName,
+              quantity: item.quantity,
+              selectedForDCR: item.selectedForDCR,
+              metrics: itemMetrics,
+            });
           } else {
             nonDcrPanels += item.quantity;
           }
-
-          item.serialAllocations.forEach((alloc: any) => {
-            const s = alloc.serial;
-            if (!s) return;
-            
-            if (s.vendorDcrStatus !== 'RECEIVED') {
-              vendorDcrPending++;
-            } else if (s.status === 'ISSUED') {
-              issued++;
-            } else if (s.status === 'READY_TO_ISSUE') {
-              readyToIssue++;
-            } else {
-              // Any other status (HOLD, ALLOCATED, RETURNED) when vendor DCR is received is considered On Hold.
-              onHold++;
-            }
-          });
         });
 
         // Processing Status Engine logic (Requested Update)
@@ -272,6 +271,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ customer
         onHold,
         readyToIssue,
         issued,
+        items: isNoDcr ? [] : itemsList,
       };
     };
 

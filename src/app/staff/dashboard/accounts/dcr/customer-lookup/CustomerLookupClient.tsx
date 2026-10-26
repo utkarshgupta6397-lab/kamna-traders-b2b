@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { Search, ChevronDown, ChevronUp, ExternalLink, Copy, AlertCircle, RefreshCw, X, Activity, ChevronRight } from 'lucide-react';
 import { CommunicationWidget } from '@/components/communications/CommunicationWidget';
 import { Select } from '@/components/ui/Select';
+import CustomerDcrPivotSection from './CustomerDcrPivotSection';
 
 const ZOHO_ORG_ID = process.env.NEXT_PUBLIC_ZOHO_ORG_ID || '';
 
@@ -743,6 +744,13 @@ export default function CustomerLookupClient() {
               </div>
             )}
           </div>
+
+          {/* DCR ITEM & INVOICE PIVOT SECTION */}
+          <CustomerDcrPivotSection
+            customer={customer}
+            invoices={filteredDcrRequired}
+            isLoading={isFetchingSummary}
+          />
 
           {/* SECTION B - NO DCR REQUIRED INVOICES */}
           <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">

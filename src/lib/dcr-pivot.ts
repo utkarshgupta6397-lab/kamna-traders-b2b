@@ -36,6 +36,8 @@ export interface RawDcrInvoice {
   id: string;
   invoiceNumber: string;
   invoiceDate: string | Date;
+  date?: string | Date;
+  billDate?: string | Date;
   items?: RawDcrItem[];
   [key: string]: any;
 }
@@ -46,6 +48,7 @@ export interface NormalizedPivotRow {
   invoiceId: string;
   invoiceNumber: string;
   invoiceDate: string;
+  billDate: string;
   billedQty: number;
   issuedQty: number;
   serialEntryPending: number;
@@ -159,6 +162,28 @@ export function getItemDisplayName(item: {
 }
 
 /**
+ * Parses and returns a numeric timestamp for a Bill Date.
+ * Missing, null, or invalid dates return -Infinity so they are sorted last.
+ */
+export function getBillDateTimestamp(dateVal: string | Date | null | undefined): number {
+  if (!dateVal) return -Infinity;
+  const d = new Date(dateVal);
+  const time = d.getTime();
+  return isNaN(time) ? -Infinity : time;
+}
+
+/**
+ * Formats invoice bill date consistently with ERP conventions (e.g. "01 Jul 26").
+ * Returns '-' for missing or invalid dates.
+ */
+export function formatBillDate(dateVal: string | Date | null | undefined): string {
+  if (!dateVal) return '-';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+}
+
+/**
  * Normalizes invoices and their line items into a flat list of Item + Invoice rows.
  * If the same product appears multiple times within a single invoice,
  * those lines are aggregated into a single row for that (Item, Invoice) pair.
@@ -169,9 +194,11 @@ export function buildNormalizedPivotRows(invoices: RawDcrInvoice[]): NormalizedP
   for (const inv of invoices) {
     if (!inv || !inv.items || !Array.isArray(inv.items)) continue;
 
-    const invoiceDateStr = inv.invoiceDate instanceof Date 
-      ? inv.invoiceDate.toISOString() 
-      : String(inv.invoiceDate || '');
+    // Authoritative bill date resolution from invoice data source
+    const rawBillDate = inv.invoiceDate ?? (inv as any).date ?? (inv as any).billDate;
+    const billDateStr = rawBillDate instanceof Date 
+      ? rawBillDate.toISOString() 
+      : (rawBillDate ? String(rawBillDate) : '');
 
     for (const item of inv.items) {
       // Must be selected for DCR (or default to true if already filtered)
@@ -196,7 +223,8 @@ export function buildNormalizedPivotRows(invoices: RawDcrInvoice[]): NormalizedP
           itemDisplayName,
           invoiceId: inv.id,
           invoiceNumber: inv.invoiceNumber,
-          invoiceDate: invoiceDateStr,
+          invoiceDate: billDateStr,
+          billDate: billDateStr,
           billedQty: metrics.billedQty,
           issuedQty: metrics.issuedQty,
           serialEntryPending: metrics.serialEntryPending,
@@ -214,13 +242,20 @@ export function buildNormalizedPivotRows(invoices: RawDcrInvoice[]): NormalizedP
 /**
  * Sorts normalized rows according to the selected orientation.
  * 
+ * MANDATORY DEFAULT SORT:
+ * Primary Sort: Bill Date descending (newest bill date first; undated rows last).
+ * 
  * View A (ITEM_FIRST):
- *   Primary: Item display name (A-Z)
- *   Secondary: Invoice number (natural order)
+ *   Primary: Bill Date descending (newest first)
+ *   Secondary: Item display name (A-Z)
+ *   Tertiary: Product key (stable identifier)
+ *   Tie-breaker: Invoice number (natural order) / invoiceId
  * 
  * View B (INVOICE_FIRST):
- *   Primary: Invoice number (natural order)
- *   Secondary: Item display name (A-Z)
+ *   Primary: Bill Date descending (newest first)
+ *   Secondary: Invoice number (natural order) / invoiceId
+ *   Tertiary: Item display name (A-Z)
+ *   Tie-breaker: Product key
  */
 export function sortPivotRows(
   rows: NormalizedPivotRow[],
@@ -230,18 +265,49 @@ export function sortPivotRows(
 
   if (orientation === 'ITEM_FIRST') {
     cloned.sort((a, b) => {
+      // 1. Primary: Bill Date descending (newest first, undated last)
+      const timeA = getBillDateTimestamp(a.billDate || a.invoiceDate);
+      const timeB = getBillDateTimestamp(b.billDate || b.invoiceDate);
+      if (timeA !== timeB) {
+        return timeB - timeA;
+      }
+
+      // 2. Secondary: Item display name (A-Z)
       const cmpItem = a.itemDisplayName.localeCompare(b.itemDisplayName, undefined, { sensitivity: 'base' });
       if (cmpItem !== 0) return cmpItem;
+
+      // 3. Stable product key
       const cmpKey = a.productKey.localeCompare(b.productKey);
       if (cmpKey !== 0) return cmpKey;
-      return a.invoiceNumber.localeCompare(b.invoiceNumber, undefined, { numeric: true, sensitivity: 'base' });
-    });
-  } else {
-    cloned.sort((a, b) => {
+
+      // 4. Final tie-breaker: Invoice number / invoiceId
       const cmpInv = a.invoiceNumber.localeCompare(b.invoiceNumber, undefined, { numeric: true, sensitivity: 'base' });
       if (cmpInv !== 0) return cmpInv;
+
+      return a.invoiceId.localeCompare(b.invoiceId);
+    });
+  } else {
+    // INVOICE_FIRST
+    cloned.sort((a, b) => {
+      // 1. Primary: Bill Date descending (newest first, undated last)
+      const timeA = getBillDateTimestamp(a.billDate || a.invoiceDate);
+      const timeB = getBillDateTimestamp(b.billDate || b.invoiceDate);
+      if (timeA !== timeB) {
+        return timeB - timeA;
+      }
+
+      // 2. Secondary: Invoice number (natural order)
+      const cmpInv = a.invoiceNumber.localeCompare(b.invoiceNumber, undefined, { numeric: true, sensitivity: 'base' });
+      if (cmpInv !== 0) return cmpInv;
+
+      const cmpInvId = a.invoiceId.localeCompare(b.invoiceId);
+      if (cmpInvId !== 0) return cmpInvId;
+
+      // 3. Tertiary: Item display name (A-Z)
       const cmpItem = a.itemDisplayName.localeCompare(b.itemDisplayName, undefined, { sensitivity: 'base' });
       if (cmpItem !== 0) return cmpItem;
+
+      // 4. Final tie-breaker: productKey
       return a.productKey.localeCompare(b.productKey);
     });
   }
@@ -286,7 +352,14 @@ export function escapeCsvCell(val: string | number | null | undefined): string {
 }
 
 /**
- * Generates RFC 4180 compliant CSV string with UTF-8 BOM.
+ * Generates RFC 4180 compliant CSV string with UTF-8 BOM, including
+ * leading sequential row index `#` and `Bill Date` column.
+ * 
+ * View A (ITEM_FIRST):
+ *   # | Item | Invoice No | Bill Date | Billed Qty | Issued Qty | Serial Entry Pending | Vendor DCR Pending | On Hold | Ready to Issue
+ * 
+ * View B (INVOICE_FIRST):
+ *   # | Invoice No | Bill Date | Item | Billed Qty | Issued Qty | Serial Entry Pending | Vendor DCR Pending | On Hold | Ready to Issue
  */
 export function generatePivotCsv(
   rows: NormalizedPivotRow[],
@@ -297,8 +370,10 @@ export function generatePivotCsv(
 
   if (orientation === 'ITEM_FIRST') {
     lines.push([
+      '#',
       'Item',
       'Invoice No',
+      'Bill Date',
       'Billed Qty',
       'Issued Qty',
       'Serial Entry Pending',
@@ -307,10 +382,12 @@ export function generatePivotCsv(
       'Ready to Issue',
     ].map(escapeCsvCell).join(','));
 
-    for (const row of rows) {
+    rows.forEach((row, idx) => {
       lines.push([
+        idx + 1,
         row.itemDisplayName,
         row.invoiceNumber,
+        formatBillDate(row.billDate || row.invoiceDate),
         row.billedQty,
         row.issuedQty,
         row.serialEntryPending,
@@ -318,10 +395,12 @@ export function generatePivotCsv(
         row.onHold,
         row.readyToIssue,
       ].map(escapeCsvCell).join(','));
-    }
+    });
 
     lines.push([
       'Grand Total',
+      '',
+      '',
       '',
       totals.billedQty,
       totals.issuedQty,
@@ -332,7 +411,9 @@ export function generatePivotCsv(
     ].map(escapeCsvCell).join(','));
   } else {
     lines.push([
+      '#',
       'Invoice No',
+      'Bill Date',
       'Item',
       'Billed Qty',
       'Issued Qty',
@@ -342,9 +423,11 @@ export function generatePivotCsv(
       'Ready to Issue',
     ].map(escapeCsvCell).join(','));
 
-    for (const row of rows) {
+    rows.forEach((row, idx) => {
       lines.push([
+        idx + 1,
         row.invoiceNumber,
+        formatBillDate(row.billDate || row.invoiceDate),
         row.itemDisplayName,
         row.billedQty,
         row.issuedQty,
@@ -353,10 +436,12 @@ export function generatePivotCsv(
         row.onHold,
         row.readyToIssue,
       ].map(escapeCsvCell).join(','));
-    }
+    });
 
     lines.push([
       'Grand Total',
+      '',
+      '',
       '',
       totals.billedQty,
       totals.issuedQty,

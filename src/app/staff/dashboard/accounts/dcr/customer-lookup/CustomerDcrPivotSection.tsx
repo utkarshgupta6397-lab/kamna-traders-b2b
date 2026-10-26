@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useRef } from 'react';
 import toast from 'react-hot-toast';
-import { Download, Image as ImageIcon, RefreshCw, FileSpreadsheet, ArrowRightLeft } from 'lucide-react';
+import { Download, Image as ImageIcon, RefreshCw, FileSpreadsheet } from 'lucide-react';
 import { toJpeg } from 'html-to-image';
 import {
   NormalizedPivotRow,
@@ -11,6 +11,7 @@ import {
   sortPivotRows,
   calculatePivotTotals,
   generatePivotCsv,
+  formatBillDate,
   sanitizeFilenamePart,
   RawDcrInvoice,
 } from '@/lib/dcr-pivot';
@@ -42,7 +43,7 @@ export default function CustomerDcrPivotSection({
     return buildNormalizedPivotRows(invoices);
   }, [invoices]);
 
-  // Sort rows based on selected orientation
+  // Sort rows based on selected orientation (default: Bill Date descending)
   const sortedRows = useMemo(() => {
     return sortPivotRows(normalizedRows, orientation);
   }, [normalizedRows, orientation]);
@@ -211,12 +212,14 @@ export default function CustomerDcrPivotSection({
 
       {/* VISIBLE TABLE */}
       <div className="overflow-x-auto relative">
-        <table className="w-full text-left text-xs table-fixed min-w-[1100px]">
+        <table className="w-full text-left text-xs table-fixed min-w-[1200px]">
           <thead className="bg-gray-50 text-gray-600 border-b border-gray-200">
             {orientation === 'ITEM_FIRST' ? (
               <tr>
-                <th className="px-3 py-2 font-semibold uppercase w-72">Item</th>
-                <th className="px-3 py-2 font-semibold uppercase w-36">Invoice No</th>
+                <th className="px-3 py-2 font-semibold uppercase w-12 text-center">#</th>
+                <th className="px-3 py-2 font-semibold uppercase w-64">Item</th>
+                <th className="px-3 py-2 font-semibold uppercase w-32">Invoice No</th>
+                <th className="px-3 py-2 font-semibold uppercase w-28">Bill Date</th>
                 <th className="px-3 py-2 font-semibold uppercase text-right w-24">Billed Qty</th>
                 <th className="px-3 py-2 font-semibold uppercase text-right w-24">Issued Qty</th>
                 <th className="px-3 py-2 font-semibold uppercase text-right w-36">Serial Entry Pending</th>
@@ -226,8 +229,10 @@ export default function CustomerDcrPivotSection({
               </tr>
             ) : (
               <tr>
-                <th className="px-3 py-2 font-semibold uppercase w-36">Invoice No</th>
-                <th className="px-3 py-2 font-semibold uppercase w-72">Item</th>
+                <th className="px-3 py-2 font-semibold uppercase w-12 text-center">#</th>
+                <th className="px-3 py-2 font-semibold uppercase w-32">Invoice No</th>
+                <th className="px-3 py-2 font-semibold uppercase w-28">Bill Date</th>
+                <th className="px-3 py-2 font-semibold uppercase w-64">Item</th>
                 <th className="px-3 py-2 font-semibold uppercase text-right w-24">Billed Qty</th>
                 <th className="px-3 py-2 font-semibold uppercase text-right w-24">Issued Qty</th>
                 <th className="px-3 py-2 font-semibold uppercase text-right w-36">Serial Entry Pending</th>
@@ -240,19 +245,22 @@ export default function CustomerDcrPivotSection({
           <tbody className="divide-y divide-gray-100">
             {isLoading ? (
               <tr>
-                <td colSpan={8} className="p-6 text-center text-gray-400 italic">
+                <td colSpan={10} className="p-6 text-center text-gray-400 italic">
                   Loading pivot records...
                 </td>
               </tr>
             ) : sortedRows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="p-6 text-center text-gray-500 italic bg-gray-50/50">
+                <td colSpan={10} className="p-6 text-center text-gray-500 italic bg-gray-50/50">
                   No DCR item records found for current filters.
                 </td>
               </tr>
             ) : (
               sortedRows.map((row, idx) => (
                 <tr key={`${row.invoiceId}__${row.productKey}__${idx}`} className="hover:bg-blue-50/20 transition-colors">
+                  <td className="px-3 py-2 text-gray-500 align-middle text-center font-mono">
+                    {idx + 1}
+                  </td>
                   {orientation === 'ITEM_FIRST' ? (
                     <>
                       <td className="px-3 py-2 font-medium text-gray-900 align-middle truncate" title={row.itemDisplayName}>
@@ -261,11 +269,17 @@ export default function CustomerDcrPivotSection({
                       <td className="px-3 py-2 font-bold text-[#1A2766] align-middle whitespace-nowrap">
                         {row.invoiceNumber}
                       </td>
+                      <td className="px-3 py-2 text-gray-600 align-middle whitespace-nowrap">
+                        {formatBillDate(row.billDate || row.invoiceDate)}
+                      </td>
                     </>
                   ) : (
                     <>
                       <td className="px-3 py-2 font-bold text-[#1A2766] align-middle whitespace-nowrap">
                         {row.invoiceNumber}
+                      </td>
+                      <td className="px-3 py-2 text-gray-600 align-middle whitespace-nowrap">
+                        {formatBillDate(row.billDate || row.invoiceDate)}
                       </td>
                       <td className="px-3 py-2 font-medium text-gray-900 align-middle truncate" title={row.itemDisplayName}>
                         {row.itemDisplayName}
@@ -299,10 +313,9 @@ export default function CustomerDcrPivotSection({
           {!isLoading && sortedRows.length > 0 && (
             <tfoot className="border-t-2 border-gray-300 bg-gray-100/80 font-bold text-gray-900">
               <tr>
-                <td className="px-3 py-2 uppercase tracking-wider text-xs font-extrabold text-[#1A2766]">
+                <td colSpan={4} className="px-3 py-2 uppercase tracking-wider text-xs font-extrabold text-[#1A2766]">
                   Grand Total
                 </td>
-                <td className="px-3 py-2 text-xs"></td>
                 <td className="px-3 py-2 text-right text-xs font-extrabold text-gray-950">
                   {totals.billedQty}
                 </td>
@@ -333,7 +346,7 @@ export default function CustomerDcrPivotSection({
           position: 'fixed',
           left: '-99999px',
           top: '0',
-          width: '1280px',
+          width: '1360px',
           backgroundColor: '#ffffff',
           padding: '24px',
           zIndex: -1,
@@ -363,8 +376,10 @@ export default function CustomerDcrPivotSection({
             <thead className="bg-gray-100 text-gray-700 border-b border-gray-300">
               {orientation === 'ITEM_FIRST' ? (
                 <tr>
+                  <th className="px-3 py-2 font-bold uppercase w-12 text-center">#</th>
                   <th className="px-3 py-2 font-bold uppercase w-80">Item</th>
-                  <th className="px-3 py-2 font-bold uppercase w-40">Invoice No</th>
+                  <th className="px-3 py-2 font-bold uppercase w-36">Invoice No</th>
+                  <th className="px-3 py-2 font-bold uppercase w-28">Bill Date</th>
                   <th className="px-3 py-2 font-bold uppercase text-right w-24">Billed Qty</th>
                   <th className="px-3 py-2 font-bold uppercase text-right w-24">Issued Qty</th>
                   <th className="px-3 py-2 font-bold uppercase text-right w-36">Serial Entry Pending</th>
@@ -374,7 +389,9 @@ export default function CustomerDcrPivotSection({
                 </tr>
               ) : (
                 <tr>
-                  <th className="px-3 py-2 font-bold uppercase w-40">Invoice No</th>
+                  <th className="px-3 py-2 font-bold uppercase w-12 text-center">#</th>
+                  <th className="px-3 py-2 font-bold uppercase w-36">Invoice No</th>
+                  <th className="px-3 py-2 font-bold uppercase w-28">Bill Date</th>
                   <th className="px-3 py-2 font-bold uppercase w-80">Item</th>
                   <th className="px-3 py-2 font-bold uppercase text-right w-24">Billed Qty</th>
                   <th className="px-3 py-2 font-bold uppercase text-right w-24">Issued Qty</th>
@@ -388,6 +405,9 @@ export default function CustomerDcrPivotSection({
             <tbody className="divide-y divide-gray-200">
               {sortedRows.map((row, idx) => (
                 <tr key={`export__${row.invoiceId}__${row.productKey}__${idx}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                  <td className="px-3 py-2 text-gray-500 font-mono text-center">
+                    {idx + 1}
+                  </td>
                   {orientation === 'ITEM_FIRST' ? (
                     <>
                       <td className="px-3 py-2 font-medium text-gray-900 truncate">
@@ -396,11 +416,17 @@ export default function CustomerDcrPivotSection({
                       <td className="px-3 py-2 font-bold text-[#1A2766] whitespace-nowrap">
                         {row.invoiceNumber}
                       </td>
+                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                        {formatBillDate(row.billDate || row.invoiceDate)}
+                      </td>
                     </>
                   ) : (
                     <>
                       <td className="px-3 py-2 font-bold text-[#1A2766] whitespace-nowrap">
                         {row.invoiceNumber}
+                      </td>
+                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                        {formatBillDate(row.billDate || row.invoiceDate)}
                       </td>
                       <td className="px-3 py-2 font-medium text-gray-900 truncate">
                         {row.itemDisplayName}
@@ -432,10 +458,9 @@ export default function CustomerDcrPivotSection({
             {/* Grand Total Row in Export */}
             <tfoot className="border-t-2 border-gray-400 bg-gray-100 font-bold text-gray-900">
               <tr>
-                <td className="px-3 py-2 uppercase tracking-wider text-xs font-extrabold text-[#1A2766]">
+                <td colSpan={4} className="px-3 py-2 uppercase tracking-wider text-xs font-extrabold text-[#1A2766]">
                   Grand Total
                 </td>
-                <td className="px-3 py-2 text-xs"></td>
                 <td className="px-3 py-2 text-right text-xs font-extrabold text-gray-950">
                   {totals.billedQty}
                 </td>

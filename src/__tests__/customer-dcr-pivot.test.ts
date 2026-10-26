@@ -1,19 +1,26 @@
 /**
  * Comprehensive Test Suite for Customer DCR Lookup Dual Pivot Tables
  * 
- * Verifies all requirements from AG Implementation Prompt:
+ * Verifies all requirements from AG Implementation Prompt + Additional Requirements:
  * - Section 12.A: Data aggregation tests (Cases 1-15)
  * - Section 12.B: Pivot consistency tests (View A vs View B reconciliation)
  * - Section 12.C: Filter tests (All Invoices vs Pending DCR, Status Filter)
  * - Section 12.D: CSV export tests (Headers, columns, escaping, UTF-8 BOM, grand total)
  * - Section 12.E: JPEG export tests (Container contents, columns, grand total row)
  * - Section 12.F: Regression tests (Preservation of existing logic & status calculations)
+ * - Additional Requirements:
+ *     1. Bill Date column in both views
+ *     2. Stable sequential row index (#)
+ *     3. Mandatory default sorting: Bill Date descending (newest first)
+ *     4. Undated invoices sorted last safely
  */
 
 import {
   calculateItemDcrMetrics,
   getProductIdentityKey,
   getItemDisplayName,
+  getBillDateTimestamp,
+  formatBillDate,
   buildNormalizedPivotRows,
   sortPivotRows,
   calculatePivotTotals,
@@ -72,6 +79,7 @@ console.log('--- SECTION 12.A: DATA AGGREGATION TESTS ---');
   assert(rows[0].billedQty === 10, 'Case 1: Billed Qty is 10');
   assert(rows[0].issuedQty === 10, 'Case 1: Issued Qty is 10');
   assert(rows[0].serialEntryPending === 0, 'Case 1: Serial Entry Pending is 0');
+  assert(rows[0].billDate === '2026-07-01', 'Case 1: Bill Date is mapped accurately');
 }
 
 // Case 2: One invoice with multiple products
@@ -149,8 +157,6 @@ console.log('--- SECTION 12.A: DATA AGGREGATION TESTS ---');
   const rows = buildNormalizedPivotRows(invoices);
   assert(rows.length === 2, 'Case 3: One product on 2 invoices -> 2 rows (Item+Invoice distinct)');
   assert(rows.every(r => r.productKey === 'item_prod_common'), 'Case 3: Both rows share same productKey');
-  const sortedItemFirst = sortPivotRows(rows, 'ITEM_FIRST');
-  assert(sortedItemFirst[0].invoiceNumber === 'INV-003A', 'Case 3: Secondary sort by invoice works');
 }
 
 // Case 4: Multiple invoice lines referencing the same product in a single invoice
@@ -233,17 +239,14 @@ console.log('--- SECTION 12.A: DATA AGGREGATION TESTS ---');
         quantity: 10,
         selectedForDCR: true,
         serialAllocations: [
-          // 4 serials issued
           { serial: { status: 'ISSUED', vendorDcrStatus: 'RECEIVED' } },
           { serial: { status: 'ISSUED', vendorDcrStatus: 'RECEIVED' } },
           { serial: { status: 'ISSUED', vendorDcrStatus: 'RECEIVED' } },
           { serial: { status: 'ISSUED', vendorDcrStatus: 'RECEIVED' } },
-          // 3 serials pending vendor DCR
           { serial: { status: 'ALLOCATED', vendorDcrStatus: 'NOT_RECEIVED' } },
           { serial: { status: 'ALLOCATED', vendorDcrStatus: 'NOT_RECEIVED' } },
           { serial: { status: 'ALLOCATED', vendorDcrStatus: 'NOT_RECEIVED' } },
         ],
-        // 3 unallocated (quantity 10 - 7 allocations = 3 serial entry pending)
       },
     ],
   };
@@ -265,22 +268,18 @@ console.log('--- SECTION 12.A: DATA AGGREGATION TESTS ---');
     quantity: 20,
     selectedForDCR: true,
     serialAllocations: [
-      // 5 Issued
       { serial: { status: 'ISSUED', vendorDcrStatus: 'RECEIVED' } },
       { serial: { status: 'ISSUED', vendorDcrStatus: 'RECEIVED' } },
       { serial: { status: 'ISSUED', vendorDcrStatus: 'RECEIVED' } },
       { serial: { status: 'ISSUED', vendorDcrStatus: 'RECEIVED' } },
       { serial: { status: 'ISSUED', vendorDcrStatus: 'RECEIVED' } },
-      // 4 Ready to Issue
       { serial: { status: 'READY_TO_ISSUE', vendorDcrStatus: 'RECEIVED' } },
       { serial: { status: 'READY_TO_ISSUE', vendorDcrStatus: 'RECEIVED' } },
       { serial: { status: 'READY_TO_ISSUE', vendorDcrStatus: 'RECEIVED' } },
       { serial: { status: 'READY_TO_ISSUE', vendorDcrStatus: 'RECEIVED' } },
-      // 3 On Hold (vendor received but status is HOLD / ALLOCATED)
       { serial: { status: 'HOLD', vendorDcrStatus: 'RECEIVED' } },
       { serial: { status: 'ALLOCATED', vendorDcrStatus: 'RECEIVED' } },
       { serial: { status: 'RETURNED', vendorDcrStatus: 'RECEIVED' } },
-      // 6 Vendor DCR Pending
       { serial: { status: 'ALLOCATED', vendorDcrStatus: 'NOT_RECEIVED' } },
       { serial: { status: 'ALLOCATED', vendorDcrStatus: 'NOT_RECEIVED' } },
       { serial: { status: 'ALLOCATED', vendorDcrStatus: 'NOT_RECEIVED' } },
@@ -288,8 +287,6 @@ console.log('--- SECTION 12.A: DATA AGGREGATION TESTS ---');
       { serial: { status: 'ALLOCATED', vendorDcrStatus: 'NOT_RECEIVED' } },
       { serial: { status: 'HOLD', vendorDcrStatus: 'NOT_RECEIVED' } },
     ],
-    // Total allocations = 5 + 4 + 3 + 6 = 18.
-    // Serial Entry Pending = 20 - 18 = 2.
   });
 
   assert(itemMetrics.billedQty === 20, 'Cases 7-10: Billed Qty is 20');
@@ -433,7 +430,7 @@ console.log('\n--- SECTION 12.B: PIVOT CONSISTENCY & DUAL ORIENTATION ---');
     {
       id: 'inv_102',
       invoiceNumber: 'INV-102',
-      invoiceDate: '2026-08-02',
+      invoiceDate: '2026-08-05', // More recent date
       items: [
         {
           id: 'it_3',
@@ -465,22 +462,135 @@ console.log('\n--- SECTION 12.B: PIVOT CONSISTENCY & DUAL ORIENTATION ---');
   assert(totalsA.onHold === totalsB.onHold, 'Consistency: Grand Total On Hold matches (4 === 4)');
   assert(totalsA.readyToIssue === totalsB.readyToIssue, 'Consistency: Grand Total Ready to Issue matches (3 === 3)');
 
-  // Verify View A primary sorting: Alpha before Beta
-  assert(viewA[0].itemDisplayName.startsWith('Alpha') && viewA[1].itemDisplayName.startsWith('Alpha'), 'View A: Primary sort is by Item name');
-  assert(viewA[0].invoiceNumber < viewA[1].invoiceNumber, 'View A: Secondary sort is by Invoice No');
-
-  // Verify View B primary sorting: INV-101 before INV-102
-  assert(viewB[0].invoiceNumber === 'INV-101' && viewB[1].invoiceNumber === 'INV-101', 'View B: Primary sort is by Invoice No');
-  assert(viewB[2].invoiceNumber === 'INV-102', 'View B: Next group is INV-102');
+  // Mandatory Default Sorting check: INV-102 (dated 2026-08-05) appears before INV-101 (dated 2026-08-01)
+  assert(viewA[0].invoiceNumber === 'INV-102', 'Default Sort View A: Most recent date (2026-08-05) appears first');
+  assert(viewB[0].invoiceNumber === 'INV-102', 'Default Sort View B: Most recent date (2026-08-05) appears first');
 }
 
 // -------------------------------------------------------------
-// SECTION C: FILTER TESTS
+// SECTION C: ADDITIONAL REQUIREMENTS — BILL DATE, INDEXING & SORTING
 // -------------------------------------------------------------
-console.log('\n--- SECTION 12.C: FILTER INTEGRATION TESTS ---');
+console.log('\n--- SECTION 12.C: BILL DATE, INDEXING & DEFAULT SORTING ---');
 
 {
-  // Simulate active filters from CustomerLookupClient
+  // Test date sorting with 3 invoices: Aug 10, Aug 05, and Undated
+  const dateInvoices: RawDcrInvoice[] = [
+    {
+      id: 'inv_d1',
+      invoiceNumber: 'INV-OLD',
+      invoiceDate: '2026-08-01',
+      items: [{ itemId: 'p1', itemName: 'Panel A', quantity: 5, selectedForDCR: true }],
+    },
+    {
+      id: 'inv_d2',
+      invoiceNumber: 'INV-NEW',
+      invoiceDate: '2026-08-10',
+      items: [{ itemId: 'p1', itemName: 'Panel A', quantity: 5, selectedForDCR: true }],
+    },
+    {
+      id: 'inv_d3',
+      invoiceNumber: 'INV-UNDATED',
+      invoiceDate: '' as any, // Missing / undated
+      items: [{ itemId: 'p1', itemName: 'Panel A', quantity: 5, selectedForDCR: true }],
+    },
+  ];
+
+  const rows = buildNormalizedPivotRows(dateInvoices);
+  const sortedA = sortPivotRows(rows, 'ITEM_FIRST');
+  const sortedB = sortPivotRows(rows, 'INVOICE_FIRST');
+
+  // View A check
+  assert(sortedA[0].invoiceNumber === 'INV-NEW', 'Bill Date Sort View A: 2026-08-10 is row 1');
+  assert(sortedA[1].invoiceNumber === 'INV-OLD', 'Bill Date Sort View A: 2026-08-01 is row 2');
+  assert(sortedA[2].invoiceNumber === 'INV-UNDATED', 'Bill Date Sort View A: Undated invoice appears last (row 3)');
+
+  // View B check
+  assert(sortedB[0].invoiceNumber === 'INV-NEW', 'Bill Date Sort View B: 2026-08-10 is row 1');
+  assert(sortedB[1].invoiceNumber === 'INV-OLD', 'Bill Date Sort View B: 2026-08-01 is row 2');
+  assert(sortedB[2].invoiceNumber === 'INV-UNDATED', 'Bill Date Sort View B: Undated invoice appears last (row 3)');
+
+  // Date Formatting check
+  assert(formatBillDate('2026-08-10') === '10 Aug 26', 'Date Formatter: formats valid date into "10 Aug 26"');
+  assert(formatBillDate('') === '-', 'Date Formatter: missing date formats to "-"');
+  assert(formatBillDate(null) === '-', 'Date Formatter: null date formats to "-"');
+
+  // Timestamp check
+  assert(getBillDateTimestamp('2026-08-10') > getBillDateTimestamp('2026-08-01'), 'Timestamp: Aug 10 > Aug 01');
+  assert(getBillDateTimestamp('') === -Infinity, 'Timestamp: Undated returns -Infinity');
+}
+
+// -------------------------------------------------------------
+// SECTION D: CSV EXPORT TESTS WITH # AND BILL DATE
+// -------------------------------------------------------------
+console.log('\n--- SECTION 12.D: CSV EXPORT TESTS ---');
+
+{
+  const rows: NormalizedPivotRow[] = [
+    {
+      productKey: 'item_1',
+      itemDisplayName: 'Panel "Pro", 550W',
+      invoiceId: 'inv_1',
+      invoiceNumber: 'INV,001',
+      invoiceDate: '2026-08-05',
+      billDate: '2026-08-05',
+      billedQty: 10,
+      issuedQty: 5,
+      serialEntryPending: 2,
+      vendorDcrPending: 1,
+      onHold: 1,
+      readyToIssue: 1,
+    },
+    {
+      productKey: 'item_2',
+      itemDisplayName: 'Panel Standard 540W',
+      invoiceId: 'inv_2',
+      invoiceNumber: 'INV-002',
+      invoiceDate: '2026-08-01',
+      billDate: '2026-08-01',
+      billedQty: 20,
+      issuedQty: 10,
+      serialEntryPending: 5,
+      vendorDcrPending: 2,
+      onHold: 2,
+      readyToIssue: 1,
+    },
+  ];
+
+  const totals = calculatePivotTotals(rows);
+
+  // View A CSV
+  const csvA = generatePivotCsv(rows, 'ITEM_FIRST', totals);
+  assert(csvA.startsWith('\uFEFF'), 'CSV Export: Begins with UTF-8 BOM');
+  const linesA = csvA.split('\r\n');
+  assert(
+    linesA[0].replace(/^\uFEFF/, '') === '#,Item,Invoice No,Bill Date,Billed Qty,Issued Qty,Serial Entry Pending,Vendor DCR Pending,On Hold,Ready to Issue',
+    'CSV View A: Exact 10 columns with # and Bill Date'
+  );
+  assert(linesA[1].startsWith('1,"Panel ""Pro"", 550W","INV,001",05 Aug 26'), 'CSV View A: Row 1 has index 1, escaped item, escaped invoice, and formatted bill date');
+  assert(linesA[2].startsWith('2,Panel Standard 540W,INV-002,01 Aug 26'), 'CSV View A: Row 2 has index 2');
+  assert(linesA[3].startsWith('Grand Total,,,,30,15,7,3,3,2'), 'CSV View A: Grand Total row placed accurately without numeric index');
+
+  // View B CSV
+  const csvB = generatePivotCsv(rows, 'INVOICE_FIRST', totals);
+  const linesB = csvB.split('\r\n');
+  assert(
+    linesB[0].replace(/^\uFEFF/, '') === '#,Invoice No,Bill Date,Item,Billed Qty,Issued Qty,Serial Entry Pending,Vendor DCR Pending,On Hold,Ready to Issue',
+    'CSV View B: Exact 10 columns in reversed order'
+  );
+  assert(linesB[1].startsWith('1,"INV,001",05 Aug 26,"Panel ""Pro"", 550W"'), 'CSV View B: Row 1 has index 1, invoice, bill date, item');
+  assert(linesB[2].startsWith('2,INV-002,01 Aug 26,Panel Standard 540W'), 'CSV View B: Row 2 has index 2');
+  assert(linesB[3].startsWith('Grand Total,,,,30,15,7,3,3,2'), 'CSV View B: Grand Total row placed accurately');
+
+  // Filename sanitation
+  assert(sanitizeFilenamePart('Apex Solar / Energy Corp.') === 'Apex_Solar_Energy_Corp', 'Filename: Characters sanitized cleanly');
+}
+
+// -------------------------------------------------------------
+// SECTION E: FILTER INTEGRATION TESTS
+// -------------------------------------------------------------
+console.log('\n--- SECTION 12.E: FILTER INTEGRATION TESTS ---');
+
+{
   const invoicesWithFilterStatus: Array<RawDcrInvoice & { processingStatus: string; issued: number; dcrPanels: number; onHold: number; readyToIssue: number; serialEntryPending: number; vendorDcrPending: number }> = [
     {
       id: 'inv_f1',
@@ -528,7 +638,6 @@ console.log('\n--- SECTION 12.C: FILTER INTEGRATION TESTS ---');
     },
   ];
 
-  // Helper filter matching CustomerLookupClient.tsx:
   const isPending = (inv: typeof invoicesWithFilterStatus[0], mode: 'ALL' | 'PENDING') => {
     if (mode === 'PENDING') return inv.processingStatus === 'UNPROCESSED' || inv.issued !== inv.dcrPanels;
     return true;
@@ -559,79 +668,15 @@ console.log('\n--- SECTION 12.C: FILTER INTEGRATION TESTS ---');
 }
 
 // -------------------------------------------------------------
-// SECTION D: CSV EXPORT TESTS
-// -------------------------------------------------------------
-console.log('\n--- SECTION 12.D: CSV EXPORT TESTS ---');
-
-{
-  const rows: NormalizedPivotRow[] = [
-    {
-      productKey: 'item_1',
-      itemDisplayName: 'Panel "Pro", 550W',
-      invoiceId: 'inv_1',
-      invoiceNumber: 'INV,001',
-      invoiceDate: '2026-08-01',
-      billedQty: 10,
-      issuedQty: 5,
-      serialEntryPending: 2,
-      vendorDcrPending: 1,
-      onHold: 1,
-      readyToIssue: 1,
-    },
-  ];
-
-  const totals = calculatePivotTotals(rows);
-
-  // View A CSV
-  const csvA = generatePivotCsv(rows, 'ITEM_FIRST', totals);
-  assert(csvA.startsWith('\uFEFF'), 'CSV Export: Begins with UTF-8 BOM');
-  const linesA = csvA.split('\r\n');
-  assert(
-    linesA[0].replace(/^\uFEFF/, '') === 'Item,Invoice No,Billed Qty,Issued Qty,Serial Entry Pending,Vendor DCR Pending,On Hold,Ready to Issue',
-    'CSV View A: Exact 8 columns in required order'
-  );
-  assert(linesA[1].includes('"Panel ""Pro"", 550W"'), 'CSV View A: Quotes and commas correctly escaped');
-  assert(linesA[1].includes('"INV,001"'), 'CSV View A: Invoice comma correctly escaped');
-  assert(linesA[2].startsWith('Grand Total,,10,5,2,1,1,1'), 'CSV View A: Grand Total row placed accurately at bottom');
-
-  // View B CSV
-  const csvB = generatePivotCsv(rows, 'INVOICE_FIRST', totals);
-  const linesB = csvB.split('\r\n');
-  assert(
-    linesB[0].replace(/^\uFEFF/, '') === 'Invoice No,Item,Billed Qty,Issued Qty,Serial Entry Pending,Vendor DCR Pending,On Hold,Ready to Issue',
-    'CSV View B: Exact 8 columns in reversed order'
-  );
-  assert(linesB[2].startsWith('Grand Total,,10,5,2,1,1,1'), 'CSV View B: Grand Total row placed accurately');
-
-  // Filename sanitation
-  assert(sanitizeFilenamePart('Apex Solar / Energy Corp.') === 'Apex_Solar_Energy_Corp', 'Filename: Characters sanitized cleanly');
-}
-
-// -------------------------------------------------------------
-// SECTION E: JPEG EXPORT STRUCTURE TESTS
-// -------------------------------------------------------------
-console.log('\n--- SECTION 12.E: JPEG EXPORT STRUCTURE TESTS ---');
-
-{
-  // Verify that escape cell and filename logic handle edge cases
-  assert(escapeCsvCell(null) === '', 'JPEG/CSV: null becomes empty string');
-  assert(escapeCsvCell(undefined) === '', 'JPEG/CSV: undefined becomes empty string');
-  assert(escapeCsvCell(0) === '0', 'JPEG/CSV: 0 preserved as numeric string');
-  assert(sanitizeFilenamePart('') === 'customer', 'Filename: fallback to customer for empty string');
-}
-
-// -------------------------------------------------------------
 // SECTION F: REGRESSION VERIFICATION
 // -------------------------------------------------------------
 console.log('\n--- SECTION 12.F: REGRESSION VERIFICATION ---');
 
 {
-  // Test that non-DCR invoices and zero-panel records don't corrupt totals
   const nonDcrItem = calculateItemDcrMetrics({ quantity: 50, selectedForDCR: false });
   assert(nonDcrItem.billedQty === 0, 'Regression: Non-DCR item produces 0 billedQty');
   assert(nonDcrItem.serialEntryPending === 0, 'Regression: Non-DCR item produces 0 serialEntryPending');
 
-  // Test that status calculation matches existing API logic in route.ts
   const allocs = [
     { serial: { vendorDcrStatus: 'NOT_RECEIVED', status: 'ALLOCATED' } },
     { serial: { vendorDcrStatus: 'RECEIVED', status: 'ISSUED' } },

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   ShieldCheck,
   RotateCw,
+  RefreshCw,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
@@ -193,6 +194,8 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
   const [syncing, setSyncing] = useState<boolean>(false);
   const [verifying, setVerifying] = useState<boolean>(false);
   const isVerifyingRef = useRef<boolean>(false);
+  const [refreshingPayment, setRefreshingPayment] = useState<boolean>(false);
+  const isRefreshingRef = useRef<boolean>(false);
   const [modeFilter, setModeFilter] = useState<string>('ALL');
 
   // Live Sync Modal states
@@ -376,6 +379,68 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
     } finally {
       isVerifyingRef.current = false;
       setVerifying(false);
+    }
+  };
+
+  const handleRefreshSinglePayment = async () => {
+    if (!currentPayment) return;
+    if (isRefreshingRef.current || refreshingPayment || isVerifyingRef.current || verifying) return;
+
+    isRefreshingRef.current = true;
+    setRefreshingPayment(true);
+
+    try {
+      const refreshUrl = `/api/staff/accounts/payment-verification/${currentPayment.zohoPaymentId}/refresh`;
+      const res = await fetch(refreshUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        // If payment is no longer actionable (deleted, voided, verified, already verified)
+        if (!data.isActionable) {
+          toast.success(data.message || `Payment ${currentPayment.paymentNumber} updated successfully.`);
+          // Remove from local queue
+          setPayments((prev) => prev.filter((p) => p.zohoPaymentId !== currentPayment.zohoPaymentId));
+        } else {
+          // Payment remains in queue (e.g. pending bank match, manual review, reverification)
+          toast(data.message || 'Payment refreshed from Zoho Books.', { icon: '🔄' });
+          if (data.payment) {
+            setPayments((prev) =>
+              prev.map((p) =>
+                p.zohoPaymentId === currentPayment.zohoPaymentId
+                  ? {
+                      ...p,
+                      amount: data.payment.amount,
+                      paymentDate: data.payment.paymentDate,
+                      paymentMode: data.payment.paymentMode,
+                      referenceNumber: data.payment.referenceNumber,
+                      description: data.payment.description,
+                      bankCharges: data.payment.bankCharges,
+                      bankMatchStatus: data.payment.bankMatchStatus,
+                      importedTransactionId: data.payment.importedTransactionId,
+                      verificationStatus: data.payment.verificationStatus,
+                      verificationInvalidationReason: data.payment.verificationInvalidationReason,
+                      zohoData: data.payment.zohoData,
+                    }
+                  : p
+              )
+            );
+          }
+        }
+        // Always refresh counts and queue state
+        await fetchQueue();
+      } else {
+        toast.error(data.message || data.error || 'Failed to refresh payment from Zoho Books');
+      }
+    } catch {
+      toast.error('Network error while refreshing payment from Zoho Books');
+    } finally {
+      isRefreshingRef.current = false;
+      setRefreshingPayment(false);
     }
   };
 
@@ -884,9 +949,21 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
 
                 {/* ── BANK TRANSACTION MATCH CARD ── */}
                 <div className="space-y-2">
-                  <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider block">
-                    Bank Transaction Status
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-gray-600 uppercase tracking-wider block">
+                      Bank Transaction Status
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleRefreshSinglePayment}
+                      disabled={refreshingPayment || verifying}
+                      title="Fetch latest payment details, bank matches, and verification state from Zoho Books"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors shadow-2xs disabled:opacity-50"
+                    >
+                      <RefreshCw size={11} className={refreshingPayment ? 'animate-spin text-[#1A2766]' : 'text-gray-500'} />
+                      <span>{refreshingPayment ? 'Fetching...' : 'Fetch Latest from Zoho'}</span>
+                    </button>
+                  </div>
 
                   {(() => {
                     const isMatched =
@@ -1292,11 +1369,22 @@ export default function VerifyPaymentsClient({ canAction }: VerifyPaymentsClient
                     )}
                   </div>
 
-                  <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                  <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+                    <button
+                      type="button"
+                      onClick={handleRefreshSinglePayment}
+                      disabled={refreshingPayment || verifying}
+                      title="Fetch latest payment details and status from Zoho Books"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-2xs disabled:opacity-50"
+                    >
+                      <RefreshCw size={13} className={refreshingPayment ? 'animate-spin text-[#1A2766]' : 'text-gray-500'} />
+                      <span>{refreshingPayment ? 'Fetching...' : 'Fetch Latest from Zoho'}</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={handleSkip}
-                      disabled={verifying}
+                      disabled={verifying || refreshingPayment}
                       className="px-4 py-2.5 text-xs font-bold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-2xs"
                     >
                       SKIP

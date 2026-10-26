@@ -141,16 +141,27 @@ export function normalizeZohoTimestamp(val: string | Date | null | undefined): s
  * Payments marked with these statuses must never enter Pending Verification,
  * must not contribute to verification counts, and must never be verified.
  */
-export const ZOHO_NON_ACTIONABLE_PAYMENT_STATUSES = ['void', 'cancelled', 'canceled'] as const;
+export const ZOHO_NON_ACTIONABLE_PAYMENT_STATUSES = [
+  'void',
+  'cancelled',
+  'canceled',
+  'deleted',
+] as const;
 
 /**
  * Extracts and normalizes the authoritative payment status from a raw Zoho payment object or local record.
  */
 export function getPaymentStatus(payment: any): string {
   if (!payment) return '';
+  if (payment.verificationInvalidationReason === 'PAYMENT_DELETED_IN_ZOHO') return 'deleted';
+  if (payment.verificationInvalidationReason === 'PAYMENT_VOIDED_IN_ZOHO') return 'void';
+  if (payment.verificationInvalidationReason === 'PAYMENT_CANCELLED_IN_ZOHO') return 'cancelled';
+
   const rawStatus =
+    payment.lifecycle_status ||
     payment.payment_status ||
     payment.status ||
+    payment.zohoData?.lifecycle_status ||
     payment.zohoData?.payment_status ||
     payment.zohoData?.status ||
     '';
@@ -160,10 +171,17 @@ export function getPaymentStatus(payment: any): string {
 /**
  * Centralized payment eligibility function for Payment Verification.
  * Returns true if a payment is valid and actionable for verification.
- * Returns false if the payment is VOID, cancelled, or otherwise non-actionable in Zoho Books.
+ * Returns false if the payment is VOID, cancelled, deleted, or otherwise non-actionable in Zoho Books.
  */
 export function isPaymentEligibleForVerification(payment: any): boolean {
   if (!payment) return false;
+  if (
+    payment.verificationInvalidationReason === 'PAYMENT_DELETED_IN_ZOHO' ||
+    payment.verificationInvalidationReason === 'PAYMENT_VOIDED_IN_ZOHO' ||
+    payment.verificationInvalidationReason === 'PAYMENT_CANCELLED_IN_ZOHO'
+  ) {
+    return false;
+  }
   const status = getPaymentStatus(payment);
   if (!status) return true; // Defaults to eligible if no status property exists
   return !(ZOHO_NON_ACTIONABLE_PAYMENT_STATUSES as readonly string[]).includes(status);
@@ -870,6 +888,16 @@ export async function syncCustomerPayments(
       const rawCf = rawPayment.cf_is_verified;
       const isZohoReportedVerified = rawCf === true || rawCf === 'true';
 
+      const paymentStatus = getPaymentStatus(detail || rawPayment);
+      const isNonActionable = (ZOHO_NON_ACTIONABLE_PAYMENT_STATUSES as readonly string[]).includes(paymentStatus);
+      const invalidationReason = isNonActionable
+        ? paymentStatus === 'void'
+          ? 'PAYMENT_VOIDED_IN_ZOHO'
+          : paymentStatus === 'deleted'
+            ? 'PAYMENT_DELETED_IN_ZOHO'
+            : 'PAYMENT_CANCELLED_IN_ZOHO'
+        : null;
+
       // Upsert record locally with cache fields.
       // If Zoho LIST explicitly returns the payment in cf_is_verified=false, ensure local record reflects unverified status
       // unless local database was already verified in the current active session.
@@ -889,16 +917,31 @@ export async function syncCustomerPayments(
           accountName: detail?.account_name || rawPayment.account_name || null,
           description: detail?.description || rawPayment.description || null,
           invoiceNumbers: invoiceNumbers || null,
-          ...(!isZohoReportedVerified
-            ? existingLocal?.verificationStatus === CustomerPaymentVerificationStatus.REVERIFICATION_REQUIRED
-              ? {
-                  isVerified: false,
-                }
+          ...(isNonActionable
+            ? {
+                isVerified: false,
+                verificationInvalidationReason: invalidationReason,
+              }
+            : !isZohoReportedVerified
+              ? existingLocal?.verificationStatus === CustomerPaymentVerificationStatus.REVERIFICATION_REQUIRED
+                ? {
+                    isVerified: false,
+                  }
+                : {
+                    isVerified: false,
+                    verificationStatus: CustomerPaymentVerificationStatus.PENDING,
+                    verificationInvalidationReason: null,
+                  }
               : {
-                  isVerified: false,
-                  verificationStatus: CustomerPaymentVerificationStatus.PENDING,
-                }
-            : {}),
+                  isVerified: true,
+                  verificationStatus: CustomerPaymentVerificationStatus.VERIFIED,
+                  verificationMethod: isBankMatched
+                    ? CustomerPaymentVerificationMethod.AUTO_BANK_MATCH
+                    : (existingLocal?.verificationMethod || CustomerPaymentVerificationMethod.MANUAL),
+                  isAuditVerified: true,
+                  verifiedAt: existingLocal?.verifiedAt || nowTs,
+                  verificationInvalidationReason: null,
+                }),
           bankMatchStatus,
           importedTransactionId,
           lastZohoModifiedTime: effectiveLastModified,
@@ -922,8 +965,20 @@ export async function syncCustomerPayments(
           accountName: detail?.account_name || rawPayment.account_name || null,
           description: detail?.description || rawPayment.description || null,
           invoiceNumbers: invoiceNumbers || null,
-          isVerified: false,
-          verificationStatus: CustomerPaymentVerificationStatus.PENDING,
+          isVerified: !isNonActionable && isZohoReportedVerified,
+          verificationStatus: isNonActionable
+            ? CustomerPaymentVerificationStatus.PENDING
+            : isZohoReportedVerified
+              ? CustomerPaymentVerificationStatus.VERIFIED
+              : CustomerPaymentVerificationStatus.PENDING,
+          verificationMethod: isZohoReportedVerified
+            ? isBankMatched
+              ? CustomerPaymentVerificationMethod.AUTO_BANK_MATCH
+              : CustomerPaymentVerificationMethod.MANUAL
+            : null,
+          isAuditVerified: isZohoReportedVerified && !isNonActionable,
+          verifiedAt: isZohoReportedVerified && !isNonActionable ? nowTs : null,
+          verificationInvalidationReason: invalidationReason,
           bankMatchStatus,
           importedTransactionId,
           lastZohoModifiedTime: effectiveLastModified,
@@ -950,6 +1005,7 @@ export async function syncCustomerPayments(
       );
 
       const isEligibleForAutoVerification =
+        !isNonActionable &&
         isReconciliationEligible &&
         isBankMatched &&
         isRecognizedDepositAccount &&
@@ -1019,6 +1075,18 @@ export async function syncCustomerPayments(
       errors.push(`Error processing payment ${rawPayment.payment_id}: ${recordErr.message}`);
     }
   }
+
+  // 4. Bounded reconciliation for unreturned local pending payments in active sync window
+  // Authoritatively reconciles payments that were DELETED (404), VOIDED, or ALREADY VERIFIED in Zoho Books
+  const reconcileResult = await reconcileStalePendingPayments({
+    startDate: dateStartStr,
+    endDate: dateEndStr,
+    fetchedZohoPaymentIds: allFetchedPayments.map((p) => String(p.payment_id)),
+    token,
+    orgId,
+    limit: 50,
+  });
+  detailApiCalls += reconcileResult.detailApiCalls;
 
   const syncEndTime = new Date();
   const totalDurationMs = syncEndTime.getTime() - syncStartTime.getTime();
@@ -1154,11 +1222,16 @@ export async function verifyPaymentInZohoAndLocal(params: {
 
   // Defensive check 1: Check local cached eligibility
   if (!isPaymentEligibleForVerification(local)) {
-    const localStatus = getPaymentStatus(local).toUpperCase() || 'VOID';
+    const isDeleted =
+      local.verificationInvalidationReason === 'PAYMENT_DELETED_IN_ZOHO' ||
+      getPaymentStatus(local) === 'deleted';
+    const localStatus = getPaymentStatus(local).toUpperCase() || (isDeleted ? 'DELETED' : 'VOID');
     return {
       success: false,
-      code: 'PAYMENT_VOIDED',
-      error: `This payment is not eligible for verification because its status is ${localStatus} in Zoho Books.`,
+      code: isDeleted ? 'PAYMENT_DELETED' : 'PAYMENT_VOIDED',
+      error: isDeleted
+        ? 'Payment does not exist in Zoho Books. It may have been deleted.'
+        : `This payment is not eligible for verification because its status is ${localStatus} in Zoho Books.`,
     };
   }
 
@@ -1175,7 +1248,7 @@ export async function verifyPaymentInZohoAndLocal(params: {
   }
 
   // Defensive check 2: Validate live status from Zoho Books
-  // If paymentSnapshot is provided and authoritative, check it; otherwise fetch live Detail API to ensure payment has not been voided since local sync
+  // If paymentSnapshot is provided and authoritative, check it; otherwise fetch live Detail API to ensure payment has not been voided or deleted since local sync
   let currentZohoStatus = '';
   if (params.paymentSnapshot) {
     currentZohoStatus = getPaymentStatus(params.paymentSnapshot);
@@ -1187,16 +1260,43 @@ export async function verifyPaymentInZohoAndLocal(params: {
       const liveCheckRes = await fetch(liveCheckUrl, {
         headers: { Authorization: `Zoho-oauthtoken ${token}` },
       });
-      if (liveCheckRes.ok) {
-        const liveCheckData = await liveCheckRes.json();
-        if (liveCheckData.payment) {
-          currentZohoStatus = getPaymentStatus(liveCheckData.payment);
-          // Also update local zohoData cache with fresh state
-          await prisma.customerPayment.update({
-            where: { zohoPaymentId },
-            data: { zohoData: liveCheckData.payment as any },
-          }).catch(() => {});
-        }
+      const liveCheckData = await liveCheckRes.json().catch(() => ({}));
+
+      // Check for authoritative 404 / 1002 Payment does not exist
+      if (
+        liveCheckRes.status === 404 ||
+        liveCheckData.code === 1002 ||
+        (liveCheckData.message && liveCheckData.message.toLowerCase().includes('does not exist'))
+      ) {
+        await prisma.customerPayment.update({
+          where: { zohoPaymentId },
+          data: {
+            verificationInvalidationReason: 'PAYMENT_DELETED_IN_ZOHO',
+            zohoData: {
+              ...((local.zohoData as any) || {}),
+              payment_status: 'deleted',
+              lifecycle_status: 'DELETED',
+              deleted_in_zoho: true,
+              deleted_detected_at: new Date().toISOString(),
+            },
+            lastSyncedAt: new Date(),
+          },
+        }).catch(() => {});
+
+        return {
+          success: false,
+          code: 'PAYMENT_DELETED',
+          error: `This payment is not eligible for verification because it has been deleted in Zoho Books.`,
+        };
+      }
+
+      if (liveCheckRes.ok && liveCheckData.payment) {
+        currentZohoStatus = getPaymentStatus(liveCheckData.payment);
+        // Also update local zohoData cache with fresh state
+        await prisma.customerPayment.update({
+          where: { zohoPaymentId },
+          data: { zohoData: liveCheckData.payment as any },
+        }).catch(() => {});
       }
     } catch (liveErr) {
       console.warn(`[verifyPaymentInZohoAndLocal] Live status check warning for ${paymentNumber}:`, liveErr);
@@ -1204,10 +1304,29 @@ export async function verifyPaymentInZohoAndLocal(params: {
   }
 
   if (currentZohoStatus && (ZOHO_NON_ACTIONABLE_PAYMENT_STATUSES as readonly string[]).includes(currentZohoStatus)) {
+    const isDeleted = currentZohoStatus === 'deleted';
+    const reason = isDeleted
+      ? 'PAYMENT_DELETED_IN_ZOHO'
+      : currentZohoStatus === 'cancelled' || currentZohoStatus === 'canceled'
+        ? 'PAYMENT_CANCELLED_IN_ZOHO'
+        : 'PAYMENT_VOIDED_IN_ZOHO';
+
+    await prisma.customerPayment.update({
+      where: { zohoPaymentId },
+      data: {
+        verificationInvalidationReason: reason,
+        zohoData: {
+          ...((local.zohoData as any) || {}),
+          payment_status: currentZohoStatus,
+          lifecycle_status: currentZohoStatus.toUpperCase(),
+        },
+      },
+    }).catch(() => {});
+
     return {
       success: false,
-      code: 'PAYMENT_VOIDED',
-      error: `This payment is no longer eligible for verification because it has been voided in Zoho Books.`,
+      code: isDeleted ? 'PAYMENT_DELETED' : 'PAYMENT_VOIDED',
+      error: `This payment is no longer eligible for verification because it has been ${currentZohoStatus} in Zoho Books.`,
     };
   }
 
@@ -1390,5 +1509,657 @@ export async function verifyPaymentInZohoAndLocal(params: {
     });
 
     return { success: false, error: err.message || 'Internal connection error during verification' };
+  }
+}
+
+export interface ReconcileStalePendingPaymentsOptions {
+  limit?: number;
+  startDate?: string;
+  endDate?: string;
+  fetchedZohoPaymentIds?: string[];
+  token?: string;
+  orgId?: string;
+}
+
+export interface ReconcileStalePendingPaymentsResult {
+  checkedCount: number;
+  deletedCount: number;
+  voidedCount: number;
+  verifiedCount: number;
+  activeUnverifiedCount: number;
+  detailApiCalls: number;
+  errors: string[];
+}
+
+/**
+ * Reconciles local pending payments that are no longer active in Zoho Books.
+ * Performs bounded, authoritative checks against Zoho Detail API for candidates
+ * missing from listing responses.
+ * - HTTP 404 / code 1002 -> Confirmed DELETED (marks PAYMENT_DELETED_IN_ZOHO)
+ * - status 'void' / 'cancelled' -> Confirmed VOID (marks PAYMENT_VOIDED_IN_ZOHO)
+ * - cf_is_verified 'true' -> Confirmed ALREADY VERIFIED (reconciles to VERIFIED)
+ * - HTTP 429 / 5xx / Network -> Preserves state without guessing (resilient to outages)
+ */
+export async function reconcileStalePendingPayments(
+  options: ReconcileStalePendingPaymentsOptions = {}
+): Promise<ReconcileStalePendingPaymentsResult> {
+  const limit = options.limit ?? 50;
+  const token = options.token || (await getZohoTokens());
+  const orgId = options.orgId || getZohoOrgId();
+
+  const result: ReconcileStalePendingPaymentsResult = {
+    checkedCount: 0,
+    deletedCount: 0,
+    voidedCount: 0,
+    verifiedCount: 0,
+    activeUnverifiedCount: 0,
+    detailApiCalls: 0,
+    errors: [],
+  };
+
+  if (!token || !orgId) {
+    result.errors.push('Zoho authentication credentials missing');
+    return result;
+  }
+
+  const startDateObj = options.startDate ? new Date(options.startDate) : new Date(DEFAULT_SYNC_START_DATE);
+  const endDateObj = options.endDate ? new Date(options.endDate) : new Date();
+  endDateObj.setHours(23, 59, 59, 999);
+
+  const fetchedIdSet = options.fetchedZohoPaymentIds ? new Set(options.fetchedZohoPaymentIds) : null;
+
+  // Query candidate pending payments in active window that have not been invalidated yet
+  const candidates = await prisma.customerPayment.findMany({
+    where: {
+      verificationStatus: {
+        in: [
+          CustomerPaymentVerificationStatus.PENDING,
+          CustomerPaymentVerificationStatus.REVERIFICATION_REQUIRED,
+        ],
+      },
+      isVerified: false,
+      paymentDate: { gte: startDateObj, lte: endDateObj },
+      verificationInvalidationReason: null,
+    },
+    take: limit,
+  });
+
+  const toCheck = fetchedIdSet ? candidates.filter(c => !fetchedIdSet.has(c.zohoPaymentId)) : candidates;
+
+  for (const candidate of toCheck) {
+    result.checkedCount++;
+    result.detailApiCalls++;
+    try {
+      const detailUrl = `${API_BASE_URL}/books/v3/customerpayments/${candidate.zohoPaymentId}?organization_id=${orgId}`;
+      const res = await fetch(detailUrl, {
+        headers: { Authorization: `Zoho-oauthtoken ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+
+      // Case A: Confirmed DELETED in Zoho Books (404 or code 1002)
+      if (
+        res.status === 404 ||
+        data.code === 1002 ||
+        (data.message && data.message.toLowerCase().includes('does not exist'))
+      ) {
+        result.deletedCount++;
+        await prisma.customerPayment.update({
+          where: { zohoPaymentId: candidate.zohoPaymentId },
+          data: {
+            verificationInvalidationReason: 'PAYMENT_DELETED_IN_ZOHO',
+            zohoData: {
+              ...((candidate.zohoData as any) || {}),
+              payment_status: 'deleted',
+              lifecycle_status: 'DELETED',
+              deleted_in_zoho: true,
+              deleted_detected_at: new Date().toISOString(),
+            },
+            lastSyncedAt: new Date(),
+          },
+        });
+        console.log(`[Reconcile] Confirmed DELETED payment in Zoho: ${candidate.paymentNumber} (${candidate.zohoPaymentId})`);
+      } else if (res.ok && data.payment) {
+        const zp = data.payment;
+        const status = (zp.payment_status || zp.status || '').toLowerCase();
+        const cfVerified =
+          zp.custom_field_hash?.cf_is_verified ||
+          (zp.custom_fields || []).find((f: any) => f.api_name === 'cf_is_verified')?.value;
+
+        // Case B: Confirmed VOIDED or CANCELLED in Zoho Books
+        if (status === 'void' || status === 'cancelled' || status === 'canceled') {
+          result.voidedCount++;
+          const reason = status === 'void' ? 'PAYMENT_VOIDED_IN_ZOHO' : 'PAYMENT_CANCELLED_IN_ZOHO';
+          await prisma.customerPayment.update({
+            where: { zohoPaymentId: candidate.zohoPaymentId },
+            data: {
+              verificationInvalidationReason: reason,
+              zohoData: zp as any,
+              lastSyncedAt: new Date(),
+            },
+          });
+          console.log(`[Reconcile] Confirmed ${status.toUpperCase()} payment in Zoho: ${candidate.paymentNumber} (${candidate.zohoPaymentId})`);
+        }
+        // Case C: Confirmed ALREADY VERIFIED in Zoho Books (external verification)
+        else if (cfVerified === true || cfVerified === 'true') {
+          result.verifiedCount++;
+          const matchEval = evaluateBankMatchFromDetail(
+            zp,
+            zp.account_id || candidate.accountId,
+            zp.account_name || candidate.accountName
+          );
+
+          await prisma.customerPayment.update({
+            where: { zohoPaymentId: candidate.zohoPaymentId },
+            data: {
+              isVerified: true,
+              verificationStatus: CustomerPaymentVerificationStatus.VERIFIED,
+              verificationMethod: matchEval.isMatched
+                ? CustomerPaymentVerificationMethod.AUTO_BANK_MATCH
+                : CustomerPaymentVerificationMethod.MANUAL,
+              bankMatchStatus: matchEval.bankMatchStatus,
+              importedTransactionId: matchEval.importedTransactionId,
+              isAuditVerified: true,
+              verifiedAt: new Date(),
+              zohoData: zp as any,
+              lastSyncedAt: new Date(),
+            },
+          });
+          console.log(`[Reconcile] Reconciled ALREADY VERIFIED payment in Zoho: ${candidate.paymentNumber} (${candidate.zohoPaymentId})`);
+        } else {
+          result.activeUnverifiedCount++;
+        }
+      } else if (res.status === 429 || res.status >= 500) {
+        // Transient rate limit or server error: stop loop safely without marking deleted
+        console.warn(`[Reconcile] Transient Zoho API error (${res.status}). Pausing reconciliation.`);
+        break;
+      }
+    } catch (err: any) {
+      result.errors.push(`Error checking ${candidate.paymentNumber}: ${err.message}`);
+      break; // Transient network error: break safely
+    }
+  }
+
+  return result;
+}
+
+// In-memory concurrency locks to prevent race conditions during single-payment refresh operations
+const activePaymentRefreshLocks = new Set<string>();
+
+export type RefreshPaymentOutcome =
+  | 'VERIFIED'
+  | 'ALREADY_VERIFIED'
+  | 'PENDING_BANK_MATCH'
+  | 'PENDING_MANUAL_REVIEW'
+  | 'DELETED'
+  | 'VOIDED'
+  | 'REVERIFICATION_REQUIRED'
+  | 'REFRESH_FAILED';
+
+export interface RefreshSingleCustomerPaymentParams {
+  paymentId: string;
+  userId?: string;
+  allowZohoWrites?: boolean;
+  mockResponse?: {
+    status: number;
+    body: any;
+  };
+}
+
+export interface RefreshSingleCustomerPaymentResult {
+  success: boolean;
+  outcome: RefreshPaymentOutcome;
+  isActionable: boolean;
+  message: string;
+  error?: string;
+  payment?: any;
+  zohoApiCalls: number;
+}
+
+/**
+ * Authoritative single-payment refresh from Zoho Books.
+ * Fetches the latest detail data for a single payment, reconciles the local record,
+ * applies lifecycle rules (deleted/voided/verified), and executes auto-verification
+ * if bank-match and account criteria are satisfied.
+ */
+export async function refreshSingleCustomerPayment(
+  params: RefreshSingleCustomerPaymentParams
+): Promise<RefreshSingleCustomerPaymentResult> {
+  const { paymentId, userId, allowZohoWrites, mockResponse } = params;
+
+  if (!paymentId) {
+    return {
+      success: false,
+      outcome: 'REFRESH_FAILED',
+      isActionable: false,
+      message: 'Payment ID is required.',
+      error: 'PAYMENT_ID_REQUIRED',
+      zohoApiCalls: 0,
+    };
+  }
+
+  // 1. Locate local record by ID or Zoho Payment ID
+  const local = await prisma.customerPayment.findFirst({
+    where: {
+      OR: [
+        { id: paymentId },
+        { zohoPaymentId: paymentId },
+      ],
+    },
+  });
+
+  if (!local) {
+    return {
+      success: false,
+      outcome: 'REFRESH_FAILED',
+      isActionable: false,
+      message: 'Payment not found in local database.',
+      error: 'PAYMENT_NOT_FOUND',
+      zohoApiCalls: 0,
+    };
+  }
+
+  // 2. Concurrency protection per payment
+  if (activePaymentRefreshLocks.has(local.zohoPaymentId)) {
+    return {
+      success: false,
+      outcome: 'REFRESH_FAILED',
+      isActionable: true,
+      message: 'A refresh operation is already in progress for this payment.',
+      error: 'CONCURRENT_REFRESH',
+      zohoApiCalls: 0,
+      payment: local,
+    };
+  }
+
+  activePaymentRefreshLocks.add(local.zohoPaymentId);
+
+  let zohoApiCalls = 0;
+
+  try {
+    let resStatus: number;
+    let data: any;
+
+    if (mockResponse) {
+      resStatus = mockResponse.status;
+      data = mockResponse.body;
+      if (resStatus === 200 || resStatus === 404 || resStatus === 429 || resStatus >= 500) {
+        zohoApiCalls++;
+      }
+    } else {
+      const token = await getZohoTokens();
+      const orgId = getZohoOrgId();
+      const detailUrl = `${API_BASE_URL}/books/v3/customerpayments/${local.zohoPaymentId}?organization_id=${orgId}`;
+      zohoApiCalls++;
+
+      const res = await fetch(detailUrl, {
+        headers: { Authorization: `Zoho-oauthtoken ${token}` },
+      });
+      resStatus = res.status;
+      data = await res.json().catch(() => ({}));
+
+      await logZohoApiCall({
+        endpointType: 'PAYMENT_DETAIL',
+        method: 'GET',
+        success: res.ok,
+        httpStatus: res.status,
+      });
+    }
+
+    // 3. Transient error handling (Rate Limit 429 or Server Error 5xx): Preserve local state
+    if (resStatus === 429 || resStatus >= 500) {
+      console.warn(`[RefreshSingle] Transient Zoho API error (${resStatus}) for payment ${local.paymentNumber}. Preserving local state.`);
+      return {
+        success: false,
+        outcome: 'REFRESH_FAILED',
+        isActionable: local.verificationStatus === 'PENDING' || local.verificationStatus === 'REVERIFICATION_REQUIRED',
+        message: `Zoho Books returned status ${resStatus}. Payment state preserved without changes.`,
+        error: data?.message || `HTTP ${resStatus}`,
+        zohoApiCalls,
+        payment: local,
+      };
+    }
+
+    // 4. Confirmed DELETED in Zoho Books (HTTP 404 or Zoho error code 1002 / 'does not exist')
+    if (
+      resStatus === 404 ||
+      data?.code === 1002 ||
+      (typeof data?.message === 'string' && data.message.toLowerCase().includes('does not exist'))
+    ) {
+      const updated = await prisma.customerPayment.update({
+        where: { zohoPaymentId: local.zohoPaymentId },
+        data: {
+          verificationInvalidationReason: 'PAYMENT_DELETED_IN_ZOHO',
+          requiresManualVerification: false,
+          zohoData: {
+            ...((local.zohoData as any) || {}),
+            payment_status: 'deleted',
+            lifecycle_status: 'DELETED',
+            deleted_in_zoho: true,
+            deleted_detected_at: new Date().toISOString(),
+          },
+          lastSyncedAt: new Date(),
+        },
+      });
+
+      return {
+        success: true,
+        outcome: 'DELETED',
+        isActionable: false,
+        message: `Payment ${local.paymentNumber} has been deleted in Zoho Books and removed from the verification queue.`,
+        payment: updated,
+        zohoApiCalls,
+      };
+    }
+
+    // 5. Valid payload check
+    if (resStatus !== 200 || !data?.payment) {
+      return {
+        success: false,
+        outcome: 'REFRESH_FAILED',
+        isActionable: local.verificationStatus === 'PENDING' || local.verificationStatus === 'REVERIFICATION_REQUIRED',
+        message: data?.message || `Failed to fetch payment details from Zoho Books (status ${resStatus}).`,
+        error: data?.message || `HTTP ${resStatus}`,
+        zohoApiCalls,
+        payment: local,
+      };
+    }
+
+    const zp = data.payment;
+    const rawStatus = (zp.payment_status || zp.status || '').toLowerCase().trim();
+    const cfVerified =
+      zp.cf_is_verified ??
+      zp.custom_field_hash?.cf_is_verified ??
+      (zp.custom_fields || []).find(
+        (f: any) => f.api_name === 'cf_is_verified' || f.customfield_id === ZOHO_IS_VERIFIED_CF_ID
+      )?.value;
+    const isVerifiedInZoho = cfVerified === true || cfVerified === 'true';
+
+    // 6. Confirmed VOIDED or CANCELLED in Zoho Books
+    if (rawStatus === 'void' || rawStatus === 'cancelled' || rawStatus === 'canceled') {
+      const reason = rawStatus === 'void' ? 'PAYMENT_VOIDED_IN_ZOHO' : 'PAYMENT_CANCELLED_IN_ZOHO';
+      const updated = await prisma.customerPayment.update({
+        where: { zohoPaymentId: local.zohoPaymentId },
+        data: {
+          verificationInvalidationReason: reason,
+          requiresManualVerification: false,
+          zohoData: zp,
+          lastSyncedAt: new Date(),
+        },
+      });
+
+      return {
+        success: true,
+        outcome: 'VOIDED',
+        isActionable: false,
+        message: `Payment ${local.paymentNumber} is ${rawStatus.toUpperCase()} in Zoho Books and cannot be verified.`,
+        payment: updated,
+        zohoApiCalls,
+      };
+    }
+
+    // 7. Confirmed ALREADY VERIFIED in Zoho Books
+    if (isVerifiedInZoho) {
+      if (local.isVerified) {
+        // Evaluate material payment changes using 6-field integrity rules
+        const { evaluatePaymentIntegrity } = await import('@/lib/services/customer-payment-integrity-audit.service');
+        const integrity = evaluatePaymentIntegrity({
+          snapshot: {
+            customerName: local.customerName,
+            customerId: local.customerId,
+            amount: local.amount,
+            bankCharges: local.bankCharges,
+            paymentDate: local.paymentDate,
+            paymentMode: local.paymentMode,
+            accountId: local.accountId,
+            accountName: local.accountName,
+          },
+          current: {
+            customerName: zp.customer_name || local.customerName,
+            customerId: zp.customer_id || local.customerId,
+            amount: zp.amount,
+            bankCharges: zp.bank_charges,
+            paymentDate: zp.date,
+            paymentMode: zp.payment_mode,
+            accountId: zp.account_id,
+            accountName: zp.account_name,
+          },
+        });
+
+        if (integrity.overallIntegrityStatus === 'FAIL') {
+          const reason = integrity.reasons.join('; ') || 'Payment details modified after verification.';
+          const updated = await prisma.customerPayment.update({
+            where: { zohoPaymentId: local.zohoPaymentId },
+            data: {
+              verificationStatus: CustomerPaymentVerificationStatus.REVERIFICATION_REQUIRED,
+              verificationInvalidationReason: reason,
+              zohoData: zp,
+              lastZohoModifiedTime: zp.last_modified_time || local.lastZohoModifiedTime,
+              lastSyncedAt: new Date(),
+            },
+          });
+          return {
+            success: true,
+            outcome: 'REVERIFICATION_REQUIRED',
+            isActionable: true,
+            message: `Payment details changed in Zoho Books after initial verification (${reason}). Manual re-verification required.`,
+            payment: updated,
+            zohoApiCalls,
+          };
+        }
+
+        // Verified and integrity checks pass
+        const updated = await prisma.customerPayment.update({
+          where: { zohoPaymentId: local.zohoPaymentId },
+          data: {
+            zohoData: zp,
+            lastZohoModifiedTime: zp.last_modified_time || local.lastZohoModifiedTime,
+            lastSyncedAt: new Date(),
+          },
+        });
+        return {
+          success: true,
+          outcome: 'ALREADY_VERIFIED',
+          isActionable: false,
+          message: `Payment ${local.paymentNumber} is already verified and details match Zoho Books.`,
+          payment: updated,
+          zohoApiCalls,
+        };
+      } else {
+        // Was pending locally, but verified in Zoho Books externally
+        const depositAccountId = zp.account_id || local.accountId;
+        const depositAccountName = zp.account_name || local.accountName;
+        const matchEval = evaluateBankMatchFromDetail(zp, depositAccountId, depositAccountName);
+
+        const updated = await prisma.customerPayment.update({
+          where: { zohoPaymentId: local.zohoPaymentId },
+          data: {
+            isVerified: true,
+            verificationStatus: CustomerPaymentVerificationStatus.VERIFIED,
+            verificationMethod: matchEval.isMatched
+              ? CustomerPaymentVerificationMethod.AUTO_BANK_MATCH
+              : CustomerPaymentVerificationMethod.MANUAL,
+            bankMatchStatus: matchEval.bankMatchStatus,
+            importedTransactionId: matchEval.importedTransactionId,
+            isAuditVerified: true,
+            verifiedAt: new Date(),
+            zohoData: zp,
+            lastZohoModifiedTime: zp.last_modified_time || local.lastZohoModifiedTime,
+            lastSyncedAt: new Date(),
+            verificationInvalidationReason: null,
+          },
+        });
+
+        return {
+          success: true,
+          outcome: 'ALREADY_VERIFIED',
+          isActionable: false,
+          message: `Payment ${local.paymentNumber} is already verified in Zoho Books. Local record reconciled to Verified.`,
+          payment: updated,
+          zohoApiCalls,
+        };
+      }
+    }
+
+    // 8. Active & Unverified Payment: Reconcile fields and evaluate auto-verification
+    const depositAccountId = zp.account_id || local.accountId;
+    const depositAccountName = zp.account_name || local.accountName;
+    const bankMatchEval = evaluateBankMatchFromDetail(zp, depositAccountId, depositAccountName);
+    const isEligibleMode = isReconciliationEligiblePaymentMode(zp.payment_mode || local.paymentMode);
+    const isRecognizedAcc = isRecognizedBankAccount(depositAccountId, depositAccountName);
+    const isActionableStatus = isPaymentEligibleForVerification(zp);
+
+    // Update local record with latest authoritative data from Detail API
+    let updated = await prisma.customerPayment.update({
+      where: { zohoPaymentId: local.zohoPaymentId },
+      data: {
+        amount: zp.amount != null ? zp.amount : local.amount,
+        paymentDate: zp.date ? new Date(zp.date) : local.paymentDate,
+        paymentMode: zp.payment_mode || local.paymentMode,
+        referenceNumber: zp.reference_number || local.referenceNumber,
+        description: zp.description || local.description,
+        bankCharges: zp.bank_charges != null ? zp.bank_charges : local.bankCharges,
+        accountId: depositAccountId,
+        accountName: depositAccountName,
+        bankMatchStatus: bankMatchEval.bankMatchStatus,
+        importedTransactionId: bankMatchEval.importedTransactionId,
+        lastZohoModifiedTime: zp.last_modified_time || local.lastZohoModifiedTime,
+        zohoData: zp,
+        lastSyncedAt: new Date(),
+      },
+    });
+
+    // Auto-verification decision evaluation
+    const canAutoVerify =
+      isEligibleMode &&
+      bankMatchEval.isMatched &&
+      isRecognizedAcc &&
+      isActionableStatus &&
+      !local.requiresManualVerification &&
+      local.verificationStatus !== CustomerPaymentVerificationStatus.REVERIFICATION_REQUIRED;
+
+    if (canAutoVerify) {
+      if (mockResponse) {
+        // In simulated test mode with mockResponse, avoid live network write for fictitious test IDs
+        const verifiedRecord = await prisma.customerPayment.update({
+          where: { zohoPaymentId: local.zohoPaymentId },
+          data: {
+            isVerified: true,
+            verificationStatus: CustomerPaymentVerificationStatus.VERIFIED,
+            verificationMethod: CustomerPaymentVerificationMethod.AUTO_BANK_MATCH,
+            bankMatchStatus: bankMatchEval.bankMatchStatus,
+            importedTransactionId: bankMatchEval.importedTransactionId,
+            isAuditVerified: true,
+            verifiedAt: new Date(),
+          },
+        });
+        return {
+          success: true,
+          outcome: 'VERIFIED',
+          isActionable: false,
+          message: `Payment ${local.paymentNumber} matched with bank transaction (${bankMatchEval.importedTransactionId}) and auto-verified successfully in Zoho Books!`,
+          payment: verifiedRecord,
+          zohoApiCalls: zohoApiCalls + 1,
+        };
+      }
+
+      const verifyRes = await verifyPaymentInZohoAndLocal({
+        zohoPaymentId: local.zohoPaymentId,
+        method: CustomerPaymentVerificationMethod.AUTO_BANK_MATCH,
+        userId,
+        allowZohoWrites,
+        paymentSnapshot: zp,
+      });
+      zohoApiCalls++;
+
+      if (verifyRes.success) {
+        const finalPayment = await prisma.customerPayment.findUnique({
+          where: { zohoPaymentId: local.zohoPaymentId },
+        });
+        return {
+          success: true,
+          outcome: 'VERIFIED',
+          isActionable: false,
+          message: `Payment ${local.paymentNumber} matched with bank transaction (${bankMatchEval.importedTransactionId}) and auto-verified successfully in Zoho Books!`,
+          payment: finalPayment,
+          zohoApiCalls,
+        };
+      } else {
+        return {
+          success: true,
+          outcome: 'PENDING_BANK_MATCH',
+          isActionable: true,
+          message: `Bank match found, but auto-verification could not complete: ${verifyRes.error || 'Verification rejected'}.`,
+          payment: updated,
+          zohoApiCalls,
+        };
+      }
+    }
+
+    // Determine pending outcome
+    if (local.verificationStatus === CustomerPaymentVerificationStatus.REVERIFICATION_REQUIRED) {
+      return {
+        success: true,
+        outcome: 'REVERIFICATION_REQUIRED',
+        isActionable: true,
+        message: 'Payment details were modified after initial verification. Manual re-verification is required.',
+        payment: updated,
+        zohoApiCalls,
+      };
+    }
+
+    if (!isEligibleMode) {
+      return {
+        success: true,
+        outcome: 'PENDING_MANUAL_REVIEW',
+        isActionable: true,
+        message: `Refreshed from Zoho Books. ${updated.paymentMode || 'Cash'} payments require manual verification.`,
+        payment: updated,
+        zohoApiCalls,
+      };
+    }
+
+    if (!isRecognizedAcc) {
+      return {
+        success: true,
+        outcome: 'PENDING_MANUAL_REVIEW',
+        isActionable: true,
+        message: `Refreshed from Zoho Books. Deposit account (${depositAccountName || 'Unknown'}) is not a recognized bank account.`,
+        payment: updated,
+        zohoApiCalls,
+      };
+    }
+
+    if (!bankMatchEval.isMatched) {
+      return {
+        success: true,
+        outcome: 'PENDING_BANK_MATCH',
+        isActionable: true,
+        message: 'Refreshed from Zoho Books. Awaiting matching bank transaction in bank feeds.',
+        payment: updated,
+        zohoApiCalls,
+      };
+    }
+
+    return {
+      success: true,
+      outcome: 'PENDING_MANUAL_REVIEW',
+      isActionable: true,
+      message: 'Refreshed from Zoho Books. Payment requires manual review.',
+      payment: updated,
+      zohoApiCalls,
+    };
+  } catch (err: any) {
+    console.error(`[RefreshSingle] Exception refreshing payment ${local.paymentNumber}:`, err);
+    return {
+      success: false,
+      outcome: 'REFRESH_FAILED',
+      isActionable: local.verificationStatus === 'PENDING' || local.verificationStatus === 'REVERIFICATION_REQUIRED',
+      message: `Failed to refresh payment: ${err.message}`,
+      error: err.message,
+      zohoApiCalls,
+      payment: local,
+    };
+  } finally {
+    activePaymentRefreshLocks.delete(local.zohoPaymentId);
   }
 }

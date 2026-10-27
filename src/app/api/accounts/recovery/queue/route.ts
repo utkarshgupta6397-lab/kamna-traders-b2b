@@ -49,53 +49,11 @@ export async function GET(request: Request) {
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
     const pageSize = Math.min(100, Math.max(5, parseInt(searchParams.get('pageSize') || '25', 10)));
 
-    // 1. Fetch cached invoice snapshot
-    const cache = await prisma.invoiceSummaryCache.findUnique({
-      where: { id: 'singleton' },
-    });
-
-    if (!cache || !cache.rows || !Array.isArray(cache.rows)) {
-      return NextResponse.json({
-        success: true,
-        data: {
-          customers: [],
-          kpis: {
-            totalOutstanding: 0,
-            totalOverdue: 0,
-            totalCustomers: 0,
-            totalInvoices: 0,
-            agingSummary: {
-              '0-30': { amount: 0, count: 0 },
-              '31-60': { amount: 0, count: 0 },
-              '61-90': { amount: 0, count: 0 },
-              '90+': { amount: 0, count: 0 },
-            },
-            oldestOverdue: null,
-            lastRefreshedAt: null,
-          },
-          pagination: {
-            currentPage: 1,
-            pageSize,
-            totalCount: 0,
-            totalPages: 0,
-          },
-          salespersons: [],
-        },
-      });
-    }
-
-    const rows = (cache.rows as unknown) as RawInvoiceRow[];
-    const now = new Date();
-
-    const releaseAllowed = Boolean(
-      session &&
-        (session.role === 'ADMIN' ||
-          (session as any).release_statement_queue ||
-          session.accounts_recovery_manage)
-    );
-
-    // 2. Load persistent recovery records, customer metadata & active recovery invoice tasks
-    const [recoveryRecords, dbCustomers, activeTasks] = await Promise.all([
+    // 1. Load cached invoice snapshot, persistent recovery records, customer metadata & active recovery tasks in parallel
+    const [cache, recoveryRecords, dbCustomers, activeTasks] = await Promise.all([
+      prisma.invoiceSummaryCache.findUnique({
+        where: { id: 'singleton' },
+      }),
       prisma.customerRecoveryRecord.findMany(),
       prisma.customer.findMany({
         select: {
@@ -113,6 +71,65 @@ export async function GET(request: Request) {
     const recoveryRecordMap = new Map(recoveryRecords.map((r) => [r.customerId, r]));
     const dbCustomerMap = new Map(dbCustomers.map((c) => [c.id, c]));
     const activeTaskMap = new Map(activeTasks.map((t) => [t.invoiceId, t]));
+
+    // Resilient data source: If cache is empty or has no rows, gracefully synthesize rows from active recovery tasks
+    // (exact parity with AccountsSummaryView sidebar fallback behavior)
+    const hasCacheRows = Boolean(cache?.rows && Array.isArray(cache.rows) && cache.rows.length > 0);
+    const rows: RawInvoiceRow[] = hasCacheRows
+      ? ((cache!.rows as unknown) as RawInvoiceRow[])
+      : activeTasks.map((t) => ({
+          invoiceId: t.invoiceId,
+          invoiceNumber: t.invoiceNumber,
+          invoiceDate: t.flaggedAt.toISOString().slice(0, 10),
+          dueDate: null,
+          customerId: t.customerId,
+          customerName: t.customerName,
+          customerGst: dbCustomerMap.get(t.customerId)?.gstNumber || null,
+          salespersonName: null,
+          invoiceValue: t.lastKnownPendingAmount || 0,
+          amountPaid: 0,
+          amountPending: t.lastKnownPendingAmount || 0,
+          paymentStatus: t.lastKnownInvoiceStatus || 'unpaid',
+        }));
+
+    if (rows.length === 0) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          customers: [],
+          kpis: {
+            totalOutstanding: 0,
+            totalOverdue: 0,
+            totalCustomers: 0,
+            totalInvoices: 0,
+            agingSummary: {
+              '0-30': { amount: 0, count: 0 },
+              '31-60': { amount: 0, count: 0 },
+              '61-90': { amount: 0, count: 0 },
+              '90+': { amount: 0, count: 0 },
+            },
+            oldestOverdue: null,
+            lastRefreshedAt: cache?.generatedAt?.toISOString() || null,
+          },
+          pagination: {
+            currentPage: 1,
+            pageSize,
+            totalCount: 0,
+            totalPages: 0,
+          },
+          salespersons: [],
+        },
+      });
+    }
+
+    const now = new Date();
+
+    const releaseAllowed = Boolean(
+      session &&
+        (session.role === 'ADMIN' ||
+          (session as any).release_statement_queue ||
+          session.accounts_recovery_manage)
+    );
 
     // 3. Filter open invoices using the authoritative isOperationallyOpen rule
     // (excludes void, paid, and sub-tolerance variances)
@@ -392,7 +409,7 @@ export async function GET(request: Request) {
         allAccountsInvoicePending,
         allAccountsDifference: allAccountsNetReceivables - allAccountsInvoicePending,
       },
-      lastRefreshedAt: cache.generatedAt.toISOString(),
+      lastRefreshedAt: cache?.generatedAt?.toISOString() || null,
     };
 
     // 7. Apply Filters (AND semantics) on the active recovery dataset

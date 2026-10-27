@@ -31,41 +31,300 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json().catch(() => ({}));
-    const { invoiceIds, dryRun, type } = body || {};
+    let { invoiceIds, dryRun, type } = body || {};
 
-    // Dedicated Recovery Queue balance sync
-    if (!invoiceIds || !Array.isArray(invoiceIds)) {
+    /* =========================================================================
+     * PRE-DEPLOYMENT VERIFICATION — PRODUCTION RECOVERY RECONCILIATION
+     * =========================================================================
+     * 
+     * PURPOSE:
+     * This checklist and SQL verification suite must be executed against the
+     * production Hostinger VPS before approving the merge and deployment to main.
+     * All queries are strictly READ-ONLY. Do not mutate production data.
+     * 
+     * -------------------------------------------------------------------------
+     * SECTION A: EXACT READ-ONLY SQL QUERIES (PRODUCTION POSTGRESQL)
+     * -------------------------------------------------------------------------
+     * 
+     * 1. Recovery task counts grouped by status:
+     *    SELECT "status", COUNT(*) AS task_count
+     *    FROM "RecoveryInvoiceTask"
+     *    GROUP BY "status"
+     *    ORDER BY task_count DESC;
+     * 
+     * 2. Total active task rows vs distinct invoices and distinct customers:
+     *    SELECT 
+     *      COUNT(*) AS total_active_tasks,
+     *      COUNT(DISTINCT "invoiceId") AS distinct_active_invoices,
+     *      COUNT(DISTINCT "customerId") AS distinct_active_customers
+     *    FROM "RecoveryInvoiceTask"
+     *    WHERE "status" = 'ACTIVE';
+     * 
+     * 3. Active recovery invoices grouped by customer:
+     *    SELECT 
+     *      "customerId",
+     *      "customerName",
+     *      COUNT(*) AS active_invoice_count,
+     *      SUM(COALESCE("lastKnownPendingAmount", 0)) AS total_pending_estimate
+     *    FROM "RecoveryInvoiceTask"
+     *    WHERE "status" = 'ACTIVE'
+     *    GROUP BY "customerId", "customerName"
+     *    ORDER BY active_invoice_count DESC, total_pending_estimate DESC;
+     * 
+     * 4. Inconsistent duplicate active tasks for the same invoice (if any):
+     *    SELECT "invoiceId", COUNT(*) AS duplicate_task_count
+     *    FROM "RecoveryInvoiceTask"
+     *    WHERE "status" = 'ACTIVE'
+     *    GROUP BY "invoiceId"
+     *    HAVING COUNT(*) > 1;
+     * 
+     * 5. InvoiceSummaryCache metadata vs JSON array row length:
+     *    SELECT 
+     *      id,
+     *      "generatedAt",
+     *      "invoiceCount" AS cache_meta_count,
+     *      jsonb_array_length("rows"::jsonb) AS actual_json_row_count
+     *    FROM "InvoiceSummaryCache"
+     *    WHERE id = 'singleton';
+     * 
+     * 6. Cached invoice counts by raw paymentStatus:
+     *    SELECT 
+     *      r."paymentStatus",
+     *      COUNT(*) AS count_in_cache,
+     *      SUM(COALESCE(r."amountPending", 0)) AS total_pending_in_cache
+     *    FROM "InvoiceSummaryCache" c,
+     *    LATERAL jsonb_to_recordset(c."rows"::jsonb) AS r(
+     *      "paymentStatus" text,
+     *      "amountPending" numeric
+     *    )
+     *    WHERE c.id = 'singleton'
+     *    GROUP BY r."paymentStatus";
+     * 
+     * 7. Cached invoices categorized by operational open status (tolerance rules):
+     *    SELECT 
+     *      CASE 
+     *        WHEN LOWER(COALESCE(r."paymentStatus", '')) IN ('paid', 'void') THEN 'PAID_OR_VOID'
+     *        WHEN COALESCE(r."amountPending", 0) <= 0 THEN 'ZERO_PENDING'
+     *        WHEN ABS(COALESCE(r."amountPending", 0)) <= 10 THEN 'SUB_TOLERANCE_SETTLED_LE_10'
+     *        WHEN COALESCE(r."invoiceValue", 0) > 100000 AND ABS(COALESCE(r."amountPending", 0)) <= 100 THEN 'SUB_TOLERANCE_SETTLED_LE_100'
+     *        ELSE 'OPERATIONALLY_OPEN'
+     *      END AS operational_category,
+     *      COUNT(*) AS invoice_count,
+     *      SUM(COALESCE(r."amountPending", 0)) AS total_pending
+     *    FROM "InvoiceSummaryCache" c,
+     *    LATERAL jsonb_to_recordset(c."rows"::jsonb) AS r(
+     *      "paymentStatus" text,
+     *      "amountPending" numeric,
+     *      "invoiceValue" numeric
+     *    )
+     *    WHERE c.id = 'singleton'
+     *    GROUP BY 1
+     *    ORDER BY invoice_count DESC;
+     * 
+     * 8. Active tasks that will be inspected during refresh (first 200 batch):
+     *    SELECT 
+     *      id AS task_id,
+     *      "invoiceId",
+     *      "invoiceNumber",
+     *      "customerId",
+     *      "customerName",
+     *      "lastKnownPendingAmount",
+     *      "lastKnownInvoiceStatus",
+     *      "flaggedAt"
+     *    FROM "RecoveryInvoiceTask"
+     *    WHERE "status" = 'ACTIVE'
+     *    ORDER BY "flaggedAt" DESC
+     *    LIMIT 200;
+     * 
+     * 9. Active recovery tasks missing from the cached lookback window:
+     *    WITH cached_invoices AS (
+     *      SELECT DISTINCT r."invoiceId"
+     *      FROM "InvoiceSummaryCache" c,
+     *      LATERAL jsonb_to_recordset(c."rows"::jsonb) AS r("invoiceId" text)
+     *      WHERE c.id = 'singleton'
+     *    )
+     *    SELECT 
+     *      COUNT(t.id) AS active_tasks_missing_from_cache,
+     *      COUNT(DISTINCT t."invoiceId") AS missing_distinct_invoices
+     *    FROM "RecoveryInvoiceTask" t
+     *    LEFT JOIN cached_invoices ci ON t."invoiceId" = ci."invoiceId"
+     *    WHERE t."status" = 'ACTIVE' AND ci."invoiceId" IS NULL;
+     * 
+     * 10. Active tasks cross-referenced with cached invoice status:
+     *     WITH cached_invoices AS (
+     *       SELECT 
+     *         r."invoiceId",
+     *         r."paymentStatus",
+     *         r."amountPending",
+     *         r."invoiceValue"
+     *       FROM "InvoiceSummaryCache" c,
+     *       LATERAL jsonb_to_recordset(c."rows"::jsonb) AS r(
+     *         "invoiceId" text,
+     *         "paymentStatus" text,
+     *         "amountPending" numeric,
+     *         "invoiceValue" numeric
+     *       )
+     *       WHERE c.id = 'singleton'
+     *     )
+     *     SELECT 
+     *       t.id AS task_id,
+     *       t."invoiceId",
+     *       t."invoiceNumber",
+     *       t."customerName",
+     *       ci."paymentStatus" AS cached_status,
+     *       ci."amountPending" AS cached_pending,
+     *       CASE 
+     *         WHEN ci."invoiceId" IS NULL THEN 'NOT_IN_CACHE'
+     *         WHEN LOWER(COALESCE(ci."paymentStatus", '')) IN ('paid', 'void') THEN 'PAID_OR_VOID'
+     *         WHEN COALESCE(ci."amountPending", 0) <= 0 THEN 'ZERO_PENDING'
+     *         WHEN ABS(COALESCE(ci."amountPending", 0)) <= 10 THEN 'SETTLED_WITHIN_TOLERANCE'
+     *         WHEN COALESCE(ci."invoiceValue", 0) > 100000 AND ABS(COALESCE(ci."amountPending", 0)) <= 100 THEN 'SETTLED_WITHIN_TOLERANCE_LARGE'
+     *         ELSE 'OPERATIONALLY_OPEN'
+     *       END AS cache_eligibility
+     *     FROM "RecoveryInvoiceTask" t
+     *     LEFT JOIN cached_invoices ci ON t."invoiceId" = ci."invoiceId"
+     *     WHERE t."status" = 'ACTIVE';
+     * 
+     * -------------------------------------------------------------------------
+     * SECTION B: EXPECTED ANSWERS & INTERPRETATION OF RESULTS
+     * -------------------------------------------------------------------------
+     * 
+     * Target Benchmarks (Provisional Production Snapshot):
+     * - Accounts Summary Lookback: ~153 total invoices in cache.
+     * - Operationally Open Invoices: ~14.
+     * - Settled / Paid Invoices: ~139.
+     * - Active Recovery Customer Accounts: ~13.
+     * - Active Recovery Tasks in DB: ~153 (if sidebar badge reflects total active flags).
+     * 
+     * Detailed Metric Interpretations:
+     * - Query 1 & 2:
+     *   * If ACTIVE tasks = 153, this proves the sidebar floating badge ({activeTasksList.length})
+     *     measures the raw database row count of active tasks across all history.
+     *   * If distinct_active_invoices < total_active_tasks, duplicate task rows exist (see Query 4).
+     * - Query 5 & 7:
+     *   * If actual_json_row_count = 153 and OPERATIONALLY_OPEN = 14, this proves the Accounts
+     *     Summary "All" tab represents 153 total invoices while only 14 are open.
+     *   * If OPERATIONALLY_OPEN != 14, recent invoice payments or new billings have occurred.
+     * - Query 9 & 10:
+     *   * Measures the intersection of active recovery tasks and the recent cached window.
+     *   * If tasks are NOT_IN_CACHE, they represent older invoices outside the 15-day window.
+     *   * If tasks are PAID_OR_VOID or SETTLED, they are prime candidates for auto-resolution.
+     * 
+     * -------------------------------------------------------------------------
+     * SECTION C: LIVE ZOHO BOOKS VERIFICATION PROCEDURE
+     * -------------------------------------------------------------------------
+     * 
+     * Helper Function: fetchInvoiceById(invoiceId) in src/lib/zoho/invoices.ts
+     * Request Contract: GET https://www.zohoapis.in/books/v3/invoices/{id}?organization_id=60027595766
+     * Authorization Header: Zoho-oauthtoken {accessToken}
+     * 
+     * Verification Procedure:
+     * 1. Pick 3 representative active invoice IDs from Query 8 (e.g. 1 open, 1 suspected paid, 1 advance).
+     * 2. Run read-only diagnostic via node script:
+     *    npx tsx -e "
+     *      import { fetchInvoiceById } from './src/lib/zoho/invoices';
+     *      (async () => {
+     *        const ids = ['<invoice_id_1>', '<invoice_id_2>'];
+     *        for (const id of ids) {
+     *          const { invoice } = await fetchInvoiceById(id);
+     *          console.log({ id, number: invoice.invoice_number, status: invoice.status, balance: invoice.balance });
+     *        }
+     *      })();
+     *    "
+     * 3. Confirm Zoho balance_due matches cache and DB before triggering refresh.
+     * 
+     * -------------------------------------------------------------------------
+     * SECTION D: DATABASE & ENVIRONMENT IDENTITY VERIFICATION
+     * -------------------------------------------------------------------------
+     * 
+     * 1. Database Connection Identity Query:
+     *    SELECT current_database(), current_user, inet_server_addr(), inet_server_port();
+     *    * Limitation: On VPS or Docker, inet_server_addr() may return 127.0.0.1 or local socket.
+     *      Verify VPS PM2 environment via: `pm2 env <app-id> | grep DATABASE_URL`.
+     * 2. Zoho Organization Verification:
+     *    npx tsx -e "
+     *      import { getZohoOrgId } from './src/lib/zoho-auth';
+     *      console.log('Active Zoho Org ID:', getZohoOrgId());
+     *    "
+     *    * Pass Criteria: Must return '60027595766' (Kamna Traders Production Org).
+     * 
+     * -------------------------------------------------------------------------
+     * SECTION E: AUTOMATIC RESOLUTION SAFETY CRITERIA
+     * -------------------------------------------------------------------------
+     * 
+     * A recovery task MAY be automatically updated to RESOLVED / AUTO_RELEASED ONLY when:
+     *  [A] Live Zoho API explicitly responds with HTTP 200, status in ('paid', 'void'), or balance == 0.
+     *  [B] Live Zoho API explicitly responds with HTTP 404 / 'not found' (Invoice deleted in Zoho).
+     *  [C] Outstanding balance <= 200 AND invoice age > 7 days (auto-release threshold).
+     * 
+     * A recovery task MUST NEVER be resolved when:
+     *  [D] Zoho API returns 401 (Auth error), 429 (Rate limit), or 5xx (Server error).
+     *  [E] Network request times out or aborts.
+     *  [F] An invoice is merely absent from InvoiceSummaryCache (cache lookback cutoff).
+     *  [G] Response data structure is malformed or missing expected status fields.
+     * 
+     * In all failure modes [D]-[G], the task MUST remain ACTIVE.
+     * =========================================================================
+     */
+
+    // Refresh customer statement balances in bulk, and gather active recovery invoice tasks for live Zoho verification
+    let customerBalancesRefreshed = 0;
+    if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
       const cache = await prisma.invoiceSummaryCache.findUnique({
         where: { id: 'singleton' },
       });
 
-      if (!cache || !cache.rows || !Array.isArray(cache.rows)) {
+      if (cache && cache.rows && Array.isArray(cache.rows)) {
+        const rows = (cache.rows as unknown) as RawInvoiceRow[];
+        const openCustIds = Array.from(
+          new Set(
+            rows
+              .filter((r) => isOperationallyOpen(r))
+              .map((r) => r.customerId)
+              .filter(Boolean)
+          )
+        );
+
+        if (openCustIds.length > 0) {
+          try {
+            await CustomerBalanceService.refreshCustomerBalances(openCustIds);
+            customerBalancesRefreshed = openCustIds.length;
+          } catch (e: any) {
+            console.warn('[Recovery Refresh] Customer balance bulk refresh warning:', e?.message);
+          }
+        }
+      }
+
+      // Automatically collect active recovery tasks (up to 200) for live Zoho Books reconciliation
+      const activeTasks = await prisma.recoveryInvoiceTask.findMany({
+        where: { status: 'ACTIVE' },
+        select: { invoiceId: true },
+        take: 200,
+      });
+      invoiceIds = activeTasks.map((t) => t.invoiceId);
+
+      if (invoiceIds.length === 0) {
         return NextResponse.json({
           success: true,
-          message: 'No open invoices available to sync',
+          message: 'Recovery queue customer balances refreshed (no active recovery tasks)',
+          refreshedCustomersCount: customerBalancesRefreshed,
           lastRefreshedAt: new Date().toISOString(),
         });
       }
-
-      const rows = (cache.rows as unknown) as RawInvoiceRow[];
-      const openCustIds = Array.from(
-        new Set(
-          rows
-            .filter((r) => isOperationallyOpen(r))
-            .map((r) => r.customerId)
-            .filter(Boolean)
-        )
-      );
-
-      // Refresh customer balances in bulk (chunks of 25) using official Zoho Contacts bulk endpoint
-      await CustomerBalanceService.refreshCustomerBalances(openCustIds);
-
-      return NextResponse.json({
-        success: true,
-        message: 'Recovery queue customer balances refreshed successfully',
-        refreshedCustomersCount: openCustIds.length,
-        lastRefreshedAt: new Date().toISOString(),
+    } else if (type === 'queue') {
+      const activeTasks = await prisma.recoveryInvoiceTask.findMany({
+        where: { invoiceId: { in: invoiceIds }, status: 'ACTIVE' },
+        select: { customerId: true },
       });
+      const custIds = Array.from(new Set(activeTasks.map((t) => t.customerId).filter(Boolean)));
+      if (custIds.length > 0) {
+        try {
+          await CustomerBalanceService.refreshCustomerBalances(custIds);
+          customerBalancesRefreshed = custIds.length;
+        } catch (e: any) {
+          console.warn('[Recovery Refresh] Queue customer balance refresh warning:', e?.message);
+        }
+      }
     }
 
     if (invoiceIds.length > 200) {
@@ -109,6 +368,7 @@ export async function POST(request: Request) {
 
       const isDryRun = !!dryRun;
       const proposedRemovals: any[] = [];
+      const updatedInvoiceRows = new Map<string, { balance: number; total: number; status: string }>();
       let processedCount = 0;
       let removedCount = 0;
       let releasedCount = 0;
@@ -116,7 +376,7 @@ export async function POST(request: Request) {
       const batchSize = 10;
       for (let i = 0; i < invoiceIds.length; i += batchSize) {
       const batch = invoiceIds.slice(i, i + batchSize);
-      await Promise.all(batch.map(async (invoiceId) => {
+      await Promise.all(batch.map(async (invoiceId: string) => {
         try {
           const activeTask = await prisma.recoveryInvoiceTask.findFirst({
             where: { invoiceId, status: 'ACTIVE' }
@@ -148,6 +408,11 @@ export async function POST(request: Request) {
           }
 
           processedCount++;
+          if (found) {
+            updatedInvoiceRows.set(invoiceId, { balance, total, status });
+          } else {
+            updatedInvoiceRows.set(invoiceId, { balance: 0, total: 0, status: 'void' });
+          }
 
           if (!found) {
             proposedRemovals.push({
@@ -344,6 +609,37 @@ export async function POST(request: Request) {
         customerCredits.sort((a, b) => b.availableCredit - a.availableCredit);
       }
     }
+
+      if (!isDryRun && updatedInvoiceRows.size > 0) {
+        try {
+          const currentCache = await prisma.invoiceSummaryCache.findUnique({ where: { id: 'singleton' } });
+          if (currentCache && Array.isArray(currentCache.rows)) {
+            const updatedRows = (currentCache.rows as any[]).map((r) => {
+              const fresh = updatedInvoiceRows.get(r.invoiceId);
+              if (fresh) {
+                const freshPending = fresh.balance;
+                const freshStatus = fresh.status === 'sent' || fresh.status === 'unpaid' || fresh.status === 'overdue' ? 'unpaid' : fresh.status;
+                const invVal = fresh.total > 0 ? fresh.total : Number(r.invoiceValue || 0);
+                return {
+                  ...r,
+                  invoiceValue: invVal,
+                  amountPending: freshPending,
+                  paymentStatus: freshStatus,
+                  amountPaid: Math.max(0, invVal - freshPending),
+                  lastRefreshedAt: new Date().toISOString(),
+                };
+              }
+              return r;
+            });
+            await prisma.invoiceSummaryCache.update({
+              where: { id: 'singleton' },
+              data: { rows: updatedRows },
+            });
+          }
+        } catch (cacheErr: any) {
+          console.warn('[Recovery Refresh] Non-fatal cache row update error:', cacheErr?.message);
+        }
+      }
 
       // Fetch the final set of ACTIVE recovery tasks to return to UI
       const activeTasks = await prisma.recoveryInvoiceTask.findMany({

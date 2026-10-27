@@ -3144,7 +3144,7 @@ export default function AccountsSummaryView() {
             router.push(targetUrl);
           }}
           className="w-8 flex flex-col items-center justify-center py-4 bg-[#1A2766] hover:bg-[#AE1B1E] text-white rounded-l-md shadow-lg transition-all active:scale-95 group relative border-l border-y border-white/10 cursor-pointer"
-          title="Open Dedicated Recovery Queue"
+          title={`Open Dedicated Recovery Queue (${activeTasksList.length} Active Flagged Invoices)`}
         >
           <div className="relative mb-2">
             <Flag size={12} className="text-white group-hover:rotate-12 transition-transform" />

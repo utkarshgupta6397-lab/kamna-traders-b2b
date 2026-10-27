@@ -382,16 +382,23 @@ export default function RecoveryQueueWorkspace() {
   const handleSync = async () => {
     setRefreshing(true);
     try {
+      const activeInvoiceIds = customers.flatMap((c) =>
+        (c.invoices || []).map((i) => i.invoiceId)
+      );
+
       const res = await fetch('/api/accounts/recovery/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'queue' }),
+        body: JSON.stringify({
+          type: 'queue',
+          invoiceIds: activeInvoiceIds.slice(0, 200),
+        }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Sync failed');
       }
-      toast.success(json.message || 'Recovery queue synced');
+      toast.success(json.message || 'Recovery queue synced with live Zoho data');
       await fetchQueueData(false);
     } catch (err: any) {
       console.error('[RecoveryQueue Sync Error]', err);
@@ -888,7 +895,7 @@ export default function RecoveryQueueWorkspace() {
               </div>
             </div>
             <span className="text-[11px] text-slate-400">
-              Due date aging across active recovery invoices ({formatINR(Object.values(kpis.agingSummary).reduce((s, b) => s + b.amount, 0))} across {Object.values(kpis.agingSummary).reduce((s, b) => s + b.count, 0)} inv)
+              Due date aging across active recovery invoices ({formatINR(Object.values(kpis.agingSummary).reduce((s, b) => s + b.amount, 0))} across {Object.values(kpis.agingSummary).reduce((s, b) => s + b.count, 0)} inv{kpis.advanceInvoices && kpis.advanceInvoices.count > 0 ? ` · ${kpis.advanceInvoices.count} advance account inv excluded` : ''})
             </span>
           </div>
 

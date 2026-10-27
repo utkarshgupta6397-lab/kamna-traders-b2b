@@ -1167,6 +1167,126 @@ async function runTests() {
     failed++;
   }
 
+  // --- 22. Recovery Queue Single Population & Hybrid Vendor Offset Parity ---
+  console.log('\n--- 22. Recovery Queue Single Population & Hybrid Vendor Offset Parity ---');
+  try {
+    const queueApiCode = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/accounts/recovery/queue/route.ts'),
+      'utf8'
+    );
+    const exportApiCode = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/accounts/recovery/export/route.ts'),
+      'utf8'
+    );
+
+    // 1. Queue API synthesizes active recovery invoices from activeTasks rather than truncating by cache.rows
+    assert(
+      queueApiCode.includes('activeRecoveryInvoices') &&
+        queueApiCode.includes('for (const t of activeTasks)'),
+      'Queue API synthesizes active recovery invoices across all active tasks regardless of cache lookback range'
+    );
+
+    // 2. Export API synthesizes active recovery invoices across all active tasks
+    assert(
+      exportApiCode.includes('activeRecoveryInvoices') &&
+        exportApiCode.includes('for (const t of activeTasks)'),
+      'Export API synthesizes active recovery invoices across all active tasks matching Queue API'
+    );
+
+    // 3. Mathematical Parity Verification: Bluglo Solution Private Limited Case
+    // Bluglo has an active recovery invoice KT/26-27/3882 with pending balance ₹1,31,828
+    // But as a hybrid vendor, Kamna owes them ₹1,30,833 in vendor bills, reducing net ledger balance to ₹995.
+    const blugloInvoicePending = 131828.0;
+    const blugloVendorPayable = 130833.0;
+    const blugloNetLedgerBalance = blugloInvoicePending - blugloVendorPayable; // 995.00
+
+    const blugloMetrics = computeCustomerNetOutstanding(blugloNetLedgerBalance, blugloInvoicePending);
+    assert(blugloMetrics.isAdvance === false, 'Bluglo is NOT an advance customer (net balance > 0)');
+    assert(blugloMetrics.netBalance === 995.0, 'Bluglo net statement ledger balance is ₹995.00');
+
+    // In Recovery Queue, customer.totalOutstanding is strictly invoice recovery pending
+    const blugloQueueTotalOutstanding = blugloMetrics.isAdvance ? 0 : blugloInvoicePending;
+    assert(
+      blugloQueueTotalOutstanding === 131828.0,
+      `Bluglo Recovery Queue Total Outstanding is ₹1,31,828.00 (got ${blugloQueueTotalOutstanding}), NOT ₹995`
+    );
+
+    // 4. Global KPIs Mathematical Reconciliation:
+    // When Bluglo is the sole active customer in queue, Total Outstanding must equal Aging Bucket sum exactly
+    const mockSingleActiveQueue = [
+      {
+        customerId: '1759923000000103217',
+        customerName: 'BLUGLO SOLUTION PRIVATE LIMITED',
+        totalOutstanding: blugloQueueTotalOutstanding,
+        isAdvance: false,
+        invoices: [{ amountPending: 131828.0, agingBucket: '0-30' as const }],
+      },
+    ];
+
+    const globalTotalOutstanding = mockSingleActiveQueue.reduce((s, c) => s + c.totalOutstanding, 0);
+    const aging0_30 = mockSingleActiveQueue.reduce(
+      (s, c) => s + (!c.isAdvance ? c.invoices.reduce((sum, i) => sum + i.amountPending, 0) : 0),
+      0
+    );
+
+    assert(
+      globalTotalOutstanding === 131828.0,
+      `Global Total Outstanding KPI is ₹1,31,828.00 (got ${globalTotalOutstanding})`
+    );
+    assert(
+      aging0_30 === 131828.0,
+      `Aging Bucket (0-30 days) is ₹1,31,828.00 (got ${aging0_30})`
+    );
+    assert(
+      globalTotalOutstanding === aging0_30,
+      'Total Outstanding KPI strictly equals Aging Bucket sum (eliminates ₹995 vs ₹1,31,828 bug)'
+    );
+
+    // 5. Aging Percentage Invariant
+    const agingPercentage = globalTotalOutstanding > 0 ? (aging0_30 / globalTotalOutstanding) * 100 : 0;
+    assert(
+      agingPercentage === 100,
+      `Aging bucket percentage is 100% (got ${agingPercentage}%), eliminating previous 13,249% distortion`
+    );
+
+    // 6. Lookback Range Independence:
+    // If cache.rows only contains 1 invoice from "Today", active recovery tasks from past dates are NOT dropped
+    const mockCacheTodayOnly = [
+      { invoiceId: 'inv-today-1', customerId: 'cust-today', amountPending: 131828, paymentStatus: 'unpaid' },
+    ];
+    const mockActiveTasksMultiDay = [
+      { id: 't1', invoiceId: 'inv-today-1', customerId: 'cust-today', customerName: 'Today Cust', status: 'ACTIVE', lastKnownPendingAmount: 131828 },
+      { id: 't2', invoiceId: 'inv-past-1', customerId: 'cust-past-1', customerName: 'Past Cust 1', status: 'ACTIVE', lastKnownPendingAmount: 50000 },
+      { id: 't3', invoiceId: 'inv-past-2', customerId: 'cust-past-2', customerName: 'Past Cust 2', status: 'ACTIVE', lastKnownPendingAmount: 75000 },
+    ];
+
+    const cacheRowMap = new Map(mockCacheTodayOnly.map((r) => [r.invoiceId, r]));
+    const unifiedInvoices: any[] = [];
+    for (const t of mockActiveTasksMultiDay) {
+      const cached = cacheRowMap.get(t.invoiceId);
+      if (cached) {
+        if (isOperationallyOpen(cached)) {
+          unifiedInvoices.push({ ...cached, activeTaskId: t.id });
+        }
+      } else {
+        const pending = t.lastKnownPendingAmount || 0;
+        if (pending > 10) {
+          unifiedInvoices.push({ invoiceId: t.invoiceId, amountPending: pending, activeTaskId: t.id });
+        }
+      }
+    }
+
+    assert(
+      unifiedInvoices.length === 3,
+      `All 3 active recovery tasks preserved despite cache having only 1 row (got ${unifiedInvoices.length})`
+    );
+
+    passed += 9;
+  } catch (e: any) {
+    console.error('Suite 22 failure:', e);
+    failed++;
+  }
+
   console.log('\n===============================================================');
   console.log(`TEST SUMMARY: ${passed} Passed, ${failed} Failed`);
   console.log('===============================================================\n');

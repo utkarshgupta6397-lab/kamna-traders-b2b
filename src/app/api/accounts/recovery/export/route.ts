@@ -38,18 +38,10 @@ export async function GET(request: Request) {
     const dueTo = searchParams.get('dueTo') || null;
 
     // Load data
-    const cache = await prisma.invoiceSummaryCache.findUnique({
-      where: { id: 'singleton' },
-    });
-
-    if (!cache || !cache.rows || !Array.isArray(cache.rows)) {
-      return NextResponse.json({ success: false, error: 'No cached invoice data available' }, { status: 400 });
-    }
-
-    const rows = (cache.rows as unknown) as RawInvoiceRow[];
-    const now = new Date();
-
-    const [recoveryRecords, dbCustomers, activeTasks] = await Promise.all([
+    const [cache, recoveryRecords, dbCustomers, activeTasks] = await Promise.all([
+      prisma.invoiceSummaryCache.findUnique({
+        where: { id: 'singleton' },
+      }),
       prisma.customerRecoveryRecord.findMany(),
       prisma.customer.findMany({
         select: { id: true, name: true, gstNumber: true, netOutstandingBalance: true },
@@ -62,8 +54,81 @@ export async function GET(request: Request) {
     const recoveryRecordMap = new Map(recoveryRecords.map((r) => [r.customerId, r]));
     const dbCustomerMap = new Map(dbCustomers.map((c) => [c.id, c]));
     const activeCustomerIds = new Set(activeTasks.map((t) => t.customerId));
+    const now = new Date();
 
-    const openInvoices = rows.filter((r) => isOperationallyOpen(r));
+    // 1. Build cache lookup map
+    const cacheRowMap = new Map<string, RawInvoiceRow>();
+    if (cache?.rows && Array.isArray(cache.rows)) {
+      for (const r of cache.rows as any[]) {
+        if (r?.invoiceId) {
+          cacheRowMap.set(r.invoiceId, r as RawInvoiceRow);
+        }
+      }
+    }
+
+    // 2. Synthesize unified active recovery invoices from activeTasks
+    // Guarantees that active recovery tasks are NEVER truncated by the Accounts Summary lookback filter window
+    const activeRecoveryInvoices: Array<RawInvoiceRow & {
+      activeTaskId: string;
+      isPendingRecovery: boolean;
+      flaggedByName: string | null;
+      flaggedAt: string | null;
+    }> = [];
+
+    for (const t of activeTasks) {
+      const cached = cacheRowMap.get(t.invoiceId);
+      const custGst = dbCustomerMap.get(t.customerId)?.gstNumber || cached?.customerGst || null;
+
+      if (cached) {
+        if (!isOperationallyOpen(cached)) {
+          continue;
+        }
+
+        activeRecoveryInvoices.push({
+          invoiceId: t.invoiceId,
+          invoiceNumber: cached.invoiceNumber || t.invoiceNumber,
+          invoiceDate: cached.invoiceDate || (t.flaggedAt ? t.flaggedAt.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)),
+          dueDate: cached.dueDate || null,
+          invoiceValue: cached.invoiceValue || t.lastKnownPendingAmount || 0,
+          amountPaid: cached.amountPaid || 0,
+          amountPending: cached.amountPending !== undefined ? cached.amountPending : (t.lastKnownPendingAmount || 0),
+          paymentStatus: cached.paymentStatus || t.lastKnownInvoiceStatus || 'unpaid',
+          customerId: t.customerId,
+          customerName: cached.customerName || t.customerName,
+          customerGst: custGst,
+          salespersonName: cached.salespersonName || null,
+          activeTaskId: t.id,
+          isPendingRecovery: true,
+          flaggedByName: t.flaggedByName,
+          flaggedAt: t.flaggedAt ? t.flaggedAt.toISOString() : null,
+        });
+      } else {
+        const pendingAmount = t.lastKnownPendingAmount || 0;
+        const status = (t.lastKnownInvoiceStatus || 'unpaid').toLowerCase();
+
+        if (status === 'paid' || status === 'void') continue;
+        if (t.lastKnownPendingAmount !== null && pendingAmount <= 10) continue;
+
+        activeRecoveryInvoices.push({
+          invoiceId: t.invoiceId,
+          invoiceNumber: t.invoiceNumber,
+          invoiceDate: t.flaggedAt ? t.flaggedAt.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+          dueDate: null,
+          invoiceValue: pendingAmount,
+          amountPaid: 0,
+          amountPending: pendingAmount,
+          paymentStatus: t.lastKnownInvoiceStatus || 'unpaid',
+          customerId: t.customerId,
+          customerName: t.customerName,
+          customerGst: custGst,
+          salespersonName: null,
+          activeTaskId: t.id,
+          isPendingRecovery: true,
+          flaggedByName: t.flaggedByName,
+          flaggedAt: t.flaggedAt ? t.flaggedAt.toISOString() : null,
+        });
+      }
+    }
 
     const customerMap = new Map<
       string,
@@ -76,7 +141,7 @@ export async function GET(request: Request) {
       }
     >();
 
-    for (const inv of openInvoices) {
+    for (const inv of activeRecoveryInvoices) {
       if (!inv.customerId) continue;
 
       const custId = inv.customerId;
@@ -120,9 +185,9 @@ export async function GET(request: Request) {
         invoicePendingSum
       );
 
-      const totalOutstanding = balanceMetrics.netOutstanding;
       const isAdvance = balanceMetrics.isAdvance;
       const netPayableBalance = balanceMetrics.netPayableBalance;
+      const totalOutstanding = isAdvance ? 0 : invoicePendingSum;
 
       const overdueInvoices = c.invoices.filter((i) => i.isOverdue);
       const rawOverdueAmount = overdueInvoices.reduce((sum, i) => sum + i.amountPending, 0);

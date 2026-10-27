@@ -72,27 +72,85 @@ export async function GET(request: Request) {
     const dbCustomerMap = new Map(dbCustomers.map((c) => [c.id, c]));
     const activeTaskMap = new Map(activeTasks.map((t) => [t.invoiceId, t]));
 
-    // Resilient data source: If cache is empty or has no rows, gracefully synthesize rows from active recovery tasks
-    // (exact parity with AccountsSummaryView sidebar fallback behavior)
-    const hasCacheRows = Boolean(cache?.rows && Array.isArray(cache.rows) && cache.rows.length > 0);
-    const rows: RawInvoiceRow[] = hasCacheRows
-      ? ((cache!.rows as unknown) as RawInvoiceRow[])
-      : activeTasks.map((t) => ({
+    // 2. Build cache lookup map
+    const cacheRowMap = new Map<string, RawInvoiceRow>();
+    if (cache?.rows && Array.isArray(cache.rows)) {
+      for (const r of cache.rows as any[]) {
+        if (r?.invoiceId) {
+          cacheRowMap.set(r.invoiceId, r as RawInvoiceRow);
+        }
+      }
+    }
+
+    // 3. Unified Invoices Dataset:
+    // Guarantees that active recovery tasks are NEVER truncated by the Accounts Summary lookback filter window.
+    // Iterates over all active tasks from DB, enriched with cache rows if present, or synthesized from task record.
+    const activeRecoveryInvoices: Array<RawInvoiceRow & {
+      activeTaskId: string;
+      isPendingRecovery: boolean;
+      flaggedByName: string | null;
+      flaggedAt: string | null;
+    }> = [];
+
+    for (const t of activeTasks) {
+      const cached = cacheRowMap.get(t.invoiceId);
+      const custGst = dbCustomerMap.get(t.customerId)?.gstNumber || cached?.customerGst || null;
+
+      if (cached) {
+        // If cached invoice exists and is operationally settled/paid, exclude from active recovery
+        if (!isOperationallyOpen(cached)) {
+          continue;
+        }
+
+        activeRecoveryInvoices.push({
+          invoiceId: t.invoiceId,
+          invoiceNumber: cached.invoiceNumber || t.invoiceNumber,
+          invoiceDate: cached.invoiceDate || (t.flaggedAt ? t.flaggedAt.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)),
+          dueDate: cached.dueDate || null,
+          invoiceValue: cached.invoiceValue || t.lastKnownPendingAmount || 0,
+          amountPaid: cached.amountPaid || 0,
+          amountPending: cached.amountPending !== undefined ? cached.amountPending : (t.lastKnownPendingAmount || 0),
+          paymentStatus: cached.paymentStatus || t.lastKnownInvoiceStatus || 'unpaid',
+          customerId: t.customerId,
+          customerName: cached.customerName || t.customerName,
+          customerGst: custGst,
+          salespersonName: cached.salespersonName || null,
+          activeTaskId: t.id,
+          isPendingRecovery: true,
+          flaggedByName: t.flaggedByName,
+          flaggedAt: t.flaggedAt ? t.flaggedAt.toISOString() : null,
+        });
+      } else {
+        // Task invoice is outside the cached lookback window: synthesize from task record
+        const pendingAmount = t.lastKnownPendingAmount || 0;
+        const status = (t.lastKnownInvoiceStatus || 'unpaid').toLowerCase();
+
+        // Exclude if already recorded as paid/void or settled
+        if (status === 'paid' || status === 'void') continue;
+        if (t.lastKnownPendingAmount !== null && pendingAmount <= 10) continue;
+
+        activeRecoveryInvoices.push({
           invoiceId: t.invoiceId,
           invoiceNumber: t.invoiceNumber,
-          invoiceDate: t.flaggedAt.toISOString().slice(0, 10),
+          invoiceDate: t.flaggedAt ? t.flaggedAt.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
           dueDate: null,
+          invoiceValue: pendingAmount,
+          amountPaid: 0,
+          amountPending: pendingAmount,
+          paymentStatus: t.lastKnownInvoiceStatus || 'unpaid',
           customerId: t.customerId,
           customerName: t.customerName,
-          customerGst: dbCustomerMap.get(t.customerId)?.gstNumber || null,
+          customerGst: custGst,
           salespersonName: null,
-          invoiceValue: t.lastKnownPendingAmount || 0,
-          amountPaid: 0,
-          amountPending: t.lastKnownPendingAmount || 0,
-          paymentStatus: t.lastKnownInvoiceStatus || 'unpaid',
-        }));
+          activeTaskId: t.id,
+          isPendingRecovery: true,
+          flaggedByName: t.flaggedByName,
+          flaggedAt: t.flaggedAt ? t.flaggedAt.toISOString() : null,
+        });
+      }
+    }
 
-    if (rows.length === 0) {
+    if (activeRecoveryInvoices.length === 0 && activeTasks.length === 0) {
       return NextResponse.json({
         success: true,
         data: {
@@ -131,14 +189,10 @@ export async function GET(request: Request) {
           session.accounts_recovery_manage)
     );
 
-    // 3. Filter open invoices using the authoritative isOperationallyOpen rule
-    // (excludes void, paid, and sub-tolerance variances)
-    const openInvoices = rows.filter((r) => isOperationallyOpen(r));
-
     // Auto-heal / fetch missing customer balances to ensure 100% statement closing balance parity
     const missingBalanceCustIds = Array.from(
       new Set(
-        openInvoices
+        activeRecoveryInvoices
           .map((r) => r.customerId)
           .filter((id) => Boolean(id) && dbCustomerMap.get(id)?.netOutstandingBalance == null)
       )
@@ -165,7 +219,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // 4. Group open invoices by customer
+    // 4. Group active recovery invoices by customer
     const customerMap = new Map<
       string,
       {
@@ -190,13 +244,31 @@ export async function GET(request: Request) {
           flaggedByName: string | null;
           flaggedAt: string | null;
         }>;
+        openInvoices: Array<{
+          invoiceId: string;
+          invoiceNumber: string;
+          invoiceDate: string;
+          dueDate: string | null;
+          invoiceValue: number;
+          amountPaid: number;
+          amountPending: number;
+          paymentStatus: string;
+          isOverdue: boolean;
+          overdueDays: number;
+          agingBucket: AgingBucketKey;
+          salespersonName?: string | null;
+          activeTaskId: string | null;
+          isPendingRecovery: boolean;
+          flaggedByName: string | null;
+          flaggedAt: string | null;
+        }>;
         salespersonNames: Set<string>;
       }
     >();
 
     const allSalespersons = new Set<string>();
 
-    for (const inv of openInvoices) {
+    for (const inv of activeRecoveryInvoices) {
       if (!inv.customerId) continue;
 
       const custId = inv.customerId;
@@ -205,7 +277,6 @@ export async function GET(request: Request) {
 
       const { isOverdue, overdueDays } = getInvoiceOverdueDays(inv, now);
       const agingBucket = getAgingBucket(overdueDays);
-      const activeTask = activeTaskMap.get(inv.invoiceId);
 
       if (inv.salespersonName) {
         allSalespersons.add(inv.salespersonName.trim());
@@ -218,12 +289,13 @@ export async function GET(request: Request) {
           customerName: custName,
           customerGst: custGst,
           invoices: [],
+          openInvoices: [],
           salespersonNames: new Set(),
         };
         customerMap.set(custId, entry);
       }
 
-      entry.invoices.push({
+      const invRow = {
         invoiceId: inv.invoiceId,
         invoiceNumber: inv.invoiceNumber,
         invoiceDate: inv.invoiceDate,
@@ -236,14 +308,49 @@ export async function GET(request: Request) {
         overdueDays,
         agingBucket,
         salespersonName: inv.salespersonName,
-        activeTaskId: activeTask?.id || null,
-        isPendingRecovery: Boolean(activeTask),
-        flaggedByName: activeTask?.flaggedByName || null,
-        flaggedAt: activeTask?.flaggedAt?.toISOString() || null,
-      });
+        activeTaskId: inv.activeTaskId,
+        isPendingRecovery: true,
+        flaggedByName: inv.flaggedByName,
+        flaggedAt: inv.flaggedAt,
+      };
+
+      entry.invoices.push(invRow);
+      entry.openInvoices.push(invRow);
 
       if (inv.salespersonName) {
         entry.salespersonNames.add(inv.salespersonName.trim());
+      }
+    }
+
+    // Also enrich each customer's openInvoices collection from cached operationally open invoices (for modal selector)
+    for (const [invId, cached] of cacheRowMap.entries()) {
+      if (!cached.customerId) continue;
+      const entry = customerMap.get(cached.customerId);
+      if (entry && !entry.openInvoices.some((i) => i.invoiceId === invId) && isOperationallyOpen(cached)) {
+        const { isOverdue, overdueDays } = getInvoiceOverdueDays(cached, now);
+        const agingBucket = getAgingBucket(overdueDays);
+        if (cached.salespersonName) {
+          allSalespersons.add(cached.salespersonName.trim());
+          entry.salespersonNames.add(cached.salespersonName.trim());
+        }
+        entry.openInvoices.push({
+          invoiceId: cached.invoiceId,
+          invoiceNumber: cached.invoiceNumber,
+          invoiceDate: cached.invoiceDate,
+          dueDate: cached.dueDate,
+          invoiceValue: cached.invoiceValue,
+          amountPaid: cached.amountPaid,
+          amountPending: cached.amountPending,
+          paymentStatus: cached.paymentStatus,
+          isOverdue,
+          overdueDays,
+          agingBucket,
+          salespersonName: cached.salespersonName,
+          activeTaskId: null,
+          isPendingRecovery: false,
+          flaggedByName: null,
+          flaggedAt: null,
+        });
       }
     }
 
@@ -262,10 +369,14 @@ export async function GET(request: Request) {
         invoicePendingSum
       );
 
-      const totalOutstanding = balanceMetrics.netOutstanding;
       const isAdvance = balanceMetrics.isAdvance;
       const netBalance = balanceMetrics.netBalance;
       const netPayableBalance = balanceMetrics.netPayableBalance;
+
+      // Authoritative Total Outstanding:
+      // In the Recovery Queue, Total Outstanding is the authoritative sum of active recovery invoices.
+      // If customer has a net advance credit balance (closing balance < 0), net receivable is 0.
+      const totalOutstanding = isAdvance ? 0 : invoicePendingSum;
 
       // Overdue invoices calculation:
       // If customer has net credit balance (advance), net receivable is 0

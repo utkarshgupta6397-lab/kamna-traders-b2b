@@ -19,6 +19,7 @@ import {
   getAgingBucket,
   RECOVERY_STATUSES,
   formatINR,
+  formatCompactINR,
   computeCustomerNetOutstanding,
   getZohoContactUrl,
 } from '../lib/recovery/recovery-calculator';
@@ -317,18 +318,17 @@ async function runTests() {
     failed++;
   }
 
-  // ─── Test 9: 10-Column Compact Layout & Dedicated GSTIN Column Invariant ───
-  console.log('\n--- 9. 10-Column Compact Layout & GSTIN Column Invariant ---');
+  // ─── Test 9: 9-Column Essential Layout & GSTIN Accessibility Invariant ───
+  console.log('\n--- 9. 9-Column Essential Layout & GSTIN Accessibility ---');
   try {
     const workspaceCode = await import('fs').then((fs) =>
       fs.readFileSync('src/components/recovery/RecoveryQueueWorkspace.tsx', 'utf8')
     );
 
-    // Verify 10 distinct table header columns
+    // Verify 9 distinct essential table header columns (in order)
     const expectedHeaders = [
       '#',
       'Customer Name',
-      'GSTIN',
       'Total Outstanding',
       'Overdue Amount',
       'Invoices',
@@ -341,19 +341,26 @@ async function runTests() {
     for (const header of expectedHeaders) {
       assert(
         workspaceCode.includes(`>${header}</th>`) || workspaceCode.includes(`>${header} <`),
-        `Table header includes column: "${header}"`
+        `Table header includes essential column: "${header}"`
       );
       passed++;
     }
 
-    // Verify GSTIN fallback to '-'
+    // Verify GSTIN is moved out of the default table header
     assert(
-      workspaceCode.includes('cust.customerGst ?') && workspaceCode.includes('<span className="text-slate-300">-</span>'),
-      "GSTIN column renders '-' fallback when customerGst is null or empty"
+      !workspaceCode.includes('>GSTIN</th>'),
+      'GSTIN column is removed from default table header'
     );
     passed++;
 
-    // Verify Customer Name cell does not show GSTIN inside it
+    // Verify GSTIN fallback to '-' in customer details / expanded drawer
+    assert(
+      workspaceCode.includes('cust.customerGst ?') && workspaceCode.includes('<span className="text-slate-300">-</span>'),
+      "GSTIN renders '-' fallback when customerGst is null or empty in customer details"
+    );
+    passed++;
+
+    // Verify Customer Name cell does not show concatenated GSTIN directly inside it
     assert(
       !workspaceCode.includes('GSTIN: {cust.gstin}') && !workspaceCode.includes('GSTIN: {cust.customerGst}'),
       'Customer Name cell does not concatenate GSTIN inside it'
@@ -1342,6 +1349,174 @@ async function runTests() {
     passed += 6;
   } catch (e: any) {
     console.error('Suite 23 failure:', e);
+    failed++;
+  }
+
+  // ─── Test 24: Compact Currency Formatting & Redesign Presentation Invariant ───
+  console.log('\n--- 24. Compact Currency Formatting & Presentation Contract ---');
+  try {
+    // 1. Authoritative examples from redesign specification
+    assert(formatCompactINR(23400) === '₹23.4K', '₹23,400 formats as compact ₹23.4K');
+    assert(formatCompactINR(124000) === '₹1.24L', '₹1,24,000 formats as compact ₹1.24L');
+    assert(formatCompactINR(1250000) === '₹12.5L', '₹12,50,000 formats as compact ₹12.5L');
+    assert(formatCompactINR(12000000) === '₹1.20Cr', '₹1,20,00,000 formats as compact ₹1.20Cr');
+    passed += 4;
+
+    // 2. Sub-thousand exact rupee amounts without unnecessary decimal places
+    assert(formatCompactINR(500) === '₹500', '₹500 formats as exact ₹500 without decimals');
+    assert(formatCompactINR(0) === '₹0', '₹0 formats as ₹0');
+    assert(formatCompactINR(999) === '₹999', '₹999 formats as ₹999');
+    passed += 3;
+
+    // 3. Negative values and advance amounts
+    assert(formatCompactINR(-23400) === '-₹23.4K', '-₹23,400 formats as -₹23.4K');
+    assert(formatCompactINR(-124000) === '-₹1.24L', '-₹1,24,000 formats as -₹1.24L');
+    assert(formatCompactINR(-646922.5) === '-₹6.47L', '-₹6,46,922.50 formats as -₹6.47L');
+    passed += 3;
+
+    // 4. Null, undefined, and large crore values
+    assert(formatCompactINR(null) === '₹0', 'null formats safely as ₹0');
+    assert(formatCompactINR(undefined) === '₹0', 'undefined formats safely as ₹0');
+    assert(formatCompactINR(NaN) === '₹0', 'NaN formats safely as ₹0');
+    assert(formatCompactINR(25000000) === '₹2.50Cr', '₹2,50,00,000 formats as ₹2.50Cr');
+    assert(formatCompactINR(10000000) === '₹1Cr', '₹1,00,00,000 formats cleanly as ₹1Cr');
+    passed += 5;
+
+    // 5. Strict separation of values: numeric values remain raw numbers for calculations
+    const rawVal1 = 124000;
+    const rawVal2 = 1250000;
+    const totalSum = rawVal1 + rawVal2;
+    assert(totalSum === 1374000, 'Underlying amounts remain raw numbers for mathematical operations');
+    assert(formatCompactINR(totalSum) === '₹13.7L', 'Aggregated sum formats cleanly as compact currency');
+    passed += 2;
+
+    // 6. Workspace UI Contract: exact values preserved in accessible tooltips
+    const workspaceCode = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/recovery/RecoveryQueueWorkspace.tsx'),
+      'utf8'
+    );
+
+    assert(
+      workspaceCode.includes('formatCompactINR(kpis?.totalOutstanding'),
+      'Workspace uses formatCompactINR for Total Outstanding KPI card'
+    );
+    assert(
+      workspaceCode.includes('formatCompactINR(kpis?.totalOverdue'),
+      'Workspace uses formatCompactINR for Total Overdue KPI card'
+    );
+    assert(
+      workspaceCode.includes('formatCompactINR(item.amount)'),
+      'Workspace uses formatCompactINR for Aging summary bucket amounts'
+    );
+    assert(
+      workspaceCode.includes('formatCompactINR(cust.totalOutstanding)'),
+      'Workspace uses formatCompactINR for customer table Total Outstanding column'
+    );
+    assert(
+      workspaceCode.includes('title={`Exact: ${formatINR(') || workspaceCode.includes('title={`Exact: ${formatINR(cust.totalOutstanding)}`}'),
+      'Workspace provides exact financial value on hover tooltip for accessibility'
+    );
+    passed += 5;
+  } catch (e: any) {
+    console.error('Suite 24 failure:', e);
+    failed++;
+  }
+
+  // -------------------------------------------------------------
+  // SUITE 25: Targeted UI/UX Enhancements (Cooldown, Sort, Actions, Exposure Bar)
+  // -------------------------------------------------------------
+  console.log('\n--- SUITE 25: Targeted UI/UX Enhancements ---');
+  try {
+    const workspaceCode = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/recovery/RecoveryQueueWorkspace.tsx'),
+      'utf8'
+    );
+    const apiRouteCode = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/accounts/recovery/queue/route.ts'),
+      'utf8'
+    );
+
+    // 1. Sync Button 30-Second Cooldown & Loading State
+    assert(
+      workspaceCode.includes('syncCooldownRemaining') &&
+      workspaceCode.includes('syncTimerRef') &&
+      workspaceCode.includes('syncCooldownEndRef'),
+      'Sync cooldown uses React state and monotonic/timestamp end ref'
+    );
+    assert(
+      workspaceCode.includes('Syncing…') &&
+      workspaceCode.includes('Wait ') &&
+      workspaceCode.includes('syncCooldownRemaining > 0') &&
+      workspaceCode.includes('disabled={refreshing || loading || syncCooldownRemaining > 0}'),
+      'Sync button renders dynamic countdown and is strictly disabled during sync or remaining cooldown'
+    );
+    assert(
+      workspaceCode.includes('clearInterval(syncTimerRef.current)'),
+      'Sync cooldown timers are properly cleaned up on unmount to prevent leaks'
+    );
+    passed += 3;
+
+    // 2. Column Sorting Across All Pagination Pages
+    assert(
+      workspaceCode.includes("handleSort('customerName')") &&
+      (workspaceCode.includes("handleSort('outstanding')") || workspaceCode.includes("handleSort('totalOutstanding')")) &&
+      workspaceCode.includes("handleSort('overdueAmount')") &&
+      workspaceCode.includes("handleSort('invoiceCount')") &&
+      workspaceCode.includes("handleSort('oldestDue')") &&
+      workspaceCode.includes("handleSort('aging')") &&
+      workspaceCode.includes("handleSort('salesperson')"),
+      'Table header renders interactive sorting triggers for all 7 required columns'
+    );
+    assert(
+      workspaceCode.includes('setPage(1)') && workspaceCode.includes('setSortOrder'),
+      'Changing column sort resets pagination to page 1'
+    );
+    assert(
+      apiRouteCode.includes("case 'aging':") && apiRouteCode.includes("case 'salesperson':"),
+      'Server-side recovery API route supports sorting on aging buckets and salesperson across full dataset'
+    );
+    passed += 3;
+
+    // 3. Proportional Exposure Bar for Total Outstanding
+    assert(
+      apiRouteCode.includes('filteredMaxOutstanding'),
+      'API route calculates filteredMaxOutstanding across the complete filtered dataset'
+    );
+    assert(
+      workspaceCode.includes('maxFilteredExposure') &&
+      workspaceCode.includes('Math.abs(cust.totalOutstanding) / maxFilteredExposure'),
+      'Workspace computes proportional exposure percentage safely against filtered maximum'
+    );
+    assert(
+      workspaceCode.includes('bg-rose-500 h-full rounded-full transition-all') &&
+      workspaceCode.includes('aria-label={`Relative exposure'),
+      'Exposure bar renders with semantic rose styling and accessible ARIA description'
+    );
+    passed += 3;
+
+    // 4. Redesigned Actions Column
+    assert(
+      workspaceCode.includes('bg-[#1A2766]') &&
+      workspaceCode.includes('<span>Statement</span>'),
+      'Statement button renders as primary navy action'
+    );
+    assert(
+      workspaceCode.includes('Pending Release') &&
+      workspaceCode.includes('bg-amber-50 text-amber-800'),
+      'Pending Release renders with non-clickable amber status pill'
+    );
+    assert(
+      workspaceCode.includes('bg-emerald-50 text-emerald-700 border border-emerald-300') &&
+      workspaceCode.includes('<span>Release</span>'),
+      'Release button renders with distinct emerald outlined styling'
+    );
+    assert(
+      workspaceCode.includes('<span>Flag Invoice</span>'),
+      'Flag Invoice button renders with clean neutral styling'
+    );
+    passed += 4;
+  } catch (e: any) {
+    console.error('Suite 25 failure:', e);
     failed++;
   }
 

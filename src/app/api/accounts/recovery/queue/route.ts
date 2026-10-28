@@ -575,6 +575,12 @@ export async function GET(request: Request) {
       filteredCustomers = filteredCustomers.filter((c) => c.oldestDueDate && c.oldestDueDate <= dueTo);
     }
 
+    const filteredMaxOutstanding =
+      filteredCustomers.length > 0
+        ? Math.max(...filteredCustomers.map((c) => Math.abs(c.totalOutstanding || 0)))
+        : 0;
+    (kpis as any).filteredMaxOutstanding = filteredMaxOutstanding;
+
     // 8. Sorting
     filteredCustomers.sort((a, b) => {
       let comparison = 0;
@@ -596,11 +602,27 @@ export async function GET(request: Request) {
           else comparison = a.oldestDueDate.localeCompare(b.oldestDueDate);
           break;
         case 'customerName':
-          comparison = a.customerName.localeCompare(b.customerName);
+          comparison = a.customerName.localeCompare(b.customerName, 'en', { sensitivity: 'base' });
           break;
         case 'invoiceCount':
           comparison = a.invoiceCount - b.invoiceCount;
           break;
+        case 'aging': {
+          const bucketOrder: Record<string, number> = { '0-30': 1, '31-60': 2, '61-90': 3, '90+': 4 };
+          const orderA = bucketOrder[a.overallAgingBucket] || 0;
+          const orderB = bucketOrder[b.overallAgingBucket] || 0;
+          comparison = orderA - orderB || a.oldestOverdueDays - b.oldestOverdueDays;
+          break;
+        }
+        case 'salesperson': {
+          const spA = a.salesperson || '';
+          const spB = b.salesperson || '';
+          if (!spA && !spB) comparison = 0;
+          else if (!spA) comparison = 1;
+          else if (!spB) comparison = -1;
+          else comparison = spA.localeCompare(spB, 'en', { sensitivity: 'base' });
+          break;
+        }
         case 'nextFollowUp':
           if (!a.nextFollowUpDate && !b.nextFollowUpDate) comparison = 0;
           else if (!a.nextFollowUpDate) comparison = 1;

@@ -133,6 +133,43 @@ export function formatINR(val: number, options: { minimumFractionDigits?: number
   return isNegative ? `-${formatted}` : formatted;
 }
 
+/**
+ * Formats a number as compact Indian currency for display (e.g. ₹23.4K, ₹1.24L, ₹12.5L, ₹1.20Cr).
+ * - Under ₹1,000: exact rupee amounts without unnecessary decimal places (e.g. ₹500, ₹0).
+ * - Thousands (>= 1,000 and < 1,00,000): K notation (e.g. ₹23.4K, ₹23K).
+ * - Lakhs (>= 1,00,000 and < 1,00,00,000): L notation (e.g. ₹1.24L, ₹12.5L).
+ * - Crores (>= 1,00,00,000): Cr notation (e.g. ₹1.20Cr, ₹1Cr).
+ * - Safely handles zero, negatives, null, undefined, NaN.
+ * Note: Compact currency notation is strictly for UI display only.
+ * Filtering, sorting, calculations, exports, and accounting use original numeric values.
+ */
+export function formatCompactINR(val: number | null | undefined): string {
+  if (val === null || val === undefined || isNaN(val)) return '₹0';
+  if (val === 0) return '₹0';
+  const isNegative = val < 0;
+  const absVal = Math.abs(val);
+  const sign = isNegative ? '-' : '';
+
+  if (absVal >= 10000000) {
+    const cr = absVal / 10000000;
+    const formatted = cr % 1 === 0 ? `${cr}` : cr.toFixed(2);
+    return `${sign}₹${formatted}Cr`;
+  }
+  if (absVal >= 100000) {
+    const l = absVal / 100000;
+    const formatted = l >= 10
+      ? l.toFixed(1).replace(/\.0$/, '')
+      : l.toFixed(2).replace(/0$/, '').replace(/\.0$/, '');
+    return `${sign}₹${formatted}L`;
+  }
+  if (absVal >= 1000) {
+    const k = absVal / 1000;
+    const formatted = k.toFixed(1).replace(/\.0$/, '');
+    return `${sign}₹${formatted}K`;
+  }
+  return `${sign}₹${Math.round(absVal).toLocaleString('en-IN')}`;
+}
+
 export interface CustomerBalanceMetrics {
   netBalance: number;
   netOutstanding: number;

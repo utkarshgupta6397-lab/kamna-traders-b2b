@@ -274,34 +274,32 @@ export async function POST(request: Request) {
         where: { id: 'singleton' },
       });
 
-      if (cache && cache.rows && Array.isArray(cache.rows)) {
-        const rows = (cache.rows as unknown) as RawInvoiceRow[];
-        const openCustIds = Array.from(
-          new Set(
-            rows
-              .filter((r) => isOperationallyOpen(r))
-              .map((r) => r.customerId)
-              .filter(Boolean)
-          )
-        );
-
-        if (openCustIds.length > 0) {
-          try {
-            await CustomerBalanceService.refreshCustomerBalances(openCustIds);
-            customerBalancesRefreshed = openCustIds.length;
-          } catch (e: any) {
-            console.warn('[Recovery Refresh] Customer balance bulk refresh warning:', e?.message);
-          }
-        }
-      }
-
       // Automatically collect active recovery tasks (up to 200) for live Zoho Books reconciliation
       const activeTasks = await prisma.recoveryInvoiceTask.findMany({
         where: { status: 'ACTIVE' },
-        select: { invoiceId: true },
+        select: { invoiceId: true, customerId: true },
         take: 200,
       });
       invoiceIds = activeTasks.map((t) => t.invoiceId);
+
+      const cacheCustIds =
+        cache && cache.rows && Array.isArray(cache.rows)
+          ? ((cache.rows as unknown) as RawInvoiceRow[])
+              .filter((r) => isOperationallyOpen(r))
+              .map((r) => r.customerId)
+              .filter(Boolean)
+          : [];
+      const activeCustIds = activeTasks.map((t) => t.customerId).filter(Boolean);
+      const openCustIds = Array.from(new Set([...cacheCustIds, ...activeCustIds]));
+
+      if (openCustIds.length > 0) {
+        try {
+          await CustomerBalanceService.refreshCustomerBalances(openCustIds);
+          customerBalancesRefreshed = openCustIds.length;
+        } catch (e: any) {
+          console.warn('[Recovery Refresh] Customer balance bulk refresh warning:', e?.message);
+        }
+      }
 
       if (invoiceIds.length === 0) {
         return NextResponse.json({

@@ -10,6 +10,7 @@ import {
   RawInvoiceRow,
   computeCustomerNetOutstanding,
 } from '@/lib/recovery/recovery-calculator';
+import { CustomerBalanceService } from '@/lib/services/customer-balance.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
       }),
       prisma.customerRecoveryRecord.findMany(),
       prisma.customer.findMany({
-        select: { id: true, name: true, gstNumber: true, netOutstandingBalance: true },
+        select: { id: true, name: true, gstNumber: true, netOutstandingBalance: true, balanceUpdatedAt: true },
       }),
       prisma.recoveryInvoiceTask.findMany({
         where: { status: 'ACTIVE' },
@@ -172,6 +173,46 @@ export async function GET(request: Request) {
 
       if (inv.salespersonName) {
         entry.salespersonNames.add(inv.salespersonName.trim());
+      }
+    }
+
+    // Auto-heal / fetch missing or stale customer balances
+    const missingBalanceCustIds = Array.from(
+      new Set(
+        activeRecoveryInvoices
+          .map((r) => r.customerId)
+          .filter((id) => {
+            if (!id) return false;
+            const existing = dbCustomerMap.get(id);
+            if (!existing || existing.netOutstandingBalance == null) return true;
+            if (Number(existing.netOutstandingBalance) < 0) return true;
+            if (!existing.balanceUpdatedAt) return true;
+            const ageMs = now.getTime() - new Date(existing.balanceUpdatedAt).getTime();
+            return ageMs > 24 * 60 * 60 * 1000;
+          })
+      )
+    );
+
+    if (missingBalanceCustIds.length > 0) {
+      try {
+        const refreshed = await CustomerBalanceService.refreshCustomerBalances(missingBalanceCustIds);
+        for (const [cid, b] of Object.entries(refreshed)) {
+          const existing = dbCustomerMap.get(cid);
+          if (existing) {
+            existing.netOutstandingBalance = b.netOutstandingBalance;
+            existing.balanceUpdatedAt = b.balanceUpdatedAt;
+          } else {
+            dbCustomerMap.set(cid, {
+              id: cid,
+              name: '',
+              gstNumber: null,
+              netOutstandingBalance: b.netOutstandingBalance,
+              balanceUpdatedAt: b.balanceUpdatedAt,
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('[Recovery Export] Background customer balance fetch error:', e);
       }
     }
 

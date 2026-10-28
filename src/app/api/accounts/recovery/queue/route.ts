@@ -61,6 +61,7 @@ export async function GET(request: Request) {
           name: true,
           gstNumber: true,
           netOutstandingBalance: true,
+          balanceUpdatedAt: true,
         },
       }),
       prisma.recoveryInvoiceTask.findMany({
@@ -189,12 +190,22 @@ export async function GET(request: Request) {
           session.accounts_recovery_manage)
     );
 
-    // Auto-heal / fetch missing customer balances to ensure 100% statement closing balance parity
+    // Auto-heal / fetch missing or stale customer balances to ensure 100% statement closing balance parity
     const missingBalanceCustIds = Array.from(
       new Set(
         activeRecoveryInvoices
           .map((r) => r.customerId)
-          .filter((id) => Boolean(id) && dbCustomerMap.get(id)?.netOutstandingBalance == null)
+          .filter((id) => {
+            if (!id) return false;
+            const existing = dbCustomerMap.get(id);
+            if (!existing || existing.netOutstandingBalance == null) return true;
+            // Inconsistent advance: customer has active recovery invoice task(s) but local DB claims they are in net advance (< 0)
+            if (Number(existing.netOutstandingBalance) < 0) return true;
+            // Stale balance older than 24 hours
+            if (!existing.balanceUpdatedAt) return true;
+            const ageMs = now.getTime() - new Date(existing.balanceUpdatedAt).getTime();
+            return ageMs > 24 * 60 * 60 * 1000;
+          })
       )
     );
 
@@ -205,12 +216,14 @@ export async function GET(request: Request) {
           const existing = dbCustomerMap.get(cid);
           if (existing) {
             existing.netOutstandingBalance = b.netOutstandingBalance;
+            existing.balanceUpdatedAt = b.balanceUpdatedAt;
           } else {
             dbCustomerMap.set(cid, {
               id: cid,
               name: '',
               gstNumber: null,
               netOutstandingBalance: b.netOutstandingBalance,
+              balanceUpdatedAt: b.balanceUpdatedAt,
             });
           }
         }

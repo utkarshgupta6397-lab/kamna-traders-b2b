@@ -1287,6 +1287,64 @@ async function runTests() {
     failed++;
   }
 
+  // --- 23. Stale Customer Advance Auto-Healing & Active Recovery Refresh Contract ---
+  console.log('\n--- 23. Stale Customer Advance Auto-Healing & Active Recovery Refresh Contract ---');
+  try {
+    const queueApiCode = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/accounts/recovery/queue/route.ts'),
+      'utf8'
+    );
+    const refreshApiCode = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/accounts/recovery/refresh/route.ts'),
+      'utf8'
+    );
+    const exportApiCode = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/accounts/recovery/export/route.ts'),
+      'utf8'
+    );
+
+    // 1. Queue API selects balanceUpdatedAt and detects negative or stale balances
+    assert(
+      queueApiCode.includes('balanceUpdatedAt: true') &&
+        queueApiCode.includes('Number(existing.netOutstandingBalance) < 0') &&
+        queueApiCode.includes('CustomerBalanceService.refreshCustomerBalances'),
+      'Queue API auto-heals negative or stale balances for active recovery accounts'
+    );
+
+    // 2. Export API also auto-heals negative or stale balances
+    assert(
+      exportApiCode.includes('balanceUpdatedAt: true') &&
+        exportApiCode.includes('Number(existing.netOutstandingBalance) < 0') &&
+        exportApiCode.includes('CustomerBalanceService.refreshCustomerBalances'),
+      'Export API auto-heals negative or stale balances for active recovery accounts'
+    );
+
+    // 3. Refresh API includes all active task customers in balance sync
+    assert(
+      refreshApiCode.includes('activeTasks.map((t) => t.customerId)') &&
+        refreshApiCode.includes('CustomerBalanceService.refreshCustomerBalances(openCustIds)'),
+      'Recovery refresh combines active task customer IDs with cache rows for bulk synchronization'
+    );
+
+    // 4. Mathematical validation of Papneja recovery state
+    // When Zoho live balance is ₹12,039.00 and invoice pending is ₹12,039.00
+    const papnejaZohoBalance = 12039.0;
+    const papnejaInvoicePending = 12039.0;
+    const metrics = computeCustomerNetOutstanding(papnejaZohoBalance, papnejaInvoicePending);
+
+    assert(metrics.isAdvance === false, 'Papneja is NOT an advance customer once refreshed');
+    assert(metrics.netOutstanding === 12039.0, 'Papneja net outstanding is ₹12,039.00');
+    assert(metrics.netPayableBalance === 0, 'Papneja advance balance is ₹0.00');
+
+    const totalOutstanding = metrics.isAdvance ? 0 : papnejaInvoicePending;
+    assert(totalOutstanding === 12039.0, 'Papneja Total Outstanding in Recovery Queue is ₹12,039.00');
+
+    passed += 6;
+  } catch (e: any) {
+    console.error('Suite 23 failure:', e);
+    failed++;
+  }
+
   console.log('\n===============================================================');
   console.log(`TEST SUMMARY: ${passed} Passed, ${failed} Failed`);
   console.log('===============================================================\n');

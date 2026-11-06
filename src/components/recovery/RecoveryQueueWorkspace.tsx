@@ -31,11 +31,9 @@ import {
   Loader2,
   Edit3,
   ExternalLink,
-  Flag,
   CheckCheck,
   SlidersHorizontal,
   Info,
-  Phone,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CustomerStatementView from '@/components/zoho/CustomerStatementView';
@@ -52,13 +50,6 @@ import {
   formatINR,
   formatCompactINR,
   getZohoContactUrl,
-  CALL_PRIORITIES,
-  CallPriorityKey,
-  CallPriorityFilterKey,
-  ORDERED_CALL_PRIORITIES,
-  getCallPriorityConfig,
-  normalizeCallPriority,
-  isCallRequired,
 } from '@/lib/recovery/recovery-calculator';
 
 interface InvoiceSummaryItem {
@@ -100,7 +91,6 @@ interface RecoveryCustomerRow {
   lastActivityAt: string | null;
   internalNotes: string | null;
   assignedStaffName: string | null;
-  callPriority?: CallPriorityKey;
   hasActiveTask?: boolean;
   activeTaskCount?: number;
   invoices: InvoiceSummaryItem[];
@@ -318,32 +308,6 @@ export default function RecoveryQueueWorkspace() {
   // Invoices Expand Map
   const [expandedInvoicesCustomerId, setExpandedInvoicesCustomerId] = useState<string | null>(null);
 
-  // Call Priority Popover & Saving States
-  const [openPriorityCustomerId, setOpenPriorityCustomerId] = useState<string | null>(null);
-  const [savingPriorityCustomerId, setSavingPriorityCustomerId] = useState<string | null>(null);
-  const [selectedPriorityFilter, setSelectedPriorityFilter] = useState<CallPriorityFilterKey>('all');
-  const [priorityCounts, setPriorityCounts] = useState<{ all: number; callRequired: number; noCallNeeded: number }>({
-    all: 0,
-    callRequired: 0,
-    noCallNeeded: 0,
-  });
-  const priorityDropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (priorityDropdownRef.current && !priorityDropdownRef.current.contains(e.target as Node)) {
-        setOpenPriorityCustomerId(null);
-      }
-    };
-    if (openPriorityCustomerId) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [openPriorityCustomerId]);
-
-  // Invoice Selection Modal (for explicit selection when customer has multiple invoices)
-  const [invoiceSelectionCustomer, setInvoiceSelectionCustomer] = useState<RecoveryCustomerRow | null>(null);
-
   // Debounce search input
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -377,19 +341,12 @@ export default function RecoveryQueueWorkspace() {
       if (maxAmount) params.set('maxAmount', maxAmount);
       if (dueFrom) params.set('dueFrom', dueFrom);
       if (dueTo) params.set('dueTo', dueTo);
-      if (selectedPriorityFilter && selectedPriorityFilter !== 'all') {
-        params.set('priority', selectedPriorityFilter);
-      }
 
       const res = await fetch(`/api/accounts/recovery/queue?${params.toString()}`);
       const json = await res.json();
 
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Failed to load recovery queue');
-      }
-
-      if (json.data.callPriorityCounts) {
-        setPriorityCounts(json.data.callPriorityCounts);
       }
 
       // Filter out any locally released tasks from incoming payload
@@ -449,7 +406,6 @@ export default function RecoveryQueueWorkspace() {
     maxAmount,
     dueFrom,
     dueTo,
-    selectedPriorityFilter,
     releasedTaskIds,
   ]);
 
@@ -562,32 +518,6 @@ export default function RecoveryQueueWorkspace() {
         .filter((cust) => cust.hasActiveTask && (cust.activeTaskCount ?? 0) > 0)
     );
 
-    // Also optimistically update invoiceSelectionCustomer modal state if open
-    setInvoiceSelectionCustomer((prev) => {
-      if (!prev) return null;
-      const nextActiveInvoices = (prev.invoices || []).filter((i) => i.activeTaskId !== taskId);
-      const nextOpenInvoices = (prev.openInvoices || []).map((i) => {
-        if (i.activeTaskId === taskId) {
-          return {
-            ...i,
-            activeTaskId: null,
-            isPendingRecovery: false,
-            flaggedByName: null,
-            flaggedAt: null,
-          };
-        }
-        return i;
-      });
-      const nextActiveCount = nextActiveInvoices.length;
-      return {
-        ...prev,
-        invoices: nextActiveInvoices,
-        openInvoices: nextOpenInvoices,
-        activeTaskCount: nextActiveCount,
-        hasActiveTask: nextActiveCount > 0,
-      };
-    });
-
     try {
       const res = await fetch('/api/accounts/recovery', {
         method: 'PUT',
@@ -605,96 +535,6 @@ export default function RecoveryQueueWorkspace() {
       fetchQueueData(false);
     } finally {
       setActionLoadingInvoiceId(null);
-    }
-  };
-
-  // Flag / Mark an invoice as Pending Recovery
-  const handlePendingInvoice = async (inv: InvoiceSummaryItem, cust: RecoveryCustomerRow) => {
-    setActionLoadingInvoiceId(inv.invoiceId);
-    try {
-      const res = await fetch('/api/accounts/recovery', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          invoiceId: inv.invoiceId,
-          invoiceNumber: inv.invoiceNumber,
-          customerId: cust.customerId,
-          customerName: cust.customerName,
-          lastKnownPendingAmount: inv.amountPending,
-          lastKnownInvoiceStatus: inv.paymentStatus,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Failed to flag invoice');
-      }
-      toast.success(`Flagged invoice ${inv.invoiceNumber} as pending recovery`);
-      fetchQueueData(false);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to flag invoice');
-    } finally {
-      setActionLoadingInvoiceId(null);
-    }
-  };
-
-  // Update Call Priority for a Customer (persisted in canonical DB)
-  const handleUpdateCallPriority = async (
-    customerId: string,
-    newPriority: CallPriorityKey,
-    customerName: string
-  ) => {
-    if (savingPriorityCustomerId === customerId) return; // Prevent duplicate concurrent writes
-    const currentCust = customers.find((c) => c.customerId === customerId);
-    const previousPriority = normalizeCallPriority(currentCust?.callPriority);
-
-    if (previousPriority === newPriority) {
-      setOpenPriorityCustomerId(null);
-      return;
-    }
-
-    setSavingPriorityCustomerId(customerId);
-
-    try {
-      const res = await fetch('/api/accounts/recovery/call-priority', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerId,
-          callPriority: newPriority,
-          customerName,
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Failed to update call priority');
-      }
-
-      // Update customer in local state immediately upon success
-      setCustomers((prev) =>
-        prev.map((c) =>
-          c.customerId === customerId ? { ...c, callPriority: newPriority } : c
-        )
-      );
-
-      // Optimistically adjust filter counts if priority requirement category changed
-      const wasCallReq = isCallRequired(previousPriority);
-      const isNowCallReq = isCallRequired(newPriority);
-      if (wasCallReq !== isNowCallReq) {
-        setPriorityCounts((prev) => ({
-          ...prev,
-          callRequired: wasCallReq ? Math.max(0, prev.callRequired - 1) : prev.callRequired + 1,
-          noCallNeeded: wasCallReq ? prev.noCallNeeded + 1 : Math.max(0, prev.noCallNeeded - 1),
-        }));
-      }
-
-      setOpenPriorityCustomerId(null);
-      toast.success(`Priority updated: ${CALL_PRIORITIES[newPriority].badgeLabel}`);
-    } catch (err: any) {
-      console.error('[Call Priority Error]', err);
-      toast.error(err.message || 'Failed to update call priority');
-    } finally {
-      setSavingPriorityCustomerId(null);
     }
   };
 
@@ -857,7 +697,6 @@ export default function RecoveryQueueWorkspace() {
     setDebouncedSearch('');
     setSelectedSalesperson('');
     setSelectedAging('');
-    setSelectedPriorityFilter('all');
     handleClearRange();
     setDueFrom('');
     setDueTo('');
@@ -869,16 +708,10 @@ export default function RecoveryQueueWorkspace() {
     if (debouncedSearch) count++;
     if (selectedSalesperson) count++;
     if (selectedAging) count++;
-    if (selectedPriorityFilter !== 'all') count++;
     if (minAmount || maxAmount) count++;
     if (dueFrom || dueTo) count++;
     return count;
-  }, [debouncedSearch, selectedSalesperson, selectedAging, selectedPriorityFilter, minAmount, maxAmount, dueFrom, dueTo]);
-
-  const activeInvoiceCustomer = useMemo(() => {
-    if (!invoiceSelectionCustomer) return null;
-    return customers.find((c) => c.customerId === invoiceSelectionCustomer.customerId) || invoiceSelectionCustomer;
-  }, [invoiceSelectionCustomer, customers]);
+  }, [debouncedSearch, selectedSalesperson, selectedAging, minAmount, maxAmount, dueFrom, dueTo]);
 
   return (
     <div className="w-full flex flex-col gap-6 font-sans">
@@ -1197,65 +1030,13 @@ export default function RecoveryQueueWorkspace() {
 
       {/* ── 4. Filter Toolbar & Sorting ── */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3">
-        {/* Top Bar: Call-Priority Segmented Filter & Controls */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2.5 border-b border-slate-100">
-          <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-lg shrink-0 max-w-full overflow-x-auto">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-2 select-none">
-              Call Priority:
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPriorityFilter('all');
-                setPage(1);
-              }}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer whitespace-nowrap ${
-                selectedPriorityFilter === 'all'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Show all customers regardless of call priority"
-            >
-              All <span className="ml-1 text-[10.5px] text-slate-400 font-mono">({priorityCounts.all})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPriorityFilter('call_required');
-                setPage(1);
-              }}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap ${
-                selectedPriorityFilter === 'call_required'
-                  ? 'bg-white text-rose-700 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Show customers assigned Call Immediately, Verify First, or Senior Follow-up"
-            >
-              <div className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-              <span>Call Required</span>
-              <span className="ml-0.5 text-[10.5px] text-slate-400 font-mono">({priorityCounts.callRequired})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedPriorityFilter('no_call');
-                setPage(1);
-              }}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap ${
-                selectedPriorityFilter === 'no_call'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="Show customers where no call is currently required"
-            >
-              <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-              <span>No Call Needed</span>
-              <span className="ml-0.5 text-[10.5px] text-slate-400 font-mono">({priorityCounts.noCallNeeded})</span>
-            </button>
+        {/* Top Bar: Queue Counts & Status */}
+        <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+          <div className="text-xs font-semibold text-slate-700">
+            Recovery Accounts Filter
           </div>
-
-          <div className="text-[11px] text-slate-400 font-medium">
-            Showing <strong className="text-slate-700 font-mono">{totalCount}</strong> recovery account{totalCount === 1 ? '' : 's'}
+          <div className="text-[11px] text-slate-500 font-medium">
+            Showing <strong className="text-slate-800 font-mono">{totalCount}</strong> recovery account{totalCount === 1 ? '' : 's'}
           </div>
         </div>
 
@@ -1460,20 +1241,6 @@ export default function RecoveryQueueWorkspace() {
               </span>
             )}
 
-            {selectedPriorityFilter !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-300">
-                Priority: {selectedPriorityFilter === 'call_required' ? 'Call Required' : 'No Call Needed'}
-                <X
-                  size={12}
-                  className="cursor-pointer hover:text-slate-900"
-                  onClick={() => {
-                    setSelectedPriorityFilter('all');
-                    setPage(1);
-                  }}
-                />
-              </span>
-            )}
-
             <button
               onClick={handleResetFilters}
               className="text-[11px] font-bold text-rose-600 hover:text-rose-800 ml-auto cursor-pointer"
@@ -1584,107 +1351,6 @@ export default function RecoveryQueueWorkspace() {
                         {/* Customer Name */}
                         <td className="py-3.5 px-3 text-left">
                           <div className="flex items-center gap-2">
-                            {/* Call Priority Indicator */}
-                            {(() => {
-                              const priorityCfg = getCallPriorityConfig(cust.callPriority);
-                              const isMenuOpen = openPriorityCustomerId === cust.customerId;
-                              const isSaving = savingPriorityCustomerId === cust.customerId;
-
-                              return (
-                                <div
-                                  className="relative shrink-0"
-                                  ref={isMenuOpen ? priorityDropdownRef : null}
-                                >
-                                  <button
-                                    type="button"
-                                    disabled={isSaving}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setOpenPriorityCustomerId(
-                                        isMenuOpen ? null : cust.customerId
-                                      );
-                                    }}
-                                    aria-label={`Call Priority: ${priorityCfg.label}. Click to change call priority.`}
-                                    title={`Call Priority: ${priorityCfg.label}\n${priorityCfg.description}`}
-                                    className={`w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer border ${priorityCfg.badgeClass} hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed`}
-                                  >
-                                    {isSaving ? (
-                                      <Loader2 size={12} className="animate-spin text-slate-500" />
-                                    ) : (
-                                      <Phone size={11} className={priorityCfg.iconColor} />
-                                    )}
-                                  </button>
-
-                                  {/* Popover / Dropdown Menu */}
-                                  {isMenuOpen && (
-                                    <div
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="absolute left-0 top-full mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-200 py-1.5 z-50 text-left animate-in fade-in zoom-in-95 duration-100"
-                                      role="menu"
-                                      aria-label="Select call priority"
-                                    >
-                                      <div className="px-3 py-1.5 border-b border-slate-100 mb-1">
-                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                                          Call Priority
-                                        </span>
-                                        <span className="text-[11px] text-slate-400 block truncate">
-                                          {cust.customerName}
-                                        </span>
-                                      </div>
-
-                                      {ORDERED_CALL_PRIORITIES.map(
-                                        (key) => {
-                                          const opt = CALL_PRIORITIES[key];
-                                          const isSelected =
-                                            normalizeCallPriority(cust.callPriority) === key;
-                                          return (
-                                            <button
-                                              key={key}
-                                              type="button"
-                                              onClick={() =>
-                                                handleUpdateCallPriority(
-                                                  cust.customerId,
-                                                  key,
-                                                  cust.customerName
-                                                )
-                                              }
-                                              disabled={isSaving}
-                                              className={`w-full px-3 py-2 flex items-start gap-2.5 text-left transition-colors cursor-pointer ${
-                                                isSelected
-                                                  ? 'bg-slate-50 font-medium'
-                                                  : 'hover:bg-slate-50'
-                                              }`}
-                                              role="menuitem"
-                                            >
-                                              <div
-                                                className={`w-2.5 h-2.5 rounded-full mt-1 shrink-0 ${opt.dotClass}`}
-                                              />
-                                              <div className="flex-1 min-w-0">
-                                                <div className="flex items-center justify-between">
-                                                  <span className="text-xs font-semibold text-slate-900">
-                                                    {opt.label}
-                                                  </span>
-                                                  {isSelected && (
-                                                    <CheckCheck
-                                                      size={13}
-                                                      className="text-[#1A2766] shrink-0"
-                                                    />
-                                                  )}
-                                                </div>
-                                                <p className="text-[10.5px] text-slate-500 leading-snug mt-0.5">
-                                                  {opt.description}
-                                                </p>
-                                              </div>
-                                            </button>
-                                          );
-                                        }
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })()}
-
                             <div className="flex flex-col min-w-0">
                               {cust.customerId ? (
                                 <a
@@ -1794,9 +1460,8 @@ export default function RecoveryQueueWorkspace() {
                                 ? 'bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200'
                                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                             }`}
-                            title={isExpanded ? 'Hide invoice details' : 'Click to view & manage invoice recovery tasks'}
+                            title={isExpanded ? 'Hide invoice details' : 'Click to view invoice details'}
                           >
-                            {cust.hasActiveTask && <Flag size={8} className="fill-amber-700 text-amber-700" />}
                             <span>{cust.invoiceCount}</span>
                           </button>
                         </td>
@@ -1835,87 +1500,39 @@ export default function RecoveryQueueWorkspace() {
                         {/* Actions */}
                         <td className="py-3.5 px-3 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Invoice-scoped Action: Explicit single-invoice or selector */}
-                            {(() => {
-                              const allInvs =
-                                cust.openInvoices && cust.openInvoices.length > 0
-                                  ? cust.openInvoices
-                                  : cust.invoices;
-                              if (allInvs.length === 1) {
-                                const inv = allInvs[0];
-                                const isPending = inv.isPendingRecovery || cust.hasActiveTask;
-                                const taskId = inv.activeTaskId || cust.invoices[0]?.activeTaskId;
-
-                                if (isPending) {
-                                  return (
-                                    <div className="flex items-center gap-1.5 shrink-0">
-                                      <span
-                                        title={`Flagged for recovery`}
-                                        className="inline-flex items-center gap-1 h-7 px-2.5 bg-amber-50 text-amber-800 text-[11px] font-semibold rounded-md border border-amber-200 shrink-0"
-                                      >
-                                        <Flag size={10} className="fill-amber-600 text-amber-600" />
-                                        <span>Pending Release</span>
-                                      </span>
-                                      {releaseAllowed && taskId && (
-                                        <button
-                                          onClick={() => handleReleaseInvoice(taskId, inv.invoiceNumber)}
-                                          disabled={actionLoadingInvoiceId !== null}
-                                          className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition-colors shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
-                                          title={`Release invoice ${inv.invoiceNumber} from recovery queue`}
-                                        >
-                                          {actionLoadingInvoiceId === taskId ? (
-                                            <Loader2 size={11} className="animate-spin" />
-                                          ) : (
-                                            <CheckCheck size={12} />
-                                          )}
-                                          <span>Release</span>
-                                        </button>
-                                      )}
-                                    </div>
-                                  );
-                                } else {
-                                  return (
-                                    <button
-                                      onClick={() => handlePendingInvoice(inv, cust)}
-                                      disabled={actionLoadingInvoiceId !== null}
-                                      className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-medium bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
-                                      title={`Flag invoice ${inv.invoiceNumber} as pending recovery`}
-                                    >
-                                      {actionLoadingInvoiceId === inv.invoiceId ? (
-                                        <Loader2 size={11} className="animate-spin" />
-                                      ) : (
-                                        <Flag size={11} />
-                                      )}
-                                      <span>Flag Invoice</span>
-                                    </button>
-                                  );
-                                }
-                              } else if (allInvs.length > 1) {
-                                return (
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    {cust.hasActiveTask && (
-                                      <span
-                                        title={`${cust.activeTaskCount} invoice(s) currently pending release`}
-                                        className="inline-flex items-center gap-1 h-7 px-2.5 bg-amber-50 text-amber-800 text-[11px] font-semibold rounded-md border border-amber-200 shrink-0"
-                                      >
-                                        <Flag size={10} className="fill-amber-600 text-amber-600" />
-                                        <span>{cust.activeTaskCount} Pending</span>
-                                      </span>
+                            {/* Pending Release indicator & Release button */}
+                            {cust.hasActiveTask && (
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span
+                                  title={`${cust.activeTaskCount || 1} invoice(s) pending release`}
+                                  className="inline-flex items-center h-7 px-2.5 bg-amber-50 text-amber-800 text-[11px] font-semibold rounded-md border border-amber-200 shrink-0"
+                                >
+                                  {(cust.activeTaskCount ?? 0) > 1
+                                    ? `${cust.activeTaskCount} Pending Release`
+                                    : 'Pending Release'}
+                                </span>
+                                {releaseAllowed && cust.invoices[0]?.activeTaskId && (
+                                  <button
+                                    onClick={() =>
+                                      handleReleaseInvoice(
+                                        cust.invoices[0].activeTaskId!,
+                                        cust.invoices[0].invoiceNumber
+                                      )
+                                    }
+                                    disabled={actionLoadingInvoiceId !== null}
+                                    className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition-colors shadow-2xs cursor-pointer shrink-0 disabled:opacity-50"
+                                    title={`Release invoice ${cust.invoices[0].invoiceNumber} from recovery queue`}
+                                  >
+                                    {actionLoadingInvoiceId === cust.invoices[0].activeTaskId ? (
+                                      <Loader2 size={11} className="animate-spin" />
+                                    ) : (
+                                      <CheckCheck size={12} />
                                     )}
-                                    <button
-                                      onClick={() => setInvoiceSelectionCustomer(cust)}
-                                      className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-medium bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer shrink-0"
-                                      title={`Select an open invoice for ${cust.customerName} to flag or release`}
-                                    >
-                                      <Flag size={11} />
-                                      <span>Flag Invoice</span>
-                                      <ChevronDown size={11} className="text-slate-400" />
-                                    </button>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })()}
+                                    <span>Release</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
 
                             {/* Customer Statement Button (Primary Action) */}
                             <button
@@ -1963,14 +1580,6 @@ export default function RecoveryQueueWorkspace() {
                                       {formatINR(cust.netBalance ?? cust.totalOutstanding)}
                                     </strong>
                                   </span>
-                                  <button
-                                    onClick={() => setInvoiceSelectionCustomer(cust)}
-                                    className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded text-xs font-semibold text-slate-700 flex items-center gap-1 cursor-pointer transition-colors"
-                                    title="Add more open invoices to recovery"
-                                  >
-                                    <Flag size={11} />
-                                    <span>+ Flag Invoices</span>
-                                  </button>
                                 </div>
                               </div>
 
@@ -1978,13 +1587,7 @@ export default function RecoveryQueueWorkspace() {
                                 <div className="py-6 text-center text-slate-400 flex flex-col items-center justify-center gap-1.5 text-xs">
                                   <CheckCircle2 size={20} className="text-emerald-500" />
                                   <span className="font-semibold text-slate-700">No active recovery tasks for this customer</span>
-                                  <span className="text-[11px] text-slate-400">All flagged invoices have been released, or none have been flagged yet.</span>
-                                  <button
-                                    onClick={() => setInvoiceSelectionCustomer(cust)}
-                                    className="mt-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold cursor-pointer"
-                                  >
-                                    Flag an Open Invoice
-                                  </button>
+                                  <span className="text-[11px] text-slate-400">All recovery tasks have been released, or none are currently pending.</span>
                                 </div>
                               ) : (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -1997,10 +1600,9 @@ export default function RecoveryQueueWorkspace() {
                                         <div className="flex items-center gap-1.5">
                                           <span className="font-bold text-slate-900">{inv.invoiceNumber}</span>
                                           <span
-                                            title={`Flagged by ${inv.flaggedByName || 'Staff'} on ${inv.flaggedAt ? new Date(inv.flaggedAt).toLocaleDateString('en-IN') : 'N/A'}`}
-                                            className="inline-flex items-center gap-0.5 px-1 py-0.2 bg-amber-100 text-amber-800 text-[8.5px] font-bold rounded border border-amber-200"
+                                            title={inv.flaggedAt ? `Pending release since ${new Date(inv.flaggedAt).toLocaleDateString('en-IN')}` : 'Pending release'}
+                                            className="inline-flex items-center px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[9px] font-bold rounded border border-amber-200"
                                           >
-                                            <Flag size={8} className="fill-amber-600 text-amber-600" />
                                             Pending Release
                                           </span>
                                         </div>
@@ -2287,160 +1889,6 @@ export default function RecoveryQueueWorkspace() {
               >
                 {modalSaving && <Loader2 size={13} className="animate-spin" />}
                 <span>Save Changes</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── 9. Invoice Selection Modal (Select Specific Invoice to Flag / Release) ── */}
-      {activeInvoiceCustomer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity"
-            onClick={() => setInvoiceSelectionCustomer(null)}
-          />
-          <div className="relative w-full max-w-2xl bg-white rounded-xl shadow-2xl border border-slate-200 z-10 overflow-hidden flex flex-col max-h-[85vh]">
-            {/* Header */}
-            <div className="px-5 py-3.5 bg-[#1A2766] text-white flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold flex items-center gap-1.5">
-                  <Flag size={14} className="text-amber-400 fill-amber-400" />
-                  <span>Flag Invoices for Recovery</span>
-                </h3>
-                <p className="text-xs text-white/70 truncate max-w-md">
-                  {activeInvoiceCustomer.customerName} • {((activeInvoiceCustomer.openInvoices && activeInvoiceCustomer.openInvoices.length > 0) ? activeInvoiceCustomer.openInvoices : activeInvoiceCustomer.invoices).length} open invoice{((activeInvoiceCustomer.openInvoices && activeInvoiceCustomer.openInvoices.length > 0) ? activeInvoiceCustomer.openInvoices : activeInvoiceCustomer.invoices).length !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <button
-                onClick={() => setInvoiceSelectionCustomer(null)}
-                className="text-white/70 hover:text-white cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Invoices List / Table */}
-            <div className="p-4 overflow-y-auto space-y-2 text-xs">
-              <p className="text-slate-500 text-[11px] mb-2">
-                Select an invoice below to flag it as pending recovery or release it from the queue:
-              </p>
-
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
-                      <th className="py-2 px-3">Invoice #</th>
-                      <th className="py-2 px-3">Date</th>
-                      <th className="py-2 px-3">Due Date</th>
-                      <th className="py-2 px-3 text-right">Pending Amount</th>
-                      <th className="py-2 px-3 text-center">Status</th>
-                      <th className="py-2 px-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {((activeInvoiceCustomer.openInvoices && activeInvoiceCustomer.openInvoices.length > 0)
-                      ? activeInvoiceCustomer.openInvoices
-                      : activeInvoiceCustomer.invoices
-                    ).map((inv) => {
-                      const isPending = inv.isPendingRecovery;
-                      const isLoading = actionLoadingInvoiceId === (isPending ? inv.activeTaskId : inv.invoiceId);
-
-                      return (
-                        <tr key={inv.invoiceId} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-2.5 px-3 font-bold text-slate-900">
-                            {inv.invoiceId.startsWith('mock-') ? (
-                              inv.invoiceNumber
-                            ) : (
-                              <a
-                                href={`https://books.zoho.in/app/60027595766#/invoices/${inv.invoiceId}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="hover:text-blue-600 hover:underline inline-flex items-center gap-1 font-mono"
-                              >
-                                {inv.invoiceNumber}
-                                <ExternalLink size={10} className="text-slate-400" />
-                              </a>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
-                            {inv.invoiceDate}
-                          </td>
-                          <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
-                            {inv.dueDate || '-'}
-                            {inv.overdueDays > 0 && (
-                              <span className="ml-1 text-[10px] font-bold text-amber-700">
-                                ({inv.overdueDays}d)
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-black text-rose-700 font-mono">
-                            {formatINR(inv.amountPending)}
-                          </td>
-                          <td className="py-2.5 px-3 text-center">
-                            {isPending ? (
-                              <span
-                                title={`Flagged by ${inv.flaggedByName || 'Staff'} on ${inv.flaggedAt ? new Date(inv.flaggedAt).toLocaleDateString('en-IN') : 'N/A'}`}
-                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-50 text-amber-700 text-[9.5px] font-bold rounded border border-amber-200"
-                              >
-                                <Flag size={8} className="fill-amber-600 text-amber-600" />
-                                <span>Pending Release</span>
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-semibold text-slate-400 uppercase">
-                                Open
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-right">
-                            {isPending && inv.activeTaskId && releaseAllowed ? (
-                              <button
-                                onClick={() => handleReleaseInvoice(inv.activeTaskId!, inv.invoiceNumber)}
-                                disabled={actionLoadingInvoiceId !== null}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition-colors cursor-pointer disabled:opacity-50"
-                                title={`Release invoice ${inv.invoiceNumber} from recovery queue`}
-                              >
-                                {isLoading ? (
-                                  <Loader2 size={11} className="animate-spin" />
-                                ) : (
-                                  <CheckCheck size={11} />
-                                )}
-                                <span>Release</span>
-                              </button>
-                            ) : !isPending ? (
-                              <button
-                                onClick={() => handlePendingInvoice(inv, activeInvoiceCustomer)}
-                                disabled={actionLoadingInvoiceId !== null}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50"
-                                title={`Flag invoice ${inv.invoiceNumber} as pending recovery`}
-                              >
-                                {isLoading ? (
-                                  <Loader2 size={11} className="animate-spin" />
-                                ) : (
-                                  <Flag size={11} />
-                                )}
-                                <span>Flag Invoice</span>
-                              </button>
-                            ) : null}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-              <span className="text-[11px] text-slate-500">
-                Total Statement Balance: <strong className="text-slate-800">{formatINR(activeInvoiceCustomer.netBalance ?? activeInvoiceCustomer.totalOutstanding)}</strong>
-              </span>
-              <button
-                onClick={() => setInvoiceSelectionCustomer(null)}
-                className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
-              >
-                Close
               </button>
             </div>
           </div>

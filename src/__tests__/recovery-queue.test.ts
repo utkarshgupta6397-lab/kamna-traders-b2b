@@ -383,8 +383,8 @@ async function runTests() {
       'Customer row includes Release action'
     );
     assert(
-      workspaceCode.includes('handlePendingInvoice') && workspaceCode.includes('Flag Invoice'),
-      'Customer row includes Flag Invoice action for open invoices'
+      !workspaceCode.includes('handlePendingInvoice') && !workspaceCode.includes('Flag Invoice'),
+      'Customer row has completely removed Flag Invoice button and action'
     );
     assert(
       workspaceCode.includes('releaseAllowed'),
@@ -403,30 +403,29 @@ async function runTests() {
     );
     passed += 2;
 
-    // Single-invoice direct action vs multi-invoice selector modal
+    // Removal of Flag Invoice modal
     assert(
-      (workspaceCode.includes('allInvs.length === 1') || workspaceCode.includes('cust.invoices.length === 1')) &&
-        (workspaceCode.includes('allInvs.length > 1') || workspaceCode.includes('cust.invoices.length > 1')),
-      'Workspace distinguishes between single-invoice direct action and multi-invoice selection'
+      !workspaceCode.includes('setInvoiceSelectionCustomer'),
+      'Workspace does not have invoiceSelectionCustomer modal state'
     );
     assert(
-      workspaceCode.includes('setInvoiceSelectionCustomer(cust)'),
-      'Multi-invoice customer triggers explicit Invoice Selection modal'
+      !workspaceCode.includes('Flag Invoices for Recovery'),
+      'Workspace does not render Flag Invoices for Recovery modal'
     );
     assert(
-      workspaceCode.includes('Flag Invoices for Recovery') && workspaceCode.includes('activeInvoiceCustomer'),
-      'Invoice Selection modal renders dedicated modal for choosing specific invoice to flag/release'
+      !workspaceCode.includes('<Flag'),
+      'Workspace does not render any Flag icons from lucide-react'
     );
     passed += 3;
 
-    // Drawer level actions
+    // Drawer level actions: Release is preserved, Flagging is removed
     assert(
       workspaceCode.includes('handleReleaseInvoice(inv.activeTaskId') || workspaceCode.includes('handleReleaseInvoice('),
       'Expanded invoice drawer includes individual Release Invoice action'
     );
     assert(
-      workspaceCode.includes('handlePendingInvoice(inv, cust)') || workspaceCode.includes('handlePendingInvoice('),
-      'Expanded invoice drawer includes individual invoice flag action'
+      !workspaceCode.includes('handlePendingInvoice'),
+      'Expanded invoice drawer does not include any invoice flag action'
     );
     assert(
       workspaceCode.includes('Pending Release') && (workspaceCode.includes('bg-amber-100') || workspaceCode.includes('bg-amber-50')),
@@ -1511,8 +1510,8 @@ async function runTests() {
       'Release button renders with distinct emerald outlined styling'
     );
     assert(
-      workspaceCode.includes('<span>Flag Invoice</span>'),
-      'Flag Invoice button renders with clean neutral styling'
+      !workspaceCode.includes('<span>Flag Invoice</span>'),
+      'Flag Invoice button has been completely removed from UI'
     );
     passed += 4;
   } catch (e: any) {
@@ -1521,216 +1520,97 @@ async function runTests() {
   }
 
   // -------------------------------------------------------------
-  // SUITE 26: Call Priority Indicator, 4 States & Segmented Filter Contract
+  // SUITE 26: Complete Removal of Call Priority & Phone Indicator Contract
   // -------------------------------------------------------------
-  console.log('\n--- SUITE 26: Call Priority Indicator & Filter Contract ---');
+  console.log('\n--- SUITE 26: Complete Removal of Call Priority & Phone Indicator Contract ---');
   try {
-    const {
-      CALL_PRIORITIES,
-      DEFAULT_CALL_PRIORITY,
-      ORDERED_CALL_PRIORITIES,
-      isValidCallPriority,
-      getCallPriorityConfig,
-      normalizeCallPriority,
-      isCallRequired,
-    } = await import('../lib/recovery/call-priority');
+    // 1. Obsolete utility and API files must be completely removed
+    const callPriorityLibExists = fs.existsSync(
+      path.join(process.cwd(), 'src/lib/recovery/call-priority.ts')
+    );
+    assert(
+      !callPriorityLibExists,
+      'src/lib/recovery/call-priority.ts is completely removed from codebase'
+    );
 
-    // 1. Definition and configuration of the 4 call priority states
-    assert(
-      CALL_PRIORITIES.CALL_IMMEDIATELY &&
-      CALL_PRIORITIES.CALL_IMMEDIATELY.colorName === 'green' &&
-      CALL_PRIORITIES.CALL_IMMEDIATELY.label.includes('Call Immediately'),
-      'CALL_IMMEDIATELY is configured with green indicator and clear label'
+    const callPriorityApiExists = fs.existsSync(
+      path.join(process.cwd(), 'src/app/api/accounts/recovery/call-priority/route.ts')
     );
     assert(
-      CALL_PRIORITIES.VERIFY_FIRST &&
-      CALL_PRIORITIES.VERIFY_FIRST.colorName === 'yellow' &&
-      CALL_PRIORITIES.VERIFY_FIRST.label.includes('Verify First'),
-      'VERIFY_FIRST is configured with yellow/amber indicator and clear label'
+      !callPriorityApiExists,
+      'src/app/api/accounts/recovery/call-priority/route.ts is completely removed from codebase'
     );
-    assert(
-      CALL_PRIORITIES.SENIOR_FOLLOWUP &&
-      CALL_PRIORITIES.SENIOR_FOLLOWUP.colorName === 'red' &&
-      CALL_PRIORITIES.SENIOR_FOLLOWUP.label.includes('Senior Follow-up'),
-      'SENIOR_FOLLOWUP is configured with red indicator and clear label'
-    );
-    assert(
-      CALL_PRIORITIES.NO_CALL_NEEDED &&
-      CALL_PRIORITIES.NO_CALL_NEEDED.colorName === 'grey' &&
-      CALL_PRIORITIES.NO_CALL_NEEDED.label.includes('No Call Needed'),
-      'NO_CALL_NEEDED is configured with neutral grey indicator and clear label'
-    );
-    assert(
-      ORDERED_CALL_PRIORITIES.length === 4,
-      'Exactly 4 ordered call priority options are configured for the selector'
-    );
-    passed += 5;
+    passed += 2;
 
-    // 2. Default behavior: NO_CALL_NEEDED (Neutral grey)
-    assert(
-      DEFAULT_CALL_PRIORITY === 'NO_CALL_NEEDED',
-      'Default call priority is strictly NO_CALL_NEEDED (Neutral grey), NOT Green'
+    // 2. Calculator must not export call-priority
+    const calculatorCode = fs.readFileSync(
+      path.join(process.cwd(), 'src/lib/recovery/recovery-calculator.ts'),
+      'utf8'
     );
     assert(
-      getCallPriorityConfig(null).key === 'NO_CALL_NEEDED',
-      'Null status safely resolves to Neutral Grey — No Call Needed'
+      !calculatorCode.includes('call-priority'),
+      'recovery-calculator.ts does not re-export call-priority'
     );
-    assert(
-      getCallPriorityConfig(undefined).key === 'NO_CALL_NEEDED',
-      'Undefined status safely resolves to Neutral Grey — No Call Needed'
-    );
-    assert(
-      getCallPriorityConfig('INVALID_STATUS').key === 'NO_CALL_NEEDED',
-      'Unrecognized status safely defaults to Neutral Grey — No Call Needed'
-    );
-    assert(
-      getCallPriorityConfig(null).colorName === 'grey',
-      'Unassigned customer displays neutral grey color, avoiding false Green'
-    );
-    passed += 5;
+    passed += 1;
 
-    // 3. Normalization and backward compatibility
-    assert(normalizeCallPriority('CALL_IMMEDIATELY') === 'CALL_IMMEDIATELY', 'CALL_IMMEDIATELY normalizes to itself');
-    assert(normalizeCallPriority('CALL_NOW') === 'CALL_IMMEDIATELY', 'Legacy CALL_NOW normalizes to CALL_IMMEDIATELY');
-    assert(normalizeCallPriority('VERIFY_FIRST') === 'VERIFY_FIRST', 'VERIFY_FIRST normalizes to itself');
-    assert(normalizeCallPriority('SENIOR_FOLLOWUP') === 'SENIOR_FOLLOWUP', 'SENIOR_FOLLOWUP normalizes to itself');
-    assert(normalizeCallPriority('SENIOR_CALL') === 'SENIOR_FOLLOWUP', 'Legacy SENIOR_CALL normalizes to SENIOR_FOLLOWUP');
-    assert(normalizeCallPriority('NO_CALL_NEEDED') === 'NO_CALL_NEEDED', 'NO_CALL_NEEDED normalizes to itself');
-    assert(normalizeCallPriority(null) === 'NO_CALL_NEEDED', 'Null normalizes to NO_CALL_NEEDED');
-    passed += 7;
-
-    // 4. Validation and Call Required logic
-    assert(isValidCallPriority('CALL_IMMEDIATELY') === true, 'CALL_IMMEDIATELY is valid');
-    assert(isValidCallPriority('VERIFY_FIRST') === true, 'VERIFY_FIRST is valid');
-    assert(isValidCallPriority('SENIOR_FOLLOWUP') === true, 'SENIOR_FOLLOWUP is valid');
-    assert(isValidCallPriority('NO_CALL_NEEDED') === true, 'NO_CALL_NEEDED is valid');
-    assert(isValidCallPriority('RANDOM_STATUS') === false, 'Invalid status strings are rejected');
-    assert(isCallRequired('CALL_IMMEDIATELY') === true, 'CALL_IMMEDIATELY requires a call');
-    assert(isCallRequired('VERIFY_FIRST') === true, 'VERIFY_FIRST requires a call');
-    assert(isCallRequired('SENIOR_FOLLOWUP') === true, 'SENIOR_FOLLOWUP requires a call');
-    assert(isCallRequired('NO_CALL_NEEDED') === false, 'NO_CALL_NEEDED does not require a call');
-    assert(isCallRequired(null) === false, 'Unassigned customer does not require a call');
-    passed += 10;
-
-    // 5. Schema and Migration Contract
+    // 3. Prisma Schema Contract: Customer model does not include callPriority fields
     const schemaCode = fs.readFileSync(path.join(process.cwd(), 'prisma/schema.prisma'), 'utf8');
-    const migrationCode = fs.readFileSync(
-      path.join(
-        process.cwd(),
-        'prisma/migrations/20261028233000_add_customer_call_priority/migration.sql'
-      ),
-      'utf8'
+    assert(
+      !schemaCode.includes('callPriority'),
+      'Prisma schema has removed callPriority fields from Customer model'
     );
+    passed += 1;
 
-    assert(
-      schemaCode.includes('callPriority            String       @default("NO_CALL_NEEDED")'),
-      'Prisma schema defines callPriority on canonical Customer model with NO_CALL_NEEDED default'
-    );
-    assert(
-      schemaCode.includes('callPriorityUpdatedAt') && schemaCode.includes('callPriorityUpdatedById'),
-      'Customer model tracks timestamp and staff identifier of last priority change'
-    );
-    assert(
-      migrationCode.includes('DEFAULT \'NO_CALL_NEEDED\''),
-      'Migration script adds callPriority column with NO_CALL_NEEDED non-destructive default'
-    );
-    passed += 3;
-
-    // 6. Authenticated Call-Priority API Contract
-    const callPriorityApiCode = fs.readFileSync(
-      path.join(process.cwd(), 'src/app/api/accounts/recovery/call-priority/route.ts'),
-      'utf8'
-    );
-
-    assert(
-      callPriorityApiCode.includes('export async function PATCH') &&
-      callPriorityApiCode.includes('export async function POST'),
-      'Call priority API exposes both PATCH and POST endpoints'
-    );
-    assert(
-      callPriorityApiCode.includes('getSession()') &&
-      callPriorityApiCode.includes('accounts_summary_view') &&
-      callPriorityApiCode.includes('accounts_recovery_manage'),
-      'Call priority API enforces authentication and accounts authorization'
-    );
-    assert(
-      callPriorityApiCode.includes('!isValidCallPriority(callPriority)') &&
-      callPriorityApiCode.includes('status: 400'),
-      'Call priority API rejects invalid priority enum values with 400 Bad Request'
-    );
-    assert(
-      callPriorityApiCode.includes('prisma.customer.upsert') &&
-      callPriorityApiCode.includes('callPriorityUpdatedAt') &&
-      callPriorityApiCode.includes('callPriorityUpdatedById'),
-      'Call priority API records staffId and timestamp alongside normalized priority'
-    );
-    assert(
-      !callPriorityApiCode.includes('zoho') && !callPriorityApiCode.includes('fetchInvoiceById'),
-      'Call priority API avoids making unnecessary external Zoho Books API calls'
-    );
-    passed += 5;
-
-    // 7. Queue API Segmented Filter & Counts Contract
+    // 4. Queue API Contract: No priority filtering or counts
     const queueApiCode = fs.readFileSync(
       path.join(process.cwd(), 'src/app/api/accounts/recovery/queue/route.ts'),
       'utf8'
     );
-
     assert(
-      queueApiCode.includes('callPriority: true'),
-      'Recovery Queue API selects callPriority in bulk customer query'
+      !queueApiCode.includes('callPriority: true'),
+      'Recovery Queue API does not select callPriority'
     );
     assert(
-      queueApiCode.includes('priorityFilter === \'call_required\'') &&
-      queueApiCode.includes('priorityFilter === \'no_call\''),
-      'Recovery Queue API supports filtering by call_required and no_call'
+      !queueApiCode.includes('priorityFilter'),
+      'Recovery Queue API does not parse or filter by priority'
     );
     assert(
-      queueApiCode.includes('callPriorityCounts: {'),
-      'Recovery Queue API attaches segmented filter counts to response'
+      !queueApiCode.includes('callPriorityCounts'),
+      'Recovery Queue API does not compute or return callPriorityCounts'
     );
     passed += 3;
 
-    // 8. UI Workspace Segmented Filter Toggle & Selector Contract
+    // 5. Workspace UI Contract: Clean customer names, no phone icons, no call priority controls
     const workspaceCode = fs.readFileSync(
       path.join(process.cwd(), 'src/components/recovery/RecoveryQueueWorkspace.tsx'),
       'utf8'
     );
 
     assert(
-      workspaceCode.includes('selectedPriorityFilter') &&
-      workspaceCode.includes('setSelectedPriorityFilter'),
-      'Workspace manages segmented priority filter state'
+      !workspaceCode.includes('selectedPriorityFilter'),
+      'Workspace does not contain selectedPriorityFilter state'
     );
     assert(
-      workspaceCode.includes('Call Required') &&
-      workspaceCode.includes('No Call Needed'),
-      'Workspace renders segmented control with All, Call Required, and No Call Needed options'
+      !workspaceCode.includes('Call Priority:'),
+      'Workspace toolbar does not render Call Priority segmented filter control'
     );
     assert(
-      workspaceCode.includes('priorityCounts.all') &&
-      workspaceCode.includes('priorityCounts.callRequired') &&
-      workspaceCode.includes('priorityCounts.noCallNeeded'),
-      'Segmented filter displays counts alongside labels'
+      !workspaceCode.includes('<Phone'),
+      'Customer name column does not render any Phone icons'
     );
     assert(
-      workspaceCode.includes('ORDERED_CALL_PRIORITIES.map'),
-      'Customer row popover renders all 4 ordered selectable priority options'
+      !workspaceCode.includes('openPriorityCustomerId'),
+      'Workspace does not maintain openPriorityCustomerId state'
     );
     assert(
-      workspaceCode.includes('<Phone size={11} className={priorityCfg.iconColor} />') ||
-      workspaceCode.includes('<Phone'),
-      'Customer row renders recognizable Phone icon styled with priority color'
+      !workspaceCode.includes('handleUpdateCallPriority'),
+      'Workspace does not contain handleUpdateCallPriority handler'
     );
     assert(
-      workspaceCode.includes('if (savingPriorityCustomerId === customerId) return;'),
-      'Concurrent update guard prevents duplicate submissions while saving'
+      workspaceCode.includes('cust.customerName'),
+      'Customer name column renders customer names cleanly'
     );
-    assert(
-      workspaceCode.includes('setSelectedPriorityFilter(\'all\')'),
-      'Clearing all filters resets call priority filter to all'
-    );
-    passed += 7;
+    passed += 6;
   } catch (e: any) {
     console.error('Suite 26 failure:', e);
     failed++;

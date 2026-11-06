@@ -22,8 +22,6 @@ export interface RawInvoiceRow {
 
 export type AgingBucketKey = '0-30' | '31-60' | '61-90' | '90+';
 
-export * from './call-priority';
-
 export const RECOVERY_STATUSES = [
   { id: 'PENDING_FOLLOW_UP', label: 'Pending Follow-up', color: 'slate' },
   { id: 'CONTACTED', label: 'Contacted', color: 'blue' },

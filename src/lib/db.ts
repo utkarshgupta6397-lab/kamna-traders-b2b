@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { getDatabaseUrl } from './database-url';
 
-const CURRENT_SCHEMA_TAG = '2026-10-28-recovery-call-priority-v2';
+const CURRENT_SCHEMA_TAG = '2026-11-06-clean-recovery-queue';
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient; __prisma_schema_tag?: string };
 
 // Invalidate stale PrismaClient instance cached across dev server reloads
@@ -146,23 +146,6 @@ export async function initializeDatabase() {
 
     const { ensureInitialUsers } = await import('./initial-data');
     await ensureInitialUsers();
-
-    // Ensure non-destructive schema additions exist in local environment
-    try {
-      await prisma.$executeRawUnsafe(
-        `ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "callPriority" TEXT NOT NULL DEFAULT 'NO_CALL_NEEDED';`
-      );
-    } catch {}
-    try {
-      await prisma.$executeRawUnsafe(
-        `ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "callPriorityUpdatedAt" TIMESTAMP(3);`
-      );
-    } catch {}
-    try {
-      await prisma.$executeRawUnsafe(
-        `ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "callPriorityUpdatedById" TEXT;`
-      );
-    } catch {}
 
     // Startup Diagnostics Logs
     const userCount = await prisma.user.count();

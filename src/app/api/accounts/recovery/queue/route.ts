@@ -8,6 +8,10 @@ import {
   AgingBucketKey,
   RawInvoiceRow,
   computeCustomerNetOutstanding,
+  isValidCallPriority,
+  DEFAULT_CALL_PRIORITY,
+  isCallRequired,
+  normalizeCallPriority,
 } from '@/lib/recovery/recovery-calculator';
 import { CustomerBalanceService } from '@/lib/services/customer-balance.service';
 
@@ -34,6 +38,7 @@ export async function GET(request: Request) {
     const q = (searchParams.get('q') || '').trim().toLowerCase();
     const salespersonFilter = (searchParams.get('salesperson') || '').trim();
     const agingFilter = (searchParams.get('aging') || '').trim() as AgingBucketKey | '';
+    const priorityFilter = (searchParams.get('priority') || searchParams.get('callPriority') || 'all').trim().toLowerCase();
     
     // Total Outstanding numeric range filter (min <= max, non-negative, empty != 0)
     const rawMin = searchParams.get('minAmount');
@@ -55,15 +60,41 @@ export async function GET(request: Request) {
         where: { id: 'singleton' },
       }),
       prisma.customerRecoveryRecord.findMany(),
-      prisma.customer.findMany({
-        select: {
-          id: true,
-          name: true,
-          gstNumber: true,
-          netOutstandingBalance: true,
-          balanceUpdatedAt: true,
-        },
-      }),
+      prisma.customer
+        .findMany({
+          select: {
+            id: true,
+            name: true,
+            gstNumber: true,
+            netOutstandingBalance: true,
+            balanceUpdatedAt: true,
+            callPriority: true,
+          },
+        })
+        .catch(async () => {
+          // Graceful fallback if runtime PrismaClient in dev server has not refreshed its schema
+          try {
+            await prisma.$executeRawUnsafe(
+              `ALTER TABLE "Customer" ADD COLUMN IF NOT EXISTS "callPriority" TEXT NOT NULL DEFAULT 'CALL_NOW';`
+            );
+          } catch {}
+          return prisma.customer
+            .findMany({
+              select: {
+                id: true,
+                name: true,
+                gstNumber: true,
+                netOutstandingBalance: true,
+                balanceUpdatedAt: true,
+              },
+            })
+            .then((rows) =>
+              rows.map((r) => ({
+                ...r,
+                callPriority: DEFAULT_CALL_PRIORITY,
+              }))
+            );
+        }),
       prisma.recoveryInvoiceTask.findMany({
         where: { status: 'ACTIVE' },
       }),
@@ -224,6 +255,7 @@ export async function GET(request: Request) {
               gstNumber: null,
               netOutstandingBalance: b.netOutstandingBalance,
               balanceUpdatedAt: b.balanceUpdatedAt,
+              callPriority: DEFAULT_CALL_PRIORITY,
             });
           }
         }
@@ -435,6 +467,7 @@ export async function GET(request: Request) {
         openInvoices: c.invoices, // All operationally open invoices for selector modal
         hasActiveTask: activeInvoicesCount > 0,
         activeTaskCount: activeInvoicesCount,
+        callPriority: normalizeCallPriority(dbCust?.callPriority),
       };
     });
 
@@ -575,6 +608,27 @@ export async function GET(request: Request) {
       filteredCustomers = filteredCustomers.filter((c) => c.oldestDueDate && c.oldestDueDate <= dueTo);
     }
 
+    // Calculate call-priority segmented counts across current search & attribute filters
+    let priorityCountAll = 0;
+    let priorityCountCallRequired = 0;
+    let priorityCountNoCallNeeded = 0;
+
+    for (const c of filteredCustomers) {
+      priorityCountAll++;
+      if (isCallRequired(c.callPriority)) {
+        priorityCountCallRequired++;
+      } else {
+        priorityCountNoCallNeeded++;
+      }
+    }
+
+    // Apply Call-Priority Filter
+    if (priorityFilter === 'call_required') {
+      filteredCustomers = filteredCustomers.filter((c) => isCallRequired(c.callPriority));
+    } else if (priorityFilter === 'no_call') {
+      filteredCustomers = filteredCustomers.filter((c) => !isCallRequired(c.callPriority));
+    }
+
     const filteredMaxOutstanding =
       filteredCustomers.length > 0
         ? Math.max(...filteredCustomers.map((c) => Math.abs(c.totalOutstanding || 0)))
@@ -663,6 +717,11 @@ export async function GET(request: Request) {
         },
         salespersons: Array.from(allSalespersons).sort(),
         releaseAllowed,
+        callPriorityCounts: {
+          all: priorityCountAll,
+          callRequired: priorityCountCallRequired,
+          noCallNeeded: priorityCountNoCallNeeded,
+        },
       },
     });
   } catch (error: any) {

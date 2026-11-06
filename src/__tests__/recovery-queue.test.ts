@@ -1520,6 +1520,222 @@ async function runTests() {
     failed++;
   }
 
+  // -------------------------------------------------------------
+  // SUITE 26: Call Priority Indicator, 4 States & Segmented Filter Contract
+  // -------------------------------------------------------------
+  console.log('\n--- SUITE 26: Call Priority Indicator & Filter Contract ---');
+  try {
+    const {
+      CALL_PRIORITIES,
+      DEFAULT_CALL_PRIORITY,
+      ORDERED_CALL_PRIORITIES,
+      isValidCallPriority,
+      getCallPriorityConfig,
+      normalizeCallPriority,
+      isCallRequired,
+    } = await import('../lib/recovery/call-priority');
+
+    // 1. Definition and configuration of the 4 call priority states
+    assert(
+      CALL_PRIORITIES.CALL_IMMEDIATELY &&
+      CALL_PRIORITIES.CALL_IMMEDIATELY.colorName === 'green' &&
+      CALL_PRIORITIES.CALL_IMMEDIATELY.label.includes('Call Immediately'),
+      'CALL_IMMEDIATELY is configured with green indicator and clear label'
+    );
+    assert(
+      CALL_PRIORITIES.VERIFY_FIRST &&
+      CALL_PRIORITIES.VERIFY_FIRST.colorName === 'yellow' &&
+      CALL_PRIORITIES.VERIFY_FIRST.label.includes('Verify First'),
+      'VERIFY_FIRST is configured with yellow/amber indicator and clear label'
+    );
+    assert(
+      CALL_PRIORITIES.SENIOR_FOLLOWUP &&
+      CALL_PRIORITIES.SENIOR_FOLLOWUP.colorName === 'red' &&
+      CALL_PRIORITIES.SENIOR_FOLLOWUP.label.includes('Senior Follow-up'),
+      'SENIOR_FOLLOWUP is configured with red indicator and clear label'
+    );
+    assert(
+      CALL_PRIORITIES.NO_CALL_NEEDED &&
+      CALL_PRIORITIES.NO_CALL_NEEDED.colorName === 'grey' &&
+      CALL_PRIORITIES.NO_CALL_NEEDED.label.includes('No Call Needed'),
+      'NO_CALL_NEEDED is configured with neutral grey indicator and clear label'
+    );
+    assert(
+      ORDERED_CALL_PRIORITIES.length === 4,
+      'Exactly 4 ordered call priority options are configured for the selector'
+    );
+    passed += 5;
+
+    // 2. Default behavior: NO_CALL_NEEDED (Neutral grey)
+    assert(
+      DEFAULT_CALL_PRIORITY === 'NO_CALL_NEEDED',
+      'Default call priority is strictly NO_CALL_NEEDED (Neutral grey), NOT Green'
+    );
+    assert(
+      getCallPriorityConfig(null).key === 'NO_CALL_NEEDED',
+      'Null status safely resolves to Neutral Grey — No Call Needed'
+    );
+    assert(
+      getCallPriorityConfig(undefined).key === 'NO_CALL_NEEDED',
+      'Undefined status safely resolves to Neutral Grey — No Call Needed'
+    );
+    assert(
+      getCallPriorityConfig('INVALID_STATUS').key === 'NO_CALL_NEEDED',
+      'Unrecognized status safely defaults to Neutral Grey — No Call Needed'
+    );
+    assert(
+      getCallPriorityConfig(null).colorName === 'grey',
+      'Unassigned customer displays neutral grey color, avoiding false Green'
+    );
+    passed += 5;
+
+    // 3. Normalization and backward compatibility
+    assert(normalizeCallPriority('CALL_IMMEDIATELY') === 'CALL_IMMEDIATELY', 'CALL_IMMEDIATELY normalizes to itself');
+    assert(normalizeCallPriority('CALL_NOW') === 'CALL_IMMEDIATELY', 'Legacy CALL_NOW normalizes to CALL_IMMEDIATELY');
+    assert(normalizeCallPriority('VERIFY_FIRST') === 'VERIFY_FIRST', 'VERIFY_FIRST normalizes to itself');
+    assert(normalizeCallPriority('SENIOR_FOLLOWUP') === 'SENIOR_FOLLOWUP', 'SENIOR_FOLLOWUP normalizes to itself');
+    assert(normalizeCallPriority('SENIOR_CALL') === 'SENIOR_FOLLOWUP', 'Legacy SENIOR_CALL normalizes to SENIOR_FOLLOWUP');
+    assert(normalizeCallPriority('NO_CALL_NEEDED') === 'NO_CALL_NEEDED', 'NO_CALL_NEEDED normalizes to itself');
+    assert(normalizeCallPriority(null) === 'NO_CALL_NEEDED', 'Null normalizes to NO_CALL_NEEDED');
+    passed += 7;
+
+    // 4. Validation and Call Required logic
+    assert(isValidCallPriority('CALL_IMMEDIATELY') === true, 'CALL_IMMEDIATELY is valid');
+    assert(isValidCallPriority('VERIFY_FIRST') === true, 'VERIFY_FIRST is valid');
+    assert(isValidCallPriority('SENIOR_FOLLOWUP') === true, 'SENIOR_FOLLOWUP is valid');
+    assert(isValidCallPriority('NO_CALL_NEEDED') === true, 'NO_CALL_NEEDED is valid');
+    assert(isValidCallPriority('RANDOM_STATUS') === false, 'Invalid status strings are rejected');
+    assert(isCallRequired('CALL_IMMEDIATELY') === true, 'CALL_IMMEDIATELY requires a call');
+    assert(isCallRequired('VERIFY_FIRST') === true, 'VERIFY_FIRST requires a call');
+    assert(isCallRequired('SENIOR_FOLLOWUP') === true, 'SENIOR_FOLLOWUP requires a call');
+    assert(isCallRequired('NO_CALL_NEEDED') === false, 'NO_CALL_NEEDED does not require a call');
+    assert(isCallRequired(null) === false, 'Unassigned customer does not require a call');
+    passed += 10;
+
+    // 5. Schema and Migration Contract
+    const schemaCode = fs.readFileSync(path.join(process.cwd(), 'prisma/schema.prisma'), 'utf8');
+    const migrationCode = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'prisma/migrations/20261028233000_add_customer_call_priority/migration.sql'
+      ),
+      'utf8'
+    );
+
+    assert(
+      schemaCode.includes('callPriority            String       @default("NO_CALL_NEEDED")'),
+      'Prisma schema defines callPriority on canonical Customer model with NO_CALL_NEEDED default'
+    );
+    assert(
+      schemaCode.includes('callPriorityUpdatedAt') && schemaCode.includes('callPriorityUpdatedById'),
+      'Customer model tracks timestamp and staff identifier of last priority change'
+    );
+    assert(
+      migrationCode.includes('DEFAULT \'NO_CALL_NEEDED\''),
+      'Migration script adds callPriority column with NO_CALL_NEEDED non-destructive default'
+    );
+    passed += 3;
+
+    // 6. Authenticated Call-Priority API Contract
+    const callPriorityApiCode = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/accounts/recovery/call-priority/route.ts'),
+      'utf8'
+    );
+
+    assert(
+      callPriorityApiCode.includes('export async function PATCH') &&
+      callPriorityApiCode.includes('export async function POST'),
+      'Call priority API exposes both PATCH and POST endpoints'
+    );
+    assert(
+      callPriorityApiCode.includes('getSession()') &&
+      callPriorityApiCode.includes('accounts_summary_view') &&
+      callPriorityApiCode.includes('accounts_recovery_manage'),
+      'Call priority API enforces authentication and accounts authorization'
+    );
+    assert(
+      callPriorityApiCode.includes('!isValidCallPriority(callPriority)') &&
+      callPriorityApiCode.includes('status: 400'),
+      'Call priority API rejects invalid priority enum values with 400 Bad Request'
+    );
+    assert(
+      callPriorityApiCode.includes('prisma.customer.upsert') &&
+      callPriorityApiCode.includes('callPriorityUpdatedAt') &&
+      callPriorityApiCode.includes('callPriorityUpdatedById'),
+      'Call priority API records staffId and timestamp alongside normalized priority'
+    );
+    assert(
+      !callPriorityApiCode.includes('zoho') && !callPriorityApiCode.includes('fetchInvoiceById'),
+      'Call priority API avoids making unnecessary external Zoho Books API calls'
+    );
+    passed += 5;
+
+    // 7. Queue API Segmented Filter & Counts Contract
+    const queueApiCode = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/accounts/recovery/queue/route.ts'),
+      'utf8'
+    );
+
+    assert(
+      queueApiCode.includes('callPriority: true'),
+      'Recovery Queue API selects callPriority in bulk customer query'
+    );
+    assert(
+      queueApiCode.includes('priorityFilter === \'call_required\'') &&
+      queueApiCode.includes('priorityFilter === \'no_call\''),
+      'Recovery Queue API supports filtering by call_required and no_call'
+    );
+    assert(
+      queueApiCode.includes('callPriorityCounts: {'),
+      'Recovery Queue API attaches segmented filter counts to response'
+    );
+    passed += 3;
+
+    // 8. UI Workspace Segmented Filter Toggle & Selector Contract
+    const workspaceCode = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/recovery/RecoveryQueueWorkspace.tsx'),
+      'utf8'
+    );
+
+    assert(
+      workspaceCode.includes('selectedPriorityFilter') &&
+      workspaceCode.includes('setSelectedPriorityFilter'),
+      'Workspace manages segmented priority filter state'
+    );
+    assert(
+      workspaceCode.includes('Call Required') &&
+      workspaceCode.includes('No Call Needed'),
+      'Workspace renders segmented control with All, Call Required, and No Call Needed options'
+    );
+    assert(
+      workspaceCode.includes('priorityCounts.all') &&
+      workspaceCode.includes('priorityCounts.callRequired') &&
+      workspaceCode.includes('priorityCounts.noCallNeeded'),
+      'Segmented filter displays counts alongside labels'
+    );
+    assert(
+      workspaceCode.includes('ORDERED_CALL_PRIORITIES.map'),
+      'Customer row popover renders all 4 ordered selectable priority options'
+    );
+    assert(
+      workspaceCode.includes('<Phone size={11} className={priorityCfg.iconColor} />') ||
+      workspaceCode.includes('<Phone'),
+      'Customer row renders recognizable Phone icon styled with priority color'
+    );
+    assert(
+      workspaceCode.includes('if (savingPriorityCustomerId === customerId) return;'),
+      'Concurrent update guard prevents duplicate submissions while saving'
+    );
+    assert(
+      workspaceCode.includes('setSelectedPriorityFilter(\'all\')'),
+      'Clearing all filters resets call priority filter to all'
+    );
+    passed += 7;
+  } catch (e: any) {
+    console.error('Suite 26 failure:', e);
+    failed++;
+  }
+
   console.log('\n===============================================================');
   console.log(`TEST SUMMARY: ${passed} Passed, ${failed} Failed`);
   console.log('===============================================================\n');

@@ -35,6 +35,7 @@ import {
   CheckCheck,
   SlidersHorizontal,
   Info,
+  Phone,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CustomerStatementView from '@/components/zoho/CustomerStatementView';
@@ -51,6 +52,13 @@ import {
   formatINR,
   formatCompactINR,
   getZohoContactUrl,
+  CALL_PRIORITIES,
+  CallPriorityKey,
+  CallPriorityFilterKey,
+  ORDERED_CALL_PRIORITIES,
+  getCallPriorityConfig,
+  normalizeCallPriority,
+  isCallRequired,
 } from '@/lib/recovery/recovery-calculator';
 
 interface InvoiceSummaryItem {
@@ -92,6 +100,7 @@ interface RecoveryCustomerRow {
   lastActivityAt: string | null;
   internalNotes: string | null;
   assignedStaffName: string | null;
+  callPriority?: CallPriorityKey;
   hasActiveTask?: boolean;
   activeTaskCount?: number;
   invoices: InvoiceSummaryItem[];
@@ -309,6 +318,29 @@ export default function RecoveryQueueWorkspace() {
   // Invoices Expand Map
   const [expandedInvoicesCustomerId, setExpandedInvoicesCustomerId] = useState<string | null>(null);
 
+  // Call Priority Popover & Saving States
+  const [openPriorityCustomerId, setOpenPriorityCustomerId] = useState<string | null>(null);
+  const [savingPriorityCustomerId, setSavingPriorityCustomerId] = useState<string | null>(null);
+  const [selectedPriorityFilter, setSelectedPriorityFilter] = useState<CallPriorityFilterKey>('all');
+  const [priorityCounts, setPriorityCounts] = useState<{ all: number; callRequired: number; noCallNeeded: number }>({
+    all: 0,
+    callRequired: 0,
+    noCallNeeded: 0,
+  });
+  const priorityDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (priorityDropdownRef.current && !priorityDropdownRef.current.contains(e.target as Node)) {
+        setOpenPriorityCustomerId(null);
+      }
+    };
+    if (openPriorityCustomerId) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [openPriorityCustomerId]);
+
   // Invoice Selection Modal (for explicit selection when customer has multiple invoices)
   const [invoiceSelectionCustomer, setInvoiceSelectionCustomer] = useState<RecoveryCustomerRow | null>(null);
 
@@ -345,12 +377,19 @@ export default function RecoveryQueueWorkspace() {
       if (maxAmount) params.set('maxAmount', maxAmount);
       if (dueFrom) params.set('dueFrom', dueFrom);
       if (dueTo) params.set('dueTo', dueTo);
+      if (selectedPriorityFilter && selectedPriorityFilter !== 'all') {
+        params.set('priority', selectedPriorityFilter);
+      }
 
       const res = await fetch(`/api/accounts/recovery/queue?${params.toString()}`);
       const json = await res.json();
 
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Failed to load recovery queue');
+      }
+
+      if (json.data.callPriorityCounts) {
+        setPriorityCounts(json.data.callPriorityCounts);
       }
 
       // Filter out any locally released tasks from incoming payload
@@ -410,6 +449,7 @@ export default function RecoveryQueueWorkspace() {
     maxAmount,
     dueFrom,
     dueTo,
+    selectedPriorityFilter,
     releasedTaskIds,
   ]);
 
@@ -597,6 +637,67 @@ export default function RecoveryQueueWorkspace() {
     }
   };
 
+  // Update Call Priority for a Customer (persisted in canonical DB)
+  const handleUpdateCallPriority = async (
+    customerId: string,
+    newPriority: CallPriorityKey,
+    customerName: string
+  ) => {
+    if (savingPriorityCustomerId === customerId) return; // Prevent duplicate concurrent writes
+    const currentCust = customers.find((c) => c.customerId === customerId);
+    const previousPriority = normalizeCallPriority(currentCust?.callPriority);
+
+    if (previousPriority === newPriority) {
+      setOpenPriorityCustomerId(null);
+      return;
+    }
+
+    setSavingPriorityCustomerId(customerId);
+
+    try {
+      const res = await fetch('/api/accounts/recovery/call-priority', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId,
+          callPriority: newPriority,
+          customerName,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Failed to update call priority');
+      }
+
+      // Update customer in local state immediately upon success
+      setCustomers((prev) =>
+        prev.map((c) =>
+          c.customerId === customerId ? { ...c, callPriority: newPriority } : c
+        )
+      );
+
+      // Optimistically adjust filter counts if priority requirement category changed
+      const wasCallReq = isCallRequired(previousPriority);
+      const isNowCallReq = isCallRequired(newPriority);
+      if (wasCallReq !== isNowCallReq) {
+        setPriorityCounts((prev) => ({
+          ...prev,
+          callRequired: wasCallReq ? Math.max(0, prev.callRequired - 1) : prev.callRequired + 1,
+          noCallNeeded: wasCallReq ? prev.noCallNeeded + 1 : Math.max(0, prev.noCallNeeded - 1),
+        }));
+      }
+
+      setOpenPriorityCustomerId(null);
+      toast.success(`Priority updated: ${CALL_PRIORITIES[newPriority].badgeLabel}`);
+    } catch (err: any) {
+      console.error('[Call Priority Error]', err);
+      toast.error(err.message || 'Failed to update call priority');
+    } finally {
+      setSavingPriorityCustomerId(null);
+    }
+  };
+
   // Download Report handler (reusing authoritative batch PDF generator)
   const handleDownloadReport = async () => {
     if (downloadingReport) return;
@@ -756,6 +857,7 @@ export default function RecoveryQueueWorkspace() {
     setDebouncedSearch('');
     setSelectedSalesperson('');
     setSelectedAging('');
+    setSelectedPriorityFilter('all');
     handleClearRange();
     setDueFrom('');
     setDueTo('');
@@ -767,10 +869,11 @@ export default function RecoveryQueueWorkspace() {
     if (debouncedSearch) count++;
     if (selectedSalesperson) count++;
     if (selectedAging) count++;
+    if (selectedPriorityFilter !== 'all') count++;
     if (minAmount || maxAmount) count++;
     if (dueFrom || dueTo) count++;
     return count;
-  }, [debouncedSearch, selectedSalesperson, selectedAging, minAmount, maxAmount, dueFrom, dueTo]);
+  }, [debouncedSearch, selectedSalesperson, selectedAging, selectedPriorityFilter, minAmount, maxAmount, dueFrom, dueTo]);
 
   const activeInvoiceCustomer = useMemo(() => {
     if (!invoiceSelectionCustomer) return null;
@@ -1094,6 +1197,68 @@ export default function RecoveryQueueWorkspace() {
 
       {/* ── 4. Filter Toolbar & Sorting ── */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3">
+        {/* Top Bar: Call-Priority Segmented Filter & Controls */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2.5 border-b border-slate-100">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-lg shrink-0 max-w-full overflow-x-auto">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-2 select-none">
+              Call Priority:
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedPriorityFilter('all');
+                setPage(1);
+              }}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer whitespace-nowrap ${
+                selectedPriorityFilter === 'all'
+                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Show all customers regardless of call priority"
+            >
+              All <span className="ml-1 text-[10.5px] text-slate-400 font-mono">({priorityCounts.all})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedPriorityFilter('call_required');
+                setPage(1);
+              }}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap ${
+                selectedPriorityFilter === 'call_required'
+                  ? 'bg-white text-rose-700 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Show customers assigned Call Immediately, Verify First, or Senior Follow-up"
+            >
+              <div className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+              <span>Call Required</span>
+              <span className="ml-0.5 text-[10.5px] text-slate-400 font-mono">({priorityCounts.callRequired})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedPriorityFilter('no_call');
+                setPage(1);
+              }}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap ${
+                selectedPriorityFilter === 'no_call'
+                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Show customers where no call is currently required"
+            >
+              <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+              <span>No Call Needed</span>
+              <span className="ml-0.5 text-[10.5px] text-slate-400 font-mono">({priorityCounts.noCallNeeded})</span>
+            </button>
+          </div>
+
+          <div className="text-[11px] text-slate-400 font-medium">
+            Showing <strong className="text-slate-700 font-mono">{totalCount}</strong> recovery account{totalCount === 1 ? '' : 's'}
+          </div>
+        </div>
+
         <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           {/* Search Field */}
           <div className="relative flex-1">
@@ -1295,6 +1460,20 @@ export default function RecoveryQueueWorkspace() {
               </span>
             )}
 
+            {selectedPriorityFilter !== 'all' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-300">
+                Priority: {selectedPriorityFilter === 'call_required' ? 'Call Required' : 'No Call Needed'}
+                <X
+                  size={12}
+                  className="cursor-pointer hover:text-slate-900"
+                  onClick={() => {
+                    setSelectedPriorityFilter('all');
+                    setPage(1);
+                  }}
+                />
+              </span>
+            )}
+
             <button
               onClick={handleResetFilters}
               className="text-[11px] font-bold text-rose-600 hover:text-rose-800 ml-auto cursor-pointer"
@@ -1404,37 +1583,140 @@ export default function RecoveryQueueWorkspace() {
 
                         {/* Customer Name */}
                         <td className="py-3.5 px-3 text-left">
-                          <div className="flex flex-col">
-                            {cust.customerId ? (
-                              <a
-                                href={getZohoContactUrl(cust.customerId)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="font-semibold text-slate-900 leading-tight hover:text-[#1A2766] hover:underline inline-flex items-center gap-1 group/link max-w-[220px] sm:max-w-[280px] truncate"
-                                title={
-                                  cust.customerGst
-                                    ? `${cust.customerName} • GSTIN: ${cust.customerGst}`
-                                    : cust.customerName
-                                }
-                              >
-                                <span className="truncate">{cust.customerName}</span>
-                                <ExternalLink
-                                  size={10}
-                                  className="opacity-0 group-hover/link:opacity-100 text-slate-400 group-hover/link:text-[#1A2766] transition-opacity shrink-0"
-                                />
-                              </a>
-                            ) : (
-                              <span
-                                className="font-semibold text-slate-900 leading-tight truncate max-w-[220px] sm:max-w-[280px]"
-                                title={
-                                  cust.customerGst
-                                    ? `${cust.customerName} • GSTIN: ${cust.customerGst}`
-                                    : cust.customerName
-                                }
-                              >
-                                {cust.customerName}
-                              </span>
-                            )}
+                          <div className="flex items-center gap-2">
+                            {/* Call Priority Indicator */}
+                            {(() => {
+                              const priorityCfg = getCallPriorityConfig(cust.callPriority);
+                              const isMenuOpen = openPriorityCustomerId === cust.customerId;
+                              const isSaving = savingPriorityCustomerId === cust.customerId;
+
+                              return (
+                                <div
+                                  className="relative shrink-0"
+                                  ref={isMenuOpen ? priorityDropdownRef : null}
+                                >
+                                  <button
+                                    type="button"
+                                    disabled={isSaving}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenPriorityCustomerId(
+                                        isMenuOpen ? null : cust.customerId
+                                      );
+                                    }}
+                                    aria-label={`Call Priority: ${priorityCfg.label}. Click to change call priority.`}
+                                    title={`Call Priority: ${priorityCfg.label}\n${priorityCfg.description}`}
+                                    className={`w-6 h-6 rounded-md flex items-center justify-center transition-all cursor-pointer border ${priorityCfg.badgeClass} hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed`}
+                                  >
+                                    {isSaving ? (
+                                      <Loader2 size={12} className="animate-spin text-slate-500" />
+                                    ) : (
+                                      <Phone size={11} className={priorityCfg.iconColor} />
+                                    )}
+                                  </button>
+
+                                  {/* Popover / Dropdown Menu */}
+                                  {isMenuOpen && (
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="absolute left-0 top-full mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-200 py-1.5 z-50 text-left animate-in fade-in zoom-in-95 duration-100"
+                                      role="menu"
+                                      aria-label="Select call priority"
+                                    >
+                                      <div className="px-3 py-1.5 border-b border-slate-100 mb-1">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                                          Call Priority
+                                        </span>
+                                        <span className="text-[11px] text-slate-400 block truncate">
+                                          {cust.customerName}
+                                        </span>
+                                      </div>
+
+                                      {ORDERED_CALL_PRIORITIES.map(
+                                        (key) => {
+                                          const opt = CALL_PRIORITIES[key];
+                                          const isSelected =
+                                            normalizeCallPriority(cust.callPriority) === key;
+                                          return (
+                                            <button
+                                              key={key}
+                                              type="button"
+                                              onClick={() =>
+                                                handleUpdateCallPriority(
+                                                  cust.customerId,
+                                                  key,
+                                                  cust.customerName
+                                                )
+                                              }
+                                              disabled={isSaving}
+                                              className={`w-full px-3 py-2 flex items-start gap-2.5 text-left transition-colors cursor-pointer ${
+                                                isSelected
+                                                  ? 'bg-slate-50 font-medium'
+                                                  : 'hover:bg-slate-50'
+                                              }`}
+                                              role="menuitem"
+                                            >
+                                              <div
+                                                className={`w-2.5 h-2.5 rounded-full mt-1 shrink-0 ${opt.dotClass}`}
+                                              />
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between">
+                                                  <span className="text-xs font-semibold text-slate-900">
+                                                    {opt.label}
+                                                  </span>
+                                                  {isSelected && (
+                                                    <CheckCheck
+                                                      size={13}
+                                                      className="text-[#1A2766] shrink-0"
+                                                    />
+                                                  )}
+                                                </div>
+                                                <p className="text-[10.5px] text-slate-500 leading-snug mt-0.5">
+                                                  {opt.description}
+                                                </p>
+                                              </div>
+                                            </button>
+                                          );
+                                        }
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+
+                            <div className="flex flex-col min-w-0">
+                              {cust.customerId ? (
+                                <a
+                                  href={getZohoContactUrl(cust.customerId)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-semibold text-slate-900 leading-tight hover:text-[#1A2766] hover:underline inline-flex items-center gap-1 group/link max-w-[200px] sm:max-w-[260px] truncate"
+                                  title={
+                                    cust.customerGst
+                                      ? `${cust.customerName} • GSTIN: ${cust.customerGst}`
+                                      : cust.customerName
+                                  }
+                                >
+                                  <span className="truncate">{cust.customerName}</span>
+                                  <ExternalLink
+                                    size={10}
+                                    className="opacity-0 group-hover/link:opacity-100 text-slate-400 group-hover/link:text-[#1A2766] transition-opacity shrink-0"
+                                  />
+                                </a>
+                              ) : (
+                                <span
+                                  className="font-semibold text-slate-900 leading-tight truncate max-w-[200px] sm:max-w-[260px]"
+                                  title={
+                                    cust.customerGst
+                                      ? `${cust.customerName} • GSTIN: ${cust.customerGst}`
+                                      : cust.customerName
+                                  }
+                                >
+                                  {cust.customerName}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </td>
 

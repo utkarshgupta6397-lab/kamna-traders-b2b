@@ -951,9 +951,14 @@ model Customer {
   balanceSyncError      String?
   balanceSyncStatus     String?
   balanceUpdatedAt      DateTime?
-  netOutstandingBalance Float?
-  dcrInvoices           DcrInvoice[]
+  netOutstandingBalance   Float?
+  callPriority            String       @default("NO_CALL_NEEDED")
+  callPriorityUpdatedAt   DateTime?
+  callPriorityUpdatedById String?
+  dcrInvoices             DcrInvoice[]
   paymentRequests       PaymentRequest[]
+
+  @@index([callPriority])
 }
 
 model DcrInvoice {

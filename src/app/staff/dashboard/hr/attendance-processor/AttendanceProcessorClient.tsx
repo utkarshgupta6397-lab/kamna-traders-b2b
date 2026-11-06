@@ -387,9 +387,16 @@ export default function AttendanceProcessorClient() {
               <h3 className="text-base font-bold text-gray-900 uppercase tracking-tight">
                 Select Employees
               </h3>
-              <p className="text-xs text-gray-500 mt-0.5">
-                <span className="font-semibold text-gray-800">{parsedEmployees.length} employees found</span>.
-                Select the employees you want to include in the PDF attendance statement.
+              <p className="text-xs text-gray-500 mt-0.5 flex flex-wrap items-center gap-1.5">
+                <span>
+                  <span className="font-semibold text-gray-800">{parsedEmployees.length} eligible employees found</span>.
+                  Select the employees you want to include in the PDF attendance statement.
+                </span>
+                {parsedStats?.excludedAbsentEmployees && parsedStats.excludedAbsentEmployees > 0 ? (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                    {parsedStats.excludedAbsentEmployees} completely absent excluded
+                  </span>
+                ) : null}
               </p>
             </div>
 

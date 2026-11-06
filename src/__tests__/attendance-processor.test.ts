@@ -1,6 +1,12 @@
 import fs from 'fs';
 import path from 'path';
-import { parseAttendanceWorkbook, getEligibleEmployeesList, isInactiveEmployee } from '../lib/services/hr/attendance-parser.service';
+import {
+  parseAttendanceWorkbook,
+  getEligibleEmployeesList,
+  isInactiveEmployee,
+  isAbsentStatus,
+  isCompletelyAbsentEmployee,
+} from '../lib/services/hr/attendance-parser.service';
 import { generateAttendancePDF } from '../lib/services/hr/attendance-pdf.service';
 
 function runTests() {
@@ -32,6 +38,61 @@ function runTests() {
   }
   console.log('✓ All inactive variations correctly detected');
 
+  // Test 1b: Status and Completely Absent detection rules & edge cases
+  console.log('\n[Test 1b] Completely Absent employee evaluation & edge cases');
+  // isAbsentStatus checks
+  if (!isAbsentStatus('Absent') || !isAbsentStatus('absent') || !isAbsentStatus(' ABSENT ') || !isAbsentStatus('Absent ')) {
+    throw new Error('Expected isAbsentStatus to match case-insensitively with whitespace trimmed');
+  }
+  if (isAbsentStatus('FD') || isAbsentStatus('HD') || isAbsentStatus('Present') || isAbsentStatus('Week Off') || isAbsentStatus('Sunday')) {
+    throw new Error('Non-absent status must not be classified as absent');
+  }
+  if (isAbsentStatus('') || isAbsentStatus(null) || isAbsentStatus(undefined)) {
+    throw new Error('Empty or null status must not be classified as absent');
+  }
+
+  // Edge cases for isCompletelyAbsentEmployee
+  // 1. Employee absent on all dates -> Exclude
+  const allAbsent = [{ rawStatus: 'Absent' }, { rawStatus: 'absent' }, { rawStatus: 'ABSENT' }];
+  if (!isCompletelyAbsentEmployee(allAbsent)) {
+    throw new Error('Employee absent on all dates must be evaluated as completely absent');
+  }
+
+  // 2. Employee absent on 29 days but present on 1 day -> Include
+  const absent29Present1 = Array(29).fill({ rawStatus: 'Absent' }).concat([{ rawStatus: 'Present' }]);
+  if (isCompletelyAbsentEmployee(absent29Present1)) {
+    throw new Error('Employee with 1 Present day must NOT be evaluated as completely absent');
+  }
+
+  // 3. Employee absent on 29 days but FD on 1 day -> Include
+  const absent29FD1 = Array(29).fill({ rawStatus: 'Absent' }).concat([{ rawStatus: 'FD' }]);
+  if (isCompletelyAbsentEmployee(absent29FD1)) {
+    throw new Error('Employee with 1 FD day must NOT be evaluated as completely absent');
+  }
+
+  // 4. Employee with a Half Day entry -> Include
+  const halfDay = [{ rawStatus: 'Absent' }, { rawStatus: 'HD' }, { rawStatus: 'Absent' }];
+  if (isCompletelyAbsentEmployee(halfDay)) {
+    throw new Error('Employee with HD must NOT be evaluated as completely absent');
+  }
+
+  // 5. Employee with incomplete punch-in/out but non-Absent status -> Include
+  const incompletePunchNonAbsent = [{ rawStatus: 'Absent' }, { rawStatus: 'Missing Out' }];
+  if (isCompletelyAbsentEmployee(incompletePunchNonAbsent)) {
+    throw new Error('Employee with Missing Out must NOT be evaluated as completely absent');
+  }
+
+  // 6. Missing or unrecognized attendance status -> Do not classify as completely absent
+  const unrecognized = [{ rawStatus: 'Absent' }, { rawStatus: 'SpecialLeave' }];
+  if (isCompletelyAbsentEmployee(unrecognized)) {
+    throw new Error('Unrecognized status must NOT be classified as completely absent');
+  }
+  const emptyStatus = [{ rawStatus: 'Absent' }, { rawStatus: '' }];
+  if (isCompletelyAbsentEmployee(emptyStatus)) {
+    throw new Error('Empty status must NOT be classified as completely absent');
+  }
+  console.log('✓ All complete-absence edge cases verified successfully');
+
   // Test 2: Parsing attendance_master.xlsx with inactive exclusion
   console.log('\n[Test 2] Parsing attendance_master.xlsx with inactive employee exclusion');
   const parseResult = parseAttendanceWorkbook(buf);
@@ -40,17 +101,24 @@ function runTests() {
   }
   console.log('✓ Parsing succeeded');
 
-  // Test 3: Active employee count verification (21 total - 2 inactive = 19 active)
-  console.log('\n[Test 3] Eligible employee count verification (excludes Inactive)');
-  const expectedActiveEmpCount = 19;
+  // Test 3: Active employee count verification (21 total - 2 inactive - 1 completely absent = 18 eligible)
+  console.log('\n[Test 3] Eligible employee count verification (excludes Inactive & Completely Absent)');
+  const expectedActiveEmpCount = 18;
   if (parseResult.stats.totalEmployees !== expectedActiveEmpCount) {
     throw new Error(`Expected ${expectedActiveEmpCount} active employees, got ${parseResult.stats.totalEmployees}`);
+  }
+  if (parseResult.stats.excludedAbsentEmployees !== 1) {
+    throw new Error(`Expected 1 excluded completely absent employee, got ${parseResult.stats.excludedAbsentEmployees}`);
   }
   const inactiveInSheets = parseResult.sheets.filter(s => isInactiveEmployee(s.employeeName));
   if (inactiveInSheets.length > 0) {
     throw new Error(`Found inactive employees in sheets: ${inactiveInSheets.map(s => s.employeeName).join(', ')}`);
   }
-  console.log(`✓ Detected exactly ${parseResult.stats.totalEmployees} eligible active employees (Chetna & Nisha excluded)`);
+  const absentInSheets = parseResult.sheets.filter(s => s.employeeId === 'EMP0001');
+  if (absentInSheets.length > 0) {
+    throw new Error(`Found completely absent employee EMP0001 in sheets: ${absentInSheets.map(s => s.employeeName).join(', ')}`);
+  }
+  console.log(`✓ Detected exactly ${parseResult.stats.totalEmployees} eligible active employees (Chetna, Nisha & Vishal Vardhan excluded)`);
 
   // Test 4: Total active records count verification (593 - 4 inactive rows = 589 rows)
   console.log('\n[Test 4] Total active records verification');
@@ -63,14 +131,17 @@ function runTests() {
   // Test 5: Eligible employees list generation
   console.log('\n[Test 5] Eligible employees list generation for selection UI');
   const employeeList = getEligibleEmployeesList(parseResult.sheets);
-  if (employeeList.length !== 19) {
-    throw new Error(`Expected 19 employees in selection list, got ${employeeList.length}`);
+  if (employeeList.length !== 18) {
+    throw new Error(`Expected 18 employees in selection list, got ${employeeList.length}`);
+  }
+  if (employeeList.some(e => e.id === 'EMP0001')) {
+    throw new Error('Completely absent employee EMP0001 must not be in eligible employee list');
   }
   console.log(`✓ Selection list contains ${employeeList.length} employees with IDs and metadata`);
 
-  // Test 6: Employee selection filtering (select subset of 3 employees)
+  // Test 6: Employee selection filtering (select subset of 3 eligible employees)
   console.log('\n[Test 6] Employee selection filtering');
-  const selectedIds = ['EMP0001', 'EMP0002', 'EMP0004'];
+  const selectedIds = ['EMP0002', 'EMP0004', 'EMP0006'];
   const filteredResult = parseAttendanceWorkbook(buf, { selectedEmployeeIds: selectedIds });
   if (filteredResult.sheets.length !== 3) {
     throw new Error(`Expected 3 filtered sheets, got ${filteredResult.sheets.length}`);
@@ -167,8 +238,29 @@ function runTests() {
   }
   console.log('✓ Verified 5 Monthly Summary boxes: Total Working Days -> Total Present -> Total Absent -> Eligible Weekoffs -> Net Payable Days');
 
+  // Test 12: Multi-employee completely absent exclusion verification with attendance_master (4).xlsx
+  const multiAbsentPath = '/Users/utkarshgupta/Downloads/attendance_master (4).xlsx';
+  if (fs.existsSync(multiAbsentPath)) {
+    console.log('\n[Test 12] Multiple completely absent employees exclusion on attendance_master (4).xlsx');
+    const multiBuf = fs.readFileSync(multiAbsentPath);
+    const multiRes = parseAttendanceWorkbook(multiBuf);
+    if (!multiRes.success) {
+      throw new Error(`Expected success on multi-file but got: ${multiRes.errors.join(', ')}`);
+    }
+    const completelyAbsentIds = ['EMP0038', 'EMP0037', 'EMP0024', 'EMP0001'];
+    for (const absentId of completelyAbsentIds) {
+      if (multiRes.sheets.some(s => s.employeeId === absentId)) {
+        throw new Error(`Completely absent employee ${absentId} was NOT excluded from attendance_master (4).xlsx`);
+      }
+    }
+    if (multiRes.stats.excludedAbsentEmployees !== 4) {
+      throw new Error(`Expected exactly 4 excluded absent employees, got ${multiRes.stats.excludedAbsentEmployees}`);
+    }
+    console.log(`✓ Verified all 4 completely absent employees (${completelyAbsentIds.join(', ')}) are excluded from generated statements`);
+  }
+
   console.log('\n======================================================');
-  console.log('ALL 11 ATTENDANCE PROCESSOR TESTS PASSED SUCCESSFULLY!');
+  console.log('ALL ATTENDANCE PROCESSOR TESTS PASSED SUCCESSFULLY!');
   console.log('======================================================\n');
 }
 

@@ -103,6 +103,32 @@ export function isInactiveEmployee(name: string): boolean {
   return /inactive/i.test(name);
 }
 
+/**
+ * Checks whether a given status string represents "Absent"
+ * (case-insensitive and trimmed).
+ */
+export function isAbsentStatus(status: any): boolean {
+  if (status === null || status === undefined) return false;
+  return String(status).trim().toLowerCase() === 'absent';
+}
+
+/**
+ * Evaluates whether an employee is completely absent across all their attendance records.
+ *
+ * Rules:
+ * 1. An employee must have at least one record.
+ * 2. Every attendance record must have Status = "Absent" (case-insensitive, trimmed).
+ * 3. If an employee has even one record with a non-Absent status (FD, HD, Present, Week Off, etc.), they are NOT completely absent.
+ * 4. Missing or unrecognized attendance status is NOT automatically classified as completely absent.
+ */
+export function isCompletelyAbsentEmployee(recordsOrStatuses: Array<{ rawStatus?: string } | string>): boolean {
+  if (!recordsOrStatuses || recordsOrStatuses.length === 0) return false;
+  return recordsOrStatuses.every(item => {
+    const s = typeof item === 'object' && item !== null ? item.rawStatus : item;
+    return isAbsentStatus(s);
+  });
+}
+
 export interface ParseAttendanceResult {
   success: boolean;
   sheets: MonthlyAttendanceSheet[];
@@ -112,6 +138,7 @@ export interface ParseAttendanceResult {
 
 export interface ParseAttendanceOptions {
   selectedEmployeeIds?: string[];
+  excludeCompletelyAbsent?: boolean;
 }
 
 export function parseAttendanceWorkbook(
@@ -191,6 +218,7 @@ export function parseAttendanceWorkbook(
     employeeName: string;
     department?: string;
     designation?: string;
+    rawStatuses: string[];
     months: Map<string, {
       year: number;
       month: number;
@@ -221,6 +249,7 @@ export function parseAttendanceWorkbook(
       continue;
     }
 
+    // Group attendance records by Employee ID (use Employee ID as unique identifier)
     const empKey = rawId || rawName;
     const dateParsed = parseFlexibleDate(row[dateKey!]);
     if (!dateParsed) {
@@ -238,11 +267,20 @@ export function parseAttendanceWorkbook(
         employeeName: rawName || rawId,
         department: deptKey ? String(row[deptKey] || '').trim() : undefined,
         designation: desigKey ? String(row[desigKey] || '').trim() : undefined,
+        rawStatuses: [],
         months: new Map(),
       });
     }
 
     const empData = employeeMap.get(empKey)!;
+    const punchIn = punchInKey ? cleanPunch(row[punchInKey]) : '-';
+    const punchOut = punchOutKey ? cleanPunch(row[punchOutKey]) : '-';
+    const hours = hoursKey ? cleanPunch(row[hoursKey]) : '-';
+    const rawStatus = statusKey ? String(row[statusKey] || '').trim() : '';
+
+    // Collect status for full date-range complete-absence evaluation
+    empData.rawStatuses.push(rawStatus);
+
     if (!empData.months.has(monthKey)) {
       empData.months.set(monthKey, {
         year,
@@ -252,10 +290,6 @@ export function parseAttendanceWorkbook(
     }
 
     const mData = empData.months.get(monthKey)!;
-    const punchIn = punchInKey ? cleanPunch(row[punchInKey]) : '-';
-    const punchOut = punchOutKey ? cleanPunch(row[punchOutKey]) : '-';
-    const hours = hoursKey ? cleanPunch(row[hoursKey]) : '-';
-    const rawStatus = statusKey ? String(row[statusKey] || '').trim() : '';
 
     const hasIn = punchIn !== '-';
     const hasOut = punchOut !== '-';
@@ -286,6 +320,7 @@ export function parseAttendanceWorkbook(
 
   // Convert to MonthlyAttendanceSheet array
   const sheets: MonthlyAttendanceSheet[] = [];
+  let excludedCompletelyAbsentCount = 0;
 
   // Sort employees: alphabetically (A -> Z, case-insensitive) by employee display name, then fallback to ID
   const sortedEmployees = Array.from(employeeMap.values()).sort((a, b) => {
@@ -297,6 +332,14 @@ export function parseAttendanceWorkbook(
   });
 
   for (const emp of sortedEmployees) {
+    // Initial employee filtering rule:
+    // If every attendance record for an employee has Status = "Absent", exclude from initially generated statements.
+    const isCompletelyAbsent = isCompletelyAbsentEmployee(emp.rawStatuses);
+    if (options?.excludeCompletelyAbsent !== false && isCompletelyAbsent) {
+      excludedCompletelyAbsentCount++;
+      continue;
+    }
+
     // Sort months chronologically
     const sortedMonthKeys = Array.from(emp.months.keys()).sort();
 
@@ -425,18 +468,22 @@ export function parseAttendanceWorkbook(
     }
   }
 
-  const stats: AttendanceSummaryStats = options?.selectedEmployeeIds && options.selectedEmployeeIds.length > 0
+  const isFiltered = Boolean(options?.selectedEmployeeIds && options.selectedEmployeeIds.length > 0);
+
+  const stats: AttendanceSummaryStats = isFiltered
     ? {
         totalEmployees: uniqueEmpsInFinal.size,
         totalRecords: finalRecordsCount,
         totalMonths: finalSheets.length,
         missingPunches: finalMissingPunches,
+        excludedAbsentEmployees: excludedCompletelyAbsentCount,
       }
     : {
-        totalEmployees: employeeMap.size,
+        totalEmployees: uniqueEmpsInFinal.size,
         totalRecords: validRecordsCount,
         totalMonths: sheets.length,
         missingPunches: totalMissingPunches,
+        excludedAbsentEmployees: excludedCompletelyAbsentCount,
       };
 
   return {

@@ -46,6 +46,7 @@ export interface AttendanceSummaryStats {
   totalRecords: number;
   totalMonths: number;
   missingPunches: number;
+  excludedAbsentEmployees?: number;
 }
 
 export interface AttendanceProcessingResult {
